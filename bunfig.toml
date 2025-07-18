@@ -1,0 +1,8 @@
+[build]
+target = "node"
+outdir = "dist"
+minify = true
+sourcemap = "external"
+
+[install]
+peer = true

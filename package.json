@@ -1,0 +1,47 @@
+{
+  "name": "explorbot",
+  "version": "1.0.0",
+  "description": "CLI app built with React Ink, CodeceptJS, and Playwright",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "explorbot": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "bun build src/index.tsx --outdir dist --target node --external react --external ink --external yargs",
+    "dev": "bun run src/index.tsx",
+    "start": "node dist/index.js",
+    "init": "bun run src/index.tsx init",
+    "test": "codeceptjs run",
+    "test:headless": "codeceptjs run --headless",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "check": "biome check .",
+    "check:fix": "biome check --write ."
+  },
+  "keywords": ["cli", "react", "ink", "codeceptjs", "playwright"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@ai-sdk/groq": "^1.2.9",
+    "ai": "^4.3.17",
+    "codeceptjs": "^3.7.0",
+    "dotenv": "^17.2.0",
+    "gray-matter": "^4.0.3",
+    "ink": "^4.4.1",
+    "playwright": "^1.40.0",
+    "react": "^18.2.0",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.5.3",
+    "@types/react": "^18.2.0",
+    "@types/yargs": "^17.0.24",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

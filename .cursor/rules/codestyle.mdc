@@ -1,0 +1,17 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+
+Do not write comments unless explicilty specified
+
+Instead of if/else try to use premature exit from loop
+
+When updating do the smallest change possible
+Follow KISS and YAGNI principles
+Avoid repetetive code patterns
+Avoid creating extra functions that were not explicitly set
+Avoid deep nesting of conditionals, use if () { .. return } inestead of if/else
+Prefer to use array map/reduce/etc methods over complex ifs

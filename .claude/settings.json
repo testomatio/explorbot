@@ -1,0 +1,7 @@
+{
+  "allowedPaths": ["/home/davert/projects/explorbot"],
+  "project": {
+    "name": "explorbot",
+    "description": "CLI app with React Ink, CodeceptJS, and Playwright"
+  }
+}
