@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { log } from '../utils/logger.js';
 
 export class InitCommand {
   private getDefaultConfig(): string {
@@ -29,7 +30,7 @@ export default config;
     dirs.forEach((dir) => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
-        console.log(`✅ Created directory: ${dir}`);
+        log(`✅ Created directory: ${dir}`);
       }
     });
   }
@@ -63,37 +64,33 @@ export default config;
 
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
-        console.log(`✅ Created directory: ${dir}`);
+        log(`✅ Created directory: ${dir}`);
       }
 
       if (fs.existsSync(resolvedPath) && !force) {
-        console.error(`❌ Config file already exists: ${resolvedPath}`);
-        console.log('Use --force to overwrite existing file');
+        log(`❌ Config file already exists: ${resolvedPath}`);
+        log('Use --force to overwrite existing file');
         process.exit(1);
       }
 
       const configContent = this.getDefaultConfig();
       fs.writeFileSync(resolvedPath, configContent, 'utf8');
 
-      console.log(`✅ Created config file: ${resolvedPath}`);
-      console.log('');
-      console.log('📝 Next steps:');
-      console.log(
-        '1. Set your API key in the config file or as environment variable'
-      );
-      console.log('2. Customize the configuration as needed');
-      console.log('3. Run: explorbot start');
-      console.log('');
-      console.log('💡 You can also use different AI providers:');
-      console.log('   - import { anthropic } from "ai" for Claude');
-      console.log('   - import { bedrock } from "ai" for AWS Bedrock');
-      console.log(
-        '   - Or any other provider that supports the chat interface'
-      );
+      log(`✅ Created config file: ${resolvedPath}`);
+      log('');
+      log('📝 Next steps:');
+      log('1. Set your API key in the config file or as environment variable');
+      log('2. Customize the configuration as needed');
+      log('3. Run: explorbot start');
+      log('');
+      log('💡 You can also use different AI providers:');
+      log('   - import { anthropic } from "ai" for Claude');
+      log('   - import { bedrock } from "ai" for AWS Bedrock');
+      log('   - Or any other provider that supports the chat interface');
 
       this.createOutputDirectories();
     } catch (error) {
-      console.error('❌ Failed to create config file:', error);
+      log('❌ Failed to create config file:', error);
       process.exit(1);
     }
   }

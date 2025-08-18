@@ -1,17 +1,15 @@
 # Explorbot
 
-A CLI tool that integrates CodeceptJS with AI feedback loops for intelligent web automation. Built with React Ink for the CLI interface and uses Playwright for browser automation.
+A tool that integrates CodeceptJS with AI feedback loops for intelligent web automation.
 
 ## Features
 
-- **CLI Interface**: Interactive command-line interface built with React Ink
-- **CodeceptJS Integration**: Execute CodeceptJS code dynamically with Playwright
-- **AI Feedback Loop**: Get AI suggestions based on page state for error resolution
-- **HTML Processing**: Automatic HTML minification and processing for AI context
+- **CodeceptJS Integration**: Execute CodeceptJS code dynamically
+- **AI Feedback Loop**: Get AI suggestions based on page state
+- **HTML Processing**: Automatic HTML minification and processing
 - **Screenshot Capture**: Get screenshots as buffers for AI context
-- **Error Handling**: Comprehensive error handling and AI-driven problem resolution
+- **Error Handling**: Comprehensive error handling and reporting
 - **Proper Cleanup**: Automatic browser teardown and resource cleanup
-- **Configuration Management**: Flexible configuration with validation and defaults
 
 ## Installation
 
@@ -21,87 +19,48 @@ npm install
 
 ## Usage
 
-### CLI Usage
+### Basic Usage
 
-```bash
-# Initialize configuration file
-explorbot init
-
-# Run with default config
-explorbot
-
-# Run with custom config path
-explorbot --config ./my-config.js
-
-# Run with verbose logging
-explorbot --verbose
-```
-
-### Programmatic Usage
-
-```typescript
-import Explorer from './src/explorer.js';
+```javascript
+const Action = require('./src/action').default;
+const Explorer = require('./src/explorer').default;
 
 async function example() {
   const explorer = new Explorer();
   
   try {
     const I = await explorer.start();
-    const action = explorer.createAction();
+    const action = explorer.startAction();
 
-    // Execute CodeceptJS code
-    await action.execute("I.amOnPage('/projects/codeceptjs/')");
-    
-    // Set expectations
-    await action.expect("I.seeInCurrentUrl('/projects/codeceptjs/')")
-    
-    // Use AI to resolve errors when condition is met
-    await action.resolve(
-      (result) => result.url?.includes('/login'),
-      "Authorize using the credentials provided."
-    );
+    const codeString = `
+      await I.amOnPage('https://example.com');
+      await I.click('#login-button');
+      await I.fillField('#username', 'testuser');
+    `;
+
+    const result = await action.executeCodeceptCode(codeString);
+    console.log('Minified HTML:', result.minifiedHtml);
+    console.log('Screenshot:', result.screenshot);
   } finally {
-    await explorer.stop();
+    await explorer.teardown();
   }
 }
 ```
 
-## Configuration
-
-Create `explorbot.config.js` in your project root:
+### AI Feedback Loop
 
 ```javascript
-export default {
-  playwright: {
-    url: "https://example.com",
-    browser: "chromium",
-    show: false
-  },
-  ai: {
-    provider: "groq",
-    model: "mixtral-8x7b-32768"
-  },
-  dirs: {
-    knowledge: "knowledge",
-    experience: "experience", 
-    output: "output"
-  }
-};
+const AIExplorer = require('./example_ai_feedback_loop').AIExplorer;
+
+const explorer = new AIExplorer(actor);
+
+const result = await explorer.executeWithAI(
+  `await I.amOnPage('https://example.com');`,
+  'Navigate to the homepage and find the login button'
+);
+
+console.log('AI Response:', result.aiResponse);
 ```
-
-### Required Configuration
-
-- `playwright.url`: Target website URL
-- `ai.provider`: AI provider (e.g., "groq")
-- `ai.model`: AI model name
-
-### Optional Configuration
-
-- `playwright.browser`: Browser type (default: "chromium")
-- `playwright.show`: Show browser window (default: false)
-- `dirs.knowledge`: Knowledge directory (default: "knowledge")
-- `dirs.experience`: Experience directory (default: "experience")
-- `dirs.output`: Output directory (default: "output")
 
 ## API Reference
 
@@ -109,147 +68,101 @@ export default {
 
 #### `start(configPath?: string): Promise<CodeceptJS.I>`
 
-Initializes the browser, loads configuration, and returns a CodeceptJS actor.
+Initializes the browser and returns a CodeceptJS actor.
 
-#### `stop(): Promise<void>`
+#### `teardown(): Promise<void>`
 
 Properly shuts down the browser and cleans up resources. **Always call this when done!**
 
-#### `createAction(): Action`
+#### `stop(): Promise<void>`
 
-Creates an Action instance with the current actor and AI prompt vocabulary.
-
-#### `getConfig(): ExplorbotConfig`
-
-Returns the loaded configuration object.
-
-#### `getAIProvider(): AIProvider`
-
-Returns the AI provider instance.
+Alternative method for stopping the browser (same as teardown).
 
 ### Action Class
 
-#### `execute(codeString: string): Promise<Action>`
+#### `executeCodeceptCode(codeString: string): Promise<ActionResult>`
 
-Executes CodeceptJS code and captures page state.
+Executes CodeceptJS code and returns page state information.
 
 **Parameters:**
 - `codeString`: String containing CodeceptJS code to execute
 
-#### `expect(codeString: string): Promise<Action>`
-
-Runs assertions and captures any failures.
-
-#### `resolve(condition: (result: ActionResult) => boolean, message: string): Promise<Action>`
-
-Uses AI to resolve errors when the condition is met.
-
-**Parameters:**
-- `condition`: Function that returns true when AI should intervene
-- `message`: Instructions for the AI on how to resolve the issue
+**Returns:**
+- `ActionResult` object containing:
+  - `html`: Raw HTML of the page
+  - `screenshot`: Screenshot as Buffer (or null if unavailable)
+  - `minifiedHtml`: Processed and minified HTML
+  - `error`: Error message if execution failed
 
 ### ActionResult Class
 
 ```typescript
 class ActionResult {
-  public readonly html: string;
-  public readonly screenshot: Buffer | null;
-  public readonly title: string;
-  public readonly url: string | null;
-  public readonly error: string | null;
-  public readonly timestamp: Date;
-  
-  async getSimplifiedHtml(): Promise<string>
-  async simplify(): Promise<void>
-  toAiContext(): string
-  getStateHash(): string
+  constructor(
+    public readonly html: string,
+    public readonly screenshot: Buffer | null,
+    public readonly minifiedHtml: string,
+    public readonly error: string | null = null
+  ) {}
 }
 ```
 
-## Directory Structure
+## Supported Helpers
 
-```
-project/
-├── explorbot.config.js    # Configuration file
-├── knowledge/            # Knowledge base prompts
-├── experience/           # Experience prompts
-├── output/              # Generated outputs
-│   ├── logs/            # Execution logs
-│   ├── reports/         # Test reports
-│   ├── screenshots/     # Page screenshots
-│   └── videos/          # Recorded sessions
-└── src/                 # Your source code
-```
+The tool supports the following CodeceptJS helpers for screenshot capture:
 
-## AI Integration
+- **Playwright**: Uses `page.screenshot()`
+- **Puppeteer**: Uses `page.screenshot()`
+- **WebDriver**: Uses `browser.saveScreenshot()`
 
-Explorbot uses AI to intelligently resolve errors during web automation:
+## HTML Processing
 
-1. **Error Detection**: When `expect()` fails, the error is captured
-2. **Condition Check**: The `resolve()` method checks if intervention is needed
-3. **AI Resolution**: If the condition is met, the current page state and error message are sent to AI
-4. **Code Generation**: AI generates CodeceptJS code to resolve the issue
-5. **Execution**: The generated code is executed automatically
+The tool automatically processes HTML using CodeceptJS's built-in utilities:
+
+1. **Non-interactive element removal**: Removes unnecessary elements to reduce context size
+2. **HTML minification**: Compresses HTML for efficient AI processing
+3. **Attribute filtering**: Keeps only relevant attributes for AI analysis
 
 ## Examples
 
 See the following example files:
 
+- `example_usage.js`: Basic usage example
+- `example_ai_feedback_loop.js`: AI feedback loop implementation
 - `example/run.ts`: Complete example with proper teardown
-- `example/explorbot.config.js`: Example configuration
-- `example/knowledge/`: Example knowledge base
-
-## Build and Development
-
-### Scripts
-
-```bash
-# Development
-bun run dev
-
-# Build for distribution
-bun run build
-
-# Run built version
-bun run start
-
-# Testing
-bun run test
-
-# Linting and formatting
-bun run check
-bun run lint
-bun run format
-```
-
-### Tech Stack
-
-- **CLI**: React Ink + yargs
-- **Browser Automation**: CodeceptJS + Playwright
-- **AI**: AI SDK with multiple provider support
-- **Build**: Bun + TypeScript
-- **Linting**: Biome
 
 ## Important: Resource Cleanup
 
-**Always call `explorer.stop()`** for proper cleanup:
+**Always call `explorer.teardown()` when you're done!** This ensures:
 
-```typescript
+- Browser processes are properly terminated
+- No zombie processes are left running
+- System resources are freed
+- Clean exit from the application
+
+```javascript
 const explorer = new Explorer();
 
 try {
   const I = await explorer.start();
   // ... your code here
 } finally {
-  await explorer.stop(); // Always cleanup!
+  await explorer.teardown(); // Always cleanup!
 }
 ```
 
-This ensures:
-- Browser processes are properly terminated
-- No zombie processes are left running
-- System resources are freed
-- Clean exit from the application
+## Configuration
+
+The tool uses CodeceptJS's default HTML processing options. You can customize these by modifying the `defaultHtmlOpts` in the HTML processing utilities.
+
+## Error Handling
+
+The tool provides comprehensive error handling:
+
+- Execution errors are captured and returned in the `ActionResult`
+- Screenshot failures are handled gracefully (returns null)
+- HTML processing errors are logged but don't break execution
+- Proper cleanup happens even on errors or interruptions
 
 ## Contributing
 

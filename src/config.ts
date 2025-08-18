@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { ExplorbotConfig } from '../explorbot.config.js';
+import { log } from './utils/logger.js';
 
 export class ConfigParser {
   private static instance: ConfigParser;
@@ -16,20 +17,30 @@ export class ConfigParser {
     return ConfigParser.instance;
   }
 
-  public async loadConfig(configPath?: string): Promise<ExplorbotConfig> {
-    if (this.config && !configPath) {
+  public async loadConfig(options?: {
+    config?: string;
+    path?: string;
+  }): Promise<ExplorbotConfig> {
+    if (this.config && !options?.config && !options?.path) {
       return this.config;
     }
 
-    const resolvedPath = configPath || this.findConfigFile();
-
-    if (!resolvedPath) {
-      throw new Error(
-        'No configuration file found. Please create explorbot.config.js or explorbot.config.ts'
-      );
+    // If path is provided, change to that directory and load .env
+    const originalCwd = process.cwd();
+    if (options?.path) {
+      const resolvedWorkingPath = resolve(options.path);
+      process.chdir(resolvedWorkingPath);
     }
 
     try {
+      const resolvedPath = options?.config || this.findConfigFile();
+
+      if (!resolvedPath) {
+        throw new Error(
+          'No configuration file found. Please create explorbot.config.js or explorbot.config.ts'
+        );
+      }
+
       const configModule = await this.loadConfigModule(resolvedPath);
       const loadedConfig = configModule.default || configModule;
 
@@ -40,12 +51,14 @@ export class ConfigParser {
       this.config = loadedConfig as ExplorbotConfig;
       this.configPath = resolvedPath;
 
-      console.log(`✅ Configuration loaded from: ${resolvedPath}`);
+      log(`✅ Configuration loaded from: ${resolvedPath}`);
       return this.config;
     } catch (error) {
-      throw new Error(
-        `Failed to load configuration from ${resolvedPath}: ${error}`
-      );
+      // Restore original directory on error
+      if (options?.path && originalCwd !== process.cwd()) {
+        process.chdir(originalCwd);
+      }
+      throw new Error(`Failed to load configuration: ${error}`);
     }
   }
 

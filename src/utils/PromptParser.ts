@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
+import { log } from './logger.js';
 
 interface PromptData {
   url: string;
@@ -15,7 +16,7 @@ export class PromptParser {
     directoryPath: string
   ): Promise<Map<string, PromptData>> {
     if (!fs.existsSync(directoryPath)) {
-      console.warn(`⚠️ Prompts directory not found: ${directoryPath}`);
+      log(`⚠️ Prompts directory not found: ${directoryPath}`);
       return this.prompts;
     }
 
@@ -27,7 +28,7 @@ export class PromptParser {
       await this.parsePromptFile(filePath);
     }
 
-    console.log(`✅ Loaded ${this.prompts.size} prompts from ${directoryPath}`);
+    log(`✅ Loaded ${this.prompts.size} prompts from ${directoryPath}`);
     return this.prompts;
   }
 
@@ -37,7 +38,7 @@ export class PromptParser {
       const { data: frontmatter, content: markdown } = matter(content);
 
       if (!frontmatter.url) {
-        console.warn(`⚠️ Prompt file ${filePath} missing 'url' in frontmatter`);
+        log(`⚠️ Prompt file ${filePath} missing 'url' in frontmatter`);
         return;
       }
 
@@ -47,7 +48,7 @@ export class PromptParser {
         filePath,
       });
     } catch (error) {
-      console.error(`❌ Failed to parse prompt file ${filePath}:`, error);
+      log(`❌ Failed to parse prompt file ${filePath}:`, error);
     }
   }
 

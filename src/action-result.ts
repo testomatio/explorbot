@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+import { join } from 'node:path';
 import { minifyHtml, removeNonInteractiveElements } from 'codeceptjs/lib/html';
+import type { WebPageState } from './state-manager';
 
 interface ActionResultData {
   html: string;
@@ -11,11 +14,12 @@ interface ActionResultData {
   h2?: string;
   h3?: string;
   h4?: string;
+  browserLogs?: any[];
 }
 
 export class ActionResult {
   public html: string;
-  public readonly screenshot: Buffer | null;
+  public readonly screenshot: Buffer | null | undefined;
   public readonly title: string;
   public readonly error: string | null;
   public readonly timestamp: Date;
@@ -24,48 +28,198 @@ export class ActionResult {
   public readonly h3: string | null;
   public readonly h4: string | null;
   public readonly url: string | null;
+  public readonly browserLogs: any[];
 
   constructor(data: ActionResultData) {
-    Object.assign(this, {
+    const defaults = {
       timestamp: new Date(),
-      ...data,
-    });
+      browserLogs: [],
+    };
+
+    Object.assign(this, defaults, data);
+
+    // Extract headings from HTML if not provided
+    if (this.html && (!this.h1 || !this.h2 || !this.h3 || !this.h4)) {
+      const extractedHeadings = this.extractHeadings(this.html);
+      if (!this.h1 && extractedHeadings.h1) this.h1 = extractedHeadings.h1;
+      if (!this.h2 && extractedHeadings.h2) this.h2 = extractedHeadings.h2;
+      if (!this.h3 && extractedHeadings.h3) this.h3 = extractedHeadings.h3;
+      if (!this.h4 && extractedHeadings.h4) this.h4 = extractedHeadings.h4;
+    }
+
+    // Automatically save artifacts when ActionResult is created
+    this.saveBrowserLogs();
+    this.saveHtmlOutput();
   }
 
-  async getSimplifiedHtml(): Promise<string> {
-    const processedHtml = removeNonInteractiveElements(this.html);
-    return await minifyHtml(processedHtml);
+  /**
+   * Extract headings from HTML content
+   */
+  private extractHeadings(html: string): {
+    h1?: string;
+    h2?: string;
+    h3?: string;
+    h4?: string;
+  } {
+    const headings: { h1?: string; h2?: string; h3?: string; h4?: string } = {};
+
+    // Extract h1
+    const h1Match = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
+    if (h1Match) {
+      headings.h1 = h1Match[1].replace(/<[^>]*>/g, '').trim();
+    }
+
+    // Extract h2
+    const h2Match = html.match(/<h2[^>]*>(.*?)<\/h2>/i);
+    if (h2Match) {
+      headings.h2 = h2Match[1].replace(/<[^>]*>/g, '').trim();
+    }
+
+    // Extract h3
+    const h3Match = html.match(/<h3[^>]*>(.*?)<\/h3>/i);
+    if (h3Match) {
+      headings.h3 = h3Match[1].replace(/<[^>]*>/g, '').trim();
+    }
+
+    // Extract h4
+    const h4Match = html.match(/<h4[^>]*>(.*?)<\/h4>/i);
+    if (h4Match) {
+      headings.h4 = h4Match[1].replace(/<[^>]*>/g, '').trim();
+    }
+
+    return headings;
   }
 
-  async simplify(): Promise<void> {
-    const processedHtml = removeNonInteractiveElements(this.html);
-    this.html = await minifyHtml(processedHtml);
+  async simplifiedHtml(): Promise<string> {
+    return await minifyHtml(removeNonInteractiveElements(this.html));
+  }
+
+  static fromState(state: WebPageState): ActionResult {
+    let html = '';
+    let screenshot: Buffer | undefined;
+    let browserLogs: any[] = [];
+
+    if (state.htmlFile) {
+      html = ActionResult.loadHtmlFromFile(state.htmlFile) || '';
+    }
+
+    if (state.screenshotFile) {
+      screenshot = ActionResult.loadScreenshotFromFile(state.screenshotFile);
+    }
+
+    if (state.logFile) {
+      browserLogs = ActionResult.loadBrowserLogsFromFile(state.logFile);
+    }
+
+    const actionResultData: any = {
+      html,
+      url: state.fullUrl || state.url,
+      title: state.title,
+      screenshot,
+      browserLogs,
+    };
+
+    if (state.timestamp) {
+      actionResultData.timestamp = state.timestamp;
+    }
+
+    return new ActionResult(actionResultData);
+  }
+
+  private static loadHtmlFromFile(htmlFile: string): string | null {
+    try {
+      const filePath = join('output', htmlFile);
+      if (fs.existsSync(filePath)) {
+        return fs.readFileSync(filePath, 'utf8');
+      }
+      return null;
+    } catch (error) {
+      console.error('Failed to load HTML from file:', error);
+      return null;
+    }
+  }
+
+  private static loadScreenshotFromFile(
+    screenshotFile: string
+  ): Buffer | undefined {
+    try {
+      const filePath = join('output', screenshotFile);
+      if (fs.existsSync(filePath)) {
+        return fs.readFileSync(filePath);
+      }
+      return undefined;
+    } catch (error) {
+      console.error('Failed to load screenshot from file:', error);
+      return undefined;
+    }
+  }
+
+  private static loadBrowserLogsFromFile(logFile: string): any[] {
+    try {
+      const filePath = join('output', logFile);
+      if (fs.existsSync(filePath)) {
+        const logContent = fs.readFileSync(filePath, 'utf8');
+        return logContent
+          .split('\n')
+          .filter((line) => line.trim())
+          .map((line) => {
+            const match = line.match(/\[([^\]]+)\] (\w+): (.+)/);
+            if (match) {
+              return {
+                timestamp: match[1],
+                type: match[2].toLowerCase(),
+                text: match[3],
+                level: match[2].toLowerCase(),
+                message: match[3],
+              };
+            }
+            return { text: line, type: 'log', level: 'log', message: line };
+          });
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to load browser logs from file:', error);
+      return [];
+    }
   }
 
   toAiContext(): string {
-    const excludedKeys = ['html', 'error', 'timestamp', 'screenshot'];
-    const contextParts: string[] = [];
+    const parts: string[] = [];
 
-    for (const [key, value] of Object.entries(this)) {
-      if (
-        !excludedKeys.includes(key) &&
-        value !== null &&
-        value !== undefined
-      ) {
-        contextParts.push(`<${key}>${value}</${key}>`);
-      }
+    if (this.url) {
+      parts.push(`<url>${this.url}</url>`);
     }
 
-    return contextParts.join('\n');
+    if (this.title) {
+      parts.push(`<title>${this.title}</title>`);
+    }
+
+    if (this.h1) {
+      parts.push(`<h1>${this.h1}</h1>`);
+    }
+
+    if (this.h2) {
+      parts.push(`<h2>${this.h2}</h2>`);
+    }
+
+    if (this.h3) {
+      parts.push(`<h3>${this.h3}</h3>`);
+    }
+
+    if (this.h4) {
+      parts.push(`<h4>${this.h4}</h4>`);
+    }
+
+    return parts.join('\n');
   }
 
   get relativeUrl(): string | null {
     if (!this.url) return null;
-    
+
     const urlObj = new URL(this.url);
     const path = urlObj.pathname.replace(/\/$/, '') || '/';
     const hash = urlObj.hash || '';
-    
+
     return path + hash;
   }
 
@@ -99,5 +253,56 @@ export class ActionResult {
     }
 
     return stateString;
+  }
+
+  private saveBrowserLogs(): void {
+    if (!this.browserLogs || this.browserLogs.length === 0) return;
+
+    try {
+      const outputDir = 'output';
+      const stateHash = this.getStateHash();
+      const filename = `${stateHash}.log`;
+      const filePath = join(outputDir, filename);
+
+      // Ensure output directory exists
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // Format logs for saving
+      const formattedLogs = this.browserLogs.map((log: any) => {
+        const timestamp = new Date().toISOString();
+        const level = (log.type || log.level || 'LOG').toUpperCase();
+        const message = log.text || log.message || String(log);
+        return `[${timestamp}] ${level}: ${message}`;
+      });
+
+      // Save log content to file
+      const logContent = `${formattedLogs.join('\n')}\n`;
+      fs.writeFileSync(filePath, logContent, 'utf8');
+    } catch (error) {
+      // Silently fail to avoid breaking the main flow
+      console.error('Failed to save browser logs:', error);
+    }
+  }
+
+  private saveHtmlOutput(): void {
+    try {
+      const outputDir = 'output';
+      const stateHash = this.getStateHash();
+      const filename = `${stateHash}.html`;
+      const filePath = join(outputDir, filename);
+
+      // Ensure output directory exists
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // Save HTML content to file
+      fs.writeFileSync(filePath, this.html, 'utf8');
+    } catch (error) {
+      // Silently fail to avoid breaking the main flow
+      console.error('Failed to save HTML output:', error);
+    }
   }
 }

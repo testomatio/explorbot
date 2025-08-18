@@ -1,6 +1,8 @@
 import { type StreamTextResult, generateText, streamText } from 'ai';
 import debug from 'debug';
 import type { AIConfig } from '../../explorbot.config.ts';
+import { log } from '../utils/logger.js';
+import { setActivity, clearActivity } from '../activity.js';
 
 const debugLog = debug('explorbot:ai');
 
@@ -20,7 +22,7 @@ export class Provider {
     }
 
     this.provider = this.config.provider;
-    console.log('✅ AI provider initialized');
+    log('✅ AI provider initialized');
   }
 
   async chat(messages: any[], options: any = {}): Promise<any> {
@@ -28,18 +30,26 @@ export class Provider {
       await this.initialize();
     }
 
+    setActivity(`AI request to ${this.config.model}`, 'ai');
+
     const config = {
       model: this.provider(this.config.model),
       ...this.config.config,
       ...options,
     };
 
-    const response = await generateText({
-      messages,
-      ...config,
-    });
+    try {
+      const response = await generateText({
+        messages,
+        ...config,
+      });
 
-    return response;
+      clearActivity();
+      return response;
+    } catch (error: any) {
+      clearActivity();
+      throw new AiError(error.message || error.toString());
+    }
   }
 
   getProvider(): any {
@@ -47,4 +57,6 @@ export class Provider {
   }
 }
 
-export { Provider as AIProvider };
+class AiError extends Error {}
+
+export { AiError, Provider as AIProvider };

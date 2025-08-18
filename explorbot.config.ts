@@ -3,8 +3,16 @@ interface PlaywrightConfig {
   url: string;
   show?: boolean;
   windowSize?: string;
-  headless?: boolean;
   slowMo?: number;
+  chromium?: {
+    args?: string[];
+  };
+  firefox?: {
+    args?: string[];
+  };
+  webkit?: {
+    args?: string[];
+  };
   timeout?: number;
   waitForNavigation?: 'load' | 'domcontentloaded' | 'networkidle';
   waitForTimeout?: number;
@@ -27,8 +35,7 @@ interface AIConfig {
     maxConcurrency: number;
     timeout: number;
   };
-  streaming?: boolean;
-  retryAttempts?: number;
+  maxAttempts?: number;
   retryDelay?: number;
 }
 

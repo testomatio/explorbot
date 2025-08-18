@@ -1,64 +1,73 @@
 #!/usr/bin/env node
-
-import path from 'node:path';
-import { render } from 'ink';
 import React from 'react';
-import yargs from 'yargs';
-import { hideBin } from 'yargs/helpers';
-import { InitCommand } from './commands/InitCommand.js';
-import App from './components/App.js';
+import { render } from 'ink';
+import { App } from './components/App.js';
+import { ExplorBot, type ExplorBotOptions } from './explorbot.ts';
 
-const argv = yargs(hideBin(process.argv))
-  .command(
-    'init',
-    'Initialize explorbot.config.js in current directory',
-    {
-      path: {
-        alias: 'p',
-        type: 'string',
-        description:
-          'Path to create config file (default: ./explorbot.config.js)',
-        default: './explorbot.config.js',
-      },
-      force: {
-        alias: 'f',
-        type: 'boolean',
-        description: 'Overwrite existing config file',
-        default: false,
-      },
-    },
-    (argv) => {
-      const initCommand = new InitCommand();
-      initCommand.run(argv.path, argv.force);
-    }
-  )
-  .option('verbose', {
-    alias: 'v',
-    type: 'boolean',
-    description: 'Run with verbose logging',
-  })
-  .option('config', {
-    alias: 'c',
-    type: 'string',
-    description: 'Path to config file',
-  })
-  .option('path', {
-    alias: 'p',
-    type: 'string',
-    description:
-      'Directory path where config file is located (default: current directory)',
-  })
-  .help()
-  .alias('help', 'h')
-  .parseSync();
+// Parse command line arguments
+const args = process.argv.slice(2);
+const options: ExplorBotOptions = {};
 
-if (argv._.length === 0) {
-  let configPath = argv.config;
+// Parse options
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
 
-  if (argv.path) {
-    const dirPath = path.resolve(argv.path);
-    configPath = path.join(dirPath, 'explorbot.config.js');
+  if (arg === '--from' && i + 1 < args.length) {
+    options.from = args[++i];
+  } else if (arg === '--verbose' || arg === '-v') {
+    options.verbose = true;
+  } else if (arg === '--config' && i + 1 < args.length) {
+    options.config = args[++i];
+  } else if (arg === '--path' && i + 1 < args.length) {
+    options.path = args[++i];
+  } else if (arg === '--help' || arg === '-h') {
+    console.log(`
+ExplorBot - AI-powered web exploration tool
+
+Usage: explorbot [options]
+
+Options:
+  --from <url>           Start exploration from a specific URL
+  --verbose, -v          Enable verbose logging
+  --config <path>        Path to configuration file
+  --path <path>          Working directory path
+  --help, -h             Show this help message
+
+Examples:
+  explorbot --from https://example.com
+  explorbot --verbose --config ./config.json
+`);
+    process.exit(0);
   }
-
-  render(<App verbose={argv.verbose} config={configPath} />);
 }
+
+const initialShowInput = !options.from;
+
+const mainOptions: ExplorBotOptions = {
+  from: options.from,
+  verbose: options.verbose,
+  config: options.config,
+  path: options.path,
+};
+
+const explorBot = new ExplorBot(mainOptions);
+await explorBot.loadConfig();
+
+render(
+  <App
+    explorBot={explorBot}
+    initialShowInput={initialShowInput}
+    exitOnEmptyInput={true}
+  />
+);
+
+// Handle process termination to ensure cleanup
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Received SIGINT, cleaning up...');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Received SIGTERM, cleaning up...');
+  process.exit(0);
+});

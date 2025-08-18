@@ -1,16 +1,29 @@
-import path from 'node:path';
-import debug from 'debug';
-import type { ActionResult } from '../action-result';
-import type { PromptParser } from '../prompt-parser';
-import type { Provider } from './provider';
+import type { Provider } from './provider.js';
+import type { WebPageState } from '../state-manager.js';
+import type { ActionResult } from '../action-result.js';
+import { ExperienceCompactor } from './experience-compactor.js';
+import { tag, createDebug } from '../utils/logger.js';
 
-const debugLog = debug('explorbot:ai');
+const debugLog = createDebug('explorbot:navigator');
 
-class PromptVocabulary {
+export interface StateContext {
+  state: WebPageState;
+  knowledge: Array<{ filePath: string; content: string }>;
+  experience: string[];
+  recentTransitions: Array<{
+    fromState: WebPageState | null;
+    toState: WebPageState;
+    codeBlock: string;
+  }>;
+  html?: string;
+}
+
+class Navigator {
   private provider: Provider;
-  private promptParser: PromptParser;
+  private experienceCompactor: ExperienceCompactor;
 
-  private MAX_ATTEMPTS = process.env.MAX_ATTEMPTS || 5;
+  private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
+  private MAX_EXPERIENCE_LENGTH = 5000;
 
   private systemPrompt = `
   <role>
@@ -23,43 +36,93 @@ class PromptVocabulary {
   </task>
   `;
 
-  constructor(provider: Provider, promptParser: PromptParser) {
+  constructor(provider: Provider) {
     this.provider = provider;
-    this.promptParser = promptParser;
-    this.promptParser.getAllPrompts().forEach((prompt) => {
-      debugLog('Prompt loaded from', path.basename(prompt.filePath));
-    });
+    this.experienceCompactor = new ExperienceCompactor(provider);
   }
 
-  async resolveState(state: ActionResult, message: string): Promise<string> {
-    const stateRules = this.promptParser.getPromptsByCriteria({
-      url: state.url,
-    });
+  async resolveState(
+    message: string,
+    actionResult: ActionResult,
+    context?: StateContext
+  ): Promise<string> {
+    const state = context?.state;
+    if (!state) {
+      throw new Error('State is required');
+    }
 
-    debugLog('State rules:', stateRules);
+    tag('info').log('AI Navigator resolving state for:', state.url);
+    debugLog('Resolution message:', message);
 
-    const prompt = `
-      <message>
+    let knowledge = '';
+
+    if (context?.knowledge.length > 0) {
+      const knowledgeContent = context.knowledge
+        .map((k) => k.content)
+        .join('\n\n');
+
+      tag('substep').log(
+        `Found ${context.knowledge.length} relevant knowledge file(s) for: ${context.state.url}`
+      );
+      knowledge = `
+        <hint>
+        Here is relevant knowledge for this page:
+
+        ${knowledgeContent}
+        </hint>`;
+    }
+
+    let prompt = `
+      <task>
         ${message}
-      </message>
+      </task>
 
       Look into context of this HTML page
 
       <page>
-        ${state.toAiContext()}
+        ${actionResult.toAiContext()}
 
         HTML:
 
-        ${await state.getSimplifiedHtml()}
+        ${await actionResult.simplifiedHtml()}
       </page>
       By performing CodeceptJS actions you need to change the state of the page in expected way.
 
-      ${stateRules.map((rule) => rule.content).join('\n')}
+
+      ${knowledge}
 
       ${this.actionRule()}
 
       ${this.outputRule()}
     `;
+
+    if (context?.experience.length > 0) {
+      const experienceContent = context?.experience.join('\n\n---\n\n');
+      const truncatedContent =
+        experienceContent.length > this.MAX_EXPERIENCE_LENGTH
+          ? `${experienceContent.slice(0, this.MAX_EXPERIENCE_LENGTH)}\n\n[Content truncated due to length limit]`
+          : experienceContent;
+
+      tag('substep').log(
+        `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
+      );
+      prompt += `
+
+      <experience_rules>
+      Here is a compacted summary of previously executed code blocks.
+      Focus on successful solutions and avoid failed locators.
+      Do not repeat code blocks that already failed.
+      Analyze locators used in code blocks that failed and do not use them in your answer.
+      Do not use any locators equal to failed ones.
+      </experience_rules>
+      <experience>
+      ${truncatedContent}
+      </experience>`;
+    }
+
+    debugLog('Sending prompt to AI provider');
+
+    tag('multiline').log('Prompt:', prompt);
 
     const response = await this.provider.chat([
       { role: 'system', content: this.systemPrompt },
@@ -67,6 +130,10 @@ class PromptVocabulary {
     ]);
 
     const aiResponse = response.text;
+
+    debugLog('Received AI response:', aiResponse.length, 'characters');
+    tag('multiline').log(aiResponse);
+
     return aiResponse;
   }
 
@@ -83,6 +150,24 @@ class PromptVocabulary {
 
         Each new solution should pick the longer and more specific path to element.
         Each new solution should start with element from higher hierarchy with id or data-id attributes.
+        When suggesting a new XPath locator do not repeat previously used same CSS locator and vice versa.
+        Each new locator should at least take one step up the hierarchy.
+
+        <bad_locator_example>
+          Suggestion 1:
+          #user_email
+
+          Suggestion 2: (is the same as suggestion 1)
+          //*[@id="user_email"]
+        </bad_locator_example>
+
+        <good_locator_example>
+          Suggestion 1:
+          #user_email
+
+          Suggestion 2: (is more specific than suggestion 1)
+          //*[@id="user_form"]//*[@id="user_email"]
+        </good_locator_example>
 
         If locator is long prefer writing it as XPath.
         The very last solution should use XPath that starts from '//html/body/' XPath and provides path to the element.
@@ -160,7 +245,7 @@ class PromptVocabulary {
   private actionRule() {
     return `
     <actions>
-    ### click
+    ### I.click
 
     clicks on the element by its locator or by coordinates
 
@@ -177,7 +262,7 @@ class PromptVocabulary {
     If it doesn't work, use coordinates.
 
 
-    ### fillField
+    ### I.fillField
 
     fills the field with the given value
 
@@ -186,7 +271,7 @@ class PromptVocabulary {
       I.fillField('//user/input', 'John'); // fills the field located by XPath "//user/input" with the text "John"
     </example>
 
-    ### type
+    ### I.type
 
     type sends keyboard keys to the browser window, use it if fillField doesn't work.
     for instance, for highy customized input fields.
@@ -206,7 +291,7 @@ class PromptVocabulary {
       I.click('Submit');
     </example output>
 
-    ### selectOption
+    ### I.selectOption
 
     In case you deal with select elements, use selectOption instead of fillField.
 
@@ -219,8 +304,16 @@ class PromptVocabulary {
       I.selectOption({css: 'form select[name=account]'}, 'Premium');
     </example>
     </actions>
+
+    ### I.waitForInvisible
+
+    If you see that there is a spinner or loading indicator, use waitForInvisible to wait for it to be invisible.
+
+    <example>
+      I.waitForInvisible('.spinner', 30); // waits for the spinner to be invisible or for 30 seconds
+    </example>
     `;
   }
 }
 
-export { PromptVocabulary };
+export { Navigator };

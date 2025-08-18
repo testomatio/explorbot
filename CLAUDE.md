@@ -2,7 +2,7 @@
 
 ## Code Style
 
-Do not write comments unless explicilty specified
+**Do not write comments unless explicilty specified**
 
 Instead of if/else try to use premature exit from loop
 
@@ -10,6 +10,11 @@ When updating do the smallest change possible
 Follow KISS and YAGNI principles
 Avoid repetetive code patterns
 Avoid creating extra functions that were not explicitly set
+
+## Build
+
+Run `npm run format` after each code change
+After big changes run linter: `npm run lint:fix`
 
 ## Project Overview
 

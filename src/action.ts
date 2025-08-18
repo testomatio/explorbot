@@ -1,34 +1,41 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
-import * as codeceptjs from 'codeceptjs';
+import { highlight } from 'cli-highlight';
 import { recorder } from 'codeceptjs';
-import debug from 'debug';
-import { ActionResult } from './action-result';
-import type { PromptVocabulary } from './ai/prompt';
-import type { ExperienceTracker } from './experience-tracker.js';
-import { Path } from './path';
-import { Transition } from './transition';
-import { TransitionType } from './types/transition-type';
+import { ActionResult } from './action-result.js';
+import { ExperienceTracker } from './experience-tracker.js';
+import type { StateManager } from './state-manager.js';
+import type { Provider } from './ai/provider.js';
+import { Navigator } from './ai/navigator.js';
+import { ExperienceCompactor } from './ai/experience-compactor.js';
+import { ConfigParser } from './config.ts';
+import type { ExplorbotConfig } from '../explorbot.config.ts';
+import { log, createDebug } from './utils/logger.js';
 
-const debugLog = debug('explorbot:action');
+const debugLog = createDebug('explorbot:action');
 
 class Action {
+  private MAX_ATTEMPTS = 5;
+
   private actor: CodeceptJS.I;
-  private path: Path = new Path();
+  private stateManager: StateManager;
   private expectation: string | null = null;
-  private promptVocabulary: PromptVocabulary | null = null;
-  private actionError: Error | null = null;
-  private lastError: ActionResult | null = null;
-  private experienceTracker: ExperienceTracker | null = null;
+  private experienceTracker: ExperienceTracker;
+  private actionResult: ActionResult | null = null;
+  private navigator: Navigator | null = null;
+  private config: ExplorbotConfig;
+  private lastError: Error | null = null;
 
   constructor(
     actor: CodeceptJS.I,
-    promptVocabulary?: PromptVocabulary,
-    experienceTracker?: ExperienceTracker
+    provider: Provider,
+    stateManager: StateManager
   ) {
     this.actor = actor;
-    this.promptVocabulary = promptVocabulary || null;
-    this.experienceTracker = experienceTracker || null;
+    this.navigator = new Navigator(provider);
+    this.experienceTracker = new ExperienceTracker();
+    this.stateManager = stateManager;
+    this.config = ConfigParser.getInstance().getConfig();
   }
 
   private async capturePageState(): Promise<{
@@ -36,75 +43,204 @@ class Action {
     url: string;
     screenshot: Buffer | null;
     title: string;
+    browserLogs: any[];
+    htmlFile: string;
+    screenshotFile: string;
+    logFile: string;
+    h1?: string;
+    h2?: string;
+    h3?: string;
+    h4?: string;
   }> {
-    const [url, html, screenshot, title] = await Promise.all([
+    const currentState = this.stateManager.getCurrentState();
+    const stateHash = currentState?.hash || 'screenshot';
+    const timestamp = Date.now();
+
+    const [url, html, screenshot, title, browserLogs] = await Promise.all([
       (this.actor as any).grabCurrentUrl?.(),
       (this.actor as any).grabSource(),
-      (this.actor as any).saveScreenshot(
-        `${this.path.getCurrentState()?.getStateHash() || 'screenshot'}_${Date.now()}.png`
-      ),
+      (this.actor as any).saveScreenshot(`${stateHash}_${timestamp}.png`),
       (this.actor as any).grabTitle(),
+      this.captureBrowserLogs(),
     ]);
 
-    debugLog('Page:', { url, title, html: html.substring(0, 100) });
+    // Extract headings from HTML
+    const headings = this.extractHeadings(html);
 
-    return { html, screenshot, title, url };
+    // Save HTML to file
+    const htmlFile = `${stateHash}_${timestamp}.html`;
+    const htmlPath = join('output', htmlFile);
+    fs.writeFileSync(htmlPath, html, 'utf8');
+
+    // Save screenshot to file
+    const screenshotFile = `${stateHash}_${timestamp}.png`;
+    const screenshotPath = join('output', screenshotFile);
+    if (screenshot) {
+      fs.writeFileSync(screenshotPath, screenshot);
+    }
+
+    // Save logs to file
+    const logFile = `${stateHash}_${timestamp}.log`;
+    const logPath = join('output', logFile);
+    const formattedLogs = browserLogs.map((log: any) => {
+      const logTimestamp = new Date().toISOString();
+      const level = (log.type || log.level || 'LOG').toUpperCase();
+      const message = log.text || log.message || String(log);
+      return `[${logTimestamp}] ${level}: ${message}`;
+    });
+    fs.writeFileSync(logPath, `${formattedLogs.join('\n')}\n`, 'utf8');
+
+    debugLog('Page:', { url, title, html: html.substring(0, 100), headings });
+
+    return {
+      html,
+      screenshot,
+      title,
+      url,
+      browserLogs,
+      htmlFile,
+      screenshotFile,
+      logFile,
+      ...headings,
+    };
+  }
+
+  /**
+   * Extract headings from HTML content
+   */
+  private extractHeadings(html: string): {
+    h1?: string;
+    h2?: string;
+    h3?: string;
+    h4?: string;
+  } {
+    const headings: { h1?: string; h2?: string; h3?: string; h4?: string } = {};
+
+    // Extract h1
+    const h1Match = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
+    if (h1Match) {
+      headings.h1 = h1Match[1].replace(/<[^>]*>/g, '').trim();
+    }
+
+    // Extract h2
+    const h2Match = html.match(/<h2[^>]*>(.*?)<\/h2>/i);
+    if (h2Match) {
+      headings.h2 = h2Match[1].replace(/<[^>]*>/g, '').trim();
+    }
+
+    // Extract h3
+    const h3Match = html.match(/<h3[^>]*>(.*?)<\/h3>/i);
+    if (h3Match) {
+      headings.h3 = h3Match[1].replace(/<[^>]*>/g, '').trim();
+    }
+
+    // Extract h4
+    const h4Match = html.match(/<h4[^>]*>(.*?)<\/h4>/i);
+    if (h4Match) {
+      headings.h4 = h4Match[1].replace(/<[^>]*>/g, '').trim();
+    }
+
+    return headings;
+  }
+
+  private async captureBrowserLogs(): Promise<any[]> {
+    try {
+      const logs = await (this.actor as any).grabBrowserLogs();
+
+      // Filter for important logs (info, error, warning)
+      const importantLogs = logs.filter((log: any) => {
+        const level = log.type || log.level;
+        return ['info', 'error', 'warning', 'warn'].includes(level);
+      });
+
+      return importantLogs;
+    } catch (error) {
+      debugLog('Failed to capture browser logs:', error);
+      return [];
+    }
   }
 
   async execute(codeString: string): Promise<Action> {
-    this.expectation = null;
     let error: Error | null = null;
 
+    if (!codeString.startsWith('//'))
+      log(highlight(codeString, { language: 'javascript' }));
     try {
       debugLog('Executing action:', codeString);
       const codeFunction = new Function('I', codeString);
       codeFunction(this.actor);
       await recorder.promise();
+
+      const pageState = await this.capturePageState();
+      const result = new ActionResult({
+        url: pageState.url,
+        html: pageState.html,
+        screenshot: pageState.screenshot
+          ? fs.readFileSync(pageState.screenshot)
+          : undefined,
+        title: pageState.title,
+        error: error ? errorToString(error) : null,
+        browserLogs: pageState.browserLogs,
+        h1: pageState.h1,
+        h2: pageState.h2,
+        h3: pageState.h3,
+        h4: pageState.h4,
+      });
+
+      // Update state manager with new state and code that led to it
+      // updateState will only create a new state if the hash has changed
+      this.stateManager.updateState(
+        result,
+        codeString,
+        {
+          htmlFile: pageState.htmlFile,
+          screenshotFile: pageState.screenshotFile,
+          logFile: pageState.logFile,
+        },
+        'manual'
+      );
+
+      this.actionResult = result;
     } catch (err) {
       debugLog('Action error', errorToString(err));
       error = err as Error;
       await recorder.reset();
       await recorder.start();
+      throw err;
     }
-
-    const state = await this.capturePageState();
-    const result = new ActionResult({
-      url: state.url,
-      html: state.html,
-      screenshot: state.screenshot
-        ? fs.readFileSync(state.screenshot)
-        : undefined,
-      title: state.title,
-      error: error ? errorToString(error) : null,
-    });
-    
-    // Save HTML output to output folder using state hash as filename
-    this.saveHtmlOutput(result);
-    
-    const transition = new Transition(
-      TransitionType.ACTION,
-      codeString,
-      error ? errorToString(error) : null
-    );
-    if (error) this.actionError = error;
-    this.path.addStep(this.path.getCurrentState(), transition, result);
 
     return this;
   }
 
   async expect(codeString: string): Promise<Action> {
     this.expectation = codeString;
+    log('Expecting', highlight(codeString, { language: 'javascript' }));
     try {
       debugLog('Executing expectation:', codeString);
       const codeFunction = new Function('I', codeString);
       codeFunction(this.actor);
       await recorder.promise();
       debugLog('Expectation executed successfully');
+
+      // Get current state from state manager
+      const currentState = this.stateManager.getCurrentState();
+      if (currentState) {
+        // Create ActionResult from current state for compatibility
+        this.actionResult = new ActionResult({
+          url: currentState.fullUrl || '',
+          title: currentState.title,
+          timestamp: currentState.timestamp,
+          html: '', // Empty HTML for expectation state
+        });
+      }
+
+      return this;
     } catch (err) {
+      log('Expectation failed:', errorToString(err));
+      this.lastError = err as Error;
       await recorder.reset();
       await recorder.start();
       debugLog('Expectation failed:', errorToString(err));
-      this.lastError = err;
     }
 
     return this;
@@ -118,55 +254,36 @@ class Action {
     try {
       debugLog(`Resolution attempt ${attempt}`);
 
+      const prevActionResult = this.actionResult;
+      this.lastError = null;
       await this.execute(codeBlock);
 
-      const previousExpectation = this.expectation;
-      if (previousExpectation) {
-        await this.expect(previousExpectation);
-
-        if (!this.lastError) {
-          debugLog(`Resolution succeeded on attempt ${attempt}`);
-
-          if (this.experienceTracker) {
-            await this.experienceTracker.saveSuccessfulResolution(
-              this.path.getCurrentState()!,
-              originalMessage,
-              codeBlock,
-              attempt
-            );
-          }
-
-          return true;
-        }
+      if (!this.expectation) {
+        return true;
       }
+      await this.expect(this.expectation!);
 
-      if (this.experienceTracker) {
-        await this.experienceTracker.saveFailedAttempt(
-          this.path.getCurrentState()!,
-          originalMessage,
-          codeBlock,
-          this.actionError ? errorToString(this.actionError) : null,
-          this.lastError ? errorToString(this.lastError) : null,
-          attempt
-        );
-      }
+      log('✅ Resolved', this.expectation);
+      log(highlight(codeBlock, { language: 'javascript' }));
+      await this.experienceTracker.saveSuccessfulResolution(
+        prevActionResult!,
+        originalMessage,
+        codeBlock
+      );
 
-      return false;
+      return true;
     } catch (error) {
       debugLog(`Attempt ${attempt} failed with error:`, error);
 
       const executionError = errorToString(error);
 
-      if (this.experienceTracker) {
-        await this.experienceTracker.saveFailedAttempt(
-          this.path.getCurrentState()!,
-          originalMessage,
-          codeBlock,
-          executionError,
-          this.lastError ? errorToString(this.lastError) : null,
-          attempt
-        );
-      }
+      await this.experienceTracker.saveFailedAttempt(
+        this.actionResult!,
+        originalMessage,
+        codeBlock,
+        executionError,
+        attempt
+      );
 
       return false;
     }
@@ -192,79 +309,47 @@ class Action {
   }
 
   private async ask(
-    originalMessage: string,
-    failedAttempts: Array<{ attempt: number; code: string; error: string }>
+    message: string,
+    actionResult: ActionResult
   ): Promise<string[]> {
-    if (!this.promptVocabulary) {
-      return [];
-    }
-
-    let contextMessage = originalMessage;
-
-    // Add experience context from similar pages
-    if (this.experienceTracker) {
-      const currentState = this.path.getCurrentState();
-      if (currentState?.url) {
-        const experience = await this.experienceTracker.getExperienceByUrl(
-          currentState.url
-        );
-        if (experience) {
-          contextMessage = `${originalMessage}
-
-<experience>
-Here is previous experience from this page that might help:
-
-${experience}
-</experience>`;
-        }
-      }
-    }
-
-    if (failedAttempts.length > 0) {
-      const failureContext = failedAttempts
-        .map((fa) => `Attempt ${fa.attempt}: \`${fa.code}\` → ${fa.error}`)
-        .join('\n');
-
-      contextMessage = `${contextMessage}
-
-Previous failed attempts in current session:
-${failureContext}
-
-Please analyze the previous failures and provide a different approach.`;
-    }
-
-    const aiResponse = await this.promptVocabulary.resolveState(
-      this.path.getCurrentState()!,
-      contextMessage
+    const aiResponse = await this.navigator?.resolveState(
+      message,
+      actionResult,
+      this.stateManager.getCurrentContext()
     );
 
-    return this.extractCodeBlocks(aiResponse);
+    return this.extractCodeBlocks(aiResponse || '');
   }
 
   async resolve(
-    condition: (result: ActionResult) => boolean,
-    message: string,
-    maxAttempts = process.env.MAX_ATTEMPTS || 5
+    condition?: (result: ActionResult) => boolean,
+    message?: string,
+    maxAttempts?: number
   ): Promise<Action> {
     if (!this.lastError) return this;
 
-    const originalMessage = `I expected ${this.expectation} but got ${errorToString(this.lastError)}. To resolve the error: ${errorToString(this.lastError)} follow the instructions: ${message}`;
-
-    debugLog('Resolving error', errorToString(this.lastError));
-    debugLog('Current state', this.path.getCurrentState()?.toAiContext());
-    debugLog('Condition', condition.toString());
-
-    if (!this.promptVocabulary) {
-      debugLog('No prompt vocabulary provided');
-      return this;
+    if (!maxAttempts) {
+      maxAttempts = this.config.ai.maxAttempts || this.MAX_ATTEMPTS;
     }
 
-    if (!condition(this.path.getCurrentState()!)) {
+    let originalMessage = `I expected ${this.expectation} but got ${errorToString(this.lastError)}.`;
+    if (message) {
+      originalMessage += ` To resolve the error: ${message}`;
+    }
+
+    log('Resolving', errorToString(this.lastError));
+
+    const actionResult =
+      this.actionResult ||
+      ActionResult.fromState(this.stateManager.getCurrentState()!);
+
+    if (condition && !condition(actionResult)) {
+      debugLog('Condition', condition.toString());
       debugLog('Condition is false, skipping resolution');
       return this;
     }
 
-    debugLog('Condition is true, starting iterative resolution');
+    debugLog('Starting iterative resolution');
 
     let attempt = 0;
     const failedAttempts: Array<{
@@ -278,7 +363,7 @@ Please analyze the previous failures and provide a different approach.`;
       attempt++;
 
       if (codeBlocks.length === 0) {
-        codeBlocks = await this.ask(originalMessage, failedAttempts);
+        codeBlocks = await this.ask(originalMessage, actionResult);
         if (codeBlocks.length === 0) {
           break;
         }
@@ -288,6 +373,7 @@ Please analyze the previous failures and provide a different approach.`;
       const success = await this.attempt(codeBlock, attempt, originalMessage);
 
       if (success) {
+        log('🎉 Successfully resolved', this.expectation);
         return this;
       }
 
@@ -305,30 +391,6 @@ Please analyze the previous failures and provide a different approach.`;
     throw new Error(errorMessage);
   }
 
-  private saveHtmlOutput(result: ActionResult): void {
-    try {
-      const outputDir = 'output';
-      const stateHash = result.getStateHash();
-      const filename = `${stateHash}.html`;
-      const filePath = join(outputDir, filename);
-
-      // Ensure output directory exists
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      // Save HTML content to file
-      fs.writeFileSync(filePath, result.html, 'utf8');
-      debugLog(`HTML saved to: ${filePath}`);
-    } catch (error) {
-      debugLog('Failed to save HTML output:', error);
-    }
-  }
-
-  getPath(): Path {
-    return this.path;
-  }
-
   getActor(): CodeceptJS.I {
     return this.actor;
   }
@@ -337,8 +399,12 @@ Please analyze the previous failures and provide a different approach.`;
     this.actor = actor;
   }
 
-  setExperienceTracker(tracker: ExperienceTracker): void {
-    this.experienceTracker = tracker;
+  getCurrentState(): ActionResult | null {
+    return this.actionResult;
+  }
+
+  getStateManager(): StateManager {
+    return this.stateManager;
   }
 }
 

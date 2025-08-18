@@ -26,17 +26,24 @@
   "license": "MIT",
   "dependencies": {
     "@ai-sdk/groq": "^1.2.9",
+    "@inkjs/ui": "^2.0.0",
     "ai": "^4.3.17",
+    "cli-highlight": "^2.1.11",
     "codeceptjs": "^3.7.0",
     "dotenv": "^17.2.0",
     "gray-matter": "^4.0.3",
     "ink": "^4.4.1",
+    "ink-big-text": "^2.0.0",
+    "ink-select-input": "^6.2.0",
+    "ink-text-input": "^6.0.0",
+    "micromatch": "^4.0.8",
     "playwright": "^1.40.0",
     "react": "^18.2.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.5.3",
+    "@types/micromatch": "^4.0.9",
     "@types/react": "^18.2.0",
     "@types/yargs": "^17.0.24",
     "typescript": "^5.0.0"
