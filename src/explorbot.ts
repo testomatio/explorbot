@@ -49,6 +49,7 @@ export class ExplorBot {
       this.explorer = new Explorer();
       await this.explorer.compactPreviousExperiences();
       await this.explorer.start();
+      if (this.userResolveFn) this.explorer.setUserResolve(this.userResolveFn);
     } catch (error) {
       console.log(`\n❌ Failed to start:`);
       if (error instanceof AiError) {
@@ -64,19 +65,10 @@ export class ExplorBot {
 
   async visitInitialState(): Promise<void> {
     const url = this.options.from || '/';
-    try {
-      await this.explorer.visit(url);
-      this.needsInput = false;
-    } catch (error: any) {
-      log('❌ Failed to visit:', error);
-      this.needsInput = true;
-      if (!this.userResolveFn) throw error;
-
-      const errorObj =
-        error instanceof Error ? error : new Error(String(error));
-      await this.userResolveFn(errorObj);
-    }
+    await this.explorer.visit(url);
+    await this.explorer.plan();
   }
+
 
   getExplorer(): Explorer {
     return this.explorer;

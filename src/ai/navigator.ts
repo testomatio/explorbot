@@ -1,3 +1,4 @@
+import dedent from 'dedent';
 import type { Provider } from './provider.js';
 import type { WebPageState } from '../state-manager.js';
 import type { ActionResult } from '../action-result.js';
@@ -25,7 +26,7 @@ class Navigator {
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
   private MAX_EXPERIENCE_LENGTH = 5000;
 
-  private systemPrompt = `
+  private systemPrompt = dedent`
   <role>
     You are senior test automation engineer with master QA skills.
     You write test automation in CodeceptJS.
@@ -72,7 +73,7 @@ class Navigator {
         </hint>`;
     }
 
-    let prompt = `
+    let prompt = dedent`
       <message>        
         ${message}
       </message>
@@ -148,7 +149,7 @@ class Navigator {
   }
 
   private locatorRule(): string {
-    return `
+    return dedent`
       <locators>
         Use different locator strategies: button names, input labels, placeholders, CSS, XPath.
 
@@ -205,7 +206,7 @@ class Navigator {
   }
 
   private outputRule(): string {
-    return `
+    return dedent`
       <output>
       Your response must start explanation of what you are going to do to achive the result
       And then contain valid CodeceptJS code in code blocks.
@@ -271,7 +272,7 @@ class Navigator {
   }
 
   private actionRule() {
-    return `
+    return dedent`
     <actions>
     ### I.click
 

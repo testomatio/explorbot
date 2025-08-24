@@ -158,7 +158,7 @@ export function App({
 
       {currentState && <StateTransitionPane currentState={currentState} />}
 
-      <Box height={1}>
+      <Box height={1} marginBottom={1}>
         <ActivityPane />
       </Box>
 

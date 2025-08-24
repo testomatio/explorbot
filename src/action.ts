@@ -11,6 +11,8 @@ import { ExperienceCompactor } from './ai/experience-compactor.js';
 import { ConfigParser } from './config.ts';
 import type { ExplorbotConfig } from '../explorbot.config.ts';
 import { log, tag, createDebug } from './utils/logger.js';
+import { setActivity } from './activity.ts';
+import type { UserResolveFunction } from './explorbot.ts';
 
 const debugLog = createDebug('explorbot:action');
 
@@ -19,24 +21,29 @@ class Action {
 
   private actor: CodeceptJS.I;
   private stateManager: StateManager;
-  private expectation: string | null = null;
   private experienceTracker: ExperienceTracker;
   private actionResult: ActionResult | null = null;
   private navigator: Navigator | null = null;
   private config: ExplorbotConfig;
+  private userResolveFn: UserResolveFunction | null = null;
+
+  // action info
+  private action: string | null = null;
+  private expectation: string | null = null;
   private lastError: Error | null = null;
-  action: string;
 
   constructor(
     actor: CodeceptJS.I,
     provider: Provider,
-    stateManager: StateManager
+    stateManager: StateManager,
+    userResolveFn?: UserResolveFunction
   ) {
     this.actor = actor;
     this.navigator = new Navigator(provider);
     this.experienceTracker = new ExperienceTracker();
     this.stateManager = stateManager;
     this.config = ConfigParser.getInstance().getConfig();
+    this.userResolveFn = userResolveFn || null;
   }
 
   private async capturePageState(): Promise<{
@@ -117,29 +124,12 @@ class Action {
   } {
     const headings: { h1?: string; h2?: string; h3?: string; h4?: string } = {};
 
-    // Extract h1
-    const h1Match = html.match(/<h1[^>]*>(.*?)<\/h1>/i);
-    if (h1Match) {
-      headings.h1 = h1Match[1].replace(/<[^>]*>/g, '').trim();
-    }
-
-    // Extract h2
-    const h2Match = html.match(/<h2[^>]*>(.*?)<\/h2>/i);
-    if (h2Match) {
-      headings.h2 = h2Match[1].replace(/<[^>]*>/g, '').trim();
-    }
-
-    // Extract h3
-    const h3Match = html.match(/<h3[^>]*>(.*?)<\/h3>/i);
-    if (h3Match) {
-      headings.h3 = h3Match[1].replace(/<[^>]*>/g, '').trim();
-    }
-
-    // Extract h4
-    const h4Match = html.match(/<h4[^>]*>(.*?)<\/h4>/i);
-    if (h4Match) {
-      headings.h4 = h4Match[1].replace(/<[^>]*>/g, '').trim();
-    }
+    ['h1', 'h2', 'h3', 'h4'].forEach(tag => {
+      const match = html.match(new RegExp(`<${tag}[^>]*>(.*?)</${tag}>`, 'i'));
+      if (match) {
+        headings[tag as keyof typeof headings] = match[1].replace(/<[^>]*>/g, '').trim();
+      }
+    });
 
     return headings;
   }
@@ -163,6 +153,8 @@ class Action {
 
   async execute(codeString: string): Promise<Action> {
     let error: Error | null = null;
+
+    setActivity(`🔎 Browsing...`, 'action');
 
     if (!codeString.startsWith('//'))
       tag('step').log(highlight(codeString, { language: 'javascript' }));
@@ -334,6 +326,7 @@ class Action {
       maxAttempts = this.config.ai.maxAttempts || this.MAX_ATTEMPTS;
     }
 
+    setActivity(`🤔 Thinking...`, 'action');
 
     let originalMessage = `
       I tried to do: ${this.action}
@@ -381,7 +374,7 @@ class Action {
       const success = await this.attempt(codeBlock, attempt, originalMessage);
 
       if (success) {
-        log('🎉 Successfully resolved', this.expectation);
+        tag('success').log('resolved', this.expectation);
         return this;
       }
 
@@ -395,6 +388,35 @@ class Action {
     }
 
     const errorMessage = `Failed to resolve issue after ${maxAttempts} attempts. Original issue: ${originalMessage}. Please check the experience folder for details of failed attempts and resolve manually.`;
+    
+    debugLog(errorMessage);
+    
+    if (!this.userResolveFn) {
+      throw new Error(errorMessage);
+    }
+
+    tag('warning').log(`Can't resolve ${this.expectation}. What should we do?`);
+    tag('warning').log(`Provide CodeceptJS command starting with I. or a text to pass to AI`);
+    setActivity(`🖐️ Waiting for user input...`, 'action');
+    
+    try {
+      const userInput = await this.userResolveFn(this.lastError!);
+      if (!userInput) {
+        throw new Error(errorMessage);
+      }
+      if (userInput?.startsWith('I.')) {
+        const success = await this.attempt(userInput, attempt + 1, originalMessage);
+        if (success) {
+          tag('success').log('resolved with user input', this.expectation);
+          return this;
+        }
+      } else {        
+        codeBlocks = await this.ask(userInput, actionResult);
+      }
+    } catch (error) {
+      tag('error').log('Failed to resolve', this.expectation);
+    }
+
     debugLog(errorMessage);
     throw new Error(errorMessage);
   }

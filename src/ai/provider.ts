@@ -1,21 +1,39 @@
-import { type StreamTextResult, generateText, streamText } from 'ai';
+import { generateText } from 'ai';
 import type { AIConfig } from '../../explorbot.config.ts';
-import { log, createDebug, setVerboseMode } from '../utils/logger.js';
+import { createDebug } from '../utils/logger.js';
 import { setActivity, clearActivity } from '../activity.js';
+import { Conversation, type Message } from './conversation.js';
 
 const debugLog = createDebug('explorbot:ai');
 
 export class Provider {
   private config: AIConfig;
   private provider: any = null;
+  private conversations: Map<string, Conversation> = new Map();
 
   constructor(config: AIConfig) {
     this.config = config;
     this.provider = this.config.provider;
   }
 
+  async startConversation(messages: Message[] = []): Promise<Conversation> {
+    const conversation = new Conversation(messages);
+    this.conversations.set(conversation.id, conversation);
+    const response = await this.chat(conversation.messages);
+    conversation.addAssistantText(response.text);
+    return conversation;
+  }
+
+  async followUp(conversationId: string): Promise<Conversation | null> {
+    const conversation = this.conversations.get(conversationId);
+    if (!conversation) return null;
+    const response = await this.chat(conversation.messages);
+    conversation.addAssistantText(response.text);
+    return conversation;
+  }
+
   async chat(messages: any[], options: any = {}): Promise<any> {
-    setActivity(`AI request to ${this.config.model}`, 'ai');
+    setActivity(`🤖 Asking ${this.config.model}`, 'ai');
 
     const config = {
       model: this.provider(this.config.model),
@@ -42,11 +60,6 @@ export class Provider {
     return this.provider;
   }
 
-  setVerboseMode(enabled: boolean): void {
-    if (enabled) {
-      process.env.DEBUG = process.env.DEBUG ? `${process.env.DEBUG},explorbot:ai:*` : 'explorbot:ai:*';
-    }
-  }
 }
 
 class AiError extends Error {}

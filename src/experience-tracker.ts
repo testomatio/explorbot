@@ -159,7 +159,7 @@ ${entry.code}
       originalMessage: originalMessage.split('\n')[0],
     };
 
-    log('code failed', code, newEntry.error);
+    tag('error').log('code failed', newEntry.error);
     this.appendToExperienceFile(state, newEntry);
     tag('substep').log(`Added failed attempt ${attempt} to: ${state.getStateHash()}.md`);
   }

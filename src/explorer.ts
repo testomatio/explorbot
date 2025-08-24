@@ -8,10 +8,11 @@ import { AIProvider } from './ai/provider.js';
 import { ConfigParser } from './config.js';
 import { StateManager } from './state-manager.js';
 import { log, createDebug, isVerboseMode } from './utils/logger.js';
-import { Researcher } from './ai/researcher.ts';
-import { ActionResult } from './action-result.ts';
-import { ExperienceCompactor } from './ai/experience-compactor.ts';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { Researcher } from './ai/researcher.js';
+import { ActionResult } from './action-result.js';
+import { Conversation } from './ai/conversation.js';
+import { ExperienceCompactor } from './ai/experience-compactor.js';
+import { UserResolveFunction } from './explorbot.js';
 
 declare global {
   namespace NodeJS {
@@ -38,6 +39,8 @@ class Explorer {
   private researcher!: Researcher;
   private navigator!: Navigator;
   config: ExplorbotConfig;
+  private userResolveFn: UserResolveFunction | null = null;
+  scenarios: import("./ai/researcher.js").Task[] = [];
 
   constructor() {
     this.configParser = ConfigParser.getInstance();
@@ -67,20 +70,9 @@ class Explorer {
   private async initializeAI(): Promise<void> {
     if (!this.aiProvider) {
       this.aiProvider = new AIProvider(this.config.ai);
-      if (process.env.DEBUG?.includes('explorbot:') || this.isLoggerVerboseMode()) {
-        this.aiProvider.setVerboseMode(true);
-      }
+      this.stateManager = new StateManager();
       this.navigator = new Navigator(this.aiProvider);
-      this.researcher = new Researcher(this.aiProvider);
-    }
-    this.stateManager = new StateManager();
-  }
-
-  private isLoggerVerboseMode(): boolean {
-    try {
-      return isVerboseMode();
-    } catch {
-      return false;
+      this.researcher = new Researcher(this.aiProvider, this.stateManager);
     }
   }
 
@@ -172,7 +164,7 @@ class Explorer {
   }
 
   createAction() {
-    return new Action(this.actor, this.aiProvider, this.stateManager);
+    return new Action(this.actor, this.aiProvider, this.stateManager, this.userResolveFn || undefined);
   }
 
   async visit(url: string) {
@@ -182,14 +174,16 @@ class Explorer {
     await action.resolve();
   }
 
-  async research() {
-    const state = this.stateManager.getCurrentState();
-    if (!state) return 'No state found';
+  async plan() {
+    const conversation = await this.researcher.research();
+    const scenarios = await this.researcher.plan(conversation);
+    this.scenarios = scenarios;
 
-    // Create ActionResult from current state
-    const actionResult = ActionResult.fromState(state);
-    const research = await this.researcher.research(actionResult);
-    return research;
+    return scenarios;
+  }
+
+  setUserResolve(userResolveFn: UserResolveFunction): void {
+    this.userResolveFn = userResolveFn;
   }
 
   async compactPreviousExperiences(): Promise<void> {

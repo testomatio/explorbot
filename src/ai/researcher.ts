@@ -1,34 +1,62 @@
 import type { Provider } from './provider.js';
-import type { ActionResult } from '../action-result.js';
-import { tag } from '../utils/logger.js';
+import { ActionResult } from '../action-result.js';
+import type { StateManager } from '../state-manager.js';
+import { tag, createDebug } from '../utils/logger.js';
+import { setActivity } from '../activity.js';
+import { WebPageState } from '../state-manager.js';
+import { Conversation, Message } from './conversation.js';
+import dedent from 'dedent';
+
+const debugLog = createDebug('explorbot:researcher');
+
+export interface Task {
+  scenario: string;
+  status: 'pending' | 'completed' | 'failed';
+  conversation: Conversation;
+}
 
 export class Researcher {
   private provider: Provider;
+  private stateManager: StateManager;
 
-  constructor(provider: Provider) {
+  constructor(provider: Provider, stateManager: StateManager) {
     this.provider = provider;
+    this.stateManager = stateManager;
   }
 
-  async research(actionResult: ActionResult): Promise<string> {
+  getSystemMessage(): Message {
+    const text = dedent`
+    <role>
+    You are senior QA focused on exploritary testig of web application.
+    </role>
+    `;
+    return { role: 'system', content: [{ type: 'text', text }] };
+  }
+
+  async research(): Promise<Conversation> {
+    const state = this.stateManager.getCurrentState();
+    if (!state) throw new Error('No state found');
+
+    const actionResult = ActionResult.fromState(state);
     const simplifiedHtml = await actionResult.simplifiedHtml();
 
+    setActivity('🧑‍🔬 Researching...', 'action');
+    debugLog('Researching web page:', actionResult.url);
     const prompt = this.buildResearchPrompt(actionResult, simplifiedHtml);
 
-    tag('multiline').log('📡 Asking...', prompt);
-
-    const response = await this.provider.chat([
+    const conversation = await this.provider.startConversation([
+      this.getSystemMessage(),
       {
         role: 'user',
-        content: [
-          {
+        content: [{
             type: 'text',
             text: prompt,
           },
           ...(actionResult.screenshot
             ? [
                 {
-                  type: 'image',
-                  image: actionResult.screenshot,
+                  type: 'image' as const,
+                  image: actionResult.screenshot.toString('base64'),
                 },
               ]
             : []),
@@ -36,72 +64,212 @@ export class Researcher {
       },
     ]);
 
-    tag('multiline').log('📡 Response:', response.text);
+    const responseText = conversation.getLastMessage();
+    debugLog('Research response:', responseText);
+    tag('multiline').log('📡 Research:\n\n', responseText);
 
-    return response.text;
+    state.research = responseText;
+
+    return conversation;
+  }
+
+  async plan(conversation: Conversation): Promise<Task[]> {
+    const state = this.stateManager.getCurrentState();
+    debugLog('Planning:', state?.url);
+    if (!state) throw new Error('No state found');
+
+    const prompt = this.buildPlanningPrompt(state);
+
+    setActivity('👨‍💻 Planning...', 'action');
+
+    conversation.addUserText(prompt);
+
+    debugLog('Sending planning prompt to AI provider');
+
+    const response = await this.provider.followUp(conversation.id);
+    if (!response) throw new Error('Failed to get planning response');
+    
+    const responseText = response.getLastMessage();
+    debugLog('Planning response:', responseText);
+    
+    let tasks = this.parseTasks(responseText, conversation);
+    
+    if (tasks.length === 0) {
+      conversation.addUserText(`Your response was not in the expected markdown list format. Please provide ONLY a markdown list of testing scenarios, one per line, starting with * or -.`);
+      
+      const newResponse = await this.provider.followUp(conversation.id);
+      if (!newResponse) throw new Error('Failed to get correction response');
+      
+      const newResponseText = newResponse.getLastMessage();
+      tasks = this.parseTasks(newResponseText, conversation);
+    }
+
+    tag('info').log('📋 Testing Plan');
+    tasks.forEach((task) => {
+      tag('info').log('☐', task.scenario);
+    });
+
+    return tasks;
   }
 
   private buildResearchPrompt(
     actionResult: ActionResult,
     html: string
   ): string {
-    return `Analyze this web page and provide a comprehensive research report.
+    const context = this.stateManager.getCurrentContext();
+    
+    let knowledge = '';
+    if (context.knowledge.length > 0) {
+      const knowledgeContent = context.knowledge
+        .map((k) => k.content)
+        .join('\n\n');
 
-URL: ${actionResult.url || 'Unknown'}
-Title: ${actionResult.title || 'Unknown'}
+      tag('substep').log(
+        `Found ${context.knowledge.length} relevant knowledge file(s) for: ${context.state.url}`
+      );
+      knowledge = `
+        <hint>
+        Here is relevant knowledge for this page:
 
-HTML Content:
-${html}
+        ${knowledgeContent}
+        </hint>`;
+    }
 
-Please provide a structured analysis in markdown format with the following sections:
+    let experience = '';
+    if (context.experience.length > 0) {
+      const experienceContent = context.experience.join('\n\n---\n\n');
+      const truncatedContent =
+        experienceContent.length > 5000
+          ? `${experienceContent.slice(0, 5000)}\n\n[Content truncated due to length limit]`
+          : experienceContent;
 
-## Summary
-Brief overview of the page purpose and main content
+      tag('substep').log(
+        `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
+      );
+      experience = `
 
-## Functional Areas
+      <experience_rules>
+      Here is a compacted summary of previously executed code blocks.
+      Focus on successful solutions and avoid failed locators.
+      Do not repeat code blocks that already failed.
+      Analyze locators used in code blocks that failed and do not use them in your answer.
+      Do not use any locators equal to failed ones.
+      </experience_rules>
+      <experience>
+      ${truncatedContent}
+      </experience>`;
+    }
 
-### Menus
-- Menu name: CSS/XPath locator
-- Example: "Main Navigation": "nav.main-menu" or "//nav[@class='main-menu']"
+    return dedent`Analyze this web page and provide a comprehensive research report.
 
-### Content
-- Content area name: CSS/XPath locator
-- Example: "Article Header": "h1.article-title" or "//h1[@class='article-title']"
+    <rules>
+        - Analyze the web page and provide a comprehensive research report.
+        - Provider either CSS or XPath locator but not both. Shortest locator is preferred.
+        - Focus in main content of the page, not in the menu, sidebar or footer.
 
-### Buttons
-- Button name: CSS/XPath locator
-- Example: "Submit Button": "button[type='submit']" or "//button[@type='submit']"
+    </rules>
 
-### Forms
-- Form name: CSS/XPath locator
-- Example: "Login Form": "form#login" or "//form[@id='login']"
+    URL: ${actionResult.url || 'Unknown'}
+    Title: ${actionResult.title || 'Unknown'}
 
-### Navigation
-- Navigation element name: CSS/XPath locator
-- Example: "Breadcrumb": "nav.breadcrumb" or "//nav[@class='breadcrumb']"
+    HTML Content:
+    ${html}
 
-## Testing Suggestions
-Sort by severity (critical first, then high, medium, low):
+    ${knowledge}
 
-### Critical
-- **Area**: Specific area to test
-- **Description**: What should be tested
-- **Rationale**: Why this area is important to test
-- **Locator**: CSS/XPath selector for the element
+    ${experience}
 
-### High
-- **Area**: Specific area to test
-- **Description**: What should be tested
-- **Rationale**: Why this area is important to test
-- **Locator**: CSS/XPath selector for the element
+    Please provide a structured analysis in markdown format with the following sections:
 
-Focus on identifying:
-1. Critical user flows and functionality
-2. Interactive elements that could break
-3. Content that affects user experience
-4. Navigation and accessibility features
-5. Data input and form validation areas
+    ## Summary
 
-For each element you identify, provide a reliable CSS selector or XPath locator that can be used for automated testing.`;
+    Brief overview of the page purpose and main content.
+    Identify the purpose of this page and what user can do on this page.
+
+    ## User Goals
+
+    List what user can achieve from this page.
+
+    ## Functional Areas
+
+    ### Menus & Navigation
+    - Menu name: CSS/XPath locator
+    - Example: "Main Navigation": "nav.main-menu" or "//nav[@class='main-menu']"
+
+    ### Content
+    - Content area name: CSS/XPath locator
+    - Example: "Article Header": "h1.article-title" or "//h1[@class='article-title']"
+
+    ### Buttons
+    - Button name: CSS/XPath locator
+    - Example: "Submit Button": "button[type='submit']" or "//button[@type='submit']"
+
+    ### Forms
+    - Form name: CSS/XPath locator
+    - Example: "Login Form": "form#login" or "//form[@id='login']"
+
+`;
+  }
+
+  private buildPlanningPrompt(state: WebPageState): string {
+    return `Based on the research analysis below, create a comprehensive exploratory testing plan for this page.
+
+    <context>
+    URL: ${state.url || 'Unknown'}
+    Title: ${state.title || 'Unknown'}
+
+    HTML:
+    ${state.html}
+    </context>
+
+    <task>
+    Based on the previous research, suggest 5-10 exploratory testing scenarios to test on this page.
+    Start with positive scenarios and then move to negative scenarios.
+    Focus on main content of the page, not in the menu, sidebar or footer.
+    </task>
+
+    <rules>
+    Result must be a markdown list with bullet points.
+    Each scenario should be a single sentence describing what to test.
+    Each scenario should be on a new line starting with * or -.
+    Do not include any other text in the response.
+    </rules>
+
+    <output_example>
+    * Test user login functionality with valid credentials
+    * Test user login functionality with invalid credentials
+    * Test form validation for required fields
+    * Test responsive design on different screen sizes
+    * Test accessibility features and keyboard navigation
+    </output_example>
+
+    <output>
+    * test 1
+    * test 2
+    * test 3
+    * ...
+    </output>
+`;
+  }
+
+  private parseTasks(responseText: string, conversation: Conversation): Task[] {
+    const lines = dedent(responseText).split('\n');
+    const tasks: Task[] = [];
+
+    for (const line of lines) {
+      if (!line.match(/^[\*\-]\s+/)) continue;
+
+        const scenario = line.replace(/^[\*\-]\s+/, '').trim();
+        if (scenario) {
+          debugLog('Scenario added',' [ ] ', scenario);
+          tasks.push({
+            scenario,
+            status: 'pending',
+            conversation: conversation.clone()
+          });
+        }
+    }
+
+    return tasks;
   }
 }

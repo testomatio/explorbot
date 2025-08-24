@@ -33,6 +33,9 @@ export interface WebPageState {
   h2?: string;
   h3?: string;
   h4?: string;
+  /** Research results */
+  research?: string;
+
 }
 
 export interface StateTransition {

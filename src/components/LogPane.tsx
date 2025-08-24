@@ -1,6 +1,12 @@
 import React from 'react';
+import dedent from 'dedent';
+import { marked } from 'marked';
+import { markedTerminal } from 'marked-terminal';
+
 import { Box, Text } from 'ink';
 import type { TaggedLogEntry, LogType } from '../utils/logger.js';
+
+marked.use(markedTerminal());
 
 type LogEntry = string | React.ReactElement | TaggedLogEntry;
 
@@ -43,21 +49,17 @@ const LogPane: React.FC<LogPaneProps> = ({ logs, verboseMode = false }) => {
       if (taggedLog.type === 'debug' && !verboseMode) {
         return null;
       }
-      
       const styles = getLogStyles(taggedLog.type);
-      const lines = processLogContent(String(taggedLog.content));
 
       if (taggedLog.type === 'multiline') {
         return (
           <Box key={index} flexDirection="column">
-            {lines.map((line, lineIndex) => (
-              <Text key={`${index}-${lineIndex}`} {...styles}>
-                {lineIndex === 0 ? line : `   ${line}`}
-              </Text>
-            ))}
+            <Text>{marked.parse(String(taggedLog.content)).toString()}</Text>
           </Box>
         );
       }
+
+      const lines = processLogContent(String(taggedLog.content));
 
       if (taggedLog.type === 'substep') {
         return (

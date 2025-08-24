@@ -27,11 +27,18 @@ interface LogDestination {
 }
 
 class ConsoleDestination implements LogDestination {
+  private verboseMode = false;
+
   isEnabled(): boolean {
     return !process.env.INK_RUNNING;
   }
 
+  setVerboseMode(enabled: boolean): void {
+    this.verboseMode = enabled;
+  }
+
   write(entry: TaggedLogEntry): void {
+    if (entry.type === 'debug' && !this.verboseMode) return;
     console.log(entry.content);
   }
 }
@@ -50,21 +57,24 @@ class DebugDestination implements LogDestination {
   write(entry: TaggedLogEntry): void {
     if (!this.isEnabled()) return;
     
-    const namespace =
-      entry.type === 'debug'
-        ? entry.content.toString().match(/\[([^\]]+)\]/)?.[1] || 'app'
-        : 'app';
-    const debugLog = debug(`explorbot:${namespace}`);
-    debugLog(entry.content);
+    if (entry.type === 'debug') {
+      const namespace = entry.content.toString().match(/\[([^\]]+)\]/)?.[1] || 'app';
+      console.log(`[DEBUG:${namespace}] ${entry.content}`);
+    }
   }
 }
 
 class FileDestination implements LogDestination {
   private initialized = false;
   private logFilePath: string | null = null;
+  private verboseMode = false;
 
   isEnabled(): boolean {
-    return Boolean(process.env.DEBUG?.includes('explorbot:'));
+    return this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
+  }
+
+  setVerboseMode(enabled: boolean): void {
+    this.verboseMode = enabled;
   }
 
   write(entry: TaggedLogEntry): void {
@@ -145,14 +155,16 @@ class Logger {
 
   setVerboseMode(enabled: boolean): void {
     this.debugDestination.setVerboseMode(enabled);
+    this.file.setVerboseMode(enabled);
+    this.console.setVerboseMode(enabled);
   }
 
   isVerboseMode(): boolean {
     return this.debugDestination.isEnabled();
   }
 
-  log(type: LogType, ...args: any[]): void {
-    const content = args
+  private processArgs(args: any[]): string {
+    return args
       .map((arg) => {
         if (typeof arg === 'object' && arg !== null) {
           try {
@@ -164,7 +176,10 @@ class Logger {
         return String(arg);
       })
       .join(' ');
+  }
 
+  log(type: LogType, ...args: any[]): void {
+    const content = this.processArgs(args);
     const entry: TaggedLogEntry = {
       type,
       content,
@@ -194,12 +209,7 @@ class Logger {
   }
 
   debug(namespace: string, ...args: any[]): void {
-    const content = args
-      .map((arg) =>
-        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-      )
-      .join(' ');
-
+    const content = this.processArgs(args);
     this.log('debug', `[${namespace.replace('explorbot:', '')}] ${content}`);
   }
 
@@ -219,24 +229,17 @@ export const setLogCallback = (callback: (entry: LogEntry) => void) => {
 };
 
 export const tag = (type: LogType) => ({
-  log: (...args: any[]) => {
-    logger.log(type, ...args);
-  },
+  log: (...args: any[]) => logger.log(type, ...args),
 });
 
-export const log = (...args: any[]) => {
-  logger.info(...args);
-};
-
+export const log = (...args: any[]) => logger.info(...args);
 export const logSuccess = (...args: any[]) => logger.success(...args);
 export const logError = (...args: any[]) => logger.error(...args);
 export const logWarning = (...args: any[]) => logger.warning(...args);
 export const logSubstep = (...args: any[]) => logger.substep(...args);
 
 export const createDebug = (namespace: string) => {
-  return (...args: any[]) => {
-    logger.debug(namespace, ...args);
-  };
+  return (...args: any[]) => logger.debug(namespace, ...args);
 };
 
 export const getMethodsOfObject = (obj: any): string[] => {
@@ -251,10 +254,5 @@ export const getMethodsOfObject = (obj: any): string[] => {
   return methods.sort();
 };
 
-export const setVerboseMode = (enabled: boolean) => {
-  logger.setVerboseMode(enabled);
-};
-
-export const isVerboseMode = () => {
-  return logger.isVerboseMode();
-};
+export const setVerboseMode = (enabled: boolean) => logger.setVerboseMode(enabled);
+export const isVerboseMode = () => logger.isVerboseMode();

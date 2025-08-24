@@ -8,6 +8,7 @@ import {
 
 const ActivityPane: React.FC = () => {
   const [activity, setActivity] = useState<ActivityEntry | null>(null);
+  const [animationState, setAnimationState] = useState(0);
 
   useEffect(() => {
     const listener = (newActivity: ActivityEntry | null) => {
@@ -20,6 +21,16 @@ const ActivityPane: React.FC = () => {
       removeActivityListener(listener);
     };
   }, []);
+
+  useEffect(() => {
+    if (!activity) return;
+
+    const interval = setInterval(() => {
+      setAnimationState((prev) => (prev + 1) % 4);
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [activity]);
 
   if (!activity) {
     return (
@@ -42,9 +53,20 @@ const ActivityPane: React.FC = () => {
     }
   };
 
+  const getDots = () => {
+    return '.'.repeat(animationState);
+  };
+
+  const isDimmed = animationState % 2 === 0;
+
   return (
     <Box height={1} paddingX={1}>
-      <Text color={getActivityColor(activity.type)}>{activity.message}</Text>
+      <Text 
+        color={getActivityColor(activity.type)} 
+        dimColor={isDimmed}
+      >
+        {activity.message}{getDots()}
+      </Text>
     </Box>
   );
 };
