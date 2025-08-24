@@ -10,6 +10,7 @@ export type LogType =
   | 'warning'
   | 'debug'
   | 'substep'
+  | 'step'
   | 'multiline';
 
 export interface TaggedLogEntry {
@@ -36,11 +37,19 @@ class ConsoleDestination implements LogDestination {
 }
 
 class DebugDestination implements LogDestination {
+  private verboseMode = false;
+
   isEnabled(): boolean {
-    return Boolean(process.env.DEBUG?.includes('explorbot:'));
+    return this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
+  }
+
+  setVerboseMode(enabled: boolean): void {
+    this.verboseMode = enabled;
   }
 
   write(entry: TaggedLogEntry): void {
+    if (!this.isEnabled()) return;
+    
     const namespace =
       entry.type === 'debug'
         ? entry.content.toString().match(/\[([^\]]+)\]/)?.[1] || 'app'
@@ -132,6 +141,14 @@ class Logger {
       Logger.instance = new Logger();
     }
     return Logger.instance;
+  }
+
+  setVerboseMode(enabled: boolean): void {
+    this.debugDestination.setVerboseMode(enabled);
+  }
+
+  isVerboseMode(): boolean {
+    return this.debugDestination.isEnabled();
   }
 
   log(type: LogType, ...args: any[]): void {
@@ -232,4 +249,12 @@ export const getMethodsOfObject = (obj: any): string[] => {
   }
 
   return methods.sort();
+};
+
+export const setVerboseMode = (enabled: boolean) => {
+  logger.setVerboseMode(enabled);
+};
+
+export const isVerboseMode = () => {
+  return logger.isVerboseMode();
 };

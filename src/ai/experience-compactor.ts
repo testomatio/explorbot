@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
-import debug from 'debug';
 import type { Provider } from './provider.js';
+import { log, createDebug } from '../utils/logger.js';
 
-const debugLog = debug('explorbot:experience-compactor');
+const debugLog = createDebug('explorbot:experience-compactor');
+
 
 export class ExperienceCompactor {
   private provider: Provider;
@@ -18,8 +19,10 @@ export class ExperienceCompactor {
       const fileContent = readFileSync(filePath, 'utf8');
       const parsed = matter(fileContent);
 
-      if (!parsed.content.trim()) {
-        return '';
+      debugLog('Experience file to compact:', filePath);
+
+      if (parsed.content.length < this.MAX_LENGTH) {
+        return parsed.content;
       }
 
       const prompt = this.buildCompactionPrompt(parsed.content);
@@ -28,6 +31,10 @@ export class ExperienceCompactor {
         { role: 'user', content: prompt },
       ]);
 
+      log('Experience file compacted:', filePath);
+      debugLog('Experience file compacted:', response);
+
+     
       return response.text;
     } catch (error) {
       debugLog('Error compacting experience file:', error);

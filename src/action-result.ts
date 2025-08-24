@@ -92,7 +92,7 @@ export class ActionResult {
 
   async simplifiedHtml(): Promise<string> {
     return await minifyHtml(removeNonInteractiveElements(this.html));
-  }
+  }  
 
   static fromState(state: WebPageState): ActionResult {
     let html = '';

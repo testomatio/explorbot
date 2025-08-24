@@ -28,10 +28,10 @@ class Navigator {
   private systemPrompt = `
   <role>
     You are senior test automation engineer with master QA skills.
-    You write code in CodeceptJS.
+    You write test automation in CodeceptJS.
   </role>
   <task>
-    You are given a state of the page and a message.
+    You are given the web page and a message from user.
     You need to resolve the state of the page based on the message.
   </task>
   `;
@@ -73,11 +73,20 @@ class Navigator {
     }
 
     let prompt = `
-      <task>
+      <message>        
         ${message}
+      </message>
+
+      <task>
+        Identify the actual request of the user.
+        Identify what is expected by user.
+        Identify what might have caused the error.
+        Propose different solutions to achieve the result.
+        Solution should be valid CodeceptJS code.
+        Use only data from the <page> context to plan the solution.
+        Try various ways to achieve the result
       </task>
 
-      Look into context of this HTML page
 
       <page>
         ${actionResult.toAiContext()}
@@ -86,7 +95,6 @@ class Navigator {
 
         ${await actionResult.simplifiedHtml()}
       </page>
-      By performing CodeceptJS actions you need to change the state of the page in expected way.
 
 
       ${knowledge}
@@ -122,7 +130,7 @@ class Navigator {
 
     debugLog('Sending prompt to AI provider');
 
-    tag('multiline').log('Prompt:', prompt);
+    tag('debug').log('Prompt:', prompt);
 
     const response = await this.provider.chat([
       { role: 'system', content: this.systemPrompt },
@@ -131,8 +139,10 @@ class Navigator {
 
     const aiResponse = response.text;
 
+    tag('info').log(aiResponse.split('\n')[0]);
+
     debugLog('Received AI response:', aiResponse.length, 'characters');
-    tag('multiline').log(aiResponse);
+    tag('debug').log(aiResponse);
 
     return aiResponse;
   }
@@ -197,7 +207,8 @@ class Navigator {
   private outputRule(): string {
     return `
       <output>
-      Your response must contain only valid CodeceptJS code in code blocks.
+      Your response must start explanation of what you are going to do to achive the result
+      And then contain valid CodeceptJS code in code blocks.
       Provide up to ${this.MAX_ATTEMPTS} various code suggestions to achieve the result.
 
       Do not stick only to the first found element as it might be hidden or not availble on the page.
@@ -207,12 +218,30 @@ class Navigator {
       If you found a duplicated area, you need to present code block for each such area.
 
       <rules>
+      In <explanation> write only one line without heading or bullet list or any other formatting.
       CodeceptJS code must start with "I."
       All lines of code must start with "I."
       ${this.locatorRule()}
       </rules>
 
-      <example output>
+      <output_format>
+        <explanation>
+
+        \`\`\`js
+        <code>
+        \`\`\`
+        </code>
+        <code>
+        \`\`\`
+        </code>
+        <code>
+        \`\`\`
+        </code>
+      </output_format>
+
+      <example_output>
+      Trying to fill the form on the page
+
       \`\`\`js
         I.fillField('Name', 'Value');
         I.click('Submit');
@@ -229,16 +258,15 @@ class Navigator {
       \`\`\`js
         I.fillField('/html/body/div/div/div/form/input[@name="name"]', 'Value');
       \`\`\`      
-      </example output>
-      </output>
+      </example_output>
 
       If you don't know the answer, answer as:
 
-      <example output>
+      <example_output>
       \`\`\`js
         throw new Error('No resolution');
       \`\`\`
-      </example output>
+      </example_output>
     `;
   }
 

@@ -10,7 +10,7 @@ import { Navigator } from './ai/navigator.js';
 import { ExperienceCompactor } from './ai/experience-compactor.js';
 import { ConfigParser } from './config.ts';
 import type { ExplorbotConfig } from '../explorbot.config.ts';
-import { log, createDebug } from './utils/logger.js';
+import { log, tag, createDebug } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:action');
 
@@ -25,6 +25,7 @@ class Action {
   private navigator: Navigator | null = null;
   private config: ExplorbotConfig;
   private lastError: Error | null = null;
+  action: string;
 
   constructor(
     actor: CodeceptJS.I,
@@ -164,8 +165,9 @@ class Action {
     let error: Error | null = null;
 
     if (!codeString.startsWith('//'))
-      log(highlight(codeString, { language: 'javascript' }));
+      tag('step').log(highlight(codeString, { language: 'javascript' }));
     try {
+      this.action = codeString;
       debugLog('Executing action:', codeString);
       const codeFunction = new Function('I', codeString);
       codeFunction(this.actor);
@@ -236,7 +238,7 @@ class Action {
 
       return this;
     } catch (err) {
-      log('Expectation failed:', errorToString(err));
+      tag('error').log('Expectation failed:', errorToString(err));
       this.lastError = err as Error;
       await recorder.reset();
       await recorder.start();
@@ -263,8 +265,8 @@ class Action {
       }
       await this.expect(this.expectation!);
 
-      log('✅ Resolved', this.expectation);
-      log(highlight(codeBlock, { language: 'javascript' }));
+      tag('success').log('Resolved', this.expectation);
+      tag('step').log(highlight(codeBlock, { language: 'javascript' }));
       await this.experienceTracker.saveSuccessfulResolution(
         prevActionResult!,
         originalMessage,
@@ -273,7 +275,7 @@ class Action {
 
       return true;
     } catch (error) {
-      debugLog(`Attempt ${attempt} failed with error:`, error);
+      tag('error').log(`Attempt ${attempt} failed with error:`, error);
 
       const executionError = errorToString(error);
 
@@ -332,10 +334,16 @@ class Action {
       maxAttempts = this.config.ai.maxAttempts || this.MAX_ATTEMPTS;
     }
 
-    let originalMessage = `I expected ${this.expectation} but got ${errorToString(this.lastError)}.`;
-    if (message) {
-      originalMessage += ` To resolve the error: ${message}`;
-    }
+
+    let originalMessage = `
+      I tried to do: ${this.action}
+      And I expected that ${this.expectation}
+      But the expectation failed with error: ${errorToString(this.lastError)}.
+
+      ${message}
+    `;
+
+    debugLog('Original message:', originalMessage);
 
     log('Resolving', errorToString(this.lastError));
 
@@ -411,8 +419,8 @@ class Action {
 export default Action;
 
 function errorToString(error: any): string {
-  if (error.inspect) {
-    return error.inspect();
+  if (error.cliMessage) {
+    return error.cliMessage();
   }
   return error.message || error.toString();
 }

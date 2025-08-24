@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import debug from 'debug';
 import matter from 'gray-matter';
+import { createDebug } from './utils/logger.js';
 
-const debugLog = debug('explorbot:prompt-parser');
+const debugLog = createDebug('explorbot:prompt-parser');
 
 interface PromptData {
   content: string;

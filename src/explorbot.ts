@@ -1,9 +1,11 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import Explorer from './explorer.ts';
 import { ConfigParser } from './config.ts';
-import { log } from './utils/logger.ts';
+import { log, setVerboseMode } from './utils/logger.ts';
 import type { ExplorbotConfig } from '../explorbot.config.ts';
 import { AiError } from './ai/provider.ts';
+import { ExperienceCompactor } from './ai/experience-compactor.ts';
 
 export interface ExplorBotOptions {
   from?: string;
@@ -25,13 +27,13 @@ export class ExplorBot {
     this.options = options;
     if (this.options.verbose) {
       process.env.DEBUG = 'explorbot:*';
+      setVerboseMode(true);
     }
   }
 
   async loadConfig(): Promise<void> {
     const configParser = ConfigParser.getInstance();
     this.config = await configParser.loadConfig(this.options);
-    log('✅ Configuration loaded successfully');
   }
 
   get isExploring(): boolean {
@@ -45,22 +47,23 @@ export class ExplorBot {
   async start(): Promise<void> {
     try {
       this.explorer = new Explorer();
+      await this.explorer.compactPreviousExperiences();
       await this.explorer.start();
-
-      if (this.options.from) {
-        await this.visitWithFallback(this.options.from);
-      }
     } catch (error) {
-      log(`❌ Failed to start: ${error}`);
+      console.log(`\n❌ Failed to start:`);
       if (error instanceof AiError) {
-        console.log(error.message);
-        process.exit(1);
+        console.log('  ', error.message);
+      } else if (error instanceof Error) {
+        console.log('  ', error.stack);
+      } else {
+        console.log('  ', error);
       }
-      throw error;
+      process.exit(1);
     }
   }
 
-  private async visitWithFallback(url: string): Promise<void> {
+  async visitInitialState(): Promise<void> {
+    const url = this.options.from || '/';
     try {
       await this.explorer.visit(url);
       this.needsInput = false;
@@ -81,6 +84,10 @@ export class ExplorBot {
 
   getConfig(): ExplorbotConfig | null {
     return this.config;
+  }
+
+  getOptions(): ExplorBotOptions {
+    return this.options;
   }
 
   isReady(): boolean {

@@ -6,17 +6,10 @@ type LogEntry = string | React.ReactElement | TaggedLogEntry;
 
 interface LogPaneProps {
   logs: LogEntry[];
-  maxLines?: number; // alias for maxRows
-  maxRows?: number;
-  maxColumns?: number;
+  verboseMode?: boolean;
 }
 
-const LogPane: React.FC<LogPaneProps> = ({
-  logs,
-  maxLines,
-  maxRows,
-  maxColumns,
-}) => {
+const LogPane: React.FC<LogPaneProps> = ({ logs, verboseMode = false }) => {
   const getLogStyles = (type: LogType) => {
     switch (type) {
       case 'success':
@@ -29,6 +22,8 @@ const LogPane: React.FC<LogPaneProps> = ({
         return { color: 'gray' as const, dimColor: true };
       case 'substep':
         return { color: 'gray' as const, dimColor: true };
+      case 'step':
+        return { color: 'cyan' as const, dimColor: true };
       case 'multiline':
         return { color: 'gray' as const, dimColor: true };
       default:
@@ -36,144 +31,88 @@ const LogPane: React.FC<LogPaneProps> = ({
     }
   };
 
+  const processLogContent = (content: string): string[] => {
+    return content.split('\n').filter(line => line.length > 0);
+  };
+
   const renderLogEntry = (log: LogEntry, index: number) => {
-    // Handle tagged log entries
     if (typeof log === 'object' && 'type' in log && 'content' in log) {
       const taggedLog = log as TaggedLogEntry;
+      
+      // Skip debug logs when not in verbose mode
+      if (taggedLog.type === 'debug' && !verboseMode) {
+        return null;
+      }
+      
       const styles = getLogStyles(taggedLog.type);
+      const lines = processLogContent(String(taggedLog.content));
 
       if (taggedLog.type === 'multiline') {
-        const content = String(taggedLog.content);
-        const lines = content.split('\n');
-        const maxLines = 5;
-        const trimmedLines = lines.slice(0, maxLines);
-        const wasTrimmed = lines.length > maxLines;
-
         return (
           <Box key={index} flexDirection="column">
-            {trimmedLines.map((line, lineIndex) => (
+            {lines.map((line, lineIndex) => (
               <Text key={`${index}-${lineIndex}`} {...styles}>
                 {lineIndex === 0 ? line : `   ${line}`}
               </Text>
             ))}
-            {wasTrimmed && (
-              <Text key={`${index}-ellipsis`} {...styles}>
-                ...
-              </Text>
-            )}
           </Box>
-        );
-      }
-
-      if (taggedLog.type === 'debug') {
-        return (
-          <Text key={index} {...styles}>
-            {taggedLog.content}
-          </Text>
         );
       }
 
       if (taggedLog.type === 'substep') {
         return (
-          <Text key={index} {...styles}>
-            {'> '}
-            {taggedLog.content}
-          </Text>
+          <Box key={index} flexDirection="column">
+            {lines.map((line, lineIndex) => (
+              <Text key={`${index}-${lineIndex}`} {...styles}>
+                {lineIndex === 0 ? `> ${line}` : `   ${line}`}
+              </Text>
+            ))}
+          </Box>
         );
       }
 
-      // Default tagged log rendering
+      if (taggedLog.type === 'step') {
+        return (
+          <Box key={index} flexDirection="column" paddingLeft={2}>
+            {lines.map((line, lineIndex) => (
+              <Text key={`${index}-${lineIndex}`} {...styles}>
+                {line}
+              </Text>
+            ))}
+          </Box>
+        );
+      }
+
       return (
-        <Text key={index} {...styles}>
-          {String(taggedLog.content)}
-        </Text>
+        <Box key={index} flexDirection="column">
+          {lines.map((line, lineIndex) => (
+            <Text key={`${index}-${lineIndex}`} {...styles}>
+              {line}
+            </Text>
+          ))}
+        </Box>
       );
     }
 
-    // Handle legacy string and React element logs
     if (typeof log === 'string') {
-      return <Text key={index}>{log}</Text>;
+      const lines = processLogContent(log);
+      return (
+        <Box key={index} flexDirection="column">
+          {lines.map((line, lineIndex) => (
+            <Text key={`${index}-${lineIndex}`}>
+              {line}
+            </Text>
+          ))}
+        </Box>
+      );
     }
+
     return <Box key={index}>{log}</Box>;
   };
 
-  // Convert logs into plain lines respecting maxColumns, then slice last N rows
-  const effectiveRows =
-    (maxRows && maxRows > 0 ? maxRows : undefined) ??
-    (maxLines && maxLines > 0 ? maxLines : undefined);
-
-  if (!effectiveRows || !maxColumns || maxColumns <= 4) {
-    const entries = maxLines && maxLines > 0 ? logs.slice(-maxLines) : logs;
-    return <Box flexDirection="column">{entries.map(renderLogEntry)}</Box>;
-  }
-
-  const wrapToWidth = (text: string, width: number): string[] => {
-    if (width <= 0) return [text];
-    const lines: string[] = [];
-    const parts = String(text).split('\n');
-    for (const part of parts) {
-      let start = 0;
-      while (start < part.length) {
-        lines.push(part.slice(start, start + width));
-        start += width;
-      }
-      if (parts.length > 1) {
-        if (part !== parts[parts.length - 1]) {
-          // preserve explicit newlines
-          if (lines.length === 0 || lines[lines.length - 1] !== '')
-            lines.push('');
-        }
-      }
-    }
-    return lines.length === 0 ? [''] : lines;
-  };
-
-  type StyledLine = { text: string; styles: ReturnType<typeof getLogStyles> };
-
-  const flattenLogsToLines = (): StyledLine[] => {
-    const result: StyledLine[] = [];
-    const pushStyled = (text: string, styles: StyledLine['styles']) => {
-      const wrapped = wrapToWidth(text, maxColumns);
-      for (const w of wrapped) result.push({ text: w, styles });
-    };
-
-    for (const log of logs) {
-      if (typeof log === 'object' && 'type' in log && 'content' in log) {
-        const taggedLog = log as TaggedLogEntry;
-        const styles = getLogStyles(taggedLog.type);
-        if (taggedLog.type === 'multiline') {
-          const content = String(taggedLog.content);
-          const lines = content.split('\n');
-          const maxMultiline = 5;
-          const trimmed = lines.slice(0, maxMultiline);
-          for (let i = 0; i < trimmed.length; i++) {
-            pushStyled(i === 0 ? trimmed[i] : `   ${trimmed[i]}`, styles);
-          }
-          if (lines.length > maxMultiline) pushStyled('...', styles);
-          continue;
-        }
-        pushStyled(String(taggedLog.content), styles);
-        continue;
-      }
-      if (typeof log === 'string') {
-        pushStyled(log, {});
-        continue;
-      }
-      pushStyled(String(log), {});
-    }
-    return result;
-  };
-
-  const allLines = flattenLogsToLines();
-  const visible = allLines.slice(-effectiveRows);
-
   return (
     <Box flexDirection="column">
-      {visible.map((line, index) => (
-        <Text key={index} {...line.styles}>
-          {line.text}
-        </Text>
-      ))}
+      {logs.map((log, index) => renderLogEntry(log, index)).filter(Boolean)}
     </Box>
   );
 };

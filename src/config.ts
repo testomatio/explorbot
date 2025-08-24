@@ -25,6 +25,11 @@ export class ConfigParser {
       return this.config;
     }
 
+    // Store the initial working directory for reference
+    if (!process.env.INITIAL_CWD) {
+      process.env.INITIAL_CWD = process.cwd();
+    }
+
     // If path is provided, change to that directory and load .env
     const originalCwd = process.cwd();
     if (options?.path) {
@@ -51,7 +56,13 @@ export class ConfigParser {
       this.config = loadedConfig as ExplorbotConfig;
       this.configPath = resolvedPath;
 
-      log(`✅ Configuration loaded from: ${resolvedPath}`);
+      log(`Configuration loaded from: ${resolvedPath}`);
+      
+      // Restore original directory after successful config load
+      if (options?.path && originalCwd !== process.cwd()) {
+        process.chdir(originalCwd);
+      }
+      
       return this.config;
     } catch (error) {
       // Restore original directory on error

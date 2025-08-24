@@ -18,9 +18,11 @@ import {
   logSubstep,
   createDebug,
   setLogCallback,
+  setVerboseMode,
+  isVerboseMode,
   type TaggedLogEntry,
-} from '../../src/utils/logger';
-import { ConfigParser } from '../../src/config';
+} from '../../src/utils/logger.js';
+import { ConfigParser } from '../../src/config.js';
 
 describe('Logger', () => {
   let originalConsoleLog: typeof console.log;
@@ -293,6 +295,49 @@ describe('Logger', () => {
       }).not.toThrow();
 
       expect(consoleSpy).toHaveBeenCalledWith('null undefined text');
+    });
+  });
+
+  describe('verbose mode', () => {
+    it('should enable verbose mode when set', () => {
+      setVerboseMode(true);
+      expect(isVerboseMode()).toBe(true);
+      
+      setVerboseMode(false);
+      expect(isVerboseMode()).toBe(false);
+    });
+
+    it('should respect verbose mode for debug logging', () => {
+      // Clear debug environment
+      delete process.env.DEBUG;
+      
+      setVerboseMode(false);
+      const debugLog = createDebug('explorbot:test');
+      debugLog('Debug message');
+      
+      // Should not log when verbose mode is off
+      expect(consoleSpy).toHaveBeenCalledTimes(0);
+      
+      setVerboseMode(true);
+      debugLog('Debug message with verbose');
+      
+      // Should log when verbose mode is on
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should work with DEBUG environment variable', () => {
+      // Set DEBUG environment
+      process.env.DEBUG = 'explorbot:*';
+      
+      // Should be enabled even without setting verbose mode
+      expect(isVerboseMode()).toBe(true);
+      
+      // Setting verbose mode should still work
+      setVerboseMode(false);
+      expect(isVerboseMode()).toBe(false);
+      
+      setVerboseMode(true);
+      expect(isVerboseMode()).toBe(true);
     });
   });
 });

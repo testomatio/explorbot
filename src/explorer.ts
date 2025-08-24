@@ -7,9 +7,11 @@ import { Navigator } from './ai/navigator.js';
 import { AIProvider } from './ai/provider.js';
 import { ConfigParser } from './config.js';
 import { StateManager } from './state-manager.js';
-import { log, createDebug } from './utils/logger.js';
+import { log, createDebug, isVerboseMode } from './utils/logger.js';
 import { Researcher } from './ai/researcher.ts';
 import { ActionResult } from './action-result.ts';
+import { ExperienceCompactor } from './ai/experience-compactor.ts';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 declare global {
   namespace NodeJS {
@@ -27,7 +29,6 @@ declare namespace CodeceptJS {
 
 const debugLog = createDebug('explorbot:explorer');
 class Explorer {
-  private config: ExplorbotConfig | null = null;
   private configParser: ConfigParser;
   private aiProvider!: AIProvider;
   playwrightHelper: any;
@@ -36,16 +37,21 @@ class Explorer {
   private stateManager!: StateManager;
   private researcher!: Researcher;
   private navigator!: Navigator;
+  config: ExplorbotConfig;
 
   constructor() {
     this.configParser = ConfigParser.getInstance();
+    this.config = this.configParser.getConfig();    
+    this.initializeContainer();
+    this.initializeAI();
   }
 
-  private async initializeContainer(): Promise<void> {
+  private initializeContainer() {
     try {
-      this.config = this.configParser.getConfig();
-
-      (global as any).output_dir = path.join(process.cwd(), 'output');
+      // Use project root for output directory, not current working directory
+      const configPath = this.configParser.getConfigPath();
+      const projectRoot = configPath ? path.dirname(configPath) : process.cwd();
+      (global as any).output_dir = path.join(projectRoot, 'output');
 
       this.configParser.validateConfig(this.config);
 
@@ -59,34 +65,27 @@ class Explorer {
   }
 
   private async initializeAI(): Promise<void> {
-    if (!this.config) {
-      throw new Error('Configuration not loaded. Call run() first.');
-    }
-
     if (!this.aiProvider) {
       this.aiProvider = new AIProvider(this.config.ai);
-      await this.aiProvider.initialize();
+      if (process.env.DEBUG?.includes('explorbot:') || this.isLoggerVerboseMode()) {
+        this.aiProvider.setVerboseMode(true);
+      }
       this.navigator = new Navigator(this.aiProvider);
       this.researcher = new Researcher(this.aiProvider);
     }
-
-    const configPath = this.configParser.getConfigPath();
-    const configDir = configPath ? path.dirname(configPath) : process.cwd();
-    const experienceDir = path.join(
-      configDir,
-      this.config?.dirs?.experience || 'experience'
-    );
-
-    const knowledgeDir = path.join(
-      configDir,
-      this.config?.dirs?.knowledge || 'knowledge'
-    );
-    this.stateManager = new StateManager(knowledgeDir, experienceDir);
+    this.stateManager = new StateManager();
   }
 
-  private convertToCodeceptConfig(config: ExplorbotConfig): any {
-    const playwrightConfig = { ...config.playwright };
+  private isLoggerVerboseMode(): boolean {
+    try {
+      return isVerboseMode();
+    } catch {
+      return false;
+    }
+  }
 
+  private convertToCodeceptConfig(config: ExplorbotConfig): { helpers: { Playwright: any } } {
+    const playwrightConfig = { ...config.playwright };
     if (!config.playwright.show && !process.env.CI) {
       if (config.playwright.browser === 'chromium') {
         const debugPort = 9222;
@@ -140,7 +139,7 @@ class Explorer {
     return this.configParser.getConfigPath();
   }
 
-  public getAIProvider(): AIProvider | null {
+  public getAIProvider(): AIProvider {
     return this.aiProvider;
   }
 
@@ -157,9 +156,11 @@ class Explorer {
     await codeceptjs.container.started(null);
 
     this.playwrightHelper = codeceptjs.container.helpers('Playwright');
+    if (!this.playwrightHelper) {
+      throw new Error('Playwright helper not available');
+    }
     await this.playwrightHelper._startBrowser();
     await this.playwrightHelper._createContextPage();
-    await this.initializeAI();
     const I = codeceptjs.container.support('I');
 
     this.actor = I;
@@ -190,6 +191,26 @@ class Explorer {
     const research = await this.researcher.research(actionResult);
     return research;
   }
+
+  async compactPreviousExperiences(): Promise<void> {
+    log('Compacting previous experiences...');
+    const experienceCompactor = new ExperienceCompactor(this.getAIProvider());
+    const experienceTracker = this.getStateManager().getExperienceTracker();
+    const experienceFiles = experienceTracker.getAllExperience();
+    let compactedCount = 0;
+    for (const experience of experienceFiles) {
+      const prevContent = experience.content;
+      const frontmatter = experience.data;
+      const compactedContent = await experienceCompactor.compactExperienceFile(experience.filePath);
+      if (prevContent !== compactedContent) {
+        const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
+        experienceTracker.writeExperienceFile(stateHash, compactedContent, frontmatter);
+        log('Experience file compacted:', experience.filePath);
+        compactedCount++;
+      }
+    }
+    log(`${compactedCount} previous experiences compacted`);
+  }  
 
   private listenToStateChanged(): void {
     if (!this.playwrightHelper) {

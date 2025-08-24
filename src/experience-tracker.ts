@@ -1,12 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import debug from 'debug';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import matter from 'gray-matter';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
-import { log } from './utils/logger.js';
+import { log, createDebug, tag  } from './utils/logger.js';
 
-const debugLog = debug('explorbot:experience');
+const debugLog = createDebug('explorbot:experience');
 
 interface ExperienceEntry {
   timestamp: string;
@@ -23,8 +22,49 @@ export class ExperienceTracker {
   constructor() {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
-    this.experienceDir = config.dirs?.experience || 'experience';
+    const configPath = configParser.getConfigPath();
+    
+    // Resolve experience directory relative to the config file location (project root)
+    if (configPath) {
+      const projectRoot = dirname(configPath);
+      this.experienceDir = join(projectRoot, config.dirs?.experience || 'experience');
+    } else {
+      this.experienceDir = config.dirs?.experience || 'experience';
+    }
+    
     this.ensureDirectory(this.experienceDir);
+  }
+
+  private getExperienceDirectories(): string[] {
+    const directories = [this.experienceDir];
+    
+    // Also check for experience directory in current working directory
+    const cwdExperienceDir = join(process.cwd(), 'experience');
+    debugLog('Checking for experience directory in CWD:', cwdExperienceDir);
+    debugLog('CWD experience dir exists:', existsSync(cwdExperienceDir));
+    debugLog('CWD experience dir different from main:', cwdExperienceDir !== this.experienceDir);
+    
+    if (existsSync(cwdExperienceDir) && cwdExperienceDir !== this.experienceDir) {
+      directories.push(cwdExperienceDir);
+      debugLog('Added CWD experience directory:', cwdExperienceDir);
+    }
+    
+    // Also check for experience directory in the directory where the script was run from
+    // This is useful when running from subdirectories like 'example'
+    const scriptCwd = process.env.INITIAL_CWD || process.cwd();
+    const scriptExperienceDir = join(scriptCwd, 'experience');
+    debugLog('Checking for experience directory in script CWD:', scriptExperienceDir);
+    debugLog('Script CWD experience dir exists:', existsSync(scriptExperienceDir));
+    
+    if (existsSync(scriptExperienceDir) && 
+        scriptExperienceDir !== this.experienceDir && 
+        !directories.includes(scriptExperienceDir)) {
+      directories.push(scriptExperienceDir);
+      debugLog('Added script CWD experience directory:', scriptExperienceDir);
+    }
+    
+    debugLog('Final experience directories:', directories);
+    return directories;
   }
 
   private ensureDirectory(dir: string): void {
@@ -70,7 +110,7 @@ export class ExperienceTracker {
 
     if (!existsSync(filePath)) {
       const frontmatter = {
-        url: state.url,
+        url: state.url ? this.extractStatePath(state.url) : '',
         title: state.title,
       };
       this.writeExperienceFile(stateHash, '', frontmatter);
@@ -121,7 +161,7 @@ ${entry.code}
 
     log('code failed', code, newEntry.error);
     this.appendToExperienceFile(state, newEntry);
-    log(`📝 Added failed attempt ${attempt} to: ${state.getStateHash()}.md`);
+    tag('substep').log(`Added failed attempt ${attempt} to: ${state.getStateHash()}.md`);
   }
 
   async saveSuccessfulResolution(
@@ -143,6 +183,79 @@ ${entry.code}
     const updatedContent = newEntryContent + '\n\n' + content;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
-    log(`✅ Added successful resolution to: ${stateHash}.md`);
+    tag('substep').log(` Added successful resolution to: ${stateHash}.md`);
+  }
+
+  getAllExperience(): { filePath: string; data: any; content: string }[] {
+    const allFiles: { filePath: string; data: any; content: string }[] = [];
+    
+    for (const experienceDir of this.getExperienceDirectories()) {
+      if (!existsSync(experienceDir)) {
+        continue;
+      }
+      
+      try {
+        const files = readdirSync(experienceDir)
+          .filter((file: string) => file.endsWith('.md'))
+          .map((file: string) => join(experienceDir, file));
+          
+        for (const file of files) {
+          try {
+            const content = readFileSync(file, 'utf8');
+            const parsed = matter(content);
+            allFiles.push({ filePath: file, data: parsed.data, content: parsed.content });
+          } catch (error) {
+            debugLog(`Failed to read experience file ${file}:`, error);
+          }
+        }
+      } catch (error) {
+        debugLog(`Failed to read experience directory ${experienceDir}:`, error);
+      }
+    }
+    
+    return allFiles;
+  }
+
+  getRelevantExperience(state: ActionResult): string[] {
+    const allExperience = this.getAllExperience();
+    debugLog('All experience files found:', allExperience.length);
+    
+    const withUrl = allExperience.filter((experience) => experience.data.url);
+    debugLog('Experience files with URL:', withUrl.length);
+    
+    // Extract just the path from the state URL (remove domain, protocol, query params)
+    const statePath = state.url ? this.extractStatePath(state.url) : '';
+    debugLog('State URL path:', statePath);
+    
+    for (const exp of withUrl) {
+      debugLog('Experience file URL:', exp.data.url);
+      debugLog('Current state URL:', state.url);
+      const experiencePath = this.extractStatePath(exp.data.url);
+      debugLog('Extracted experience path:', experiencePath);
+      debugLog('URLs match:', experiencePath === statePath);
+    }
+    
+    const relevant = withUrl.filter((experience) => {
+      const experiencePath = this.extractStatePath(experience.data.url);
+      return experiencePath === statePath;
+    });
+    
+    debugLog('Relevant experience files:', relevant.length);
+    return relevant.map((experience) => experience.content);
+  }
+
+  private extractStatePath(url: string): string {
+    // Handle relative paths (like /users/sign_in)
+    if (url.startsWith('/')) {
+      return url;
+    }
+    
+    // Handle full URLs
+    try {
+      const urlObj = new URL(url);
+      return urlObj.pathname + urlObj.hash;
+    } catch {
+      return url;
+    }
   }
 }

@@ -1,10 +1,9 @@
 import { type StreamTextResult, generateText, streamText } from 'ai';
-import debug from 'debug';
 import type { AIConfig } from '../../explorbot.config.ts';
-import { log } from '../utils/logger.js';
+import { log, createDebug, setVerboseMode } from '../utils/logger.js';
 import { setActivity, clearActivity } from '../activity.js';
 
-const debugLog = debug('explorbot:ai');
+const debugLog = createDebug('explorbot:ai');
 
 export class Provider {
   private config: AIConfig;
@@ -12,24 +11,10 @@ export class Provider {
 
   constructor(config: AIConfig) {
     this.config = config;
-  }
-
-  async initialize(): Promise<void> {
-    if (!this.config.provider) {
-      throw new Error(
-        'AI provider not set in config. Please import and set the provider.'
-      );
-    }
-
     this.provider = this.config.provider;
-    log('✅ AI provider initialized');
   }
 
   async chat(messages: any[], options: any = {}): Promise<any> {
-    if (!this.provider) {
-      await this.initialize();
-    }
-
     setActivity(`AI request to ${this.config.model}`, 'ai');
 
     const config = {
@@ -45,6 +30,7 @@ export class Provider {
       });
 
       clearActivity();
+      debugLog('AI response:', response.text);
       return response;
     } catch (error: any) {
       clearActivity();
@@ -54,6 +40,12 @@ export class Provider {
 
   getProvider(): any {
     return this.provider;
+  }
+
+  setVerboseMode(enabled: boolean): void {
+    if (enabled) {
+      process.env.DEBUG = process.env.DEBUG ? `${process.env.DEBUG},explorbot:ai:*` : 'explorbot:ai:*';
+    }
   }
 }
 

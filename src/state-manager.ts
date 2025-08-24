@@ -1,11 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import debug from 'debug';
+import { join, dirname } from 'node:path';
 import matter from 'gray-matter';
 import micromatch from 'micromatch';
-import type { ActionResult } from './action-result.js';
+import { ActionResult } from './action-result.js';
+import { ExperienceTracker } from './experience-tracker.js';
+import { createDebug } from './utils/logger.js';
+import { ConfigParser } from './config.js';
 
-const debugLog = debug('explorbot:state');
+const debugLog = createDebug('explorbot:state');
 
 export interface WebPageState {
   /** URL path without domain, including hash: /path/to/page#section */
@@ -64,15 +66,29 @@ export interface KnowledgeFile {
 export class StateManager {
   private currentState: WebPageState | null = null;
   private stateHistory: StateTransition[] = [];
-  private knowledgeDir: string;
-  private experienceDir: string;
   private knowledgeCache: KnowledgeFile[] = [];
   private lastKnowledgeScan: Date | null = null;
   private stateChangeListeners: StateChangeListener[] = [];
+  private experienceTracker!: ExperienceTracker;
+  private knowledgeDir: string;
 
-  constructor(knowledgeDir = 'knowledge', experienceDir = 'experience') {
-    this.knowledgeDir = knowledgeDir;
-    this.experienceDir = experienceDir;
+  constructor() {
+    this.experienceTracker = new ExperienceTracker();
+    const configParser = ConfigParser.getInstance();
+    const config = configParser.getConfig();
+    const configPath = configParser.getConfigPath();
+    
+    // Resolve knowledge directory relative to the config file location (project root)
+    if (configPath) {
+      const projectRoot = dirname(configPath);
+      this.knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
+    } else {
+      this.knowledgeDir = config.dirs?.knowledge || 'knowledge';
+    }
+  }
+
+  getExperienceTracker(): ExperienceTracker {
+    return this.experienceTracker;
   }
 
   /**
@@ -439,38 +455,12 @@ export class StateManager {
    * Get relevant experience files for current state
    */
   getRelevantExperience(): string[] {
-    if (!this.currentState || !existsSync(this.experienceDir)) {
+    if (!this.currentState) {
       return [];
     }
 
-    try {
-      const files = readdirSync(this.experienceDir)
-        .filter((file) => file.endsWith('.md'))
-        .map((file) => join(this.experienceDir, file));
-
-      const relevantFiles: string[] = [];
-
-      for (const filePath of files) {
-        try {
-          const fileContent = readFileSync(filePath, 'utf8');
-          const parsed = matter(fileContent);
-
-          if (parsed.data.url) {
-            const experiencePath = this.extractStatePath(parsed.data.url);
-            if (experiencePath === this.currentState.url) {
-              relevantFiles.push(parsed.content);
-            }
-          }
-        } catch (error) {
-          debugLog(`Failed to read experience file ${filePath}:`, error);
-        }
-      }
-
-      return relevantFiles;
-    } catch (error) {
-      debugLog('Failed to scan experience directory:', error);
-      return [];
-    }
+    const state = ActionResult.fromState(this.currentState);
+    return this.experienceTracker.getRelevantExperience(state);
   }
 
   /**

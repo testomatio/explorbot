@@ -14,7 +14,7 @@ for (let i = 0; i < args.length; i++) {
 
   if (arg === '--from' && i + 1 < args.length) {
     options.from = args[++i];
-  } else if (arg === '--verbose' || arg === '-v') {
+  } else if (arg === '--verbose' || arg === '-v' || arg === '--debug') {
     options.verbose = true;
   } else if (arg === '--config' && i + 1 < args.length) {
     options.config = args[++i];
@@ -29,13 +29,15 @@ Usage: explorbot [options]
 Options:
   --from <url>           Start exploration from a specific URL
   --verbose, -v          Enable verbose logging
+  --debug                Enable debug logging (same as --verbose)
   --config <path>        Path to configuration file
   --path <path>          Working directory path
   --help, -h             Show this help message
 
 Examples:
-  explorbot --from https://example.com
+  explorbot --from /uri/of-page/to-test
   explorbot --verbose --config ./config.json
+  explorbot --debug
 `);
     process.exit(0);
   }

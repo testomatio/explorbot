@@ -1,14 +1,65 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { StateTransition } from '../state-manager.js';
+import type { StateTransition, WebPageState } from '../state-manager.js';
 
 interface StateTransitionPaneProps {
-  transition: StateTransition;
+  transition?: StateTransition;
+  currentState?: WebPageState;
 }
 
 const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
   transition,
+  currentState,
 }) => {
+  if (currentState) {
+    return (
+      <Box flexDirection="column" marginY={1}>
+        <Box
+          borderStyle="round"
+          borderColor="dim"
+          padding={1}
+          flexDirection="column"
+        >
+          <Box justifyContent="space-between" marginBottom={1}>
+            <Text color="dim">📍 current page</Text>
+            <Text color="dim">
+              [{currentState.timestamp?.toLocaleTimeString() || 'unknown'}]
+            </Text>
+          </Box>
+
+          <Box marginY={0}>
+            <Text color="dim">
+              URL: <Text color="green">{currentState.fullUrl || currentState.url || 'unknown'}</Text>
+            </Text>
+          </Box>
+          <Box marginY={0}>
+            <Text color="dim">
+              Title: <Text color="green">{currentState.title || 'none'}</Text>
+            </Text>
+          </Box>
+          {currentState.h1 && (
+            <Box marginY={0}>
+              <Text color="dim">
+                H1: <Text color="green">{currentState.h1}</Text>
+              </Text>
+            </Box>
+          )}
+          {currentState.h2 && (
+            <Box marginY={0}>
+              <Text color="dim">
+                H2: <Text color="green">{currentState.h2}</Text>
+              </Text>
+            </Box>
+          )}
+        </Box>
+      </Box>
+    );
+  }
+
+  if (!transition) {
+    return null;
+  }
+
   const { fromState, toState, trigger, timestamp } = transition;
 
   const getDifferences = () => {
