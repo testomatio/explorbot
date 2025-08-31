@@ -6,6 +6,7 @@ import { setActivity } from '../activity.js';
 import { WebPageState } from '../state-manager.js';
 import { Conversation, Message } from './conversation.js';
 import dedent from 'dedent';
+import { ExperienceTracker } from '../experience-tracker.ts';
 
 const debugLog = createDebug('explorbot:researcher');
 
@@ -18,10 +19,12 @@ export interface Task {
 export class Researcher {
   private provider: Provider;
   private stateManager: StateManager;
+  private experienceTracker: ExperienceTracker;
 
   constructor(provider: Provider, stateManager: StateManager) {
     this.provider = provider;
     this.stateManager = stateManager;
+    this.experienceTracker = stateManager.getExperienceTracker();
   }
 
   getSystemMessage(): Message {
@@ -65,10 +68,11 @@ export class Researcher {
     ]);
 
     const responseText = conversation.getLastMessage();
+    this.experienceTracker.writeExperienceFile(`reseach_${actionResult.getStateHash()}`, responseText, {
+      url: actionResult.relativeUrl
+    });
     debugLog('Research response:', responseText);
     tag('multiline').log('📡 Research:\n\n', responseText);
-
-    state.research = responseText;
 
     return conversation;
   }
@@ -116,16 +120,16 @@ export class Researcher {
     actionResult: ActionResult,
     html: string
   ): string {
-    const context = this.stateManager.getCurrentContext();
-    
+    const knowledgeFiles = this.stateManager.getRelevantKnowledge();
+
     let knowledge = '';
-    if (context.knowledge.length > 0) {
-      const knowledgeContent = context.knowledge
+    if (knowledgeFiles.length > 0) {
+      const knowledgeContent = knowledgeFiles
         .map((k) => k.content)
         .join('\n\n');
 
       tag('substep').log(
-        `Found ${context.knowledge.length} relevant knowledge file(s) for: ${context.state.url}`
+        `Found ${knowledgeFiles.length} relevant knowledge file(s) for: ${actionResult.url}`
       );
       knowledge = `
         <hint>
@@ -133,31 +137,6 @@ export class Researcher {
 
         ${knowledgeContent}
         </hint>`;
-    }
-
-    let experience = '';
-    if (context.experience.length > 0) {
-      const experienceContent = context.experience.join('\n\n---\n\n');
-      const truncatedContent =
-        experienceContent.length > 5000
-          ? `${experienceContent.slice(0, 5000)}\n\n[Content truncated due to length limit]`
-          : experienceContent;
-
-      tag('substep').log(
-        `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
-      );
-      experience = `
-
-      <experience_rules>
-      Here is a compacted summary of previously executed code blocks.
-      Focus on successful solutions and avoid failed locators.
-      Do not repeat code blocks that already failed.
-      Analyze locators used in code blocks that failed and do not use them in your answer.
-      Do not use any locators equal to failed ones.
-      </experience_rules>
-      <experience>
-      ${truncatedContent}
-      </experience>`;
     }
 
     return dedent`Analyze this web page and provide a comprehensive research report.
@@ -176,8 +155,6 @@ export class Researcher {
     ${html}
 
     ${knowledge}
-
-    ${experience}
 
     Please provide a structured analysis in markdown format with the following sections:
 
@@ -212,7 +189,12 @@ export class Researcher {
   }
 
   private buildPlanningPrompt(state: WebPageState): string {
-    return `Based on the research analysis below, create a comprehensive exploratory testing plan for this page.
+    return `
+    <task>
+    Based on the previous research, suggest 5-10 exploratory testing scenarios to test on this page.
+    Start with positive scenarios and then move to negative scenarios.
+    Focus on main content of the page, not in the menu, sidebar or footer.
+    </task>
 
     <context>
     URL: ${state.url || 'Unknown'}
@@ -221,12 +203,6 @@ export class Researcher {
     HTML:
     ${state.html}
     </context>
-
-    <task>
-    Based on the previous research, suggest 5-10 exploratory testing scenarios to test on this page.
-    Start with positive scenarios and then move to negative scenarios.
-    Focus on main content of the page, not in the menu, sidebar or footer.
-    </task>
 
     <rules>
     Result must be a markdown list with bullet points.
@@ -261,7 +237,6 @@ export class Researcher {
 
         const scenario = line.replace(/^[\*\-]\s+/, '').trim();
         if (scenario) {
-          debugLog('Scenario added',' [ ] ', scenario);
           tasks.push({
             scenario,
             status: 'pending',

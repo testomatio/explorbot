@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import matter from 'gray-matter';
-import micromatch from 'micromatch';
 import { ActionResult } from './action-result.js';
 import { ExperienceTracker } from './experience-tracker.js';
 import { createDebug } from './utils/logger.js';
@@ -13,7 +12,7 @@ export interface WebPageState {
   /** URL path without domain, including hash: /path/to/page#section */
   url: string;
   /** Page title */
-  title: string;
+  title?: string;
   /** Full URL for reference */
   fullUrl?: string;
   /** Timestamp when state was captured */
@@ -33,9 +32,6 @@ export interface WebPageState {
   h2?: string;
   h3?: string;
   h4?: string;
-  /** Research results */
-  research?: string;
-
 }
 
 export interface StateTransition {
@@ -55,13 +51,9 @@ export interface StateTransition {
 
 export type StateChangeListener = (event: StateTransition) => void;
 
-export interface KnowledgeFile {
+export interface Knowledge extends WebPageState {
   /** File path */
   filePath: string;
-  /** URL pattern from frontmatter (supports wildcards) */
-  urlPattern: string;
-  /** Parsed frontmatter */
-  frontmatter: any;
   /** Markdown content */
   content: string;
 }
@@ -69,7 +61,7 @@ export interface KnowledgeFile {
 export class StateManager {
   private currentState: WebPageState | null = null;
   private stateHistory: StateTransition[] = [];
-  private knowledgeCache: KnowledgeFile[] = [];
+  private knowledgeCache: Knowledge[] = [];
   private lastKnowledgeScan: Date | null = null;
   private stateChangeListeners: StateChangeListener[] = [];
   private experienceTracker!: ExperienceTracker;
@@ -364,8 +356,8 @@ export class StateManager {
 
           this.knowledgeCache.push({
             filePath,
-            urlPattern,
-            frontmatter: parsed.data,
+            url: urlPattern,
+            ...parsed.data,
             content: parsed.content,
           });
 
@@ -383,74 +375,17 @@ export class StateManager {
       debugLog('Failed to scan knowledge directory:', error);
     }
   }
-
-  /**
-   * Use micromatch for glob matching
-   * Supports: *, ?, [abc], [a-z], **, and many more advanced patterns
-   */
-  private globMatch(pattern: string, str: string): boolean {
-    return micromatch.isMatch(str, pattern);
-  }
-
-  /**
-   * Check if a pattern matches an actual value
-   * Supports multiple modes:
-   * - If pattern starts with '^', treat as regex: ^/user/\d+$
-   * - If pattern starts and ends with '~', treat as regex: ~/user/\d+~
-   * - Otherwise, use glob matching via micromatch with advanced patterns
-   * Can be extended to match h1, h2, h3, title, etc.
-   */
-  private matchesPattern(pattern: string, actualValue: string): boolean {
-    if (pattern === '*') return true;
-    if (pattern === actualValue) return true;
-
-    // If pattern starts with '^', treat as regex
-    if (pattern.startsWith('^')) {
-      try {
-        const regexPattern = pattern.slice(1);
-        const regex = new RegExp(regexPattern);
-        return regex.test(actualValue);
-      } catch (error) {
-        debugLog(`Invalid regex pattern: ${pattern}`, error);
-        return false;
-      }
-    }
-
-    // If pattern starts and ends with '~', treat as regex
-    if (
-      pattern.startsWith('~') &&
-      pattern.endsWith('~') &&
-      pattern.length > 2
-    ) {
-      try {
-        const regexPattern = pattern.slice(1, -1);
-        const regex = new RegExp(regexPattern);
-        return regex.test(actualValue);
-      } catch (error) {
-        debugLog(`Invalid regex pattern: ${pattern}`, error);
-        return false;
-      }
-    }
-
-    // Use glob matching for everything else
-    try {
-      return this.globMatch(pattern, actualValue);
-    } catch (error) {
-      debugLog(`Invalid glob pattern: ${pattern}`, error);
-      return false;
-    }
-  }
-
   /**
    * Get relevant knowledge files for current state
    */
-  getRelevantKnowledge(): KnowledgeFile[] {
+  getRelevantKnowledge(): Knowledge[] {
     if (!this.currentState) return [];
 
     this.scanKnowledgeFiles();
 
+    const actionResult = ActionResult.fromState(this.currentState)
     return this.knowledgeCache.filter((knowledge) =>
-      this.matchesPattern(knowledge.urlPattern, this.currentState!.url)
+      actionResult.isMatchedBy(knowledge)
     );
   }
 
@@ -461,9 +396,11 @@ export class StateManager {
     if (!this.currentState) {
       return [];
     }
-
-    const state = ActionResult.fromState(this.currentState);
-    return this.experienceTracker.getRelevantExperience(state);
+    const actionResult = ActionResult.fromState(this.currentState)
+    return this.experienceTracker.getAllExperience().filter((experience) => {
+      const experienceState = experience.data as WebPageState;
+      return actionResult.isMatchedBy(experienceState)
+    }).map(experince => experince.content);
   }
 
   /**
@@ -471,7 +408,7 @@ export class StateManager {
    */
   getCurrentContext(): {
     state: WebPageState;
-    knowledge: KnowledgeFile[];
+    knowledge: Knowledge[];
     experience: string[];
     recentTransitions: StateTransition[];
   } {

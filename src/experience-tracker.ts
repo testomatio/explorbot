@@ -179,6 +179,11 @@ ${entry.code}
 
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
+    if (content.includes(code)) {
+      debugLog('Skipping duplicate successful resolution', code);
+      return;
+    }
+
     const newEntryContent = this.generateEntryContent(newEntry);
     const updatedContent = newEntryContent + '\n\n' + content;
     this.writeExperienceFile(stateHash, updatedContent, data);
@@ -216,41 +221,10 @@ ${entry.code}
     return allFiles;
   }
 
-  getRelevantExperience(state: ActionResult): string[] {
-    const allExperience = this.getAllExperience();
-    debugLog('All experience files found:', allExperience.length);
-    
-    const withUrl = allExperience.filter((experience) => experience.data.url);
-    debugLog('Experience files with URL:', withUrl.length);
-    
-    // Extract just the path from the state URL (remove domain, protocol, query params)
-    const statePath = state.url ? this.extractStatePath(state.url) : '';
-    debugLog('State URL path:', statePath);
-    
-    for (const exp of withUrl) {
-      debugLog('Experience file URL:', exp.data.url);
-      debugLog('Current state URL:', state.url);
-      const experiencePath = this.extractStatePath(exp.data.url);
-      debugLog('Extracted experience path:', experiencePath);
-      debugLog('URLs match:', experiencePath === statePath);
-    }
-    
-    const relevant = withUrl.filter((experience) => {
-      const experiencePath = this.extractStatePath(experience.data.url);
-      return experiencePath === statePath;
-    });
-    
-    debugLog('Relevant experience files:', relevant.length);
-    return relevant.map((experience) => experience.content);
-  }
-
   private extractStatePath(url: string): string {
-    // Handle relative paths (like /users/sign_in)
     if (url.startsWith('/')) {
       return url;
     }
-    
-    // Handle full URLs
     try {
       const urlObj = new URL(url);
       return urlObj.pathname + urlObj.hash;

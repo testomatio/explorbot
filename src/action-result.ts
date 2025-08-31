@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
+import micromatch from 'micromatch';
 import { minifyHtml, removeNonInteractiveElements } from 'codeceptjs/lib/html';
-import type { WebPageState } from './state-manager';
+import type { WebPageState } from './state-manager.ts';
+import { createDebug } from './utils/logger.ts';
+
+const debugLog = createDebug('explorbot:action-state')
 
 interface ActionResultData {
   html: string;
@@ -89,6 +93,41 @@ export class ActionResult {
 
     return headings;
   }
+
+  isMatchedBy(state: WebPageState): boolean {
+    let isRelevant = false;
+    if (!this.url) {
+      return false;
+    }
+
+    isRelevant = this.matchesPattern(this.extractStatePath(state.url), this.extractStatePath(this.url));
+    if (!isRelevant) {
+      return false;
+    }
+    if (isRelevant && state.h1 && this.h1 && this.matchesPattern(state.h1, this.h1)) {
+      isRelevant = true;
+    }
+    if (isRelevant && state.h2 && this.h2 && this.matchesPattern(state.h2, this.h2)) {
+      isRelevant = true;
+    }
+    if (isRelevant && state.h3 && this.h3 && this.matchesPattern(state.h3, this.h3)) {
+      isRelevant = true;
+    }
+    return isRelevant;
+  }
+
+  private extractStatePath(url: string): string {
+    if (url.startsWith('/')) {
+      return url;
+    }
+    try {
+      const urlObj = new URL(url);
+      return urlObj.pathname + urlObj.hash;
+    } catch {
+      return url;
+    }
+  }
+
 
   async simplifiedHtml(): Promise<string> {
     return await minifyHtml(removeNonInteractiveElements(this.html));
@@ -305,4 +344,62 @@ export class ActionResult {
       console.error('Failed to save HTML output:', error);
     }
   }
+
+
+  /**
+   * Use micromatch for glob matching
+   * Supports: *, ?, [abc], [a-z], **, and many more advanced patterns
+   */
+  private globMatch(pattern: string, str: string): boolean {
+    return micromatch.isMatch(str, pattern);
+  }
+
+  /**
+   * Check if a pattern matches an actual value
+   * Supports multiple modes:
+   * - If pattern starts with '^', treat as regex: ^/user/\d+$
+   * - If pattern starts and ends with '~', treat as regex: ~/user/\d+~
+   * - Otherwise, use glob matching via micromatch with advanced patterns
+   * Can be extended to match h1, h2, h3, title, etc.
+   */
+  private matchesPattern(pattern: string, actualValue: string): boolean {
+    if (pattern === '*') return true;
+    if (pattern?.toLowerCase() === actualValue?.toLowerCase()) return true;
+
+    // If pattern starts with '^', treat as regex
+    if (pattern.startsWith('^')) {
+      try {
+        const regexPattern = pattern.slice(1);
+        const regex = new RegExp(regexPattern);
+        return regex.test(actualValue);
+      } catch (error) {
+        debugLog(`Invalid regex pattern: ${pattern}`, error);
+        return false;
+      }
+    }
+
+    // If pattern starts and ends with '~', treat as regex
+    if (
+      pattern.startsWith('~') &&
+      pattern.endsWith('~') &&
+      pattern.length > 2
+    ) {
+      try {
+        const regexPattern = pattern.slice(1, -1);
+        const regex = new RegExp(regexPattern);
+        return regex.test(actualValue);
+      } catch (error) {
+        debugLog(`Invalid regex pattern: ${pattern}`, error);
+        return false;
+      }
+    }
+
+    // Use glob matching for everything else
+    try {
+      return this.globMatch(pattern, actualValue);
+    } catch (error) {
+      debugLog(`Invalid glob pattern: ${pattern}`, error);
+      return false;
+    }
+  }  
 }

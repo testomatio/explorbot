@@ -14,7 +14,7 @@ export interface ExplorBotOptions {
   path?: string;
 }
 
-export type UserResolveFunction = (error: Error) => Promise<string | null>;
+export type UserResolveFunction = (error?: Error) => Promise<string | null>;
 
 export class ExplorBot {
   private explorer!: Explorer;

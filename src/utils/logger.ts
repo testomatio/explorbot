@@ -96,24 +96,31 @@ class FileDestination implements LogDestination {
   private ensureInitialized(): void {
     if (this.initialized) return;
 
-    try {
-      const config = ConfigParser.getInstance().getConfig();
-      const outputDir = config?.dirs?.output || 'output';
+    this.initialized = true;
 
+    let outputDir = 'output';
+    let baseDir = process.env.INITIAL_CWD || process.cwd();
+    try {
+      const parser = ConfigParser.getInstance();
+      const config = parser.getConfig();
+      const configPath = parser.getConfigPath();
+      if (configPath) baseDir = path.dirname(configPath);
+      outputDir = path.join(baseDir, config?.dirs?.output || outputDir);
+    } catch {
+      outputDir = path.join(baseDir, outputDir);
+    }
+
+    try {
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
       }
-
       this.logFilePath = path.join(outputDir, 'explorbot.log');
-      this.initialized = true;
-
       const timestamp = new Date().toISOString();
       fs.appendFileSync(
         this.logFilePath,
         `\n=== ExplorBot Session Started at ${timestamp} ===\n`
       );
-    } catch (error) {
-      this.initialized = true;
+    } catch {
       this.logFilePath = null;
     }
   }

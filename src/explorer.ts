@@ -7,7 +7,7 @@ import { Navigator } from './ai/navigator.js';
 import { AIProvider } from './ai/provider.js';
 import { ConfigParser } from './config.js';
 import { StateManager } from './state-manager.js';
-import { log, createDebug, isVerboseMode } from './utils/logger.js';
+import { log, createDebug, tag } from './utils/logger.js';
 import { Researcher } from './ai/researcher.js';
 import { ActionResult } from './action-result.js';
 import { Conversation } from './ai/conversation.js';
@@ -175,10 +175,19 @@ class Explorer {
   }
 
   async plan() {
+    log('Planning next steps...');
     const conversation = await this.researcher.research();
-    const scenarios = await this.researcher.plan(conversation);
+    let scenarios = await this.researcher.plan(conversation);
+    if (this.userResolveFn) {
+      tag('info').log('Do you want to change the testing plan?')
+      tag('info').log('Suggest what should be tested instead or press [Enter] to start testing');
+      const suggestions = (await this.userResolveFn()) as string;
+      if (!suggestions.trim()) {
+        conversation.addUserText(suggestions);
+        scenarios = await this.researcher.plan(conversation);
+      }
+    }
     this.scenarios = scenarios;
-
     return scenarios;
   }
 

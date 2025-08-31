@@ -258,7 +258,6 @@ class Action {
       await this.expect(this.expectation!);
 
       tag('success').log('Resolved', this.expectation);
-      tag('step').log(highlight(codeBlock, { language: 'javascript' }));
       await this.experienceTracker.saveSuccessfulResolution(
         prevActionResult!,
         originalMessage,
