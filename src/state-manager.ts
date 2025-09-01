@@ -72,11 +72,14 @@ export class StateManager {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
     const configPath = configParser.getConfigPath();
-    
+
     // Resolve knowledge directory relative to the config file location (project root)
     if (configPath) {
       const projectRoot = dirname(configPath);
-      this.knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
+      this.knowledgeDir = join(
+        projectRoot,
+        config.dirs?.knowledge || 'knowledge'
+      );
     } else {
       this.knowledgeDir = config.dirs?.knowledge || 'knowledge';
     }
@@ -383,7 +386,7 @@ export class StateManager {
 
     this.scanKnowledgeFiles();
 
-    const actionResult = ActionResult.fromState(this.currentState)
+    const actionResult = ActionResult.fromState(this.currentState);
     return this.knowledgeCache.filter((knowledge) =>
       actionResult.isMatchedBy(knowledge)
     );
@@ -396,11 +399,14 @@ export class StateManager {
     if (!this.currentState) {
       return [];
     }
-    const actionResult = ActionResult.fromState(this.currentState)
-    return this.experienceTracker.getAllExperience().filter((experience) => {
-      const experienceState = experience.data as WebPageState;
-      return actionResult.isMatchedBy(experienceState)
-    }).map(experince => experince.content);
+    const actionResult = ActionResult.fromState(this.currentState);
+    return this.experienceTracker
+      .getAllExperience()
+      .filter((experience) => {
+        const experienceState = experience.data as WebPageState;
+        return actionResult.isMatchedBy(experienceState);
+      })
+      .map((experince) => experince.content);
   }
 
   /**

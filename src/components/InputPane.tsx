@@ -49,7 +49,9 @@ const InputPane: React.FC<InputPaneProps> = ({
 
     if (key.backspace || key.delete) {
       if (cursorPosition > 0) {
-        const newValue = inputValue.slice(0, cursorPosition - 1) + inputValue.slice(cursorPosition);
+        const newValue =
+          inputValue.slice(0, cursorPosition - 1) +
+          inputValue.slice(cursorPosition);
         setInputValue(newValue);
         setCursorPosition(Math.max(0, cursorPosition - 1));
         onChange(newValue);
@@ -58,7 +60,10 @@ const InputPane: React.FC<InputPaneProps> = ({
     }
 
     if (input && input.length === 1) {
-      const newValue = inputValue.slice(0, cursorPosition) + input + inputValue.slice(cursorPosition);
+      const newValue =
+        inputValue.slice(0, cursorPosition) +
+        input +
+        inputValue.slice(cursorPosition);
       setInputValue(newValue);
       setCursorPosition(cursorPosition + 1);
       onChange(newValue);
@@ -79,7 +84,9 @@ const InputPane: React.FC<InputPaneProps> = ({
       <Box>
         <Text color="green">&gt; </Text>
         <Text>{beforeCursor}</Text>
-        <Text backgroundColor="white" color="black"> </Text>
+        <Text backgroundColor="white" color="black">
+          {' '}
+        </Text>
         <Text>{afterCursor}</Text>
       </Box>
     </Box>

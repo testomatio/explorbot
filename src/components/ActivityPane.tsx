@@ -61,11 +61,9 @@ const ActivityPane: React.FC = () => {
 
   return (
     <Box height={1} paddingX={1}>
-      <Text 
-        color={getActivityColor(activity.type)} 
-        dimColor={isDimmed}
-      >
-        {activity.message}{getDots()}
+      <Text color={getActivityColor(activity.type)} dimColor={isDimmed}>
+        {activity.message}
+        {getDots()}
       </Text>
     </Box>
   );

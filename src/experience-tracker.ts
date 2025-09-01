@@ -1,9 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 import matter from 'gray-matter';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
-import { log, createDebug, tag  } from './utils/logger.js';
+import { log, createDebug, tag } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:experience');
 
@@ -23,46 +29,63 @@ export class ExperienceTracker {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
     const configPath = configParser.getConfigPath();
-    
+
     // Resolve experience directory relative to the config file location (project root)
     if (configPath) {
       const projectRoot = dirname(configPath);
-      this.experienceDir = join(projectRoot, config.dirs?.experience || 'experience');
+      this.experienceDir = join(
+        projectRoot,
+        config.dirs?.experience || 'experience'
+      );
     } else {
       this.experienceDir = config.dirs?.experience || 'experience';
     }
-    
+
     this.ensureDirectory(this.experienceDir);
   }
 
   private getExperienceDirectories(): string[] {
     const directories = [this.experienceDir];
-    
+
     // Also check for experience directory in current working directory
     const cwdExperienceDir = join(process.cwd(), 'experience');
     debugLog('Checking for experience directory in CWD:', cwdExperienceDir);
     debugLog('CWD experience dir exists:', existsSync(cwdExperienceDir));
-    debugLog('CWD experience dir different from main:', cwdExperienceDir !== this.experienceDir);
-    
-    if (existsSync(cwdExperienceDir) && cwdExperienceDir !== this.experienceDir) {
+    debugLog(
+      'CWD experience dir different from main:',
+      cwdExperienceDir !== this.experienceDir
+    );
+
+    if (
+      existsSync(cwdExperienceDir) &&
+      cwdExperienceDir !== this.experienceDir
+    ) {
       directories.push(cwdExperienceDir);
       debugLog('Added CWD experience directory:', cwdExperienceDir);
     }
-    
+
     // Also check for experience directory in the directory where the script was run from
     // This is useful when running from subdirectories like 'example'
     const scriptCwd = process.env.INITIAL_CWD || process.cwd();
     const scriptExperienceDir = join(scriptCwd, 'experience');
-    debugLog('Checking for experience directory in script CWD:', scriptExperienceDir);
-    debugLog('Script CWD experience dir exists:', existsSync(scriptExperienceDir));
-    
-    if (existsSync(scriptExperienceDir) && 
-        scriptExperienceDir !== this.experienceDir && 
-        !directories.includes(scriptExperienceDir)) {
+    debugLog(
+      'Checking for experience directory in script CWD:',
+      scriptExperienceDir
+    );
+    debugLog(
+      'Script CWD experience dir exists:',
+      existsSync(scriptExperienceDir)
+    );
+
+    if (
+      existsSync(scriptExperienceDir) &&
+      scriptExperienceDir !== this.experienceDir &&
+      !directories.includes(scriptExperienceDir)
+    ) {
       directories.push(scriptExperienceDir);
       debugLog('Added script CWD experience directory:', scriptExperienceDir);
     }
-    
+
     debugLog('Final experience directories:', directories);
     return directories;
   }
@@ -161,7 +184,9 @@ ${entry.code}
 
     tag('error').log('code failed', newEntry.error);
     this.appendToExperienceFile(state, newEntry);
-    tag('substep').log(`Added failed attempt ${attempt} to: ${state.getStateHash()}.md`);
+    tag('substep').log(
+      `Added failed attempt ${attempt} to: ${state.getStateHash()}.md`
+    );
   }
 
   async saveSuccessfulResolution(
@@ -193,31 +218,38 @@ ${entry.code}
 
   getAllExperience(): { filePath: string; data: any; content: string }[] {
     const allFiles: { filePath: string; data: any; content: string }[] = [];
-    
+
     for (const experienceDir of this.getExperienceDirectories()) {
       if (!existsSync(experienceDir)) {
         continue;
       }
-      
+
       try {
         const files = readdirSync(experienceDir)
           .filter((file: string) => file.endsWith('.md'))
           .map((file: string) => join(experienceDir, file));
-          
+
         for (const file of files) {
           try {
             const content = readFileSync(file, 'utf8');
             const parsed = matter(content);
-            allFiles.push({ filePath: file, data: parsed.data, content: parsed.content });
+            allFiles.push({
+              filePath: file,
+              data: parsed.data,
+              content: parsed.content,
+            });
           } catch (error) {
             debugLog(`Failed to read experience file ${file}:`, error);
           }
         }
       } catch (error) {
-        debugLog(`Failed to read experience directory ${experienceDir}:`, error);
+        debugLog(
+          `Failed to read experience directory ${experienceDir}:`,
+          error
+        );
       }
     }
-    
+
     return allFiles;
   }
 

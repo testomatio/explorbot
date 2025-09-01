@@ -19,21 +19,21 @@ export class Conversation {
   addUserText(text: string): void {
     this.messages.push({
       role: 'user',
-      content: [{ type: 'text', text }]
+      content: [{ type: 'text', text }],
     });
   }
 
   addUserImage(image: string): void {
     this.messages.push({
       role: 'user',
-      content: [{ type: 'image', image }]
+      content: [{ type: 'image', image }],
     });
   }
 
   addAssistantText(text: string): void {
     this.messages.push({
       role: 'assistant',
-      content: [{ type: 'text', text }]
+      content: [{ type: 'text', text }],
     });
   }
 

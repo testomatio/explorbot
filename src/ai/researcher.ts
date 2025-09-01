@@ -51,7 +51,8 @@ export class Researcher {
       this.getSystemMessage(),
       {
         role: 'user',
-        content: [{
+        content: [
+          {
             type: 'text',
             text: prompt,
           },
@@ -68,9 +69,13 @@ export class Researcher {
     ]);
 
     const responseText = conversation.getLastMessage();
-    this.experienceTracker.writeExperienceFile(`reseach_${actionResult.getStateHash()}`, responseText, {
-      url: actionResult.relativeUrl
-    });
+    this.experienceTracker.writeExperienceFile(
+      `reseach_${actionResult.getStateHash()}`,
+      responseText,
+      {
+        url: actionResult.relativeUrl,
+      }
+    );
     debugLog('Research response:', responseText);
     tag('multiline').log('📡 Research:\n\n', responseText);
 
@@ -92,18 +97,20 @@ export class Researcher {
 
     const response = await this.provider.followUp(conversation.id);
     if (!response) throw new Error('Failed to get planning response');
-    
+
     const responseText = response.getLastMessage();
     debugLog('Planning response:', responseText);
-    
+
     let tasks = this.parseTasks(responseText, conversation);
-    
+
     if (tasks.length === 0) {
-      conversation.addUserText(`Your response was not in the expected markdown list format. Please provide ONLY a markdown list of testing scenarios, one per line, starting with * or -.`);
-      
+      conversation.addUserText(
+        `Your response was not in the expected markdown list format. Please provide ONLY a markdown list of testing scenarios, one per line, starting with * or -.`
+      );
+
       const newResponse = await this.provider.followUp(conversation.id);
       if (!newResponse) throw new Error('Failed to get correction response');
-      
+
       const newResponseText = newResponse.getLastMessage();
       tasks = this.parseTasks(newResponseText, conversation);
     }
@@ -235,14 +242,14 @@ export class Researcher {
     for (const line of lines) {
       if (!line.match(/^[\*\-]\s+/)) continue;
 
-        const scenario = line.replace(/^[\*\-]\s+/, '').trim();
-        if (scenario) {
-          tasks.push({
-            scenario,
-            status: 'pending',
-            conversation: conversation.clone()
-          });
-        }
+      const scenario = line.replace(/^[\*\-]\s+/, '').trim();
+      if (scenario) {
+        tasks.push({
+          scenario,
+          status: 'pending',
+          conversation: conversation.clone(),
+        });
+      }
     }
 
     return tasks;

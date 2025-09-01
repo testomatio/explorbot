@@ -40,11 +40,11 @@ class Explorer {
   private navigator!: Navigator;
   config: ExplorbotConfig;
   private userResolveFn: UserResolveFunction | null = null;
-  scenarios: import("./ai/researcher.js").Task[] = [];
+  scenarios: import('./ai/researcher.js').Task[] = [];
 
   constructor() {
     this.configParser = ConfigParser.getInstance();
-    this.config = this.configParser.getConfig();    
+    this.config = this.configParser.getConfig();
     this.initializeContainer();
     this.initializeAI();
   }
@@ -76,7 +76,9 @@ class Explorer {
     }
   }
 
-  private convertToCodeceptConfig(config: ExplorbotConfig): { helpers: { Playwright: any } } {
+  private convertToCodeceptConfig(config: ExplorbotConfig): {
+    helpers: { Playwright: any };
+  } {
     const playwrightConfig = { ...config.playwright };
     if (!config.playwright.show && !process.env.CI) {
       if (config.playwright.browser === 'chromium') {
@@ -164,7 +166,12 @@ class Explorer {
   }
 
   createAction() {
-    return new Action(this.actor, this.aiProvider, this.stateManager, this.userResolveFn || undefined);
+    return new Action(
+      this.actor,
+      this.aiProvider,
+      this.stateManager,
+      this.userResolveFn || undefined
+    );
   }
 
   async visit(url: string) {
@@ -179,8 +186,10 @@ class Explorer {
     const conversation = await this.researcher.research();
     let scenarios = await this.researcher.plan(conversation);
     if (this.userResolveFn) {
-      tag('info').log('Do you want to change the testing plan?')
-      tag('info').log('Suggest what should be tested instead or press [Enter] to start testing');
+      tag('info').log('Do you want to change the testing plan?');
+      tag('info').log(
+        'Suggest what should be tested instead or press [Enter] to start testing'
+      );
       const suggestions = (await this.userResolveFn()) as string;
       if (!suggestions.trim()) {
         conversation.addUserText(suggestions);
@@ -204,16 +213,23 @@ class Explorer {
     for (const experience of experienceFiles) {
       const prevContent = experience.content;
       const frontmatter = experience.data;
-      const compactedContent = await experienceCompactor.compactExperienceFile(experience.filePath);
+      const compactedContent = await experienceCompactor.compactExperienceFile(
+        experience.filePath
+      );
       if (prevContent !== compactedContent) {
-        const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
-        experienceTracker.writeExperienceFile(stateHash, compactedContent, frontmatter);
+        const stateHash =
+          experience.filePath.split('/').pop()?.replace('.md', '') || '';
+        experienceTracker.writeExperienceFile(
+          stateHash,
+          compactedContent,
+          frontmatter
+        );
         log('Experience file compacted:', experience.filePath);
         compactedCount++;
       }
     }
     log(`${compactedCount} previous experiences compacted`);
-  }  
+  }
 
   private listenToStateChanged(): void {
     if (!this.playwrightHelper) {

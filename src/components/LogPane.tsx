@@ -38,13 +38,13 @@ const LogPane: React.FC<LogPaneProps> = ({ logs, verboseMode = false }) => {
   };
 
   const processLogContent = (content: string): string[] => {
-    return content.split('\n').filter(line => line.length > 0);
+    return content.split('\n').filter((line) => line.length > 0);
   };
 
   const renderLogEntry = (log: LogEntry, index: number) => {
     if (typeof log === 'object' && 'type' in log && 'content' in log) {
       const taggedLog = log as TaggedLogEntry;
-      
+
       // Skip debug logs when not in verbose mode
       if (taggedLog.type === 'debug' && !verboseMode) {
         return null;
@@ -101,9 +101,7 @@ const LogPane: React.FC<LogPaneProps> = ({ logs, verboseMode = false }) => {
       return (
         <Box key={index} flexDirection="column">
           {lines.map((line, lineIndex) => (
-            <Text key={`${index}-${lineIndex}`}>
-              {line}
-            </Text>
+            <Text key={`${index}-${lineIndex}`}>{line}</Text>
           ))}
         </Box>
       );

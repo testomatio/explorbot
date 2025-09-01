@@ -3,6 +3,7 @@ import type { Provider } from './provider.js';
 import type { WebPageState } from '../state-manager.js';
 import type { ActionResult } from '../action-result.js';
 import { ExperienceCompactor } from './experience-compactor.js';
+import { createCodeceptJSTools } from './tools.js';
 import { tag, createDebug } from '../utils/logger.js';
 
 const debugLog = createDebug('explorbot:navigator');
@@ -146,6 +147,163 @@ class Navigator {
     tag('debug').log(aiResponse);
 
     return aiResponse;
+  }
+
+  async changeState(
+    message: string,
+    actionResult: ActionResult,
+    context?: StateContext,
+    actor?: any
+  ): Promise<ActionResult> {
+    const state = context?.state;
+    if (!state) {
+      throw new Error('State is required');
+    }
+
+    if (!actor) {
+      throw new Error('CodeceptJS actor is required for changeState');
+    }
+
+    tag('info').log('AI Navigator changing state for:', state.url);
+    debugLog('Change message:', message);
+
+    const tools = createCodeceptJSTools(actor);
+
+    const systemPrompt = dedent`
+      <role>
+        You are a senior web automation engineer with expertise in CodeceptJS.
+        Your task is to interact with web pages using available tools to achieve user goals.
+      </role>
+      <approach>
+        Analyze the page state, plan your actions, then execute them step by step.
+        Be methodical and precise in your interactions.
+        After each action, you'll automatically receive the updated page state.
+        Use this feedback to decide your next actions dynamically.
+        Continue until the task is complete or you determine it cannot be completed.
+        
+        Use click() for buttons, links, and clickable elements.
+        Use type() for text input - you can specify a locator to focus first, or type without locator for active element.
+      </approach>
+    `;
+
+    const userPrompt = dedent`
+      <message>        
+        ${message}
+      </message>
+
+      <task>
+        You need to perform actions on the current web page to fulfill the user's request.
+        Use the provided tools (click and type) to interact with the page.
+        
+        Each tool call will automatically return the new page state after the action.
+        Use this feedback to dynamically plan your next steps.
+        Continue making tool calls until the task is completed.
+      </task>
+
+      <current_page>
+        ${actionResult.toAiContext()}
+
+        HTML:
+        ${await actionResult.simplifiedHtml()}
+      </current_page>
+    `;
+
+    try {
+      // Use AI SDK's native tool calling with automatic roundtrips
+      const response = await this.provider.generateWithTools(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        tools,
+        { maxToolRoundtrips: 5 }
+      );
+
+      tag('success').log('Dynamic tool calling completed');
+      debugLog('Final AI response:', response.text);
+
+      // Capture final page state
+      const finalActionResult = await this.capturePageState(actor);
+
+      // Check if task was completed
+      const taskCompleted = await this.isTaskCompleted(
+        message,
+        finalActionResult
+      );
+      if (taskCompleted) {
+        tag('success').log('Task completed successfully');
+      } else {
+        tag('warning').log('Task may not be fully completed');
+      }
+
+      return finalActionResult;
+    } catch (error) {
+      tag('error').log('Error during dynamic tool calling:', error);
+
+      // Return current state as fallback
+      return await this.capturePageState(actor);
+    }
+  }
+
+  private async capturePageState(actor: any): Promise<ActionResult> {
+    try {
+      const url = await actor.grabCurrentUrl();
+      const title = await actor.grabTitle();
+      const html = await actor.grabHTMLFrom('body');
+
+      // Try to get screenshot if possible
+      let screenshot = null;
+      try {
+        screenshot = await actor.saveScreenshot();
+      } catch (error) {
+        debugLog('Could not capture screenshot:', error);
+      }
+
+      return new (await import('../action-result.js')).ActionResult({
+        url,
+        title,
+        html,
+        screenshot,
+        timestamp: new Date(),
+      });
+    } catch (error) {
+      throw new Error(`Failed to capture page state: ${error}`);
+    }
+  }
+
+  private async isTaskCompleted(
+    originalMessage: string,
+    currentState: ActionResult
+  ): Promise<boolean> {
+    // Simple heuristic: check if the current state looks like it fulfills the original request
+    // This could be enhanced with more sophisticated AI validation
+    const validationPrompt = dedent`
+      Original task: ${originalMessage}
+      
+      Current page state:
+      URL: ${currentState.url}
+      Title: ${currentState.title}
+      
+      Has the original task been completed based on the current page state?
+      Answer only "yes" or "no" with brief reasoning.
+    `;
+
+    try {
+      const response = await this.provider.chat([
+        {
+          role: 'system',
+          content:
+            'You are validating if a web automation task has been completed successfully.',
+        },
+        { role: 'user', content: validationPrompt },
+      ]);
+
+      const responseText = response.text.toLowerCase();
+      return responseText.includes('yes') && !responseText.includes('no');
+    } catch (error) {
+      debugLog('Task validation failed:', error);
+      return false; // Conservative approach - assume not completed if validation fails
+    }
   }
 
   private locatorRule(): string {

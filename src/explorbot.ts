@@ -69,7 +69,6 @@ export class ExplorBot {
     await this.explorer.plan();
   }
 
-
   getExplorer(): Explorer {
     return this.explorer;
   }

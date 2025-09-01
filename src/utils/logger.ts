@@ -47,7 +47,9 @@ class DebugDestination implements LogDestination {
   private verboseMode = false;
 
   isEnabled(): boolean {
-    return this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
+    return (
+      this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'))
+    );
   }
 
   setVerboseMode(enabled: boolean): void {
@@ -56,9 +58,10 @@ class DebugDestination implements LogDestination {
 
   write(entry: TaggedLogEntry): void {
     if (!this.isEnabled()) return;
-    
+
     if (entry.type === 'debug') {
-      const namespace = entry.content.toString().match(/\[([^\]]+)\]/)?.[1] || 'app';
+      const namespace =
+        entry.content.toString().match(/\[([^\]]+)\]/)?.[1] || 'app';
       console.log(`[DEBUG:${namespace}] ${entry.content}`);
     }
   }
@@ -70,7 +73,9 @@ class FileDestination implements LogDestination {
   private verboseMode = false;
 
   isEnabled(): boolean {
-    return this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
+    return (
+      this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'))
+    );
   }
 
   setVerboseMode(enabled: boolean): void {
@@ -261,5 +266,6 @@ export const getMethodsOfObject = (obj: any): string[] => {
   return methods.sort();
 };
 
-export const setVerboseMode = (enabled: boolean) => logger.setVerboseMode(enabled);
+export const setVerboseMode = (enabled: boolean) =>
+  logger.setVerboseMode(enabled);
 export const isVerboseMode = () => logger.isVerboseMode();

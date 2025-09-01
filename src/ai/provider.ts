@@ -16,20 +16,26 @@ export class Provider {
     this.provider = this.config.provider;
   }
 
-  async startConversation(messages: Message[] = []): Promise<Conversation> {
+  async startConversation(
+    messages: Message[] = [],
+    tools?: any
+  ): Promise<{ conversation: Conversation; response: any }> {
     const conversation = new Conversation(messages);
     this.conversations.set(conversation.id, conversation);
-    const response = await this.chat(conversation.messages);
+    const response = await this.chat(conversation.messages, { tools });
     conversation.addAssistantText(response.text);
-    return conversation;
+    return { conversation, response };
   }
 
-  async followUp(conversationId: string): Promise<Conversation | null> {
+  async followUp(
+    conversationId: string,
+    tools?: any
+  ): Promise<{ conversation: Conversation; response: any } | null> {
     const conversation = this.conversations.get(conversationId);
     if (!conversation) return null;
-    const response = await this.chat(conversation.messages);
+    const response = await this.chat(conversation.messages, { tools });
     conversation.addAssistantText(response.text);
-    return conversation;
+    return { conversation, response };
   }
 
   async chat(messages: any[], options: any = {}): Promise<any> {
@@ -56,10 +62,40 @@ export class Provider {
     }
   }
 
+  async generateWithTools(
+    messages: any[],
+    tools: any,
+    options: any = {}
+  ): Promise<any> {
+    setActivity(`🤖 Asking ${this.config.model} with dynamic tools`, 'ai');
+
+    const config = {
+      model: this.provider(this.config.model),
+      tools,
+      maxToolRoundtrips: options.maxToolRoundtrips || 5,
+      toolChoice: 'auto',
+      ...this.config.config,
+      ...options,
+    };
+
+    try {
+      const response = await generateText({
+        messages,
+        ...config,
+      });
+
+      clearActivity();
+      debugLog('AI response with dynamic tools:', response.text);
+      return response;
+    } catch (error: any) {
+      clearActivity();
+      throw new AiError(error.message || error.toString());
+    }
+  }
+
   getProvider(): any {
     return this.provider;
   }
-
 }
 
 class AiError extends Error {}

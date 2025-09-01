@@ -29,7 +29,10 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
 
           <Box marginY={0}>
             <Text color="dim">
-              URL: <Text color="green">{currentState.fullUrl || currentState.url || 'unknown'}</Text>
+              URL:{' '}
+              <Text color="green">
+                {currentState.fullUrl || currentState.url || 'unknown'}
+              </Text>
             </Text>
           </Box>
           <Box marginY={0}>

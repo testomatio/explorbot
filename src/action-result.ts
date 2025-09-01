@@ -5,7 +5,7 @@ import { minifyHtml, removeNonInteractiveElements } from 'codeceptjs/lib/html';
 import type { WebPageState } from './state-manager.ts';
 import { createDebug } from './utils/logger.ts';
 
-const debugLog = createDebug('explorbot:action-state')
+const debugLog = createDebug('explorbot:action-state');
 
 interface ActionResultData {
   html: string;
@@ -100,17 +100,35 @@ export class ActionResult {
       return false;
     }
 
-    isRelevant = this.matchesPattern(this.extractStatePath(state.url), this.extractStatePath(this.url));
+    isRelevant = this.matchesPattern(
+      this.extractStatePath(state.url),
+      this.extractStatePath(this.url)
+    );
     if (!isRelevant) {
       return false;
     }
-    if (isRelevant && state.h1 && this.h1 && this.matchesPattern(state.h1, this.h1)) {
+    if (
+      isRelevant &&
+      state.h1 &&
+      this.h1 &&
+      this.matchesPattern(state.h1, this.h1)
+    ) {
       isRelevant = true;
     }
-    if (isRelevant && state.h2 && this.h2 && this.matchesPattern(state.h2, this.h2)) {
+    if (
+      isRelevant &&
+      state.h2 &&
+      this.h2 &&
+      this.matchesPattern(state.h2, this.h2)
+    ) {
       isRelevant = true;
     }
-    if (isRelevant && state.h3 && this.h3 && this.matchesPattern(state.h3, this.h3)) {
+    if (
+      isRelevant &&
+      state.h3 &&
+      this.h3 &&
+      this.matchesPattern(state.h3, this.h3)
+    ) {
       isRelevant = true;
     }
     return isRelevant;
@@ -128,10 +146,9 @@ export class ActionResult {
     }
   }
 
-
   async simplifiedHtml(): Promise<string> {
     return await minifyHtml(removeNonInteractiveElements(this.html));
-  }  
+  }
 
   static fromState(state: WebPageState): ActionResult {
     let html = '';
@@ -345,7 +362,6 @@ export class ActionResult {
     }
   }
 
-
   /**
    * Use micromatch for glob matching
    * Supports: *, ?, [abc], [a-z], **, and many more advanced patterns
@@ -401,5 +417,5 @@ export class ActionResult {
       debugLog(`Invalid glob pattern: ${pattern}`, error);
       return false;
     }
-  }  
+  }
 }

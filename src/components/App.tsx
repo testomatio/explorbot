@@ -45,11 +45,21 @@ export function App({
       // Prevent duplicate consecutive logs
       if (prevLogs.length > 0) {
         const lastLog = prevLogs[prevLogs.length - 1];
-        if (typeof lastLog === 'string' && typeof logEntry === 'string' && lastLog === logEntry) {
+        if (
+          typeof lastLog === 'string' &&
+          typeof logEntry === 'string' &&
+          lastLog === logEntry
+        ) {
           return prevLogs;
         }
-        if (typeof lastLog === 'object' && 'type' in lastLog && typeof logEntry === 'object' && 'type' in logEntry && 
-            lastLog.type === logEntry.type && lastLog.content === logEntry.content) {
+        if (
+          typeof lastLog === 'object' &&
+          'type' in lastLog &&
+          typeof logEntry === 'object' &&
+          'type' in logEntry &&
+          lastLog.type === logEntry.type &&
+          lastLog.content === logEntry.content
+        ) {
           return prevLogs;
         }
       }
@@ -61,7 +71,7 @@ export function App({
     try {
       // Set verbose mode based on ExplorBot options
       setVerboseMode(explorBot.getOptions()?.verbose || false);
-      
+
       explorBot.setUserResolve(async (error: Error) => {
         console.error('Error occurred:', error.message);
         setShowInput(true);
@@ -164,7 +174,7 @@ export function App({
 
       {showInput && (
         <>
-          <Box height={1}  />
+          <Box height={1} />
           <InputPane
             value=""
             onChange={() => {}}

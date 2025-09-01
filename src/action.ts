@@ -124,10 +124,12 @@ class Action {
   } {
     const headings: { h1?: string; h2?: string; h3?: string; h4?: string } = {};
 
-    ['h1', 'h2', 'h3', 'h4'].forEach(tag => {
+    ['h1', 'h2', 'h3', 'h4'].forEach((tag) => {
       const match = html.match(new RegExp(`<${tag}[^>]*>(.*?)</${tag}>`, 'i'));
       if (match) {
-        headings[tag as keyof typeof headings] = match[1].replace(/<[^>]*>/g, '').trim();
+        headings[tag as keyof typeof headings] = match[1]
+          .replace(/<[^>]*>/g, '')
+          .trim();
       }
     });
 
@@ -387,29 +389,35 @@ class Action {
     }
 
     const errorMessage = `Failed to resolve issue after ${maxAttempts} attempts. Original issue: ${originalMessage}. Please check the experience folder for details of failed attempts and resolve manually.`;
-    
+
     debugLog(errorMessage);
-    
+
     if (!this.userResolveFn) {
       throw new Error(errorMessage);
     }
 
     tag('warning').log(`Can't resolve ${this.expectation}. What should we do?`);
-    tag('warning').log(`Provide CodeceptJS command starting with I. or a text to pass to AI`);
+    tag('warning').log(
+      `Provide CodeceptJS command starting with I. or a text to pass to AI`
+    );
     setActivity(`🖐️ Waiting for user input...`, 'action');
-    
+
     try {
       const userInput = await this.userResolveFn(this.lastError!);
       if (!userInput) {
         throw new Error(errorMessage);
       }
       if (userInput?.startsWith('I.')) {
-        const success = await this.attempt(userInput, attempt + 1, originalMessage);
+        const success = await this.attempt(
+          userInput,
+          attempt + 1,
+          originalMessage
+        );
         if (success) {
           tag('success').log('resolved with user input', this.expectation);
           return this;
         }
-      } else {        
+      } else {
         codeBlocks = await this.ask(userInput, actionResult);
       }
     } catch (error) {

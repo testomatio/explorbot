@@ -57,12 +57,12 @@ export class ConfigParser {
       this.configPath = resolvedPath;
 
       log(`Configuration loaded from: ${resolvedPath}`);
-      
+
       // Restore original directory after successful config load
       if (options?.path && originalCwd !== process.cwd()) {
         process.chdir(originalCwd);
       }
-      
+
       return this.config;
     } catch (error) {
       // Restore original directory on error

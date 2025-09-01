@@ -5,7 +5,6 @@ import { log, createDebug } from '../utils/logger.js';
 
 const debugLog = createDebug('explorbot:experience-compactor');
 
-
 export class ExperienceCompactor {
   private provider: Provider;
   private MAX_LENGTH = 5000;
@@ -34,7 +33,6 @@ export class ExperienceCompactor {
       log('Experience file compacted:', filePath);
       debugLog('Experience file compacted:', response);
 
-     
       return response.text;
     } catch (error) {
       debugLog('Error compacting experience file:', error);

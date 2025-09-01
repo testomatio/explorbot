@@ -302,7 +302,7 @@ describe('Logger', () => {
     it('should enable verbose mode when set', () => {
       setVerboseMode(true);
       expect(isVerboseMode()).toBe(true);
-      
+
       setVerboseMode(false);
       expect(isVerboseMode()).toBe(false);
     });
@@ -310,17 +310,17 @@ describe('Logger', () => {
     it('should respect verbose mode for debug logging', () => {
       // Clear debug environment
       delete process.env.DEBUG;
-      
+
       setVerboseMode(false);
       const debugLog = createDebug('explorbot:test');
       debugLog('Debug message');
-      
+
       // Should not log when verbose mode is off
       expect(consoleSpy).toHaveBeenCalledTimes(0);
-      
+
       setVerboseMode(true);
       debugLog('Debug message with verbose');
-      
+
       // Should log when verbose mode is on
       expect(consoleSpy).toHaveBeenCalledTimes(1);
     });
@@ -328,14 +328,14 @@ describe('Logger', () => {
     it('should work with DEBUG environment variable', () => {
       // Set DEBUG environment
       process.env.DEBUG = 'explorbot:*';
-      
+
       // Should be enabled even without setting verbose mode
       expect(isVerboseMode()).toBe(true);
-      
+
       // Setting verbose mode should still work
       setVerboseMode(false);
       expect(isVerboseMode()).toBe(false);
-      
+
       setVerboseMode(true);
       expect(isVerboseMode()).toBe(true);
     });
