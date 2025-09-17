@@ -1,12 +1,37 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { StateManager } from '../../src/state-manager.js';
 import { ActionResult } from '../../src/action-result.js';
+import { ConfigParser } from '../../src/config.js';
+import { rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 describe('StateManager Events', () => {
   let stateManager: StateManager;
 
   beforeEach(() => {
+    // Reset ConfigParser singleton between tests
+    ConfigParser.resetForTesting();
+
+    // Set up test config
+    ConfigParser.setupTestConfig();
     stateManager = new StateManager();
+  });
+
+  afterEach(() => {
+    // Clean up StateManager and ConfigParser after each test
+    if (stateManager) {
+      stateManager.cleanup();
+    }
+
+    // Clean up test directories
+    const testDirs = ConfigParser.getTestDirectories();
+    testDirs.forEach((dir) => {
+      if (existsSync(dir)) {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    ConfigParser.resetForTesting();
   });
 
   it('should emit state change events when state is updated', () => {

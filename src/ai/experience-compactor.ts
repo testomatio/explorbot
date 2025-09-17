@@ -26,7 +26,7 @@ export class ExperienceCompactor {
 
       const prompt = this.buildCompactionPrompt(parsed.content);
       const response = await this.provider.chat([
-        { role: 'system', content: this.getSystemPrompt() },
+        { role: 'user', content: this.getSystemPrompt() },
         { role: 'user', content: prompt },
       ]);
 

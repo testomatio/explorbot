@@ -21,7 +21,7 @@ export class ExplorBot {
   private config: ExplorbotConfig | null = null;
   private options: ExplorBotOptions;
   private userResolveFn: UserResolveFunction | null = null;
-  public needsInput = true;
+  public needsInput = false;
 
   constructor(options: ExplorBotOptions = {}) {
     this.options = options;
@@ -66,7 +66,11 @@ export class ExplorBot {
   async visitInitialState(): Promise<void> {
     const url = this.options.from || '/';
     await this.explorer.visit(url);
-    await this.explorer.plan();
+
+    // Automatically start research and planning if a URL was provided
+    if (this.options.from) {
+      await this.explorer.plan();
+    }
   }
 
   getExplorer(): Explorer {

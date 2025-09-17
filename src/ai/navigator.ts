@@ -135,7 +135,7 @@ class Navigator {
     tag('debug').log('Prompt:', prompt);
 
     const response = await this.provider.chat([
-      { role: 'system', content: this.systemPrompt },
+      { role: 'user', content: this.systemPrompt },
       { role: 'user', content: prompt },
     ]);
 
@@ -210,9 +210,10 @@ class Navigator {
 
     try {
       // Use AI SDK's native tool calling with automatic roundtrips
+      tag('info').log('🤖 Starting AI dynamic navigation with tool calling');
       const response = await this.provider.generateWithTools(
         [
-          { role: 'system', content: systemPrompt },
+          { role: 'user', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         tools,
@@ -291,7 +292,7 @@ class Navigator {
     try {
       const response = await this.provider.chat([
         {
-          role: 'system',
+          role: 'user',
           content:
             'You are validating if a web automation task has been completed successfully.',
         },

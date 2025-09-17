@@ -55,6 +55,13 @@ const mainOptions: ExplorBotOptions = {
 const explorBot = new ExplorBot(mainOptions);
 await explorBot.loadConfig();
 
+// Check if we have a proper TTY for input
+if (!process.stdin.isTTY) {
+  console.error(
+    'Warning: Input not available. Running in non-interactive mode.'
+  );
+}
+
 render(
   <App
     explorBot={explorBot}

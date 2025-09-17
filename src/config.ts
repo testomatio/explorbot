@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { ExplorbotConfig } from '../explorbot.config.js';
 import { log } from './utils/logger.js';
@@ -82,6 +82,66 @@ export class ConfigParser {
 
   public getConfigPath(): string | null {
     return this.configPath;
+  }
+
+  // For testing purposes only
+  public static resetForTesting(): void {
+    if (ConfigParser.instance) {
+      ConfigParser.instance.config = null;
+      ConfigParser.instance.configPath = null;
+    }
+  }
+
+  // For testing purposes only - sets up minimal default config
+  public static setupTestConfig(): void {
+    const instance = ConfigParser.getInstance();
+    // Create unique directory names for this test run to ensure isolation
+    const testId = Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+    const testBaseDir = join(process.cwd(), 'test-dirs', testId);
+
+    instance.config = {
+      playwright: {
+        url: 'https://example.com',
+        browser: 'chromium',
+        show: false,
+      },
+      ai: {
+        provider: () => ({ model: 'test' }),
+        model: 'test-model',
+        config: {},
+      },
+      dirs: {
+        knowledge: join(testBaseDir, 'knowledge'),
+        experience: join(testBaseDir, 'experience'),
+        output: join(testBaseDir, 'output'),
+      },
+    };
+    instance.configPath = join(testBaseDir, 'test-config');
+  }
+
+  // For testing purposes only - get test directories for cleanup
+  public static getTestDirectories(): string[] {
+    const instance = ConfigParser.getInstance();
+    if (!instance.config?.dirs) return [];
+
+    return [
+      instance.config.dirs.knowledge,
+      instance.config.dirs.experience,
+      instance.config.dirs.output,
+      dirname(instance.configPath || ''),
+    ].filter((dir) => dir && dir.includes('test-dirs'));
+  }
+
+  // For testing purposes only - clean up all test directories
+  public static cleanupAllTestDirectories(): void {
+    try {
+      const testDirsBase = join(process.cwd(), 'test-dirs');
+      if (existsSync(testDirsBase)) {
+        rmSync(testDirsBase, { recursive: true, force: true });
+      }
+    } catch (error) {
+      // Ignore cleanup errors
+    }
   }
 
   private findConfigFile(): string | null {

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import { ConfigParser } from '../config.js';
 

@@ -264,4 +264,12 @@ ${entry.code}
       return url;
     }
   }
+
+  /**
+   * Clean up experience tracker (for testing)
+   */
+  cleanup(): void {
+    // Clear any in-memory state if needed
+    // The actual files will be cleaned up by test cleanup
+  }
 }

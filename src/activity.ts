@@ -10,6 +10,7 @@ class Activity {
   private static instance: Activity;
   private currentActivity: ActivityEntry | null = null;
   private listeners: ActivityListener[] = [];
+  private clearTimeoutId: NodeJS.Timeout | null = null;
 
   private constructor() {}
 
@@ -21,6 +22,12 @@ class Activity {
   }
 
   setActivity(message: string, type: ActivityEntry['type'] = 'general'): void {
+    // Clear any pending clear timeout
+    if (this.clearTimeoutId) {
+      clearTimeout(this.clearTimeoutId);
+      this.clearTimeoutId = null;
+    }
+
     this.currentActivity = {
       message,
       timestamp: new Date(),
@@ -30,8 +37,23 @@ class Activity {
   }
 
   clearActivity(): void {
-    this.currentActivity = null;
-    this.notifyListeners();
+    // Don't clear immediately - wait a minimum time to ensure the activity was visible
+    if (!this.clearTimeoutId && this.currentActivity) {
+      const timeSinceActivity =
+        Date.now() - this.currentActivity.timestamp.getTime();
+      const minDisplayTime = 1000; // Minimum 1 second display time
+
+      if (timeSinceActivity < minDisplayTime) {
+        this.clearTimeoutId = setTimeout(() => {
+          this.currentActivity = null;
+          this.notifyListeners();
+          this.clearTimeoutId = null;
+        }, minDisplayTime - timeSinceActivity);
+      } else {
+        this.currentActivity = null;
+        this.notifyListeners();
+      }
+    }
   }
 
   getCurrentActivity(): ActivityEntry | null {

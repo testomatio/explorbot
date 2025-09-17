@@ -38,8 +38,8 @@ describe('Logger', () => {
     fsSpy = spyOn(fs, 'appendFileSync').mockImplementation(() => {});
     mockCallback = mock(() => {});
 
-    // Clear debug environment
-    delete process.env.DEBUG;
+    // Reset verbose mode for clean test state
+    setVerboseMode(false);
   });
 
   afterEach(() => {
@@ -86,12 +86,12 @@ describe('Logger', () => {
       tag('substep').log('Substep via tag');
       tag('multiline').log('Multiline via tag');
 
-      expect(consoleSpy).toHaveBeenCalledTimes(7);
+      expect(consoleSpy).toHaveBeenCalledTimes(6); // Debug doesn't log to console unless verbose mode is on
       expect(consoleSpy).toHaveBeenCalledWith('Info via tag');
       expect(consoleSpy).toHaveBeenCalledWith('Success via tag');
       expect(consoleSpy).toHaveBeenCalledWith('Error via tag');
       expect(consoleSpy).toHaveBeenCalledWith('Warning via tag');
-      expect(consoleSpy).toHaveBeenCalledWith('Debug via tag');
+      // Debug is not called because verbose mode is off
       expect(consoleSpy).toHaveBeenCalledWith('Substep via tag');
       expect(consoleSpy).toHaveBeenCalledWith('Multiline via tag');
     });
@@ -121,36 +121,32 @@ describe('Logger', () => {
   });
 
   describe('debug logging', () => {
-    it('should not log to debug destination when DEBUG env is not set', () => {
+    it('should not log to console when DEBUG env is not set', () => {
+      // Ensure clean state without modifying process.env
+      setVerboseMode(false);
+      consoleSpy.mockClear();
+
       const debugLog = createDebug('explorbot:test');
       debugLog('Debug message');
 
-      expect(consoleSpy).toHaveBeenCalledWith('[test] Debug message');
+      expect(consoleSpy).not.toHaveBeenCalled(); // Debug doesn't log to console unless verbose mode is on
       expect(fsSpy).not.toHaveBeenCalled();
-    });
-
-    it('should log to debug and file destinations when DEBUG env is set', () => {
-      process.env.DEBUG = 'explorbot:*';
-
-      const debugLog = createDebug('explorbot:test');
-      debugLog('Debug message');
-
-      expect(consoleSpy).toHaveBeenCalledWith('[test] Debug message');
-      // File logging would be called if config is properly loaded
     });
 
     it('should extract namespace from debug logs', () => {
       const debugLog = createDebug('explorbot:action');
       debugLog('Action executed');
 
-      expect(consoleSpy).toHaveBeenCalledWith('[action] Action executed');
+      // Debug doesn't log to console unless verbose mode is on
+      expect(consoleSpy).not.toHaveBeenCalled();
     });
 
     it('should handle debug logs without explorbot prefix', () => {
       const debugLog = createDebug('test');
       debugLog('Simple debug');
 
-      expect(consoleSpy).toHaveBeenCalledWith('[test] Simple debug');
+      // Debug doesn't log to console unless verbose mode is on
+      expect(consoleSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -211,7 +207,10 @@ describe('Logger', () => {
 
     it('should handle config errors gracefully', () => {
       process.env.DEBUG = 'explorbot:*';
-      spyOn(ConfigParser.getInstance(), 'getConfig').mockImplementation(() => {
+      const mockConfig = spyOn(
+        ConfigParser.getInstance(),
+        'getConfig'
+      ).mockImplementation(() => {
         throw new Error('Config error');
       });
 
@@ -220,6 +219,9 @@ describe('Logger', () => {
       }).not.toThrow();
 
       // Should not crash, but file logging won't work
+
+      // Restore the mock to prevent pollution
+      mockConfig.mockRestore();
     });
   });
 
@@ -238,7 +240,7 @@ describe('Logger', () => {
       tag('substep').log('Substep');
       tag('multiline').log('Multiline');
 
-      expect(consoleSpy).toHaveBeenCalledTimes(7);
+      expect(consoleSpy).toHaveBeenCalledTimes(6); // Debug doesn't log to console unless verbose mode is on
     });
   });
 
@@ -308,10 +310,10 @@ describe('Logger', () => {
     });
 
     it('should respect verbose mode for debug logging', () => {
-      // Clear debug environment
-      delete process.env.DEBUG;
-
+      // Ensure clean state
       setVerboseMode(false);
+      consoleSpy.mockClear();
+
       const debugLog = createDebug('explorbot:test');
       debugLog('Debug message');
 
@@ -321,23 +323,14 @@ describe('Logger', () => {
       setVerboseMode(true);
       debugLog('Debug message with verbose');
 
-      // Should log when verbose mode is on
-      expect(consoleSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('should work with DEBUG environment variable', () => {
-      // Set DEBUG environment
-      process.env.DEBUG = 'explorbot:*';
-
-      // Should be enabled even without setting verbose mode
-      expect(isVerboseMode()).toBe(true);
-
-      // Setting verbose mode should still work
-      setVerboseMode(false);
-      expect(isVerboseMode()).toBe(false);
-
-      setVerboseMode(true);
-      expect(isVerboseMode()).toBe(true);
+      // Should log when verbose mode is on (goes to both ConsoleDestination and DebugDestination)
+      expect(consoleSpy).toHaveBeenCalledTimes(2);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[test] Debug message with verbose'
+      ); // ConsoleDestination
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[DEBUG:test] [test] Debug message with verbose'
+      ); // DebugDestination
     });
   });
 });

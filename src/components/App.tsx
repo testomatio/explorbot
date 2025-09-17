@@ -6,8 +6,10 @@ import PausePane from './PausePane.js';
 import ActivityPane from './ActivityPane.js';
 import AutocompletePane from './AutocompletePane.js';
 import StateTransitionPane from './StateTransitionPane.js';
+import TerminalPane from './TerminalPane.tsx';
 import Welcome from './Welcome.js';
-import { ExplorBot, type ExplorBotOptions } from '../explorbot.ts';
+import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
+import { CommandHandler } from '../command-handler.js';
 import type {
   StateManager,
   StateTransition,
@@ -38,6 +40,14 @@ export function App({
   const [showWelcome, setShowWelcome] = useState(true);
   const [startupSuccessful, setStartupSuccessful] = useState(false);
   const [verboseMode, setVerboseMode] = useState(false);
+  const [commandHandler] = useState(() => new CommandHandler(explorBot));
+  const [inputValue, setInputValue] = useState('');
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [userInputPromise, setUserInputPromise] = useState<{
+    resolve: (value: string | null) => void;
+    reject: (reason?: any) => void;
+  } | null>(null);
 
   // Create a stable callback for logging
   const addLog = useCallback((logEntry: string | TaggedLogEntry) => {
@@ -72,10 +82,17 @@ export function App({
       // Set verbose mode based on ExplorBot options
       setVerboseMode(explorBot.getOptions()?.verbose || false);
 
-      explorBot.setUserResolve(async (error: Error) => {
-        console.error('Error occurred:', error.message);
+      setShowInput(false);
+      explorBot.setUserResolve(async (error?: Error) => {
+        if (error) {
+          console.error('Error occurred:', error.message);
+        }
         setShowInput(true);
-        return null;
+
+        // Return a promise that resolves when user submits input
+        return new Promise<string | null>((resolve, reject) => {
+          setUserInputPromise({ resolve, reject });
+        });
       });
 
       await explorBot.start();
@@ -97,13 +114,14 @@ export function App({
         }
       );
 
-      if (!explorBot.needsInput) {
-        setShowInput(false);
-      }
+      setShowInput(false);
 
       // Mark loading as complete and startup as successful
       setIsLoading(false);
       setStartupSuccessful(true);
+
+      // Show input BEFORE visitInitialState so it's ready when plan() asks for input
+      setShowInput(true);
 
       await explorBot.visitInitialState();
 
@@ -123,7 +141,7 @@ export function App({
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
-    let isComponentMounted = true;
+    const isComponentMounted = true;
 
     // Set up log callback immediately when component mounts
     process.env.INK_RUNNING = '1';
@@ -166,45 +184,131 @@ export function App({
         <LogPane logs={logs} verboseMode={verboseMode} />
       </Box>
 
-      {currentState && <StateTransitionPane currentState={currentState} />}
-
-      <Box height={1} marginBottom={1}>
-        <ActivityPane />
-      </Box>
-
-      {showInput && (
+      {showInput ? (
         <>
           <Box height={1} />
           <InputPane
-            value=""
-            onChange={() => {}}
+            value={inputValue}
+            onChange={(value: string) => {
+              setInputValue(value);
+              setSelectedIndex(0);
+              setShowAutocomplete(
+                value.startsWith('/') || value.startsWith('I.')
+              );
+            }}
+            onAutocompleteNavigate={(direction: 'up' | 'down') => {
+              if (!showAutocomplete) return;
+              const commands = commandHandler.getAvailableCommands();
+              const filtered = inputValue.trim()
+                ? commands
+                    .filter((cmd) =>
+                      cmd
+                        .toLowerCase()
+                        .includes(inputValue.toLowerCase().replace(/^i\./, ''))
+                    )
+                    .slice(0, 20)
+                : commands.slice(0, 20);
+
+              if (filtered.length === 0) return;
+
+              setSelectedIndex((prev) => {
+                if (direction === 'up') {
+                  return prev > 0 ? prev - 1 : filtered.length - 1;
+                } else {
+                  return prev < filtered.length - 1 ? prev + 1 : 0;
+                }
+              });
+            }}
+            onAutocompleteSelect={() => {
+              if (!showAutocomplete) return;
+              const commands = commandHandler.getAvailableCommands();
+              const filtered = inputValue.trim()
+                ? commands
+                    .filter((cmd) =>
+                      cmd
+                        .toLowerCase()
+                        .includes(inputValue.toLowerCase().replace(/^i\./, ''))
+                    )
+                    .slice(0, 20)
+                : commands.slice(0, 20);
+
+              if (selectedIndex < filtered.length) {
+                setInputValue(filtered[selectedIndex]);
+                setShowAutocomplete(false);
+              }
+            }}
             onSubmit={async (input: string) => {
               if (!input.trim()) {
                 if (exitOnEmptyInput) {
                   process.exit(0);
                 }
+                // If we're waiting for user input, resolve with null
+                if (userInputPromise) {
+                  userInputPromise.resolve(null);
+                  setUserInputPromise(null);
+                  setShowInput(false);
+                  setInputValue('');
+                  setShowAutocomplete(false);
+                }
                 return;
               }
 
-              try {
+              // Check if this is a command (starts with / or I.)
+              const isCommand = input.startsWith('/') || input.startsWith('I.');
+
+              if (userInputPromise) {
+                // If we're waiting for user input, resolve with the input
+                userInputPromise.resolve(input);
+                setUserInputPromise(null);
                 setShowInput(false);
-                await explorBot.getExplorer().visit(input);
-                setShowInput(true);
-              } catch (error) {
-                console.error('Visit failed:', error);
-                setShowInput(true);
+                setInputValue('');
+                setShowAutocomplete(false);
+              } else if (isCommand) {
+                // Otherwise, execute as command
+                try {
+                  setShowInput(false);
+                  setInputValue('');
+                  setShowAutocomplete(false);
+                  await commandHandler.executeCommand(input);
+                  setShowInput(false);
+                } catch (error) {
+                  console.error('Command failed:', error);
+                  setShowInput(false);
+                }
               }
             }}
           />
+          <AutocompletePane
+            commands={commandHandler.getAvailableCommands()}
+            input={inputValue}
+            selectedIndex={selectedIndex}
+            onSelect={(index: number) => {
+              const commands = commandHandler.getAvailableCommands();
+              const filtered = inputValue.trim()
+                ? commands
+                    .filter((cmd) =>
+                      cmd
+                        .toLowerCase()
+                        .includes(inputValue.toLowerCase().replace(/^i\./, ''))
+                    )
+                    .slice(0, 20)
+                : commands.slice(0, 20);
+
+              if (index < filtered.length) {
+                setInputValue(filtered[index]);
+                setShowAutocomplete(false);
+              }
+            }}
+            visible={showAutocomplete}
+          />
         </>
+      ) : (
+        <Box height={1} marginBottom={1}>
+          <ActivityPane />
+        </Box>
       )}
-      <AutocompletePane
-        commands={[]}
-        input=""
-        selectedIndex={0}
-        onSelect={() => {}}
-        visible={false}
-      />
+
+      {currentState && <StateTransitionPane currentState={currentState} />}
     </Box>
   );
 }

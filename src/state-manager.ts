@@ -499,4 +499,26 @@ export class StateManager {
     this.stateChangeListeners = [];
     debugLog('All state change listeners cleared');
   }
+
+  /**
+   * Complete cleanup of the StateManager instance
+   * Clears all state, history, listeners, and caches
+   */
+  cleanup(): void {
+    this.currentState = null;
+    this.stateHistory = [];
+    this.stateChangeListeners = [];
+    this.knowledgeCache = [];
+    this.lastKnowledgeScan = null;
+
+    // Clean up experience tracker if it has cleanup method
+    if (
+      this.experienceTracker &&
+      typeof this.experienceTracker.cleanup === 'function'
+    ) {
+      this.experienceTracker.cleanup();
+    }
+
+    debugLog('StateManager cleanup completed');
+  }
 }

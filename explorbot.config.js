@@ -13,7 +13,11 @@ const config = {
   ai: {
     provider: groq,
     model: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
-    apiKey: process.env.GROQ_KEY || '',
+    apiKey: process.env.GROQ_API_KEY || '',
+    config: {
+      maxRetries: 3,
+      timeout: 30000, // 30 seconds timeout
+    },
   },
 };
 

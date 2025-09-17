@@ -272,11 +272,15 @@ export class ActionResult {
   get relativeUrl(): string | null {
     if (!this.url) return null;
 
-    const urlObj = new URL(this.url);
-    const path = urlObj.pathname.replace(/\/$/, '') || '/';
-    const hash = urlObj.hash || '';
-
-    return path + hash;
+    try {
+      const urlObj = new URL(this.url);
+      const path = urlObj.pathname.replace(/\/$/, '') || '/';
+      const hash = urlObj.hash || '';
+      return path + hash;
+    } catch {
+      // If URL parsing fails, assume it's already a relative URL
+      return this.url;
+    }
   }
 
   getStateHash(): string {

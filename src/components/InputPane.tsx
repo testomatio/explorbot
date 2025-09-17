@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
+import { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 
 interface InputPaneProps {
@@ -7,6 +8,8 @@ interface InputPaneProps {
   onSubmit: (value: string) => void;
   placeholder?: string;
   suggestions?: string[];
+  onAutocompleteNavigate?: (direction: 'up' | 'down') => void;
+  onAutocompleteSelect?: () => void;
 }
 
 const InputPane: React.FC<InputPaneProps> = ({
@@ -15,6 +18,8 @@ const InputPane: React.FC<InputPaneProps> = ({
   onSubmit,
   placeholder,
   suggestions = [],
+  onAutocompleteNavigate,
+  onAutocompleteSelect,
 }) => {
   const [inputValue, setInputValue] = useState(value);
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -44,6 +49,23 @@ const InputPane: React.FC<InputPaneProps> = ({
 
     if (key.rightArrow) {
       setCursorPosition(Math.min(inputValue.length, cursorPosition + 1));
+      return;
+    }
+
+    // Handle autocomplete navigation
+    if (key.upArrow) {
+      onAutocompleteNavigate?.('up');
+      return;
+    }
+
+    if (key.downArrow) {
+      onAutocompleteNavigate?.('down');
+      return;
+    }
+
+    if (key.tab) {
+      key.tab = false; // Prevent default tab behavior
+      onAutocompleteSelect?.();
       return;
     }
 

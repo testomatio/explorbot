@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import {
   addActivityListener,
@@ -35,7 +36,7 @@ const ActivityPane: React.FC = () => {
   if (!activity) {
     return (
       <Box height={1} paddingX={1}>
-        <Text dimColor>Ready</Text>
+        <Text dimColor>Type a command (start with / for help)</Text>
       </Box>
     );
   }

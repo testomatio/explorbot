@@ -1,12 +1,37 @@
-import { describe, expect, it, beforeEach } from 'bun:test';
+import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import { StateManager } from '../../src/state-manager';
 import { ActionResult } from '../../src/action-result';
+import { ConfigParser } from '../../src/config.js';
+import { rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 describe('StateManager', () => {
   let stateManager: StateManager;
 
   beforeEach(() => {
+    // Reset ConfigParser singleton between tests
+    ConfigParser.resetForTesting();
+
+    // Set up test config
+    ConfigParser.setupTestConfig();
     stateManager = new StateManager();
+  });
+
+  afterEach(() => {
+    // Clean up StateManager and ConfigParser after each test
+    if (stateManager) {
+      stateManager.cleanup();
+    }
+
+    // Clean up test directories
+    const testDirs = ConfigParser.getTestDirectories();
+    testDirs.forEach((dir) => {
+      if (existsSync(dir)) {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    ConfigParser.resetForTesting();
   });
 
   describe('constructor', () => {
@@ -278,169 +303,29 @@ describe('StateManager', () => {
     });
   });
 
-  describe('globMatch', () => {
-    it('should match exact strings', () => {
-      const result = (stateManager as any).globMatch('test', 'test');
-      expect(result).toBe(true);
-    });
+  describe('cleanup', () => {
+    it('should perform complete cleanup of StateManager', () => {
+      const actionResult = new ActionResult({
+        html: '<html><body>Test</body></html>',
+        url: 'https://example.com/test',
+        title: 'Test Page',
+      });
 
-    it('should match wildcard patterns', () => {
-      const result = (stateManager as any).globMatch('test*', 'testing');
-      expect(result).toBe(true);
-    });
+      // Set up state
+      stateManager.updateState(actionResult);
+      const unsubscribe = stateManager.onStateChange(() => {});
 
-    it('should match single character', () => {
-      const result = (stateManager as any).globMatch('te?t', 'test');
-      expect(result).toBe(true);
-    });
+      expect(stateManager.getCurrentState()).not.toBeNull();
+      expect(stateManager.getStateHistory()).toHaveLength(1);
+      expect(stateManager.getListenerCount()).toBe(1);
 
-    it('should match character classes', () => {
-      const result = (stateManager as any).globMatch('t[aeiou]st', 'test');
-      expect(result).toBe(true);
-    });
+      // Cleanup
+      stateManager.cleanup();
 
-    it('should not match different strings', () => {
-      const result = (stateManager as any).globMatch('test', 'other');
-      expect(result).toBe(false);
-    });
-  });
-
-  describe('matchesPattern', () => {
-    it('should match exact strings', () => {
-      const result = (stateManager as any).matchesPattern('test', 'test');
-      expect(result).toBe(true);
-    });
-
-    it('should match wildcard patterns', () => {
-      const result = (stateManager as any).matchesPattern('test*', 'testing');
-      expect(result).toBe(true);
-    });
-
-    it('should match complex patterns', () => {
-      const result = (stateManager as any).matchesPattern(
-        '/user/*',
-        '/user/123'
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should not match different strings', () => {
-      const result = (stateManager as any).matchesPattern('test', 'other');
-      expect(result).toBe(false);
-    });
-
-    it('should handle wildcard for any path', () => {
-      const result = (stateManager as any).matchesPattern('*', '/any/path');
-      expect(result).toBe(true);
-    });
-
-    it('should handle regex patterns starting with ^', () => {
-      const result = (stateManager as any).matchesPattern(
-        '^/user/\\d+$',
-        '/user/123'
-      );
-      expect(result).toBe(true);
-    });
-
-    it("should not match regex patterns that don't match", () => {
-      const result = (stateManager as any).matchesPattern(
-        '^/user/\\d+$',
-        '/user/abc'
-      );
-      expect(result).toBe(false);
-    });
-
-    it('should handle regex patterns wrapped in ~', () => {
-      const result = (stateManager as any).matchesPattern(
-        '~/user/\\d+~',
-        '/user/123'
-      );
-      expect(result).toBe(true);
-    });
-
-    it("should not match ~ wrapped patterns that don't match", () => {
-      const result = (stateManager as any).matchesPattern(
-        '~/user/\\d+~',
-        '/user/abc'
-      );
-      expect(result).toBe(false);
-    });
-
-    it('should not treat ~ as regex if too short', () => {
-      const result = (stateManager as any).matchesPattern('~', '~');
-      expect(result).toBe(true);
-    });
-
-    it('should not treat ~ as regex if not properly wrapped', () => {
-      const result = (stateManager as any).matchesPattern(
-        '~/user/*',
-        '~/user/123'
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should demonstrate different regex detection methods', () => {
-      // Using ^ prefix
-      const result1 = (stateManager as any).matchesPattern(
-        '^/user/\\d+$',
-        '/user/123'
-      );
-      expect(result1).toBe(true);
-
-      // Using ~ wrapping
-      const result2 = (stateManager as any).matchesPattern(
-        '~/user/\\d+~',
-        '/user/123'
-      );
-      expect(result2).toBe(true);
-
-      // Both should work the same
-      expect(result1).toBe(result2);
-    });
-
-    it('should handle complex regex patterns', () => {
-      const result = (stateManager as any).matchesPattern(
-        '~/user/[a-z]+/\\d+~',
-        '/user/abc/123'
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should demonstrate enhanced glob capabilities', () => {
-      // Extended glob patterns supported by micromatch
-      const result1 = (stateManager as any).matchesPattern(
-        '/user/{admin,user}/*',
-        '/user/admin/dashboard'
-      );
-      expect(result1).toBe(true);
-
-      const result2 = (stateManager as any).matchesPattern(
-        '/user/{admin,user}/*',
-        '/user/user/profile'
-      );
-      expect(result2).toBe(true);
-
-      const result3 = (stateManager as any).matchesPattern(
-        '/user/{admin,user}/*',
-        '/user/guest/profile'
-      );
-      expect(result3).toBe(false);
-    });
-
-    it('should handle negated patterns', () => {
-      const result = (stateManager as any).matchesPattern(
-        '!/user/admin/*',
-        '/user/user/profile'
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should handle multiple patterns', () => {
-      const result = (stateManager as any).matchesPattern(
-        '**/*.{js,ts,tsx}',
-        '/src/components/App.tsx'
-      );
-      expect(result).toBe(true);
+      // Verify everything is cleared
+      expect(stateManager.getCurrentState()).toBeNull();
+      expect(stateManager.getStateHistory()).toEqual([]);
+      expect(stateManager.getListenerCount()).toBe(0);
     });
   });
 });

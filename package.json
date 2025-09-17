@@ -14,6 +14,7 @@
     "init": "bun run src/index.tsx init",
     "test": "codeceptjs run",
     "test:headless": "codeceptjs run --headless",
+    "test:ui": "bun test tests/ui",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
@@ -42,13 +43,16 @@
     "micromatch": "^4.0.8",
     "playwright": "^1.40.0",
     "react": "^18.2.0",
-    "yargs": "^17.7.2"
+    "yargs": "^17.7.2",
+    "zod": "^4.1.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.5.3",
+    "@testing-library/react": "^16.3.0",
     "@types/micromatch": "^4.0.9",
     "@types/react": "^18.2.0",
     "@types/yargs": "^17.0.24",
+    "ink-testing-library": "^4.0.0",
     "typescript": "^5.0.0"
   },
   "engines": {

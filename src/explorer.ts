@@ -9,10 +9,12 @@ import { ConfigParser } from './config.js';
 import { StateManager } from './state-manager.js';
 import { log, createDebug, tag } from './utils/logger.js';
 import { Researcher } from './ai/researcher.js';
+import { Planner, type Task } from './ai/planner.js';
+import { createCodeceptJSTools } from './ai/tools.js';
 import { ActionResult } from './action-result.js';
 import { Conversation } from './ai/conversation.js';
 import { ExperienceCompactor } from './ai/experience-compactor.js';
-import { UserResolveFunction } from './explorbot.js';
+import type { UserResolveFunction } from './explorbot.js';
 
 declare global {
   namespace NodeJS {
@@ -37,10 +39,11 @@ class Explorer {
   actor!: CodeceptJS.I;
   private stateManager!: StateManager;
   private researcher!: Researcher;
+  private planner!: Planner;
   private navigator!: Navigator;
   config: ExplorbotConfig;
   private userResolveFn: UserResolveFunction | null = null;
-  scenarios: import('./ai/researcher.js').Task[] = [];
+  scenarios: Task[] = [];
 
   constructor() {
     this.configParser = ConfigParser.getInstance();
@@ -73,6 +76,7 @@ class Explorer {
       this.stateManager = new StateManager();
       this.navigator = new Navigator(this.aiProvider);
       this.researcher = new Researcher(this.aiProvider, this.stateManager);
+      this.planner = new Planner(this.aiProvider, this.stateManager);
     }
   }
 
@@ -175,25 +179,45 @@ class Explorer {
   }
 
   async visit(url: string) {
-    const action = this.createAction();
-    await action.execute(`I.amOnPage('${url}')`);
-    await action.expect(`I.seeInCurrentUrl('${url}')`);
-    await action.resolve();
+    try {
+      const action = this.createAction();
+
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(
+          () => reject(new Error('Page visit timed out after 30 seconds')),
+          30000
+        );
+      });
+
+      await Promise.race([
+        (async () => {
+          await action.execute(`I.amOnPage('${url}')`);
+          await action.expect(`I.seeInCurrentUrl('${url}')`);
+          await action.resolve();
+        })(),
+        timeoutPromise,
+      ]);
+    } catch (error) {
+      console.error('Failed to visit initial page:', error);
+      throw error;
+    }
   }
 
   async plan() {
     log('Planning next steps...');
-    const conversation = await this.researcher.research();
-    let scenarios = await this.researcher.plan(conversation);
+    const tools = createCodeceptJSTools(this.actor);
+    const conversation = await this.researcher.research(tools);
+    let scenarios = await this.planner.plan(conversation);
     if (this.userResolveFn) {
       tag('info').log('Do you want to change the testing plan?');
       tag('info').log(
         'Suggest what should be tested instead or press [Enter] to start testing'
       );
       const suggestions = (await this.userResolveFn()) as string;
-      if (!suggestions.trim()) {
+      if (suggestions?.trim()) {
         conversation.addUserText(suggestions);
-        scenarios = await this.researcher.plan(conversation);
+        scenarios = await this.planner.plan(conversation);
       }
     }
     this.scenarios = scenarios;
