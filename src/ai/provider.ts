@@ -45,28 +45,26 @@ export class Provider {
   async chat(messages: any[], options: any = {}): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model}`, 'ai');
 
+    debugLog('AI config:', this.config);
+    debugLog('AI options:', options);
     const config = {
-      model: this.provider(this.config.model),
-      ...this.config.config,
+      ...this.config,
       ...options,
+      model: this.provider(this.config.model),
     };
 
     try {
-      const timeout = config.timeout || 30000; // Default 30 seconds
-      const response = (await Promise.race([
-        generateText({
-          messages,
-          ...config,
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('AI request timeout')), timeout)
-        ),
-      ])) as any;
+      const response = await generateText({ messages, ...config });
 
       clearActivity();
       debugLog('AI response:', response.text);
+      if (!response.text) {
+        debugLog(response);
+        throw new Error('No response text from AI');
+      }
       return response;
     } catch (error: any) {
+      tag('error').log(error.message || error.toString());
       clearActivity();
       throw new AiError(error.message || error.toString());
     }

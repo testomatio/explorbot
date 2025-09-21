@@ -28,9 +28,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.17",
     "@ai-sdk/groq": "^2.0.20",
+    "@ai-sdk/openai": "^2.0.32",
     "@inkjs/ui": "^2.0.0",
-    "ai": "^4.3.17",
+    "ai": "^5.0.0",
     "cli-highlight": "^2.1.11",
     "codeceptjs": "^3.7.0",
     "commander": "^14.0.1",
