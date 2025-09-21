@@ -24,9 +24,10 @@ program
   .description('Clean generated files and folders')
   .option(
     '-t, --type <type>',
-    'Type of cleaning: artifacts or experience',
+    'Type of cleaning: artifacts, experience, or all',
     'artifacts'
   )
+  .option('-p, --path <path>', 'Custom path to clean')
   .action(cleanCommand);
 
 program
@@ -38,6 +39,7 @@ program
     './explorbot.config.js'
   )
   .option('-f, --force', 'Overwrite existing config file', false)
+  .option('-p, --path <path>', 'Working directory for initialization')
   .action(initCommand);
 
 program.parse();

@@ -1,10 +1,10 @@
 import dedent from 'dedent';
 import type { Provider } from './provider.js';
 import type { WebPageState } from '../state-manager.js';
-import type { ActionResult } from '../action-result.js';
-import { ExperienceCompactor } from './experience-compactor.js';
 import { createCodeceptJSTools } from './tools.js';
 import { tag, createDebug } from '../utils/logger.js';
+import { ActionResult } from '../action-result.js';
+import { ExperienceCompactor } from './experience-compactor.js';
 
 const debugLog = createDebug('explorbot:navigator');
 
@@ -53,7 +53,7 @@ class Navigator {
       throw new Error('State is required');
     }
 
-    tag('info').log('AI Navigator resolving state for:', state.url);
+    tag('info').log('AI Navigator resolving state at', state.url);
     debugLog('Resolution message:', message);
 
     let knowledge = '';
@@ -75,7 +75,7 @@ class Navigator {
     }
 
     let prompt = dedent`
-      <message>        
+      <message>
         ${message}
       </message>
 
@@ -107,11 +107,9 @@ class Navigator {
     `;
 
     if (context?.experience.length > 0) {
-      const experienceContent = context?.experience.join('\n\n---\n\n');
-      const truncatedContent =
-        experienceContent.length > this.MAX_EXPERIENCE_LENGTH
-          ? `${experienceContent.slice(0, this.MAX_EXPERIENCE_LENGTH)}\n\n[Content truncated due to length limit]`
-          : experienceContent;
+      let experienceContent = context?.experience.join('\n\n---\n\n');
+      experienceContent =
+        await this.experienceCompactor.compactExperience(experienceContent);
 
       tag('substep').log(
         `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
@@ -126,7 +124,7 @@ class Navigator {
       Do not use any locators equal to failed ones.
       </experience_rules>
       <experience>
-      ${truncatedContent}
+      ${experienceContent}
       </experience>`;
     }
 
@@ -180,21 +178,21 @@ class Navigator {
         After each action, you'll automatically receive the updated page state.
         Use this feedback to decide your next actions dynamically.
         Continue until the task is complete or you determine it cannot be completed.
-        
+
         Use click() for buttons, links, and clickable elements.
         Use type() for text input - you can specify a locator to focus first, or type without locator for active element.
       </approach>
     `;
 
     const userPrompt = dedent`
-      <message>        
+      <message>
         ${message}
       </message>
 
       <task>
         You need to perform actions on the current web page to fulfill the user's request.
         Use the provided tools (click and type) to interact with the page.
-        
+
         Each tool call will automatically return the new page state after the action.
         Use this feedback to dynamically plan your next steps.
         Continue making tool calls until the task is completed.
@@ -272,41 +270,6 @@ class Navigator {
     }
   }
 
-  private async isTaskCompleted(
-    originalMessage: string,
-    currentState: ActionResult
-  ): Promise<boolean> {
-    // Simple heuristic: check if the current state looks like it fulfills the original request
-    // This could be enhanced with more sophisticated AI validation
-    const validationPrompt = dedent`
-      Original task: ${originalMessage}
-      
-      Current page state:
-      URL: ${currentState.url}
-      Title: ${currentState.title}
-      
-      Has the original task been completed based on the current page state?
-      Answer only "yes" or "no" with brief reasoning.
-    `;
-
-    try {
-      const response = await this.provider.chat([
-        {
-          role: 'user',
-          content:
-            'You are validating if a web automation task has been completed successfully.',
-        },
-        { role: 'user', content: validationPrompt },
-      ]);
-
-      const responseText = response.text.toLowerCase();
-      return responseText.includes('yes') && !responseText.includes('no');
-    } catch (error) {
-      debugLog('Task validation failed:', error);
-      return false; // Conservative approach - assume not completed if validation fails
-    }
-  }
-
   private locatorRule(): string {
     return dedent`
       <locators>
@@ -375,7 +338,6 @@ class Navigator {
       If you think HTML contains several areas that can help to achieve the result, propose codeblocks for each such area.
       Use exact locators that can pick the elements from each areas.
       Detect such duplicated areas by looking for duplicate IDs, data-ids, forms, etc.
-      If you found a duplicated area, you need to present code block for each such area.
 
       <rules>
       In <explanation> write only one line without heading or bullet list or any other formatting.
@@ -417,7 +379,7 @@ class Navigator {
 
       \`\`\`js
         I.fillField('/html/body/div/div/div/form/input[@name="name"]', 'Value');
-      \`\`\`      
+      \`\`\`
       </example_output>
 
       If you don't know the answer, answer as:
@@ -468,8 +430,6 @@ class Navigator {
       I.type('John'); // types the text "John" into the active element
     </example>
 
-    </actions>
-
     Check example output:
 
     Assuming the follwing code if executed will change the state of the page:
@@ -491,15 +451,21 @@ class Navigator {
       I.selectOption('form select[name=account]', 'Premium');
       I.selectOption({css: 'form select[name=account]'}, 'Premium');
     </example>
-    </actions>
 
-    ### I.waitForInvisible
-
-    If you see that there is a spinner or loading indicator, use waitForInvisible to wait for it to be invisible.
+    ### I.wait  - SHOULD NEVER BE USED
+    ### I.waitForVisible - SHOULD NEVER BE USED
+    ### I.waitForUrl - SHOULD NEVER BE USED
+    ### I.waitForNavigation - SHOULD NEVER BE USED
+    ### I.waitForInvisible - SHOULD BE USED **ONLY** FOR SPINNERS AND LOADING INDICATORS
 
     <example>
-      I.waitForInvisible('.spinner', 30); // waits for the spinner to be invisible or for 30 seconds
+      I.waitForInvisible('.spinner', 10); // waits for the spinner to be invisible or for 30 seconds
     </example>
+
+    [DO NOT USE ANY OTHER COMMANDS]
+    [DO NOT USE wait* COMMANDS. EXCEPTION IS waitForInvisible and ONLY FOR SPINNERS]
+
+    </actions>
     `;
   }
 }

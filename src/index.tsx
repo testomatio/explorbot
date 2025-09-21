@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { exploreCommand } from './commands/explore.js';
+import { cleanCommand } from './commands/clean.js';
+import { initCommand } from './commands/init.js';
 import { Command } from 'commander';
 
 const program = new Command();
@@ -14,7 +16,45 @@ program
   .option('-p, --path <path>', 'Working directory path')
   .helpOption('-h, --help', 'Show this help message');
 
+program
+  .command('clean')
+  .description('Clean up artifacts or experience folders')
+  .option(
+    '-t, --type <type>',
+    'Type of cleanup (artifacts|experience|all)',
+    'artifacts'
+  )
+  .option('-p, --path <path>', 'Custom path to clean')
+  .action(async (options, command) => {
+    const globalOptions = command.parent.opts();
+    const allOptions = { ...globalOptions, ...options };
+    await cleanCommand(allOptions);
+  });
+
+program
+  .command('init')
+  .description('Initialize a new project with configuration')
+  .option(
+    '-c, --config-path <path>',
+    'Path for the config file',
+    './explorbot.config.js'
+  )
+  .option('-f, --force', 'Overwrite existing config file', false)
+  .option('-p, --path <path>', 'Working directory for initialization')
+  .action(async (options, command) => {
+    const globalOptions = command.parent.opts();
+    const allOptions = { ...globalOptions, ...options };
+    await initCommand(allOptions);
+  });
+
 program.parse();
 
 const options = program.opts();
-exploreCommand(options);
+const command = program.args[0];
+
+if (command === 'clean' || command === 'init') {
+  // These commands are handled by their respective actions
+} else {
+  // Default to explore command
+  exploreCommand(options);
+}

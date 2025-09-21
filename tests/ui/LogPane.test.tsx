@@ -19,9 +19,7 @@ describe('LogPane', () => {
   });
 
   it('should respect verbose mode', () => {
-    const { lastFrame: frameVerbose } = render(
-      <LogPane verboseMode={true} />
-    );
+    const { lastFrame: frameVerbose } = render(<LogPane verboseMode={true} />);
     const { lastFrame: frameNonVerbose } = render(
       <LogPane verboseMode={false} />
     );

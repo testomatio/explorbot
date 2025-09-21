@@ -76,6 +76,15 @@ export class CommandHandler implements InputManager {
           await this.explorBot.getExplorer().navigate(target);
         },
       },
+      {
+        name: 'exit',
+        description: 'Exit the application',
+        pattern: /^exit$/,
+        execute: async () => {
+          console.log('\n👋 Goodbye!');
+          process.exit(0);
+        },
+      },
     ];
   }
 
@@ -181,7 +190,8 @@ export class CommandHandler implements InputManager {
     }
 
     // Check if this is a command (starts with / or I.)
-    const isCommand = trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
+    const isCommand =
+      trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
 
     if (isCommand) {
       // Otherwise, execute as command

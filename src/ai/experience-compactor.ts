@@ -13,6 +13,19 @@ export class ExperienceCompactor {
     this.provider = provider;
   }
 
+  async compactExperience(experience: string): Promise<string> {
+    if (experience.length < this.MAX_LENGTH) {
+      return experience;
+    }
+
+    const prompt = this.buildCompactionPrompt(experience);
+    const response = await this.provider.chat([
+      { role: 'user', content: this.getSystemPrompt() },
+      { role: 'user', content: prompt },
+    ]);
+    return response.text;
+  }
+
   async compactExperienceFile(filePath: string): Promise<string> {
     try {
       const fileContent = readFileSync(filePath, 'utf8');
@@ -24,16 +37,12 @@ export class ExperienceCompactor {
         return parsed.content;
       }
 
-      const prompt = this.buildCompactionPrompt(parsed.content);
-      const response = await this.provider.chat([
-        { role: 'user', content: this.getSystemPrompt() },
-        { role: 'user', content: prompt },
-      ]);
+      const text = await this.compactExperience(parsed.content);
 
       log('Experience file compacted:', filePath);
-      debugLog('Experience file compacted:', response);
+      debugLog('Experience file compacted:', text);
 
-      return response.text;
+      return text;
     } catch (error) {
       debugLog('Error compacting experience file:', error);
       return '';
@@ -45,32 +54,45 @@ export class ExperienceCompactor {
 You are an expert test automation engineer specializing in CodeceptJS.
 Your task is to compact experience data from test automation attempts.
 
-Focus on:
-1. Successful solutions - keep all working code blocks
-2. Failed locators - identify and document problematic locators
-3. Common error patterns - group similar errors
-4. Keep output under 5000 characters while preserving the most valuable information
-
-Format your response as structured markdown with clear sections.
 `;
   }
 
   private buildCompactionPrompt(content: string): string {
     return `
-Please compact this experience data from test automation attempts:
-
-${content}
-
-Requirements:
+<rules>
 - Focus on successful attempts and working code blocks
+- Keep output under ${this.MAX_LENGTH / 5} words while preserving the most valuable information-
 - Identify and document failed locators that should be avoided
 - Group similar errors to reduce noise
-- Keep the output under ${this.MAX_LENGTH} characters
 - Preserve all successful CodeceptJS code blocks
 - Highlight which locators failed and why
+- Common error patterns - group similar errors
 - Structure the output with clear sections (Successful Solutions, Failed Locators, Common Errors)
+- Your task is ONLY to compact the current experience data.
+- Be explicit and short. Do not add any proposals or explanations on your own.
+</rules>
 
-Make the content concise but informative for future automation attempts.
+<output>
+Format your response as structured text MARKDOWN format prepared for LLM usage.
+Use <success>, <locators>, <bad_example> sections to structure the output by context.
+Keep the output under ${this.MAX_LENGTH} characters
+
+<successfu_actions>
+...
+</successful_actions>
+
+<failed_actions>
+...
+</failed_actions>
+</
+</output>
+
+Please compact this experience data from test automation attempts:
+
+<context>
+${content}
+</context>
+
 `;
   }
 }

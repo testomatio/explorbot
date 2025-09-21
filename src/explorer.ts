@@ -94,9 +94,9 @@ class Explorer {
           '--remote-debugging-address=0.0.0.0',
         ];
 
-        log('🔧 Browser started in headless mode with debug protocol');
-        log('🌐 To connect your local Chrome to the headless browser:');
-        log(`   Visit: http://localhost:${debugPort}`);
+        log(
+          `Enabling debug protocol for Chromium at http://localhost:${debugPort}`
+        );
       } else if (config.playwright.browser === 'firefox') {
         const debugPort = 9222;
         playwrightConfig.firefox ||= {};
@@ -104,18 +104,13 @@ class Explorer {
           ...(config.playwright.args || []),
           `--remote-debugging-port=${debugPort}`,
         ];
-
-        log('🔧 Browser started in headless mode with debug protocol');
-        log('🌐 To connect your local Firefox to the headless browser:');
-        log('   1. Open Firefox browser');
-        log('   2. Navigate to: about:debugging#/runtime/this-firefox');
-        log(`   3. Click "Connect..." and enter: localhost:${debugPort}`);
-      } else {
-        log(`🔧 Browser started in headless mode`);
-        log(`ℹ️  WebKit doesn't support remote debugging in headless mode`);
-        log(`   To see browser actions, set headless: false in your config`);
+        log(
+          `Enabling debug protocol for Firefox at http://localhost:${debugPort}`
+        );
       }
     }
+
+    log(`🔧 ${playwrightConfig.browser} started in headless mode`);
 
     return {
       helpers: {
@@ -185,7 +180,8 @@ class Explorer {
       // Add timeout to prevent hanging
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(
-          () => reject(new Error('Page visit timed out after 30 seconds')),
+          () =>
+            reject(new Error(`Page visit ${url} timed out after 30 seconds`)),
           30000
         );
       });
@@ -199,7 +195,7 @@ class Explorer {
         timeoutPromise,
       ]);
     } catch (error) {
-      console.error('Failed to visit initial page:', error);
+      console.error(`Failed to visit initial page ${url}:`, error);
       throw error;
     }
   }

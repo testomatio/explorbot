@@ -1,66 +1,126 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { ConfigParser } from '../config.js';
 
 export interface CleanOptions {
   type?: 'artifacts' | 'experience';
+  path?: string;
 }
 
 export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
   const type = options.type || 'artifacts';
+  const customPath = options.path;
 
-  function removeDirectory(dir: string): void {
-    if (fs.existsSync(dir)) {
-      const files = fs.readdirSync(dir);
+  // Store original working directory
+  const originalCwd = process.cwd();
 
-      for (const file of files) {
-        const filePath = path.join(dir, file);
-        const stat = fs.statSync(filePath);
+  // Determine base path for relative paths BEFORE changing directories
+  const basePath = customPath
+    ? path.resolve(originalCwd, customPath)
+    : process.cwd();
 
-        if (stat.isDirectory()) {
-          removeDirectory(filePath);
-        } else {
-          fs.unlinkSync(filePath);
-        }
+  try {
+    // If custom path is provided, change to that directory and load config
+    if (customPath) {
+      const resolvedPath = path.resolve(originalCwd, customPath);
+      console.log(`📁 Working in directory: ${resolvedPath}`);
+      process.chdir(resolvedPath);
+
+      try {
+        // Try to load config from this path
+        const configParser = ConfigParser.getInstance();
+        await configParser.loadConfig({ path: '.' }); // Use current directory (.) since we already changed to it
+        console.log(`✅ Configuration loaded from: ${resolvedPath}`);
+      } catch (error) {
+        console.log(
+          `⚠️  No configuration found in ${resolvedPath}, using default paths`
+        );
       }
-
-      fs.rmdirSync(dir);
-    }
-  }
-
-  function cleanFolder(folderPath: string, folderName: string): void {
-    if (!fs.existsSync(folderPath)) {
-      console.log(`📁 ${folderName} folder does not exist, nothing to clean`);
-      return;
     }
 
-    try {
-      console.log(`🧹 Cleaning ${folderName} folder...`);
+    // Clean artifacts
+    if (type === 'artifacts' || type === 'all') {
+      const artifactsPaths = [
+        path.join(basePath, 'output'),
+        path.join(basePath, 'test-results'),
+        path.join(basePath, 'screenshots'),
+        path.join(basePath, 'allure-results'),
+        path.join(basePath, 'logs'),
+      ];
 
-      const files = fs.readdirSync(folderPath);
-
-      for (const file of files) {
-        const filePath = path.join(folderPath, file);
-        const stat = fs.statSync(filePath);
-
-        if (stat.isDirectory()) {
-          removeDirectory(filePath);
-          console.log(`🗑️  Removed directory: ${file}`);
-        } else {
-          fs.unlinkSync(filePath);
-          console.log(`🗑️  Removed file: ${file}`);
-        }
+      for (const artifactPath of artifactsPaths) {
+        await cleanPath(artifactPath, 'Artifacts');
       }
+    }
 
-      console.log(`✅ ${folderName} folder cleaned successfully`);
-    } catch (error) {
-      console.error(`❌ Failed to clean ${folderName} folder:`, error);
-      process.exit(1);
+    // Clean experience files
+    if (type === 'experience' || type === 'all') {
+      const experiencePaths = [
+        path.join(basePath, 'experience'),
+        path.join(basePath, '.experience'),
+        path.join(basePath, 'experiences'),
+      ];
+
+      for (const experiencePath of experiencePaths) {
+        await cleanPath(experiencePath, 'Experience');
+      }
+    }
+
+    console.log(`✅ Cleanup completed successfully!`);
+  } catch (error) {
+    console.error(`❌ Failed to clean:`, error);
+    process.exit(1);
+  } finally {
+    // Always restore original working directory
+    if (process.cwd() !== originalCwd) {
+      process.chdir(originalCwd);
+    }
+  }
+}
+
+async function cleanPath(
+  targetPath: string,
+  displayName: string
+): Promise<void> {
+  const resolvedPath = path.resolve(targetPath);
+
+  if (!fs.existsSync(resolvedPath)) {
+    console.log(`📁 ${displayName} path does not exist: ${resolvedPath}`);
+    return;
+  }
+
+  const stat = fs.statSync(resolvedPath);
+
+  try {
+    if (stat.isDirectory()) {
+      console.log(`🧹 Cleaning ${displayName} folder: ${resolvedPath}`);
+      await cleanDirectory(resolvedPath);
+      console.log(`✅ ${displayName} folder cleaned successfully`);
+    } else {
+      console.log(`🗑️  Removing ${displayName} file: ${resolvedPath}`);
+      fs.unlinkSync(resolvedPath);
+      console.log(`✅ ${displayName} file removed successfully`);
+    }
+  } catch (error) {
+    console.error(`❌ Failed to clean ${displayName}:`, error);
+  }
+}
+
+async function cleanDirectory(dirPath: string): Promise<void> {
+  const items = fs.readdirSync(dirPath);
+
+  for (const item of items) {
+    const itemPath = path.join(dirPath, item);
+    const stat = fs.statSync(itemPath);
+
+    if (stat.isDirectory()) {
+      await cleanDirectory(itemPath);
+      console.log(`🗑️  Removed directory: ${item}`);
+    } else {
+      fs.unlinkSync(itemPath);
+      console.log(`🗑️  Removed file: ${item}`);
     }
   }
 
-  if (type === 'artifacts') {
-    cleanFolder('./output', 'Output');
-  } else if (type === 'experience') {
-    cleanFolder('./experience', 'Experience');
-  }
+  fs.rmdirSync(dirPath);
 }

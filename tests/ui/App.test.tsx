@@ -33,11 +33,8 @@ const mockCommandHandler = {
   ],
   executeCommand: async () => {},
   registerInputPane: () => () => {},
-  getFilteredCommands: (input: string) => [
-    '/research',
-    '/plan',
-    '/navigate',
-  ].slice(0, 20),
+  getFilteredCommands: (input: string) =>
+    ['/research', '/plan', '/navigate'].slice(0, 20),
   setExitOnEmptyInput: () => {},
   submitInput: async () => {},
 };

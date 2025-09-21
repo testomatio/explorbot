@@ -24,39 +24,52 @@ const InputPane: React.FC<InputPaneProps> = ({
     console.log(entry);
   }, []);
 
-  const handleSubmit = useCallback(async (value: string) => {
-    const trimmedValue = value.trim();
+  const handleSubmit = useCallback(
+    async (value: string) => {
+      const trimmedValue = value.trim();
 
-    if (!trimmedValue) {
-      if (exitOnEmptyInput) {
-        process.exit(0);
+      if (!trimmedValue) {
+        if (exitOnEmptyInput) {
+          console.log('\nExiting...');
+          process.exit(0);
+        }
+        return;
       }
+
+      // Check if this is a command (starts with / or I.) or is 'exit'
+      const isCommand =
+        trimmedValue.startsWith('/') ||
+        trimmedValue.startsWith('I.') ||
+        trimmedValue === 'exit';
+
+      if (isCommand) {
+        // Execute as command directly
+        try {
+          await commandHandler.executeCommand(trimmedValue);
+        } catch (error) {
+          addLog(`Command failed: ${error}`);
+        }
+      } else if (onSubmit) {
+        // Use the provided submit callback for non-commands
+        await onSubmit(trimmedValue);
+      }
+
+      // Reset state after submission
+      setInputValue('');
+      setCursorPosition(0);
+      setShowAutocomplete(false);
+      setSelectedIndex(0);
+    },
+    [commandHandler, exitOnEmptyInput, onSubmit, addLog]
+  );
+
+  useInput((input, key) => {
+    if (key.ctrl && input === 'c') {
+      console.log('\n🛑 Received Ctrl-C, exiting...');
+      process.exit(0);
       return;
     }
 
-    // Check if this is a command (starts with / or I.)
-    const isCommand = trimmedValue.startsWith('/') || trimmedValue.startsWith('I.');
-
-    if (isCommand) {
-      // Execute as command directly
-      try {
-        await commandHandler.executeCommand(trimmedValue);
-      } catch (error) {
-        addLog(`Command failed: ${error}`);
-      }
-    } else if (onSubmit) {
-      // Use the provided submit callback for non-commands
-      await onSubmit(trimmedValue);
-    }
-
-    // Reset state after submission
-    setInputValue('');
-    setCursorPosition(0);
-    setShowAutocomplete(false);
-    setSelectedIndex(0);
-  }, [commandHandler, exitOnEmptyInput, onSubmit, addLog]);
-
-  useInput((input, key) => {
     if (key.return) {
       handleSubmit(inputValue);
       return;
@@ -118,7 +131,11 @@ const InputPane: React.FC<InputPaneProps> = ({
         setInputValue(newValue);
         setCursorPosition(Math.max(0, cursorPosition - 1));
         setSelectedIndex(0);
-        setShowAutocomplete(newValue.startsWith('/') || newValue.startsWith('I.'));
+        setShowAutocomplete(
+          newValue.startsWith('/') ||
+            newValue.startsWith('I.') ||
+            newValue.startsWith('exit')
+        );
       }
       return;
     }
@@ -131,7 +148,11 @@ const InputPane: React.FC<InputPaneProps> = ({
       setInputValue(newValue);
       setCursorPosition(cursorPosition + 1);
       setSelectedIndex(0);
-      setShowAutocomplete(newValue.startsWith('/') || newValue.startsWith('I.'));
+      setShowAutocomplete(
+        newValue.startsWith('/') ||
+          newValue.startsWith('I.') ||
+          newValue.startsWith('exit')
+      );
     }
   });
 

@@ -2,18 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
 import LogPane from './LogPane.js';
 import InputPane from './InputPane.js';
-import PausePane from './PausePane.js';
 import ActivityPane from './ActivityPane.js';
 import StateTransitionPane from './StateTransitionPane.js';
-import Welcome from './Welcome.js';
 import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
 import { CommandHandler } from '../command-handler.js';
-import type {
-  StateManager,
-  StateTransition,
-  WebPageState,
-} from '../state-manager.js';
-import type { TaggedLogEntry } from '../utils/logger.js';
+import type { StateTransition, WebPageState } from '../state-manager.js';
 
 interface AppProps {
   explorBot: ExplorBot;
@@ -27,15 +20,10 @@ export function App({
   exitOnEmptyInput = false,
 }: AppProps) {
   const [showInput, setShowInput] = useState(initialShowInput);
-  const [stateManager, setStateManager] = useState<StateManager | null>(null);
-  const [isPaused, setIsPaused] = useState(false);
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
   const [lastTransition, setLastTransition] = useState<StateTransition | null>(
     null
   );
-  const [isLoading, setIsLoading] = useState(true);
-  const [showWelcome, setShowWelcome] = useState(true);
-  const [startupSuccessful, setStartupSuccessful] = useState(false);
   const [commandHandler] = useState(() => new CommandHandler(explorBot));
   const [userInputPromise, setUserInputPromise] = useState<{
     resolve: (value: string | null) => void;
@@ -51,7 +39,6 @@ export function App({
         }
         setShowInput(true);
 
-        // Return a promise that resolves when user submits input
         return new Promise<string | null>((resolve, reject) => {
           setUserInputPromise({ resolve, reject });
         });
@@ -60,15 +47,12 @@ export function App({
       await explorBot.start();
 
       const manager = explorBot.getExplorer().getStateManager();
-      setStateManager(manager);
 
-      // Get initial current state
       const initialState = manager.getCurrentState();
       if (initialState) {
         setCurrentState(initialState);
       }
 
-      // Subscribe to state changes
       const unsubscribe = manager.onStateChange(
         (transition: StateTransition) => {
           setLastTransition(transition);
@@ -78,21 +62,8 @@ export function App({
 
       setShowInput(false);
 
-      // Mark loading as complete and startup as successful
-      setIsLoading(false);
-      setStartupSuccessful(true);
-
-      // Show input BEFORE visitInitialState so it's ready when plan() asks for input
-      setShowInput(true);
-
       await explorBot.visitInitialState();
 
-      // Show welcome for a brief moment, then transition to main interface
-      setTimeout(() => {
-        setShowWelcome(false);
-      }, 2000);
-
-      // Return cleanup function
       return unsubscribe;
     } catch (error) {
       console.error('Failed to start ExplorBot:', error);
@@ -102,16 +73,13 @@ export function App({
   };
 
   useEffect(() => {
-    startMain().then((cleanup) => {
-    }).catch((error) => {
-      console.error('Failed to start ExplorBot:', error);
-      process.exit(1);
-    });
+    startMain()
+      .then((cleanup) => {})
+      .catch((error) => {
+        console.error('Failed to start ExplorBot:', error);
+        process.exit(1);
+      });
   }, []);
-
-  if (isPaused) {
-    return <PausePane onExit={() => setIsPaused(false)} />;
-  }
 
   return (
     <Box flexDirection="column">
@@ -125,7 +93,6 @@ export function App({
           <InputPane
             commandHandler={commandHandler}
             onSubmit={async (input: string) => {
-              // If we're waiting for user input, resolve with the input
               if (userInputPromise) {
                 userInputPromise.resolve(input);
                 setUserInputPromise(null);

@@ -2,6 +2,7 @@ import React from 'react';
 import { render } from 'ink';
 import { App } from '../components/App.js';
 import { ExplorBot, type ExplorBotOptions } from '../explorbot.js';
+import { setPreserveConsoleLogs } from '../utils/logger.js';
 
 export interface ExploreOptions {
   from?: string;
@@ -13,6 +14,9 @@ export interface ExploreOptions {
 
 export async function exploreCommand(options: ExploreOptions) {
   const initialShowInput = !options.from;
+
+  // Enable console log persistence for after exit
+  setPreserveConsoleLogs(true);
 
   const mainOptions: ExplorBotOptions = {
     from: options.from,
@@ -34,16 +38,25 @@ export async function exploreCommand(options: ExploreOptions) {
     React.createElement(App, {
       explorBot,
       initialShowInput,
-    })
+    }),
+    {
+      exitOnCtrlC: false,
+      patchConsole: false, // Don't redirect console.log
+    }
   );
+
+  const cleanup = async () => {
+    // Just exit normally, let the terminal handle cleanup
+    process.exit(0);
+  };
 
   process.on('SIGINT', async () => {
     console.log('\n🛑 Received SIGINT, cleaning up...');
-    process.exit(0);
+    await cleanup();
   });
 
   process.on('SIGTERM', async () => {
     console.log('\n🛑 Received SIGTERM, cleaning up...');
-    process.exit(0);
+    await cleanup();
   });
 }

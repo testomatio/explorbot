@@ -1,4 +1,4 @@
-import debug from 'debug';
+// import debug from 'debug';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigParser } from '../config.js';
@@ -19,7 +19,7 @@ export interface TaggedLogEntry {
   timestamp?: Date;
 }
 
-type LogEntry = string | TaggedLogEntry;
+type LogEntry = TaggedLogEntry;
 
 interface LogDestination {
   isEnabled(): boolean;
@@ -28,9 +28,14 @@ interface LogDestination {
 
 class ConsoleDestination implements LogDestination {
   private verboseMode = false;
+  private forceEnabled = false;
 
   isEnabled(): boolean {
-    return !process.env.INK_RUNNING;
+    return this.forceEnabled || !process.env.INK_RUNNING;
+  }
+
+  forceEnable(enabled: boolean): void {
+    this.forceEnabled = enabled;
   }
 
   setVerboseMode(enabled: boolean): void {
@@ -58,12 +63,10 @@ class DebugDestination implements LogDestination {
 
   write(entry: TaggedLogEntry): void {
     if (!this.isEnabled()) return;
+    if (entry.type !== 'debug') return;
 
-    if (entry.type === 'debug') {
-      const namespace =
-        entry.content.toString().match(/\[([^\]]+)\]/)?.[1] || 'app';
-      console.log(`[DEBUG:${namespace}] ${entry.content}`);
-    }
+    // Debug logs are now handled by the main logger flow
+    // No need for special handling here
   }
 }
 
@@ -132,24 +135,27 @@ class FileDestination implements LogDestination {
 }
 
 class ReactDestination implements LogDestination {
-  private logPanes: Set<(entry: LogEntry) => void> = new Set();
+  private logPane: ((entry: LogEntry) => void) | null = null;
 
   isEnabled(): boolean {
-    return this.logPanes.size > 0;
+    return this.logPane !== null;
   }
 
   write(entry: TaggedLogEntry): void {
-    this.logPanes.forEach((addLog) => {
-      addLog(entry);
-    });
+    if (!this.isEnabled()) {
+      console.log(entry.content);
+      return;
+    }
+    this.logPane!(entry);
   }
 
   registerLogPane(addLog: (entry: LogEntry) => void): void {
-    this.logPanes.add(addLog);
+    this.logPane = addLog;
   }
 
   unregisterLogPane(addLog: (entry: LogEntry) => void): void {
-    this.logPanes.delete(addLog);
+    if (this.logPane !== addLog) return;
+    this.logPane = null;
   }
 }
 
@@ -173,6 +179,10 @@ class Logger {
     this.debugDestination.setVerboseMode(enabled);
     this.file.setVerboseMode(enabled);
     this.console.setVerboseMode(enabled);
+  }
+
+  setPreserveConsoleLogs(enabled: boolean): void {
+    this.console.forceEnable(enabled);
   }
 
   isVerboseMode(): boolean {
@@ -210,7 +220,10 @@ class Logger {
       timestamp: new Date(),
     };
 
-    if (this.console.isEnabled()) this.console.write(entry);
+    // Write to all enabled destinations in order
+    // Note: When console is force enabled, we still want logs in the log pane
+    if (!this.react.isEnabled() && this.console.isEnabled())
+      this.console.write(entry);
     if (this.debugDestination.isEnabled()) this.debugDestination.write(entry);
     if (this.file.isEnabled()) this.file.write(entry);
     if (this.react.isEnabled()) this.react.write(entry);
@@ -248,7 +261,6 @@ class Logger {
 
 const logger = Logger.getInstance();
 
-
 export const tag = (type: LogType) => ({
   log: (...args: any[]) => logger.log(type, ...args),
 });
@@ -277,6 +289,8 @@ export const getMethodsOfObject = (obj: any): string[] => {
 
 export const setVerboseMode = (enabled: boolean) =>
   logger.setVerboseMode(enabled);
+export const setPreserveConsoleLogs = (enabled: boolean) =>
+  logger.setPreserveConsoleLogs(enabled);
 export const isVerboseMode = () => logger.isVerboseMode();
 
 export const registerLogPane = (addLog: (entry: LogEntry) => void) =>

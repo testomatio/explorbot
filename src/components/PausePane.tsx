@@ -3,11 +3,10 @@ import { recorder, store, container, output } from 'codeceptjs';
 import { Box, Text } from 'ink';
 // import InputPane from './InputPane.js';
 import AutocompleteInput from './AutocompleteInput.js';
-import debugModule from 'debug';
-import { log, getMethodsOfObject } from '../utils/logger.ts';
+import { log, getMethodsOfObject, createDebug } from '../utils/logger.ts';
 import chalk from 'chalk';
 
-const debug = debugModule('explorbot:pause');
+const debug = createDebug('pause');
 
 // Global object to register variables (as in the original pause command)
 let registeredVariables = {};

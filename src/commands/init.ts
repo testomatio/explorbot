@@ -5,11 +5,30 @@ import { log } from '../utils/logger.js';
 export interface InitOptions {
   configPath?: string;
   force?: boolean;
+  path?: string;
 }
 
 export async function initCommand(options: InitOptions = {}): Promise<void> {
   const configPath = options.configPath || './explorbot.config.js';
   const force = options.force || false;
+  const customPath = options.path;
+
+  // Store original working directory
+  const originalCwd = process.cwd();
+
+  // If custom path is provided, change to that directory
+  if (customPath) {
+    const resolvedPath = path.resolve(customPath);
+
+    // Create the directory if it doesn't exist
+    if (!fs.existsSync(resolvedPath)) {
+      fs.mkdirSync(resolvedPath, { recursive: true });
+      log(`✅ Created directory: ${resolvedPath}`);
+    }
+
+    process.chdir(resolvedPath);
+    log(`📁 Working in directory: ${resolvedPath}`);
+  }
 
   function getDefaultConfig(): string {
     return `import { openai } from 'ai';
@@ -95,5 +114,10 @@ export default config;
   } catch (error) {
     log('❌ Failed to create config file:', error);
     process.exit(1);
+  } finally {
+    // Always restore original working directory
+    if (process.cwd() !== originalCwd) {
+      process.chdir(originalCwd);
+    }
   }
 }
