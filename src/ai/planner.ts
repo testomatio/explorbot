@@ -14,19 +14,35 @@ export interface Task {
   scenario: string;
   status: 'pending' | 'completed' | 'failed';
   conversation: Conversation;
+  priority: 'high' | 'medium' | 'low';
 }
 
-const PlanningSchema = z.object({
-  tasks: z
-    .array(
-      z.object({
-        scenario: z
-          .string()
-          .describe('A single sentence describing what to test'),
-      })
-    )
-    .describe('Array of testing scenarios'),
+const TaskSchema = z.object({
+  scenario: z.string().describe('A single sentence describing what to test'),
+  priority: z
+    .enum(['high', 'medium', 'low'])
+    .describe('Priority of the task based on importance and risk'),
 });
+
+const CreateTasksSchema = z.object({
+  tasks: z
+    .array(TaskSchema)
+    .describe('Array of testing scenarios with priorities'),
+});
+
+const createTasksTool = {
+  description: 'Create testing tasks with priorities for the current page',
+  parameters: CreateTasksSchema,
+  execute: async (params: {
+    tasks: Array<{ scenario: string; priority: 'high' | 'medium' | 'low' }>;
+  }) => {
+    return {
+      success: true,
+      message: `Created ${params.tasks.length} tasks with priorities`,
+      tasks: params.tasks,
+    };
+  },
+};
 
 export class Planner {
   private provider: Provider;
@@ -50,36 +66,75 @@ export class Planner {
 
     conversation.addUserText(prompt);
 
-    debugLog('Sending planning prompt to AI provider with structured output');
+    debugLog('Sending planning prompt to AI provider with tool calling');
 
-    const result = await this.provider.generateObject(
+    const tools = {
+      createTasks: createTasksTool,
+    };
+
+    const result = await this.provider.generateWithTools(
       conversation.messages,
-      PlanningSchema
+      tools,
+      {
+        toolChoice: 'required',
+      }
     );
-    if (!result) throw new Error('Failed to get planning response');
 
-    const planningData = result.object;
-    debugLog('Planning response:', planningData);
+    if (!result || !result.toolResults || result.toolResults.length === 0) {
+      throw new Error('Failed to get planning response - no tool calls made');
+    }
 
-    const tasks = planningData.tasks.map((taskData: { scenario: string }) => ({
-      scenario: taskData.scenario,
-      status: 'pending' as const,
-      conversation: conversation.clone(),
-    }));
+    const toolResult = result.toolResults[0];
+    if (toolResult.toolName !== 'createTasks' || !toolResult.result?.success) {
+      throw new Error('Expected createTasks tool to be called successfully');
+    }
+
+    const tasks = toolResult.result.tasks.map(
+      (taskData: {
+        scenario: string;
+        priority: 'high' | 'medium' | 'low';
+      }) => ({
+        scenario: taskData.scenario,
+        status: 'pending' as const,
+        priority: taskData.priority,
+        conversation: conversation.clone(),
+      })
+    );
+
+    debugLog('Created tasks:', tasks);
+
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    const sortedTasks = [...tasks].sort(
+      (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]
+    );
 
     tag('info').log('📋 Testing Plan');
-    tasks.forEach((task: Task) => {
-      tag('info').log('☐', task.scenario);
+    sortedTasks.forEach((task: Task) => {
+      const priorityIcon =
+        task.priority === 'high'
+          ? '🔴'
+          : task.priority === 'medium'
+            ? '🟡'
+            : '🟢';
+      tag('info').log(`${priorityIcon} ${task.scenario}`);
     });
 
-    return tasks;
+    return sortedTasks;
   }
 
   private buildPlanningPrompt(state: WebPageState): string {
-    return dedent`Based on the previous research, suggest 3-7 exploratory testing scenarios to test on this page.
+    return dedent`Based on the previous research, create 3-7 exploratory testing scenarios for this page using the createTasks tool.
 
-      Start with positive scenarios and then move to negative scenarios.
-      Focus on main content of the page, not in the menu, sidebar or footer.
+      You MUST use the createTasks tool to provide your response.
+
+      When creating tasks:
+      1. Assign priorities based on:
+         - HIGH: Critical functionality, user flows, security-related, or high-risk features
+         - MEDIUM: Important features that affect user experience but aren't critical
+         - LOW: Edge cases, minor features, or nice-to-have validations
+      2. Start with positive scenarios and then move to negative scenarios
+      3. Focus on main content of the page, not in the menu, sidebar or footer
+      4. Provide a good mix of high, medium, and low priority tasks
 
       <rules>
       Suggest tests only which you can handle. 

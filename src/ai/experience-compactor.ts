@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import type { Provider } from './provider.js';
 import { log, createDebug } from '../utils/logger.js';
+import { json } from 'zod';
 
 const debugLog = createDebug('explorbot:experience-compactor');
 
@@ -64,7 +65,7 @@ Your task is to compact experience data from test automation attempts.
 - Keep output under ${this.MAX_LENGTH / 5} words while preserving the most valuable information-
 - Identify and document failed locators that should be avoided
 - Group similar errors to reduce noise
-- Preserve all successful CodeceptJS code blocks
+- Preserve all successful CodeceptJS code blocks with their intentions
 - Highlight which locators failed and why
 - Common error patterns - group similar errors
 - Structure the output with clear sections (Successful Solutions, Failed Locators, Common Errors)
@@ -75,16 +76,33 @@ Your task is to compact experience data from test automation attempts.
 <output>
 Format your response as structured text MARKDOWN format prepared for LLM usage.
 Use <success>, <locators>, <bad_example> sections to structure the output by context.
+In each section provide code blocks and intention of the code block.
 Keep the output under ${this.MAX_LENGTH} characters
+Proposed output format:
 
-<successfu_actions>
-...
-</successful_actions>
+<output_format>
+<successfu_attempts>
+  <attempt>
+  - <purpose>
+    \`\`\`js
+    <code>
+    \`\`\`
+  </attempt>
+  ...
+</successful_attempts>
 
-<failed_actions>
-...
-</failed_actions>
-</
+<locators>
+  - <locator> - [accessible or not accessible locator for this Page, if accessible what it refers to]
+</locators>
+
+<failed_attempts>
+  - <purpose>
+    \`\`\`js
+    <code>
+    \`\`\`
+  ...
+</failed_attempts>
+</output_format>
 </output>
 
 Please compact this experience data from test automation attempts:

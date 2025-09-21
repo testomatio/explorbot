@@ -23,11 +23,11 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     // Create the directory if it doesn't exist
     if (!fs.existsSync(resolvedPath)) {
       fs.mkdirSync(resolvedPath, { recursive: true });
-      log(`✅ Created directory: ${resolvedPath}`);
+      log(`Created directory: ${resolvedPath}`);
     }
 
     process.chdir(resolvedPath);
-    log(`📁 Working in directory: ${resolvedPath}`);
+    log(`Working in directory: ${resolvedPath}`);
   }
 
   function getDefaultConfig(): string {
@@ -57,7 +57,7 @@ export default config;
     dirs.forEach((dir) => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
-        log(`✅ Created directory: ${dir}`);
+        log(`Created directory: ${dir}`);
       }
     });
   }
@@ -86,11 +86,11 @@ export default config;
 
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
-      log(`✅ Created directory: ${dir}`);
+      log(`Created directory: ${dir}`);
     }
 
     if (fs.existsSync(resolvedPath) && !force) {
-      log(`❌ Config file already exists: ${resolvedPath}`);
+      log(`Config file already exists: ${resolvedPath}`);
       log('Use --force to overwrite existing file');
       process.exit(1);
     }
@@ -98,21 +98,21 @@ export default config;
     const configContent = getDefaultConfig();
     fs.writeFileSync(resolvedPath, configContent, 'utf8');
 
-    log(`✅ Created config file: ${resolvedPath}`);
+    log(`Created config file: ${resolvedPath}`);
     log('');
-    log('📝 Next steps:');
+    log('Next steps:');
     log('1. Set your API key in the config file or as environment variable');
     log('2. Customize the configuration as needed');
     log('3. Run: explorbot start');
     log('');
-    log('💡 You can also use different AI providers:');
+    log('You can also use different AI providers:');
     log('   - import { anthropic } from "ai" for Claude');
     log('   - import { bedrock } from "ai" for AWS Bedrock');
     log('   - Or any other provider that supports the chat interface');
 
     createOutputDirectories();
   } catch (error) {
-    log('❌ Failed to create config file:', error);
+    log('Failed to create config file:', error);
     process.exit(1);
   } finally {
     // Always restore original working directory

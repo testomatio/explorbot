@@ -25,7 +25,6 @@ class Navigator {
   private experienceCompactor: ExperienceCompactor;
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
-  private MAX_EXPERIENCE_LENGTH = 5000;
 
   private systemPrompt = dedent`
   <role>
@@ -101,32 +100,12 @@ class Navigator {
 
       ${knowledge}
 
+      ${await this.experienceRule(context)}
+
       ${this.actionRule()}
 
       ${this.outputRule()}
     `;
-
-    if (context?.experience.length > 0) {
-      let experienceContent = context?.experience.join('\n\n---\n\n');
-      experienceContent =
-        await this.experienceCompactor.compactExperience(experienceContent);
-
-      tag('substep').log(
-        `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
-      );
-      prompt += `
-
-      <experience_rules>
-      Here is a compacted summary of previously executed code blocks.
-      Focus on successful solutions and avoid failed locators.
-      Do not repeat code blocks that already failed.
-      Analyze locators used in code blocks that failed and do not use them in your answer.
-      Do not use any locators equal to failed ones.
-      </experience_rules>
-      <experience>
-      ${experienceContent}
-      </experience>`;
-    }
 
     debugLog('Sending prompt to AI provider');
 
@@ -258,7 +237,7 @@ class Navigator {
         debugLog('Could not capture screenshot:', error);
       }
 
-      return new (await import('../action-result.js')).ActionResult({
+      return new ActionResult({
         url,
         title,
         html,
@@ -327,11 +306,36 @@ class Navigator {
     `;
   }
 
+  private async experienceRule(context: StateContext): Promise<string> {
+    if (!context?.experience.length) return '';
+
+    let experienceContent = context?.experience.join('\n\n---\n\n');
+    experienceContent = await this.experienceCompactor.compactExperience(experienceContent);
+    tag('substep').log(
+      `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
+    );
+
+    return dedent`
+      <experience>
+      Here is the experience of interacting with the page.
+      Learn from it to not repeat the same mistakes.
+      If there was found successful solution to an issue, propose it as a first solution.
+      If there is no successful solution, analyze failed intentions and actions and propose new solutions.
+      Focus on successful solutions and avoid failed locators.
+
+      ${experienceContent}
+
+      </experience>
+    `;
+  }
+
   private outputRule(): string {
     return dedent`
       <output>
       Your response must start explanation of what you are going to do to achive the result
       And then contain valid CodeceptJS code in code blocks.
+      Use only locators from HTML PAGE that was passed in <page> context.
+      Do not invent locators, focus only on locators from HTML PAGE.
       Provide up to ${this.MAX_ATTEMPTS} various code suggestions to achieve the result.
 
       Do not stick only to the first found element as it might be hidden or not availble on the page.
@@ -341,6 +345,7 @@ class Navigator {
 
       <rules>
       In <explanation> write only one line without heading or bullet list or any other formatting.
+      Check previous solutions, if there is already successful solution, use it!
       CodeceptJS code must start with "I."
       All lines of code must start with "I."
       ${this.locatorRule()}
@@ -452,18 +457,9 @@ class Navigator {
       I.selectOption({css: 'form select[name=account]'}, 'Premium');
     </example>
 
-    ### I.wait  - SHOULD NEVER BE USED
-    ### I.waitForVisible - SHOULD NEVER BE USED
-    ### I.waitForUrl - SHOULD NEVER BE USED
-    ### I.waitForNavigation - SHOULD NEVER BE USED
-    ### I.waitForInvisible - SHOULD BE USED **ONLY** FOR SPINNERS AND LOADING INDICATORS
-
-    <example>
-      I.waitForInvisible('.spinner', 10); // waits for the spinner to be invisible or for 30 seconds
-    </example>
-
-    [DO NOT USE ANY OTHER COMMANDS]
-    [DO NOT USE wait* COMMANDS. EXCEPTION IS waitForInvisible and ONLY FOR SPINNERS]
+    [DO NEVER USE OTHER CODECEPTJS COMMANDS THAN PROPOSED HERE]
+    [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML]
+    [DO NOT USE WAIT FUNCTIONS]
 
     </actions>
     `;

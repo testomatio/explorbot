@@ -177,23 +177,9 @@ class Explorer {
     try {
       const action = this.createAction();
 
-      // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(
-          () =>
-            reject(new Error(`Page visit ${url} timed out after 30 seconds`)),
-          30000
-        );
-      });
-
-      await Promise.race([
-        (async () => {
-          await action.execute(`I.amOnPage('${url}')`);
-          await action.expect(`I.seeInCurrentUrl('${url}')`);
-          await action.resolve();
-        })(),
-        timeoutPromise,
-      ]);
+      await action.execute(`I.amOnPage('${url}')`);
+      await action.expect(`I.seeInCurrentUrl('${url}')`);
+      await action.resolve();
     } catch (error) {
       console.error(`Failed to visit initial page ${url}:`, error);
       throw error;

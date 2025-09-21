@@ -89,6 +89,7 @@ export class Researcher {
     if (knowledgeFiles.length > 0) {
       const knowledgeContent = knowledgeFiles
         .map((k) => k.content)
+        .filter((k) => !!k)
         .join('\n\n');
 
       tag('substep').log(

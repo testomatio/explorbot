@@ -156,7 +156,7 @@ export class ExperienceTracker {
     const content = `### ${entry.error ? 'Failed Attempt' : 'Successful Attempt'}
 
 ${entry.originalMessage ? `Purpose: ${entry.originalMessage}` : ''}
-${entry.error ? `Error: ${entry.error} from:` : ''}
+${entry.error ? `${entry.error} from:` : ''}
 
 \`\`\`javascript
 ${entry.code}

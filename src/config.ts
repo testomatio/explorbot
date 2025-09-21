@@ -1,7 +1,72 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import type { ExplorbotConfig } from '../explorbot.config.js';
 import { log } from './utils/logger.js';
+
+interface PlaywrightConfig {
+  browser: 'chromium' | 'firefox' | 'webkit';
+  url: string;
+  show?: boolean;
+  windowSize?: string;
+  slowMo?: number;
+  chromium?: {
+    args?: string[];
+  };
+  firefox?: {
+    args?: string[];
+  };
+  webkit?: {
+    args?: string[];
+  };
+  timeout?: number;
+  waitForNavigation?: 'load' | 'domcontentloaded' | 'networkidle';
+  waitForTimeout?: number;
+  ignoreHTTPSErrors?: boolean;
+  userAgent?: string;
+  viewport?: {
+    width: number;
+    height: number;
+  };
+  args?: string[];
+}
+
+interface AIConfig {
+  provider: any;
+  model: string;
+  apiKey?: string;
+  config?: Record<string, any>;
+  tools?: {
+    enabled: boolean;
+    maxConcurrency: number;
+    timeout: number;
+  };
+  vision?: boolean;
+  maxAttempts?: number;
+  retryDelay?: number;
+}
+
+interface ExplorbotConfig {
+  playwright: PlaywrightConfig;
+  ai: AIConfig;
+  dirs?: {
+    knowledge: string;
+    experience: string;
+    output: string;
+  };
+}
+
+const config: ExplorbotConfig = {
+  playwright: {
+    browser: 'chromium',
+    url: 'http://localhost:3000',
+  },
+
+  ai: {
+    provider: null,
+    model: 'gpt-4o',
+  },
+};
+
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig };
 
 export class ConfigParser {
   private static instance: ConfigParser;
@@ -109,6 +174,7 @@ export class ConfigParser {
         provider: () => ({ model: 'test' }),
         model: 'test-model',
         config: {},
+        vision: false,
       },
       dirs: {
         knowledge: join(testBaseDir, 'knowledge'),

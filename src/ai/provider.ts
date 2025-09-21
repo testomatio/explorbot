@@ -1,5 +1,5 @@
 import { generateText, generateObject } from 'ai';
-import type { AIConfig } from '../../explorbot.config.ts';
+import type { AIConfig } from '../config.js';
 import { createDebug, tag } from '../utils/logger.js';
 import { setActivity, clearActivity } from '../activity.ts';
 import { Conversation, type Message } from './conversation.js';
@@ -47,6 +47,9 @@ export class Provider {
 
     debugLog('AI config:', this.config);
     debugLog('AI options:', options);
+
+    messages = this.filterImages(messages);
+
     const config = {
       ...this.config,
       ...options,
@@ -76,6 +79,8 @@ export class Provider {
     options: any = {}
   ): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model} with dynamic tools`, 'ai');
+
+    messages = this.filterImages(messages);
 
     const toolNames = Object.keys(tools || {});
     tag('info').log(
@@ -140,7 +145,7 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
-      throw new AiError(error.message || error.toString());
+      throw error;
     }
   }
 
@@ -150,6 +155,9 @@ export class Provider {
     options: any = {}
   ): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model} for structured output`, 'ai');
+
+
+    messages = this.filterImages(messages);
 
     const config = {
       model: this.provider(this.config.model),
@@ -182,6 +190,22 @@ export class Provider {
 
   getProvider(): any {
     return this.provider;
+  }
+
+  filterImages(messages: any[]): any[] {
+    if (this.config.vision) {
+      return messages;
+    }
+
+    messages.forEach((message) => {
+      if (!Array.isArray(message.content)) return;
+      message.content = message.content.filter((content: any) => {
+        if (content.type === 'image') return false;
+        return true;
+      });
+    });
+
+    return messages;
   }
 }
 

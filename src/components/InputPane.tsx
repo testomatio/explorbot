@@ -18,6 +18,7 @@ const InputPane: React.FC<InputPaneProps> = ({
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [autoCompleteTriggered, setAutoCompleteTriggered] = useState(false);
 
   const addLog = useCallback((entry: string) => {
     // For now, just console.log - in a real implementation this would integrate with the logger
@@ -116,9 +117,15 @@ const InputPane: React.FC<InputPaneProps> = ({
       key.tab = false; // Prevent default tab behavior
       const filteredCommands = commandHandler.getFilteredCommands(inputValue);
       if (selectedIndex < filteredCommands.length) {
-        setInputValue(filteredCommands[selectedIndex]);
+        const selectedCommand = filteredCommands[selectedIndex];
+        setInputValue(selectedCommand);
         setShowAutocomplete(false);
         setSelectedIndex(0);
+        setAutoCompleteTriggered(true);
+        // Auto-execute commands that start with /
+        if (selectedCommand.startsWith('/')) {
+          setTimeout(() => handleSubmit(selectedCommand), 0);
+        }
       }
       return;
     }
@@ -131,6 +138,7 @@ const InputPane: React.FC<InputPaneProps> = ({
         setInputValue(newValue);
         setCursorPosition(Math.max(0, cursorPosition - 1));
         setSelectedIndex(0);
+        setAutoCompleteTriggered(false);
         setShowAutocomplete(
           newValue.startsWith('/') ||
             newValue.startsWith('I.') ||
@@ -148,6 +156,7 @@ const InputPane: React.FC<InputPaneProps> = ({
       setInputValue(newValue);
       setCursorPosition(cursorPosition + 1);
       setSelectedIndex(0);
+      setAutoCompleteTriggered(false);
       setShowAutocomplete(
         newValue.startsWith('/') ||
           newValue.startsWith('I.') ||
@@ -187,10 +196,15 @@ const InputPane: React.FC<InputPaneProps> = ({
         selectedIndex={selectedIndex}
         onSelect={(index: number) => {
           if (index < filteredCommands.length) {
-            setInputValue(filteredCommands[index]);
+            const selectedCommand = filteredCommands[index];
+            setInputValue(selectedCommand);
             setShowAutocomplete(false);
             setSelectedIndex(0);
-            setCursorPosition(filteredCommands[index].length);
+            setCursorPosition(selectedCommand.length);
+            // Auto-execute commands that start with /
+            if (selectedCommand.startsWith('/')) {
+              setTimeout(() => handleSubmit(selectedCommand), 0);
+            }
           }
         }}
         visible={showAutocomplete}

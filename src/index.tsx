@@ -2,6 +2,7 @@
 import { exploreCommand } from './commands/explore.js';
 import { cleanCommand } from './commands/clean.js';
 import { initCommand } from './commands/init.js';
+import { addKnowledgeCommand } from './commands/add-knowledge.js';
 import { Command } from 'commander';
 
 const program = new Command();
@@ -47,12 +48,26 @@ program
     await initCommand(allOptions);
   });
 
+program
+  .command('add-knowledge')
+  .alias('knows')
+  .description('Add knowledge for specific URLs')
+  .option('-p, --path <path>', 'Knowledge directory path')
+  .action(async (options) => {
+    await addKnowledgeCommand(options);
+  });
+
 program.parse();
 
 const options = program.opts();
 const command = program.args[0];
 
-if (command === 'clean' || command === 'init') {
+if (
+  command === 'clean' ||
+  command === 'init' ||
+  command === 'add-knowledge' ||
+  command === 'knows'
+) {
   // These commands are handled by their respective actions
 } else {
   // Default to explore command

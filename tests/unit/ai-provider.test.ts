@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, mock, spyOn } from 'bun:test';
 import { Provider, AiError } from '../../src/ai/provider.js';
-import type { AIConfig } from '../../explorbot.config.ts';
+import type { AIConfig } from '../../src/config.js';
 
 // Mock the 'ai' module
 const mockGenerateText = mock(() => Promise.resolve({ text: 'Test response' }));

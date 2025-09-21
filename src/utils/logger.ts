@@ -2,6 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigParser } from '../config.js';
+import chalk from 'chalk';
+import { marked } from 'marked';
+import dedent from 'dedent';
+
 
 export type LogType =
   | 'info'
@@ -43,8 +47,11 @@ class ConsoleDestination implements LogDestination {
   }
 
   write(entry: TaggedLogEntry): void {
-    if (entry.type === 'debug' && !this.verboseMode) return;
-    console.log(entry.content);
+    let styledContent = entry.type === 'debug' ? chalk.gray(entry.content) : entry.content;
+    if (entry.type === 'multiline') {
+      styledContent = chalk.gray(dedent(marked.parse(styledContent).toString()));
+    }
+    console.log(styledContent);
   }
 }
 

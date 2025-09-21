@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import Explorer from './explorer.ts';
 import { ConfigParser } from './config.ts';
 import { log, setVerboseMode } from './utils/logger.ts';
-import type { ExplorbotConfig } from '../explorbot.config.ts';
+import type { ExplorbotConfig } from './config.js';
 import { AiError } from './ai/provider.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
 
@@ -66,10 +66,11 @@ export class ExplorBot {
   async visitInitialState(): Promise<void> {
     const url = this.options.from || '/';
     await this.explorer.visit(url);
-
-    // Automatically start research and planning if a URL was provided
-    if (this.options.from) {
-      await this.explorer.plan();
+    if (this.userResolveFn) {
+      log(
+        'What should we do next? Consider /research, /plan, /navigate commands'
+      );
+      this.userResolveFn();
     }
   }
 

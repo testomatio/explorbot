@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { exploreCommand } from '../src/commands/explore.js';
 import { cleanCommand } from '../src/commands/clean.js';
 import { initCommand } from '../src/commands/init.js';
+import { addKnowledgeCommand } from '../src/commands/add-knowledge.js';
 
 const program = new Command();
 
@@ -41,5 +42,12 @@ program
   .option('-f, --force', 'Overwrite existing config file', false)
   .option('-p, --path <path>', 'Working directory for initialization')
   .action(initCommand);
+
+program
+  .command('add-knowledge')
+  .alias('knows')
+  .description('Add knowledge for specific URLs')
+  .option('-p, --path <path>', 'Knowledge directory path')
+  .action(addKnowledgeCommand);
 
 program.parse();

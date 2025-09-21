@@ -87,7 +87,7 @@ export const setActivity = (
 };
 
 export const clearActivity = () => {
-  activity.clearActivity();
+  activity?.clearActivity();
 };
 
 export const getCurrentActivity = () => {

@@ -1,8 +1,6 @@
 import type { ExplorBot } from './explorbot.js';
 
-export interface InputSubmitCallback {
-  (input: string): Promise<void>;
-}
+export type InputSubmitCallback = (input: string) => Promise<void>;
 
 export interface InputManager {
   registerInputPane(
