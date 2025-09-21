@@ -1,34 +1,64 @@
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { CommandHandler } from '../command-handler.js';
+import AutocompletePane from './AutocompletePane.js';
 
 interface InputPaneProps {
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: (value: string) => void;
-  placeholder?: string;
-  suggestions?: string[];
-  onAutocompleteNavigate?: (direction: 'up' | 'down') => void;
-  onAutocompleteSelect?: () => void;
+  commandHandler: CommandHandler;
+  exitOnEmptyInput?: boolean;
+  onSubmit?: (value: string) => Promise<void>;
 }
 
 const InputPane: React.FC<InputPaneProps> = ({
-  value,
-  onChange,
+  commandHandler,
+  exitOnEmptyInput = false,
   onSubmit,
-  placeholder,
-  suggestions = [],
-  onAutocompleteNavigate,
-  onAutocompleteSelect,
 }) => {
-  const [inputValue, setInputValue] = useState(value);
+  const [inputValue, setInputValue] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
+  const [showAutocomplete, setShowAutocomplete] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const addLog = useCallback((entry: string) => {
+    // For now, just console.log - in a real implementation this would integrate with the logger
+    console.log(entry);
+  }, []);
+
+  const handleSubmit = useCallback(async (value: string) => {
+    const trimmedValue = value.trim();
+
+    if (!trimmedValue) {
+      if (exitOnEmptyInput) {
+        process.exit(0);
+      }
+      return;
+    }
+
+    // Check if this is a command (starts with / or I.)
+    const isCommand = trimmedValue.startsWith('/') || trimmedValue.startsWith('I.');
+
+    if (isCommand) {
+      // Execute as command directly
+      try {
+        await commandHandler.executeCommand(trimmedValue);
+      } catch (error) {
+        addLog(`Command failed: ${error}`);
+      }
+    } else if (onSubmit) {
+      // Use the provided submit callback for non-commands
+      await onSubmit(trimmedValue);
+    }
+
+    // Reset state after submission
+    setInputValue('');
+    setCursorPosition(0);
+    setShowAutocomplete(false);
+    setSelectedIndex(0);
+  }, [commandHandler, exitOnEmptyInput, onSubmit, addLog]);
 
   useInput((input, key) => {
     if (key.return) {
-      onSubmit(inputValue);
-      setInputValue('');
-      setCursorPosition(0);
+      handleSubmit(inputValue);
       return;
     }
 
@@ -53,19 +83,30 @@ const InputPane: React.FC<InputPaneProps> = ({
     }
 
     // Handle autocomplete navigation
-    if (key.upArrow) {
-      onAutocompleteNavigate?.('up');
+    if (key.upArrow && showAutocomplete) {
+      const filteredCommands = commandHandler.getFilteredCommands(inputValue);
+      setSelectedIndex((prev) =>
+        prev > 0 ? prev - 1 : filteredCommands.length - 1
+      );
       return;
     }
 
-    if (key.downArrow) {
-      onAutocompleteNavigate?.('down');
+    if (key.downArrow && showAutocomplete) {
+      const filteredCommands = commandHandler.getFilteredCommands(inputValue);
+      setSelectedIndex((prev) =>
+        prev < filteredCommands.length - 1 ? prev + 1 : 0
+      );
       return;
     }
 
     if (key.tab) {
       key.tab = false; // Prevent default tab behavior
-      onAutocompleteSelect?.();
+      const filteredCommands = commandHandler.getFilteredCommands(inputValue);
+      if (selectedIndex < filteredCommands.length) {
+        setInputValue(filteredCommands[selectedIndex]);
+        setShowAutocomplete(false);
+        setSelectedIndex(0);
+      }
       return;
     }
 
@@ -76,7 +117,8 @@ const InputPane: React.FC<InputPaneProps> = ({
           inputValue.slice(cursorPosition);
         setInputValue(newValue);
         setCursorPosition(Math.max(0, cursorPosition - 1));
-        onChange(newValue);
+        setSelectedIndex(0);
+        setShowAutocomplete(newValue.startsWith('/') || newValue.startsWith('I.'));
       }
       return;
     }
@@ -88,18 +130,24 @@ const InputPane: React.FC<InputPaneProps> = ({
         inputValue.slice(cursorPosition);
       setInputValue(newValue);
       setCursorPosition(cursorPosition + 1);
-      onChange(newValue);
+      setSelectedIndex(0);
+      setShowAutocomplete(newValue.startsWith('/') || newValue.startsWith('I.'));
     }
   });
 
+  // Register with command handler on mount, unregister on unmount
   useEffect(() => {
-    setInputValue(value);
-    setCursorPosition(value.length);
-  }, [value]);
+    const unregister = commandHandler.registerInputPane(addLog, handleSubmit);
+    commandHandler.setExitOnEmptyInput(exitOnEmptyInput);
 
-  const displayValue = inputValue || placeholder || '';
+    return unregister;
+  }, [commandHandler, addLog, handleSubmit, exitOnEmptyInput]);
+
+  const displayValue = inputValue || '';
   const beforeCursor = displayValue.slice(0, cursorPosition);
   const afterCursor = displayValue.slice(cursorPosition);
+
+  const filteredCommands = commandHandler.getFilteredCommands(inputValue);
 
   return (
     <Box flexDirection="column">
@@ -111,6 +159,21 @@ const InputPane: React.FC<InputPaneProps> = ({
         </Text>
         <Text>{afterCursor}</Text>
       </Box>
+
+      <AutocompletePane
+        commands={commandHandler.getAvailableCommands()}
+        input={inputValue}
+        selectedIndex={selectedIndex}
+        onSelect={(index: number) => {
+          if (index < filteredCommands.length) {
+            setInputValue(filteredCommands[index]);
+            setShowAutocomplete(false);
+            setSelectedIndex(0);
+            setCursorPosition(filteredCommands[index].length);
+          }
+        }}
+        visible={showAutocomplete}
+      />
     </Box>
   );
 };

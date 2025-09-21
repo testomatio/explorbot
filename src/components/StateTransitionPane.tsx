@@ -21,7 +21,7 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
           flexDirection="column"
         >
           <Box justifyContent="space-between" marginBottom={1}>
-            <Text color="dim">📍 current page</Text>
+            <Text color="dim">Current page</Text>
             <Text color="dim">
               [{currentState.timestamp?.toLocaleTimeString() || 'unknown'}]
             </Text>

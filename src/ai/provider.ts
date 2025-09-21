@@ -1,7 +1,7 @@
 import { generateText, generateObject } from 'ai';
 import type { AIConfig } from '../../explorbot.config.ts';
 import { createDebug, tag } from '../utils/logger.js';
-import { setActivity, clearActivity } from '../activity.js';
+import { setActivity, clearActivity } from '../activity.ts';
 import { Conversation, type Message } from './conversation.js';
 
 const debugLog = createDebug('explorbot:ai');

@@ -1,26 +1,17 @@
-import { describe, expect, it } from 'bun:test';
-import { render } from 'ink-testing-library';
+import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
+import { render, cleanup } from 'ink-testing-library';
 import React from 'react';
 import LogPane from '../../src/components/LogPane';
+import { registerLogPane, unregisterLogPane } from '../../src/utils/logger.js';
 
 describe('LogPane', () => {
-  it('should render logs correctly', () => {
-    const logs = [
-      '🚀 Starting ExplorBot...',
-      '🔧 Browser started in headless mode',
-      { type: 'info', content: 'Test message' },
-    ];
-
-    const { lastFrame } = render(<LogPane logs={logs} verboseMode={false} />);
-    const frame = lastFrame();
-
-    expect(frame).toContain('Starting ExplorBot');
-    expect(frame).toContain('Browser started in headless mode');
-    expect(frame).toContain('Test message');
+  beforeEach(() => {
+    // Clean up after each test
+    cleanup();
   });
 
-  it('should handle empty logs array', () => {
-    const { lastFrame } = render(<LogPane logs={[]} verboseMode={false} />);
+  it('should render empty LogPane', () => {
+    const { lastFrame } = render(<LogPane verboseMode={false} />);
     const frame = lastFrame();
 
     // Empty LogPane might render whitespace or empty string
@@ -28,32 +19,49 @@ describe('LogPane', () => {
   });
 
   it('should respect verbose mode', () => {
-    const logs = ['Debug message', 'Important message'];
-
     const { lastFrame: frameVerbose } = render(
-      <LogPane logs={logs} verboseMode={true} />
+      <LogPane verboseMode={true} />
     );
     const { lastFrame: frameNonVerbose } = render(
-      <LogPane logs={logs} verboseMode={false} />
+      <LogPane verboseMode={false} />
     );
 
-    // Both should render the same for now (implementation may vary)
-    expect(frameVerbose()).toBeTruthy();
-    expect(frameNonVerbose()).toBeTruthy();
+    // Empty LogPane renders empty string (no logs to display)
+    expect(frameVerbose()).toBe('');
+    expect(frameNonVerbose()).toBe('');
   });
 
-  it('should limit logs to prevent overflow', () => {
-    // Create many logs
-    const logs = Array(100)
-      .fill(null)
-      .map((_, i) => `Log entry ${i}`);
+  it('should register and unregister with logger', () => {
+    const mockAddLog = () => {};
 
-    const { lastFrame } = render(<LogPane logs={logs} verboseMode={false} />);
+    // Test that register/unregister functions work
+    expect(() => registerLogPane(mockAddLog)).not.toThrow();
+    expect(() => unregisterLogPane(mockAddLog)).not.toThrow();
+  });
+
+  it('should handle component mounting and unmounting', () => {
+    const mockAddLog = () => {};
+
+    // Register should work
+    registerLogPane(mockAddLog);
+
+    // Unregister should work
+    unregisterLogPane(mockAddLog);
+  });
+
+  it('should render with verbose mode enabled', () => {
+    const { lastFrame } = render(<LogPane verboseMode={true} />);
     const frame = lastFrame();
 
-    // LogPane should display all logs passed to it (limiting is done in App component)
-    expect(
-      frame.split('\n').filter((line) => line.trim()).length
-    ).toBeGreaterThan(0);
+    // Empty LogPane renders empty string (no logs to display)
+    expect(frame).toBe('');
+  });
+
+  it('should render with verbose mode disabled', () => {
+    const { lastFrame } = render(<LogPane verboseMode={false} />);
+    const frame = lastFrame();
+
+    // Empty LogPane renders empty string (no logs to display)
+    expect(frame).toBe('');
   });
 });

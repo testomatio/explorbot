@@ -5,10 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "explorbot": "./dist/index.js"
+    "explorbot": "./dist/index.js",
+    "maclay": "./bin/maclay.ts"
   },
   "scripts": {
-    "build": "bun build src/index.tsx --outdir dist --target node --external react --external ink --external yargs",
+    "build": "bun run src/index.tsx build && bun run build:bin",
+    "build:bin": "bun build bin/maclay.ts --outdir bin --target node --external commander --format esm",
     "dev": "bun run src/index.tsx",
     "start": "node dist/index.js",
     "init": "bun run src/index.tsx init",
@@ -31,6 +33,7 @@
     "ai": "^4.3.17",
     "cli-highlight": "^2.1.11",
     "codeceptjs": "^3.7.0",
+    "commander": "^14.0.1",
     "dedent": "^1.6.0",
     "dotenv": "^17.2.0",
     "gray-matter": "^4.0.3",

@@ -132,20 +132,24 @@ class FileDestination implements LogDestination {
 }
 
 class ReactDestination implements LogDestination {
-  private callback: ((entry: LogEntry) => void) | null = null;
+  private logPanes: Set<(entry: LogEntry) => void> = new Set();
 
   isEnabled(): boolean {
-    return Boolean(this.callback);
+    return this.logPanes.size > 0;
   }
 
   write(entry: TaggedLogEntry): void {
-    if (this.callback) {
-      this.callback(entry);
-    }
+    this.logPanes.forEach((addLog) => {
+      addLog(entry);
+    });
   }
 
-  setCallback(callback: (entry: LogEntry) => void): void {
-    this.callback = callback;
+  registerLogPane(addLog: (entry: LogEntry) => void): void {
+    this.logPanes.add(addLog);
+  }
+
+  unregisterLogPane(addLog: (entry: LogEntry) => void): void {
+    this.logPanes.delete(addLog);
   }
 }
 
@@ -173,6 +177,14 @@ class Logger {
 
   isVerboseMode(): boolean {
     return this.debugDestination.isEnabled();
+  }
+
+  registerLogPane(addLog: (entry: LogEntry) => void): void {
+    this.react.registerLogPane(addLog);
+  }
+
+  unregisterLogPane(addLog: (entry: LogEntry) => void): void {
+    this.react.unregisterLogPane(addLog);
   }
 
   private processArgs(args: any[]): string {
@@ -236,9 +248,6 @@ class Logger {
 
 const logger = Logger.getInstance();
 
-export const setLogCallback = (callback: (entry: LogEntry) => void) => {
-  logger.react.setCallback(callback);
-};
 
 export const tag = (type: LogType) => ({
   log: (...args: any[]) => logger.log(type, ...args),
@@ -269,3 +278,8 @@ export const getMethodsOfObject = (obj: any): string[] => {
 export const setVerboseMode = (enabled: boolean) =>
   logger.setVerboseMode(enabled);
 export const isVerboseMode = () => logger.isVerboseMode();
+
+export const registerLogPane = (addLog: (entry: LogEntry) => void) =>
+  logger.registerLogPane(addLog);
+export const unregisterLogPane = (addLog: (entry: LogEntry) => void) =>
+  logger.unregisterLogPane(addLog);

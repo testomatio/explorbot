@@ -265,6 +265,7 @@ class Action {
   ): Promise<boolean> {
     try {
       debugLog(`Resolution attempt ${attempt}`);
+      setActivity(`🦾 Acting in browser...`, 'action');
 
       const prevActionResult = this.actionResult;
       this.lastError = null;
@@ -403,7 +404,7 @@ class Action {
 
         if (success) {
           tag('success').log('resolved', this.expectation);
-          const { clearActivity } = await import('../activity.js');
+          const { clearActivity } = await import('./activity.ts');
           clearActivity();
           return this;
         }
@@ -422,7 +423,7 @@ class Action {
       debugLog(errorMessage);
 
       if (!this.userResolveFn) {
-        const { clearActivity } = await import('../activity.js');
+        const { clearActivity } = await import('./activity.ts');
         clearActivity();
         throw new Error(errorMessage);
       }
@@ -437,7 +438,7 @@ class Action {
 
       const userInput = await this.userResolveFn(this.lastError!);
       if (!userInput) {
-        const { clearActivity } = await import('../activity.js');
+        const { clearActivity } = await import('./activity.ts');
         clearActivity();
         throw new Error(errorMessage);
       }
@@ -449,7 +450,7 @@ class Action {
         );
         if (success) {
           tag('success').log('resolved with user input', this.expectation);
-          const { clearActivity } = await import('../activity.js');
+          const { clearActivity } = await import('./activity.ts');
           clearActivity();
           return this;
         }
@@ -458,12 +459,13 @@ class Action {
       }
     } catch (error) {
       tag('error').log('Failed to resolve', this.expectation);
+      const { clearActivity } = await import('./activity.ts');
       clearActivity();
       throw error;
     }
 
     debugLog(errorMessage);
-    const { clearActivity } = await import('../activity.js');
+    const { clearActivity } = await import('./activity.ts');
     clearActivity();
     throw new Error(errorMessage);
   }

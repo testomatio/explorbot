@@ -2,7 +2,7 @@ import type { Provider } from './provider.js';
 import { ActionResult } from '../action-result.js';
 import type { StateManager } from '../state-manager.js';
 import { tag, createDebug } from '../utils/logger.js';
-import { setActivity } from '../activity.js';
+import { setActivity } from '../activity.ts';
 import { WebPageState } from '../state-manager.js';
 import type { Conversation, Message } from './conversation.js';
 import dedent from 'dedent';

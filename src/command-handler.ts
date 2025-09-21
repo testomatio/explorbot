@@ -1,5 +1,19 @@
 import type { ExplorBot } from './explorbot.js';
 
+export interface InputSubmitCallback {
+  (input: string): Promise<void>;
+}
+
+export interface InputManager {
+  registerInputPane(
+    addLog: (entry: string) => void,
+    onSubmit: InputSubmitCallback
+  ): () => void;
+  getAvailableCommands(): string[];
+  getFilteredCommands(input: string): string[];
+  setExitOnEmptyInput(enabled: boolean): void;
+}
+
 export interface Command {
   name: string;
   description: string;
@@ -7,9 +21,14 @@ export interface Command {
   execute: (input: string, explorBot: ExplorBot) => Promise<void>;
 }
 
-export class CommandHandler {
+export class CommandHandler implements InputManager {
   private explorBot: ExplorBot;
   private commands: Command[];
+  private registeredInputPanes: Set<{
+    addLog: (entry: string) => void;
+    onSubmit: InputSubmitCallback;
+  }> = new Set();
+  private exitOnEmptyInput = false;
 
   constructor(explorBot: ExplorBot) {
     this.explorBot = explorBot;
@@ -119,5 +138,66 @@ export class CommandHandler {
     }
 
     return this.commands.some((cmd) => cmd.pattern.test(trimmedInput));
+  }
+
+  // InputManager implementation
+  registerInputPane(
+    addLog: (entry: string) => void,
+    onSubmit: InputSubmitCallback
+  ): () => void {
+    const pane = { addLog, onSubmit };
+    this.registeredInputPanes.add(pane);
+
+    // Return unregister function
+    return () => {
+      this.registeredInputPanes.delete(pane);
+    };
+  }
+
+  getFilteredCommands(input: string): string[] {
+    const trimmedInput = input.trim();
+    if (!trimmedInput) {
+      return this.getAvailableCommands().slice(0, 20);
+    }
+
+    const searchTerm = trimmedInput.toLowerCase().replace(/^i\./, '');
+    return this.getAvailableCommands()
+      .filter((cmd) => cmd.toLowerCase().includes(searchTerm))
+      .slice(0, 20);
+  }
+
+  setExitOnEmptyInput(enabled: boolean): void {
+    this.exitOnEmptyInput = enabled;
+  }
+
+  async submitInput(input: string): Promise<void> {
+    const trimmedInput = input.trim();
+
+    if (!trimmedInput) {
+      if (this.exitOnEmptyInput) {
+        process.exit(0);
+      }
+      return;
+    }
+
+    // Check if this is a command (starts with / or I.)
+    const isCommand = trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
+
+    if (isCommand) {
+      // Otherwise, execute as command
+      try {
+        await this.executeCommand(trimmedInput);
+      } catch (error) {
+        // Use the first registered pane's addLog if available
+        const firstPane = this.registeredInputPanes.values().next().value;
+        firstPane?.addLog(`Command failed: ${error}`);
+      }
+    } else {
+      // If we have registered panes, use the first one's submit callback
+      const firstPane = this.registeredInputPanes.values().next().value;
+      if (firstPane) {
+        await firstPane.onSubmit(trimmedInput);
+      }
+    }
   }
 }

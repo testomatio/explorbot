@@ -1,21 +1,56 @@
-import React from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import dedent from 'dedent';
 import { marked } from 'marked';
-import { markedTerminal } from 'marked-terminal';
+// import markedTerminal from 'marked-terminal';
 
 import { Box, Text } from 'ink';
 import type { TaggedLogEntry, LogType } from '../utils/logger.js';
+import { registerLogPane, setVerboseMode, unregisterLogPane } from '../utils/logger.js';
 
-marked.use(markedTerminal());
+// marked.use(new markedTerminal());
 
 type LogEntry = string | React.ReactElement | TaggedLogEntry;
 
 interface LogPaneProps {
-  logs: LogEntry[];
-  verboseMode?: boolean;
+  verboseMode: boolean;
 }
 
-const LogPane: React.FC<LogPaneProps> = ({ logs, verboseMode = false }) => {
+const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
+  const [logs, setLogs] = useState<(string | TaggedLogEntry)[]>([]);
+
+  const addLog = useCallback((logEntry: string | TaggedLogEntry) => {
+    setLogs((prevLogs) => {
+      if (prevLogs.length > 0) {
+        const lastLog = prevLogs[prevLogs.length - 1];
+        if (
+          typeof lastLog === 'string' &&
+          typeof logEntry === 'string' &&
+          lastLog === logEntry
+        ) {
+          return prevLogs;
+        }
+        if (
+          typeof lastLog === 'object' &&
+          'type' in lastLog &&
+          typeof logEntry === 'object' &&
+          'type' in logEntry &&
+          lastLog.type === logEntry.type &&
+          lastLog.content === logEntry.content
+        ) {
+          return prevLogs;
+        }
+      }
+      return [...prevLogs.slice(-50), logEntry];
+    });
+  }, []);
+
+  useEffect(() => {
+    registerLogPane(addLog);
+
+    return () => {
+      unregisterLogPane(addLog);
+    };
+  }, [addLog]);
   const getLogStyles = (type: LogType) => {
     switch (type) {
       case 'success':

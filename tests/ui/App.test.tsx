@@ -32,6 +32,14 @@ const mockCommandHandler = {
     'I.see',
   ],
   executeCommand: async () => {},
+  registerInputPane: () => () => {},
+  getFilteredCommands: (input: string) => [
+    '/research',
+    '/plan',
+    '/navigate',
+  ].slice(0, 20),
+  setExitOnEmptyInput: () => {},
+  submitInput: async () => {},
 };
 
 // Mock the logger

@@ -5,7 +5,7 @@ import {
   addActivityListener,
   removeActivityListener,
   type ActivityEntry,
-} from '../activity.js';
+} from '../activity.ts';
 
 const ActivityPane: React.FC = () => {
   const [activity, setActivity] = useState<ActivityEntry | null>(null);

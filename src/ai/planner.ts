@@ -1,7 +1,7 @@
 import type { Provider } from './provider.js';
 import type { StateManager } from '../state-manager.js';
 import { tag, createDebug } from '../utils/logger.js';
-import { setActivity } from '../activity.js';
+import { setActivity } from '../activity.ts';
 import type { WebPageState } from '../state-manager.js';
 import { type Conversation, Message } from './conversation.js';
 import type { ExperienceTracker } from '../experience-tracker.ts';
