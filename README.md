@@ -74,14 +74,53 @@ The Planner creates test scenarios based on research:
 
 Explorbot provides a real-time TUI (Terminal User Interface) with three main areas:
 
-**Log Pane**: Shows all Explorbot activities, AI decisions, and execution logs
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 📋 LOG PANE                                                                                         │
+│                                                                                                     │
+│ Expecting I.seeInCurrentUrl('/company/settings')                                                   │
+│ Resolved I.seeInCurrentUrl('/company/settings')                                                    │
+│ >  Added successful resolution to: users_sign_in.md                                                │
+│ What should we do next? Consider /research, /plan, /navigate commands                              │
+│ Researching...                                                                                      │
+│ Initiated research for /company/settings to understand the context...                              │
+│                                                                                                     │
+│ ## Summary                                                                                          │
+│ The Company Settings page lets users view and edit company details.                                │
+│ The page provides navigation to other sections and user profile utilities.                         │
+│                                                                                                     │
+│ ## User Goals                                                                                       │
+│ • Edit company name - Modify the "Company Name" field and save changes                            │
+│ • Navigate settings - Switch between Company Settings, Share Options, AI tabs                      │
+│                                                                                                     │
+│ Planning...                                                                                         │
+│   ⯈ AddScenario(Verify company name field is pre-populated, HIGH)                                  │
+│   ⯈ AddScenario(Change company name and verify persistence, HIGH)                                   │
+│   ⯈ AddScenario(Navigate away and return to verify name persists, HIGH)                            │
+│ Done. Press [ESC] to enable input                                                                   │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ > /plan user-management                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐ ┌─────────────────────────────────────────┐
+│ 🌐 STATE PANE                                           │ │ 📋 TASKS PANE                           │
+│                                                         │ │                                         │
+│ Current: /company/settings                              │ │ Testing Tasks            [3 total]     │
+│ URL: https://app.example.com/company/settings           │ │                                         │
+│ Title: Company Settings - Example App                   │ │ • Verify company name field is pre-po⭆ │
+│ H2: Company Settings                                    │ │ • Change company name and verify per⭆  │
+│                                                         │ │ • Navigate away and return to verify⭆  │
+│ History: / → /login → /dashboard → /settings            │ │                                         │
+└─────────────────────────────────────────────────────────┘ └─────────────────────────────────────────┘
+```
 
-**Activity/Input Pane**: 
-- Displays current AI actions when Explorbot is working
-- Provides command input with autocomplete when idle
-- Supports both application commands (/) and CodeceptJS commands (I.)
+**Log Pane**: Shows all Explorbot activities, AI decisions, research results, and execution logs
 
-**State Transition Pane**: Shows current page location and navigation history
+**Input Pane**: Single-line command input with autocomplete support for both application commands (/) and CodeceptJS commands (I.)
+
+**State Pane**: Shows current page location, URL, title, and navigation history
+
+**Tasks Pane**: Shows generated test scenarios with priorities and status
 
 ### Available Commands
 
