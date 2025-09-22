@@ -186,22 +186,18 @@ class Explorer {
     }
   }
 
-  async plan() {
-    log('Planning next steps...');
+  async research() {
+    log('Researching...');
     const tools = createCodeceptJSTools(this.actor);
     const conversation = await this.researcher.research(tools);
-    let scenarios = await this.planner.plan(conversation);
-    if (this.userResolveFn) {
-      tag('info').log('Do you want to change the testing plan?');
-      tag('info').log(
-        'Suggest what should be tested instead or press [Enter] to start testing'
-      );
-      const suggestions = (await this.userResolveFn()) as string;
-      if (suggestions?.trim()) {
-        conversation.addUserText(suggestions);
-        scenarios = await this.planner.plan(conversation);
-      }
-    }
+    return conversation;
+  }
+
+  async plan() {
+    log('Planning next steps...');
+
+    const pageContext = await this.researcher.research();
+    let scenarios = await this.planner.plan(pageContext);
     this.scenarios = scenarios;
     return scenarios;
   }

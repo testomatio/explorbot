@@ -40,7 +40,9 @@ describe('CodeceptJS Tools', () => {
   describe('click tool', () => {
     it('should be defined with correct description and parameters', () => {
       expect(tools.click).toBeDefined();
-      expect(tools.click.description).toContain('Click on an element');
+      expect(tools.click.description).toContain(
+        'Perform a click on a link or a button'
+      );
       expect(tools.click.parameters).toBeDefined();
     });
 

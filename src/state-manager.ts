@@ -25,6 +25,8 @@ export interface WebPageState {
   screenshotFile?: string;
   /** Log file path */
   logFile?: string;
+  /** Research result */
+  researchResult?: string;
   /** HTML content */
   html?: string;
   /** Page headings */

@@ -6,7 +6,6 @@ import chalk from 'chalk';
 import { marked } from 'marked';
 import dedent from 'dedent';
 
-
 export type LogType =
   | 'info'
   | 'success'
@@ -47,9 +46,12 @@ class ConsoleDestination implements LogDestination {
   }
 
   write(entry: TaggedLogEntry): void {
-    let styledContent = entry.type === 'debug' ? chalk.gray(entry.content) : entry.content;
+    let styledContent =
+      entry.type === 'debug' ? chalk.gray(entry.content) : entry.content;
     if (entry.type === 'multiline') {
-      styledContent = chalk.gray(dedent(marked.parse(styledContent).toString()));
+      styledContent = chalk.gray(
+        dedent(marked.parse(styledContent).toString())
+      );
     }
     console.log(styledContent);
   }
@@ -304,3 +306,6 @@ export const registerLogPane = (addLog: (entry: LogEntry) => void) =>
   logger.registerLogPane(addLog);
 export const unregisterLogPane = (addLog: (entry: LogEntry) => void) =>
   logger.unregisterLogPane(addLog);
+
+// Legacy alias for backward compatibility
+export const setLogCallback = registerLogPane;

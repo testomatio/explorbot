@@ -14,11 +14,30 @@ export class Researcher {
   private provider: Provider;
   private stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
+  private researchCache: Map<string, Conversation>;
 
   constructor(provider: Provider, stateManager: StateManager) {
     this.provider = provider;
     this.stateManager = stateManager;
     this.experienceTracker = stateManager.getExperienceTracker();
+    this.researchCache = new Map();
+  }
+  /**
+   * Clear the research cache. Useful for testing or when memory usage becomes an issue.
+   */
+  clearCache(): void {
+    this.researchCache.clear();
+    debugLog('Research cache cleared');
+  }
+
+  /**
+   * Get cache statistics for debugging purposes
+   */
+  getCacheStats(): { size: number; keys: string[] } {
+    return {
+      size: this.researchCache.size,
+      keys: Array.from(this.researchCache.keys()),
+    };
   }
 
   getSystemMessage(): Message {
@@ -30,18 +49,22 @@ export class Researcher {
     return { role: 'user', content: [{ type: 'text', text }] };
   }
 
-  async research(tools?: any): Promise<Conversation> {
+  async research(tools?: any): Promise<string> {
     const state = this.stateManager.getCurrentState();
     if (!state) throw new Error('No state found');
 
+    if (state.researchResult) {
+      return state.researchResult;
+    }
+
+    setActivity('🧑‍🔬 Researching...', 'action');
     const actionResult = ActionResult.fromState(state);
     const simplifiedHtml = await actionResult.simplifiedHtml();
 
-    setActivity('🧑‍🔬 Researching...', 'action');
     debugLog('Researching web page:', actionResult.url);
     const prompt = this.buildResearchPrompt(actionResult, simplifiedHtml);
 
-    const { conversation } = await this.provider.startConversation(
+    const response = await this.provider.generateWithTools(
       [
         this.getSystemMessage(),
         {
@@ -65,7 +88,9 @@ export class Researcher {
       tools
     );
 
-    const responseText = conversation.getLastMessage();
+    state.researchResult = response.text;
+
+    const responseText = response.text;
     this.experienceTracker.writeExperienceFile(
       `reseach_${actionResult.getStateHash()}`,
       responseText,
@@ -74,9 +99,9 @@ export class Researcher {
       }
     );
     debugLog('Research response:', responseText);
-    tag('multiline').log('📡 Research:\n\n', responseText);
+    tag('multiline').log(responseText);
 
-    return conversation;
+    return responseText;
   }
 
   private buildResearchPrompt(
@@ -103,7 +128,7 @@ export class Researcher {
         </hint>`;
     }
 
-    return dedent`Analyze this web page and provide a comprehensive research report.
+    return dedent`Analyze this web page and provide a comprehensive research report in markdown format.
 
     <rules>
     - Analyze the web page and provide a comprehensive research report.
@@ -140,6 +165,7 @@ export class Researcher {
 
     ${knowledge}
 
+    <output>
     Please provide a structured analysis in markdown format with the following sections:
 
     ## Summary
@@ -171,6 +197,8 @@ export class Researcher {
 
     ### Expanded Interactions
     - Control clicked: locator — revealed items/areas summary
+
+    </output>
 
 `;
   }

@@ -347,7 +347,9 @@ class Action {
       return this;
     }
 
-    log(`Starting iterative resolution (Max attempts: ${maxAttempts.toString()})`);
+    log(
+      `Starting iterative resolution (Max attempts: ${maxAttempts.toString()})`
+    );
 
     let attempt = 0;
     let codeBlocks: string[] = [];
@@ -369,7 +371,7 @@ class Action {
             intention = aiMessage || '';
           }
 
-          codeBlocks = this.extractCodeBlocks(aiResponse || '');  
+          codeBlocks = this.extractCodeBlocks(aiResponse || '');
 
           if (codeBlocks.length === 0) {
             break;
@@ -382,7 +384,6 @@ class Action {
         if (success) {
           return this;
         }
-
       }
 
       const errorMessage = `Failed to resolve issue after ${maxAttempts} attempts. Original issue: ${originalMessage}. Please check the experience folder for details of failed attempts and resolve manually.`;
@@ -420,7 +421,6 @@ class Action {
   getStateManager(): StateManager {
     return this.stateManager;
   }
-
 }
 
 export default Action;

@@ -310,7 +310,8 @@ class Navigator {
     if (!context?.experience.length) return '';
 
     let experienceContent = context?.experience.join('\n\n---\n\n');
-    experienceContent = await this.experienceCompactor.compactExperience(experienceContent);
+    experienceContent =
+      await this.experienceCompactor.compactExperience(experienceContent);
     tag('substep').log(
       `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
     );
@@ -331,25 +332,33 @@ class Navigator {
 
   private outputRule(): string {
     return dedent`
-      <output>
-      Your response must start explanation of what you are going to do to achive the result
-      And then contain valid CodeceptJS code in code blocks.
-      Use only locators from HTML PAGE that was passed in <page> context.
+
+      <rules>
       Do not invent locators, focus only on locators from HTML PAGE.
       Provide up to ${this.MAX_ATTEMPTS} various code suggestions to achieve the result.
+      If there was already succesful solution in <experince> use it as a first solution.
 
+      If no succesful solution was found in <experince> propose codeblocks for each area that can help to achieve the result.
       Do not stick only to the first found element as it might be hidden or not availble on the page.
       If you think HTML contains several areas that can help to achieve the result, propose codeblocks for each such area.
       Use exact locators that can pick the elements from each areas.
       Detect such duplicated areas by looking for duplicate IDs, data-ids, forms, etc.
 
-      <rules>
       In <explanation> write only one line without heading or bullet list or any other formatting.
       Check previous solutions, if there is already successful solution, use it!
       CodeceptJS code must start with "I."
-      All lines of code must start with "I."
+      All lines of code must be CodeceptJS code and start with "I."
       ${this.locatorRule()}
       </rules>
+
+      <output>
+      Your response must start explanation of what you are going to do to achive the result
+      It is important to explain intention before proposing code.
+      Response must also valid CodeceptJS code in code blocks.
+      Propose codeblock from succesful solutions in <experince> first if they exist.
+      Use only locators from HTML PAGE that was passed in <page> context.
+      </output>
+
 
       <output_format>
         <explanation>

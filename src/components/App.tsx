@@ -99,6 +99,9 @@ export function App({
                 setShowInput(false);
               }
             }}
+            onCommandStart={() => {
+              setShowInput(false);
+            }}
           />
         </>
       ) : (

@@ -83,8 +83,8 @@ export class Provider {
     messages = this.filterImages(messages);
 
     const toolNames = Object.keys(tools || {});
-    tag('info').log(
-      `🛠️ AI Tool Calling enabled with tools: [${toolNames.join(', ')}]`
+    tag('debug').log(
+      `Tools enabled: [${toolNames.join(', ')}]`
     );
     debugLog('Available tools:', toolNames);
 
@@ -113,37 +113,18 @@ export class Provider {
 
       // Log tool usage summary
       if (response.toolCalls && response.toolCalls.length > 0) {
-        tag('info').log(
-          `🔧 AI executed ${response.toolCalls.length} tool calls`
+        tag('debug').log(
+          `AI executed ${response.toolCalls.length} tool calls`
         );
         response.toolCalls.forEach((call: any, index: number) => {
-          const args = JSON.stringify(call.args || {});
-          tag('substep').log(`${index + 1}. ${call.toolName}(${args})`);
+          tag('step').log(`⯈ ${call.toolName}(${Object.values(call?.input || []).join(', ')})`);
         });
       }
-
-      // Log tool results if available
-      if (response.toolResults && response.toolResults.length > 0) {
-        tag('info').log(
-          `📊 Tool results received: ${response.toolResults.length} results`
-        );
-        response.toolResults.forEach((result: any, index: number) => {
-          const success = result.result?.success !== false;
-          const status = success ? '✅' : '❌';
-          tag('substep').log(
-            `${index + 1}. ${status} ${result.toolName} → ${success ? 'Success' : result.result?.error || 'Failed'}`
-          );
-        });
-      }
-
-      debugLog('AI response with dynamic tools:', response.text);
-      tag('info').log(
-        '🎯 AI response:',
-        response.text?.split('\n')[0] || 'No text response'
-      );
 
       return response;
     } catch (error: any) {
+      console.log(error.messages);
+      console.log(error.tools);
       clearActivity();
       throw error;
     }
@@ -155,7 +136,6 @@ export class Provider {
     options: any = {}
   ): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model} for structured output`, 'ai');
-
 
     messages = this.filterImages(messages);
 

@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { createDebug, tag } from '../utils/logger.js';
 import { ActionResult } from '../action-result.js';
+import dedent from 'dedent';
 
 const debugLog = createDebug('explorbot:tools');
 
@@ -34,64 +35,43 @@ async function capturePageState(actor: any): Promise<ActionResult> {
 export function createCodeceptJSTools(actor: any) {
   return {
     click: tool({
-      description:
-        'Click on an element by locator (text, CSS selector, XPath). After clicking, the page state will be automatically captured and returned.',
-      parameters: z.object({
-        locator: z
-          .string()
-          .describe(
-            'The locator for the element to click (text, CSS selector, XPath)'
-          ),
-        context: z
-          .string()
-          .optional()
-          .describe('Optional context element to search within'),
+      description: dedent`
+        Perform a click on an element by its locator. CSS or XPath locator are equally supported.
+      `,
+      inputSchema: z.object({
+        locator: z.string().describe(
+          dedent`
+              CSS or XPath locator of target element
+            `
+        ),
       }),
-      execute: async ({ locator, context }) => {
-        const contextMsg = context ? ` within: ${context}` : '';
-        tag('action').log(`🖱️ AI Tool: click("${locator}")${contextMsg}`);
-        debugLog(
-          `Clicking element: ${locator}`,
-          context ? `within: ${context}` : ''
-        );
+      execute: async ({ locator }) => {
+        tag('substep').log(`🖱️ AI Tool: click("${locator}")`);
+        debugLog(`Clicking element: ${locator}`);
+
         try {
-          if (context) {
-            await actor.click(locator, context);
-          } else {
-            await actor.click(locator);
-          }
+          await actor.click(locator);
 
           // Capture new page state after click
+          let pageState = null;
           try {
-            const newState = await capturePageState(actor);
+            pageState = await capturePageState(actor);
             tag('success').log(
-              `✅ Click successful → ${newState.url} "${newState.title}"`
+              `✅ Click successful → ${pageState.url} "${pageState.title}"`
             );
-
-            return {
-              success: true,
-              action: 'click',
-              locator,
-              context,
-              pageState: {
-                url: newState.url,
-                title: newState.title,
-                html: await newState.simplifiedHtml(),
-              },
-            };
           } catch (stateError) {
             debugLog(`Page state capture failed after click: ${stateError}`);
             tag('warning').log(
               `⚠️ Click executed but page state capture failed: ${stateError}`
             );
-            return {
-              success: false,
-              action: 'click',
-              locator,
-              context,
-              error: `Failed to capture page state: ${stateError}`,
-            };
           }
+
+          return {
+            success: true,
+            action: 'click',
+            locator,
+            pageState,
+          };
         } catch (error) {
           debugLog(`Click failed: ${error}`);
           tag('error').log(`❌ Click failed: ${error}`);
@@ -99,7 +79,6 @@ export function createCodeceptJSTools(actor: any) {
             success: false,
             action: 'click',
             locator,
-            context,
             error: String(error),
           };
         }
@@ -109,17 +88,19 @@ export function createCodeceptJSTools(actor: any) {
     type: tool({
       description:
         'Send keyboard input to the active element or fill a field. After typing, the page state will be automatically captured and returned.',
-      parameters: z.object({
+      inputSchema: z.object({
         text: z.string().describe('The text to type'),
         locator: z
           .string()
           .optional()
-          .describe('Optional locator to focus on before typing'),
+          .describe('Optional CSS or XPath locator to focus on before typing'),
       }),
       execute: async ({ text, locator }) => {
         const locatorMsg = locator ? ` in: ${locator}` : '';
-        tag('action').log(`⌨️ AI Tool: type("${text}")${locatorMsg}`);
+
+        tag('substep').log(`⌨️ AI Tool: type("${text}")${locatorMsg}`);
         debugLog(`Typing text: ${text}`, locator ? `in: ${locator}` : '');
+
         try {
           if (locator) {
             await actor.fillField(locator, text);

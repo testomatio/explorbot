@@ -122,6 +122,11 @@ export class CommandHandler implements InputManager {
       return;
     }
 
+    // Don't treat lone '/' as a URL
+    if (trimmedInput === '/') {
+      return;
+    }
+
     for (const command of this.commands) {
       if (command.pattern.test(trimmedInput)) {
         await command.execute(trimmedInput, this.explorBot);

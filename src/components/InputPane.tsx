@@ -7,12 +7,14 @@ interface InputPaneProps {
   commandHandler: CommandHandler;
   exitOnEmptyInput?: boolean;
   onSubmit?: (value: string) => Promise<void>;
+  onCommandStart?: () => void;
 }
 
 const InputPane: React.FC<InputPaneProps> = ({
   commandHandler,
   exitOnEmptyInput = false,
   onSubmit,
+  onCommandStart,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -45,6 +47,7 @@ const InputPane: React.FC<InputPaneProps> = ({
 
       if (isCommand) {
         // Execute as command directly
+        onCommandStart?.();
         try {
           await commandHandler.executeCommand(trimmedValue);
         } catch (error) {
@@ -114,18 +117,14 @@ const InputPane: React.FC<InputPaneProps> = ({
     }
 
     if (key.tab) {
-      key.tab = false; // Prevent default tab behavior
       const filteredCommands = commandHandler.getFilteredCommands(inputValue);
       if (selectedIndex < filteredCommands.length) {
         const selectedCommand = filteredCommands[selectedIndex];
         setInputValue(selectedCommand);
         setShowAutocomplete(false);
         setSelectedIndex(0);
+        setCursorPosition(selectedCommand.length);
         setAutoCompleteTriggered(true);
-        // Auto-execute commands that start with /
-        if (selectedCommand.startsWith('/')) {
-          setTimeout(() => handleSubmit(selectedCommand), 0);
-        }
       }
       return;
     }
@@ -191,7 +190,7 @@ const InputPane: React.FC<InputPaneProps> = ({
       </Box>
 
       <AutocompletePane
-        commands={commandHandler.getAvailableCommands()}
+        commands={filteredCommands}
         input={inputValue}
         selectedIndex={selectedIndex}
         onSelect={(index: number) => {
@@ -201,10 +200,7 @@ const InputPane: React.FC<InputPaneProps> = ({
             setShowAutocomplete(false);
             setSelectedIndex(0);
             setCursorPosition(selectedCommand.length);
-            // Auto-execute commands that start with /
-            if (selectedCommand.startsWith('/')) {
-              setTimeout(() => handleSubmit(selectedCommand), 0);
-            }
+            setAutoCompleteTriggered(true);
           }
         }}
         visible={showAutocomplete}
