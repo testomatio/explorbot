@@ -21,10 +21,10 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
           flexDirection="column"
         >
           <Box flexDirection="row" alignItems="flex-start" marginBottom={1}>
-              <Text color="dim">Current Page </Text>
-              <Text color="blue" wrap="truncate-end">
-                {currentState.url}
-              </Text>
+            <Text color="dim">Current Page </Text>
+            <Text color="blue" wrap="truncate-end">
+              {currentState.url}
+            </Text>
           </Box>
 
           <Box marginY={0}>

@@ -151,7 +151,13 @@ export class Planner {
 
     const priorityOrder = { high: 0, medium: 1, low: 2, unknown: 3 };
     const sortedTasks = [...tasks].sort(
-      (a, b) => (priorityOrder[a.priority.toLowerCase() as keyof typeof priorityOrder] || 0) - (priorityOrder[b.priority.toLowerCase() as keyof typeof priorityOrder] || 0)
+      (a, b) =>
+        (priorityOrder[
+          a.priority.toLowerCase() as keyof typeof priorityOrder
+        ] || 0) -
+        (priorityOrder[
+          b.priority.toLowerCase() as keyof typeof priorityOrder
+        ] || 0)
     );
 
     return sortedTasks;
@@ -212,5 +218,5 @@ export class Planner {
       7. At least 3 tasks should be proposed.
     </task>
     `;
-  }  
+  }
 }

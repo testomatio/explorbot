@@ -13,7 +13,7 @@ const getStatusIcon = (status: string): string => {
     case 'failed':
       return '❌';
     case 'pending':
-      return '▢'
+      return '▢';
     default:
       return '⮽';
   }
@@ -56,20 +56,17 @@ const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
       >
         <Box justifyContent="space-between" marginBottom={1}>
           <Text color="dim">📋 Testing Tasks</Text>
-          <Text color="dim">
-            [{tasks.length} total]
-          </Text>
+          <Text color="dim">[{tasks.length} total]</Text>
         </Box>
 
         {tasks.map((task, taskIndex) => (
           <Box key={taskIndex} flexDirection="column" marginY={0}>
             <Box justifyContent="space-between" marginBottom={0}>
               <Box flexDirection="row">
-                <Text>
-                  {getStatusIcon(task.status)}
-                </Text>
+                <Text>{getStatusIcon(task.status)}</Text>
                 <Text color="dim" wrap="truncate-end">
-                  {' '}{task.scenario}
+                  {' '}
+                  {task.scenario}
                 </Text>
               </Box>
               <Text color={getPriorityColor(task.priority)}>

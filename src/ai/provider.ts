@@ -83,9 +83,7 @@ export class Provider {
     messages = this.filterImages(messages);
 
     const toolNames = Object.keys(tools || {});
-    tag('debug').log(
-      `Tools enabled: [${toolNames.join(', ')}]`
-    );
+    tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
     debugLog('Available tools:', toolNames);
 
     const config = {
@@ -113,11 +111,11 @@ export class Provider {
 
       // Log tool usage summary
       if (response.toolCalls && response.toolCalls.length > 0) {
-        tag('debug').log(
-          `AI executed ${response.toolCalls.length} tool calls`
-        );
+        tag('debug').log(`AI executed ${response.toolCalls.length} tool calls`);
         response.toolCalls.forEach((call: any, index: number) => {
-          tag('step').log(`⯈ ${call.toolName}(${Object.values(call?.input || []).join(', ')})`);
+          tag('step').log(
+            `⯈ ${call.toolName}(${Object.values(call?.input || []).join(', ')})`
+          );
         });
       }
 

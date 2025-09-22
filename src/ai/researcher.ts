@@ -21,7 +21,6 @@ export class Researcher {
     this.experienceTracker = stateManager.getExperienceTracker();
   }
 
-
   getSystemMessage(): Message {
     const text = dedent`
     <role>
@@ -39,7 +38,9 @@ export class Researcher {
       return state.researchResult;
     }
 
-    tag('info').log(`Initiated research for ${state.url} to understand the context...`);
+    tag('info').log(
+      `Initiated research for ${state.url} to understand the context...`
+    );
     setActivity('🧑‍🔬 Researching...', 'action');
     const actionResult = ActionResult.fromState(state);
     const simplifiedHtml = await actionResult.simplifiedHtml();

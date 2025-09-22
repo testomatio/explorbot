@@ -130,9 +130,22 @@ export function App({
         </Box>
       )}
 
-      <Box flexDirection="row" alignItems="flex-start" columnGap={1} flexGrow={1}>
-        {currentState && <Box width={tasks.length > 0 ? "50%" : "100%"}><StateTransitionPane currentState={currentState} /></Box>}
-        {tasks.length > 0 && <Box width={currentState ? "50%" : "100%"}><TaskPane tasks={tasks} /></Box>}
+      <Box
+        flexDirection="row"
+        alignItems="flex-start"
+        columnGap={1}
+        flexGrow={1}
+      >
+        {currentState && (
+          <Box width={tasks.length > 0 ? '50%' : '100%'}>
+            <StateTransitionPane currentState={currentState} />
+          </Box>
+        )}
+        {tasks.length > 0 && (
+          <Box width={currentState ? '50%' : '100%'}>
+            <TaskPane tasks={tasks} />
+          </Box>
+        )}
       </Box>
     </Box>
   );
