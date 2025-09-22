@@ -305,7 +305,7 @@ export default {
 ## Installation
 
 ```bash
-npm install
+bun install
 ```
 
 ## Requirements
@@ -313,5 +313,78 @@ npm install
 - Bun runtime (Node.js is not supported)
 - AI provider API key (OpenAI or Anthropic)
 - Modern browser for Playwright automation
+
+## Programmatic Usage
+
+While Explorbot is primarily designed as a CLI tool, you can also use it programmatically in your own scripts:
+
+```typescript
+#!/usr/bin/env bun
+
+import { ExplorBot } from './src/explorbot.js';
+import { setPreserveConsoleLogs } from './src/utils/logger.js';
+import dotenv from 'dotenv';
+
+async function runAutomatedExploration() {
+  dotenv.config();
+  
+  console.log('🚀 Starting automated exploration...');
+  
+  // Enable console logging preservation
+  setPreserveConsoleLogs(true);
+
+  // Initialize ExplorBot
+  const explorBot = new ExplorBot({
+    path: '.',
+    verbose: true,
+    from: '/'
+  });
+
+  await explorBot.loadConfig();
+  console.log('✅ Config loaded successfully');
+
+  await explorBot.start();
+  console.log('✅ ExplorBot started successfully');
+
+  // Visit initial page
+  await explorBot.visitInitialState();
+  console.log('✅ Visited initial page: /');
+
+  // Navigate to specific page
+  console.log('🧭 Navigating to target page...');
+  const explorer = explorBot.getExplorer();
+  await explorer.visit('/dashboard');
+
+  // Research the page
+  console.log('🔍 Starting research on the page...');
+  await explorer.research();
+  console.log('✅ Research completed');
+
+  // Generate test plan
+  const tasks = await explorer.plan();
+  
+  console.log('📋 Testing Plan');
+  tasks.forEach((task) => {
+    console.log(` • 🔳 ${task.scenario}`);
+    console.log(`     Priority: ${task.priority}`);
+    console.log(`     Expected Outcome: ${task.expectedOutcome}`);
+  });
+
+  // Clean up
+  await explorer.stop();
+  console.log('✅ ExplorBot stopped successfully');
+}
+
+if (import.meta.main) {
+  runAutomatedExploration();
+}
+```
+
+Run the script with:
+```bash
+bun run your-exploration-script.ts
+```
+
+This approach allows you to integrate Explorbot's capabilities into CI/CD pipelines, automated testing suites, or custom exploration workflows.
 
 Explorbot learns as it goes, building up experience and knowledge to become more effective at testing your specific application over time.
