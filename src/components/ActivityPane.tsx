@@ -36,7 +36,7 @@ const ActivityPane: React.FC = () => {
   if (!activity) {
     return (
       <Box height={1} paddingX={1}>
-        <Text dimColor>Type a command (start with / for help)</Text>
+        <Text dimColor>Done. Press [ESC] to enable input</Text>
       </Box>
     );
   }
@@ -61,7 +61,7 @@ const ActivityPane: React.FC = () => {
   const isDimmed = animationState % 2 === 0;
 
   return (
-    <Box height={1} paddingX={1}>
+    <Box height={1} marginY={1} paddingX={1}>
       <Text color={getActivityColor(activity.type)} dimColor={isDimmed}>
         {activity.message}
         {getDots()}

@@ -89,8 +89,8 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
 
     if (log.type === 'multiline') {
       return (
-        <Box key={index}  flexDirection="column">
-          <Text wrap="truncate-end">{dedent(marked.parse(String(log.content)).toString())}</Text>
+        <Box key={index} borderStyle="classic" marginY={1} borderColor="dim" height={15} overflow="hidden">
+          <Text>{dedent(marked.parse(String(log.content)).toString())}</Text>
         </Box>
       );
     }
