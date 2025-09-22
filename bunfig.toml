@@ -6,3 +6,34 @@ sourcemap = "external"
 
 [install]
 peer = true
+
+[test]
+# Test configuration
+coverage = true
+coverageDir = "coverage"
+coverageThreshold = 80
+
+# Coverage reporters
+coverageReporter = ["text", "lcov"]
+
+# Coverage settings
+coverageSkipTestFiles = true
+
+# Include patterns for coverage
+coverageInclude = [
+  "src/**/*.{ts,tsx,js,jsx}"
+]
+
+# Exclude patterns from coverage
+coverageExclude = [
+  "src/**/*.test.{ts,tsx,js,jsx}",
+  "src/**/*.spec.{ts,tsx,js,jsx}", 
+  "src/**/__tests__/**",
+  "src/**/__mocks__/**",
+  "src/index.tsx",
+  "src/components/**/*.tsx", # TUI components - harder to test meaningfully
+  "bin/**",
+  "dist/**",
+  "coverage/**",
+  "node_modules/**"
+]

@@ -1,6 +1,6 @@
 # Explorbot - Claude Assistant Documentation
 
-Explorbot is Bun application that performs automatical exploratary testing of web applications using AI.
+Explorbot is a Bun application that performs automated exploratory testing of web applications using AI. It combines intelligent web navigation with automatic failure recovery to test web applications without pre-written test scripts.
 
 ## Code Style
 
@@ -41,11 +41,13 @@ This application is only Bun
 
 Explorbot uses layered architecture with AI-driven automation:
 
-1. **Explorer Class** - Main orchestrator and entry point
-2. **Action Class** - Execution engine with AI-driven error resolution
-3. **Navigator Class** - AI-powered web interaction and problem solving
-4. **Researcher Class** - AI-powered web page analysis and test planning
-5. **StateManager Class** - Web page state tracking and history management
+1. **ExplorBot Class** (`src/explorbot.ts`) - Main application class handling TUI and user interaction
+2. **Explorer Class** (`src/explorer.ts`) - Core orchestrator managing CodeceptJS integration and test execution
+3. **Action Class** (`src/action.ts`) - Execution engine with AI-driven error resolution
+4. **Navigator Class** (`src/ai/navigator.ts`) - AI-powered web interaction and problem solving
+5. **Researcher Class** (`src/ai/researcher.ts`) - AI-powered web page analysis and understanding
+6. **Planner Class** (`src/ai/planner.ts`) - AI-powered test scenario generation and prioritization
+7. **StateManager Class** (`src/state-manager.ts`) - Web page state tracking and history management
 
 ## Application Usage
 
@@ -53,13 +55,14 @@ Application is built for explorarary automated testing using AI
 
 Its capabilities:
 
-- open web pages
-- make a research of those pages using AI and researcher class
-- plan testing of a page (using AI)
-- perform a test using AI via tools and codeceptjs scripts
-- learn from succesful and insuccesful interactions via experience files
-- learn about application from knowledge files
-- application tracks its state and understands where it is, and which knowledge or experience files are relevant based on state
+- Open and navigate web pages intelligently
+- Research page content and structure using AI to understand UI elements
+- Plan comprehensive test scenarios with priority levels
+- Execute tests with automatic failure recovery and self-healing
+- Learn from successful and unsuccessful interactions via experience files
+- Leverage domain knowledge from markdown documentation files
+- Track application state and context-aware navigation history
+- Support both interactive TUI mode and non-interactive automation
 
 ## TUI
 
@@ -100,62 +103,101 @@ There are also CodeceptJS commands availble:
 
 ## Command Line Usage
 
-By default explorbot should open a page and ask for you user input:
+Explorbot uses the `maclay` CLI command (defined in `bin/maclay.ts`):
 
-```
-exporbot
-```
-
-Start explorbot at specific URL page
-
-```
-explorbot --from /admin/users
-```
-
-Read config from speficic dir or file
-
-```
-explorbot --path example
+### Interactive exploration with TUI:
+```bash
+maclay explore
+maclay explore --from https://example.com/login
+maclay explore --path ./my-project
+maclay explore --config ./custom-config.js
+maclay explore --verbose  # or --debug
 ```
 
-Research current page and ask for user input
-
-```
-explorbot --research
-```
-
-Open page, research it, plan testing of ir
-If feature name is provided, focus testing on specific thing. 
-Otherwise learn from page what is primary feature
-
-```
-explorbot --from /admin/users --plan [feature-name]
+### Initialize project configuration:
+```bash
+maclay init
+maclay init --config-path ./explorbot.config.js
+maclay init --force  # overwrite existing config
 ```
 
-There should be non-interactive mode where user input is not availble. In this case appliation exits when finishing tasks.
+### Add domain knowledge:
+```bash
+maclay add-knowledge  # or maclay knows
+maclay add-knowledge --path ./knowledge
+```
+
+### Clean generated files:
+```bash
+maclay clean  # clean artifacts only
+maclay clean --type experience
+maclay clean --type all
+```
+
+Note: Non-interactive mode is planned but not yet implemented.
 
 ## Configuration
 
-`explorbot.config.js` or `explorbot.config.ts` is used.
-See exportbot.config.ts or explorbot.config.js
+Explorbot uses `explorbot.config.js` or `explorbot.config.ts` for configuration.
 
-## Main Logic
+Example configuration:
+```javascript
+export default {
+  ai: {
+    provider: 'openai', // or 'anthropic', 'groq'
+    apiKey: process.env.AI_API_KEY
+  },
+  playwright: {
+    browser: 'chromium', // or 'firefox', 'webkit'
+    show: false,  // set to true to see browser window
+    args: []      // additional browser arguments
+  }
+}
+```
 
-### Navigation
+## Main Components
 
-Using AI, experience, knowledge app can navigate to speific page
+### Navigation (`src/ai/navigator.ts`)
+AI-powered navigation that:
+- Executes CodeceptJS commands with automatic error recovery
+- Tries multiple element locator strategies
+- Learns from failed attempts and applies solutions
+- Uses experience files to optimize future interactions
 
-src/ai/navigator.ts
+### Research (`src/ai/researcher.ts`)
+AI-powered page analysis that:
+- Identifies all interactive UI elements
+- Maps navigation structures and menus
+- Expands collapsible content for full discovery
+- Documents form fields and validation requirements
+- Provides structured analysis for test planning
 
-### Research 
+### Planning (`src/ai/planner.ts`)
+AI-powered test generation that:
+- Creates business-focused test scenarios
+- Assigns priority levels (HIGH/MEDIUM/LOW)
+- Generates expected outcomes for verification
+- Balances positive and negative test cases
+- Focuses on UI-testable functionality
 
-Using Ai analyzes current page for its UI elements, especially interactive elements, to understand what navigation elements or paths are there
+### State Management (`src/state-manager.ts`)
+Tracks navigation history and page context:
+- Maintains current URL and page title
+- Records navigation history
+- Matches relevant knowledge/experience files
+- Provides context for AI decision making
 
-src/ai/researcher.ts
+## Dependencies and Requirements
 
-### Plan
+- **Runtime**: Bun only (Node.js is NOT supported)
+- **AI Providers**: OpenAI, Anthropic, or Groq (configured via API key)
+- **Browser Automation**: Playwright with CodeceptJS wrapper
+- **TUI Framework**: React Ink for terminal interface
 
-Plan tests for a speficic feature starting from current page. 
-Research is needed to start with
+## Testing and Linting
 
-src/ai/researcher.ts
+```bash
+npm run format       # Format code with Biome
+npm run lint:fix     # Fix linting issues
+npm run check:fix    # Run all Biome checks and fixes
+```

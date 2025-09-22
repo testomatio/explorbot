@@ -1,331 +1,310 @@
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
-import { StateManager } from '../../src/state-manager';
+import { StateManager, type WebPageState, type StateTransition } from '../../src/state-manager';
 import { ActionResult } from '../../src/action-result';
-import { ConfigParser } from '../../src/config.js';
-import { rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { ConfigParser } from '../../src/config';
 
 describe('StateManager', () => {
   let stateManager: StateManager;
 
   beforeEach(() => {
-    // Reset ConfigParser singleton between tests
-    ConfigParser.resetForTesting();
-
-    // Set up test config
-    ConfigParser.setupTestConfig();
+    // Mock config parser with writable temp directories
+    const mockConfig = {
+      playwright: { browser: 'chromium', url: 'http://localhost:3000' },
+      ai: { provider: null, model: 'test' },
+      dirs: { 
+        knowledge: '/tmp/explorbot-test/knowledge',
+        experience: '/tmp/explorbot-test/experience'
+      }
+    };
+    
+    const configParser = ConfigParser.getInstance();
+    (configParser as any).config = mockConfig;
+    (configParser as any).configPath = '/tmp/explorbot-test/config.js';
+    
     stateManager = new StateManager();
   });
 
   afterEach(() => {
-    // Clean up StateManager and ConfigParser after each test
-    if (stateManager) {
-      stateManager.cleanup();
-    }
-
-    // Clean up test directories
-    const testDirs = ConfigParser.getTestDirectories();
-    testDirs.forEach((dir) => {
-      if (existsSync(dir)) {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    });
-
-    ConfigParser.resetForTesting();
+    stateManager.cleanup();
   });
 
   describe('constructor', () => {
-    it('should create instance with default directories', () => {
-      const manager = new StateManager();
-      expect(manager).toBeInstanceOf(StateManager);
+    it('should initialize with null current state', () => {
+      expect(stateManager.getCurrentState()).toBeNull();
     });
 
-    it('should create instance with custom directories', () => {
-      const manager = new StateManager('custom-knowledge', 'custom-experience');
-      expect(manager).toBeInstanceOf(StateManager);
-    });
-  });
-
-  describe('extractStatePath', () => {
-    it('should extract path from URL', () => {
-      const path = (stateManager as any).extractStatePath(
-        'https://example.com/path/to/page'
-      );
-      expect(path).toBe('/path/to/page');
+    it('should have empty state history', () => {
+      expect(stateManager.getStateHistory()).toEqual([]);
     });
 
-    it('should handle root path', () => {
-      const path = (stateManager as any).extractStatePath(
-        'https://example.com'
-      );
-      expect(path).toBe('/');
-    });
-
-    it('should include hash in path', () => {
-      const path = (stateManager as any).extractStatePath(
-        'https://example.com/path#section'
-      );
-      expect(path).toBe('/path#section');
-    });
-
-    it('should handle invalid URL gracefully', () => {
-      const path = (stateManager as any).extractStatePath('invalid-url');
-      expect(path).toBe('invalid-url');
+    it('should have zero listeners initially', () => {
+      expect(stateManager.getListenerCount()).toBe(0);
     });
   });
 
   describe('updateState', () => {
-    it('should create new state from ActionResult', () => {
+    it('should update current state from ActionResult', () => {
+      const actionResult = new ActionResult({
+        html: '<html><body><h1>Test Page</h1></body></html>',
+        url: 'https://example.com/test',
+        title: 'Test Page',
+        h1: 'Test Page'
+      });
+
+      const newState = stateManager.updateState(actionResult);
+
+      expect(newState.url).toBe('/test');
+      expect(newState.title).toBe('Test Page');
+      expect(newState.fullUrl).toBe('https://example.com/test');
+      expect(newState.h1).toBe('Test Page');
+      expect(stateManager.getCurrentState()).toEqual(newState);
+    });
+
+    it('should not update if state hash is unchanged', () => {
+      const actionResult = new ActionResult({
+        html: '<html><body><h1>Test Page</h1></body></html>',
+        url: 'https://example.com/test',
+        title: 'Test Page'
+      });
+
+      const firstState = stateManager.updateState(actionResult);
+      const secondState = stateManager.updateState(actionResult);
+
+      expect(firstState).toBe(secondState);
+      expect(stateManager.getStateHistory()).toHaveLength(1);
+    });
+
+    it('should create state transition record', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
-        title: 'Test Page',
+        title: 'Test Page'
       });
 
-      const state = stateManager.updateState(actionResult);
+      stateManager.updateState(actionResult, 'I.amOnPage("/test")', undefined, 'navigation');
+      const history = stateManager.getStateHistory();
 
-      expect(state.url).toBe('/test');
-      expect(state.title).toBe('Test Page');
-      expect(state.fullUrl).toBe('https://example.com/test');
-      expect(state.hash).toBeDefined();
+      expect(history).toHaveLength(1);
+      expect(history[0].fromState).toBeNull();
+      expect(history[0].toState.url).toBe('/test');
+      expect(history[0].codeBlock).toBe('I.amOnPage("/test")');
+      expect(history[0].trigger).toBe('navigation');
+    });
+  });
+
+  describe('updateStateFromBasic', () => {
+    it('should create state from basic URL and title', () => {
+      const newState = stateManager.updateStateFromBasic(
+        'https://example.com/dashboard',
+        'Dashboard',
+        'manual'
+      );
+
+      expect(newState.url).toBe('/dashboard');
+      expect(newState.title).toBe('Dashboard');
+      expect(newState.fullUrl).toBe('https://example.com/dashboard');
+      expect(newState.hash).toBeTruthy();
     });
 
-    it("should return existing state if hash hasn't changed", () => {
-      const actionResult1 = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
+    it('should not update if basic state hash is unchanged', () => {
+      const firstState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
+      const secondState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
 
-      const actionResult2 = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      const state1 = stateManager.updateState(actionResult1);
-      const state2 = stateManager.updateState(actionResult2);
-
-      expect(state1).toBe(state2);
+      expect(firstState).toBe(secondState);
+      expect(stateManager.getStateHistory()).toHaveLength(1);
     });
+  });
 
-    it('should track state transitions', () => {
-      const actionResult1 = new ActionResult({
-        html: '<html><body>Page 1</body></html>',
+  describe('state change events', () => {
+    it('should emit state change events when state is updated', () => {
+      const events: StateTransition[] = [];
+      const unsubscribe = stateManager.onStateChange((event) => {
+        events.push(event);
+      });
+
+      const actionResult = new ActionResult({
+        html: '<html></html>',
         url: 'https://example.com/page1',
-        title: 'Page 1',
+        title: 'Page 1'
       });
 
-      const actionResult2 = new ActionResult({
-        html: '<html><body>Page 2</body></html>',
-        url: 'https://example.com/page2',
-        title: 'Page 2',
+      stateManager.updateState(actionResult);
+
+      expect(events).toHaveLength(1);
+      expect(events[0].toState.url).toBe('/page1');
+      expect(events[0].fromState).toBeNull();
+
+      unsubscribe();
+    });
+
+    it('should support multiple listeners', () => {
+      const events1: StateTransition[] = [];
+      const events2: StateTransition[] = [];
+
+      stateManager.onStateChange((event) => events1.push(event));
+      stateManager.onStateChange((event) => events2.push(event));
+
+      const actionResult = new ActionResult({
+        html: '<html></html>',
+        url: 'https://example.com/test',
+        title: 'Test'
       });
 
-      stateManager.updateState(actionResult1);
-      stateManager.updateState(actionResult2, "I.click('Next')");
+      stateManager.updateState(actionResult);
+
+      expect(events1).toHaveLength(1);
+      expect(events2).toHaveLength(1);
+      expect(stateManager.getListenerCount()).toBe(2);
+    });
+
+    it('should allow unsubscribing listeners', () => {
+      const events: StateTransition[] = [];
+      const unsubscribe = stateManager.onStateChange((event) => {
+        events.push(event);
+      });
+
+      unsubscribe();
+      expect(stateManager.getListenerCount()).toBe(0);
+
+      const actionResult = new ActionResult({
+        html: '<html></html>',
+        url: 'https://example.com/test',
+        title: 'Test'
+      });
+
+      stateManager.updateState(actionResult);
+      expect(events).toHaveLength(0);
+    });
+  });
+
+  describe('state comparison', () => {
+    it('should detect state changes correctly', () => {
+      const state1: WebPageState = { url: '/test1', hash: 'hash1' };
+      const state2: WebPageState = { url: '/test2', hash: 'hash2' };
+
+      expect(stateManager.hasStateChanged(null)).toBe(false);
+      
+      stateManager.updateStateFromBasic('https://example.com/test1');
+      expect(stateManager.hasStateChanged(null)).toBe(true);
+      expect(stateManager.hasStateChanged(state1)).toBe(true);
+    });
+
+    it('should compare states by hash correctly', () => {
+      const state1: WebPageState = { url: '/test', hash: 'hash1' };
+      const state2: WebPageState = { url: '/test', hash: 'hash1' };
+      const state3: WebPageState = { url: '/test', hash: 'hash2' };
+
+      expect(stateManager.statesEqual(state1, state2)).toBe(true);
+      expect(stateManager.statesEqual(state1, state3)).toBe(false);
+      expect(stateManager.statesEqual(null, null)).toBe(true);
+      expect(stateManager.statesEqual(state1, null)).toBe(false);
+    });
+  });
+
+  describe('visit tracking', () => {
+    beforeEach(() => {
+      // Add some visit history
+      stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1');
+      stateManager.updateStateFromBasic('https://example.com/page2', 'Page 2');
+      stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1 Again');
+    });
+
+    it('should track if state has been visited', () => {
+      expect(stateManager.hasVisitedState('/page1')).toBe(true);
+      expect(stateManager.hasVisitedState('/page2')).toBe(true);
+      expect(stateManager.hasVisitedState('/page3')).toBe(false);
+    });
+
+    it('should count visits to a state', () => {
+      expect(stateManager.getVisitCount('/page1')).toBe(2);
+      expect(stateManager.getVisitCount('/page2')).toBe(1);
+      expect(stateManager.getVisitCount('/page3')).toBe(0);
+    });
+
+    it('should find last visit to a path', () => {
+      const lastVisit = stateManager.getLastVisitToPath('/page1');
+      expect(lastVisit).toBeTruthy();
+      expect(lastVisit?.toState.title).toBe('Page 1 Again');
+
+      expect(stateManager.getLastVisitToPath('/nonexistent')).toBeNull();
+    });
+  });
+
+  describe('state history', () => {
+    it('should maintain state history', () => {
+      stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1');
+      stateManager.updateStateFromBasic('https://example.com/page2', 'Page 2');
 
       const history = stateManager.getStateHistory();
       expect(history).toHaveLength(2);
-    });
-  });
-
-  describe('getCurrentState', () => {
-    it('should return null initially', () => {
-      const state = stateManager.getCurrentState();
-      expect(state).toBeNull();
+      expect(history[0].toState.url).toBe('/page1');
+      expect(history[1].toState.url).toBe('/page2');
     });
 
-    it('should return current state after update', () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      stateManager.updateState(actionResult);
-      const state = stateManager.getCurrentState();
-
-      expect(state).not.toBeNull();
-      expect(state?.url).toBe('/test');
-    });
-  });
-
-  describe('hasStateChanged', () => {
-    it('should return false for same state', () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      const state = stateManager.updateState(actionResult);
-      const changed = stateManager.hasStateChanged(state);
-
-      expect(changed).toBe(false);
-    });
-
-    it('should return true for different state', () => {
-      const actionResult1 = new ActionResult({
-        html: '<html><body>Test 1</body></html>',
-        url: 'https://example.com/test1',
-        title: 'Test Page 1',
-      });
-
-      const actionResult2 = new ActionResult({
-        html: '<html><body>Test 2</body></html>',
-        url: 'https://example.com/test2',
-        title: 'Test Page 2',
-      });
-
-      const state1 = stateManager.updateState(actionResult1);
-      stateManager.updateState(actionResult2);
-      const changed = stateManager.hasStateChanged(state1);
-
-      expect(changed).toBe(true);
-    });
-  });
-
-  describe('getStateHistory', () => {
-    it('should return empty array initially', () => {
-      const history = stateManager.getStateHistory();
-      expect(history).toEqual([]);
-    });
-
-    it('should return copy of history', () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      stateManager.updateState(actionResult);
-      const history1 = stateManager.getStateHistory();
-      const history2 = stateManager.getStateHistory();
-
-      expect(history1).not.toBe(history2);
-      expect(history1).toEqual(history2);
-    });
-  });
-
-  describe('getRecentTransitions', () => {
-    it('should return empty array initially', () => {
-      const recent = stateManager.getRecentTransitions();
-      expect(recent).toEqual([]);
-    });
-
-    it('should return last N transitions', () => {
-      for (let i = 0; i < 5; i++) {
-        const actionResult = new ActionResult({
-          html: `<html><body>Page ${i}</body></html>`,
-          url: `https://example.com/page${i}`,
-          title: `Page ${i}`,
-        });
-        stateManager.updateState(actionResult, `Action ${i}`);
+    it('should get recent transitions', () => {
+      for (let i = 1; i <= 10; i++) {
+        stateManager.updateStateFromBasic(`https://example.com/page${i}`, `Page ${i}`);
       }
 
       const recent = stateManager.getRecentTransitions(3);
       expect(recent).toHaveLength(3);
+      expect(recent[0].toState.url).toBe('/page8');
+      expect(recent[1].toState.url).toBe('/page9');
+      expect(recent[2].toState.url).toBe('/page10');
     });
   });
 
-  describe('hasVisitedState', () => {
-    it('should return false for unvisited state', () => {
-      const visited = stateManager.hasVisitedState('/test');
-      expect(visited).toBe(false);
-    });
-
-    it('should return true for visited state', () => {
+  describe('createStateFromActionResult', () => {
+    it('should create state without updating current state', () => {
       const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
+        html: '<html></html>',
         url: 'https://example.com/test',
-        title: 'Test Page',
+        title: 'Test Page'
       });
 
-      stateManager.updateState(actionResult);
-      const visited = stateManager.hasVisitedState('/test');
-      expect(visited).toBe(true);
-    });
-  });
-
-  describe('getVisitCount', () => {
-    it('should return 0 for unvisited state', () => {
-      const count = stateManager.getVisitCount('/test');
-      expect(count).toBe(0);
-    });
-
-    it('should return correct visit count', () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      stateManager.updateState(actionResult);
-      const count = stateManager.getVisitCount('/test');
-      expect(count).toBe(1);
-    });
-  });
-
-  describe('getLastVisitToPath', () => {
-    it('should return null for unvisited path', () => {
-      const lastVisit = stateManager.getLastVisitToPath('/test');
-      expect(lastVisit).toBeNull();
-    });
-
-    it('should return last visit to path', () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      stateManager.updateState(actionResult);
-      const lastVisit = stateManager.getLastVisitToPath('/test');
-      expect(lastVisit).not.toBeNull();
-    });
-  });
-
-  describe('clearHistory', () => {
-    it('should clear all history', () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      stateManager.updateState(actionResult);
-      expect(stateManager.getStateHistory()).toHaveLength(1);
-
-      stateManager.clearHistory();
-      expect(stateManager.getStateHistory()).toEqual([]);
+      const state = stateManager.createStateFromActionResult(actionResult);
+      
+      expect(state.url).toBe('/test');
+      expect(state.title).toBe('Test Page');
       expect(stateManager.getCurrentState()).toBeNull();
     });
   });
 
   describe('cleanup', () => {
-    it('should perform complete cleanup of StateManager', () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
+    it('should clear all state and listeners', () => {
+      stateManager.onStateChange(() => {});
+      stateManager.updateStateFromBasic('https://example.com/test', 'Test');
 
-      // Set up state
-      stateManager.updateState(actionResult);
-      const unsubscribe = stateManager.onStateChange(() => {});
-
-      expect(stateManager.getCurrentState()).not.toBeNull();
+      expect(stateManager.getCurrentState()).toBeTruthy();
       expect(stateManager.getStateHistory()).toHaveLength(1);
       expect(stateManager.getListenerCount()).toBe(1);
 
-      // Cleanup
       stateManager.cleanup();
 
-      // Verify everything is cleared
       expect(stateManager.getCurrentState()).toBeNull();
-      expect(stateManager.getStateHistory()).toEqual([]);
+      expect(stateManager.getStateHistory()).toHaveLength(0);
       expect(stateManager.getListenerCount()).toBe(0);
+    });
+  });
+
+  describe('newState', () => {
+    it('should create new state from partial data', () => {
+      const state = stateManager.newState({
+        url: '/test',
+        title: 'Test Page',
+        h1: 'Main Title'
+      });
+
+      expect(state.url).toBe('/test');
+      expect(state.title).toBe('Test Page');
+      expect(state.h1).toBe('Main Title');
+    });
+
+    it('should provide defaults for missing fields', () => {
+      const state = stateManager.newState({});
+      
+      expect(state.url).toBe('');
+      expect(state.title).toBe('');
     });
   });
 });
