@@ -13,44 +13,44 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
 }) => {
   if (currentState) {
     return (
-      <Box flexDirection="column" marginY={1}>
+      <Box flexDirection="column" flexGrow={1}>
         <Box
+          padding={1}
           borderStyle="round"
           borderColor="dim"
-          padding={1}
           flexDirection="column"
         >
-          <Box justifyContent="space-between" marginBottom={1}>
-            <Text color="dim">Current page</Text>
-            <Text color="dim">
-              [{currentState.timestamp?.toLocaleTimeString() || 'unknown'}]
-            </Text>
+          <Box flexDirection="row" alignItems="flex-start" marginBottom={1}>
+              <Text color="dim">Current Page </Text>
+              <Text color="blue" wrap="truncate-end">
+                {currentState.url}
+              </Text>
           </Box>
 
           <Box marginY={0}>
             <Text color="dim">
               URL:{' '}
-              <Text color="green">
+              <Text color="yellow" wrap="truncate-end">
                 {currentState.fullUrl || currentState.url || 'unknown'}
               </Text>
             </Text>
           </Box>
           <Box marginY={0}>
             <Text color="dim">
-              Title: <Text color="green">{currentState.title || 'none'}</Text>
+              Title: <Text color="yellow">{currentState.title || 'none'}</Text>
             </Text>
           </Box>
           {currentState.h1 && (
             <Box marginY={0}>
               <Text color="dim">
-                H1: <Text color="green">{currentState.h1}</Text>
+                H1: <Text color="yellow">{currentState.h1}</Text>
               </Text>
             </Box>
           )}
           {currentState.h2 && (
             <Box marginY={0}>
               <Text color="dim">
-                H2: <Text color="green">{currentState.h2}</Text>
+                H2: <Text color="yellow">{currentState.h2}</Text>
               </Text>
             </Box>
           )}
@@ -73,7 +73,7 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
       differences.push({
         key: 'url',
         from: fromState?.url || 'none',
-        to: toState.url,
+        to: toState.url || 'none',
       });
     }
 
@@ -82,7 +82,7 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
       differences.push({
         key: 'title',
         from: fromState?.title || 'none',
-        to: toState.title,
+        to: toState.title || 'none',
       });
     }
 
@@ -133,7 +133,7 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
   }
 
   return (
-    <Box flexDirection="column" marginY={1}>
+    <Box flexDirection="column" flexGrow={1}>
       <Box
         borderStyle="round"
         borderColor="dim"

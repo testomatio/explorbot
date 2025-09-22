@@ -6,6 +6,7 @@ import { log, setVerboseMode } from './utils/logger.ts';
 import type { ExplorbotConfig } from './config.js';
 import { AiError } from './ai/provider.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
+import type { Task } from './ai/planner.ts';
 
 export interface ExplorBotOptions {
   from?: string;
@@ -84,6 +85,10 @@ export class ExplorBot {
 
   getOptions(): ExplorBotOptions {
     return this.options;
+  }
+
+  getTasks(): Task[] {
+    return this.explorer ? this.explorer.scenarios : [];
   }
 
   isReady(): boolean {

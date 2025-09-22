@@ -14,31 +14,13 @@ export class Researcher {
   private provider: Provider;
   private stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
-  private researchCache: Map<string, Conversation>;
 
   constructor(provider: Provider, stateManager: StateManager) {
     this.provider = provider;
     this.stateManager = stateManager;
     this.experienceTracker = stateManager.getExperienceTracker();
-    this.researchCache = new Map();
-  }
-  /**
-   * Clear the research cache. Useful for testing or when memory usage becomes an issue.
-   */
-  clearCache(): void {
-    this.researchCache.clear();
-    debugLog('Research cache cleared');
   }
 
-  /**
-   * Get cache statistics for debugging purposes
-   */
-  getCacheStats(): { size: number; keys: string[] } {
-    return {
-      size: this.researchCache.size,
-      keys: Array.from(this.researchCache.keys()),
-    };
-  }
 
   getSystemMessage(): Message {
     const text = dedent`
@@ -57,6 +39,7 @@ export class Researcher {
       return state.researchResult;
     }
 
+    tag('info').log(`Initiated research for ${state.url} to understand the context...`);
     setActivity('🧑‍🔬 Researching...', 'action');
     const actionResult = ActionResult.fromState(state);
     const simplifiedHtml = await actionResult.simplifiedHtml();

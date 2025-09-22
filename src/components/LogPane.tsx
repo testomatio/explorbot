@@ -1,7 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import dedent from 'dedent';
 import { marked } from 'marked';
-// import markedTerminal from 'marked-terminal';
+import { markedTerminal } from 'marked-terminal';
+
+marked.use(markedTerminal());
 
 import { Box, Text } from 'ink';
 import type { TaggedLogEntry, LogType } from '../utils/logger.js';
@@ -87,8 +89,8 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
 
     if (log.type === 'multiline') {
       return (
-        <Box key={index} flexDirection="column">
-          <Text>{dedent(marked.parse(String(log.content)).toString())}</Text>
+        <Box key={index}  flexDirection="column">
+          <Text wrap="truncate-end">{dedent(marked.parse(String(log.content)).toString())}</Text>
         </Box>
       );
     }

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import LogPane from './LogPane.js';
 import InputPane from './InputPane.js';
 import ActivityPane from './ActivityPane.js';
 import StateTransitionPane from './StateTransitionPane.js';
+import TaskPane from './TaskPane.js';
 import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
 import { CommandHandler } from '../command-handler.js';
 import type { StateTransition, WebPageState } from '../state-manager.js';
+import type { Task } from '../ai/planner.js';
 
 interface AppProps {
   explorBot: ExplorBot;
@@ -24,6 +26,7 @@ export function App({
   const [lastTransition, setLastTransition] = useState<StateTransition | null>(
     null
   );
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [commandHandler] = useState(() => new CommandHandler(explorBot));
   const [userInputPromise, setUserInputPromise] = useState<{
     resolve: (value: string | null) => void;
@@ -81,6 +84,23 @@ export function App({
       });
   }, []);
 
+  // Listen for task changes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentTasks = explorBot.getTasks();
+      setTasks(currentTasks);
+    }, 1000); // Check every second
+
+    return () => clearInterval(interval);
+  }, [explorBot]);
+
+  // Handle keyboard input - ESC to enable input
+  useInput((input, key) => {
+    if (key.escape) {
+      setShowInput(true);
+    }
+  });
+
   return (
     <Box flexDirection="column">
       <Box flexDirection="column" flexGrow={1}>
@@ -105,12 +125,15 @@ export function App({
           />
         </>
       ) : (
-        <Box height={1} marginBottom={1}>
+        <Box height={1}>
           <ActivityPane />
         </Box>
       )}
 
-      {currentState && <StateTransitionPane currentState={currentState} />}
+      <Box flexDirection="row" alignItems="flex-start" columnGap={1} flexGrow={1}>
+        {currentState && <Box width={tasks.length > 0 ? "50%" : "100%"}><StateTransitionPane currentState={currentState} /></Box>}
+        {tasks.length > 0 && <Box width={currentState ? "50%" : "100%"}><TaskPane tasks={tasks} /></Box>}
+      </Box>
     </Box>
   );
 }

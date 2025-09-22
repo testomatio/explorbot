@@ -194,10 +194,11 @@ class Explorer {
   }
 
   async plan() {
-    log('Planning next steps...');
+    log('Researching...');
 
-    const pageContext = await this.researcher.research();
-    let scenarios = await this.planner.plan(pageContext);
+    await this.researcher.research();
+    log('Planning...');
+    let scenarios = await this.planner.plan();
     this.scenarios = scenarios;
     return scenarios;
   }
