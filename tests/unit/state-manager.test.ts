@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
-import { StateManager, type WebPageState, type StateTransition } from '../../src/state-manager';
+import {
+  StateManager,
+  type WebPageState,
+  type StateTransition,
+} from '../../src/state-manager';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
 
@@ -11,16 +15,16 @@ describe('StateManager', () => {
     const mockConfig = {
       playwright: { browser: 'chromium', url: 'http://localhost:3000' },
       ai: { provider: null, model: 'test' },
-      dirs: { 
+      dirs: {
         knowledge: '/tmp/explorbot-test/knowledge',
-        experience: '/tmp/explorbot-test/experience'
-      }
+        experience: '/tmp/explorbot-test/experience',
+      },
     };
-    
+
     const configParser = ConfigParser.getInstance();
     (configParser as any).config = mockConfig;
     (configParser as any).configPath = '/tmp/explorbot-test/config.js';
-    
+
     stateManager = new StateManager();
   });
 
@@ -48,7 +52,7 @@ describe('StateManager', () => {
         html: '<html><body><h1>Test Page</h1></body></html>',
         url: 'https://example.com/test',
         title: 'Test Page',
-        h1: 'Test Page'
+        h1: 'Test Page',
       });
 
       const newState = stateManager.updateState(actionResult);
@@ -64,7 +68,7 @@ describe('StateManager', () => {
       const actionResult = new ActionResult({
         html: '<html><body><h1>Test Page</h1></body></html>',
         url: 'https://example.com/test',
-        title: 'Test Page'
+        title: 'Test Page',
       });
 
       const firstState = stateManager.updateState(actionResult);
@@ -78,10 +82,15 @@ describe('StateManager', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
-        title: 'Test Page'
+        title: 'Test Page',
       });
 
-      stateManager.updateState(actionResult, 'I.amOnPage("/test")', undefined, 'navigation');
+      stateManager.updateState(
+        actionResult,
+        'I.amOnPage("/test")',
+        undefined,
+        'navigation'
+      );
       const history = stateManager.getStateHistory();
 
       expect(history).toHaveLength(1);
@@ -107,8 +116,14 @@ describe('StateManager', () => {
     });
 
     it('should not update if basic state hash is unchanged', () => {
-      const firstState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
-      const secondState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
+      const firstState = stateManager.updateStateFromBasic(
+        'https://example.com/test',
+        'Test'
+      );
+      const secondState = stateManager.updateStateFromBasic(
+        'https://example.com/test',
+        'Test'
+      );
 
       expect(firstState).toBe(secondState);
       expect(stateManager.getStateHistory()).toHaveLength(1);
@@ -125,7 +140,7 @@ describe('StateManager', () => {
       const actionResult = new ActionResult({
         html: '<html></html>',
         url: 'https://example.com/page1',
-        title: 'Page 1'
+        title: 'Page 1',
       });
 
       stateManager.updateState(actionResult);
@@ -147,7 +162,7 @@ describe('StateManager', () => {
       const actionResult = new ActionResult({
         html: '<html></html>',
         url: 'https://example.com/test',
-        title: 'Test'
+        title: 'Test',
       });
 
       stateManager.updateState(actionResult);
@@ -169,7 +184,7 @@ describe('StateManager', () => {
       const actionResult = new ActionResult({
         html: '<html></html>',
         url: 'https://example.com/test',
-        title: 'Test'
+        title: 'Test',
       });
 
       stateManager.updateState(actionResult);
@@ -183,7 +198,7 @@ describe('StateManager', () => {
       const state2: WebPageState = { url: '/test2', hash: 'hash2' };
 
       expect(stateManager.hasStateChanged(null)).toBe(false);
-      
+
       stateManager.updateStateFromBasic('https://example.com/test1');
       expect(stateManager.hasStateChanged(null)).toBe(true);
       expect(stateManager.hasStateChanged(state1)).toBe(true);
@@ -206,7 +221,10 @@ describe('StateManager', () => {
       // Add some visit history
       stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1');
       stateManager.updateStateFromBasic('https://example.com/page2', 'Page 2');
-      stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1 Again');
+      stateManager.updateStateFromBasic(
+        'https://example.com/page1',
+        'Page 1 Again'
+      );
     });
 
     it('should track if state has been visited', () => {
@@ -243,7 +261,10 @@ describe('StateManager', () => {
 
     it('should get recent transitions', () => {
       for (let i = 1; i <= 10; i++) {
-        stateManager.updateStateFromBasic(`https://example.com/page${i}`, `Page ${i}`);
+        stateManager.updateStateFromBasic(
+          `https://example.com/page${i}`,
+          `Page ${i}`
+        );
       }
 
       const recent = stateManager.getRecentTransitions(3);
@@ -259,11 +280,11 @@ describe('StateManager', () => {
       const actionResult = new ActionResult({
         html: '<html></html>',
         url: 'https://example.com/test',
-        title: 'Test Page'
+        title: 'Test Page',
       });
 
       const state = stateManager.createStateFromActionResult(actionResult);
-      
+
       expect(state.url).toBe('/test');
       expect(state.title).toBe('Test Page');
       expect(stateManager.getCurrentState()).toBeNull();
@@ -292,7 +313,7 @@ describe('StateManager', () => {
       const state = stateManager.newState({
         url: '/test',
         title: 'Test Page',
-        h1: 'Main Title'
+        h1: 'Main Title',
       });
 
       expect(state.url).toBe('/test');
@@ -302,7 +323,7 @@ describe('StateManager', () => {
 
     it('should provide defaults for missing fields', () => {
       const state = stateManager.newState({});
-      
+
       expect(state.url).toBe('');
       expect(state.title).toBe('');
     });

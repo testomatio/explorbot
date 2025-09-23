@@ -7,36 +7,53 @@ import { WebPageState } from '../state-manager.js';
 import type { Conversation, Message } from './conversation.js';
 import dedent from 'dedent';
 import type { ExperienceTracker } from '../experience-tracker.ts';
+import { createCodeceptJSTools } from './tools.ts';
+import { tool } from 'ai';
+import { z } from 'zod';
 
 const debugLog = createDebug('explorbot:researcher');
+
+export class Research {
+  expandDOMCalled: boolean = false;
+}
 
 export class Researcher {
   private provider: Provider;
   private stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
+  private research: Research;
+  actor: CodeceptJS.I;
 
   constructor(provider: Provider, stateManager: StateManager) {
     this.provider = provider;
     this.stateManager = stateManager;
     this.experienceTracker = stateManager.getExperienceTracker();
+    this.research = new Research();
   }
 
-  getSystemMessage(): Message {
-    const text = dedent`
+  setActor(actor: CodeceptJS.I) {
+    this.actor = actor;
+  }
+
+  getSystemMessage(): string {
+    return dedent`
     <role>
     You are senior QA focused on exploritary testig of web application.
     </role>
     `;
-    return { role: 'user', content: [{ type: 'text', text }] };
   }
 
-  async research(tools?: any): Promise<string> {
+  async research(): Promise<string> {
     const state = this.stateManager.getCurrentState();
     if (!state) throw new Error('No state found');
 
     if (state.researchResult) {
       return state.researchResult;
     }
+
+    const tools = {
+      ...createCodeceptJSTools(this.actor),
+    };
 
     tag('info').log(
       `Initiated research for ${state.url} to understand the context...`
@@ -48,29 +65,45 @@ export class Researcher {
     debugLog('Researching web page:', actionResult.url);
     const prompt = this.buildResearchPrompt(actionResult, simplifiedHtml);
 
-    const response = await this.provider.generateWithTools(
-      [
-        this.getSystemMessage(),
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: prompt,
-            },
-            ...(actionResult.screenshot
-              ? [
-                  {
-                    type: 'image' as const,
-                    image: actionResult.screenshot.toString('base64'),
-                  },
-                ]
-              : []),
-          ],
-        },
-      ],
-      tools
+    const expandDOMMessage = `
+      <task>
+      There might be hidden content or collapsible elements which should be expanded. 
+      If you see additional inspection is print <EXPAND_DOM> tag in output.
+      Print it if you see dropdowns, tabs, accordions, disclosure widgets, hamburger menus, "more/show" toggles, etc.
+      It is important to write <EXPAND_DOM> if you see elmeents that needs additional inspection and do not navigate away from the current page.
+      </task>
+    `;
+
+    const conversation = this.provider.startConversation(
+      this.getSystemMessage()
     );
+    conversation.addUserText(prompt);
+    conversation.addUserText(expandDOMMessage);
+    if (actionResult.screenshot) {
+      conversation.addUserImage(actionResult.screenshot.toString('base64'));
+    }
+
+    const result = await this.provider.invokeConversation(conversation);
+    if (!result) throw new Error('Failed to get response from provider');
+
+    const { response } = result;
+
+    const researchResults = [response.text];
+
+    if (response.text.includes('<EXPAND_DOM>')) {
+      conversation.addUserText(dedent`
+        <task>
+        Given the click and type tools expand the DOM elements that are not visible.
+        Do not navigate away from the current page.
+        After each click, re-check the updated HTML. Repeat until no new expandable content remains.
+        </task>
+      `);
+
+      const result = await this.provider.invokeConversation(
+        conversation,
+        tools
+      );
+    }
 
     state.researchResult = response.text;
 

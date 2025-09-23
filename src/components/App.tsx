@@ -116,8 +116,8 @@ export function App({
               if (userInputPromise) {
                 userInputPromise.resolve(input);
                 setUserInputPromise(null);
-                setShowInput(false);
               }
+              setShowInput(false);
             }}
             onCommandStart={() => {
               setShowInput(false);

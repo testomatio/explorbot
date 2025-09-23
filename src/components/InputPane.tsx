@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { CommandHandler } from '../command-handler.js';
+import type { CommandHandler } from '../command-handler.js';
 import AutocompletePane from './AutocompletePane.js';
 
 interface InputPaneProps {
@@ -39,6 +40,9 @@ const InputPane: React.FC<InputPaneProps> = ({
         return;
       }
 
+      // Always call onCommandStart to hide input field
+      onCommandStart?.();
+
       // Check if this is a command (starts with / or I.) or is 'exit'
       const isCommand =
         trimmedValue.startsWith('/') ||
@@ -47,7 +51,6 @@ const InputPane: React.FC<InputPaneProps> = ({
 
       if (isCommand) {
         // Execute as command directly
-        onCommandStart?.();
         try {
           await commandHandler.executeCommand(trimmedValue);
         } catch (error) {
@@ -64,7 +67,7 @@ const InputPane: React.FC<InputPaneProps> = ({
       setShowAutocomplete(false);
       setSelectedIndex(0);
     },
-    [commandHandler, exitOnEmptyInput, onSubmit, addLog]
+    [commandHandler, exitOnEmptyInput, onSubmit, onCommandStart, addLog]
   );
 
   useInput((input, key) => {

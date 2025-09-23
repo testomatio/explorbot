@@ -22,9 +22,9 @@ export class MockAIProvider {
       generateTextResponse: async ({ prompt, messages }) => {
         this.lastMessages = messages || [];
         this.callHistory.push(JSON.stringify(messages || prompt));
-        
+
         const response = this.getNextResponse();
-        
+
         return {
           text: response.text || 'Mock AI response',
           toolCalls: response.toolCalls || [],
@@ -51,7 +51,7 @@ export class MockAIProvider {
     if (this.responses.length === 0) {
       return { text: 'Default mock response' };
     }
-    
+
     const response = this.responses[this.responseIndex];
     this.responseIndex = (this.responseIndex + 1) % this.responses.length;
     return response;

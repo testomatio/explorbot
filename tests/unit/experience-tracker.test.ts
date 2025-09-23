@@ -18,22 +18,22 @@ describe('ExperienceTracker', () => {
     const mockConfig = {
       playwright: { browser: 'chromium', url: 'http://localhost:3000' },
       ai: { provider: null, model: 'test' },
-      dirs: { 
+      dirs: {
         knowledge: '/tmp/explorbot-test/knowledge',
-        experience: 'experience' // Use relative path so it gets resolved properly
-      }
+        experience: 'experience', // Use relative path so it gets resolved properly
+      },
     };
-    
+
     const configParser = ConfigParser.getInstance();
     (configParser as any).config = mockConfig;
     (configParser as any).configPath = '/tmp/config.js'; // Point to parent dir
-    
+
     experienceTracker = new ExperienceTracker();
   });
 
   afterEach(() => {
     experienceTracker.cleanup();
-    
+
     // Clean up test directory
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
@@ -52,7 +52,7 @@ describe('ExperienceTracker', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test Page</body></html>',
         url: 'https://example.com/test',
-        title: 'Test Page'
+        title: 'Test Page',
       });
 
       await experienceTracker.saveFailedAttempt(
@@ -65,9 +65,9 @@ describe('ExperienceTracker', () => {
 
       const stateHash = actionResult.getStateHash();
       const filePath = `${testDir}/${stateHash}.md`;
-      
+
       expect(existsSync(filePath)).toBe(true);
-      
+
       const content = readFileSync(filePath, 'utf8');
       expect(content).toContain('Failed Attempt');
       expect(content).toContain('Purpose: Click the login button');
@@ -79,7 +79,7 @@ describe('ExperienceTracker', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test Page</body></html>',
         url: 'https://example.com/test',
-        title: 'Test Page'
+        title: 'Test Page',
       });
 
       // First failed attempt
@@ -117,7 +117,7 @@ describe('ExperienceTracker', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Dashboard</body></html>',
         url: 'https://example.com/dashboard',
-        title: 'Dashboard'
+        title: 'Dashboard',
       });
 
       // First create a failed attempt so the file exists
@@ -137,9 +137,9 @@ describe('ExperienceTracker', () => {
 
       const stateHash = actionResult.getStateHash();
       const filePath = `${testDir}/${stateHash}.md`;
-      
+
       expect(existsSync(filePath)).toBe(true);
-      
+
       const content = readFileSync(filePath, 'utf8');
       expect(content).toContain('Successful Attempt');
       expect(content).toContain('Purpose: Navigate to dashboard');
@@ -152,7 +152,7 @@ describe('ExperienceTracker', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
-        title: 'Test'
+        title: 'Test',
       });
 
       // First save a failed attempt
@@ -178,7 +178,7 @@ describe('ExperienceTracker', () => {
       // Success should appear before failure in content
       const successIndex = content.indexOf('Successful Attempt');
       const failureIndex = content.indexOf('Failed Attempt');
-      
+
       expect(successIndex).toBeGreaterThan(-1);
       expect(failureIndex).toBeGreaterThan(-1);
       expect(successIndex).toBeLessThan(failureIndex);
@@ -188,7 +188,7 @@ describe('ExperienceTracker', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
-        title: 'Test'
+        title: 'Test',
       });
 
       const code = 'I.click("#submit")';
@@ -230,7 +230,7 @@ describe('ExperienceTracker', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
-        title: 'Test Page'
+        title: 'Test Page',
       });
 
       // Create an experience file first with a failed attempt
@@ -266,13 +266,14 @@ describe('ExperienceTracker', () => {
       const frontmatter = {
         url: '/custom',
         title: 'Custom Page',
-        custom: 'metadata'
+        custom: 'metadata',
       };
 
       experienceTracker.writeExperienceFile(stateHash, content, frontmatter);
 
-      const { content: readContent, data } = experienceTracker.readExperienceFile(stateHash);
-      
+      const { content: readContent, data } =
+        experienceTracker.readExperienceFile(stateHash);
+
       expect(readContent.trim()).toBe(content.trim());
       expect(data.url).toBe('/custom');
       expect(data.title).toBe('Custom Page');
@@ -286,7 +287,7 @@ describe('ExperienceTracker', () => {
       if (existsSync(testDir)) {
         rmSync(testDir, { recursive: true, force: true });
       }
-      
+
       const experiences = experienceTracker.getAllExperience();
       expect(experiences).toEqual([]);
     });
@@ -296,13 +297,13 @@ describe('ExperienceTracker', () => {
       const actionResult1 = new ActionResult({
         html: '<html><body>Page 1</body></html>',
         url: 'https://example.com/page1',
-        title: 'Page 1'
+        title: 'Page 1',
       });
 
       const actionResult2 = new ActionResult({
         html: '<html><body>Page 2</body></html>',
         url: 'https://example.com/page2',
-        title: 'Page 2'
+        title: 'Page 2',
       });
 
       // Create the first file with failed then successful
@@ -329,12 +330,16 @@ describe('ExperienceTracker', () => {
       );
 
       const experiences = experienceTracker.getAllExperience();
-      
+
       expect(experiences).toHaveLength(2);
-      
-      const page1Experience = experiences.find(exp => exp.data.title === 'Page 1');
-      const page2Experience = experiences.find(exp => exp.data.title === 'Page 2');
-      
+
+      const page1Experience = experiences.find(
+        (exp) => exp.data.title === 'Page 1'
+      );
+      const page2Experience = experiences.find(
+        (exp) => exp.data.title === 'Page 2'
+      );
+
       expect(page1Experience).toBeTruthy();
       expect(page2Experience).toBeTruthy();
       expect(page1Experience?.content).toContain('I.click("Link1")');
@@ -355,10 +360,11 @@ describe('ExperienceTracker', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
-        title: 'Test'
+        title: 'Test',
       });
 
-      const longError = 'This is a very long error message that should be truncated because it exceeds the maximum length limit for error messages in the experience tracker system';
+      const longError =
+        'This is a very long error message that should be truncated because it exceeds the maximum length limit for error messages in the experience tracker system';
 
       await experienceTracker.saveFailedAttempt(
         actionResult,
@@ -382,7 +388,7 @@ describe('ExperienceTracker', () => {
         html: '<html><head><title>Unique Test</title></head><body><h1>Null Error Unique Test</h1></body></html>',
         url: 'https://example.com/completely-unique-null-error-test-path',
         title: 'Unique Null Error Test',
-        h1: 'Null Error Unique Test'
+        h1: 'Null Error Unique Test',
       });
 
       await experienceTracker.saveFailedAttempt(
@@ -395,10 +401,10 @@ describe('ExperienceTracker', () => {
 
       const stateHash = actionResult.getStateHash();
       const filePath = `${testDir}/${stateHash}.md`;
-      
+
       // Verify file exists and contains our failed attempt
       expect(existsSync(filePath)).toBe(true);
-      
+
       const content = readFileSync(filePath, 'utf8');
 
       // Should handle null error gracefully - just verify the file has the right structure
@@ -413,23 +419,23 @@ describe('ExperienceTracker', () => {
       const testCases = [
         {
           url: 'https://example.com/users/profile',
-          expectedPath: '/users/profile'
+          expectedPath: '/users/profile',
         },
         {
           url: '/dashboard',
-          expectedPath: '/dashboard'
+          expectedPath: '/dashboard',
         },
         {
           url: 'https://example.com/page#section',
-          expectedPath: '/page#section'
-        }
+          expectedPath: '/page#section',
+        },
       ];
 
       for (const testCase of testCases) {
         const actionResult = new ActionResult({
           html: '<html><body>Test</body></html>',
           url: testCase.url,
-          title: 'Test'
+          title: 'Test',
         });
 
         // Create failed attempt first
@@ -449,7 +455,7 @@ describe('ExperienceTracker', () => {
 
         const stateHash = actionResult.getStateHash();
         const { data } = experienceTracker.readExperienceFile(stateHash);
-        
+
         expect(data.url).toBe(testCase.expectedPath);
       }
     });

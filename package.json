@@ -63,7 +63,9 @@
     "@types/react": "^18.2.0",
     "@types/yargs": "^17.0.24",
     "ink-testing-library": "^4.0.0",
-    "typescript": "^5.0.0"
+    "msw": "^2.11.3",
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=16.0.0"

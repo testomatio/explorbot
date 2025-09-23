@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import type React from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import dedent from 'dedent';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
@@ -94,7 +95,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
           borderStyle="classic"
           marginY={1}
           borderColor="dim"
-          height={15}
+          height={25}
           overflow="hidden"
         >
           <Text>{dedent(marked.parse(String(log.content)).toString())}</Text>

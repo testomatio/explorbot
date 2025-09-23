@@ -73,7 +73,7 @@ class Navigator {
         </hint>`;
     }
 
-    let prompt = dedent`
+    const prompt = dedent`
       <message>
         ${message}
       </message>

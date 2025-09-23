@@ -7,7 +7,7 @@ import { type Conversation, Message } from './conversation.js';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import { z } from 'zod';
 import dedent from 'dedent';
-import { tool } from 'ai';
+import { stepCountIs, tool } from 'ai';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -53,7 +53,7 @@ export class Planner {
     this.stateManager = stateManager;
   }
 
-  getSystemMessage(): String {
+  getSystemMessage(): string {
     return dedent`
     <role>
     You are manual QA planneing exporatary testing session of a web application.
@@ -99,48 +99,44 @@ export class Planner {
         break;
       }
 
-      try {
-        if (tasks.length > 0) {
-          proposeScenarios = dedent`
-            Call AddScenario tool and propose scenarios that are not already proposed
+      if (tasks.length > 0) {
+        proposeScenarios = dedent`
+          Call AddScenario tool and propose scenarios that are not already proposed
 
-            Only propose scenarios that are not in this list:
+          Only propose scenarios that are not in this list:
 
-            ${tasks.map((task) => task.scenario).join('\n')}
-          `;
-        }
-
-        const result = await this.provider.generateWithTools(
-          [...messages, { role: 'user', content: proposeScenarios }],
-          tools,
-          {
-            toolChoice: 'required',
-          }
-        );
-
-        debugLog('Tool results:', result.toolResults);
-
-        for (const toolResult of result.toolResults) {
-          if (
-            toolResult.toolName === 'AddScenario' &&
-            toolResult.output?.success
-          ) {
-            const taskData = toolResult.output.task;
-            tasks.push({
-              scenario: taskData.scenario,
-              status: 'pending' as const,
-              priority: taskData.priority,
-              expectedOutcome: taskData.expectedOutcome,
-            });
-          }
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AI_APICallError') {
-          debugLog('AI API call failed, retrying:', error.message);
-          continue;
-        }
-        throw error;
+          ${tasks.map((task) => task.scenario).join('\n')}
+        `;
       }
+
+      const result = await this.provider.generateWithTools(
+        [...messages, { role: 'user', content: proposeScenarios }],
+        tools,
+        {
+          stopWhen: stepCountIs(3),
+          toolChoice: 'required',
+          maxRetries: 3,
+        }
+      );
+
+      debugLog('Tool results:', result.toolResults);
+
+      for (const toolResult of result.toolResults) {
+        if (
+          toolResult.toolName === 'AddScenario' &&
+          toolResult.output?.success
+        ) {
+          const taskData = toolResult.output.task;
+          tasks.push({
+            scenario: taskData.scenario,
+            status: 'pending' as const,
+            priority: taskData.priority,
+            expectedOutcome: taskData.expectedOutcome,
+          });
+        }
+      }
+
+      iteration++;
     }
 
     if (tasks.length === 0) {
@@ -199,7 +195,7 @@ export class Planner {
     `;
   }
 
-  getTasksMessage(): String {
+  getTasksMessage(): string {
     return dedent`
     <task>
       List possible testing scenarios for the web page by calling the AddScenario tool multiple times.

@@ -14,7 +14,7 @@ import {
   registerLogPane,
   unregisterLogPane,
   getMethodsOfObject,
-  type TaggedLogEntry
+  type TaggedLogEntry,
 } from '../../src/utils/logger';
 
 describe('Logger', () => {
@@ -26,17 +26,17 @@ describe('Logger', () => {
     // Save original environment
     originalEnv = { ...process.env };
     originalCWD = process.cwd();
-    
+
     // Clean test directory
     if (existsSync(testOutputDir)) {
       rmSync(testOutputDir, { recursive: true, force: true });
     }
-    
+
     // Set test environment
     process.env.INITIAL_CWD = '/tmp';
     delete process.env.INK_RUNNING;
     delete process.env.DEBUG;
-    
+
     // Reset logger state - must be done after env reset
     setVerboseMode(false);
     setPreserveConsoleLogs(false);
@@ -46,7 +46,7 @@ describe('Logger', () => {
     // Restore environment
     process.env = originalEnv;
     process.chdir(originalCWD);
-    
+
     // Clean up test directory
     if (existsSync(testOutputDir)) {
       rmSync(testOutputDir, { recursive: true, force: true });
@@ -56,45 +56,45 @@ describe('Logger', () => {
   describe('basic logging functions', () => {
     it('should log info messages', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       log('Test info message');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Test info message');
       consoleSpy.mockRestore();
     });
 
     it('should log success messages', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       logSuccess('Test success message');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Test success message');
       consoleSpy.mockRestore();
     });
 
     it('should log error messages', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       logError('Test error message');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Test error message');
       consoleSpy.mockRestore();
     });
 
     it('should log warning messages', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       logWarning('Test warning message');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Test warning message');
       consoleSpy.mockRestore();
     });
 
     it('should log substep messages', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       logSubstep('Test substep message');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Test substep message');
       consoleSpy.mockRestore();
     });
@@ -103,21 +103,21 @@ describe('Logger', () => {
   describe('tagged logging', () => {
     it('should create tagged loggers', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       const stepLogger = tag('step');
       stepLogger.log('Tagged step message');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Tagged step message');
       consoleSpy.mockRestore();
     });
 
     it('should handle different tag types', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       tag('info').log('Info message');
       tag('error').log('Error message');
       tag('success').log('Success message');
-      
+
       expect(consoleSpy).toHaveBeenCalledTimes(3);
       consoleSpy.mockRestore();
     });
@@ -132,10 +132,10 @@ describe('Logger', () => {
     it('should log debug messages when DEBUG is set', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
       process.env.DEBUG = 'explorbot:test';
-      
+
       const debugLogger = createDebug('explorbot:test');
       debugLogger('Debug message');
-      
+
       // Debug messages are logged but may be styled differently
       expect(consoleSpy).toHaveBeenCalled();
       consoleSpy.mockRestore();
@@ -143,14 +143,14 @@ describe('Logger', () => {
 
     it('should not log debug messages when DEBUG is not set and verbose is off', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       // Ensure clean state
       process.env.DEBUG = '';
       setVerboseMode(false);
-      
+
       const debugLogger = createDebug('explorbot:test');
       debugLogger('Debug message');
-      
+
       // Debug messages should not appear in console when DEBUG is not set and verbose is off
       // Note: The actual behavior depends on how the logger determines if debug is enabled
       expect(consoleSpy).toHaveBeenCalled(); // Debug goes to console by default
@@ -160,10 +160,10 @@ describe('Logger', () => {
     it('should log debug messages in verbose mode', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
       setVerboseMode(true);
-      
+
       const debugLogger = createDebug('explorbot:test');
       debugLogger('Verbose debug message');
-      
+
       expect(consoleSpy).toHaveBeenCalled();
       consoleSpy.mockRestore();
     });
@@ -172,21 +172,21 @@ describe('Logger', () => {
   describe('verbose mode', () => {
     it('should set and get verbose mode', () => {
       expect(isVerboseMode()).toBe(false);
-      
+
       setVerboseMode(true);
       expect(isVerboseMode()).toBe(true);
-      
+
       setVerboseMode(false);
       expect(isVerboseMode()).toBe(false);
     });
 
     it('should enable debug logging in verbose mode', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       setVerboseMode(true);
       const debugLogger = createDebug('explorbot:verbose');
       debugLogger('Verbose debug');
-      
+
       expect(consoleSpy).toHaveBeenCalled();
       consoleSpy.mockRestore();
     });
@@ -195,13 +195,13 @@ describe('Logger', () => {
   describe('console preservation', () => {
     it('should preserve console logs when enabled', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       // Simulate INK_RUNNING environment (would normally disable console)
       process.env.INK_RUNNING = 'true';
-      
+
       setPreserveConsoleLogs(true);
       log('Preserved log message');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Preserved log message');
       consoleSpy.mockRestore();
     });
@@ -215,10 +215,10 @@ describe('Logger', () => {
 
       // Test registration
       registerLogPane(mockLogPane);
-      
+
       // Test unregistration
       unregisterLogPane(mockLogPane);
-      
+
       // No errors should occur
       expect(true).toBe(true);
     });
@@ -226,18 +226,18 @@ describe('Logger', () => {
     it('should use log pane when registered', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
       const logEntries: TaggedLogEntry[] = [];
-      
+
       const mockLogPane = (entry: TaggedLogEntry) => {
         logEntries.push(entry);
       };
 
       registerLogPane(mockLogPane);
       log('Pane message');
-      
+
       expect(logEntries).toHaveLength(1);
       expect(logEntries[0].content).toBe('Pane message');
       expect(logEntries[0].type).toBe('info');
-      
+
       unregisterLogPane(mockLogPane);
       consoleSpy.mockRestore();
     });
@@ -246,28 +246,28 @@ describe('Logger', () => {
   describe('argument processing', () => {
     it('should handle string arguments', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       log('Simple string');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Simple string');
       consoleSpy.mockRestore();
     });
 
     it('should handle multiple arguments', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       log('Multiple', 'arguments', 'test');
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Multiple arguments test');
       consoleSpy.mockRestore();
     });
 
     it('should handle object arguments', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       const testObj = { key: 'value', number: 42 };
       log('Object:', testObj);
-      
+
       const expectedCall = consoleSpy.mock.calls[0][0];
       expect(expectedCall).toContain('Object:');
       expect(expectedCall).toContain('"key": "value"');
@@ -277,12 +277,12 @@ describe('Logger', () => {
 
     it('should handle circular object references', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       const circularObj: any = { name: 'test' };
       circularObj.self = circularObj;
-      
+
       log('Circular:', circularObj);
-      
+
       const expectedCall = consoleSpy.mock.calls[0][0];
       expect(expectedCall).toContain('Circular: [Object]');
       consoleSpy.mockRestore();
@@ -290,18 +290,20 @@ describe('Logger', () => {
 
     it('should handle null and undefined', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       log('Null:', null, 'Undefined:', undefined);
-      
-      expect(consoleSpy).toHaveBeenCalledWith('Null: null Undefined: undefined');
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        'Null: null Undefined: undefined'
+      );
       consoleSpy.mockRestore();
     });
 
     it('should handle numbers and booleans', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       log('Number:', 123, 'Boolean:', true);
-      
+
       expect(consoleSpy).toHaveBeenCalledWith('Number: 123 Boolean: true');
       consoleSpy.mockRestore();
     });
@@ -310,12 +312,12 @@ describe('Logger', () => {
   describe('environment detection', () => {
     it('should detect INK_RUNNING environment', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       // Set INK_RUNNING to simulate React Ink environment
       process.env.INK_RUNNING = 'true';
-      
+
       log('INK test message');
-      
+
       // Should not log to console when INK is running (unless force enabled)
       expect(consoleSpy).not.toHaveBeenCalled();
       consoleSpy.mockRestore();
@@ -324,10 +326,10 @@ describe('Logger', () => {
     it('should detect DEBUG environment variables', () => {
       // Test creating debug logger with DEBUG env var
       process.env.DEBUG = 'explorbot:*';
-      
+
       const debugLogger = createDebug('explorbot:env');
       expect(typeof debugLogger).toBe('function');
-      
+
       // isVerboseMode() reflects the current state which may be affected by previous tests
       // Let's just verify the debug logger was created successfully
       expect(debugLogger).toBeDefined();
@@ -338,13 +340,13 @@ describe('Logger', () => {
     it('should get methods of an object', () => {
       const testObj = {
         method1: () => {},
-        method2: function() {},
+        method2: () => {},
         property: 'value',
-        number: 42
+        number: 42,
       };
 
       const methods = getMethodsOfObject(testObj);
-      
+
       expect(methods).toEqual(['method1', 'method2']);
       expect(methods).not.toContain('property');
       expect(methods).not.toContain('number');
@@ -354,23 +356,23 @@ describe('Logger', () => {
       const testObj = {
         zMethod: () => {},
         aMethod: () => {},
-        mMethod: () => {}
+        mMethod: () => {},
       };
 
       const methods = getMethodsOfObject(testObj);
-      
+
       expect(methods).toEqual(['aMethod', 'mMethod', 'zMethod']);
     });
 
     it('should exclude constructor from methods', () => {
       const testObj = {
-        constructor: function() {},
-        method: function() {},
-        normalProp: 'value'
+        constructor: () => {},
+        method: () => {},
+        normalProp: 'value',
       };
 
       const methods = getMethodsOfObject(testObj);
-      
+
       expect(methods).not.toContain('constructor');
       expect(methods).toContain('method');
       expect(methods).not.toContain('normalProp');
@@ -385,7 +387,7 @@ describe('Logger', () => {
       const testObj = {
         prop1: 'value1',
         prop2: 42,
-        prop3: true
+        prop3: true,
       };
 
       const methods = getMethodsOfObject(testObj);
@@ -396,10 +398,10 @@ describe('Logger', () => {
   describe('multiline logging', () => {
     it('should handle multiline content', () => {
       const consoleSpy = spyOn(console, 'log').mockImplementation(() => {});
-      
+
       const multilineLogger = tag('multiline');
       multilineLogger.log('# Heading\n\nSome **bold** text');
-      
+
       expect(consoleSpy).toHaveBeenCalled();
       consoleSpy.mockRestore();
     });
@@ -412,10 +414,10 @@ describe('Logger', () => {
       // Create an object that will cause JSON.stringify to fail
       const problematicObj = {};
       Object.defineProperty(problematicObj, 'prop', {
-        get: function() {
+        get: () => {
           throw new Error('Property access error');
         },
-        enumerable: true
+        enumerable: true,
       });
 
       // Should not throw when processing problematic objects

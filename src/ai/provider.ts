@@ -3,38 +3,53 @@ import type { AIConfig } from '../config.js';
 import { createDebug, tag } from '../utils/logger.js';
 import { setActivity, clearActivity } from '../activity.ts';
 import { Conversation, type Message } from './conversation.js';
+import { withRetry, type RetryOptions } from '../utils/retry.js';
 
 const debugLog = createDebug('explorbot:ai');
 
 export class Provider {
   private config: AIConfig;
   private provider: any = null;
-  private conversations: Map<string, Conversation> = new Map();
+  private defaultRetryOptions: RetryOptions = {
+    maxAttempts: 3,
+    baseDelay: 10,
+    maxDelay: 10000,
+    retryCondition: (error: Error) => {
+      return (
+        error.name === 'AI_APICallError' ||
+        error.message.includes('timeout') ||
+        error.message.includes('network') ||
+        error.message.includes('rate limit') ||
+        error.message.includes('AI request timeout')
+      );
+    },
+  };
 
   constructor(config: AIConfig) {
     this.config = config;
     this.provider = this.config.provider;
   }
 
-  async startConversation(
-    messages: Message[] = [],
-    tools?: any
-  ): Promise<{ conversation: Conversation; response: any }> {
-    const conversation = new Conversation(messages);
-    this.conversations.set(conversation.id, conversation);
-    const response = tools
-      ? await this.generateWithTools(conversation.messages, tools)
-      : await this.chat(conversation.messages);
-    conversation.addAssistantText(response.text);
-    return { conversation, response };
+  private getRetryOptions(options: any = {}): RetryOptions {
+    return {
+      ...this.defaultRetryOptions,
+      maxAttempts: options.maxRetries || this.defaultRetryOptions.maxAttempts,
+    };
   }
 
-  async followUp(
-    conversationId: string,
+  startConversation(systemMessage: string) {
+    return new Conversation([
+      {
+        role: 'system',
+        content: [{ type: 'text', text: systemMessage }],
+      },
+    ]);
+  }
+
+  async invokeConversation(
+    conversation: Conversation,
     tools?: any
   ): Promise<{ conversation: Conversation; response: any } | null> {
-    const conversation = this.conversations.get(conversationId);
-    if (!conversation) return null;
     const response = tools
       ? await this.generateWithTools(conversation.messages, tools)
       : await this.chat(conversation.messages);
@@ -57,14 +72,17 @@ export class Provider {
     };
 
     try {
-      const response = await generateText({ messages, ...config });
+      const response = await withRetry(async () => {
+        const result = await generateText({ messages, ...config });
+        if (!result.text) {
+          debugLog(result);
+          throw new Error('No response text from AI');
+        }
+        return result;
+      }, this.getRetryOptions(options));
 
       clearActivity();
       debugLog('AI response:', response.text);
-      if (!response.text) {
-        debugLog(response);
-        throw new Error('No response text from AI');
-      }
       return response;
     } catch (error: any) {
       tag('error').log(error.message || error.toString());
@@ -96,16 +114,18 @@ export class Provider {
     };
 
     try {
-      const timeout = config.timeout || 30000; // Default 30 seconds
-      const response = (await Promise.race([
-        generateText({
-          messages,
-          ...config,
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('AI request timeout')), timeout)
-        ),
-      ])) as any;
+      const response = await withRetry(async () => {
+        const timeout = config.timeout || 30000;
+        return (await Promise.race([
+          generateText({
+            messages,
+            ...config,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('AI request timeout')), timeout)
+          ),
+        ])) as any;
+      }, this.getRetryOptions(options));
 
       clearActivity();
 
@@ -145,16 +165,18 @@ export class Provider {
     };
 
     try {
-      const timeout = config.timeout || 30000; // Default 30 seconds
-      const response = (await Promise.race([
-        generateObject({
-          messages,
-          ...config,
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('AI request timeout')), timeout)
-        ),
-      ])) as any;
+      const response = await withRetry(async () => {
+        const timeout = config.timeout || 30000;
+        return (await Promise.race([
+          generateObject({
+            messages,
+            ...config,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('AI request timeout')), timeout)
+          ),
+        ])) as any;
+      }, this.getRetryOptions(options));
 
       clearActivity();
       debugLog('AI structured response:', response.object);
