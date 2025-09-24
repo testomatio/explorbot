@@ -61,12 +61,35 @@ interface AIConfig {
   retryDelay: number;
 }
 
+interface HtmlConfig {
+  minimal?: {
+    include?: string[];
+    exclude?: string[];
+  };
+  combined?: {
+    include?: string[];
+    exclude?: string[];
+  };
+  text?: {
+    include?: string[];
+    exclude?: string[];
+  };
+}
+
+interface DirsConfig {
+  knowledge: string;
+  experience: string;
+  output: string;
+}
+
 interface ExplorbotConfig {
   playwright: PlaywrightConfig;
   app: AppConfig;
   output: OutputConfig;
   test: TestConfig;
   ai: AIConfig;
+  html?: HtmlConfig;
+  dirs?: DirsConfig;
 }
 
 const config: ExplorbotConfig = {
@@ -155,6 +178,72 @@ const config: ExplorbotConfig = {
     retryAttempts: 3,
     retryDelay: 1000,
   },
+
+  // Optional HTML parsing configuration
+  // Use CSS selectors to customize which elements are included in snapshots
+  html: {
+    // Minimal UI snapshot - keeps only interactive elements
+    minimal: {
+      include: [
+        // Include elements with test IDs (not included by default)
+        '[data-testid]',
+        '[data-cy]',
+        // Include custom interactive components
+        '[role="toolbar"]',
+        // Include elements with specific data attributes
+        'div[data-id]',
+      ],
+      exclude: [
+        // Exclude cookie banners
+        '#onetrust-consent-sdk',
+        // Exclude notification toasts
+        '.toast',
+        '.notification',
+        // Exclude loading spinners
+        '.spinner',
+        '.loading',
+      ],
+    },
+    // Combined snapshot - keeps interactive elements + meaningful text
+    combined: {
+      include: [
+        // Include content areas with specific classes
+        '.content',
+        '.main-content',
+        '[data-content]',
+        // Include article content
+        'article',
+        '.article',
+      ],
+      exclude: [
+        // Exclude navigation menus
+        '.nav-menu',
+        '.navigation',
+        'nav',
+        // Exclude metadata
+        '.metadata',
+        '.meta',
+        'time',
+      ],
+    },
+    // Text snapshot - converts to markdown text
+    text: {
+      include: [
+        // Include specific text containers
+        '.prose',
+        '.markdown',
+        '[data-markdown]',
+      ],
+      exclude: [
+        // Exclude code blocks (if not needed)
+        'code',
+        'pre',
+        // Exclude small text
+        'small',
+        '.fine-print',
+      ],
+    },
+  },
 };
 
 export default config;
@@ -165,4 +254,6 @@ export type {
   OutputConfig,
   TestConfig,
   AIConfig,
+  HtmlConfig,
+  DirsConfig,
 };

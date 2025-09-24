@@ -198,7 +198,7 @@ class Explorer {
 
     await this.researcher.research();
     log('Planning...');
-    let scenarios = await this.planner.plan();
+    const scenarios = await this.planner.plan();
     this.scenarios = scenarios;
     return scenarios;
   }

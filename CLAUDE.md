@@ -37,6 +37,8 @@ After big changes run linter: `npm run lint:fix`
 **Never use NodeJS**
 This application is only Bun
 
+
+
 ## Core Architecture
 
 Explorbot uses layered architecture with AI-driven automation:
@@ -84,6 +86,12 @@ Application is built via React Ink with interactive TUI
   <StateTransitionPane>
   [prints which page we on right now]
 ]
+```
+
+DO NEVER REMOVE FROM COMPONENTS:
+
+```
+import React from 'react';
 ```
 
 ### User Input in TUI

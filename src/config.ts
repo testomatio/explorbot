@@ -44,14 +44,32 @@ interface AIConfig {
   retryDelay?: number;
 }
 
+interface HtmlConfig {
+  minimal?: {
+    include?: string[];
+    exclude?: string[];
+  };
+  combined?: {
+    include?: string[];
+    exclude?: string[];
+  };
+  text?: {
+    include?: string[];
+    exclude?: string[];
+  };
+}
+
+interface DirsConfig {
+  knowledge: string;
+  experience: string;
+  output: string;
+}
+
 interface ExplorbotConfig {
   playwright: PlaywrightConfig;
   ai: AIConfig;
-  dirs?: {
-    knowledge: string;
-    experience: string;
-    output: string;
-  };
+  html?: HtmlConfig;
+  dirs?: DirsConfig;
 }
 
 const config: ExplorbotConfig = {
@@ -66,7 +84,13 @@ const config: ExplorbotConfig = {
   },
 };
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig };
+export type {
+  ExplorbotConfig,
+  PlaywrightConfig,
+  AIConfig,
+  HtmlConfig,
+  DirsConfig,
+};
 
 export class ConfigParser {
   private static instance: ConfigParser;

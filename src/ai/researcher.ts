@@ -14,7 +14,7 @@ import { z } from 'zod';
 const debugLog = createDebug('explorbot:researcher');
 
 export class Research {
-  expandDOMCalled: boolean = false;
+  expandDOMCalled = false;
 }
 
 export class Researcher {
