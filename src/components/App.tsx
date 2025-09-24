@@ -94,10 +94,13 @@ export function App({
     return () => clearInterval(interval);
   }, [explorBot]);
 
-  // Handle keyboard input - ESC to enable input
+  // Handle keyboard input - ESC to enable input, Ctrl-C to exit
   useInput((input, key) => {
     if (key.escape) {
       setShowInput(true);
+    }
+    if (key.ctrl && input === 'c') {
+      process.exit(0);
     }
   });
 
@@ -116,8 +119,8 @@ export function App({
               if (userInputPromise) {
                 userInputPromise.resolve(input);
                 setUserInputPromise(null);
+                setShowInput(false);
               }
-              setShowInput(false);
             }}
             onCommandStart={() => {
               setShowInput(false);
@@ -125,7 +128,7 @@ export function App({
           />
         </>
       ) : (
-        <Box height={1}>
+        <Box height={3}>
           <ActivityPane />
         </Box>
       )}
@@ -134,7 +137,7 @@ export function App({
         flexDirection="row"
         alignItems="flex-start"
         columnGap={1}
-        flexGrow={1}
+        height="20%"
       >
         {currentState && (
           <Box width={tasks.length > 0 ? '50%' : '100%'}>

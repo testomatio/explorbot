@@ -1,4 +1,4 @@
-import type React from 'react';
+import React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { CommandHandler } from '../command-handler.js';

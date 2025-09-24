@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ExperienceTracker } from './experience-tracker.js';
-import { createDebug } from './utils/logger.js';
+import { createDebug, tag } from './utils/logger.js';
 import { ConfigParser } from './config.js';
 
 const debugLog = createDebug('explorbot:state');
@@ -110,6 +110,13 @@ export class StateManager {
    * Emit state change event to all listeners
    */
   private emitStateChange(event: StateTransition): void {
+    // Log HTML content when state changes
+    if (event.toState.html && event.toState.html !== event.fromState?.html) {
+      const htmlContent =
+        typeof event.toState.html === 'string' ? event.toState.html : '';
+      tag('html').log(`Page HTML for ${event.toState.url}:\n${htmlContent}`);
+    }
+
     this.stateChangeListeners.forEach((listener) => {
       try {
         listener(event);

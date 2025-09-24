@@ -14,7 +14,8 @@ export type LogType =
   | 'debug'
   | 'substep'
   | 'step'
-  | 'multiline';
+  | 'multiline'
+  | 'html';
 
 export interface TaggedLogEntry {
   type: LogType;

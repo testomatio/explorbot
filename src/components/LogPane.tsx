@@ -1,9 +1,9 @@
-import type React from 'react';
+import React from 'react';
 import { useState, useCallback, useEffect } from 'react';
 import dedent from 'dedent';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
-
+import { htmlTextSnapshot } from '../utils/html.js';
 marked.use(markedTerminal());
 
 import { Box, Text } from 'ink';
@@ -70,6 +70,8 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
         return { color: 'cyan' as const, dimColor: true };
       case 'multiline':
         return { color: 'gray' as const, dimColor: true };
+      case 'html':
+        return { color: 'gray' as const };
       default:
         return {};
     }
@@ -94,20 +96,35 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
           key={index}
           borderStyle="classic"
           marginY={1}
+          padding={1}
           borderColor="dim"
-          height={25}
+          height={17}
           overflow="hidden"
         >
-          <Text>{dedent(marked.parse(String(log.content)).toString())}</Text>
+          <Text color="gray" dimColor>
+            {dedent(marked.parse(String(log.content)).toString())}
+          </Text>
         </Box>
       );
+    }
+
+    if (log.type === 'html') {
+      // Convert HTML to markdown, then render as multiline
+      const markdown = htmlTextSnapshot(log.content);
+      const multilineLog: TaggedLogEntry = {
+        type: 'multiline',
+        content: `HTML Content:\n\n${markdown}`,
+        timestamp: log.timestamp,
+      };
+
+      return renderLogEntry(multilineLog, `html-${index}`);
     }
 
     const lines = processLogContent(String(log.content));
 
     if (log.type === 'substep') {
       return (
-        <Box key={index} flexDirection="column">
+        <Box key={index} marginLeft={2} flexDirection="column">
           {lines.map((line, lineIndex) => (
             <Text key={`${index}-${lineIndex}`} {...styles}>
               {lineIndex === 0 ? `> ${line}` : `   ${line}`}
@@ -129,13 +146,31 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
       );
     }
 
+    let marginTop = 0;
+    if (log.type === 'info') marginTop = 1;
+    const icon =
+      log.type === 'info'
+        ? '●'
+        : log.type === 'success'
+          ? '✓'
+          : log.type === 'error'
+            ? '✗'
+            : log.type === 'warning'
+              ? '!'
+              : log.type === 'debug'
+                ? '*'
+                : '';
+
     return (
-      <Box key={index} flexDirection="column">
-        {lines.map((line, lineIndex) => (
-          <Text key={`${index}-${lineIndex}`} {...styles}>
-            {line}
-          </Text>
-        ))}
+      <Box key={index} columnGap={1} marginTop={marginTop} flexDirection="row">
+        {icon && <Text {...styles}>{icon}</Text>}
+        <Box flexDirection="column">
+          {lines.map((line, lineIndex) => (
+            <Text key={`${index}-${lineIndex}`} {...styles}>
+              {line}
+            </Text>
+          ))}
+        </Box>
       </Box>
     );
   };

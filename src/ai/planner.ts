@@ -8,6 +8,7 @@ import type { ExperienceTracker } from '../experience-tracker.ts';
 import { z } from 'zod';
 import dedent from 'dedent';
 import { stepCountIs, tool } from 'ai';
+import { loop } from '../utils/loop.js';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -93,12 +94,7 @@ export class Planner {
     let proposeScenarios =
       'Suggest at least 3 scenarios which are relevant to the page and can be tested from UI.';
 
-    let iteration = 0;
-    while (tasks.length < 3) {
-      if (iteration > 3) {
-        break;
-      }
-
+    const request = async () => {
       if (tasks.length > 0) {
         proposeScenarios = dedent`
           Call AddScenario tool and propose scenarios that are not already proposed
@@ -109,7 +105,7 @@ export class Planner {
         `;
       }
 
-      const result = await this.provider.generateWithTools(
+      return await this.provider.generateWithTools(
         [...messages, { role: 'user', content: proposeScenarios }],
         tools,
         {
@@ -118,26 +114,45 @@ export class Planner {
           maxRetries: 3,
         }
       );
+    };
 
-      debugLog('Tool results:', result.toolResults);
-
-      for (const toolResult of result.toolResults) {
-        if (
-          toolResult.toolName === 'AddScenario' &&
-          toolResult.output?.success
-        ) {
-          const taskData = toolResult.output.task;
-          tasks.push({
-            scenario: taskData.scenario,
-            status: 'pending' as const,
-            priority: taskData.priority,
-            expectedOutcome: taskData.expectedOutcome,
-          });
+    await loop(
+      request,
+      async ({ stop, iteration }) => {
+        if (iteration >= 3) {
+          stop();
         }
-      }
 
-      iteration++;
-    }
+        const result = await request();
+        debugLog('Tool results:', result.toolResults);
+
+        for (const toolResult of result.toolResults) {
+          if (
+            toolResult.toolName === 'AddScenario' &&
+            toolResult.output?.success
+          ) {
+            const taskData = toolResult.output.task;
+            tasks.push({
+              scenario: taskData.scenario,
+              status: 'pending' as const,
+              priority: taskData.priority,
+              expectedOutcome: taskData.expectedOutcome,
+            });
+          }
+        }
+
+        if (tasks.length >= 3) {
+          stop();
+        }
+
+        // Update messages for next iteration
+        messages.push({
+          role: 'user',
+          content: 'Please continue with more scenarios if needed',
+        });
+      },
+      3
+    );
 
     if (tasks.length === 0) {
       throw new Error('No tasks were created successfully');

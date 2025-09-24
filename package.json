@@ -51,8 +51,10 @@
     "marked": "^16.2.0",
     "marked-terminal": "^7.3.0",
     "micromatch": "^4.0.8",
+    "parse5": "^8.0.0",
     "playwright": "^1.40.0",
     "react": "^18.2.0",
+    "turndown": "^7.2.1",
     "yargs": "^17.7.2",
     "zod": "^4.1.8"
   },

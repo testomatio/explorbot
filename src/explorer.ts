@@ -110,7 +110,7 @@ class Explorer {
       }
     }
 
-    log(`🔧 ${playwrightConfig.browser} started in headless mode`);
+    log(`${playwrightConfig.browser} started in headless mode`);
 
     return {
       helpers: {
@@ -208,7 +208,7 @@ class Explorer {
   }
 
   async compactPreviousExperiences(): Promise<void> {
-    log('Compacting previous experiences...');
+    tag('debug').log('Compacting previous experiences...');
     const experienceCompactor = new ExperienceCompactor(this.getAIProvider());
     const experienceTracker = this.getStateManager().getExperienceTracker();
     const experienceFiles = experienceTracker.getAllExperience();
@@ -227,11 +227,11 @@ class Explorer {
           compactedContent,
           frontmatter
         );
-        log('Experience file compacted:', experience.filePath);
+        tag('debug').log('Experience file compacted:', experience.filePath);
         compactedCount++;
       }
     }
-    log(`${compactedCount} previous experiences compacted`);
+    tag('debug').log(`${compactedCount} previous experiences compacted`);
   }
 
   private listenToStateChanged(): void {
