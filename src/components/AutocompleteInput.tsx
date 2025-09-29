@@ -12,14 +12,7 @@ interface AutocompleteInputProps {
   showAutocomplete?: boolean;
 }
 
-const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
-  value,
-  onChange,
-  onSubmit,
-  placeholder,
-  suggestions,
-  showAutocomplete = true,
-}) => {
+const AutocompleteInput: React.FC<AutocompleteInputProps> = ({ value, onChange, onSubmit, placeholder, suggestions, showAutocomplete = true }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
   const [autocompleteMode, setAutocompleteMode] = useState(false);
@@ -40,9 +33,7 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
     }
 
     const searchTerm = internalValue.toLowerCase().replace(/^i\./, '');
-    const filtered = suggestions
-      .filter((cmd) => cmd.toLowerCase().includes(searchTerm))
-      .slice(0, 20);
+    const filtered = suggestions.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
 
     setFilteredSuggestions(filtered);
     setSelectedIndex(0);
@@ -57,8 +48,7 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   // Handle autocomplete completion
   const handleAutoCompleteSubmit = (inputValue: string) => {
     if (filteredSuggestions.length > 0) {
-      const selected =
-        filteredSuggestions[autocompleteMode ? selectedIndex : 0];
+      const selected = filteredSuggestions[autocompleteMode ? selectedIndex : 0];
       if (selected) {
         const newValue = `I.${selected}`;
         console.log('Autocomplete: Setting value to:', newValue);
@@ -98,9 +88,7 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
 
     if (autocompleteMode) {
       if (key.upArrow) {
-        setSelectedIndex((prev) =>
-          prev > 0 ? prev - 1 : filteredSuggestions.length - 1
-        );
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filteredSuggestions.length - 1));
         return;
       }
 
@@ -137,24 +125,13 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
             {chunked.map((column, colIndex) => {
               const cmd = column[rowIndex];
               const globalIndex = colIndex * 5 + rowIndex;
-              const isSelected =
-                autocompleteMode && globalIndex === selectedIndex;
+              const isSelected = autocompleteMode && globalIndex === selectedIndex;
               const isFirstSuggestion = !autocompleteMode && globalIndex === 0;
 
               return (
                 <Box key={colIndex} width={20} marginRight={1}>
                   {cmd && (
-                    <Text
-                      color={
-                        isSelected
-                          ? 'black'
-                          : isFirstSuggestion
-                            ? 'yellow'
-                            : 'cyan'
-                      }
-                      backgroundColor={isSelected ? 'cyan' : undefined}
-                      dimColor={!isSelected && !isFirstSuggestion}
-                    >
+                    <Text color={isSelected ? 'black' : isFirstSuggestion ? 'yellow' : 'cyan'} backgroundColor={isSelected ? 'cyan' : undefined} dimColor={!isSelected && !isFirstSuggestion}>
                       {cmd.length > 18 ? `${cmd.slice(0, 15)}...` : cmd}
                     </Text>
                   )}
@@ -171,20 +148,12 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
     <Box flexDirection="column">
       <Box>
         <Text color="green">&gt; </Text>
-        <TextInput
-          key={inputKey}
-          value={internalValue}
-          onChange={handleInternalChange}
-          onSubmit={handleAutoCompleteSubmit}
-          placeholder={placeholder}
-        />
+        <TextInput key={inputKey} value={internalValue} onChange={handleInternalChange} onSubmit={handleAutoCompleteSubmit} placeholder={placeholder} />
       </Box>
       {renderAutocomplete()}
       {filteredSuggestions.length > 0 && (
         <Text color="gray" dimColor>
-          {autocompleteMode
-            ? '↑↓ navigate, Tab/Enter to select, Esc to exit'
-            : 'Enter for first match, ↓ to navigate'}
+          {autocompleteMode ? '↑↓ navigate, Tab/Enter to select, Esc to exit' : 'Enter for first match, ↓ to navigate'}
         </Text>
       )}
     </Box>

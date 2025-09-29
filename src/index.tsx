@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { exploreCommand } from './commands/explore.js';
-import { cleanCommand } from './commands/clean.js';
-import { initCommand } from './commands/init.js';
-import { addKnowledgeCommand } from './commands/add-knowledge.js';
 import { Command } from 'commander';
+import { addKnowledgeCommand } from './commands/add-knowledge.js';
+import { cleanCommand } from './commands/clean.js';
+import { exploreCommand } from './commands/explore.js';
+import { initCommand } from './commands/init.js';
 
 const program = new Command();
 
@@ -20,11 +20,7 @@ program
 program
   .command('clean')
   .description('Clean up artifacts or experience folders')
-  .option(
-    '-t, --type <type>',
-    'Type of cleanup (artifacts|experience|all)',
-    'artifacts'
-  )
+  .option('-t, --type <type>', 'Type of cleanup (artifacts|experience|all)', 'artifacts')
   .option('-p, --path <path>', 'Custom path to clean')
   .action(async (options, command) => {
     const globalOptions = command.parent.opts();
@@ -35,11 +31,7 @@ program
 program
   .command('init')
   .description('Initialize a new project with configuration')
-  .option(
-    '-c, --config-path <path>',
-    'Path for the config file',
-    './explorbot.config.js'
-  )
+  .option('-c, --config-path <path>', 'Path for the config file', './explorbot.config.js')
   .option('-f, --force', 'Overwrite existing config file', false)
   .option('-p, --path <path>', 'Working directory for initialization')
   .action(async (options, command) => {
@@ -62,12 +54,7 @@ program.parse();
 const options = program.opts();
 const command = program.args[0];
 
-if (
-  command === 'clean' ||
-  command === 'init' ||
-  command === 'add-knowledge' ||
-  command === 'knows'
-) {
+if (command === 'clean' || command === 'init' || command === 'add-knowledge' || command === 'knows') {
   // These commands are handled by their respective actions
 } else {
   // Default to explore command

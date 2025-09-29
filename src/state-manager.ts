@@ -1,10 +1,11 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
-import { ExperienceTracker } from './experience-tracker.js';
-import { createDebug, tag } from './utils/logger.js';
 import { ConfigParser } from './config.js';
+import { ExperienceTracker } from './experience-tracker.js';
+import { htmlTextSnapshot } from './utils/html.js';
+import { createDebug, tag } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:state');
 
@@ -78,10 +79,7 @@ export class StateManager {
     // Resolve knowledge directory relative to the config file location (project root)
     if (configPath) {
       const projectRoot = dirname(configPath);
-      this.knowledgeDir = join(
-        projectRoot,
-        config.dirs?.knowledge || 'knowledge'
-      );
+      this.knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
     } else {
       this.knowledgeDir = config.dirs?.knowledge || 'knowledge';
     }
@@ -112,9 +110,9 @@ export class StateManager {
   private emitStateChange(event: StateTransition): void {
     // Log HTML content when state changes
     if (event.toState.html && event.toState.html !== event.fromState?.html) {
-      const htmlContent =
-        typeof event.toState.html === 'string' ? event.toState.html : '';
-      tag('html').log(`Page HTML for ${event.toState.url}:\n${htmlContent}`);
+      let htmlContent = event?.toState?.html ?? '';
+      htmlContent = htmlTextSnapshot(htmlContent);
+      // tag('html').log(`Page HTML for ${event.toState.url}:\n${htmlContent}`);
     }
 
     this.stateChangeListeners.forEach((listener) => {
@@ -194,9 +192,7 @@ export class StateManager {
     // Emit state change event
     this.emitStateChange(transition);
 
-    debugLog(
-      `State updated: ${this.currentState.url} (${this.currentState.hash})`
-    );
+    debugLog(`State updated: ${this.currentState.url} (${this.currentState.hash})`);
 
     return newState;
   }
@@ -215,11 +211,7 @@ export class StateManager {
   /**
    * Update state from basic data (for navigation events)
    */
-  updateStateFromBasic(
-    url: string,
-    title?: string,
-    trigger: 'manual' | 'navigation' | 'automatic' = 'navigation'
-  ): WebPageState {
+  updateStateFromBasic(url: string, title?: string, trigger: 'manual' | 'navigation' | 'automatic' = 'navigation'): WebPageState {
     const path = this.extractStatePath(url);
     const newState: WebPageState = {
       url: path,
@@ -231,7 +223,6 @@ export class StateManager {
 
     // Check if state has actually changed
     if (this.currentState && this.currentState.hash === newState.hash) {
-      debugLog(`State unchanged: ${this.currentState.url} (${newState.hash})`);
       return this.currentState;
     }
 
@@ -251,9 +242,7 @@ export class StateManager {
     // Emit state change event
     this.emitStateChange(transition);
 
-    debugLog(
-      `State updated from basic: ${this.currentState.url} (${this.currentState.hash})`
-    );
+    debugLog(`State updated from navigation: ${this.currentState.url} (${this.currentState.hash})`);
 
     return newState;
   }
@@ -295,10 +284,7 @@ export class StateManager {
   /**
    * Compare two states by their hash
    */
-  statesEqual(
-    state1: WebPageState | null,
-    state2: WebPageState | null
-  ): boolean {
+  statesEqual(state1: WebPageState | null, state2: WebPageState | null): boolean {
     if (!state1 && !state2) return true;
     if (!state1 || !state2) return false;
     return state1.hash === state2.hash;
@@ -340,10 +326,7 @@ export class StateManager {
     const now = new Date();
 
     // Only rescan every 30 seconds to avoid excessive file I/O
-    if (
-      this.lastKnowledgeScan &&
-      now.getTime() - this.lastKnowledgeScan.getTime() < 30000
-    ) {
+    if (this.lastKnowledgeScan && now.getTime() - this.lastKnowledgeScan.getTime() < 30000) {
       return;
     }
 
@@ -373,9 +356,7 @@ export class StateManager {
             content: parsed.content,
           });
 
-          debugLog(
-            `Loaded knowledge file: ${filePath} (pattern: ${urlPattern})`
-          );
+          debugLog(`Loaded knowledge file: ${filePath} (pattern: ${urlPattern})`);
         } catch (error) {
           debugLog(`Failed to load knowledge file ${filePath}:`, error);
         }
@@ -396,9 +377,7 @@ export class StateManager {
     this.scanKnowledgeFiles();
 
     const actionResult = ActionResult.fromState(this.currentState);
-    return this.knowledgeCache.filter((knowledge) =>
-      actionResult.isMatchedBy(knowledge)
-    );
+    return this.knowledgeCache.filter((knowledge) => actionResult.isMatchedBy(knowledge));
   }
 
   /**
@@ -443,18 +422,14 @@ export class StateManager {
    * Check if we've been in this state before
    */
   hasVisitedState(path: string): boolean {
-    return this.stateHistory.some(
-      (transition) => transition.toState.url === path
-    );
+    return this.stateHistory.some((transition) => transition.toState.url === path);
   }
 
   /**
    * Get how many times we've visited a specific path
    */
   getVisitCount(path: string): number {
-    return this.stateHistory.filter(
-      (transition) => transition.toState.url === path
-    ).length;
+    return this.stateHistory.filter((transition) => transition.toState.url === path).length;
   }
 
   /**
@@ -521,10 +496,7 @@ export class StateManager {
     this.lastKnowledgeScan = null;
 
     // Clean up experience tracker if it has cleanup method
-    if (
-      this.experienceTracker &&
-      typeof this.experienceTracker.cleanup === 'function'
-    ) {
+    if (this.experienceTracker && typeof this.experienceTracker.cleanup === 'function') {
       this.experienceTracker.cleanup();
     }
 

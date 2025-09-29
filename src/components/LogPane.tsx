@@ -8,11 +8,7 @@ marked.use(markedTerminal());
 
 import { Box, Text } from 'ink';
 import type { TaggedLogEntry, LogType } from '../utils/logger.js';
-import {
-  registerLogPane,
-  setVerboseMode,
-  unregisterLogPane,
-} from '../utils/logger.js';
+import { registerLogPane, setVerboseMode, unregisterLogPane } from '../utils/logger.js';
 
 // marked.use(new markedTerminal());
 
@@ -35,10 +31,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
         lastLog.type === logEntry.type &&
         lastLog.content === logEntry.content &&
         // Check if it's within 1 second to avoid legitimate duplicates
-        Math.abs(
-          (lastLog.timestamp?.getTime() || 0) -
-            (logEntry.timestamp?.getTime() || 0)
-        ) < 1000
+        Math.abs((lastLog.timestamp?.getTime() || 0) - (logEntry.timestamp?.getTime() || 0)) < 1000
       ) {
         return prevLogs;
       }
@@ -83,8 +76,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
 
   const renderLogEntry = (log: TaggedLogEntry, index: number) => {
     // Skip debug logs when not in verbose mode AND DEBUG env var is not set
-    const shouldShowDebug =
-      verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
+    const shouldShowDebug = verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
     if (log.type === 'debug' && !shouldShowDebug) {
       return null;
     }
@@ -92,15 +84,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
 
     if (log.type === 'multiline') {
       return (
-        <Box
-          key={index}
-          borderStyle="classic"
-          marginY={1}
-          padding={1}
-          borderColor="dim"
-          height={17}
-          overflow="hidden"
-        >
+        <Box key={index} borderStyle="classic" marginY={1} padding={1} borderColor="dim" height={17} overflow="hidden">
           <Text color="gray" dimColor>
             {dedent(marked.parse(String(log.content)).toString())}
           </Text>
@@ -148,18 +132,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
 
     let marginTop = 0;
     if (log.type === 'info') marginTop = 1;
-    const icon =
-      log.type === 'info'
-        ? '●'
-        : log.type === 'success'
-          ? '✓'
-          : log.type === 'error'
-            ? '✗'
-            : log.type === 'warning'
-              ? '!'
-              : log.type === 'debug'
-                ? '*'
-                : '';
+    const icon = log.type === 'info' ? '●' : log.type === 'success' ? '✓' : log.type === 'error' ? '✗' : log.type === 'warning' ? '!' : log.type === 'debug' ? '*' : '';
 
     return (
       <Box key={index} columnGap={1} marginTop={marginTop} flexDirection="row">
@@ -175,11 +148,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
     );
   };
 
-  return (
-    <Box flexDirection="column">
-      {logs.map((log, index) => renderLogEntry(log, index)).filter(Boolean)}
-    </Box>
-  );
+  return <Box flexDirection="column">{logs.map((log, index) => renderLogEntry(log, index)).filter(Boolean)}</Box>;
 };
 
 export default LogPane;

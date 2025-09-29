@@ -1,11 +1,7 @@
-import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
-import {
-  StateManager,
-  type WebPageState,
-  type StateTransition,
-} from '../../src/state-manager';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
+import { StateManager, type StateTransition, type WebPageState } from '../../src/state-manager';
 
 describe('StateManager', () => {
   let stateManager: StateManager;
@@ -85,12 +81,7 @@ describe('StateManager', () => {
         title: 'Test Page',
       });
 
-      stateManager.updateState(
-        actionResult,
-        'I.amOnPage("/test")',
-        undefined,
-        'navigation'
-      );
+      stateManager.updateState(actionResult, 'I.amOnPage("/test")', undefined, 'navigation');
       const history = stateManager.getStateHistory();
 
       expect(history).toHaveLength(1);
@@ -103,11 +94,7 @@ describe('StateManager', () => {
 
   describe('updateStateFromBasic', () => {
     it('should create state from basic URL and title', () => {
-      const newState = stateManager.updateStateFromBasic(
-        'https://example.com/dashboard',
-        'Dashboard',
-        'manual'
-      );
+      const newState = stateManager.updateStateFromBasic('https://example.com/dashboard', 'Dashboard', 'manual');
 
       expect(newState.url).toBe('/dashboard');
       expect(newState.title).toBe('Dashboard');
@@ -116,14 +103,8 @@ describe('StateManager', () => {
     });
 
     it('should not update if basic state hash is unchanged', () => {
-      const firstState = stateManager.updateStateFromBasic(
-        'https://example.com/test',
-        'Test'
-      );
-      const secondState = stateManager.updateStateFromBasic(
-        'https://example.com/test',
-        'Test'
-      );
+      const firstState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
+      const secondState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
 
       expect(firstState).toBe(secondState);
       expect(stateManager.getStateHistory()).toHaveLength(1);
@@ -221,10 +202,7 @@ describe('StateManager', () => {
       // Add some visit history
       stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1');
       stateManager.updateStateFromBasic('https://example.com/page2', 'Page 2');
-      stateManager.updateStateFromBasic(
-        'https://example.com/page1',
-        'Page 1 Again'
-      );
+      stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1 Again');
     });
 
     it('should track if state has been visited', () => {
@@ -261,10 +239,7 @@ describe('StateManager', () => {
 
     it('should get recent transitions', () => {
       for (let i = 1; i <= 10; i++) {
-        stateManager.updateStateFromBasic(
-          `https://example.com/page${i}`,
-          `Page ${i}`
-        );
+        stateManager.updateStateFromBasic(`https://example.com/page${i}`, `Page ${i}`);
       }
 
       const recent = stateManager.getRecentTransitions(3);

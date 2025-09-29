@@ -8,9 +8,7 @@ export interface AddKnowledgeOptions {
   path?: string;
 }
 
-export async function addKnowledgeCommand(
-  options: AddKnowledgeOptions = {}
-): Promise<void> {
+export async function addKnowledgeCommand(options: AddKnowledgeOptions = {}): Promise<void> {
   const customPath = options.path;
 
   try {
@@ -24,10 +22,7 @@ export async function addKnowledgeCommand(
 
       if (configPath) {
         const projectRoot = path.dirname(configPath);
-        knowledgeDir = path.join(
-          projectRoot,
-          config.dirs?.knowledge || 'knowledge'
-        );
+        knowledgeDir = path.join(projectRoot, config.dirs?.knowledge || 'knowledge');
       } else {
         knowledgeDir = config.dirs?.knowledge || 'knowledge';
       }
@@ -61,10 +56,7 @@ export async function addKnowledgeCommand(
     console.log('=============');
 
     // Get URL pattern
-    const urlPattern = await promptForInput(
-      'URL Pattern (e.g., /login, https://example.com/dashboard, *):',
-      suggestedUrls.length > 0 ? suggestedUrls[0] : ''
-    );
+    const urlPattern = await promptForInput('URL Pattern (e.g., /login, https://example.com/dashboard, *):', suggestedUrls.length > 0 ? suggestedUrls[0] : '');
 
     if (!urlPattern.trim()) {
       console.log('URL pattern is required');
@@ -72,10 +64,7 @@ export async function addKnowledgeCommand(
     }
 
     // Get description
-    const description = await promptForInput(
-      'Description (markdown supported):',
-      ''
-    );
+    const description = await promptForInput('Description (markdown supported):', '');
 
     if (!description.trim()) {
       console.log('Description is required');
@@ -118,14 +107,9 @@ function findExistingKnowledgeFiles(knowledgeDir: string): string[] {
   return files;
 }
 
-async function promptForInput(
-  prompt: string,
-  defaultValue = ''
-): Promise<string> {
+async function promptForInput(prompt: string, defaultValue = ''): Promise<string> {
   return new Promise((resolve) => {
-    console.log(
-      `${prompt}${defaultValue ? ` (default: ${defaultValue})` : ''}`
-    );
+    console.log(`${prompt}${defaultValue ? ` (default: ${defaultValue})` : ''}`);
 
     // Simple readline-like implementation
     process.stdin.setEncoding('utf8');
@@ -164,11 +148,7 @@ async function promptForInput(
   });
 }
 
-async function createOrUpdateKnowledgeFile(
-  knowledgeDir: string,
-  urlPattern: string,
-  description: string
-): Promise<void> {
+async function createOrUpdateKnowledgeFile(knowledgeDir: string, urlPattern: string, description: string): Promise<void> {
   // Generate filename based on URL pattern
   let filename = urlPattern
     .replace(/https?:\/\//g, '') // Remove protocol

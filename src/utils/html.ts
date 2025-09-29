@@ -36,21 +36,14 @@ const INTERACTIVE_SELECTORS = [
  * Simple CSS selector matcher
  * Supports basic selectors: tag, .class, #id, [attr], [attr=value]
  */
-function matchesSelector(
-  element: parse5TreeAdapter.Element,
-  selector: string
-): boolean {
+function matchesSelector(element: parse5TreeAdapter.Element, selector: string): boolean {
   // Check if it's actually an element with tagName
   if (!element || !element.tagName) {
     return false;
   }
 
   // Tag selector
-  if (
-    !selector.includes('[', '.') &&
-    !selector.includes('#') &&
-    !selector.includes(':')
-  ) {
+  if (!selector.includes('[', '.') && !selector.includes('#') && !selector.includes(':')) {
     return element.tagName.toLowerCase() === selector.toLowerCase();
   }
 
@@ -93,10 +86,7 @@ function matchesSelector(
 /**
  * Check if element matches any of the provided selectors
  */
-function matchesAnySelector(
-  element: parse5TreeAdapter.Element,
-  selectors: string[]
-): boolean {
+function matchesAnySelector(element: parse5TreeAdapter.Element, selectors: string[]): boolean {
   if (!selectors || selectors.length === 0) return false;
 
   for (const selector of selectors) {
@@ -107,33 +97,307 @@ function matchesAnySelector(
   return false;
 }
 
-const TEXT_ELEMENT_TAGS = new Set([
-  'h1',
-  'h2',
-  'h3',
-  'h4',
-  'h5',
-  'h6',
-  'p',
-  'li',
-  'td',
-  'th',
-  'label',
-  'div',
-  'span',
+const TEXT_ELEMENT_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'td', 'th', 'label', 'div', 'span']);
+
+const TAILWIND_CLASS_PATTERNS: RegExp[] = [
+  /^m[trblxy]?-/i,
+  /^p[trblxy]?-/i,
+  /^(min|max)-(w|h)-/i,
+  /^(h|w)-/i,
+  /^bg-/i,
+  /^text-/i,
+  /^font-/i,
+  /^leading-/i,
+  /^tracking-/i,
+  /^uppercase$/i,
+  /^lowercase$/i,
+  /^capitalize$/i,
+  /^italic$/i,
+  /^antialiased$/i,
+  /^subpixel-antialiased$/i,
+  /^whitespace-/i,
+  /^break-/i,
+  /^flex$/i,
+  /^inline-flex$/i,
+  /^grid$/i,
+  /^inline-grid$/i,
+  /^items-/i,
+  /^content-/i,
+  /^justify-/i,
+  /^place-/i,
+  /^self-/i,
+  /^gap-/i,
+  /^space-[xy]-/i,
+  /^order-/i,
+  /^z-/i,
+  /^shadow/i,
+  /^rounded/i,
+  /^border/i,
+  /^outline-/i,
+  /^ring-/i,
+  /^opacity-/i,
+  /^fill-/i,
+  /^stroke-/i,
+  /^blur-/i,
+  /^brightness-/i,
+  /^contrast-/i,
+  /^drop-shadow-/i,
+  /^grayscale$/i,
+  /^hue-rotate-/i,
+  /^invert$/i,
+  /^saturate-/i,
+  /^sepia$/i,
+  /^backdrop-/i,
+  /^overflow-/i,
+  /^truncate$/i,
+  /^transform$/i,
+  /^transition$/i,
+  /^duration-/i,
+  /^delay-/i,
+  /^ease-/i,
+  /^animate-/i,
+  /^cursor-/i,
+  /^select-/i,
+  /^pointer-events-/i,
+  /^align-/i,
+  /^table-/i,
+  /^list-/i,
+  /^grid-cols-/i,
+  /^grid-rows-/i,
+  /^col-span-/i,
+  /^row-span-/i,
+  /^translate-[xyz]-/i,
+  /^scale-[xyz]?-/i,
+  /^rotate-/i,
+  /^skew-[xy]-/i,
+  /^origin-/i,
+  /^inset-/i,
+  /^top-/i,
+  /^bottom-/i,
+  /^left-/i,
+  /^right-/i,
+  /^aspect-/i,
+  /^prose$/i,
+];
+
+const NON_SEMANTIC_TAGS = new Set([
+  'style',
+  'script',
+  'link',
+  'meta',
+  'base',
+  'template',
+  'slot',
+  'noscript',
+  'iframe',
+  'frame',
+  'frameset',
+  'object',
+  'embed',
+  'path',
+  'polygon',
+  'polyline',
+  'circle',
+  'ellipse',
+  'line',
+  'rect',
+  'defs',
+  'g',
+  'symbol',
+  'use',
+  'mask',
+  'pattern',
+  'clippath',
+  'animate',
+  'animatetransform',
+  'animatecolor',
 ]);
+
+type ParentNodeLike = parse5TreeAdapter.Document | parse5TreeAdapter.DocumentFragment | parse5TreeAdapter.Element;
+
+function hasChildNodes(node: unknown): node is ParentNodeLike {
+  return !!node && typeof node === 'object' && 'childNodes' in (node as Record<string, unknown>) && Array.isArray((node as { childNodes?: unknown }).childNodes);
+}
+
+function stripElementsByTag(node: ParentNodeLike, tagsToRemove: Set<string>): void {
+  if (!node.childNodes) return;
+
+  for (let i = node.childNodes.length - 1; i >= 0; i--) {
+    const child = node.childNodes[i];
+
+    if (child.nodeName === '#comment') {
+      node.childNodes.splice(i, 1);
+      continue;
+    }
+
+    if ('tagName' in child && child.tagName) {
+      const tagName = child.tagName.toLowerCase();
+      if (tagsToRemove.has(tagName)) {
+        node.childNodes.splice(i, 1);
+        continue;
+      }
+
+      stripElementsByTag(child as ParentNodeLike, tagsToRemove);
+    } else if (hasChildNodes(child)) {
+      stripElementsByTag(child as ParentNodeLike, tagsToRemove);
+    }
+  }
+}
+
+function pruneDocumentHead(document: parse5TreeAdapter.Document): void {
+  if (!document.childNodes) return;
+
+  const htmlElement = document.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'html');
+
+  if (!htmlElement || !htmlElement.childNodes) {
+    return;
+  }
+
+  const headElement = htmlElement.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'head');
+
+  if (!headElement || !headElement.childNodes) {
+    return;
+  }
+
+  for (let i = headElement.childNodes.length - 1; i >= 0; i--) {
+    const child = headElement.childNodes[i];
+
+    if ('tagName' in child && child.tagName) {
+      const tagName = child.tagName.toLowerCase();
+      if (tagName !== 'title') {
+        headElement.childNodes.splice(i, 1);
+      }
+      continue;
+    }
+
+    if (child.nodeName === '#text') {
+      const textNode = child as parse5TreeAdapter.TextNode;
+      if (!textNode.value.trim()) {
+        headElement.childNodes.splice(i, 1);
+      }
+      continue;
+    }
+
+    if (child.nodeName === '#comment') {
+      headElement.childNodes.splice(i, 1);
+      continue;
+    }
+
+    headElement.childNodes.splice(i, 1);
+  }
+}
+
+function sanitizeDocumentTree(document: parse5TreeAdapter.Document): void {
+  stripElementsByTag(document, NON_SEMANTIC_TAGS);
+  pruneDocumentHead(document);
+}
+
+function getDocumentTitle(document: parse5TreeAdapter.Document): string | null {
+  if (!document.childNodes) return null;
+
+  const htmlElement = document.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'html');
+
+  if (!htmlElement || !htmlElement.childNodes) {
+    return null;
+  }
+
+  const headElement = htmlElement.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'head');
+
+  if (!headElement || !headElement.childNodes) {
+    return null;
+  }
+
+  const titleElement = headElement.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'title');
+
+  if (!titleElement) {
+    return null;
+  }
+
+  const text = getTextContent(titleElement).trim();
+  return text.length > 0 ? text : null;
+}
+
+function ensureDocumentTitle(document: parse5TreeAdapter.Document, titleText: string | null): void {
+  if (!titleText || !document.childNodes) {
+    return;
+  }
+
+  const htmlElement = document.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'html');
+
+  if (!htmlElement) {
+    return;
+  }
+
+  const namespace = htmlElement.namespaceURI || 'http://www.w3.org/1999/xhtml';
+
+  let headElement = htmlElement.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'head');
+
+  if (!headElement) {
+    headElement = {
+      nodeName: 'head',
+      tagName: 'head',
+      attrs: [],
+      namespaceURI: namespace,
+      childNodes: [],
+      parentNode: htmlElement,
+    } as parse5TreeAdapter.Element;
+
+    // Insert head before body if possible, otherwise prepend
+    const bodyIndex = htmlElement.childNodes.findIndex((node) => 'tagName' in node && node.tagName?.toLowerCase() === 'body');
+    if (bodyIndex === -1) {
+      htmlElement.childNodes.push(headElement);
+    } else {
+      htmlElement.childNodes.splice(bodyIndex, 0, headElement);
+    }
+  } else {
+    headElement.childNodes = [];
+  }
+
+  const titleElement: parse5TreeAdapter.Element = {
+    nodeName: 'title',
+    tagName: 'title',
+    attrs: [],
+    namespaceURI: namespace,
+    childNodes: [],
+    parentNode: headElement,
+  };
+
+  const textNode: parse5TreeAdapter.TextNode = {
+    nodeName: '#text',
+    value: titleText,
+  };
+
+  (textNode as any).parentNode = titleElement;
+  titleElement.childNodes.push(textNode);
+  headElement.childNodes.push(titleElement);
+}
+
+function createSanitizedDocument(html: string, _htmlConfig?: HtmlConfig): parse5TreeAdapter.Document {
+  const document = parse(html);
+  const documentTitle = getDocumentTitle(document);
+  sanitizeDocumentTree(document);
+  ensureDocumentTitle(document, documentTitle);
+  return document;
+}
+
+export function sanitizeHtmlDocument(html: string, htmlConfig?: HtmlConfig): parse5TreeAdapter.Document {
+  return createSanitizedDocument(html, htmlConfig);
+}
+
+export function sanitizeHtmlString(html: string, htmlConfig?: HtmlConfig): string {
+  const document = createSanitizedDocument(html, htmlConfig);
+  return serialize(document);
+}
 
 /**
  * Creates a minimal snapshot keeping only interactive elements and their structure
  * Based on CodeceptJS HTML library
  */
-export function htmlMinimalUISnapshot(
-  html: string,
-  htmlConfig?: HtmlConfig['minimal']
-) {
-  const document = parse(html);
+export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['minimal']) {
+  const document = createSanitizedDocument(html);
+  const documentTitle = getDocumentTitle(document);
   const trashHtmlClasses = /^(text-|color-|flex-|float-|v-|ember-|d-|border-)/;
-  const removeElements = ['path', 'script'];
+  const removeElements = new Set(NON_SEMANTIC_TAGS);
 
   function isFilteredOut(node) {
     // Check exclude selectors first
@@ -141,76 +405,35 @@ export function htmlMinimalUISnapshot(
       return true;
     }
 
-    if (removeElements.includes(node.nodeName)) return true;
+    if (removeElements.has(node.nodeName.toLowerCase())) return true;
     if (node.attrs) {
-      if (
-        node.attrs.find(
-          (attr) => attr.name === 'role' && attr.value === 'tooltip'
-        )
-      )
-        return true;
+      if (node.attrs.find((attr) => attr.name === 'role' && attr.value === 'tooltip')) return true;
     }
     return false;
   }
 
   // Define default interactive elements
-  const interactiveElements = [
-    'a',
-    'input',
-    'button',
-    'select',
-    'textarea',
-    'option',
-  ];
+  const interactiveElements = ['a', 'input', 'button', 'select', 'textarea', 'option'];
   const textElements = ['label', 'h1', 'h2'];
   const allowedRoles = ['button', 'checkbox', 'search', 'textbox', 'tab'];
-  const allowedAttrs = [
-    'id',
-    'for',
-    'class',
-    'name',
-    'type',
-    'value',
-    'tabindex',
-    'aria-labelledby',
-    'aria-label',
-    'label',
-    'placeholder',
-    'title',
-    'alt',
-    'src',
-    'role',
-  ];
+  const allowedAttrs = ['id', 'for', 'class', 'name', 'type', 'value', 'tabindex', 'aria-labelledby', 'aria-label', 'label', 'placeholder', 'title', 'alt', 'src', 'role'];
 
   function isInteractive(element) {
     // Check if element matches include selectors
-    if (
-      htmlConfig?.include &&
-      matchesAnySelector(element, htmlConfig.include)
-    ) {
+    if (htmlConfig?.include && matchesAnySelector(element, htmlConfig.include)) {
       return true;
     }
 
     // Check if element matches exclude selectors
-    if (
-      htmlConfig?.exclude &&
-      matchesAnySelector(element, htmlConfig.exclude)
-    ) {
+    if (htmlConfig?.exclude && matchesAnySelector(element, htmlConfig.exclude)) {
       return false;
     }
 
     // Default logic
-    if (
-      element.nodeName === 'input' &&
-      element.attrs.find(
-        (attr) => attr.name === 'type' && attr.value === 'hidden'
-      )
-    )
-      return false;
+    if (element.nodeName === 'input' && element.attrs.find((attr) => attr.name === 'type' && attr.value === 'hidden')) return false;
     if (interactiveElements.includes(element.nodeName)) return true;
     if (element.attrs) {
-      if (element.attrs.find((attr) => attr.name === 'contenteditable'))
-        return true;
+      if (element.attrs.find((attr) => attr.name === 'contenteditable')) return true;
       if (element.attrs.find((attr) => attr.name === 'tabindex')) return true;
       const role = element.attrs.find((attr) => attr.name === 'role');
       if (role && allowedRoles.includes(role.value)) return true;
@@ -246,10 +469,7 @@ export function htmlMinimalUISnapshot(
       }
 
       // keep texts for interactive elements
-      if (
-        (isInteractive(parent) || hasMeaningfulText(parent)) &&
-        node.nodeName === '#text'
-      ) {
+      if ((isInteractive(parent) || hasMeaningfulText(parent)) && node.nodeName === '#text') {
         node.value = node.value.trim().slice(0, 200);
         if (!node.value) return false;
         return true;
@@ -272,15 +492,17 @@ export function htmlMinimalUISnapshot(
       node.attrs = node.attrs.filter((attr) => {
         const { name, value } = attr;
         if (name === 'class') {
-          // Remove classes containing digits
           attr.value = value
             .split(' ')
-            // remove classes containing digits/
+            .filter((className) => className.length > 0)
+            // remove classes containing digits /
             .filter((className) => !/\d/.test(className))
             // remove popular trash classes
             .filter((className) => !className.match(trashHtmlClasses))
             // remove classes with : and __ in them
             .filter((className) => !className.match(/(:|__)/))
+            // remove tailwind utility classes
+            .filter((className) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(className)))
             .join(' ');
         }
 
@@ -299,6 +521,7 @@ export function htmlMinimalUISnapshot(
 
   // Remove non-interactive elements starting from the root element
   removeNonInteractive(document);
+  ensureDocumentTitle(document, documentTitle);
 
   // Serialize the modified document tree back to HTML
   const serializedHTML = serialize(document);
@@ -310,33 +533,18 @@ export function htmlMinimalUISnapshot(
  * Creates a combined snapshot with interactive elements and meaningful text
  * Preserves original HTML structure
  */
-export function htmlCombinedSnapshot(
-  html: string,
-  htmlConfig?: HtmlConfig['combined']
-): string {
+export function htmlCombinedSnapshot(html: string, htmlConfig?: HtmlConfig['combined']): string {
   // Create a shouldKeep function that captures the config
   const shouldKeepWithConfig = (element: parse5TreeAdapter.Element) => {
     return shouldKeepCombined(element, htmlConfig);
   };
 
-  // Check if html is a fragment (no html/body tags)
-  if (!html.includes('<html') && !html.includes('<body')) {
-    // Parse as fragment
-    const fragment = parseFragment(html);
-    filterTree(fragment as parse5TreeAdapter.Element, shouldKeepWithConfig);
-    truncateTextInTree(fragment as parse5TreeAdapter.Element, 270); // Adjusted to ensure total with "..." is ≤303
-    return serialize(fragment);
-  }
-
-  const document = parse(html);
+  const document = createSanitizedDocument(html);
   const body = findBody(document);
   if (!body) return html;
 
   // Recursively filter the tree
   filterTree(body, shouldKeepWithConfig);
-
-  // Truncate text content in remaining elements
-  truncateTextInTree(body, 270); // Adjusted to ensure total with "..." is ≤303
 
   return serialize(document);
 }
@@ -344,22 +552,8 @@ export function htmlCombinedSnapshot(
 /**
  * Creates text-only snapshot with markdown formatting
  */
-export function htmlTextSnapshot(
-  html: string,
-  htmlConfig?: HtmlConfig['text']
-): string {
-  // Check if html is a fragment (no html/body tags)
-  const trimmedHtml = html.trim();
-  if (!trimmedHtml.startsWith('<html') && !trimmedHtml.includes('<body')) {
-    const fragment = parseFragment(html);
-    const text = processHtmlForText(
-      fragment as parse5TreeAdapter.Element,
-      htmlConfig
-    );
-    return text.trim();
-  }
-
-  const document = parse(html);
+export function htmlTextSnapshot(html: string, htmlConfig?: HtmlConfig['text']): string {
+  const document = createSanitizedDocument(html);
   const body = findBody(document);
   if (!body) return '';
 
@@ -367,10 +561,7 @@ export function htmlTextSnapshot(
   return text.trim();
 }
 
-function processHtmlForText(
-  element: parse5TreeAdapter.Element,
-  htmlConfig?: HtmlConfig['text']
-): string {
+function processHtmlForText(element: parse5TreeAdapter.Element, htmlConfig?: HtmlConfig['text']): string {
   const lines: string[] = [];
 
   // Helper function to check if element matches include/exclude selectors
@@ -455,10 +646,7 @@ function processHtmlForText(
       // Handle interactive elements specially
       if (shouldKeepInteractive(element)) {
         // Format buttons and links
-        if (
-          tagName === 'button' ||
-          getAttribute(element, 'role') === 'button'
-        ) {
+        if (tagName === 'button' || getAttribute(element, 'role') === 'button') {
           const buttonText = getTextContent(element).trim();
           if (buttonText) {
             lines.push(`[${buttonText}]`);
@@ -480,8 +668,7 @@ function processHtmlForText(
 
         // Format input fields
         if (tagName === 'input') {
-          const name =
-            getAttribute(element, 'name') || getAttribute(element, 'id');
+          const name = getAttribute(element, 'name') || getAttribute(element, 'id');
           const placeholder = getAttribute(element, 'placeholder');
           const type = getAttribute(element, 'type');
 
@@ -500,8 +687,7 @@ function processHtmlForText(
 
         // Format textarea fields
         if (tagName === 'textarea') {
-          const name =
-            getAttribute(element, 'name') || getAttribute(element, 'id');
+          const name = getAttribute(element, 'name') || getAttribute(element, 'id');
           const placeholder = getAttribute(element, 'placeholder');
 
           if (placeholder) {
@@ -516,8 +702,7 @@ function processHtmlForText(
 
         // Format select fields
         if (tagName === 'select') {
-          const name =
-            getAttribute(element, 'name') || getAttribute(element, 'id');
+          const name = getAttribute(element, 'name') || getAttribute(element, 'id');
 
           if (name) {
             lines.push(`{${name}}`);
@@ -602,68 +787,30 @@ function processHtmlForText(
 
 // Helper functions
 
-function findBody(
-  document: parse5TreeAdapter.Document
-): parse5TreeAdapter.Element | null {
+function findBody(document: parse5TreeAdapter.Document): parse5TreeAdapter.Element | null {
   const html = document.childNodes.find((node) => node.nodeName === 'html');
   if (!html || !('childNodes' in html)) return null;
 
-  return (
-    (html.childNodes.find(
-      (node) => node.nodeName === 'body'
-    ) as parse5TreeAdapter.Element) || null
-  );
+  return (html.childNodes.find((node) => node.nodeName === 'body') as parse5TreeAdapter.Element) || null;
 }
 
 function shouldKeepInteractive(element: parse5TreeAdapter.Element): boolean {
   const tagName = element.tagName.toLowerCase();
 
   // Check for interactive tags
-  if (
-    [
-      'a',
-      'button',
-      'input',
-      'select',
-      'textarea',
-      'details',
-      'summary',
-    ].includes(tagName)
-  ) {
+  if (['a', 'button', 'input', 'select', 'textarea', 'details', 'summary'].includes(tagName)) {
     return true;
   }
 
   // Check for interactive roles
   const role = getAttribute(element, 'role');
-  if (
-    role &&
-    [
-      'button',
-      'link',
-      'checkbox',
-      'radio',
-      'combobox',
-      'listbox',
-      'textbox',
-      'switch',
-      'tab',
-    ].includes(role.toLowerCase())
-  ) {
+  if (role && ['button', 'link', 'checkbox', 'radio', 'combobox', 'listbox', 'textbox', 'switch', 'tab'].includes(role.toLowerCase())) {
     return true;
   }
 
   // Check for interactive attributes
   for (const attr of element.attrs) {
-    if (
-      [
-        'onclick',
-        'onmousedown',
-        'onmouseup',
-        'onchange',
-        'onfocus',
-        'onblur',
-      ].includes(attr.name.toLowerCase())
-    ) {
+    if (['onclick', 'onmousedown', 'onmouseup', 'onchange', 'onfocus', 'onblur'].includes(attr.name.toLowerCase())) {
       return true;
     }
   }
@@ -671,10 +818,7 @@ function shouldKeepInteractive(element: parse5TreeAdapter.Element): boolean {
   return false;
 }
 
-function shouldKeepCombined(
-  element: parse5TreeAdapter.Element,
-  htmlConfig?: HtmlConfig['combined']
-): boolean {
+function shouldKeepCombined(element: parse5TreeAdapter.Element, htmlConfig?: HtmlConfig['combined']): boolean {
   // Check include selectors first
   if (htmlConfig?.include && matchesAnySelector(element, htmlConfig.include)) {
     return true;
@@ -728,21 +872,7 @@ function hasTextAncestor(element: parse5TreeAdapter.Element): boolean {
     const parentElement = parent as parse5TreeAdapter.Element;
     const parentTagName = parentElement.tagName.toLowerCase();
 
-    if (
-      [
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'h5',
-        'h6',
-        'li',
-        'p',
-        'td',
-        'th',
-        'label',
-      ].includes(parentTagName)
-    ) {
+    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'p', 'td', 'th', 'label'].includes(parentTagName)) {
       return true;
     }
 
@@ -771,10 +901,7 @@ function hasListParent(element: parse5TreeAdapter.Element): boolean {
   return false;
 }
 
-function filterTree(
-  element: parse5TreeAdapter.Element,
-  shouldKeep: (el: parse5TreeAdapter.Element) => boolean
-): boolean {
+function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5TreeAdapter.Element) => boolean): boolean {
   if (!element.childNodes) return false;
 
   let hasKeepableContent = false;
@@ -863,28 +990,14 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
 
   element.attrs = element.attrs.filter((attr) => keepAttrs.includes(attr.name));
 
-  // Add data-codecept-path for CodeceptJS compatibility
-  if (!getAttribute(element, 'data-codecept-path')) {
-    element.attrs.push({
-      name: 'data-codecept-path',
-      value: getElementPath(element),
-    });
-  }
-
   // Clean script tags
   if (element.tagName.toLowerCase() === 'script') {
     element.childNodes = [];
   }
 }
 
-function truncateTextInTree(
-  element: parse5TreeAdapter.Element,
-  maxLength: number
-): void {
-  const truncateNode = (
-    node: parse5TreeAdapter.Node,
-    remaining: number
-  ): number => {
+function truncateTextInTree(element: parse5TreeAdapter.Element, maxLength: number): void {
+  const truncateNode = (node: parse5TreeAdapter.Node, remaining: number): number => {
     if (remaining <= 0) return 0;
 
     if (node.nodeName === '#text') {
@@ -925,9 +1038,7 @@ function truncateTextInTree(
   truncateNode(element, maxLength);
 }
 
-function findTextElementsForTruncation(
-  element: parse5TreeAdapter.Element
-): parse5TreeAdapter.Element[] {
+function findTextElementsForTruncation(element: parse5TreeAdapter.Element): parse5TreeAdapter.Element[] {
   const result: parse5TreeAdapter.Element[] = [];
 
   if (!element || !element.tagName) return result;
@@ -940,9 +1051,7 @@ function findTextElementsForTruncation(
   if (element.childNodes) {
     element.childNodes.forEach((child) => {
       if ('tagName' in child) {
-        result.push(
-          ...findTextElementsForTruncation(child as parse5TreeAdapter.Element)
-        );
+        result.push(...findTextElementsForTruncation(child as parse5TreeAdapter.Element));
       }
     });
   }
@@ -965,10 +1074,7 @@ function getTextContent(element: parse5TreeAdapter.Element): string {
   return text.trim();
 }
 
-function getAttribute(
-  element: parse5TreeAdapter.Element,
-  name: string
-): string | undefined {
+function getAttribute(element: parse5TreeAdapter.Element, name: string): string | undefined {
   const attr = element.attrs.find((a) => a.name === name);
   return attr?.value;
 }
@@ -986,11 +1092,7 @@ function getElementPath(element: parse5TreeAdapter.Element): string {
     } else {
       // Calculate nth-child
       if (current.parentNode && 'childNodes' in current.parentNode) {
-        const siblings = current.parentNode.childNodes.filter(
-          (n) =>
-            'tagName' in n &&
-            (n as parse5TreeAdapter.Element).tagName === current.tagName
-        );
+        const siblings = current.parentNode.childNodes.filter((n) => 'tagName' in n && (n as parse5TreeAdapter.Element).tagName === current.tagName);
         const index = siblings.indexOf(current);
         if (index > 0) {
           selector += `:nth-of-type(${index + 1})`;

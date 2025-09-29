@@ -39,8 +39,7 @@ class Activity {
   clearActivity(): void {
     // Don't clear immediately - wait a minimum time to ensure the activity was visible
     if (!this.clearTimeoutId && this.currentActivity) {
-      const timeSinceActivity =
-        Date.now() - this.currentActivity.timestamp.getTime();
+      const timeSinceActivity = Date.now() - this.currentActivity.timestamp.getTime();
       const minDisplayTime = 1000; // Minimum 1 second display time
 
       if (timeSinceActivity < minDisplayTime) {
@@ -79,10 +78,7 @@ class Activity {
 
 const activity = Activity.getInstance();
 
-export const setActivity = (
-  message: string,
-  type: ActivityEntry['type'] = 'general'
-) => {
+export const setActivity = (message: string, type: ActivityEntry['type'] = 'general') => {
   activity.setActivity(message, type);
 };
 

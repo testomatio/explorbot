@@ -3,10 +3,7 @@ import type { ExplorBot } from './explorbot.js';
 export type InputSubmitCallback = (input: string) => Promise<void>;
 
 export interface InputManager {
-  registerInputPane(
-    addLog: (entry: string) => void,
-    onSubmit: InputSubmitCallback
-  ): () => void;
+  registerInputPane(addLog: (entry: string) => void, onSubmit: InputSubmitCallback): () => void;
   getAvailableCommands(): string[];
   getFilteredCommands(input: string): string[];
   setExitOnEmptyInput(enabled: boolean): void;
@@ -153,10 +150,7 @@ export class CommandHandler implements InputManager {
   }
 
   // InputManager implementation
-  registerInputPane(
-    addLog: (entry: string) => void,
-    onSubmit: InputSubmitCallback
-  ): () => void {
+  registerInputPane(addLog: (entry: string) => void, onSubmit: InputSubmitCallback): () => void {
     const pane = { addLog, onSubmit };
     this.registeredInputPanes.add(pane);
 
@@ -193,8 +187,7 @@ export class CommandHandler implements InputManager {
     }
 
     // Check if this is a command (starts with / or I.)
-    const isCommand =
-      trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
+    const isCommand = trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
 
     if (isCommand) {
       // Otherwise, execute as command

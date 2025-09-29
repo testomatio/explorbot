@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { StateManager } from '../../src/state-manager.js';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { ActionResult } from '../../src/action-result.js';
 import { ConfigParser } from '../../src/config.js';
-import { rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { StateManager } from '../../src/state-manager.js';
 
 describe('StateManager Events', () => {
   let stateManager: StateManager;
@@ -42,11 +42,7 @@ describe('StateManager Events', () => {
     });
 
     // Update state from basic data
-    stateManager.updateStateFromBasic(
-      'https://example.com/page1',
-      'Page 1',
-      'navigation'
-    );
+    stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1', 'navigation');
 
     expect(events).toHaveLength(1);
     expect(events[0].fromState).toBeNull();
@@ -91,19 +87,11 @@ describe('StateManager Events', () => {
     });
 
     // Update state
-    stateManager.updateStateFromBasic(
-      'https://example.com/page1',
-      'Page 1',
-      'navigation'
-    );
+    stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1', 'navigation');
     expect(events).toHaveLength(1);
 
     // Update with same data (should not emit)
-    stateManager.updateStateFromBasic(
-      'https://example.com/page1',
-      'Page 1',
-      'navigation'
-    );
+    stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1', 'navigation');
     expect(events).toHaveLength(1); // No new event
 
     unsubscribe();
@@ -121,11 +109,7 @@ describe('StateManager Events', () => {
       events2.push(event);
     });
 
-    stateManager.updateStateFromBasic(
-      'https://example.com/page1',
-      'Page 1',
-      'navigation'
-    );
+    stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1', 'navigation');
 
     expect(events1).toHaveLength(1);
     expect(events2).toHaveLength(1);
@@ -142,20 +126,12 @@ describe('StateManager Events', () => {
       events.push(event);
     });
 
-    stateManager.updateStateFromBasic(
-      'https://example.com/page1',
-      'Page 1',
-      'navigation'
-    );
+    stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1', 'navigation');
     expect(events).toHaveLength(1);
 
     unsubscribe();
 
-    stateManager.updateStateFromBasic(
-      'https://example.com/page2',
-      'Page 2',
-      'navigation'
-    );
+    stateManager.updateStateFromBasic('https://example.com/page2', 'Page 2', 'navigation');
     expect(events).toHaveLength(1); // No new event after unsubscribe
   });
 
@@ -172,11 +148,7 @@ describe('StateManager Events', () => {
 
     // Should not throw and should still call other listeners
     expect(() => {
-      stateManager.updateStateFromBasic(
-        'https://example.com/page1',
-        'Page 1',
-        'navigation'
-      );
+      stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1', 'navigation');
     }).not.toThrow();
 
     expect(events).toHaveLength(1);
@@ -217,11 +189,7 @@ describe('StateManager Events', () => {
     stateManager.clearListeners();
     expect(stateManager.getListenerCount()).toBe(0);
 
-    stateManager.updateStateFromBasic(
-      'https://example.com/page1',
-      'Page 1',
-      'navigation'
-    );
+    stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1', 'navigation');
     expect(events).toHaveLength(0); // No events after clearing
   });
 });

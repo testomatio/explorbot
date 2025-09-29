@@ -1,32 +1,16 @@
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import {
-  htmlMinimalUISnapshot,
-  htmlCombinedSnapshot,
-  htmlTextSnapshot,
-} from '../../src/utils/html.ts';
+import { describe, expect, it } from 'vitest';
+import { htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot } from '../../src/utils/html.ts';
 
 // Load test HTML files
-const githubHtml = readFileSync(
-  join(process.cwd(), 'test/data/github.html'),
-  'utf8'
-);
+const githubHtml = readFileSync(join(process.cwd(), 'test/data/github.html'), 'utf8');
 
-const gitlabHtml = readFileSync(
-  join(process.cwd(), 'test/data/gitlab.html'),
-  'utf8'
-);
+const gitlabHtml = readFileSync(join(process.cwd(), 'test/data/gitlab.html'), 'utf8');
 
-const testomatHtml = readFileSync(
-  join(process.cwd(), 'test/data/testomat.html'),
-  'utf8'
-);
+const testomatHtml = readFileSync(join(process.cwd(), 'test/data/testomat.html'), 'utf8');
 
-const checkoutHtml = readFileSync(
-  join(process.cwd(), 'test/data/checkout.html'),
-  'utf8'
-);
+const checkoutHtml = readFileSync(join(process.cwd(), 'test/data/checkout.html'), 'utf8');
 
 describe('HTML Parsing Library', () => {
   describe('htmlMinimalUISnapshot', () => {
@@ -106,6 +90,69 @@ describe('HTML Parsing Library', () => {
       const result = htmlMinimalUISnapshot(testomatHtml);
       expect(result).toContain('<svg class="md-icon md-icon-check-bold');
     });
+
+    it('should strip script and style elements entirely', () => {
+      const html = `
+        <html>
+          <head>
+            <style>.hidden{display:none;}</style>
+            <script>console.log('head');</script>
+          </head>
+          <body>
+            <div>
+              <script>console.log('body');</script>
+              <style>.foo{color:red;}</style>
+              <button>Checkout</button>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlMinimalUISnapshot(html);
+
+      expect(result).toContain('<button>Checkout</button>');
+      expect(result).not.toContain('<script');
+      expect(result).not.toContain('<style');
+    });
+
+    it('should strip tailwind utility classes while keeping custom ones', () => {
+      const html = `
+        <button class="bg-blue-500 flex items-center text-sm uppercase custom-link">
+          Click me
+        </button>
+      `;
+
+      const result = htmlMinimalUISnapshot(html);
+
+      expect(result).toContain('class="custom-link"');
+      expect(result).not.toContain('flex');
+      expect(result).not.toContain('items-center');
+      expect(result).not.toContain('text-sm');
+      expect(result).not.toContain('uppercase');
+    });
+
+    it('should remove vector-only svg children while keeping structural wrappers', () => {
+      const html = `
+        <div>
+          <button>
+            <svg width="10" height="10">
+              <defs></defs>
+              <g><path d="m0 0" /></g>
+            </svg>
+            Menu
+          </button>
+        </div>
+      `;
+
+      const result = htmlMinimalUISnapshot(html);
+
+      expect(result).toContain('<button');
+      expect(result).toContain('Menu');
+      expect(result).toContain('<svg');
+      expect(result).not.toContain('<path');
+      expect(result).not.toContain('<defs');
+      expect(result).not.toContain('<g>');
+    });
   });
 
   describe('htmlCombinedSnapshot', () => {
@@ -151,9 +198,102 @@ describe('HTML Parsing Library', () => {
       const result = htmlCombinedSnapshot(html);
       const textContent = result.replace(/<[^>]*>/g, '').trim();
 
-      // Text should be truncated to ~300 chars
-      expect(textContent.length).toBeLessThanOrEqual(303); // 300 + "..."
-      expect(textContent).toContain('...');
+      // Text should remain intact for combined snapshot
+      expect(textContent.length).toBeGreaterThanOrEqual(400);
+      expect(textContent).not.toContain('...');
+    });
+
+    it('should clean head elements except title', () => {
+      const html = `
+        <html>
+          <head>
+            <title>Dashboard</title>
+            <script>console.log('head');</script>
+            <style>.header{}</style>
+            <meta name="viewport" content="width=device-width">
+            <link rel="stylesheet" href="style.css">
+          </head>
+          <body>
+            <h1>Welcome</h1>
+            <svg>
+              <path d="m0 0"></path>
+              <defs></defs>
+            </svg>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('<title>Dashboard</title>');
+      expect(result).not.toContain('<style');
+      expect(result).not.toContain('<script');
+      expect(result).not.toContain('<meta');
+      expect(result).not.toContain('<link');
+      expect(result).not.toContain('<path');
+      expect(result).not.toContain('<defs');
+    });
+
+    it('should remove script and iframe elements from combined snapshot body', () => {
+      const html = `
+        <html>
+          <body>
+            <div>Visible</div>
+            <script>console.log('body');</script>
+            <iframe src="/example"></iframe>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('Visible');
+      expect(result).not.toContain('<script');
+      expect(result).not.toContain('<iframe');
+    });
+
+    it('should preserve extended interactive structure without truncating content', () => {
+      const html = `
+        <html lang="en" class="light">
+          <head>
+            <title>Company Settings - Testomat.io</title>
+            <script src="/assets/head.js"></script>
+          </head>
+          <body>
+            <div id="content-desktop" class="user">
+              <div class="auth-header-nav">
+                <div class="auth-header-nav-left-items">
+                  <a href="/">Dashboard</a>
+                  <a href="/companies">Companies</a>
+                </div>
+                <div class="auth-header-nav-right">
+                  <a class="auth-header-nav-right-icon-button" href="/projects/new">New Project</a>
+                  <button id="showGlobalSearchBtn">Search</button>
+                  <div class="auth-header-nav-right-dropdown" x-data="{ open: false }">
+                    <div id="profile-menu" role="menu" aria-labelledby="user-menu-button">
+                      <div class="auth-header-nav-right-dropdown-menu-block">
+                        <div class="auth-header-nav-right-dropdown-menu-block-signed-as">Signed in as</div>
+                        <div class="auth-header-nav-right-dropdown-menu-block-email">user@example.com</div>
+                      </div>
+                      <div class="auth-header-nav-right-dropdown-menu-block">
+                        <a href="/account">Account</a>
+                        <a href="/account/files">Downloads</a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('Dashboard');
+      expect(result).toContain('Companies');
+      expect(result).toContain('Signed in as');
+      expect(result).toContain('Downloads');
     });
   });
 
@@ -180,9 +320,7 @@ describe('HTML Parsing Library', () => {
       const result = htmlTextSnapshot(html);
 
       expect(result).toContain('# Main Title');
-      expect(result).toContain(
-        'This is a paragraph with enough text to be included.'
-      );
+      expect(result).toContain('This is a paragraph with enough text to be included.');
       expect(result).toContain('- First item');
       expect(result).toContain('- Second item');
       expect(result).toContain('**Email:**');

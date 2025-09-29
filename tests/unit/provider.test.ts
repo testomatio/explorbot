@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { Provider, AiError } from '../../src/ai/provider.js';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { AiError, Provider } from '../../src/ai/provider.js';
 import type { AIConfig } from '../../src/config.js';
 
 // Simple mock implementation without external dependencies
@@ -275,9 +275,7 @@ describe('Provider', () => {
       mockAI.setResponses([{ text: 'Success' }]);
       mockAI.setFailure(true, 5); // Fail more than max retries
 
-      await expect(provider.chat(messages, { maxRetries: 2 })).rejects.toThrow(
-        AiError
-      );
+      await expect(provider.chat(messages, { maxRetries: 2 })).rejects.toThrow(AiError);
     });
 
     // Note: Non-retryable error test is complex to set up with the current mock
@@ -307,9 +305,7 @@ describe('Provider', () => {
       mockAI.setResponses([{ object: { wrongField: 'value' } }]);
 
       // This should throw an AiError due to schema validation
-      await expect(provider.generateObject(messages, schema)).rejects.toThrow(
-        AiError
-      );
+      await expect(provider.generateObject(messages, schema)).rejects.toThrow(AiError);
     });
   });
 

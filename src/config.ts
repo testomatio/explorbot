@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import path, { dirname, join, resolve } from 'node:path';
 import { log } from './utils/logger.js';
 
 interface PlaywrightConfig {
@@ -59,17 +59,21 @@ interface HtmlConfig {
   };
 }
 
-interface DirsConfig {
-  knowledge: string;
-  experience: string;
-  output: string;
+interface ActionConfig {
+  delay?: number;
+  retries?: number;
 }
 
 interface ExplorbotConfig {
   playwright: PlaywrightConfig;
   ai: AIConfig;
   html?: HtmlConfig;
-  dirs?: DirsConfig;
+  action?: ActionConfig;
+  dirs?: {
+    knowledge: string;
+    experience: string;
+    output: string;
+  };
 }
 
 const config: ExplorbotConfig = {
@@ -84,13 +88,7 @@ const config: ExplorbotConfig = {
   },
 };
 
-export type {
-  ExplorbotConfig,
-  PlaywrightConfig,
-  AIConfig,
-  HtmlConfig,
-  DirsConfig,
-};
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig };
 
 export class ConfigParser {
   private static instance: ConfigParser;
@@ -130,9 +128,7 @@ export class ConfigParser {
       const resolvedPath = options?.config || this.findConfigFile();
 
       if (!resolvedPath) {
-        throw new Error(
-          'No configuration file found. Please create explorbot.config.js or explorbot.config.ts'
-        );
+        throw new Error('No configuration file found. Please create explorbot.config.js or explorbot.config.ts');
       }
 
       const configModule = await this.loadConfigModule(resolvedPath);
@@ -171,6 +167,13 @@ export class ConfigParser {
 
   public getConfigPath(): string | null {
     return this.configPath;
+  }
+
+  public getOutputDir(): string {
+    const config = this.getConfig();
+    const configPath = this.getConfigPath();
+    if (!configPath) throw new Error('Config path not found');
+    return path.join(path.dirname(configPath), config.dirs?.output || 'output');
   }
 
   // For testing purposes only
@@ -214,12 +217,7 @@ export class ConfigParser {
     const instance = ConfigParser.getInstance();
     if (!instance.config?.dirs) return [];
 
-    return [
-      instance.config.dirs.knowledge,
-      instance.config.dirs.experience,
-      instance.config.dirs.output,
-      dirname(instance.configPath || ''),
-    ].filter((dir) => dir && dir.includes('test-dirs'));
+    return [instance.config.dirs.knowledge, instance.config.dirs.experience, instance.config.dirs.output, dirname(instance.configPath || '')].filter((dir) => dir && dir.includes('test-dirs'));
   }
 
   // For testing purposes only - clean up all test directories
@@ -265,9 +263,7 @@ export class ConfigParser {
         const module = await import(configPath);
         return module;
       } catch (error) {
-        const require = (await import('node:module')).createRequire(
-          import.meta.url
-        );
+        const require = (await import('node:module')).createRequire(import.meta.url);
         return require(configPath);
       }
     } else if (ext === 'js' || ext === 'mjs') {
@@ -306,6 +302,10 @@ export class ConfigParser {
         browser: 'chromium',
         show: false, // we need headless
       },
+      action: {
+        delay: 1000,
+        retries: 3,
+      },
       dirs: {
         knowledge: 'knowledge',
         experience: 'experience',
@@ -320,11 +320,7 @@ export class ConfigParser {
     const result = { ...target };
 
     for (const key in source) {
-      if (
-        source[key] &&
-        typeof source[key] === 'object' &&
-        !Array.isArray(source[key])
-      ) {
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
         result[key] = this.deepMerge(result[key] || {}, source[key]);
       } else {
         result[key] = source[key];

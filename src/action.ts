@@ -2,18 +2,20 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import { highlight } from 'cli-highlight';
 import { recorder } from 'codeceptjs';
+import dedent from 'dedent';
 import { ActionResult } from './action-result.js';
-import { ExperienceTracker } from './experience-tracker.js';
-import type { StateManager } from './state-manager.js';
-import type { Provider } from './ai/provider.js';
-import { Navigator } from './ai/navigator.js';
+import { clearActivity, setActivity } from './activity.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.js';
+import { Navigator } from './ai/navigator.js';
+import type { Provider } from './ai/provider.js';
 import { ConfigParser } from './config.js';
 import type { ExplorbotConfig } from './config.js';
-import { log, tag, createDebug } from './utils/logger.js';
-import { setActivity, clearActivity } from './activity.ts';
+import { ExperienceTracker } from './experience-tracker.js';
 import type { UserResolveFunction } from './explorbot.ts';
-import dedent from 'dedent';
+import type { StateManager } from './state-manager.js';
+import { extractCodeBlocks } from './utils/code-extractor.js';
+import { createDebug, log, tag } from './utils/logger.js';
+import { loop } from './utils/loop.js';
 
 const debugLog = createDebug('explorbot:action');
 
@@ -33,12 +35,7 @@ class Action {
   private expectation: string | null = null;
   private lastError: Error | null = null;
 
-  constructor(
-    actor: CodeceptJS.I,
-    provider: Provider,
-    stateManager: StateManager,
-    userResolveFn?: UserResolveFunction
-  ) {
+  constructor(actor: CodeceptJS.I, provider: Provider, stateManager: StateManager, userResolveFn?: UserResolveFunction) {
     this.actor = actor;
     this.navigator = new Navigator(provider);
     this.experienceTracker = new ExperienceTracker();
@@ -128,9 +125,7 @@ class Action {
     ['h1', 'h2', 'h3', 'h4'].forEach((tag) => {
       const match = html.match(new RegExp(`<${tag}[^>]*>(.*?)</${tag}>`, 'i'));
       if (match) {
-        headings[tag as keyof typeof headings] = match[1]
-          .replace(/<[^>]*>/g, '')
-          .trim();
+        headings[tag as keyof typeof headings] = match[1].replace(/<[^>]*>/g, '').trim();
       }
     });
 
@@ -159,22 +154,20 @@ class Action {
 
     setActivity(`🔎 Browsing...`, 'action');
 
-    if (!codeString.startsWith('//'))
-      tag('step').log(highlight(codeString, { language: 'javascript' }));
+    if (!codeString.startsWith('//')) tag('step').log(highlight(codeString, { language: 'javascript' }));
     try {
       this.action = codeString;
       debugLog('Executing action:', codeString);
       const codeFunction = new Function('I', codeString);
       codeFunction(this.actor);
+      await recorder.add(() => sleep(this.config.action?.delay || 500)); // wait for the action to be executed
       await recorder.promise();
 
       const pageState = await this.capturePageState();
       const result = new ActionResult({
         url: pageState.url,
         html: pageState.html,
-        screenshot: pageState.screenshot
-          ? fs.readFileSync(pageState.screenshot)
-          : undefined,
+        screenshot: pageState.screenshot ? fs.readFileSync(pageState.screenshot) : undefined,
         title: pageState.title,
         error: error ? errorToString(error) : null,
         browserLogs: pageState.browserLogs,
@@ -247,11 +240,13 @@ class Action {
     return this;
   }
 
-  private async attempt(
-    codeBlock: string,
-    attempt: number,
-    originalMessage: string
-  ): Promise<boolean> {
+  public async waitForInteraction(): Promise<Action> {
+    // start with basic approach
+    await this.actor.wait(1);
+    return this;
+  }
+
+  public async attempt(codeBlock: string, attempt: number, originalMessage: string): Promise<boolean> {
     try {
       debugLog(`Resolution attempt ${attempt}`);
       setActivity(`🦾 Acting in browser...`, 'action');
@@ -266,11 +261,7 @@ class Action {
       await this.expect(this.expectation!);
 
       tag('success').log('Resolved', this.expectation);
-      await this.experienceTracker.saveSuccessfulResolution(
-        prevActionResult!,
-        originalMessage,
-        codeBlock
-      );
+      await this.experienceTracker.saveSuccessfulResolution(prevActionResult!, originalMessage, codeBlock);
 
       return true;
     } catch (error) {
@@ -278,48 +269,19 @@ class Action {
 
       const executionError = errorToString(error);
 
-      await this.experienceTracker.saveFailedAttempt(
-        this.actionResult!,
-        originalMessage,
-        codeBlock,
-        executionError,
-        attempt
-      );
+      await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage, codeBlock, executionError, attempt);
 
       return false;
     }
   }
 
-  private extractCodeBlocks(aiResponse: string): string[] {
-    const codeBlockRegex = /```(?:js|javascript)?\s*\n([\s\S]*?)\n```/g;
-    const codeBlocks: string[] = [];
-    let match: RegExpExecArray | null = null;
-
-    while ((match = codeBlockRegex.exec(aiResponse))) {
-      const code = match[1].trim();
-      if (!code) continue;
-      try {
-        new Function('I', code);
-        codeBlocks.push(code);
-      } catch {
-        debugLog('Invalid JavaScript code block skipped:', code);
-      }
-    }
-
-    return codeBlocks;
-  }
-
-  async resolve(
-    condition?: (result: ActionResult) => boolean,
-    message?: string,
-    maxAttempts?: number
-  ): Promise<Action> {
+  async resolve(condition?: (result: ActionResult) => boolean, message?: string, maxAttempts?: number): Promise<Action> {
     if (!this.lastError) {
       return this;
     }
 
     if (!maxAttempts) {
-      maxAttempts = this.config.ai.maxAttempts || this.MAX_ATTEMPTS;
+      maxAttempts = this.config.action?.retries || this.config.ai.maxAttempts || this.MAX_ATTEMPTS;
     }
 
     setActivity(`🤔 Thinking...`, 'action');
@@ -336,9 +298,7 @@ class Action {
 
     log('Resolving', errorToString(this.lastError));
 
-    const actionResult =
-      this.actionResult ||
-      ActionResult.fromState(this.stateManager.getCurrentState()!);
+    const actionResult = this.actionResult || ActionResult.fromState(this.stateManager.getCurrentState()!);
 
     if (condition && !condition(actionResult)) {
       debugLog('Condition', condition.toString());
@@ -347,63 +307,51 @@ class Action {
       return this;
     }
 
-    log(
-      `Starting iterative resolution (Max attempts: ${maxAttempts.toString()})`
-    );
+    log(`Starting iterative resolution (Max attempts: ${maxAttempts.toString()})`);
 
-    let attempt = 0;
     let codeBlocks: string[] = [];
 
-    try {
-      while (attempt < maxAttempts) {
-        attempt++;
-        let intention = originalMessage;
+    const result = await loop(async ({ stop, iteration }) => {
+      let intention = originalMessage;
+
+      if (codeBlocks.length === 0) {
+        const aiResponse = await this.navigator?.resolveState(originalMessage, actionResult, this.stateManager.getCurrentContext());
+
+        const aiMessage = aiResponse?.split('\n')[0];
+        if (!aiMessage?.startsWith('```')) {
+          intention = aiMessage || '';
+        }
+
+        codeBlocks = extractCodeBlocks(aiResponse || '');
 
         if (codeBlocks.length === 0) {
-          const aiResponse = await this.navigator?.resolveState(
-            originalMessage,
-            actionResult,
-            this.stateManager.getCurrentContext()
-          );
-
-          const aiMessage = aiResponse?.split('\n')[0];
-          if (!aiMessage?.startsWith('```')) {
-            intention = aiMessage || '';
-          }
-
-          codeBlocks = this.extractCodeBlocks(aiResponse || '');
-
-          if (codeBlocks.length === 0) {
-            break;
-          }
-        }
-
-        const codeBlock = codeBlocks.shift()!;
-        const success = await this.attempt(codeBlock, attempt, intention);
-
-        if (success) {
-          return this;
+          stop();
+          return;
         }
       }
 
-      const errorMessage = `Failed to resolve issue after ${maxAttempts} attempts. Original issue: ${originalMessage}. Please check the experience folder for details of failed attempts and resolve manually.`;
+      const codeBlock = codeBlocks.shift()!;
+      const success = await this.attempt(codeBlock, iteration, intention);
 
-      debugLog(errorMessage);
-
-      if (!this.userResolveFn) {
-        throw new Error(errorMessage);
+      if (success) {
+        stop();
+        return this;
       }
+    }, maxAttempts);
 
-      tag('warning').log(dedent`
-        Can't resolve ${this.expectation}. What should we do?
-        Provide CodeceptJS command starting with I. or a text to pass to AI`);
-      setActivity(`🖐️ Waiting for user input...`, 'action');
-      this.userResolveFn(this.lastError!);
-    } catch (error) {
-      tag('error').log('Failed to resolve', this.expectation);
-      clearActivity();
-      throw error;
+    if (result) {
+      return result;
     }
+
+    const errorMessage = `Failed to resolve issue after ${maxAttempts} attempts. Original issue: ${originalMessage}. Please check the experience folder for details of failed attempts and resolve manually.`;
+
+    debugLog(errorMessage);
+
+    if (!this.userResolveFn) {
+      return this;
+    }
+
+    this.userResolveFn(this.lastError!);
   }
 
   getActor(): CodeceptJS.I {
@@ -415,6 +363,10 @@ class Action {
   }
 
   getCurrentState(): ActionResult | null {
+    return this.actionResult;
+  }
+
+  getActionResult(): ActionResult | null {
     return this.actionResult;
   }
 
@@ -430,4 +382,7 @@ function errorToString(error: any): string {
     return error.cliMessage();
   }
   return error.message || error.toString();
+}
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

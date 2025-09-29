@@ -48,12 +48,7 @@ const getPriorityColor = (priority: string): string => {
 const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box
-        borderStyle="round"
-        borderColor="dim"
-        padding={1}
-        flexDirection="column"
-      >
+      <Box borderStyle="round" borderColor="dim" padding={1} flexDirection="column">
         <Box justifyContent="space-between" marginBottom={1}>
           <Text color="dim">📋 Testing Tasks</Text>
           <Text color="dim">[{tasks.length} total]</Text>
@@ -69,9 +64,7 @@ const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
                   {task.scenario}
                 </Text>
               </Box>
-              <Text color={getPriorityColor(task.priority)}>
-                {getPriorityIcon(task.priority)}
-              </Text>
+              <Text color={getPriorityColor(task.priority)}>{getPriorityIcon(task.priority)}</Text>
             </Box>
           </Box>
         ))}

@@ -1,14 +1,13 @@
-import type { Provider } from './provider.js';
-import type { StateManager } from '../state-manager.js';
-import { tag, createDebug } from '../utils/logger.js';
-import { setActivity } from '../activity.ts';
-import type { WebPageState } from '../state-manager.js';
-import { type Conversation, Message } from './conversation.js';
-import type { ExperienceTracker } from '../experience-tracker.ts';
-import { z } from 'zod';
 import dedent from 'dedent';
-import { stepCountIs, tool } from 'ai';
-import { loop } from '../utils/loop.js';
+import { z } from 'zod';
+import { ActionResult } from '../action-result.ts';
+import { setActivity } from '../activity.ts';
+import type Explorer from '../explorer.ts';
+import type { ExperienceTracker } from '../experience-tracker.ts';
+import type { StateManager } from '../state-manager.js';
+import { createDebug, tag } from '../utils/logger.js';
+import type { Agent } from './agent.js';
+import type { Provider } from './provider.js';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -19,39 +18,34 @@ export interface Task {
   expectedOutcome: string;
 }
 
-const AddScenarioTool = tool({
-  description: 'Add a testing task with priority and expected outcome',
-  inputSchema: z.object({
-    scenario: z.string().describe('A single sentence describing what to test'),
-    priority: z
-      .string()
-      .describe(
-        'Priority of the task based on importance and risk. Must be one of: high, medium, low, unknown.'
-      ),
-    expectedOutcome: z
-      .string()
-      .describe('Expected result or behavior after executing the task'),
-  }),
-  execute: async (params: {
-    scenario: string;
-    priority: string;
-    expectedOutcome: string;
-  }) => {
-    return {
-      success: true,
-      message: `Added task: ${params.scenario}`,
-      task: params,
-    };
-  },
+const TasksSchema = z.object({
+  scenarios: z
+    .array(
+      z.object({
+        scenario: z.string().describe('A single sentence describing what to test'),
+        priority: z.enum(['high', 'medium', 'low', 'unknown']).describe('Priority of the task based on importance and risk'),
+        expectedOutcome: z.string().describe('Expected result or behavior after executing the task'),
+      })
+    )
+    .describe('List of testing scenarios'),
+  reasoning: z.string().optional().describe('Brief explanation of the scenario selection'),
 });
 
-export class Planner {
+export class Planner implements Agent {
+  emoji = '📋';
+  private explorer: Explorer;
   private provider: Provider;
   private stateManager: StateManager;
+  private experienceTracker: ExperienceTracker;
 
-  constructor(provider: Provider, stateManager: StateManager) {
+  MIN_TASKS = 3;
+  MAX_TASKS = 7;
+
+  constructor(explorer: Explorer, provider: Provider) {
+    this.explorer = explorer;
     this.provider = provider;
-    this.stateManager = stateManager;
+    this.stateManager = explorer.getStateManager();
+    this.experienceTracker = this.stateManager.getExperienceTracker();
   }
 
   getSystemMessage(): string {
@@ -61,6 +55,7 @@ export class Planner {
     </role>
     <task>
       List possible testing scenarios for the web page.
+
     </task>
     `;
   }
@@ -70,114 +65,60 @@ export class Planner {
     debugLog('Planning:', state?.url);
     if (!state) throw new Error('No state found');
 
-    const prompt = this.buildPlanningPrompt(state);
+    const actionResult = ActionResult.fromState(state);
+    const prompt = this.buildPlanningPrompt(actionResult);
 
+    tag('info').log(`Initiated planning for ${state.url} to create testing scenarios...`);
     setActivity('👨‍💻 Planning...', 'action');
 
     const messages = [
-      { role: 'user', content: this.getSystemMessage() },
-      { role: 'user', content: prompt },
+      { role: 'system' as const, content: this.getSystemMessage() },
+      { role: 'user' as const, content: prompt },
     ];
 
     if (state.researchResult) {
-      messages.push({ role: 'user', content: state.researchResult });
+      messages.push({ role: 'user' as const, content: state.researchResult });
     }
 
-    messages.push({ role: 'user', content: this.getTasksMessage() });
+    messages.push({ role: 'user' as const, content: this.getTasksMessage() });
 
-    debugLog('Sending planning prompt to AI provider with tool calling');
+    debugLog('Sending planning prompt to AI provider with structured output');
 
-    const tools = { AddScenario: AddScenarioTool };
+    const result = await this.provider.generateObject(messages, TasksSchema);
 
-    const tasks: Task[] = [];
-
-    let proposeScenarios =
-      'Suggest at least 3 scenarios which are relevant to the page and can be tested from UI.';
-
-    const request = async () => {
-      if (tasks.length > 0) {
-        proposeScenarios = dedent`
-          Call AddScenario tool and propose scenarios that are not already proposed
-
-          Only propose scenarios that are not in this list:
-
-          ${tasks.map((task) => task.scenario).join('\n')}
-        `;
-      }
-
-      return await this.provider.generateWithTools(
-        [...messages, { role: 'user', content: proposeScenarios }],
-        tools,
-        {
-          stopWhen: stepCountIs(3),
-          toolChoice: 'required',
-          maxRetries: 3,
-        }
-      );
-    };
-
-    await loop(
-      request,
-      async ({ stop, iteration }) => {
-        if (iteration >= 3) {
-          stop();
-        }
-
-        const result = await request();
-        debugLog('Tool results:', result.toolResults);
-
-        for (const toolResult of result.toolResults) {
-          if (
-            toolResult.toolName === 'AddScenario' &&
-            toolResult.output?.success
-          ) {
-            const taskData = toolResult.output.task;
-            tasks.push({
-              scenario: taskData.scenario,
-              status: 'pending' as const,
-              priority: taskData.priority,
-              expectedOutcome: taskData.expectedOutcome,
-            });
-          }
-        }
-
-        if (tasks.length >= 3) {
-          stop();
-        }
-
-        // Update messages for next iteration
-        messages.push({
-          role: 'user',
-          content: 'Please continue with more scenarios if needed',
-        });
-      },
-      3
-    );
-
-    if (tasks.length === 0) {
+    if (!result?.object?.scenarios || result.object.scenarios.length === 0) {
       throw new Error('No tasks were created successfully');
     }
+
+    const tasks: Task[] = result.object.scenarios.map((s: any) => ({
+      scenario: s.scenario,
+      status: 'pending' as const,
+      priority: s.priority,
+      expectedOutcome: s.expectedOutcome,
+    }));
 
     debugLog('Created tasks:', tasks);
 
     const priorityOrder = { high: 0, medium: 1, low: 2, unknown: 3 };
     const sortedTasks = [...tasks].sort(
-      (a, b) =>
-        (priorityOrder[
-          a.priority.toLowerCase() as keyof typeof priorityOrder
-        ] || 0) -
-        (priorityOrder[
-          b.priority.toLowerCase() as keyof typeof priorityOrder
-        ] || 0)
+      (a, b) => (priorityOrder[a.priority.toLowerCase() as keyof typeof priorityOrder] || 0) - (priorityOrder[b.priority.toLowerCase() as keyof typeof priorityOrder] || 0)
     );
+
+    const summary = result.object.reasoning
+      ? `${result.object.reasoning}\n\nScenarios:\n${tasks.map((t) => `- ${t.scenario}`).join('\n')}`
+      : `Scenarios:\n${tasks.map((t) => `- ${t.scenario}`).join('\n')}`;
+
+    this.experienceTracker.writeExperienceFile(`plan_${actionResult.getStateHash()}`, summary, {
+      url: actionResult.relativeUrl,
+    });
+
+    tag('multiline').log(summary);
 
     return sortedTasks;
   }
 
-  private buildPlanningPrompt(state: WebPageState): string {
-    return dedent`Based on the previous research, create 3-7 exploratory testing scenarios for this page by calling the AddScenario tool multiple times.
-
-      You MUST call the AddScenario tool multiple times to add individual tasks, one by one.
+  private buildPlanningPrompt(state: ActionResult): string {
+    return dedent`Based on the previous research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios for this page.
 
       When creating tasks:
       1. Assign priorities based on:
@@ -198,6 +139,8 @@ export class Planner {
       Suggest scenarios that can be potentially verified by UI.
       Focus on error or success messages as outcome.
       Focus on URL page change or data persistency after page reload.
+      Focus on main content of the page, not in the menu, sidebar or footer
+      Start with positive scenarios and then move to negative scenarios
       </rules>
 
       <context>
@@ -205,7 +148,7 @@ export class Planner {
       Title: ${state.title || 'Unknown'}
 
       HTML:
-      ${state.html}
+      ${state.simplifiedHtml}
       </context>
     `;
   }
@@ -213,9 +156,7 @@ export class Planner {
   getTasksMessage(): string {
     return dedent`
     <task>
-      List possible testing scenarios for the web page by calling the AddScenario tool multiple times.
-      You MUST call the AddScenario tool multiple times to add individual tasks, one by one.
-      When creating tasks ensure all parameters are provided.
+      Provide testing scenarios as structured data with the following requirements:
       1. Assign priorities based on:
          - HIGH: Critical functionality, user flows, security-related, or high-risk features
          - MEDIUM: Important features that affect user experience but aren't critical
@@ -226,7 +167,7 @@ export class Planner {
       4. Focus on tasks you are 100% sure relevant to this page and can be achived from UI.
       5. For each task, specify what the expected outcome should be (e.g., "User should see success message", "Page should redirect to login", "Error message should appear")
       6. Only tasks that can be tested from web UI should be proposed.
-      7. At least 3 tasks should be proposed.
+      7. At least ${this.MIN_TASKS} tasks should be proposed.
     </task>
     `;
   }

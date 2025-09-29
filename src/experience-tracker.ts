@@ -1,15 +1,9 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, statSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
-import { log, createDebug, tag } from './utils/logger.js';
+import { createDebug, log, tag } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:experience');
 
@@ -33,10 +27,7 @@ export class ExperienceTracker {
     // Resolve experience directory relative to the config file location (project root)
     if (configPath) {
       const projectRoot = dirname(configPath);
-      this.experienceDir = join(
-        projectRoot,
-        config.dirs?.experience || 'experience'
-      );
+      this.experienceDir = join(projectRoot, config.dirs?.experience || 'experience');
     } else {
       this.experienceDir = config.dirs?.experience || 'experience';
     }
@@ -51,15 +42,9 @@ export class ExperienceTracker {
     const cwdExperienceDir = join(process.cwd(), 'experience');
     debugLog('Checking for experience directory in CWD:', cwdExperienceDir);
     debugLog('CWD experience dir exists:', existsSync(cwdExperienceDir));
-    debugLog(
-      'CWD experience dir different from main:',
-      cwdExperienceDir !== this.experienceDir
-    );
+    debugLog('CWD experience dir different from main:', cwdExperienceDir !== this.experienceDir);
 
-    if (
-      existsSync(cwdExperienceDir) &&
-      cwdExperienceDir !== this.experienceDir
-    ) {
+    if (existsSync(cwdExperienceDir) && cwdExperienceDir !== this.experienceDir) {
       directories.push(cwdExperienceDir);
       debugLog('Added CWD experience directory:', cwdExperienceDir);
     }
@@ -68,20 +53,10 @@ export class ExperienceTracker {
     // This is useful when running from subdirectories like 'example'
     const scriptCwd = process.env.INITIAL_CWD || process.cwd();
     const scriptExperienceDir = join(scriptCwd, 'experience');
-    debugLog(
-      'Checking for experience directory in script CWD:',
-      scriptExperienceDir
-    );
-    debugLog(
-      'Script CWD experience dir exists:',
-      existsSync(scriptExperienceDir)
-    );
+    debugLog('Checking for experience directory in script CWD:', scriptExperienceDir);
+    debugLog('Script CWD experience dir exists:', existsSync(scriptExperienceDir));
 
-    if (
-      existsSync(scriptExperienceDir) &&
-      scriptExperienceDir !== this.experienceDir &&
-      !directories.includes(scriptExperienceDir)
-    ) {
+    if (existsSync(scriptExperienceDir) && scriptExperienceDir !== this.experienceDir && !directories.includes(scriptExperienceDir)) {
       directories.push(scriptExperienceDir);
       debugLog('Added script CWD experience directory:', scriptExperienceDir);
     }
@@ -103,14 +78,22 @@ export class ExperienceTracker {
     return { content, data };
   }
 
-  writeExperienceFile(
-    stateHash: string,
-    content: string,
-    frontmatter?: any
-  ): void {
+  writeExperienceFile(stateHash: string, content: string, frontmatter?: any): void {
     const filePath = this.getExperienceFilePath(stateHash);
     const fileContent = matter.stringify(content, frontmatter || {});
     writeFileSync(filePath, fileContent, 'utf8');
+  }
+
+  hasRecentExperience(stateHash: string, prefix = ''): boolean {
+    if (prefix) {
+      stateHash = `${prefix}_${stateHash}`;
+    }
+    const filePath = this.getExperienceFilePath(stateHash);
+    if (!existsSync(filePath)) {
+      return false;
+    }
+    const stats = statSync(filePath);
+    return stats.mtime.getTime() > Date.now() - 1000 * 60 * 60 * 24;
   }
 
   private getExperienceFilePath(stateHash: string): string {
@@ -122,9 +105,7 @@ export class ExperienceTracker {
 
     // Extract first line of error, remove stack traces and extra details
     const firstLine = error.split('\n')[0];
-    return firstLine.length > 100
-      ? `${firstLine.substring(0, 100)}...`
-      : firstLine;
+    return firstLine.length > 100 ? `${firstLine.substring(0, 100)}...` : firstLine;
   }
 
   private ensureExperienceFile(state: ActionResult): string {
@@ -142,10 +123,7 @@ export class ExperienceTracker {
     return filePath;
   }
 
-  private appendToExperienceFile(
-    state: ActionResult,
-    entry: ExperienceEntry
-  ): void {
+  private appendToExperienceFile(state: ActionResult, entry: ExperienceEntry): void {
     const filePath = this.ensureExperienceFile(state);
 
     const newEntryContent = this.generateEntryContent(entry);
@@ -166,13 +144,7 @@ ${entry.code}
     return content;
   }
 
-  async saveFailedAttempt(
-    state: ActionResult,
-    originalMessage: string,
-    code: string,
-    executionError: string | null,
-    attempt: number
-  ): Promise<void> {
+  async saveFailedAttempt(state: ActionResult, originalMessage: string, code: string, executionError: string | null, attempt: number): Promise<void> {
     const newEntry: ExperienceEntry = {
       timestamp: new Date().toISOString(),
       attempt,
@@ -183,16 +155,10 @@ ${entry.code}
     };
 
     this.appendToExperienceFile(state, newEntry);
-    tag('substep').log(
-      `Added failed attempt ${attempt} to: ${state.getStateHash()}.md`
-    );
+    tag('substep').log(`Added failed attempt ${attempt} to: ${state.getStateHash()}.md`);
   }
 
-  async saveSuccessfulResolution(
-    state: ActionResult,
-    originalMessage: string,
-    code: string
-  ): Promise<void> {
+  async saveSuccessfulResolution(state: ActionResult, originalMessage: string, code: string): Promise<void> {
     const newEntry: ExperienceEntry = {
       timestamp: new Date().toISOString(),
       status: 'success',
@@ -242,10 +208,7 @@ ${entry.code}
           }
         }
       } catch (error) {
-        debugLog(
-          `Failed to read experience directory ${experienceDir}:`,
-          error
-        );
+        debugLog(`Failed to read experience directory ${experienceDir}:`, error);
       }
     }
 

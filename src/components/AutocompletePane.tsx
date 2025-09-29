@@ -10,13 +10,7 @@ interface AutocompletePaneProps {
   visible: boolean;
 }
 
-const AutocompletePane: React.FC<AutocompletePaneProps> = ({
-  commands,
-  input,
-  selectedIndex,
-  onSelect,
-  visible,
-}) => {
+const AutocompletePane: React.FC<AutocompletePaneProps> = ({ commands, input, selectedIndex, onSelect, visible }) => {
   const [filteredCommands, setFilteredCommands] = useState<string[]>([]);
 
   useEffect(() => {
@@ -26,9 +20,7 @@ const AutocompletePane: React.FC<AutocompletePaneProps> = ({
     }
 
     const searchTerm = input.toLowerCase().replace(/^i\./, '');
-    const filtered = commands
-      .filter((cmd) => cmd.toLowerCase().includes(searchTerm))
-      .slice(0, 20);
+    const filtered = commands.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
 
     setFilteredCommands(filtered);
   }, [input, commands]);
@@ -58,10 +50,7 @@ const AutocompletePane: React.FC<AutocompletePaneProps> = ({
             return (
               <Box key={colIndex} width={20} marginRight={1}>
                 {cmd && (
-                  <Text
-                    color={isSelected ? 'black' : 'cyan'}
-                    backgroundColor={isSelected ? 'cyan' : undefined}
-                  >
+                  <Text color={isSelected ? 'black' : 'cyan'} backgroundColor={isSelected ? 'cyan' : undefined}>
                     {cmd.length > 18 ? `${cmd.slice(0, 15)}...` : cmd}
                   </Text>
                 )}

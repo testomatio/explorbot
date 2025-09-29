@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
-import type { Provider } from './provider.js';
-import { log, createDebug } from '../utils/logger.js';
 import { json } from 'zod';
+import { createDebug, log } from '../utils/logger.js';
+import type { Provider } from './provider.js';
 
 const debugLog = createDebug('explorbot:experience-compactor');
 

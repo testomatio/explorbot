@@ -1,8 +1,8 @@
 import { tool } from 'ai';
-import { z } from 'zod';
-import { createDebug, tag } from '../utils/logger.js';
-import { ActionResult } from '../action-result.js';
 import dedent from 'dedent';
+import { z } from 'zod';
+import { ActionResult } from '../action-result.js';
+import { createDebug, tag } from '../utils/logger.js';
 
 const debugLog = createDebug('explorbot:tools');
 
@@ -47,7 +47,6 @@ export function createCodeceptJSTools(actor: any) {
       }),
       execute: async ({ locator }) => {
         tag('substep').log(`🖱️ AI Tool: click("${locator}")`);
-        debugLog(`Clicking element: ${locator}`);
 
         try {
           await actor.click(locator);
@@ -56,14 +55,10 @@ export function createCodeceptJSTools(actor: any) {
           let pageState = null;
           try {
             pageState = await capturePageState(actor);
-            tag('success').log(
-              `✅ Click successful → ${pageState.url} "${pageState.title}"`
-            );
+            tag('success').log(`✅ Click successful → ${pageState.url} "${pageState.title}"`);
           } catch (stateError) {
             debugLog(`Page state capture failed after click: ${stateError}`);
-            tag('warning').log(
-              `⚠️ Click executed but page state capture failed: ${stateError}`
-            );
+            tag('warning').log(`⚠️ Click executed but page state capture failed: ${stateError}`);
           }
 
           return {
@@ -86,14 +81,10 @@ export function createCodeceptJSTools(actor: any) {
     }),
 
     type: tool({
-      description:
-        'Send keyboard input to the active element or fill a field. After typing, the page state will be automatically captured and returned.',
+      description: 'Send keyboard input to the active element or fill a field. After typing, the page state will be automatically captured and returned.',
       inputSchema: z.object({
         text: z.string().describe('The text to type'),
-        locator: z
-          .string()
-          .optional()
-          .describe('Optional CSS or XPath locator to focus on before typing'),
+        locator: z.string().optional().describe('Optional CSS or XPath locator to focus on before typing'),
       }),
       execute: async ({ text, locator }) => {
         const locatorMsg = locator ? ` in: ${locator}` : '';
@@ -111,9 +102,7 @@ export function createCodeceptJSTools(actor: any) {
           // Capture new page state after typing
           try {
             const newState = await capturePageState(actor);
-            tag('success').log(
-              `✅ Type successful → ${newState.url} "${newState.title}"`
-            );
+            tag('success').log(`✅ Type successful → ${newState.url} "${newState.title}"`);
 
             return {
               success: true,
@@ -128,9 +117,7 @@ export function createCodeceptJSTools(actor: any) {
             };
           } catch (stateError) {
             debugLog(`Page state capture failed after type: ${stateError}`);
-            tag('warning').log(
-              `⚠️ Type executed but page state capture failed: ${stateError}`
-            );
+            tag('warning').log(`⚠️ Type executed but page state capture failed: ${stateError}`);
             return {
               success: false,
               action: 'type',
@@ -147,6 +134,64 @@ export function createCodeceptJSTools(actor: any) {
             action: 'type',
             text,
             locator,
+            error: String(error),
+          };
+        }
+      },
+    }),
+
+    reset: tool({
+      description: dedent`
+        Reset the testing flow by navigating back to the initial page or context. 
+        Use this when the agent has navigated too far from the desired state and 
+        there's no clear path to achieve the expected result. This restarts the 
+        testing flow from a known good state.
+      `,
+      inputSchema: z.object({
+        reason: z.string().optional().describe('Optional reason for the reset'),
+        targetUrl: z.string().optional().describe('Optional specific URL to navigate to for reset'),
+      }),
+      execute: async ({ reason, targetUrl }) => {
+        const reasonMsg = reason ? ` (${reason})` : '';
+        tag('substep').log(`🔄 AI Tool: reset()${reasonMsg}`);
+
+        try {
+          let resetUrl = targetUrl;
+
+          if (!resetUrl) {
+            try {
+              resetUrl = await actor.grabCurrentUrl();
+              debugLog('No target URL provided, staying on current page');
+            } catch (error) {
+              debugLog('Could not get current URL, using default reset behavior');
+            }
+          }
+
+          if (resetUrl) {
+            await actor.amOnPage(resetUrl);
+            tag('success').log(`✅ Reset successful → navigated to ${resetUrl}`);
+          } else {
+            tag('warning').log(`⚠️ Reset called but no target URL available`);
+          }
+
+          const pageState = await capturePageState(actor);
+
+          return {
+            success: true,
+            action: 'reset',
+            reason,
+            targetUrl: resetUrl,
+            pageState,
+            message: 'Testing flow has been reset to a known state',
+          };
+        } catch (error) {
+          debugLog(`Reset failed: ${error}`);
+          tag('error').log(`❌ Reset failed: ${error}`);
+          return {
+            success: false,
+            action: 'reset',
+            reason,
+            targetUrl,
             error: String(error),
           };
         }

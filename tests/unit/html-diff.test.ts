@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { htmlDiff } from '../../src/utils/html-diff.ts';
 
 describe('HTML Diff', () => {
@@ -27,6 +27,7 @@ describe('HTML Diff', () => {
     expect(result.added).toHaveLength(0);
     expect(result.removed).toHaveLength(0);
     expect(result.summary).toBe('No changes detected');
+    expect(result.subtree).toBe('');
   });
 
   it('should detect added text content', () => {
@@ -55,9 +56,12 @@ describe('HTML Diff', () => {
     expect(result.added).toContain('TEXT:This is a test paragraph.');
     expect(result.added).toContain('BUTTON:Click me');
     expect(result.removed).toContain('TEXT:This is a test.');
+    expect(result.subtree).toContain('<html');
+    expect(result.subtree).toContain('<body>');
+    expect(result.subtree).toContain('<button>Click me</button>');
   });
 
-  it('should detect removed elements', () => {
+  it('should detect removed elements without subtree', () => {
     const html1 = `
       <html>
         <body>
@@ -82,9 +86,10 @@ describe('HTML Diff', () => {
     expect(result.similarity).toBeLessThan(100);
     expect(result.removed).toContain('A:Login');
     expect(result.added).toHaveLength(0);
+    expect(result.subtree).toBe('');
   });
 
-  it('should detect form field changes', () => {
+  it('should detect form field changes and additions', () => {
     const html1 = `
       <form>
         <input type="text" name="username" placeholder="Enter username">
@@ -105,6 +110,10 @@ describe('HTML Diff', () => {
     expect(result.similarity).toBeLessThan(100);
     expect(result.added).toContain('INPUT:Enter password');
     expect(result.removed).toContain('INPUT:Enter username');
+    expect(result.subtree).toContain('type="password"');
+    expect(result.subtree).not.toContain('<button>Login</button>');
+    expect(result.added).toContain('ELEMENT:html[1]/body[1]/form[1]/input[2]');
+    expect(result.added).toContain('BUTTON:Login');
   });
 
   it('should handle HTML fragments', () => {
@@ -115,6 +124,7 @@ describe('HTML Diff', () => {
 
     expect(result.similarity).toBeLessThan(100);
     expect(result.added.length).toBeGreaterThan(0);
+    expect(result.subtree).toContain('<span>extra</span>');
   });
 
   it('should calculate similarity percentage correctly', () => {
@@ -142,8 +152,74 @@ describe('HTML Diff', () => {
 
     const result = htmlDiff(html1, html2);
 
-    // Should be around 33% similar (2 matching out of 6 total unique items)
     expect(result.similarity).toBeGreaterThan(30);
     expect(result.similarity).toBeLessThan(40);
+    expect(result.subtree).toBe('');
+  });
+
+  it('should retain ancestors for nested additions', () => {
+    const original = `
+      <ul>
+        <li>First item</li>
+      </ul>
+    `;
+
+    const modified = `
+      <ul>
+        <li>First item</li>
+        <li>Second item</li>
+      </ul>
+    `;
+
+    const result = htmlDiff(original, modified);
+
+    expect(result.subtree).toContain('<html');
+    expect(result.subtree).toContain('<body>');
+    expect(result.subtree).toContain('<ul>');
+    expect(result.subtree).toContain('<li>Second item</li>');
+    expect(result.subtree).not.toContain('First item');
+  });
+
+  it('should capture text-only changes', () => {
+    const original = '<button>Submit</button>';
+    const modified = '<button>Confirm</button>';
+
+    const result = htmlDiff(original, modified);
+
+    expect(result.subtree).toBe('');
+    expect(result.added).toContain('BUTTON:Confirm');
+    expect(result.removed).toContain('BUTTON:Submit');
+  });
+
+  it('should sanitize scripts and non-semantic nodes from diff output', () => {
+    const original = `
+      <html>
+        <body>
+          <div>Base</div>
+        </body>
+      </html>
+    `;
+
+    const modified = `
+      <html>
+        <body>
+          <div>Base</div>
+          <script>alert('xss');</script>
+          <iframe src="/test"></iframe>
+          <svg><path d="m0 0"></path></svg>
+        </body>
+      </html>
+    `;
+
+    const result = htmlDiff(original, modified);
+
+    expect(result.subtree).not.toContain('<script');
+    expect(result.subtree).not.toContain('<iframe');
+    expect(result.subtree).not.toContain('<path');
+    expect(result.subtree).not.toContain('<script');
+    expect(result.subtree).not.toContain('<iframe');
+    expect(result.subtree).toContain('<svg');
+    expect(result.added).toContain('ELEMENT:html[1]/body[1]/svg[1]');
+    expect(result.summary).toContain('addition');
   });
 });

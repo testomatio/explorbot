@@ -1,11 +1,12 @@
-import { generateText, generateObject } from 'ai';
+import { generateObject, generateText } from 'ai';
+import type { ModelMessage } from 'ai';
+import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
 import { createDebug, tag } from '../utils/logger.js';
-import { setActivity, clearActivity } from '../activity.ts';
-import { Conversation, type Message } from './conversation.js';
-import { withRetry, type RetryOptions } from '../utils/retry.js';
+import { type RetryOptions, withRetry } from '../utils/retry.js';
+import { Conversation } from './conversation.js';
 
-const debugLog = createDebug('explorbot:ai');
+const debugLog = createDebug('explorbot:provider');
 
 export class Provider {
   private config: AIConfig;
@@ -41,27 +42,19 @@ export class Provider {
     return new Conversation([
       {
         role: 'system',
-        content: [{ type: 'text', text: systemMessage }],
+        content: systemMessage,
       },
     ]);
   }
 
-  async invokeConversation(
-    conversation: Conversation,
-    tools?: any
-  ): Promise<{ conversation: Conversation; response: any } | null> {
-    const response = tools
-      ? await this.generateWithTools(conversation.messages, tools)
-      : await this.chat(conversation.messages);
+  async invokeConversation(conversation: Conversation, tools?: any, options: any = {}): Promise<{ conversation: Conversation; response: any } | null> {
+    const response = tools ? await this.generateWithTools(conversation.messages, tools, options) : await this.chat(conversation.messages, options);
     conversation.addAssistantText(response.text);
     return { conversation, response };
   }
 
-  async chat(messages: any[], options: any = {}): Promise<any> {
+  async chat(messages: ModelMessage[], options: any = {}): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model}`, 'ai');
-
-    debugLog('AI config:', this.config);
-    debugLog('AI options:', options);
 
     messages = this.filterImages(messages);
 
@@ -91,11 +84,7 @@ export class Provider {
     }
   }
 
-  async generateWithTools(
-    messages: any[],
-    tools: any,
-    options: any = {}
-  ): Promise<any> {
+  async generateWithTools(messages: ModelMessage[], tools: any, options: any = {}): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model} with dynamic tools`, 'ai');
 
     messages = this.filterImages(messages);
@@ -121,9 +110,7 @@ export class Provider {
             messages,
             ...config,
           }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('AI request timeout')), timeout)
-          ),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('AI request timeout')), timeout)),
         ])) as any;
       }, this.getRetryOptions(options));
 
@@ -133,9 +120,7 @@ export class Provider {
       if (response.toolCalls && response.toolCalls.length > 0) {
         tag('debug').log(`AI executed ${response.toolCalls.length} tool calls`);
         response.toolCalls.forEach((call: any, index: number) => {
-          tag('step').log(
-            `⯈ ${call.toolName}(${Object.values(call?.input || []).join(', ')})`
-          );
+          tag('step').log(`⯈ ${call.toolName}(${Object.values(call?.input || []).join(', ')})`);
         });
       }
 
@@ -148,11 +133,7 @@ export class Provider {
     }
   }
 
-  async generateObject(
-    messages: any[],
-    schema: any,
-    options: any = {}
-  ): Promise<any> {
+  async generateObject(messages: ModelMessage[], schema: any, options: any = {}): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model} for structured output`, 'ai');
 
     messages = this.filterImages(messages);
@@ -172,9 +153,7 @@ export class Provider {
             messages,
             ...config,
           }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('AI request timeout')), timeout)
-          ),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('AI request timeout')), timeout)),
         ])) as any;
       }, this.getRetryOptions(options));
 
@@ -192,20 +171,30 @@ export class Provider {
     return this.provider;
   }
 
-  filterImages(messages: any[]): any[] {
+  filterImages(messages: ModelMessage[]): ModelMessage[] {
     if (this.config.vision) {
       return messages;
     }
 
-    messages.forEach((message) => {
-      if (!Array.isArray(message.content)) return;
-      message.content = message.content.filter((content: any) => {
-        if (content.type === 'image') return false;
-        return true;
-      });
-    });
+    return messages.map((message) => {
+      if (typeof message.content === 'string') {
+        return message;
+      }
 
-    return messages;
+      if (Array.isArray(message.content)) {
+        const filteredContent = message.content.filter((content: any) => {
+          if (content.type === 'image') return false;
+          return true;
+        });
+
+        return {
+          ...message,
+          content: filteredContent as any,
+        };
+      }
+
+      return message;
+    });
   }
 }
 

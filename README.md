@@ -13,6 +13,14 @@ Explorbot autonomously explores web applications by:
 - **Learning** from previous interactions through experience tracking
 - **Leveraging** domain knowledge from documentation files
 
+## Core Philosophy
+
+This project has a hybrid agent-workflow implementation. 
+While all core decisions (analyze page, run test, plan tests) are strictly implemented in code (workflow), when comes to tactical decisions (page navigation, test completentess) it is done in agentic mode. That makes Explorbot to be **deterministic in strategic goals**, while being flexible and smart in taking in-place decisions. This also reduces context length (each agent has few operations, so context overhead is not hit) and execution speed. 
+
+Wherever possible Explorbot asks for codeblocks instead of executing tools directly. This way LLM provides few alternative suggestions to achieve the desired result in one request. Explorbot iterates over them with no additional AI calls. That saves tokens and speeds up navigation web page.
+
+
 ## Core Capabilities
 
 ### Intelligent Web Navigation

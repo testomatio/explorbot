@@ -16,16 +16,10 @@ interface AppProps {
   exitOnEmptyInput?: boolean;
 }
 
-export function App({
-  explorBot,
-  initialShowInput = false,
-  exitOnEmptyInput = false,
-}: AppProps) {
+export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = false }: AppProps) {
   const [showInput, setShowInput] = useState(initialShowInput);
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
-  const [lastTransition, setLastTransition] = useState<StateTransition | null>(
-    null
-  );
+  const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [commandHandler] = useState(() => new CommandHandler(explorBot));
   const [userInputPromise, setUserInputPromise] = useState<{
@@ -56,12 +50,10 @@ export function App({
         setCurrentState(initialState);
       }
 
-      const unsubscribe = manager.onStateChange(
-        (transition: StateTransition) => {
-          setLastTransition(transition);
-          setCurrentState(transition.toState);
-        }
-      );
+      const unsubscribe = manager.onStateChange((transition: StateTransition) => {
+        setLastTransition(transition);
+        setCurrentState(transition.toState);
+      });
 
       setShowInput(false);
 
@@ -133,12 +125,7 @@ export function App({
         </Box>
       )}
 
-      <Box
-        flexDirection="row"
-        alignItems="flex-start"
-        columnGap={1}
-        height="20%"
-      >
+      <Box flexDirection="row" alignItems="flex-start" columnGap={1} height="20%">
         {currentState && (
           <Box width={tasks.length > 0 ? '50%' : '100%'}>
             <StateTransitionPane currentState={currentState} />

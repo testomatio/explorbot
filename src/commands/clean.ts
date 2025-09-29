@@ -15,9 +15,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
   const originalCwd = process.cwd();
 
   // Determine base path for relative paths BEFORE changing directories
-  const basePath = customPath
-    ? path.resolve(originalCwd, customPath)
-    : process.cwd();
+  const basePath = customPath ? path.resolve(originalCwd, customPath) : process.cwd();
 
   try {
     // If custom path is provided, change to that directory and load config
@@ -32,9 +30,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
         await configParser.loadConfig({ path: '.' }); // Use current directory (.) since we already changed to it
         console.log(`Configuration loaded from: ${resolvedPath}`);
       } catch (error) {
-        console.log(
-          `No configuration found in ${resolvedPath}, using default paths`
-        );
+        console.log(`No configuration found in ${resolvedPath}, using default paths`);
       }
     }
 
@@ -62,10 +58,7 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
   }
 }
 
-async function cleanPath(
-  targetPath: string,
-  displayName: string
-): Promise<void> {
+async function cleanPath(targetPath: string, displayName: string): Promise<void> {
   const resolvedPath = path.resolve(targetPath);
 
   if (!fs.existsSync(resolvedPath)) {

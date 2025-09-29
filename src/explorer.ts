@@ -3,18 +3,14 @@ import path from 'node:path';
 import * as codeceptjs from 'codeceptjs';
 import type { ExplorbotConfig } from '../explorbot.config.js';
 import Action from './action.js';
+import { ExperienceCompactor } from './ai/experience-compactor.js';
 import { Navigator } from './ai/navigator.js';
+import type { Task } from './ai/planner.js';
 import { AIProvider } from './ai/provider.js';
 import { ConfigParser } from './config.js';
-import { StateManager } from './state-manager.js';
-import { log, createDebug, tag } from './utils/logger.js';
-import { Researcher } from './ai/researcher.js';
-import { Planner, type Task } from './ai/planner.js';
-import { createCodeceptJSTools } from './ai/tools.js';
-import { ActionResult } from './action-result.js';
-import { Conversation } from './ai/conversation.js';
-import { ExperienceCompactor } from './ai/experience-compactor.js';
 import type { UserResolveFunction } from './explorbot.js';
+import { StateManager } from './state-manager.js';
+import { createDebug, log, tag } from './utils/logger.js';
 
 declare global {
   namespace NodeJS {
@@ -32,34 +28,33 @@ declare namespace CodeceptJS {
 
 const debugLog = createDebug('explorbot:explorer');
 class Explorer {
-  private configParser: ConfigParser;
-  private aiProvider!: AIProvider;
+  private aiProvider: AIProvider;
   playwrightHelper: any;
   public isStarted = false;
   actor!: CodeceptJS.I;
   private stateManager!: StateManager;
-  private researcher!: Researcher;
-  private planner!: Planner;
-  private navigator!: Navigator;
   config: ExplorbotConfig;
   private userResolveFn: UserResolveFunction | null = null;
   scenarios: Task[] = [];
+  private options?: { show?: boolean; headless?: boolean };
 
-  constructor() {
-    this.configParser = ConfigParser.getInstance();
-    this.config = this.configParser.getConfig();
+  constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean }) {
+    this.config = config;
+    this.aiProvider = aiProvider;
+    this.options = options;
     this.initializeContainer();
-    this.initializeAI();
+    this.stateManager = new StateManager();
   }
 
   private initializeContainer() {
     try {
       // Use project root for output directory, not current working directory
-      const configPath = this.configParser.getConfigPath();
+      const configParser = ConfigParser.getInstance();
+      const configPath = configParser.getConfigPath();
       const projectRoot = configPath ? path.dirname(configPath) : process.cwd();
       (global as any).output_dir = path.join(projectRoot, 'output');
 
-      this.configParser.validateConfig(this.config);
+      configParser.validateConfig(this.config);
 
       const codeceptConfig = this.convertToCodeceptConfig(this.config);
 
@@ -70,47 +65,34 @@ class Explorer {
     }
   }
 
-  private async initializeAI(): Promise<void> {
-    if (!this.aiProvider) {
-      this.aiProvider = new AIProvider(this.config.ai);
-      this.stateManager = new StateManager();
-      this.navigator = new Navigator(this.aiProvider);
-      this.researcher = new Researcher(this.aiProvider, this.stateManager);
-      this.planner = new Planner(this.aiProvider, this.stateManager);
-    }
-  }
-
   private convertToCodeceptConfig(config: ExplorbotConfig): {
     helpers: { Playwright: any };
   } {
     const playwrightConfig = { ...config.playwright };
-    if (!config.playwright.show && !process.env.CI) {
+
+    if (this.options?.show !== undefined) {
+      playwrightConfig.show = this.options.show;
+    }
+    if (this.options?.headless !== undefined) {
+      playwrightConfig.show = !this.options.headless;
+    }
+
+    if (!playwrightConfig.show && !process.env.CI) {
       if (config.playwright.browser === 'chromium') {
         const debugPort = 9222;
         playwrightConfig.chromium ||= {};
-        playwrightConfig.chromium.args = [
-          ...(config.playwright.args || []),
-          `--remote-debugging-port=${debugPort}`,
-          '--remote-debugging-address=0.0.0.0',
-        ];
+        playwrightConfig.chromium.args = [...(config.playwright.args || []), `--remote-debugging-port=${debugPort}`, '--remote-debugging-address=0.0.0.0'];
 
-        log(
-          `Enabling debug protocol for Chromium at http://localhost:${debugPort}`
-        );
+        log(`Enabling debug protocol for Chromium at http://localhost:${debugPort}`);
       } else if (config.playwright.browser === 'firefox') {
         const debugPort = 9222;
         playwrightConfig.firefox ||= {};
-        playwrightConfig.firefox.args = [
-          ...(config.playwright.args || []),
-          `--remote-debugging-port=${debugPort}`,
-        ];
-        log(
-          `Enabling debug protocol for Firefox at http://localhost:${debugPort}`
-        );
+        playwrightConfig.firefox.args = [...(config.playwright.args || []), `--remote-debugging-port=${debugPort}`];
+        log(`Enabling debug protocol for Firefox at http://localhost:${debugPort}`);
       }
     }
 
-    log(`${playwrightConfig.browser} started in headless mode`);
+    log(`${playwrightConfig.browser} started in ${playwrightConfig.show ? 'headed' : 'headless'} mode`);
 
     return {
       helpers: {
@@ -148,6 +130,17 @@ class Explorer {
     await codeceptjs.recorder.start();
     await codeceptjs.container.started(null);
 
+    codeceptjs.recorder.retry({
+      retries: this.config.action?.retries || 3,
+      when: (err: any) => {
+        if (!err || typeof err.message !== 'string') {
+          return false;
+        }
+        // ignore context errors
+        return err.message.includes('context');
+      },
+    });
+
     this.playwrightHelper = codeceptjs.container.helpers('Playwright');
     if (!this.playwrightHelper) {
       throw new Error('Playwright helper not available');
@@ -165,42 +158,7 @@ class Explorer {
   }
 
   createAction() {
-    return new Action(
-      this.actor,
-      this.aiProvider,
-      this.stateManager,
-      this.userResolveFn || undefined
-    );
-  }
-
-  async visit(url: string) {
-    try {
-      const action = this.createAction();
-
-      await action.execute(`I.amOnPage('${url}')`);
-      await action.expect(`I.seeInCurrentUrl('${url}')`);
-      await action.resolve();
-    } catch (error) {
-      console.error(`Failed to visit initial page ${url}:`, error);
-      throw error;
-    }
-  }
-
-  async research() {
-    log('Researching...');
-    const tools = createCodeceptJSTools(this.actor);
-    const conversation = await this.researcher.research(tools);
-    return conversation;
-  }
-
-  async plan() {
-    log('Researching...');
-
-    await this.researcher.research();
-    log('Planning...');
-    const scenarios = await this.planner.plan();
-    this.scenarios = scenarios;
-    return scenarios;
+    return new Action(this.actor, this.aiProvider, this.stateManager, this.userResolveFn || undefined);
   }
 
   setUserResolve(userResolveFn: UserResolveFunction): void {
@@ -216,17 +174,10 @@ class Explorer {
     for (const experience of experienceFiles) {
       const prevContent = experience.content;
       const frontmatter = experience.data;
-      const compactedContent = await experienceCompactor.compactExperienceFile(
-        experience.filePath
-      );
+      const compactedContent = await experienceCompactor.compactExperienceFile(experience.filePath);
       if (prevContent !== compactedContent) {
-        const stateHash =
-          experience.filePath.split('/').pop()?.replace('.md', '') || '';
-        experienceTracker.writeExperienceFile(
-          stateHash,
-          compactedContent,
-          frontmatter
-        );
+        const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
+        experienceTracker.writeExperienceFile(stateHash, compactedContent, frontmatter);
         tag('debug').log('Experience file compacted:', experience.filePath);
         compactedCount++;
       }

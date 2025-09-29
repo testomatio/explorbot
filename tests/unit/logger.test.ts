@@ -1,20 +1,20 @@
-import { describe, expect, it, beforeEach, afterEach, spyOn } from 'bun:test';
-import { existsSync, rmSync, readFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import {
-  log,
-  logSuccess,
-  logError,
-  logWarning,
-  logSubstep,
-  createDebug,
-  tag,
-  setVerboseMode,
-  setPreserveConsoleLogs,
-  isVerboseMode,
-  registerLogPane,
-  unregisterLogPane,
-  getMethodsOfObject,
   type TaggedLogEntry,
+  createDebug,
+  getMethodsOfObject,
+  isVerboseMode,
+  log,
+  logError,
+  logSubstep,
+  logSuccess,
+  logWarning,
+  registerLogPane,
+  setPreserveConsoleLogs,
+  setVerboseMode,
+  tag,
+  unregisterLogPane,
 } from '../../src/utils/logger';
 
 describe('Logger', () => {
@@ -293,9 +293,7 @@ describe('Logger', () => {
 
       log('Null:', null, 'Undefined:', undefined);
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Null: null Undefined: undefined'
-      );
+      expect(consoleSpy).toHaveBeenCalledWith('Null: null Undefined: undefined');
       consoleSpy.mockRestore();
     });
 

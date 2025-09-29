@@ -28,8 +28,7 @@ const Welcome: React.FC = () => {
           const provider = loadedConfig.ai.provider;
 
           const testModel = provider('test-model');
-          aiProviderName =
-            testModel?.constructor?.name || testModel?.config?.provider;
+          aiProviderName = testModel?.constructor?.name || testModel?.config?.provider;
         }
 
         setConfigInfo({

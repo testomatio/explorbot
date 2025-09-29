@@ -1,5 +1,5 @@
-import React from 'react';
 import { render } from 'ink';
+import React from 'react';
 import { App } from '../components/App.js';
 import { ExplorBot, type ExplorBotOptions } from '../explorbot.js';
 import { setPreserveConsoleLogs } from '../utils/logger.js';
@@ -10,6 +10,8 @@ export interface ExploreOptions {
   debug?: boolean;
   config?: string;
   path?: string;
+  show?: boolean;
+  headless?: boolean;
 }
 
 export async function exploreCommand(options: ExploreOptions) {
@@ -23,15 +25,15 @@ export async function exploreCommand(options: ExploreOptions) {
     verbose: options.verbose || options.debug,
     config: options.config,
     path: options.path,
+    show: options.show,
+    headless: options.headless,
   };
 
   const explorBot = new ExplorBot(mainOptions);
   await explorBot.loadConfig();
 
   if (!process.stdin.isTTY) {
-    console.error(
-      'Warning: Input not available. Running in non-interactive mode.'
-    );
+    console.error('Warning: Input not available. Running in non-interactive mode.');
   }
 
   render(

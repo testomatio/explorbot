@@ -1,10 +1,13 @@
 import dedent from 'dedent';
-import type { Provider } from './provider.js';
-import type { WebPageState } from '../state-manager.js';
-import { createCodeceptJSTools } from './tools.js';
-import { tag, createDebug } from '../utils/logger.js';
 import { ActionResult } from '../action-result.js';
+import type { WebPageState } from '../state-manager.js';
+import { createDebug, tag } from '../utils/logger.js';
+import { loop } from '../utils/loop.js';
+import type { Agent } from './agent.js';
 import { ExperienceCompactor } from './experience-compactor.js';
+import type { Provider } from './provider.js';
+import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
+import { createCodeceptJSTools } from './tools.js';
 
 const debugLog = createDebug('explorbot:navigator');
 
@@ -20,7 +23,8 @@ export interface StateContext {
   html?: string;
 }
 
-class Navigator {
+class Navigator implements Agent {
+  emoji = '🧭';
   private provider: Provider;
   private experienceCompactor: ExperienceCompactor;
 
@@ -42,11 +46,7 @@ class Navigator {
     this.experienceCompactor = new ExperienceCompactor(provider);
   }
 
-  async resolveState(
-    message: string,
-    actionResult: ActionResult,
-    context?: StateContext
-  ): Promise<string> {
+  async resolveState(message: string, actionResult: ActionResult, context?: StateContext): Promise<string> {
     const state = context?.state;
     if (!state) {
       throw new Error('State is required');
@@ -58,13 +58,9 @@ class Navigator {
     let knowledge = '';
 
     if (context?.knowledge.length > 0) {
-      const knowledgeContent = context.knowledge
-        .map((k) => k.content)
-        .join('\n\n');
+      const knowledgeContent = context.knowledge.map((k) => k.content).join('\n\n');
 
-      tag('substep').log(
-        `Found ${context.knowledge.length} relevant knowledge file(s) for: ${context.state.url}`
-      );
+      tag('substep').log(`Found ${context.knowledge.length} relevant knowledge file(s) for: ${context.state.url}`);
       knowledge = `
         <hint>
         Here is relevant knowledge for this page:
@@ -121,17 +117,11 @@ class Navigator {
     tag('info').log(aiResponse.split('\n')[0]);
 
     debugLog('Received AI response:', aiResponse.length, 'characters');
-    tag('debug').log(aiResponse);
 
     return aiResponse;
   }
 
-  async changeState(
-    message: string,
-    actionResult: ActionResult,
-    context?: StateContext,
-    actor?: any
-  ): Promise<ActionResult> {
+  async changeState(message: string, actionResult: ActionResult, context?: StateContext, actor?: any): Promise<ActionResult> {
     const state = context?.state;
     if (!state) {
       throw new Error('State is required');
@@ -204,10 +194,7 @@ class Navigator {
       const finalActionResult = await this.capturePageState(actor);
 
       // Check if task was completed
-      const taskCompleted = await this.isTaskCompleted(
-        message,
-        finalActionResult
-      );
+      const taskCompleted = await this.isTaskCompleted(message, finalActionResult);
       if (taskCompleted) {
         tag('success').log('Task completed successfully');
       } else {
@@ -252,56 +239,10 @@ class Navigator {
   private locatorRule(): string {
     return dedent`
       <locators>
-        Use different locator strategies: button names, input labels, placeholders, CSS, XPath.
 
-        You will need to provide multiple solutions to achieve the result.
+        ${multipleLocatorRule}
 
-        The very first solution should be with shortest and simplest locator.
-        Be specific about locators, check if multiple elements can be selected by the same locator.
-        While the first element can be a good solution, also propose solutions with locators that can pick other valid elements.
-
-        Each new solution should pick the longer and more specific path to element.
-        Each new solution should start with element from higher hierarchy with id or data-id attributes.
-        When suggesting a new XPath locator do not repeat previously used same CSS locator and vice versa.
-        Each new locator should at least take one step up the hierarchy.
-
-        <bad_locator_example>
-          Suggestion 1:
-          #user_email
-
-          Suggestion 2: (is the same as suggestion 1)
-          //*[@id="user_email"]
-        </bad_locator_example>
-
-        <good_locator_example>
-          Suggestion 1:
-          #user_email
-
-          Suggestion 2: (is more specific than suggestion 1)
-          //*[@id="user_form"]//*[@id="user_email"]
-        </good_locator_example>
-
-        If locator is long prefer writing it as XPath.
-        The very last solution should use XPath that starts from '//html/body/' XPath and provides path to the element.
-        XPath locator should always start with // 
-        Do not stick to element order like /div[2] or /div[2]/div[2] etc. 
-        Use wide-range locators like // or * and prefer elements that have ids, classes, names, or data-id attributes, prefer element ids, classes, names, and other semantic attributes.
-
-        <good locator example>
-          I.fillField('form#user_form input[name="name"]', 'Value');
-          I.fillField('#content-top #user_name', 'Value');
-          I.fillField('#content-bottom #user_name', 'Value');
-          I.fillField('#content-top form input[name="name"]', 'Value');
-          I.fillField('//html/body//[@id="content-top"]//form//input[@name="name"]', 'Value');
-          I.fillField('//html/body//[@id="content-bottom"]//form//input[@name="name"]', 'Value');
-        </good locator example>
-
-        <bad locator example>
-          I.fillField('//html/body/div[2]/div[2]/div/form/input[@name="name"]', 'Value');
-          I.fillField('//html/body/div[2]/div[2]/div/form/input[@name="name"]', 'Value');
-        </bad locator example>
-
-        Solutions should be different, do not repeat the same locator in different solutions.
+        ${generalLocatorRuleText}
       </locators>
     `;
   }
@@ -310,11 +251,8 @@ class Navigator {
     if (!context?.experience.length) return '';
 
     let experienceContent = context?.experience.join('\n\n---\n\n');
-    experienceContent =
-      await this.experienceCompactor.compactExperience(experienceContent);
-    tag('substep').log(
-      `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
-    );
+    experienceContent = await this.experienceCompactor.compactExperience(experienceContent);
+    tag('substep').log(`Found ${context.experience.length} experience file(s) for: ${context.state.url}`);
 
     return dedent`
       <experience>
@@ -473,6 +411,88 @@ class Navigator {
     </actions>
     `;
   }
+
+  private async isTaskCompleted(message: string, actionResult: ActionResult): Promise<boolean> {
+    // Simple implementation - can be enhanced later
+    // For now, consider task completed if no errors occurred
+    return !actionResult.error;
+  }
+
+  async visit(url: string, explorer: any): Promise<void> {
+    try {
+      const action = explorer.createAction();
+
+      await action.execute(`I.amOnPage('${url}')`);
+      await action.expect(`I.seeInCurrentUrl('${url}')`);
+
+      if (action.lastError) {
+        await this.resolveNavigation(action, url, explorer);
+      }
+    } catch (error) {
+      console.error(`Failed to visit page ${url}:`, error);
+      throw error;
+    }
+  }
+
+  private async resolveNavigation(action: any, url: string, explorer: any): Promise<void> {
+    const stateManager = explorer.getStateManager();
+    const actionResult = action.getActionResult() || ActionResult.fromState(stateManager.getCurrentState()!);
+    const maxAttempts = 5;
+
+    const originalMessage = `
+      I tried to navigate to: ${url}
+      And I expected to see the URL in the browser
+      But I got error: ${action.lastError?.message || 'Navigation failed'}.
+    `.trim();
+
+    tag('info').log('Resolving navigation issue...');
+
+    const codeBlocks: string[] = [];
+
+    await loop(async ({ stop, iteration }) => {
+      if (codeBlocks.length === 0) {
+        const aiResponse = await this.resolveState(originalMessage, actionResult, stateManager.getCurrentContext());
+
+        const blocks = extractCodeBlocks(aiResponse || '');
+        if (blocks.length === 0) {
+          stop();
+          return;
+        }
+        codeBlocks.push(...blocks);
+      }
+
+      const codeBlock = codeBlocks.shift()!;
+
+      try {
+        tag('step').log(`Attempting resolution: ${codeBlock}`);
+        await action.execute(codeBlock);
+        await action.expect(`I.seeInCurrentUrl('${url}')`);
+
+        if (!action.lastError) {
+          tag('success').log('Navigation resolved successfully');
+          stop();
+          return;
+        }
+      } catch (error) {
+        debugLog(`Resolution attempt ${iteration} failed:`, error);
+      }
+    }, maxAttempts);
+  }
 }
 
 export { Navigator };
+
+function extractCodeBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  const regex = /```(?:js|javascript)?\s*\n([\s\S]*?)```/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    const code = match[1].trim();
+    if (code && !code.includes('throw new Error')) {
+      blocks.push(code);
+    }
+  }
+
+  return blocks;
+}

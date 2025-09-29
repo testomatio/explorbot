@@ -82,12 +82,18 @@ interface DirsConfig {
   output: string;
 }
 
+interface ActionConfig {
+  delay?: number;
+  retries?: number;
+}
+
 interface ExplorbotConfig {
   playwright: PlaywrightConfig;
   app: AppConfig;
   output: OutputConfig;
   test: TestConfig;
   ai: AIConfig;
+  action?: ActionConfig;
   html?: HtmlConfig;
   dirs?: DirsConfig;
 }
@@ -109,15 +115,7 @@ const config: ExplorbotConfig = {
       width: 1200,
       height: 900,
     },
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-    ],
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-gpu'],
   },
 
   app: {
@@ -177,6 +175,12 @@ const config: ExplorbotConfig = {
     streaming: true,
     retryAttempts: 3,
     retryDelay: 1000,
+  },
+
+  // Action configuration
+  action: {
+    delay: 1000, // Delay between actions in milliseconds
+    retries: 3, // Number of retry attempts for failed actions
   },
 
   // Optional HTML parsing configuration
@@ -247,13 +251,4 @@ const config: ExplorbotConfig = {
 };
 
 export default config;
-export type {
-  ExplorbotConfig,
-  PlaywrightConfig,
-  AppConfig,
-  OutputConfig,
-  TestConfig,
-  AIConfig,
-  HtmlConfig,
-  DirsConfig,
-};
+export type { ExplorbotConfig, PlaywrightConfig, AppConfig, OutputConfig, TestConfig, AIConfig, ActionConfig, HtmlConfig, DirsConfig };

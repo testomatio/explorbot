@@ -11,12 +11,7 @@ interface InputPaneProps {
   onCommandStart?: () => void;
 }
 
-const InputPane: React.FC<InputPaneProps> = ({
-  commandHandler,
-  exitOnEmptyInput = false,
-  onSubmit,
-  onCommandStart,
-}) => {
+const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput = false, onSubmit, onCommandStart }) => {
   const [inputValue, setInputValue] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -44,10 +39,7 @@ const InputPane: React.FC<InputPaneProps> = ({
       onCommandStart?.();
 
       // Check if this is a command (starts with / or I.) or is 'exit'
-      const isCommand =
-        trimmedValue.startsWith('/') ||
-        trimmedValue.startsWith('I.') ||
-        trimmedValue === 'exit';
+      const isCommand = trimmedValue.startsWith('/') || trimmedValue.startsWith('I.') || trimmedValue === 'exit';
 
       if (isCommand) {
         // Execute as command directly
@@ -105,17 +97,13 @@ const InputPane: React.FC<InputPaneProps> = ({
     // Handle autocomplete navigation
     if (key.upArrow && showAutocomplete) {
       const filteredCommands = commandHandler.getFilteredCommands(inputValue);
-      setSelectedIndex((prev) =>
-        prev > 0 ? prev - 1 : filteredCommands.length - 1
-      );
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filteredCommands.length - 1));
       return;
     }
 
     if (key.downArrow && showAutocomplete) {
       const filteredCommands = commandHandler.getFilteredCommands(inputValue);
-      setSelectedIndex((prev) =>
-        prev < filteredCommands.length - 1 ? prev + 1 : 0
-      );
+      setSelectedIndex((prev) => (prev < filteredCommands.length - 1 ? prev + 1 : 0));
       return;
     }
 
@@ -134,36 +122,23 @@ const InputPane: React.FC<InputPaneProps> = ({
 
     if (key.backspace || key.delete) {
       if (cursorPosition > 0) {
-        const newValue =
-          inputValue.slice(0, cursorPosition - 1) +
-          inputValue.slice(cursorPosition);
+        const newValue = inputValue.slice(0, cursorPosition - 1) + inputValue.slice(cursorPosition);
         setInputValue(newValue);
         setCursorPosition(Math.max(0, cursorPosition - 1));
         setSelectedIndex(0);
         setAutoCompleteTriggered(false);
-        setShowAutocomplete(
-          newValue.startsWith('/') ||
-            newValue.startsWith('I.') ||
-            newValue.startsWith('exit')
-        );
+        setShowAutocomplete(newValue.startsWith('/') || newValue.startsWith('I.') || newValue.startsWith('exit'));
       }
       return;
     }
 
     if (input && input.length === 1) {
-      const newValue =
-        inputValue.slice(0, cursorPosition) +
-        input +
-        inputValue.slice(cursorPosition);
+      const newValue = inputValue.slice(0, cursorPosition) + input + inputValue.slice(cursorPosition);
       setInputValue(newValue);
       setCursorPosition(cursorPosition + 1);
       setSelectedIndex(0);
       setAutoCompleteTriggered(false);
-      setShowAutocomplete(
-        newValue.startsWith('/') ||
-          newValue.startsWith('I.') ||
-          newValue.startsWith('exit')
-      );
+      setShowAutocomplete(newValue.startsWith('/') || newValue.startsWith('I.') || newValue.startsWith('exit'));
     }
   });
 

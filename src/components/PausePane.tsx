@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { recorder, store, container, output } from 'codeceptjs';
+import chalk from 'chalk';
+import { container, output, recorder, store } from 'codeceptjs';
 import { Box, Text } from 'ink';
+import React, { useState, useEffect } from 'react';
+import { createDebug, getMethodsOfObject, log } from '../utils/logger.ts';
 // import InputPane from './InputPane.js';
 import AutocompleteInput from './AutocompleteInput.js';
-import { log, getMethodsOfObject, createDebug } from '../utils/logger.ts';
-import chalk from 'chalk';
 
 const debug = createDebug('pause');
 
@@ -26,10 +26,7 @@ const resetGlobalState = () => {
  *   onExit: a callback to signal that the pause session should finish.
  *   onCommandSubmit: a callback to signal that a command was submitted.
  */
-const PausePane = ({
-  onExit,
-  onCommandSubmit,
-}: { onExit: () => void; onCommandSubmit?: () => void }) => {
+const PausePane = ({ onExit, onCommandSubmit }: { onExit: () => void; onCommandSubmit?: () => void }) => {
   let finish;
   let next;
 
@@ -43,36 +40,10 @@ const PausePane = ({
     try {
       const I = container.support('I');
       const cmdList = getMethodsOfObject(I);
-      setCommands(
-        cmdList.length > 0
-          ? cmdList
-          : [
-              'amOnPage',
-              'click',
-              'fillField',
-              'see',
-              'dontSee',
-              'seeElement',
-              'dontSeeElement',
-              'waitForElement',
-              'selectOption',
-              'checkOption',
-            ]
-      );
+      setCommands(cmdList.length > 0 ? cmdList : ['amOnPage', 'click', 'fillField', 'see', 'dontSee', 'seeElement', 'dontSeeElement', 'waitForElement', 'selectOption', 'checkOption']);
     } catch (err) {
       // Fallback to predefined commands if container fails
-      setCommands([
-        'amOnPage',
-        'click',
-        'fillField',
-        'see',
-        'dontSee',
-        'seeElement',
-        'dontSeeElement',
-        'waitForElement',
-        'selectOption',
-        'checkOption',
-      ]);
+      setCommands(['amOnPage', 'click', 'fillField', 'see', 'dontSee', 'seeElement', 'dontSeeElement', 'waitForElement', 'selectOption', 'checkOption']);
     }
   }, []);
   // Handle the submission of a command
@@ -81,11 +52,7 @@ const PausePane = ({
     recorder.session.start('pause');
 
     // If blank or "exit" or "resume" is entered, exit the pause session
-    if (
-      cmd.trim() === '' ||
-      cmd.trim().toLowerCase() === 'exit' ||
-      cmd.trim().toLowerCase() === 'resume'
-    ) {
+    if (cmd.trim() === '' || cmd.trim().toLowerCase() === 'exit' || cmd.trim().toLowerCase() === 'resume') {
       recorder.session.restore('pause');
       onExit();
       return;
@@ -141,37 +108,17 @@ const PausePane = ({
   };
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor="yellow"
-      flexGrow={1}
-      padding={1}
-      marginTop={1}
-    >
+    <Box flexDirection="column" borderStyle="round" borderColor="yellow" flexGrow={1} padding={1} marginTop={1}>
       {!command.trim() && (
         <>
           <Text color="yellow">Interactive shell started</Text>
-          <Text color="yellow">
-            Use JavaScript syntax to try steps in action
-          </Text>
-          <Text color="yellow">
-            - Press ENTER on a blank line, or type "exit" or "resume" to exit
-          </Text>
-          <Text color="yellow">
-            - Prefix commands with &quot;=&gt;&quot; for custom commands
-          </Text>
+          <Text color="yellow">Use JavaScript syntax to try steps in action</Text>
+          <Text color="yellow">- Press ENTER on a blank line, or type "exit" or "resume" to exit</Text>
+          <Text color="yellow">- Prefix commands with &quot;=&gt;&quot; for custom commands</Text>
         </>
       )}
       <Box marginTop={1}>
-        <AutocompleteInput
-          value={command}
-          onChange={setCommand}
-          onSubmit={handleSubmit}
-          placeholder="Enter command..."
-          suggestions={commands}
-          showAutocomplete={true}
-        />
+        <AutocompleteInput value={command} onChange={setCommand} onSubmit={handleSubmit} placeholder="Enter command..." suggestions={commands} showAutocomplete={true} />
         {/* <InputPane
           value={command}
           onChange={setCommand}

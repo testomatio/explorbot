@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
 import micromatch from 'micromatch';
-import { minifyHtml, removeNonInteractiveElements } from 'codeceptjs/lib/html';
+import { ConfigParser, type HtmlConfig } from './config.ts';
 import type { WebPageState } from './state-manager.ts';
+import { htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
 
 const debugLog = createDebug('explorbot:action-state');
@@ -22,17 +23,17 @@ interface ActionResultData {
 }
 
 export class ActionResult {
-  public html: string;
+  public html = '';
   public readonly screenshot: Buffer | null | undefined;
-  public readonly title: string;
-  public readonly error: string | null;
-  public readonly timestamp: Date;
-  public readonly h1: string | null;
-  public readonly h2: string | null;
-  public readonly h3: string | null;
-  public readonly h4: string | null;
-  public readonly url: string | null;
-  public readonly browserLogs: any[];
+  public readonly title: string = '';
+  public readonly error: string | null = null;
+  public readonly timestamp: Date = new Date();
+  public readonly h1: string | null = null;
+  public readonly h2: string | null = null;
+  public readonly h3: string | null = null;
+  public readonly h4: string | null = null;
+  public readonly url: string | null = null;
+  public readonly browserLogs: any[] = [];
 
   constructor(data: ActionResultData) {
     const defaults = {
@@ -54,6 +55,10 @@ export class ActionResult {
     // Automatically save artifacts when ActionResult is created
     this.saveBrowserLogs();
     this.saveHtmlOutput();
+
+    if (this.url) {
+      this.url = this.extractStatePath(this.url);
+    }
   }
 
   /**
@@ -94,44 +99,35 @@ export class ActionResult {
     return headings;
   }
 
+  isSameUrl(state: WebPageState): boolean {
+    if (!this.url) {
+      return false;
+    }
+    return this.extractStatePath(state.url) === this.extractStatePath(this.url);
+  }
+
   isMatchedBy(state: WebPageState): boolean {
-    let isRelevant = false;
     if (!this.url) {
       return false;
     }
 
-    isRelevant = this.matchesPattern(
-      this.extractStatePath(state.url),
-      this.extractStatePath(this.url)
-    );
+    const isRelevant = this.matchesPattern(this.extractStatePath(state.url), this.extractStatePath(this.url));
     if (!isRelevant) {
       return false;
     }
-    if (
-      isRelevant &&
-      state.h1 &&
-      this.h1 &&
-      this.matchesPattern(state.h1, this.h1)
-    ) {
-      isRelevant = true;
+
+    // If headings are provided in state, they must match
+    if (state.h1 && this.h1 && !this.matchesPattern(this.h1, state.h1)) {
+      return false;
     }
-    if (
-      isRelevant &&
-      state.h2 &&
-      this.h2 &&
-      this.matchesPattern(state.h2, this.h2)
-    ) {
-      isRelevant = true;
+    if (state.h2 && this.h2 && !this.matchesPattern(this.h2, state.h2)) {
+      return false;
     }
-    if (
-      isRelevant &&
-      state.h3 &&
-      this.h3 &&
-      this.matchesPattern(state.h3, this.h3)
-    ) {
-      isRelevant = true;
+    if (state.h3 && this.h3 && !this.matchesPattern(this.h3, state.h3)) {
+      return false;
     }
-    return isRelevant;
+
+    return true;
   }
 
   private extractStatePath(url: string): string {
@@ -146,8 +142,27 @@ export class ActionResult {
     }
   }
 
-  async simplifiedHtml(): Promise<string> {
-    return await minifyHtml(removeNonInteractiveElements(this.html));
+  async simplifiedHtml(htmlConfig?: HtmlConfig): Promise<string> {
+    const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
+    return htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal);
+  }
+
+  async combinedHtml(htmlConfig?: HtmlConfig): Promise<string> {
+    const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
+    return htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined);
+  }
+
+  async textHtml(htmlConfig?: HtmlConfig): Promise<string> {
+    const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
+    return htmlTextSnapshot(this.html ?? '', normalizedConfig?.text);
+  }
+
+  private normalizeHtmlConfig(htmlConfig?: HtmlConfig): HtmlConfig | undefined {
+    if (htmlConfig) {
+      return htmlConfig;
+    }
+    const parser = ConfigParser.getInstance();
+    return parser.getConfig().html;
   }
 
   static fromState(state: WebPageState): ActionResult {
@@ -195,9 +210,7 @@ export class ActionResult {
     }
   }
 
-  private static loadScreenshotFromFile(
-    screenshotFile: string
-  ): Buffer | undefined {
+  private static loadScreenshotFromFile(screenshotFile: string): Buffer | undefined {
     try {
       const filePath = join('output', screenshotFile);
       if (fs.existsSync(filePath)) {
@@ -379,12 +392,20 @@ export class ActionResult {
    * Supports multiple modes:
    * - If pattern starts with '^', treat as regex: ^/user/\d+$
    * - If pattern starts and ends with '~', treat as regex: ~/user/\d+~
+   * - Special handling for /* patterns to match both exact path and sub-paths
    * - Otherwise, use glob matching via micromatch with advanced patterns
    * Can be extended to match h1, h2, h3, title, etc.
    */
   private matchesPattern(pattern: string, actualValue: string): boolean {
     if (pattern === '*') return true;
     if (pattern?.toLowerCase() === actualValue?.toLowerCase()) return true;
+
+    // Special handling for /* patterns - they should match both exact path and sub-paths
+    if (pattern.endsWith('/*')) {
+      const basePattern = pattern.slice(0, -2); // Remove /*
+      if (actualValue === basePattern) return true;
+      if (actualValue.startsWith(basePattern + '/')) return true;
+    }
 
     // If pattern starts with '^', treat as regex
     if (pattern.startsWith('^')) {
@@ -399,11 +420,7 @@ export class ActionResult {
     }
 
     // If pattern starts and ends with '~', treat as regex
-    if (
-      pattern.startsWith('~') &&
-      pattern.endsWith('~') &&
-      pattern.length > 2
-    ) {
+    if (pattern.startsWith('~') && pattern.endsWith('~') && pattern.length > 2) {
       try {
         const regexPattern = pattern.slice(1, -1);
         const regex = new RegExp(regexPattern);
