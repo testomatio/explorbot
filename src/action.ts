@@ -15,33 +15,26 @@ import type { UserResolveFunction } from './explorbot.ts';
 import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { createDebug, log, tag } from './utils/logger.js';
-import { loop } from './utils/loop.js';
 
 const debugLog = createDebug('explorbot:action');
 
 class Action {
-  private MAX_ATTEMPTS = 5;
-
   private actor: CodeceptJS.I;
-  private stateManager: StateManager;
+  public stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
-  private actionResult: ActionResult | null = null;
-  private navigator: Navigator | null = null;
+  public actionResult: ActionResult | null = null;
   private config: ExplorbotConfig;
-  private userResolveFn: UserResolveFunction | null = null;
 
   // action info
   private action: string | null = null;
   private expectation: string | null = null;
-  private lastError: Error | null = null;
+  public lastError: Error | null = null;
 
-  constructor(actor: CodeceptJS.I, provider: Provider, stateManager: StateManager, userResolveFn?: UserResolveFunction) {
+  constructor(actor: CodeceptJS.I, stateManager: StateManager) {
     this.actor = actor;
-    this.navigator = new Navigator(provider);
     this.experienceTracker = new ExperienceTracker();
     this.stateManager = stateManager;
     this.config = ConfigParser.getInstance().getConfig();
-    this.userResolveFn = userResolveFn || null;
   }
 
   private async capturePageState(): Promise<{
@@ -149,17 +142,24 @@ class Action {
     }
   }
 
-  async execute(codeString: string): Promise<Action> {
+  async execute(codeOrFunction: string | ((I: CodeceptJS.I) => void)): Promise<Action> {
     let error: Error | null = null;
 
     setActivity(`🔎 Browsing...`, 'action');
 
-    if (!codeString.startsWith('//')) tag('step').log(highlight(codeString, { language: 'javascript' }));
+    const codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
+    tag('step').log(highlight(codeString, { language: 'javascript' }));
     try {
-      this.action = codeString;
       debugLog('Executing action:', codeString);
-      const codeFunction = new Function('I', codeString);
+
+      let codeFunction: any;
+      if (typeof codeOrFunction === 'function') {
+        codeFunction = codeOrFunction;
+      } else {
+        codeFunction = new Function('I', codeString);
+      }
       codeFunction(this.actor);
+
       await recorder.add(() => sleep(this.config.action?.delay || 500)); // wait for the action to be executed
       await recorder.promise();
 
@@ -204,12 +204,19 @@ class Action {
     return this;
   }
 
-  async expect(codeString: string): Promise<Action> {
-    this.expectation = codeString;
+  async expect(codeOrFunction: string | ((I: CodeceptJS.I) => void)): Promise<Action> {
+    const codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
+    this.expectation = codeString.toString();
     log('Expecting', highlight(codeString, { language: 'javascript' }));
     try {
       debugLog('Executing expectation:', codeString);
-      const codeFunction = new Function('I', codeString);
+
+      let codeFunction: any;
+      if (typeof codeOrFunction === 'function') {
+        codeFunction = codeOrFunction;
+      } else {
+        codeFunction = new Function('I', codeString);
+      }
       codeFunction(this.actor);
       await recorder.promise();
       debugLog('Expectation executed successfully');
@@ -275,85 +282,6 @@ class Action {
     }
   }
 
-  async resolve(condition?: (result: ActionResult) => boolean, message?: string, maxAttempts?: number): Promise<Action> {
-    if (!this.lastError) {
-      return this;
-    }
-
-    if (!maxAttempts) {
-      maxAttempts = this.config.action?.retries || this.config.ai.maxAttempts || this.MAX_ATTEMPTS;
-    }
-
-    setActivity(`🤔 Thinking...`, 'action');
-
-    const originalMessage = `
-      I tried to: ${this.action}
-      And I expected that ${this.expectation}
-      But I got error: ${errorToString(this.lastError)}.
-
-      ${message || ''}
-    `.trim();
-
-    debugLog('Original message:', originalMessage);
-
-    log('Resolving', errorToString(this.lastError));
-
-    const actionResult = this.actionResult || ActionResult.fromState(this.stateManager.getCurrentState()!);
-
-    if (condition && !condition(actionResult)) {
-      debugLog('Condition', condition.toString());
-      debugLog('Condition is false, skipping resolution');
-      clearActivity();
-      return this;
-    }
-
-    log(`Starting iterative resolution (Max attempts: ${maxAttempts.toString()})`);
-
-    let codeBlocks: string[] = [];
-
-    const result = await loop(async ({ stop, iteration }) => {
-      let intention = originalMessage;
-
-      if (codeBlocks.length === 0) {
-        const aiResponse = await this.navigator?.resolveState(originalMessage, actionResult, this.stateManager.getCurrentContext());
-
-        const aiMessage = aiResponse?.split('\n')[0];
-        if (!aiMessage?.startsWith('```')) {
-          intention = aiMessage || '';
-        }
-
-        codeBlocks = extractCodeBlocks(aiResponse || '');
-
-        if (codeBlocks.length === 0) {
-          stop();
-          return;
-        }
-      }
-
-      const codeBlock = codeBlocks.shift()!;
-      const success = await this.attempt(codeBlock, iteration, intention);
-
-      if (success) {
-        stop();
-        return this;
-      }
-    }, maxAttempts);
-
-    if (result) {
-      return result;
-    }
-
-    const errorMessage = `Failed to resolve issue after ${maxAttempts} attempts. Original issue: ${originalMessage}. Please check the experience folder for details of failed attempts and resolve manually.`;
-
-    debugLog(errorMessage);
-
-    if (!this.userResolveFn) {
-      return this;
-    }
-
-    this.userResolveFn(this.lastError!);
-  }
-
   getActor(): CodeceptJS.I {
     return this.actor;
   }
@@ -368,10 +296,6 @@ class Action {
 
   getActionResult(): ActionResult | null {
     return this.actionResult;
-  }
-
-  getStateManager(): StateManager {
-    return this.stateManager;
   }
 }
 

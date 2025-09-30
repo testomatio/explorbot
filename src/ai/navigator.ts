@@ -1,32 +1,28 @@
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
+import { ExperienceTracker } from '../experience-tracker.js';
+import { KnowledgeTracker } from '../knowledge-tracker.js';
 import type { WebPageState } from '../state-manager.js';
 import { createDebug, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
+import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
 import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
-import { createCodeceptJSTools } from './tools.js';
+import { extractCodeBlocks } from '../utils/code-extractor.js';
+import Explorer from '../explorer.ts';
 
 const debugLog = createDebug('explorbot:navigator');
-
-export interface StateContext {
-  state: WebPageState;
-  knowledge: Array<{ filePath: string; content: string }>;
-  experience: string[];
-  recentTransitions: Array<{
-    fromState: WebPageState | null;
-    toState: WebPageState;
-    codeBlock: string;
-  }>;
-  html?: string;
-}
 
 class Navigator implements Agent {
   emoji = '🧭';
   private provider: Provider;
   private experienceCompactor: ExperienceCompactor;
+  private knowledgeTracker: KnowledgeTracker;
+  private experienceTracker: ExperienceTracker;
+  private currentAction: any = null;
+  private currentUrl: string | null = null;
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
 
@@ -40,33 +36,77 @@ class Navigator implements Agent {
     You need to resolve the state of the page based on the message.
   </task>
   `;
+  private explorer: Explorer;
 
-  constructor(provider: Provider) {
+  constructor(explorer: Explorer, provider: Provider, experienceCompactor: ExperienceCompactor) {
     this.provider = provider;
-    this.experienceCompactor = new ExperienceCompactor(provider);
+    this.explorer = explorer;
+    this.experienceCompactor = experienceCompactor;
+    this.knowledgeTracker = new KnowledgeTracker();
+    this.experienceTracker = new ExperienceTracker();
   }
 
-  async resolveState(message: string, actionResult: ActionResult, context?: StateContext): Promise<string> {
-    const state = context?.state;
-    if (!state) {
-      throw new Error('State is required');
-    }
+  async visit(url: string): Promise<void> {
+    try {
+      const action = this.explorer.createAction();
 
-    tag('info').log('AI Navigator resolving state at', state.url);
+      await action.execute(`I.amOnPage('${url}')`);
+      await action.expect(`I.seeInCurrentUrl('${url}')`);
+
+      if (action.lastError) {
+        const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
+        const originalMessage = `
+          I tried to navigate to: ${url}
+          And I expected to see the URL in the browser
+          But I got error: ${action.lastError?.message || 'Navigation failed'}.
+        `.trim();
+
+        // Store action and url for execution in resolveState
+        this.currentAction = action;
+        this.currentUrl = url;
+        await this.resolveState(originalMessage, actionResult);
+      }
+    } catch (error) {
+      console.error(`Failed to visit page ${url}:`, error);
+      throw error;
+    }
+  }
+
+  async resolveState(message: string, actionResult: ActionResult): Promise<boolean> {
+    tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
 
     let knowledge = '';
+    let experience = '';
 
-    if (context?.knowledge.length > 0) {
-      const knowledgeContent = context.knowledge.map((k) => k.content).join('\n\n');
-
-      tag('substep').log(`Found ${context.knowledge.length} relevant knowledge file(s) for: ${context.state.url}`);
+    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(actionResult);
+    if (relevantKnowledge.length > 0) {
+      const knowledgeContent = relevantKnowledge.map((k) => k.content).join('\n\n');
       knowledge = `
-        <hint>
-        Here is relevant knowledge for this page:
+      <hint>
+      Here is relevant knowledge for this page:
+      ${knowledgeContent}
+      </hint>`;
+    }
 
-        ${knowledgeContent}
-        </hint>`;
+    const relevantExperience = this.experienceTracker.getRelevantExperience(actionResult).map((experience) => experience.content);
+
+    if (relevantExperience.length > 0) {
+      const experienceContent = relevantExperience.join('\n\n---\n\n');
+      experience = await this.experienceCompactor.compactExperience(experienceContent);
+      tag('substep').log(`Found ${relevantExperience.length} experience file(s) for: ${actionResult.url}`);
+
+      experience = dedent`
+      <experience>
+      Here is the experience of interacting with the page.
+      Learn from it to not repeat the same mistakes.
+      If there was found successful solution to an issue, propose it as a first solution.
+      If there is no successful solution, analyze failed intentions and actions and propose new solutions.
+      Focus on successful solutions and avoid failed locators.
+
+      ${experienceContent}
+
+      </experience>`;
     }
 
     const prompt = dedent`
@@ -96,7 +136,7 @@ class Navigator implements Agent {
 
       ${knowledge}
 
-      ${await this.experienceRule(context)}
+      ${experience}
 
       ${this.actionRule()}
 
@@ -107,165 +147,53 @@ class Navigator implements Agent {
 
     tag('debug').log('Prompt:', prompt);
 
-    const response = await this.provider.chat([
-      { role: 'user', content: this.systemPrompt },
-      { role: 'user', content: prompt },
-    ]);
+    const conversation = this.provider.startConversation(this.systemPrompt);
+    conversation.addUserText(prompt);
 
-    const aiResponse = response.text;
+    let codeBlocks: string[] = [];
 
-    tag('info').log(aiResponse.split('\n')[0]);
+    let resolved = false;
+    await loop(
+      async ({ stop, iteration }) => {
+        if (codeBlocks.length === 0) {
+          const result = await this.provider.invokeConversation(conversation);
+          if (!result) return;
+          const aiResponse = result?.response?.text;
+          tag('info').log(this.emoji, aiResponse?.split('\n')[0]);
+          debugLog('Received AI response:', aiResponse.length, 'characters');
+          tag('step').log(this.emoji, 'Resolving navigation issue...');
+          codeBlocks = extractCodeBlocks(aiResponse ?? '');
+        }
 
-    debugLog('Received AI response:', aiResponse.length, 'characters');
+        if (codeBlocks.length === 0) {
+          return;
+        }
 
-    return aiResponse;
-  }
+        const codeBlock = codeBlocks[iteration - 1];
+        if (!codeBlock) {
+          stop();
+          return;
+        }
 
-  async changeState(message: string, actionResult: ActionResult, context?: StateContext, actor?: any): Promise<ActionResult> {
-    const state = context?.state;
-    if (!state) {
-      throw new Error('State is required');
-    }
+        tag('step').log(this.emoji, `Attempting resolution: ${codeBlock}`);
+        resolved = await this.currentAction.attempt(codeBlock, iteration, message);
 
-    if (!actor) {
-      throw new Error('CodeceptJS actor is required for changeState');
-    }
-
-    tag('info').log('AI Navigator changing state for:', state.url);
-    debugLog('Change message:', message);
-
-    const tools = createCodeceptJSTools(actor);
-
-    const systemPrompt = dedent`
-      <role>
-        You are a senior web automation engineer with expertise in CodeceptJS.
-        Your task is to interact with web pages using available tools to achieve user goals.
-      </role>
-      <approach>
-        Analyze the page state, plan your actions, then execute them step by step.
-        Be methodical and precise in your interactions.
-        After each action, you'll automatically receive the updated page state.
-        Use this feedback to decide your next actions dynamically.
-        Continue until the task is complete or you determine it cannot be completed.
-
-        Use click() for buttons, links, and clickable elements.
-        Use type() for text input - you can specify a locator to focus first, or type without locator for active element.
-      </approach>
-    `;
-
-    const userPrompt = dedent`
-      <message>
-        ${message}
-      </message>
-
-      <task>
-        You need to perform actions on the current web page to fulfill the user's request.
-        Use the provided tools (click and type) to interact with the page.
-
-        Each tool call will automatically return the new page state after the action.
-        Use this feedback to dynamically plan your next steps.
-        Continue making tool calls until the task is completed.
-      </task>
-
-      <current_page>
-        ${actionResult.toAiContext()}
-
-        HTML:
-        ${await actionResult.simplifiedHtml()}
-      </current_page>
-    `;
-
-    try {
-      // Use AI SDK's native tool calling with automatic roundtrips
-      tag('info').log('🤖 Starting AI dynamic navigation with tool calling');
-      const response = await this.provider.generateWithTools(
-        [
-          { role: 'user', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        tools,
-        { maxToolRoundtrips: 5 }
-      );
-
-      tag('success').log('Dynamic tool calling completed');
-      debugLog('Final AI response:', response.text);
-
-      // Capture final page state
-      const finalActionResult = await this.capturePageState(actor);
-
-      // Check if task was completed
-      const taskCompleted = await this.isTaskCompleted(message, finalActionResult);
-      if (taskCompleted) {
-        tag('success').log('Task completed successfully');
-      } else {
-        tag('warning').log('Task may not be fully completed');
+        if (resolved) {
+          tag('success').log(this.emoji, 'Navigation resolved successfully');
+          stop();
+          return;
+        }
+      },
+      {
+        maxAttempts: this.MAX_ATTEMPTS,
+        catch: async (error) => {
+          debugLog(error);
+          resolved = false;
+        },
       }
+    );
 
-      return finalActionResult;
-    } catch (error) {
-      tag('error').log('Error during dynamic tool calling:', error);
-
-      // Return current state as fallback
-      return await this.capturePageState(actor);
-    }
-  }
-
-  private async capturePageState(actor: any): Promise<ActionResult> {
-    try {
-      const url = await actor.grabCurrentUrl();
-      const title = await actor.grabTitle();
-      const html = await actor.grabHTMLFrom('body');
-
-      // Try to get screenshot if possible
-      let screenshot = null;
-      try {
-        screenshot = await actor.saveScreenshot();
-      } catch (error) {
-        debugLog('Could not capture screenshot:', error);
-      }
-
-      return new ActionResult({
-        url,
-        title,
-        html,
-        screenshot,
-        timestamp: new Date(),
-      });
-    } catch (error) {
-      throw new Error(`Failed to capture page state: ${error}`);
-    }
-  }
-
-  private locatorRule(): string {
-    return dedent`
-      <locators>
-
-        ${multipleLocatorRule}
-
-        ${generalLocatorRuleText}
-      </locators>
-    `;
-  }
-
-  private async experienceRule(context: StateContext): Promise<string> {
-    if (!context?.experience.length) return '';
-
-    let experienceContent = context?.experience.join('\n\n---\n\n');
-    experienceContent = await this.experienceCompactor.compactExperience(experienceContent);
-    tag('substep').log(`Found ${context.experience.length} experience file(s) for: ${context.state.url}`);
-
-    return dedent`
-      <experience>
-      Here is the experience of interacting with the page.
-      Learn from it to not repeat the same mistakes.
-      If there was found successful solution to an issue, propose it as a first solution.
-      If there is no successful solution, analyze failed intentions and actions and propose new solutions.
-      Focus on successful solutions and avoid failed locators.
-
-      ${experienceContent}
-
-      </experience>
-    `;
+    return resolved;
   }
 
   private outputRule(): string {
@@ -286,7 +214,10 @@ class Navigator implements Agent {
       Check previous solutions, if there is already successful solution, use it!
       CodeceptJS code must start with "I."
       All lines of code must be CodeceptJS code and start with "I."
-      ${this.locatorRule()}
+
+      ${multipleLocatorRule}
+
+      ${generalLocatorRuleText}
       </rules>
 
       <output>
@@ -411,88 +342,6 @@ class Navigator implements Agent {
     </actions>
     `;
   }
-
-  private async isTaskCompleted(message: string, actionResult: ActionResult): Promise<boolean> {
-    // Simple implementation - can be enhanced later
-    // For now, consider task completed if no errors occurred
-    return !actionResult.error;
-  }
-
-  async visit(url: string, explorer: any): Promise<void> {
-    try {
-      const action = explorer.createAction();
-
-      await action.execute(`I.amOnPage('${url}')`);
-      await action.expect(`I.seeInCurrentUrl('${url}')`);
-
-      if (action.lastError) {
-        await this.resolveNavigation(action, url, explorer);
-      }
-    } catch (error) {
-      console.error(`Failed to visit page ${url}:`, error);
-      throw error;
-    }
-  }
-
-  private async resolveNavigation(action: any, url: string, explorer: any): Promise<void> {
-    const stateManager = explorer.getStateManager();
-    const actionResult = action.getActionResult() || ActionResult.fromState(stateManager.getCurrentState()!);
-    const maxAttempts = 5;
-
-    const originalMessage = `
-      I tried to navigate to: ${url}
-      And I expected to see the URL in the browser
-      But I got error: ${action.lastError?.message || 'Navigation failed'}.
-    `.trim();
-
-    tag('info').log('Resolving navigation issue...');
-
-    const codeBlocks: string[] = [];
-
-    await loop(async ({ stop, iteration }) => {
-      if (codeBlocks.length === 0) {
-        const aiResponse = await this.resolveState(originalMessage, actionResult, stateManager.getCurrentContext());
-
-        const blocks = extractCodeBlocks(aiResponse || '');
-        if (blocks.length === 0) {
-          stop();
-          return;
-        }
-        codeBlocks.push(...blocks);
-      }
-
-      const codeBlock = codeBlocks.shift()!;
-
-      try {
-        tag('step').log(`Attempting resolution: ${codeBlock}`);
-        await action.execute(codeBlock);
-        await action.expect(`I.seeInCurrentUrl('${url}')`);
-
-        if (!action.lastError) {
-          tag('success').log('Navigation resolved successfully');
-          stop();
-          return;
-        }
-      } catch (error) {
-        debugLog(`Resolution attempt ${iteration} failed:`, error);
-      }
-    }, maxAttempts);
-  }
 }
 
 export { Navigator };
-
-function extractCodeBlocks(text: string): string[] {
-  const blocks: string[] = [];
-  const regex = /```(?:js|javascript)?\s*\n([\s\S]*?)```/g;
-  let match;
-
-  while ((match = regex.exec(text)) !== null) {
-    const code = match[1].trim();
-    if (code && !code.includes('throw new Error')) {
-      blocks.push(code);
-    }
-  }
-
-  return blocks;
-}

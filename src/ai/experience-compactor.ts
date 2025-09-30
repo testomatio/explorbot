@@ -3,15 +3,20 @@ import matter from 'gray-matter';
 import { json } from 'zod';
 import { createDebug, log } from '../utils/logger.js';
 import type { Provider } from './provider.js';
+import type { ExperienceTracker } from '../experience-tracker.js';
+import type { Agent } from './agent.js';
 
 const debugLog = createDebug('explorbot:experience-compactor');
 
-export class ExperienceCompactor {
+export class ExperienceCompactor implements Agent {
+  emoji = '🗜️';
   private provider: Provider;
+  private experienceTracker: ExperienceTracker;
   private MAX_LENGTH = 5000;
 
-  constructor(provider: Provider) {
+  constructor(provider: Provider, experienceTracker: ExperienceTracker) {
     this.provider = provider;
+    this.experienceTracker = experienceTracker;
   }
 
   async compactExperience(experience: string): Promise<string> {
@@ -27,16 +32,35 @@ export class ExperienceCompactor {
     return response.text;
   }
 
+  async compactAllExperiences(): Promise<number> {
+    const experienceFiles = this.experienceTracker.getAllExperience();
+    let compactedCount = 0;
+
+    for (const experience of experienceFiles) {
+      const prevContent = experience.content;
+      const frontmatter = experience.data;
+      const compactedContent = await this.compactExperienceFile(experience.filePath);
+
+      if (prevContent !== compactedContent) {
+        const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
+        this.experienceTracker.writeExperienceFile(stateHash, compactedContent, frontmatter);
+        debugLog('Experience file compacted:', experience.filePath);
+        compactedCount++;
+      }
+    }
+
+    return compactedCount;
+  }
+
   async compactExperienceFile(filePath: string): Promise<string> {
     try {
       const fileContent = readFileSync(filePath, 'utf8');
       const parsed = matter(fileContent);
 
-      debugLog('Experience file to compact:', filePath);
-
       if (parsed.content.length < this.MAX_LENGTH) {
         return parsed.content;
       }
+      debugLog('Experience file to compact:', filePath);
 
       const text = await this.compactExperience(parsed.content);
 

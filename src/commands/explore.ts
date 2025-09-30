@@ -30,7 +30,7 @@ export async function exploreCommand(options: ExploreOptions) {
   };
 
   const explorBot = new ExplorBot(mainOptions);
-  await explorBot.loadConfig();
+  await explorBot.start();
 
   if (!process.stdin.isTTY) {
     console.error('Warning: Input not available. Running in non-interactive mode.');

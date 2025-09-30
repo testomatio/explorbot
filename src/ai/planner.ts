@@ -7,15 +7,18 @@ import type { ExperienceTracker } from '../experience-tracker.ts';
 import type { StateManager } from '../state-manager.js';
 import { createDebug, tag } from '../utils/logger.js';
 import type { Agent } from './agent.js';
+import { Conversation } from './conversation.ts';
 import type { Provider } from './provider.js';
+import { Researcher } from './researcher.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
 export interface Task {
   scenario: string;
-  status: 'pending' | 'completed' | 'failed';
+  status: 'pending' | 'in_progress' | 'success' | 'failed';
   priority: 'high' | 'medium' | 'low' | 'unknown';
   expectedOutcome: string;
+  logs: string[];
 }
 
 const TasksSchema = z.object({
@@ -66,25 +69,14 @@ export class Planner implements Agent {
     if (!state) throw new Error('No state found');
 
     const actionResult = ActionResult.fromState(state);
-    const prompt = this.buildPlanningPrompt(actionResult);
+    const conversation = await this.buildConversation(actionResult);
 
     tag('info').log(`Initiated planning for ${state.url} to create testing scenarios...`);
     setActivity('👨‍💻 Planning...', 'action');
 
-    const messages = [
-      { role: 'system' as const, content: this.getSystemMessage() },
-      { role: 'user' as const, content: prompt },
-    ];
-
-    if (state.researchResult) {
-      messages.push({ role: 'user' as const, content: state.researchResult });
-    }
-
-    messages.push({ role: 'user' as const, content: this.getTasksMessage() });
-
     debugLog('Sending planning prompt to AI provider with structured output');
 
-    const result = await this.provider.generateObject(messages, TasksSchema);
+    const result = await this.provider.generateObject(conversation.messages, TasksSchema);
 
     if (!result?.object?.scenarios || result.object.scenarios.length === 0) {
       throw new Error('No tasks were created successfully');
@@ -95,6 +87,7 @@ export class Planner implements Agent {
       status: 'pending' as const,
       priority: s.priority,
       expectedOutcome: s.expectedOutcome,
+      logs: [],
     }));
 
     debugLog('Created tasks:', tasks);
@@ -117,8 +110,12 @@ export class Planner implements Agent {
     return sortedTasks;
   }
 
-  private buildPlanningPrompt(state: ActionResult): string {
-    return dedent`Based on the previous research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios for this page.
+  private async buildConversation(state: ActionResult): Promise<Conversation> {
+    const conversation = new Conversation();
+
+    conversation.addUserText(this.getSystemMessage());
+
+    const planningPrompt = dedent`Based on the previous research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios for this page.
 
       When creating tasks:
       1. Assign priorities based on:
@@ -147,14 +144,24 @@ export class Planner implements Agent {
       URL: ${state.url || 'Unknown'}
       Title: ${state.title || 'Unknown'}
 
-      HTML:
-      ${state.simplifiedHtml}
+      Web Page Content:
+      ${await state.textHtml()}
       </context>
     `;
-  }
 
-  getTasksMessage(): string {
-    return dedent`
+    conversation.addUserText(planningPrompt);
+
+    const currentState = this.stateManager.getCurrentState();
+    if (!currentState) throw new Error('No state found');
+
+    if (!currentState.researchResult) {
+      const research = await new Researcher(this.explorer, this.provider).research();
+      conversation.addUserText(`Identified page elements: ${research}`);
+    } else {
+      conversation.addUserText(`Identified page elements: ${currentState.researchResult}`);
+    }
+
+    const tasksMessage = dedent`
     <task>
       Provide testing scenarios as structured data with the following requirements:
       1. Assign priorities based on:
@@ -170,5 +177,9 @@ export class Planner implements Agent {
       7. At least ${this.MIN_TASKS} tasks should be proposed.
     </task>
     `;
+
+    conversation.addUserText(tasksMessage);
+
+    return conversation;
   }
 }

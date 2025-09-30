@@ -15,7 +15,6 @@ import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
 import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
-import { createCodeceptJSTools } from './tools.ts';
 
 declare namespace CodeceptJS {
   interface I {
@@ -126,7 +125,7 @@ export class Researcher implements Agent {
               return;
             }
 
-            const action = new Action(this.actor, this.provider, this.stateManager);
+            const action = this.explorer.createAction();
             tag('step').log(codeBlock || 'No code block');
             await action.execute(codeBlock);
 
@@ -228,8 +227,9 @@ export class Researcher implements Agent {
     - Focus on primary user actions of this page
     - Provider either CSS or XPath locator but not both. Shortest locator is preferred.
     - Research all menus and navigational areas;
+    - Focus on interactive elements: forms, buttons, links, clickable elements, etc.
     - Structure the report by sections.
-    - Focus on interactive elements, not on static content.
+    - Focus on UI elements, not on static content.
     - Ignore purely decorative sidebars and footer-only links.
     </rules>
 
@@ -404,7 +404,7 @@ export class Researcher implements Agent {
   }
 
   private async navigateTo(url: string): Promise<void> {
-    const action = new Action(this.actor, this.provider, this.stateManager);
+    const action = this.explorer.createAction();
     await action.execute(`I.amOnPage("${url}")`);
     await action.expect(`I.seeInCurrentUrl('${url}')`);
   }

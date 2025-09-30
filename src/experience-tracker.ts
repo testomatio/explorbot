@@ -2,6 +2,7 @@ import { existsSync, statSync, mkdirSync, readFileSync, readdirSync, writeFileSy
 import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import type { ActionResult } from './action-result.js';
+import type { WebPageState } from './state-manager.js';
 import { ConfigParser } from './config.js';
 import { createDebug, log, tag } from './utils/logger.js';
 
@@ -213,6 +214,13 @@ ${entry.code}
     }
 
     return allFiles;
+  }
+
+  getRelevantExperience(state: ActionResult): { filePath: string; data: any; content: string }[] {
+    return this.getAllExperience().filter((experience) => {
+      const experienceState = experience.data as WebPageState;
+      return state.url === experienceState.url || (experienceState.url && state.url && (state.url.includes(experienceState.url) || experienceState.url.includes(state.url)));
+    });
   }
 
   private extractStatePath(url: string): string {

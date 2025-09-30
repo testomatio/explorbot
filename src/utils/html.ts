@@ -1,6 +1,7 @@
 import { parse, parseFragment, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
 import type { HtmlConfig } from '../config.ts';
+import { minify } from 'html-minifier-next';
 
 /**
  * HTML parsing library that preserves original structure while filtering content
@@ -527,6 +528,15 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
   const serializedHTML = serialize(document);
 
   return serializedHTML;
+}
+
+export function minifyHtml(html: string): string {
+  return minify(html, {
+    collapseWhitespace: true,
+    removeComments: true,
+    removeEmptyElements: true,
+    removeOptionalTags: true,
+  });
 }
 
 /**

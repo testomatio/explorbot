@@ -25,6 +25,7 @@ export class Provider {
       );
     },
   };
+  lastConversation: Conversation | null = null;
 
   constructor(config: AIConfig) {
     this.config = config;
@@ -50,6 +51,7 @@ export class Provider {
   async invokeConversation(conversation: Conversation, tools?: any, options: any = {}): Promise<{ conversation: Conversation; response: any } | null> {
     const response = tools ? await this.generateWithTools(conversation.messages, tools, options) : await this.chat(conversation.messages, options);
     conversation.addAssistantText(response.text);
+    this.lastConversation = conversation;
     return { conversation, response };
   }
 
@@ -92,6 +94,7 @@ export class Provider {
     const toolNames = Object.keys(tools || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
     debugLog('Available tools:', toolNames);
+    debugLog(messages[messages.length - 1].content);
 
     const config = {
       model: this.provider(this.config.model),

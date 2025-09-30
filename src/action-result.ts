@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import micromatch from 'micromatch';
 import { ConfigParser, type HtmlConfig } from './config.ts';
 import type { WebPageState } from './state-manager.ts';
-import { htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot } from './utils/html.ts';
+import { htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
 
 const debugLog = createDebug('explorbot:action-state');
@@ -144,17 +144,17 @@ export class ActionResult {
 
   async simplifiedHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    return htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal);
+    return minifyHtml(htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal));
   }
 
   async combinedHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    return htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined);
+    return minifyHtml(htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined));
   }
 
   async textHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    return htmlTextSnapshot(this.html ?? '', normalizedConfig?.text);
+    return minifyHtml(htmlTextSnapshot(this.html ?? '', normalizedConfig?.text));
   }
 
   private normalizeHtmlConfig(htmlConfig?: HtmlConfig): HtmlConfig | undefined {

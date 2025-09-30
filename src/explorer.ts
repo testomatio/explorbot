@@ -4,11 +4,11 @@ import * as codeceptjs from 'codeceptjs';
 import type { ExplorbotConfig } from '../explorbot.config.js';
 import Action from './action.js';
 import { ExperienceCompactor } from './ai/experience-compactor.js';
-import { Navigator } from './ai/navigator.js';
 import type { Task } from './ai/planner.js';
 import { AIProvider } from './ai/provider.js';
 import { ConfigParser } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
+import { KnowledgeTracker } from './knowledge-tracker.js';
 import { StateManager } from './state-manager.js';
 import { createDebug, log, tag } from './utils/logger.js';
 
@@ -33,9 +33,9 @@ class Explorer {
   public isStarted = false;
   actor!: CodeceptJS.I;
   private stateManager!: StateManager;
+  private knowledgeTracker!: KnowledgeTracker;
   config: ExplorbotConfig;
   private userResolveFn: UserResolveFunction | null = null;
-  scenarios: Task[] = [];
   private options?: { show?: boolean; headless?: boolean };
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean }) {
@@ -44,6 +44,7 @@ class Explorer {
     this.options = options;
     this.initializeContainer();
     this.stateManager = new StateManager();
+    this.knowledgeTracker = new KnowledgeTracker();
   }
 
   private initializeContainer() {
@@ -111,7 +112,8 @@ class Explorer {
   }
 
   public getConfigPath(): string | null {
-    return this.configParser.getConfigPath();
+    const configParser = ConfigParser.getInstance();
+    return configParser.getConfigPath();
   }
 
   public getAIProvider(): AIProvider {
@@ -120,6 +122,10 @@ class Explorer {
 
   public getStateManager(): StateManager {
     return this.stateManager;
+  }
+
+  public getKnowledgeTracker(): KnowledgeTracker {
+    return this.knowledgeTracker;
   }
 
   async start() {
@@ -158,31 +164,20 @@ class Explorer {
   }
 
   createAction() {
-    return new Action(this.actor, this.aiProvider, this.stateManager, this.userResolveFn || undefined);
+    return new Action(this.actor, this.stateManager);
+  }
+
+  visit(url: string) {
+    log('For AI powered navigation use navigator agent instead');
+    return this.createAction().execute(`I.amOnPage('${url}')`);
   }
 
   setUserResolve(userResolveFn: UserResolveFunction): void {
     this.userResolveFn = userResolveFn;
   }
 
-  async compactPreviousExperiences(): Promise<void> {
-    tag('debug').log('Compacting previous experiences...');
-    const experienceCompactor = new ExperienceCompactor(this.getAIProvider());
-    const experienceTracker = this.getStateManager().getExperienceTracker();
-    const experienceFiles = experienceTracker.getAllExperience();
-    let compactedCount = 0;
-    for (const experience of experienceFiles) {
-      const prevContent = experience.content;
-      const frontmatter = experience.data;
-      const compactedContent = await experienceCompactor.compactExperienceFile(experience.filePath);
-      if (prevContent !== compactedContent) {
-        const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
-        experienceTracker.writeExperienceFile(stateHash, compactedContent, frontmatter);
-        tag('debug').log('Experience file compacted:', experience.filePath);
-        compactedCount++;
-      }
-    }
-    tag('debug').log(`${compactedCount} previous experiences compacted`);
+  setExplorbot(explorbot: any): void {
+    this.explorbot = explorbot;
   }
 
   private listenToStateChanged(): void {

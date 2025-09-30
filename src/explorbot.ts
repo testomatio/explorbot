@@ -10,6 +10,7 @@ import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
 import { log, setVerboseMode } from './utils/logger.ts';
+import { Agent } from './ai/agent.ts';
 
 export interface ExplorBotOptions {
   from?: string;
@@ -31,19 +32,15 @@ export class ExplorBot {
   private userResolveFn: UserResolveFunction | null = null;
   public needsInput = false;
 
+  public agents: any[] = [];
+
   constructor(options: ExplorBotOptions = {}) {
     this.options = options;
+    this.configParser = ConfigParser.getInstance();
     if (this.options.verbose) {
       process.env.DEBUG = 'explorbot:*';
       setVerboseMode(true);
     }
-    this.configParser = ConfigParser.getInstance();
-  }
-
-  async loadConfig(): Promise<void> {
-    this.config = await this.configParser.loadConfig(this.options);
-    this.provider = new AIProvider(this.config.ai);
-    this.explorer = new Explorer(this.config, this.provider, this.options);
   }
 
   get isExploring(): boolean {
@@ -56,8 +53,11 @@ export class ExplorBot {
 
   async start(): Promise<void> {
     try {
-      await this.explorer.compactPreviousExperiences();
+      this.config = await this.configParser.loadConfig(this.options);
+      this.provider = new AIProvider(this.config.ai);
+      this.explorer = new Explorer(this.config, this.provider, this.options);
       await this.explorer.start();
+      await this.agentExperienceCompactor().compactAllExperiences();
       if (this.userResolveFn) this.explorer.setUserResolve(this.userResolveFn);
     } catch (error) {
       console.log(`\n❌ Failed to start:`);
@@ -72,16 +72,24 @@ export class ExplorBot {
     }
   }
 
+  async stop(): Promise<void> {
+    await this.explorer.stop();
+  }
+
   async visitInitialState(): Promise<void> {
     const url = this.options.from || '/';
     const navigator = this.agentNavigator();
-    await navigator.visit(url, this.explorer);
+    await navigator.visit(url);
     if (this.userResolveFn) {
       log('What should we do next? Consider /research, /plan, /navigate commands');
       this.userResolveFn();
     } else {
       log('No user resolve function provided, exiting...');
     }
+  }
+
+  async visit(url: string): Promise<void> {
+    return this.agentNavigator().visit(url);
   }
 
   getExplorer(): Explorer {
@@ -118,15 +126,20 @@ export class ExplorBot {
     const agentName = (agent as any).constructor.name.toLowerCase();
     log(`${agentEmoji} Created ${agentName} agent`);
 
+    this.agents.push(agent);
+
     return agent;
   }
 
-  agentResearch(): Researcher {
+  agentResearcher(): Researcher {
     return this.createAgent(({ ai, explorer }) => new Researcher(explorer, ai));
   }
 
   agentNavigator(): Navigator {
-    return this.createAgent(({ ai }) => new Navigator(ai));
+    return this.createAgent(({ ai, explorer }) => {
+      const experienceCompactor = this.agentExperienceCompactor();
+      return new Navigator(explorer, ai, experienceCompactor);
+    });
   }
 
   agentPlanner(): Planner {
@@ -134,12 +147,19 @@ export class ExplorBot {
   }
 
   agentTester(): Tester {
-    return this.createAgent(({ explorer, ai }) => new Tester(explorer, ai));
+    return this.createAgent(({ ai, explorer }) => new Tester(explorer, ai));
+  }
+
+  agentExperienceCompactor(): ExperienceCompactor {
+    return this.createAgent(({ ai, explorer }) => {
+      const experienceTracker = explorer.getStateManager().getExperienceTracker();
+      return new ExperienceCompactor(ai, experienceTracker);
+    });
   }
 
   async research() {
     log('Researching...');
-    const researcher = this.agentResearch();
+    const researcher = this.agentResearcher();
     researcher.setActor(this.explorer.actor);
     const conversation = await researcher.research();
     return conversation;
@@ -147,7 +167,7 @@ export class ExplorBot {
 
   async plan() {
     log('Researching...');
-    const researcher = this.agentResearch();
+    const researcher = this.agentResearcher();
     researcher.setActor(this.explorer.actor);
     await researcher.research();
     log('Planning...');
