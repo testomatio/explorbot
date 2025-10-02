@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import matter from 'gray-matter';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
@@ -72,5 +72,74 @@ export class KnowledgeTracker {
     return this.knowledgeFiles.filter((knowledge) => {
       return state.isMatchedBy(knowledge);
     });
+  }
+
+  addKnowledge(urlPattern: string, description: string, customPath?: string): void {
+    const configParser = ConfigParser.getInstance();
+    const configPath = configParser.getConfigPath();
+
+    if (!configPath) {
+      throw new Error('No explorbot configuration found. Please run "maclay init" first.');
+    }
+
+    let knowledgeDir: string;
+    if (customPath) {
+      knowledgeDir = resolve(customPath);
+    } else {
+      const projectRoot = dirname(configPath);
+      knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
+    }
+
+    if (!existsSync(knowledgeDir)) {
+      mkdirSync(knowledgeDir, { recursive: true });
+    }
+
+    const normalizedUrl = this.normalizeUrl(urlPattern);
+    const filename = this.generateFilename(normalizedUrl);
+    const filePath = join(knowledgeDir, filename);
+
+    const knowledgeContent = `---
+url: ${normalizedUrl}
+---
+
+${description}
+`;
+
+    writeFileSync(filePath, knowledgeContent, 'utf8');
+  }
+
+  private normalizeUrl(url: string): string {
+    const trimmed = url.trim();
+
+    if (!trimmed) {
+      throw new Error('URL pattern cannot be empty');
+    }
+
+    return trimmed;
+  }
+
+  private generateFilename(url: string): string {
+    let filename = url
+      .replace(/https?:\/\//g, '')
+      .replace(/[^a-zA-Z0-9_]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .toLowerCase();
+
+    if (!filename || filename === '*') {
+      filename = 'general';
+    }
+
+    if (!filename.endsWith('.md')) {
+      filename += '.md';
+    }
+
+    return filename;
+  }
+
+  getExistingUrls(): string[] {
+    this.loadKnowledgeFiles();
+
+    return this.knowledgeFiles.map((knowledge) => knowledge.url).filter((url) => url && url !== '*');
   }
 }

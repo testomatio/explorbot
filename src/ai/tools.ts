@@ -2,12 +2,44 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import Action from '../action.js';
-import { createDebug, tag } from '../utils/logger.js';
+import { createDebug } from '../utils/logger.js';
 
 const debugLog = createDebug('explorbot:tools');
 
-export function toolAction(action: Action, codeFunction: (I: any) => void, actionName: string, params: Record<string, any>) {
+const recentToolCalls: string[] = [];
+
+function hasBeenCalled(actionName: string, params: Record<string, any>, stateHash: string): boolean {
+  const callKey = `${stateHash}:${actionName}:${JSON.stringify(params)}`;
+  const len = recentToolCalls.length;
+
+  if (len >= 2 && recentToolCalls[len - 1] === callKey && recentToolCalls[len - 2] === callKey) {
+    return true;
+  }
+
+  recentToolCalls.push(callKey);
+  return false;
+}
+
+export function clearToolCallHistory() {
+  recentToolCalls.length = 0;
+}
+
+export function toolAction(action: Action, codeFunction: (I: any) => void, actionName: string, params: Record<string, any>): any {
   return async () => {
+    const currentState = action.stateManager.getCurrentState();
+    const stateHash = currentState?.hash || 'unknown';
+
+    if (hasBeenCalled(actionName, params, stateHash)) {
+      const paramsStr = JSON.stringify(params);
+      return {
+        success: false,
+        message: `This exact tool call was already attempted 3+ times consecutively with the same state and failed: ${actionName}(${paramsStr}). The page state has not changed. Try a completely different approach, use a different locator, or call reset() or stop() if available.`,
+        action: actionName,
+        ...params,
+        duplicate: true,
+      };
+    }
+
     try {
       await action.execute(codeFunction);
 
@@ -19,22 +51,18 @@ export function toolAction(action: Action, codeFunction: (I: any) => void, actio
       if (!actionResult) {
         throw new Error(`${actionName} executed but no action result available`);
       }
-
-      tag('success').log(`✅ ${actionName} successful → ${actionResult.url} "${actionResult.title}"`);
       return {
         success: true,
         action: actionName,
         ...params,
-        pageState: actionResult,
       };
     } catch (error) {
       debugLog(`${actionName} failed: ${error}`);
-      tag('error').log(`❌ ${actionName} failed: ${error}`);
       return {
         success: false,
+        message: 'Tool call has FAILED! ' + String(error),
         action: actionName,
         ...params,
-        error: String(error),
       };
     }
   };
@@ -52,12 +80,22 @@ export function createCodeceptJSTools(action: Action) {
         force: z.boolean().optional().describe('Force click even if the element is not visible. If previous click didn\t work, try again with force: true'),
       }),
       execute: async ({ locator, force }) => {
-        tag('substep').log(`🖱️ AI Tool: click("${locator}")`);
         if (force) {
-          tag('substep').log(`🖱️ AI Tool: click("${locator}", { force: true })`);
           return await toolAction(action, (I) => I.forceClick(locator), 'click', { locator })();
         }
-        return await toolAction(action, (I) => I.click(locator), 'click', { locator })();
+        let result = await toolAction(action, (I) => I.click(locator), 'click', { locator })();
+        if (!result.success && !force) {
+          // auto force click if previous click failed
+          result = await toolAction(action, (I) => I.forceClick(locator), 'click', { locator })();
+        }
+        if (!result.success) {
+          result.suggestion = `
+            Check the last HTML sample, do not interact with this element if it is not in HTML.
+            If element exists in HTML, try to use click() with force: true option to click on it.
+            If multiple calls to click failed you are probably on wrong page. Use reset() tool if it is available.
+          `;
+        }
+        return result;
       },
     }),
 
@@ -68,12 +106,19 @@ export function createCodeceptJSTools(action: Action) {
         locator: z.string().optional().describe('Optional CSS or XPath locator to focus on before typing'),
       }),
       execute: async ({ text, locator }) => {
-        const locatorMsg = locator ? ` in: ${locator}` : '';
-        tag('substep').log(`⌨️ AI Tool: type("${text}")${locatorMsg}`);
-        debugLog(`Typing text: ${text}`, locator ? `in: ${locator}` : '');
+        if (!locator) {
+          return await toolAction(action, (I) => I.type(text), 'type', { text })();
+        }
 
-        const codeFunction = locator ? (I: any) => I.fillField(locator, text) : (I: any) => I.type(text);
-        return await toolAction(action, codeFunction, 'type', { text, locator })();
+        let result = await toolAction(action, (I) => I.fillField(locator, text), 'type', { text, locator })();
+        if (!result.success) {
+          // let's click and type instead.
+          await toolAction(action, (I) => I.click(locator), 'click', { locator })();
+          await action.waitForInteraction();
+          // it's ok even if click not worked, we still can type if element is already focused
+          result = await toolAction(action, (I) => I.type(text), 'type', { text, locator })();
+        }
+        return result;
       },
     }),
   };

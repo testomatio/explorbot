@@ -7,9 +7,9 @@ import type Explorer from '../explorer.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
-import type { Task } from './planner.ts';
+import type { Note, Test } from './planner.ts';
 import { Provider } from './provider.ts';
-import { createCodeceptJSTools, toolAction } from './tools.ts';
+import { clearToolCallHistory, createCodeceptJSTools, toolAction } from './tools.ts';
 import { Researcher } from './researcher.ts';
 import { htmlDiff } from '../utils/html-diff.ts';
 import { ConfigParser } from '../config.ts';
@@ -33,12 +33,62 @@ export class Tester implements Agent {
     return dedent`
     <role>
     You are a senior test automation engineer with expertise in CodeceptJS and exploratory testing.
-    Your task is to execute testing scenarios by interacting with web pages using available tools.
+    Your task is to execute testing scenario by interacting with web pages using available tools.
     </role>
+
+    <task>
+    You will be provided with scenario goal which should be achieved.
+    Expected results will help you to achieve the scenario goal.
+    Focus on achieving the main scenario goal
+    Check expected results as an optional secondary goal, as they can be wrong or not achievable
+    </task>
+
+    <free_thinking_rule>
+    Sometimes application can behave differently from expected.
+    You must analyze differences between current and previous pages to understand if they match user flow and the actual behavior.
+    If you notice sucessful message from application, log them with success() tool.
+    If you notice failed message from application, log them with fail() tool.
+    If you see that scenario goal can be achieved in unexpected way, continue testing call success() tool.
+    If you notice any other message, log them with success() or fail() tool.
+    If behavior is unexpected, and you assume it is an application bug, call fail() with explanation.
+    If you notice error from application, call fail() with the error message.
+    </free_thinking_rule>
+
+    <approach>
+    1. Provide reasoning for your next action in your response
+    2. Analyze the current page state and identify elements needed for the scenario
+    3. Plan the sequence of actions required to achieve the scenario goal or expected outcomes
+    4. Execute actions step by step using the available tools
+    5. After each action, check if any expected outcomes have been achieved or failed
+    6. If expected outcome was verified call success(outcome="...") tool
+    6.1 If expected outcome was already checked, to not check it again
+    7. If expected outcome was not achieved call fail(outcome="...") tool
+    7.1 If you have noticed an error message, call fail() with the error message
+    7.2 If behavior is unexpected, and you assume it is an application bug, call fail() with explanation
+    7.3 If there are error or failure message (identify them by class names or text) on a page call fail() with the error message
+    8. Continue trying to achieve expected results
+    8.1 Some expectations can be wrong so it's ok to skip them and continue testing
+    9. Use reset() if you navigate too far from the desired state
+    10. ONLY use stop() if the scenario is fundamentally incompatible with the page
+    11. Be methodical and precise in your interactions
+    </approach>
+
+    <rules>
+    - Check for success messages to verify if expected outcomes are achieved
+    - Check for error messages to understand if there are issues
+    - Verify if data was correctly saved and changes are reflected on the page
+    - Always check current HTML of the page after your action
+    - Call success() with the exact expected outcome text when verified as passed
+    - Call fail() with the exact expected outcome text when it cannot be achieved or has failed
+    - You can call success() or fail() multiple times for different outcomes
+    - Always remember of INITIAL PAGE and use it as a reference point
+    - Use reset() to navigate back to the initial page if needed
+    - If your tool calling failed and your url is not the initial page, use reset() to navigate back to the initial page
+    </rules>    
     `;
   }
 
-  createTestFlowTools(task: Task, resetUrl: string) {
+  createTestFlowTools(task: Test, resetUrl: string) {
     return {
       reset: tool({
         description: dedent`
@@ -47,71 +97,111 @@ export class Tester implements Agent {
           there's no clear path to achieve the expected result. This restarts the 
           testing flow from a known good state.
         `,
-        inputSchema: z.object({}),
+        inputSchema: z.object({
+          reason: z.string().optional().describe('Explanation why you need to navigate'),
+        }),
         execute: async () => {
-          tag('substep').log(`🔄 Reset Tool: reset()`);
-          task.logs.push('Resetting to initial page');
+          if (this.explorer.getStateManager().getCurrentState()?.url === resetUrl) {
+            return {
+              success: false,
+              message: 'Reset failed - already on initial page!',
+              suggestion: 'Try different approach or use stop() tool if you think the scenario is fundamentally incompatible with the page.',
+              action: 'reset',
+            };
+          }
+          task.addNote('Resetting to initial page');
           return await toolAction(this.explorer.createAction(), (I) => I.amOnPage(resetUrl), 'reset', {})();
         },
       }),
       stop: tool({
         description: dedent`
-          Stop the current test and give up on achieving the expected outcome.
-          Use this when the expected outcome cannot be achieved with the available
-          Call this function if you are on the initial page and there's no clear path to achieve the expected outcome.
-          If you are on a different page, use reset() to navigate back to the initial page and try again.
-          If you already tried reset and it didn't help, give up and call this function to stop the test.
+          Stop the current test because the scenario is completely irrelevant to the current page.
+          ONLY use this when you determine that NONE of the expected outcomes can possibly be achieved
+          because the page does not support the scenario at all.
+
+          DO NOT use this if:
+          - You're having trouble finding the right elements (try different locators instead)
+          - Some outcomes were achieved but not all (the test will be marked successful anyway)
+          - You need to reset and try again (use reset() instead)
+
+          Use this ONLY when the scenario is fundamentally incompatible with the page.
         `,
         inputSchema: z.object({
-          reason: z.string().optional(),
+          reason: z.string().describe('Explanation of why the scenario is irrelevant to this page'),
         }),
         execute: async ({ reason }) => {
-          reason = reason || 'Expected outcome cannot be achieved';
-          const message = `Test stopped - expected outcome cannot be achieved: ${reason}`;
+          const message = `Test stopped - scenario is irrelevant: ${reason}`;
           tag('warning').log(`❌ ${message}`);
 
-          task.status = 'failed';
-          task.logs.push(message);
+          task.addNote(message, 'failed', true);
+          task.finish();
 
           return {
             success: true,
             action: 'stop',
-            message: 'Test stopped - expected outcome cannot be achieved',
-            stopped: true,
+            message: 'Test stopped - scenario is irrelevant: ' + reason,
           };
         },
       }),
       success: tool({
         description: dedent`
-          Mark the test as successful when the expected outcome has been achieved.
-          Use this when you have successfully completed the testing scenario and 
-          the expected outcome is visible on the page or confirmed through the actions taken.
+          Call this tool if one of the expected result has been successfully achieved.
+          You can call this multiple times if multiple expected result are successfully achieved.
         `,
         inputSchema: z.object({
-          reason: z.string().optional(),
+          outcome: z.string().describe('The exact expected outcome text that was achieved'),
         }),
-        execute: async ({ reason }) => {
-          reason = reason || 'Expected outcome has been achieved';
-          const message = `Test completed successfully: ${reason}`;
-          tag('success').log(`✅ ${message}`);
+        execute: async ({ outcome }) => {
+          tag('success').log(`✔ ${outcome}`);
+          task.addNote(outcome, 'passed', true);
 
-          task.status = 'success';
-          task.logs.push(message);
+          task.updateStatus();
+          if (task.isComplete()) {
+            task.finish();
+          }
 
           return {
             success: true,
             action: 'success',
-            message,
-            completed: true,
+            suggestion: 'Continue testing to check the remaining expected outcomes. ' + task.getRemainingExpectations().join(', '),
+          };
+        },
+      }),
+      fail: tool({
+        description: dedent`
+          Call this tool if one of the expected result cannot be achieved or has failed.
+          You can call this multiple times if multiple expected result have failed.
+        `,
+        inputSchema: z.object({
+          outcome: z.string().describe('The exact expected outcome text that failed'),
+        }),
+        execute: async ({ outcome }) => {
+          tag('warning').log(`✘ ${outcome}`);
+          task.addNote(outcome, 'failed', true);
+
+          task.updateStatus();
+          if (task.isComplete()) {
+            task.finish();
+          }
+
+          return {
+            success: true,
+            action: 'fail',
+            suggestion: 'Continue testing to check the remaining expected outcomes:' + task.getRemainingExpectations().join(', '),
           };
         },
       }),
     };
   }
 
-  async test(task: Task): Promise<{ success: boolean; message: string }> {
+  async test(task: Test, url?: string): Promise<{ success: boolean }> {
     const state = this.explorer.getStateManager().getCurrentState();
     if (!state) throw new Error('No state found');
+
+    if (!url) url = task.startUrl;
+    if (url && state.url !== url) {
+      await this.explorer.visit(url);
+    }
 
     tag('info').log(`Testing scenario: ${task.scenario}`);
     setActivity(`🧪 Testing: ${task.scenario}`, 'action');
@@ -125,15 +215,23 @@ export class Tester implements Agent {
     const conversation = this.provider.startConversation(this.getSystemMessage());
     const initialPrompt = await this.buildTestPrompt(task, actionResult);
     conversation.addUserText(initialPrompt);
+    conversation.autoTrimTag('initlal_page', 100_000);
+    if (conversation.hasTag('expanded_ui_map')) {
+      conversation.addUserText(dedent`
+        When dealing with elements from <expanded_ui_map> ensure they are visible. 
+        Call the same codeblock to make them visible.
+        <ui_map> and <expanded_ui_map> are relevant only for initial page or similar pages.
+      `);
+    }
 
     debugLog('Starting test execution with tools');
 
-    let success = false;
     let lastResponse = '';
 
-    task.status = 'in_progress';
-    task.logs.push('Test started');
+    clearToolCallHistory();
+    task.start();
 
+    this.explorer.trackSteps(true);
     await loop(
       async ({ stop, iteration }) => {
         debugLog(`Test ${task.scenario} iteration ${iteration}`);
@@ -141,11 +239,37 @@ export class Tester implements Agent {
         if (iteration > 1) {
           const newState = this.explorer.getStateManager().getCurrentState()!;
           const newActionResult = ActionResult.fromState(newState);
-          const retryPrompt = dedent`
-            Continue testing if the expected outcome has not been achieved yet.
-            Expected outcome: ${task.expectedOutcome}
 
-            Current iteration: ${iteration}/${this.MAX_ITERATIONS}
+          if (this.explorer.getStateManager().isInDeadLoop()) {
+            task.addNote('Dead loop detected. Stopped', 'failed');
+            stop();
+            return;
+          }
+
+          // to keep conversation compact we remove old HTMLs
+          conversation.cleanupTag('page_html', '...cleaned HTML...', 2);
+
+          const remaining = task.getRemainingExpectations();
+          const achieved = task.getCheckedExpectations();
+
+          let outcomeStatus = '';
+          if (achieved.length > 0) {
+            outcomeStatus = `\AAlready checked: ${achieved.join(', ')}. DO NOT TEST THIS AGAIN`;
+          }
+          if (remaining.length > 0) {
+            outcomeStatus += `\nExpected steps to check: ${remaining.join(', ')}`;
+          }
+
+          const retryPrompt = dedent`
+            Continue testing to check the expected results.
+
+            ${outcomeStatus}
+
+            ${achieved.length > 0 ? `Already checked expectations. DO NOT CHECK THEM AGAIN:\n<checked_expectations>\n${achieved.join('\n- ')}\n</checked_expectations>` : ''}
+
+            ${remaining.length > 0 ? `Expected steps to check:\nTry to check them and list your findings\n\n<remaining_expectations>\n${remaining.join('\n- ')}\n</remaining_expectations>` : ''}
+
+            Provide your reasoning for the next action in your response.
           `;
 
           if (actionResult.isSameUrl({ url: newState.url })) {
@@ -154,9 +278,9 @@ export class Tester implements Agent {
               conversation.addUserText(dedent`
                 ${retryPrompt}
                 The page has changed. The following elements have been added:
-                <html>
+                <page_html>
                 ${await minifyHtml(diff.subtree)}
-                </html>
+                </page_html>
               `);
             } else {
               conversation.addUserText(dedent`
@@ -167,13 +291,19 @@ export class Tester implements Agent {
           } else {
             conversation.addUserText(dedent`
               ${retryPrompt}
-              The page state has changed. Here is the HTML of a new page:
+              The page state has changed. Here is the change page
 
-              ${await newActionResult.toAiContext()}
+              <page>
+                <page_summary>
+                ${await newActionResult.toAiContext()}
+                </page_summary>
+                <page_html>
+                ${await newActionResult.combinedHtml()}
+                </page_html>
+              </page>
 
-              <html>
-              ${await newActionResult.combinedHtml()}
-              </html>
+              When calling click() and type() tools use only HTML provided in <page_html> context.
+              If you don't see element you need to interact with -> call reset() to navigate back.
             `);
           }
         }
@@ -183,8 +313,7 @@ export class Tester implements Agent {
           toolChoice: 'required',
         });
 
-        if (task.status === 'success' || task.status === 'failed') {
-          tag('info').log(`${this.emoji} Test completed: ${task.status}`);
+        if (task.hasFinished) {
           stop();
           return;
         }
@@ -193,36 +322,38 @@ export class Tester implements Agent {
 
         lastResponse = result.response.text;
 
+        if (lastResponse) {
+          task.addNote(lastResponse);
+        }
+
         if (iteration >= this.MAX_ITERATIONS) {
-          const message = `${this.emoji} Max iterations reached without achieving outcome`;
-          tag('warning').log(message);
-          task.status = 'failed';
-          task.logs.push(message);
+          task.addNote('Max iterations reached. Stopped');
           stop();
           return;
         }
-
-        tag('substep').log(`${task.expectedOutcome} is not yet achieved, continuing...`);
       },
       {
         maxAttempts: this.MAX_ITERATIONS,
-        catch: async (error) => {
+        catch: async ({ error, stop }) => {
           task.status = 'failed';
           tag('error').log(`Test execution error: ${error}`);
           debugLog(error);
+          stop();
         },
       }
     );
 
+    this.explorer.trackSteps(false);
+    this.finishTest(task);
+
     return {
-      success,
+      success: task.isSuccessful,
       ...task,
-      message: success ? `Scenario completed: ${task.scenario}` : `Scenario incomplete after ${this.MAX_ITERATIONS} iterations`,
     };
   }
 
-  private async buildTestPrompt(task: Task, actionResult: ActionResult): Promise<string> {
-    const knowledgeFiles = this.explorer.getStateManager().getRelevantKnowledge();
+  private async buildTestPrompt(task: Test, actionResult: ActionResult): Promise<string> {
+    const knowledgeFiles = this.explorer.getKnowledgeTracker().getRelevantKnowledge(actionResult);
 
     let knowledge = '';
     if (knowledgeFiles.length > 0) {
@@ -241,55 +372,56 @@ export class Tester implements Agent {
       `;
     }
 
-    knowledge += `\n\n${await new Researcher(this.explorer, this.provider).research()}`;
+    const research = await new Researcher(this.explorer, this.provider).research();
 
     const html = await actionResult.combinedHtml();
 
     return dedent`
       <task>
-      Execute the following testing scenario using the available tools (click, type, reset, success, and stop).
+      Execute the following testing scenario using the available tools (click, type, reset, success, fail, and stop).
 
-      Scenario: ${task.scenario}
-      Expected Outcome: ${task.expectedOutcome}
-      Priority: ${task.priority}
+      SCENARIO GOAL: ${task.scenario}
 
-      Your goal is to perform actions on the web page until the expected outcome is achieved.
-      Use the click(), type(), reset(), success(), and stop() tools to interact with the page.
-      Each tool call will return the updated page state.
-      Always refer to HTML content of a page. Do not propose to use locators that are not in the HTML.
-      When you achieve the expected outcome, call success() to complete the test.
-      If you cannot achieve the expected outcome, call stop() to give up.
+      EXPECTED RESULTS:
+      Check expected results one by one.
+      But some of them can be wrong so it's ok to skip them and continue testing.
+
+      <expected_results>
+      ${task.expected.map((e) => `- ${e}`).join('\n')}
+      </expected_results>
+
+      Your goal is to perform actions on the web page and verify the expected outcomes.
+      - Call success(outcome="exact outcome text") each time you verify an expected outcome
+      - Call fail(outcome="exact outcome text") each time an expected outcome cannot be achieved
+      - You can check multiple outcomes - call success() or fail() for each one verified
+      - The test succeeds if at least one outcome is achieved
+      - Only call stop() if the scenario is completely irrelevant to this page
+      - Each tool call will return the updated page state
+
+      IMPORTANT: Provide reasoning for each action you take in your response text before calling tools.
       </task>
 
-      <approach>
-      1. Analyze the current page state and identify elements needed for the scenario
-      1.1. If no such elements are found, use stop() to give up.
-      2. Plan the sequence of actions required
-      3. Execute actions step by step using the available tools
-      4. After each action, evaluate if the expected outcome has been achieved
-      5. If achieved, call success() to complete the test
-      6. If not achieved, continue with the next logical action
-      7. Use reset() if you navigate too far from the desired state
-      8. Use stop() if the expected outcome cannot be achieved
-      9. Be methodical and precise in your interactions
-      </approach>
+      <initial_page>
+      INITIAL URL: ${actionResult.url}
 
-      <rules>
-      - check for successful messages to understand if the expected outcome has been achieved
-      - check for error messages to understand if there was an issue achieving the expected outcome
-      - check if data was correctly saved and this change is reflected on the page
-      - always check current HTML of the page after your action to use locators that are in the HTML
-      </rules>
+      <initial_page_summary>
+      ${actionResult.toAiContext()}
+      </initial_page_summary>
 
-      <current_page>
-      URL: ${actionResult.url}
-      Title: ${actionResult.title}
-
-      ${html}
-      
-      </current_page>
-
+      <initial_page_knowledge>
+      THIS IS IMPORTANT INFORMATION FROM SENIOR QA ON THIS PAGE
       ${knowledge}
+      </initial_page_knowledge>
+
+      <initial_page_ui_map>
+      ${research}
+      </initial_page_ui_map>
+
+      <initial_page_html>
+      ${html}
+      </initial_page_html>
+      </initial_page>
+
 
       <rules>
       - Use only elements that exist in the provided HTML
@@ -297,12 +429,24 @@ export class Tester implements Agent {
       - Use force: true for click() if the element exists in HTML but is not clickable
       - Use type() for text input (with optional locator parameter)
       - Use reset() to navigate back to the original page if needed
-      - Use success() when you achieve the expected outcome
-      - Use stop() to give up if the expected outcome cannot be achieved
-      - Focus on achieving the expected outcome: ${task.expectedOutcome}
+      - Call success(outcome="exact text") when you verify an expected outcome as passed
+      - Call fail(outcome="exact text") when an expected outcome cannot be achieved or has failed
+      - ONLY call stop() if the scenario is completely irrelevant to this page and no expectations can be achieved
       - Be precise with locators (CSS or XPath)
       - Each tool returns the new page state automatically
+      - Always provide reasoning in your response text before calling tools
       </rules>
     `;
+  }
+
+  private finishTest(task: Test): void {
+    task.finish();
+    tag('info').log(`${this.emoji} Finished testing: ${task.scenario}`);
+    task.getCheckedNotes().forEach((note: Note) => {
+      let icon = '?';
+      if (note.status === 'passed') icon = '✔';
+      if (note.status === 'failed') icon = '✘';
+      tag('substep').log(`${icon} ${note.message}`);
+    });
   }
 }

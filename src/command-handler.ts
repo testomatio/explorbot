@@ -72,6 +72,26 @@ export class CommandHandler implements InputManager {
         },
       },
       {
+        name: '/know',
+        description: 'Store knowledge for current page',
+        pattern: /^\/know\s+(.+)$/,
+        execute: async (input: string, explorBot: ExplorBot) => {
+          const match = input.match(/^\/know\s+(.+)$/);
+          const payload = match?.[1]?.trim();
+          if (!payload) return;
+
+          const explorer = explorBot.getExplorer();
+          const state = explorer.getStateManager().getCurrentState();
+          if (!state) {
+            throw new Error('No active page to attach knowledge');
+          }
+
+          const targetUrl = state.url || state.fullUrl || '/';
+          explorer.getKnowledgeTracker().saveKnowledge(targetUrl, payload);
+          console.log('🤓 Yey, now I know it!');
+        },
+      },
+      {
         name: 'exit',
         description: 'Exit the application',
         pattern: /^exit$/,

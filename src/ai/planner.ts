@@ -10,15 +10,120 @@ import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
+import figures from 'figures';
 
 const debugLog = createDebug('explorbot:planner');
 
-export interface Task {
+export interface Note {
+  message: string;
+  status: 'passed' | 'failed' | null;
+  expected?: boolean;
+}
+
+export class Test {
   scenario: string;
-  status: 'pending' | 'in_progress' | 'success' | 'failed';
+  status: 'pending' | 'in_progress' | 'success' | 'failed' | 'done';
   priority: 'high' | 'medium' | 'low' | 'unknown';
-  expectedOutcome: string;
-  logs: string[];
+  expected: string[];
+  notes: Note[];
+  steps: string[];
+  startUrl?: string;
+
+  constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[]) {
+    this.scenario = scenario;
+    this.status = 'pending';
+    this.priority = priority;
+    this.expected = Array.isArray(expectedOutcome) ? expectedOutcome : [expectedOutcome];
+    this.notes = [];
+    this.steps = [];
+  }
+
+  getPrintableNotes(): string {
+    const icons = {
+      passed: figures.tick,
+      failed: figures.cross,
+      no: figures.square,
+    };
+    return this.notes.map((n) => `${icons[n.status || 'no']} ${n.message}`).join('\n');
+  }
+
+  addNote(message: string, status: 'passed' | 'failed' | null = null, expected = false): void {
+    if (!expected && this.expected.includes(message)) {
+      expected = true;
+    }
+
+    const isDuplicate = this.notes.some((note) => note.message === message && note.status === status && note.expected === expected);
+    if (isDuplicate) return;
+
+    this.notes.push({ message, status, expected });
+  }
+
+  addStep(text: string): void {
+    this.steps.push(text);
+  }
+
+  get hasFinished(): boolean {
+    return this.status === 'done' || this.isComplete();
+  }
+
+  get isSuccessful(): boolean {
+    return this.status === 'success';
+  }
+
+  get hasFailed(): boolean {
+    return this.status === 'failed';
+  }
+
+  getCheckedNotes(): Note[] {
+    return this.notes.filter((n) => !!n.status);
+  }
+
+  getCheckedExpectations(): string[] {
+    return this.notes.filter((n) => n.expected && !!n.status).map((n) => n.message);
+  }
+
+  hasAchievedAny(): boolean {
+    return this.notes.some((n) => n.expected && n.status === 'passed');
+  }
+
+  hasAchievedAll(): boolean {
+    return this.notes.filter((n) => n.expected && n.status === 'passed').length === this.expected.length;
+  }
+
+  isComplete(): boolean {
+    return this.notes.filter((n) => n.expected && !!n.status).length === this.expected.length;
+  }
+
+  updateStatus(): void {
+    if (this.hasAchievedAny() && this.isComplete()) {
+      this.status = 'success';
+      return;
+    }
+
+    if (this.isComplete() && this.notes.length && !this.notes.some((n) => n.status === 'passed')) {
+      this.status = 'failed';
+      return;
+    }
+
+    if (this.isComplete()) {
+      this.status = 'done';
+    }
+  }
+
+  start(): void {
+    this.status = 'in_progress';
+    this.addNote('Test started');
+  }
+
+  finish(): void {
+    this.status = 'done';
+    this.updateStatus();
+  }
+
+  getRemainingExpectations(): string[] {
+    const achieved = this.getCheckedExpectations();
+    return this.expected.filter((e) => !achieved.includes(e));
+  }
 }
 
 const TasksSchema = z.object({
@@ -27,7 +132,11 @@ const TasksSchema = z.object({
       z.object({
         scenario: z.string().describe('A single sentence describing what to test'),
         priority: z.enum(['high', 'medium', 'low', 'unknown']).describe('Priority of the task based on importance and risk'),
-        expectedOutcome: z.string().describe('Expected result or behavior after executing the task'),
+        expectedOutcomes: z
+          .array(z.string())
+          .describe(
+            'List of expected outcomes that can be verified. Each outcome should be simple, specific, and easy to check (e.g., "Success message appears", "URL changes to /dashboard", "Form field shows error"). Keep outcomes atomic - do not combine multiple checks into one.'
+          ),
       })
     )
     .describe('List of testing scenarios'),
@@ -58,12 +167,18 @@ export class Planner implements Agent {
     </role>
     <task>
       List possible testing scenarios for the web page.
-
+      Focus on main content of the page, not in the menu, sidebar or footer
+      Start with positive scenarios and then move to negative scenarios
+      Tests must be atomic and independent of each other
+      Tests must be relevant to the page
+      Tests must be achievable from UI
+      Tests must be verifiable from UI
+      Tests must be independent of each other
     </task>
     `;
   }
 
-  async plan(): Promise<Task[]> {
+  async plan(): Promise<Test[]> {
     const state = this.stateManager.getCurrentState();
     debugLog('Planning:', state?.url);
     if (!state) throw new Error('No state found');
@@ -82,13 +197,11 @@ export class Planner implements Agent {
       throw new Error('No tasks were created successfully');
     }
 
-    const tasks: Task[] = result.object.scenarios.map((s: any) => ({
-      scenario: s.scenario,
-      status: 'pending' as const,
-      priority: s.priority,
-      expectedOutcome: s.expectedOutcome,
-      logs: [],
-    }));
+    const tasks: Test[] = result.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes));
+
+    tasks.forEach((t) => {
+      t.startUrl = state.url;
+    });
 
     debugLog('Created tasks:', tasks);
 
@@ -115,7 +228,9 @@ export class Planner implements Agent {
 
     conversation.addUserText(this.getSystemMessage());
 
-    const planningPrompt = dedent`Based on the previous research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios for this page.
+    const planningPrompt = dedent`
+      <task>
+      Based on the previous research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios for this page.
 
       When creating tasks:
       1. Assign priorities based on:
@@ -123,21 +238,23 @@ export class Planner implements Agent {
          - MEDIUM: Important features that affect user experience but aren't critical
          - LOW: Edge cases, minor features, or nice-to-have validations
       2. Start with positive scenarios and then move to negative scenarios
-      3. Focus on main content of the page, not in the menu, sidebar or footer
-      4. Provide a good mix of high, medium, and low priority tasks
-      5. For each task, specify what the expected outcome should be (e.g., "User should see success message", "Page should redirect to login", "Error message should appear")
+      3. For each task, provide multiple specific expected outcomes that can be verified:
+         - Keep each outcome simple and atomic (one check per outcome)
+         - Examples: "Success message is displayed", "URL changes to /dashboard", "Submit button is disabled"
+         - Avoid combining multiple checks: Instead of "Form submits and shows success", use two outcomes: "Form is submitted", "Success message appears"
+         </task>
 
       <rules>
       Scenarios must involve interaction with the web page (clicking, scrolling or typing).
       Scenarios must focus on business logic and functionality of the page.
+      Focus on main content of the page, not in the menu, sidebar or footer
       Propose business scenarios first, then technical scenarios.
       You can suggest scenarios that can be tested only through web interface.
       You can't test emails, database, SMS, or any external services.
       Suggest scenarios that can be potentially verified by UI.
       Focus on error or success messages as outcome.
       Focus on URL page change or data persistency after page reload.
-      Focus on main content of the page, not in the menu, sidebar or footer
-      Start with positive scenarios and then move to negative scenarios
+      If there are subpages (pages with same URL path) plan testing of those subpages as well
       </rules>
 
       <context>
@@ -172,7 +289,12 @@ export class Planner implements Agent {
       2. Start with positive scenarios and then move to negative scenarios
       3. Focus on main content of the page, not in the menu, sidebar or footer
       4. Focus on tasks you are 100% sure relevant to this page and can be achived from UI.
-      5. For each task, specify what the expected outcome should be (e.g., "User should see success message", "Page should redirect to login", "Error message should appear")
+      5. For each task, provide multiple specific expected outcomes as an array:
+         - Keep each outcome simple and atomic (one verification per outcome)
+         - Good examples: ["Success message is displayed", "URL changes to /dashboard", "Submit button becomes disabled"]
+         - Bad example: ["Form submits successfully and shows confirmation with updated data"] (too many checks in one)
+         - Each outcome should be independently verifiable
+         - Avoid combining multiple checks into one outcome
       6. Only tasks that can be tested from web UI should be proposed.
       7. At least ${this.MIN_TASKS} tasks should be proposed.
     </task>

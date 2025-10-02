@@ -134,10 +134,11 @@ export class StateManager {
       const url = new URL(fullUrl);
       const path = url.pathname || '/';
       const hash = url.hash || '';
-      return path + hash;
+      const result = path + hash;
+      return result || '/';
     } catch {
       // If URL parsing fails, return as-is
-      return fullUrl;
+      return fullUrl || '/';
     }
   }
 
@@ -152,7 +153,7 @@ export class StateManager {
     trigger: 'manual' | 'navigation' | 'automatic' = 'manual'
   ): WebPageState {
     const path = this.extractStatePath(actionResult.url || '/');
-    const stateHash = actionResult.getStateHash();
+    const stateHash = actionResult.getStateHash() || this.generateBasicHash(path, actionResult.title);
 
     // Check if state has actually changed
     if (this.currentState && this.currentState.hash === stateHash) {
@@ -163,7 +164,7 @@ export class StateManager {
     const newState: WebPageState = {
       url: path,
       title: actionResult.title || 'Unknown Page',
-      fullUrl: actionResult.url || '',
+      fullUrl: actionResult.fullUrl || actionResult.url || '',
       timestamp: actionResult.timestamp,
       hash: stateHash,
       htmlFile: files?.htmlFile,
@@ -299,7 +300,7 @@ export class StateManager {
     return {
       url: path,
       title: actionResult.title || 'Unknown Page',
-      fullUrl: actionResult.url || '',
+      fullUrl: actionResult.fullUrl || actionResult.url || '',
       timestamp: actionResult.timestamp,
       hash: actionResult.getStateHash(),
     };
@@ -310,6 +311,55 @@ export class StateManager {
    */
   getStateHistory(): StateTransition[] {
     return [...this.stateHistory];
+  }
+
+  isInDeadLoop(): boolean {
+    const minWindow = 6;
+    const increment = 3;
+    const stateHashes = this.stateHistory.map((transition) => {
+      const state = transition.toState;
+      return state.hash || this.generateBasicHash(state.url || '/', state.title);
+    });
+
+    debugLog(`Current state hash: ${this.currentState?.hash}`);
+    debugLog(`State hashes: ${stateHashes.join(', ')}`);
+
+    if (stateHashes.length < minWindow) {
+      return false;
+    }
+
+    const currentHash = this.currentState?.hash || stateHashes[stateHashes.length - 1];
+    if (!currentHash) {
+      return false;
+    }
+
+    let windowSize = minWindow;
+    let uniqueLimit = 1;
+
+    while (windowSize <= stateHashes.length) {
+      const window = stateHashes.slice(-windowSize);
+      if (!window.includes(currentHash)) {
+        return false;
+      }
+
+      const unique = new Map<string, number>();
+      for (const hash of window) {
+        unique.set(hash, (unique.get(hash) || 0) + 1);
+        if (unique.size > uniqueLimit) {
+          break;
+        }
+      }
+
+      if (unique.size <= uniqueLimit) {
+        debugLog(`DEAD LOOP DETECTED: ${window.join(', ')}`);
+        return true;
+      }
+
+      windowSize += increment;
+      uniqueLimit += 1;
+    }
+
+    return false;
   }
 
   /**

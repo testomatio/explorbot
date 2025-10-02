@@ -26,6 +26,7 @@ const debugLog = createDebug('explorbot:researcher');
 
 export class Researcher implements Agent {
   emoji = '🔍';
+  private static researchCache: Record<string, string> = {};
   private explorer: Explorer;
   private provider: Provider;
   private stateManager: StateManager;
@@ -56,16 +57,21 @@ export class Researcher implements Agent {
     if (!state) throw new Error('No state found');
 
     const actionResult = ActionResult.fromState(state);
+    const stateHash = state.hash || actionResult.getStateHash();
 
-    if (state.researchResult) {
-      debugLog('Research result found, returning...');
-      return state.researchResult;
+    if (stateHash && Researcher.researchCache[stateHash]) {
+      debugLog('Research cache hit, returning...');
+      state.researchResult ||= Researcher.researchCache[stateHash];
+      return Researcher.researchCache[stateHash];
     }
 
     const experienceFileName = 'research_' + actionResult.getStateHash();
     if (this.experienceTracker.hasRecentExperience(experienceFileName)) {
       debugLog('Recent research result found, returning...');
-      return this.experienceTracker.readExperienceFile(experienceFileName)?.content || '';
+      const cached = this.experienceTracker.readExperienceFile(experienceFileName)?.content || '';
+      if (stateHash) Researcher.researchCache[stateHash] = cached;
+      state.researchResult = cached;
+      return cached;
     }
 
     tag('info').log(this.emoji, `Initiated research for ${state.url} to understand the context...`);
@@ -156,6 +162,7 @@ export class Researcher implements Agent {
 
             researchText += dedent`\n\n---
             <expanded_ui_map>
+
               When executed ${codeBlock}:
               ${htmlFragmentResult?.response?.text}
             </expanded_ui_map>`;
@@ -184,6 +191,7 @@ export class Researcher implements Agent {
     );
 
     state.researchResult = researchText;
+    if (stateHash) Researcher.researchCache[stateHash] = researchText;
 
     this.experienceTracker.writeExperienceFile(experienceFileName, researchText, {
       url: actionResult.relativeUrl,

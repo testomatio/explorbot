@@ -31,6 +31,7 @@ export class ExplorBot {
   private options: ExplorBotOptions;
   private userResolveFn: UserResolveFunction | null = null;
   public needsInput = false;
+  private navigator: Navigator | null = null;
 
   public agents: any[] = [];
 
@@ -78,8 +79,7 @@ export class ExplorBot {
 
   async visitInitialState(): Promise<void> {
     const url = this.options.from || '/';
-    const navigator = this.agentNavigator();
-    await navigator.visit(url);
+    this.visit(url);
     if (this.userResolveFn) {
       log('What should we do next? Consider /research, /plan, /navigate commands');
       this.userResolveFn();
@@ -136,10 +136,13 @@ export class ExplorBot {
   }
 
   agentNavigator(): Navigator {
-    return this.createAgent(({ ai, explorer }) => {
-      const experienceCompactor = this.agentExperienceCompactor();
-      return new Navigator(explorer, ai, experienceCompactor);
-    });
+    if (!this.navigator) {
+      this.navigator = this.createAgent(({ ai, explorer }) => {
+        const experienceCompactor = this.agentExperienceCompactor();
+        return new Navigator(explorer, ai, experienceCompactor);
+      });
+    }
+    return this.navigator;
   }
 
   agentPlanner(): Planner {

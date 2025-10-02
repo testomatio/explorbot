@@ -16,7 +16,13 @@ const defaultOptions: Required<RetryOptions> = {
   maxDelay: 10000,
   backoffMultiplier: 2,
   retryCondition: (error: Error) => {
-    return error.name === 'AI_APICallError' || error.message.includes('timeout') || error.message.includes('network') || error.message.includes('rate limit');
+    return (
+      error.name === 'AI_APICallError' ||
+      error.message.includes('response did not match schema') ||
+      error.message.includes('timeout') ||
+      error.message.includes('network') ||
+      error.message.includes('rate limit')
+    );
   },
 };
 

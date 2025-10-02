@@ -168,7 +168,6 @@ class Explorer {
   }
 
   visit(url: string) {
-    log('For AI powered navigation use navigator agent instead');
     return this.createAction().execute(`I.amOnPage('${url}')`);
   }
 
@@ -176,8 +175,12 @@ class Explorer {
     this.userResolveFn = userResolveFn;
   }
 
-  setExplorbot(explorbot: any): void {
-    this.explorbot = explorbot;
+  trackSteps(enable = true) {
+    if (enable) {
+      codeceptjs.event.dispatcher.on('step.start', stepTracker);
+    } else {
+      codeceptjs.event.dispatcher.off('step.start', stepTracker);
+    }
   }
 
   private listenToStateChanged(): void {
@@ -236,6 +239,14 @@ class Explorer {
     await this.playwrightHelper._stopBrowser();
     await codeceptjs.recorder.stop();
   }
+}
+
+function stepTracker(step: any) {
+  if (!step.toCode) {
+    return;
+  }
+  if (step?.name?.startsWith('grab')) return;
+  tag('step').log(step.toCode());
 }
 
 export default Explorer;

@@ -8,31 +8,6 @@ import { minify } from 'html-minifier-next';
  * Based on CodeceptJS approach but with recursive parsing to maintain structure
  */
 
-const INTERACTIVE_SELECTORS = [
-  'a',
-  'button',
-  'input',
-  'select',
-  'textarea',
-  '[role="button"]',
-  '[role="link"]',
-  '[role="checkbox"]',
-  '[role="radio"]',
-  '[role="combobox"]',
-  '[role="listbox"]',
-  '[role="textbox"]',
-  '[role="switch"]',
-  '[role="tab"]',
-  '[onclick]',
-  '[onmousedown]',
-  '[onmouseup]',
-  '[onchange]',
-  '[onfocus]',
-  '[onblur]',
-  'details',
-  'summary',
-];
-
 /**
  * Simple CSS selector matcher
  * Supports basic selectors: tag, .class, #id, [attr], [attr=value]
@@ -99,6 +74,12 @@ function matchesAnySelector(element: parse5TreeAdapter.Element, selectors: strin
 }
 
 const TEXT_ELEMENT_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'td', 'th', 'label', 'div', 'span']);
+
+const INTERACTIVE_TAGS = new Set(['a', 'button', 'details', 'input', 'option', 'select', 'summary', 'textarea']);
+
+const INTERACTIVE_ROLES = new Set(['button', 'checkbox', 'combobox', 'link', 'listbox', 'radio', 'search', 'switch', 'tab', 'textbox']);
+
+const INTERACTIVE_EVENT_ATTRIBUTES = new Set(['onclick', 'onchange', 'onblur', 'onfocus', 'onmousedown', 'onmouseup']);
 
 const TAILWIND_CLASS_PATTERNS: RegExp[] = [
   /^m[trblxy]?-/i,
@@ -399,46 +380,17 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
   const documentTitle = getDocumentTitle(document);
   const trashHtmlClasses = /^(text-|color-|flex-|float-|v-|ember-|d-|border-)/;
   const removeElements = new Set(NON_SEMANTIC_TAGS);
+  const textElements = ['label', 'h1', 'h2'];
+  const allowedAttrs = ['id', 'for', 'class', 'name', 'type', 'value', 'tabindex', 'aria-labelledby', 'aria-label', 'label', 'placeholder', 'title', 'alt', 'src', 'role'];
 
   function isFilteredOut(node) {
-    // Check exclude selectors first
     if (htmlConfig?.exclude && matchesAnySelector(node, htmlConfig.exclude)) {
       return true;
     }
 
     if (removeElements.has(node.nodeName.toLowerCase())) return true;
-    if (node.attrs) {
-      if (node.attrs.find((attr) => attr.name === 'role' && attr.value === 'tooltip')) return true;
-    }
-    return false;
-  }
-
-  // Define default interactive elements
-  const interactiveElements = ['a', 'input', 'button', 'select', 'textarea', 'option'];
-  const textElements = ['label', 'h1', 'h2'];
-  const allowedRoles = ['button', 'checkbox', 'search', 'textbox', 'tab'];
-  const allowedAttrs = ['id', 'for', 'class', 'name', 'type', 'value', 'tabindex', 'aria-labelledby', 'aria-label', 'label', 'placeholder', 'title', 'alt', 'src', 'role'];
-
-  function isInteractive(element) {
-    // Check if element matches include selectors
-    if (htmlConfig?.include && matchesAnySelector(element, htmlConfig.include)) {
-      return true;
-    }
-
-    // Check if element matches exclude selectors
-    if (htmlConfig?.exclude && matchesAnySelector(element, htmlConfig.exclude)) {
-      return false;
-    }
-
-    // Default logic
-    if (element.nodeName === 'input' && element.attrs.find((attr) => attr.name === 'type' && attr.value === 'hidden')) return false;
-    if (interactiveElements.includes(element.nodeName)) return true;
-    if (element.attrs) {
-      if (element.attrs.find((attr) => attr.name === 'contenteditable')) return true;
-      if (element.attrs.find((attr) => attr.name === 'tabindex')) return true;
-      const role = element.attrs.find((attr) => attr.name === 'role');
-      if (role && allowedRoles.includes(role.value)) return true;
-    }
+    if (!('attrs' in node) || !node.attrs) return false;
+    if (node.attrs.find((attr) => attr.name === 'role' && attr.value === 'tooltip')) return true;
     return false;
   }
 
@@ -449,47 +401,43 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
 
   function hasInteractiveDescendant(node) {
     if (!node.childNodes) return false;
-    let result = false;
-
     for (const childNode of node.childNodes) {
-      if (isInteractive(childNode) || hasMeaningfulText(childNode)) return true;
-      result = result || hasInteractiveDescendant(childNode);
+      if ('tagName' in childNode && shouldKeepInteractive(childNode as parse5TreeAdapter.Element, htmlConfig)) return true;
+      if (hasMeaningfulText(childNode)) return true;
+      if (hasInteractiveDescendant(childNode)) return true;
     }
 
-    return result;
+    return false;
   }
 
   function removeNonInteractive(node) {
     if (node.nodeName !== '#document') {
       const parent = node.parentNode;
+      if (!parent || !('childNodes' in parent)) return false;
       const index = parent.childNodes.indexOf(node);
+      if (index === -1) return false;
 
       if (isFilteredOut(node)) {
         parent.childNodes.splice(index, 1);
         return true;
       }
 
-      // keep texts for interactive elements
-      if ((isInteractive(parent) || hasMeaningfulText(parent)) && node.nodeName === '#text') {
+      if (node.nodeName === '#text' && 'tagName' in parent && (shouldKeepInteractive(parent as parse5TreeAdapter.Element, htmlConfig) || hasMeaningfulText(parent))) {
         node.value = node.value.trim().slice(0, 200);
         if (!node.value) return false;
         return true;
       }
 
-      if (
-        // if parent is interactive, we may need child element to match
-        !isInteractive(parent) &&
-        !isInteractive(node) &&
-        !hasInteractiveDescendant(node) &&
-        !hasMeaningfulText(node)
-      ) {
+      const parentInteractive = 'tagName' in parent ? shouldKeepInteractive(parent as parse5TreeAdapter.Element, htmlConfig) : false;
+      const nodeInteractive = 'tagName' in node ? shouldKeepInteractive(node as parse5TreeAdapter.Element, htmlConfig) : false;
+
+      if (!parentInteractive && !nodeInteractive && !hasInteractiveDescendant(node) && !hasMeaningfulText(node)) {
         parent.childNodes.splice(index, 1);
         return true;
       }
     }
 
-    if (node.attrs) {
-      // Filter and keep allowed attributes, accessibility attributes
+    if ('attrs' in node && node.attrs) {
       node.attrs = node.attrs.filter((attr) => {
         const { name, value } = attr;
         if (name === 'class') {
@@ -804,25 +752,31 @@ function findBody(document: parse5TreeAdapter.Document): parse5TreeAdapter.Eleme
   return (html.childNodes.find((node) => node.nodeName === 'body') as parse5TreeAdapter.Element) || null;
 }
 
-function shouldKeepInteractive(element: parse5TreeAdapter.Element): boolean {
+function shouldKeepInteractive(element: parse5TreeAdapter.Element, selectorConfig?: { include?: string[]; exclude?: string[] }): boolean {
+  if (selectorConfig?.include && matchesAnySelector(element, selectorConfig.include)) {
+    return true;
+  }
+
+  if (selectorConfig?.exclude && matchesAnySelector(element, selectorConfig.exclude)) {
+    return false;
+  }
+
   const tagName = element.tagName.toLowerCase();
-
-  // Check for interactive tags
-  if (['a', 'button', 'input', 'select', 'textarea', 'details', 'summary'].includes(tagName)) {
-    return true;
+  if (tagName === 'input') {
+    const type = getAttribute(element, 'type');
+    if (type && type.toLowerCase() === 'hidden') return false;
   }
 
-  // Check for interactive roles
+  if (INTERACTIVE_TAGS.has(tagName)) return true;
+
   const role = getAttribute(element, 'role');
-  if (role && ['button', 'link', 'checkbox', 'radio', 'combobox', 'listbox', 'textbox', 'switch', 'tab'].includes(role.toLowerCase())) {
-    return true;
-  }
+  if (role && INTERACTIVE_ROLES.has(role.toLowerCase())) return true;
 
-  // Check for interactive attributes
-  for (const attr of element.attrs) {
-    if (['onclick', 'onmousedown', 'onmouseup', 'onchange', 'onfocus', 'onblur'].includes(attr.name.toLowerCase())) {
-      return true;
-    }
+  for (const attr of element.attrs ?? []) {
+    const attrName = attr.name.toLowerCase();
+    if (INTERACTIVE_EVENT_ATTRIBUTES.has(attrName)) return true;
+    if (attrName === 'contenteditable') return true;
+    if (attrName === 'tabindex') return true;
   }
 
   return false;
@@ -840,7 +794,7 @@ function shouldKeepCombined(element: parse5TreeAdapter.Element, htmlConfig?: Htm
   }
 
   // Keep if interactive
-  if (shouldKeepInteractive(element)) return true;
+  if (shouldKeepInteractive(element, htmlConfig)) return true;
 
   // Keep if it's a text element with sufficient content (headers are always kept)
   const tagName = element.tagName.toLowerCase();
@@ -852,15 +806,15 @@ function shouldKeepCombined(element: parse5TreeAdapter.Element, htmlConfig?: Htm
   }
 
   // Keep if it might contain interactive or text elements
-  return hasKeepableChildren(element);
+  return hasKeepableChildren(element, htmlConfig);
 }
 
-function hasKeepableChildren(element: parse5TreeAdapter.Element): boolean {
+function hasKeepableChildren(element: parse5TreeAdapter.Element, htmlConfig?: HtmlConfig['combined']): boolean {
   if (!element.childNodes) return false;
 
   for (const child of element.childNodes) {
     if ('tagName' in child) {
-      if (shouldKeepCombined(child as parse5TreeAdapter.Element)) {
+      if (shouldKeepCombined(child as parse5TreeAdapter.Element, htmlConfig)) {
         return true;
       }
     } else if (child.nodeName === '#text') {
@@ -1006,69 +960,6 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
   }
 }
 
-function truncateTextInTree(element: parse5TreeAdapter.Element, maxLength: number): void {
-  const truncateNode = (node: parse5TreeAdapter.Node, remaining: number): number => {
-    if (remaining <= 0) return 0;
-
-    if (node.nodeName === '#text') {
-      const textNode = node as parse5TreeAdapter.TextNode;
-      const text = textNode.value;
-
-      if (text.length <= remaining) {
-        return text.length;
-      }
-
-      // Truncate this text node
-      textNode.value = text.substring(0, remaining - 3) + '...';
-      return remaining;
-    }
-
-    if ('childNodes' in node) {
-      const element = node as parse5TreeAdapter.Element;
-      let used = 0;
-
-      for (const child of element.childNodes) {
-        const childUsed = truncateNode(child, remaining - used);
-        used += childUsed;
-
-        if (used >= remaining) {
-          // Remove remaining siblings
-          const index = element.childNodes.indexOf(child);
-          element.childNodes.splice(index + 1);
-          break;
-        }
-      }
-
-      return used;
-    }
-
-    return 0;
-  };
-
-  truncateNode(element, maxLength);
-}
-
-function findTextElementsForTruncation(element: parse5TreeAdapter.Element): parse5TreeAdapter.Element[] {
-  const result: parse5TreeAdapter.Element[] = [];
-
-  if (!element || !element.tagName) return result;
-
-  const tagName = element.tagName.toLowerCase();
-  if (TEXT_ELEMENT_TAGS.has(tagName) && !shouldKeepInteractive(element)) {
-    result.push(element);
-  }
-
-  if (element.childNodes) {
-    element.childNodes.forEach((child) => {
-      if ('tagName' in child) {
-        result.push(...findTextElementsForTruncation(child as parse5TreeAdapter.Element));
-      }
-    });
-  }
-
-  return result;
-}
-
 function getTextContent(element: parse5TreeAdapter.Element): string {
   let text = '';
 
@@ -1087,32 +978,4 @@ function getTextContent(element: parse5TreeAdapter.Element): string {
 function getAttribute(element: parse5TreeAdapter.Element, name: string): string | undefined {
   const attr = element.attrs.find((a) => a.name === name);
   return attr?.value;
-}
-
-function getElementPath(element: parse5TreeAdapter.Element): string {
-  const path: string[] = [];
-  let current: parse5TreeAdapter.Element | null = element;
-
-  while (current && 'tagName' in current) {
-    let selector = current.tagName.toLowerCase();
-
-    const id = getAttribute(current, 'id');
-    if (id) {
-      selector += `#${id}`;
-    } else {
-      // Calculate nth-child
-      if (current.parentNode && 'childNodes' in current.parentNode) {
-        const siblings = current.parentNode.childNodes.filter((n) => 'tagName' in n && (n as parse5TreeAdapter.Element).tagName === current.tagName);
-        const index = siblings.indexOf(current);
-        if (index > 0) {
-          selector += `:nth-of-type(${index + 1})`;
-        }
-      }
-    }
-
-    path.unshift(selector);
-    current = current.parentNode as parse5TreeAdapter.Element;
-  }
-
-  return path.join(' > ');
 }

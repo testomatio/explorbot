@@ -10,7 +10,8 @@ const debugLog = createDebug('explorbot:action-state');
 
 interface ActionResultData {
   html: string;
-  url: string;
+  url?: string;
+  fullUrl?: string;
   screenshot?: Buffer;
   title?: string;
   timestamp?: Date;
@@ -33,6 +34,7 @@ export class ActionResult {
   public readonly h3: string | null = null;
   public readonly h4: string | null = null;
   public readonly url: string | null = null;
+  public readonly fullUrl: string | null = null;
   public readonly browserLogs: any[] = [];
 
   constructor(data: ActionResultData) {
@@ -42,6 +44,10 @@ export class ActionResult {
     };
 
     Object.assign(this, defaults, data);
+
+    if (!this.fullUrl && this.url) {
+      this.fullUrl = this.url;
+    }
 
     // Extract headings from HTML if not provided
     if (this.html && (!this.h1 || !this.h2 || !this.h3 || !this.h4)) {

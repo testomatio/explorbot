@@ -147,8 +147,9 @@ class Action {
 
     setActivity(`🔎 Browsing...`, 'action');
 
-    const codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
-    tag('step').log(highlight(codeString, { language: 'javascript' }));
+    let codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
+    codeString = codeString.replace(/^\(I\) => /, '').trim();
+    // tag('step').log(highlight(codeString, { language: 'javascript' }));
     try {
       debugLog('Executing action:', codeString);
 

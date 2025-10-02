@@ -7,6 +7,8 @@ import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { Conversation } from './conversation.js';
 
 const debugLog = createDebug('explorbot:provider');
+const promptLog = createDebug('explorbot:provider:out');
+const responseLog = createDebug('explorbot:provider:in');
 
 export class Provider {
   private config: AIConfig;
@@ -66,6 +68,7 @@ export class Provider {
       model: this.provider(this.config.model),
     };
 
+    promptLog(messages[messages.length - 1].content);
     try {
       const response = await withRetry(async () => {
         const result = await generateText({ messages, ...config });
@@ -77,7 +80,7 @@ export class Provider {
       }, this.getRetryOptions(options));
 
       clearActivity();
-      debugLog('AI response:', response.text);
+      responseLog(response.text);
       return response;
     } catch (error: any) {
       tag('error').log(error.message || error.toString());
@@ -93,8 +96,8 @@ export class Provider {
 
     const toolNames = Object.keys(tools || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
-    debugLog('Available tools:', toolNames);
-    debugLog(messages[messages.length - 1].content);
+    promptLog('Available tools:', toolNames);
+    promptLog(messages[messages.length - 1].content);
 
     const config = {
       model: this.provider(this.config.model),
@@ -122,10 +125,13 @@ export class Provider {
       // Log tool usage summary
       if (response.toolCalls && response.toolCalls.length > 0) {
         tag('debug').log(`AI executed ${response.toolCalls.length} tool calls`);
+        responseLog(response.toolCalls);
         response.toolCalls.forEach((call: any, index: number) => {
-          tag('step').log(`⯈ ${call.toolName}(${Object.values(call?.input || []).join(', ')})`);
+          tag('step').log(`${call.toolName}(${Object.values(call?.input || []).join(', ')})`);
         });
       }
+
+      responseLog(response.text);
 
       return response;
     } catch (error: any) {

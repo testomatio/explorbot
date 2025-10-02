@@ -90,6 +90,17 @@ describe('StateManager', () => {
       expect(history[0].codeBlock).toBe('I.amOnPage("/test")');
       expect(history[0].trigger).toBe('navigation');
     });
+
+    it('should default to root path when action result lacks url', () => {
+      const actionResult = new ActionResult({
+        html: '<html></html>',
+      });
+
+      const state = stateManager.updateState(actionResult);
+
+      expect(state.url).toBe('/');
+      expect(stateManager.getCurrentState()?.url).toBe('/');
+    });
   });
 
   describe('updateStateFromBasic', () => {
@@ -247,6 +258,49 @@ describe('StateManager', () => {
       expect(recent[0].toState.url).toBe('/page8');
       expect(recent[1].toState.url).toBe('/page9');
       expect(recent[2].toState.url).toBe('/page10');
+    });
+  });
+
+  describe('dead loop detection', () => {
+    const setHistory = (sequence: string) => {
+      const entries: StateTransition[] = sequence.split('').map((hash, index) => {
+        const toState: WebPageState = { url: hash, hash };
+        const fromState = index === 0 ? null : { url: sequence[index - 1], hash: sequence[index - 1] };
+        return {
+          fromState,
+          toState,
+          codeBlock: '',
+          timestamp: new Date(),
+          trigger: 'manual',
+        };
+      });
+      (stateManager as any).stateHistory = entries;
+      (stateManager as any).currentState = entries.length ? entries[entries.length - 1].toState : null;
+    };
+
+    it('should detect single state dead loop', () => {
+      setHistory('AAAAAAAAAA');
+      expect(stateManager.isInDeadLoop()).toBe(true);
+    });
+
+    it('should detect two state dead loop', () => {
+      setHistory('ABABABABA');
+      expect(stateManager.isInDeadLoop()).toBe(true);
+    });
+
+    it('should detect three state dead loop', () => {
+      setHistory('ABCABCABCABC');
+      expect(stateManager.isInDeadLoop()).toBe(true);
+    });
+
+    it('should ignore short history', () => {
+      setHistory('AAAAA');
+      expect(stateManager.isInDeadLoop()).toBe(false);
+    });
+
+    it('should ignore mixed history', () => {
+      setHistory('ABCDACABBB');
+      expect(stateManager.isInDeadLoop()).toBe(false);
     });
   });
 
