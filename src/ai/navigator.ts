@@ -1,17 +1,18 @@
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { ExperienceTracker } from '../experience-tracker.js';
+import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
 import type { WebPageState } from '../state-manager.js';
+import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { createDebug, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
+import { Researcher } from './researcher.ts';
 import type { Provider } from './provider.js';
 import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
-import { extractCodeBlocks } from '../utils/code-extractor.js';
-import Explorer from '../explorer.ts';
 
 const debugLog = createDebug('explorbot:navigator');
 
@@ -35,6 +36,18 @@ class Navigator implements Agent {
     You are given the web page and a message from user.
     You need to resolve the state of the page based on the message.
   </task>
+  `;
+  private freeSailSystemPrompt = dedent`
+  <role>
+    You help with exploratory web navigation.
+  </role>
+  <rules>
+    Always propose a single next navigation target that was not visited yet.
+    Base the suggestion only on the provided research notes and HTML snapshot.
+    Respond with exactly two lines:
+    Next: <target>
+    Reason: <short justification>
+  </rules>
   `;
   private explorer: Explorer;
 
@@ -159,9 +172,9 @@ class Navigator implements Agent {
           const result = await this.provider.invokeConversation(conversation);
           if (!result) return;
           const aiResponse = result?.response?.text;
-          tag('info').log(this.emoji, aiResponse?.split('\n')[0]);
+          tag('info').log(aiResponse?.split('\n')[0]);
           debugLog('Received AI response:', aiResponse.length, 'characters');
-          tag('step').log(this.emoji, 'Resolving navigation issue...');
+          tag('step').log('Resolving navigation issue...');
           codeBlocks = extractCodeBlocks(aiResponse ?? '');
         }
 
@@ -175,11 +188,11 @@ class Navigator implements Agent {
           return;
         }
 
-        tag('step').log(this.emoji, `Attempting resolution: ${codeBlock}`);
+        tag('step').log(`Attempting resolution: ${codeBlock}`);
         resolved = await this.currentAction.attempt(codeBlock, iteration, message);
 
         if (resolved) {
-          tag('success').log(this.emoji, 'Navigation resolved successfully');
+          tag('success').log('Navigation resolved successfully');
           stop();
           return;
         }
@@ -194,6 +207,108 @@ class Navigator implements Agent {
     );
 
     return resolved;
+  }
+
+  async freeSail(actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
+    const stateManager = this.explorer.getStateManager();
+    const state = stateManager.getCurrentState();
+    if (!state) {
+      return null;
+    }
+
+    const currentActionResult = actionResult || ActionResult.fromState(state);
+    const research = Researcher.getCachedResearch(state) || '';
+    const combinedHtml = await currentActionResult.combinedHtml();
+
+    const history = stateManager.getStateHistory();
+    const visited = new Set<string>();
+    const normalize = (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return '';
+      if (trimmed === '/') return trimmed;
+      const withoutSlash = trimmed.replace(/\/+$/, '');
+      return withoutSlash.toLowerCase();
+    };
+
+    const pushVisited = (value?: string | null) => {
+      if (!value) return;
+      const normalized = normalize(value);
+      if (normalized) visited.add(normalized);
+    };
+
+    history.forEach((transition) => {
+      pushVisited(transition.toState.url);
+      pushVisited(transition.toState.fullUrl);
+    });
+    pushVisited(state.url);
+    pushVisited(state.fullUrl);
+
+    const visitedList = [...visited];
+    const visitedBlock = visitedList.length > 0 ? visitedList.join('\n') : 'none';
+
+    const prompt = dedent`
+      <research>
+      ${research || 'No cached research available'}
+      </research>
+
+      <page_html>
+      ${combinedHtml}
+      </page_html>
+
+      <context>
+      Current URL: ${currentActionResult.url || 'unknown'}
+      Visited URLs:
+      ${visitedBlock}
+      </context>
+
+      <task>
+      Suggest a new navigation target that has not been visited yet and can be reached from the current page.
+      </task>
+    `;
+
+    const conversation = this.provider.startConversation(this.freeSailSystemPrompt);
+    conversation.addUserText(prompt);
+
+    let suggestion: { target: string; reason: string } | null = null;
+
+    await loop(
+      async ({ stop }) => {
+        const result = await this.provider.invokeConversation(conversation);
+        const text = result?.response?.text?.trim();
+        if (!text) {
+          stop();
+          return;
+        }
+
+        const nextMatch = text.match(/Next:\s*(.+)/i);
+        const reasonMatch = text.match(/Reason:\s*(.+)/i);
+        const target = nextMatch?.[1]?.trim();
+        if (!target) {
+          stop();
+          return;
+        }
+
+        const normalizedTarget = normalize(target);
+        if (normalizedTarget && visited.has(normalizedTarget)) {
+          conversation.addUserText(
+            dedent`
+            The suggestion "${target}" was already visited. Choose another destination not in this list:
+            ${visitedBlock}
+            `
+          );
+          return;
+        }
+
+        suggestion = {
+          target,
+          reason: reasonMatch?.[1]?.trim() || '',
+        };
+        stop();
+      },
+      { maxAttempts: 3 }
+    );
+
+    return suggestion;
   }
 
   private outputRule(): string {

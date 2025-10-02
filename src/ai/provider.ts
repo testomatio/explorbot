@@ -155,6 +155,7 @@ export class Provider {
     };
 
     try {
+      promptLog(messages[messages.length - 1].content);
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
         return (await Promise.race([
@@ -167,8 +168,8 @@ export class Provider {
       }, this.getRetryOptions(options));
 
       clearActivity();
-      debugLog('AI structured response:', response.object);
-      tag('info').log('🎯 AI structured response received');
+      responseLog(response.object);
+
       return response;
     } catch (error: any) {
       clearActivity();

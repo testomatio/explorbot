@@ -1,7 +1,7 @@
-import React from 'react';
-import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { addActivityListener, removeActivityListener, type ActivityEntry } from '../activity.ts';
+import React from 'react';
+import { useEffect, useState } from 'react';
+import { type ActivityEntry, addActivityListener, removeActivityListener } from '../activity.ts';
 
 const ActivityPane: React.FC = () => {
   const [activity, setActivity] = useState<ActivityEntry | null>(null);

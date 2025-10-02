@@ -59,7 +59,7 @@ export class Conversation {
     return new Conversation([...this.messages]);
   }
 
-  cleanupTag(tagName: string, replacement: string, keepLast: number = 0): void {
+  cleanupTag(tagName: string, replacement: string, keepLast = 0): void {
     const messagesToProcess = Math.max(0, this.messages.length - keepLast);
     const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`<${escapedTag}>[\\s\\S]*?<\\/${escapedTag}>`, 'g');

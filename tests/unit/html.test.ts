@@ -4,13 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot } from '../../src/utils/html.ts';
 
 // Load test HTML files
-const githubHtml = readFileSync(join(process.cwd(), 'test/data/github.html'), 'utf8');
+const githubHtml = readFileSync(join(process.cwd(), 'test-data/github.html'), 'utf8');
 
-const gitlabHtml = readFileSync(join(process.cwd(), 'test/data/gitlab.html'), 'utf8');
+const gitlabHtml = readFileSync(join(process.cwd(), 'test-data/gitlab.html'), 'utf8');
 
-const testomatHtml = readFileSync(join(process.cwd(), 'test/data/testomat.html'), 'utf8');
+const testomatHtml = readFileSync(join(process.cwd(), 'test-data/testomat.html'), 'utf8');
 
-const checkoutHtml = readFileSync(join(process.cwd(), 'test/data/checkout.html'), 'utf8');
+const checkoutHtml = readFileSync(join(process.cwd(), 'test-data/checkout.html'), 'utf8');
 
 describe('HTML Parsing Library', () => {
   describe('htmlMinimalUISnapshot', () => {

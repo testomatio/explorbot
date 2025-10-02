@@ -3,6 +3,8 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import Action from '../action.js';
 import { createDebug } from '../utils/logger.js';
+import { loop } from '../utils/loop.js';
+import { locatorRule, multipleLocatorRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
@@ -74,28 +76,40 @@ export function createCodeceptJSTools(action: Action) {
       description: dedent`
         Perform a click on an element by its locator. CSS or XPath locator are equally supported.
         Prefer click on clickable elements like buttons, links, role=button etc, or elements have aria-label or aria-roledescription attributes.
+        Provide multiple locator alternatives to click the same element to increase chance of success.
+
+        ${locatorRule}
+        ${multipleLocatorRule}
       `,
       inputSchema: z.object({
-        locator: z.string().describe('CSS or XPath locator of target element'),
-        force: z.boolean().optional().describe('Force click even if the element is not visible. If previous click didn\t work, try again with force: true'),
+        locators: z.array(z.string()).describe('Array of CSS or XPath locators to try in order. Will try each locator until one succeeds.'),
       }),
-      execute: async ({ locator, force }) => {
-        if (force) {
-          return await toolAction(action, (I) => I.forceClick(locator), 'click', { locator })();
-        }
-        let result = await toolAction(action, (I) => I.click(locator), 'click', { locator })();
-        if (!result.success && !force) {
-          // auto force click if previous click failed
-          result = await toolAction(action, (I) => I.forceClick(locator), 'click', { locator })();
-        }
-        if (!result.success) {
-          result.suggestion = `
-            Check the last HTML sample, do not interact with this element if it is not in HTML.
-            If element exists in HTML, try to use click() with force: true option to click on it.
-            If multiple calls to click failed you are probably on wrong page. Use reset() tool if it is available.
-          `;
-        }
-        return result;
+      execute: async ({ locators }) => {
+        let result = {
+          success: false,
+          message: 'Noting was executed',
+          action: 'click',
+        };
+        await loop(
+          async ({ stop }) => {
+            const currentLocator = locators.shift();
+
+            if (!currentLocator) stop();
+
+            result = await toolAction(action, (I) => I.click(currentLocator), 'click', { locator: currentLocator })();
+            if (result.success) stop();
+
+            // auto force click if previous click failed
+            result = await toolAction(action, (I) => I.forceClick(currentLocator), 'click', { locator: currentLocator })();
+
+            if (result.success) {
+              stop();
+            }
+          },
+          {
+            maxAttempts: locators.length,
+          }
+        );
       },
     }),
 
@@ -115,8 +129,9 @@ export function createCodeceptJSTools(action: Action) {
           // let's click and type instead.
           await toolAction(action, (I) => I.click(locator), 'click', { locator })();
           await action.waitForInteraction();
+          await action.execute(`I.pressKey('Delete')`);
           // it's ok even if click not worked, we still can type if element is already focused
-          result = await toolAction(action, (I) => I.type(text), 'type', { text, locator })();
+          result = await toolAction(action, (I) => I.type(text), 'type', { text })();
         }
         return result;
       },

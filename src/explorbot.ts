@@ -1,17 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { Agent } from './ai/agent.ts';
+import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
 import { Navigator } from './ai/navigator.ts';
-import { Planner, type Task } from './ai/planner.ts';
+import { Planner } from './ai/planner.ts';
 import { AIProvider, AiError } from './ai/provider.ts';
 import { Researcher } from './ai/researcher.ts';
 import { Tester } from './ai/tester.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
-import { log, setVerboseMode } from './utils/logger.ts';
-import { Agent } from './ai/agent.ts';
+import { log, tag, setVerboseMode } from './utils/logger.ts';
+import { Plan } from './test-plan.ts';
 
+let planId = 0;
 export interface ExplorBotOptions {
   from?: string;
   verbose?: boolean;
@@ -31,9 +34,8 @@ export class ExplorBot {
   private options: ExplorBotOptions;
   private userResolveFn: UserResolveFunction | null = null;
   public needsInput = false;
-  private navigator: Navigator | null = null;
-
-  public agents: any[] = [];
+  private currentPlan?: Plan;
+  private agents: Record<string, any> = {};
 
   constructor(options: ExplorBotOptions = {}) {
     this.options = options;
@@ -79,7 +81,7 @@ export class ExplorBot {
 
   async visitInitialState(): Promise<void> {
     const url = this.options.from || '/';
-    this.visit(url);
+    await this.visit(url);
     if (this.userResolveFn) {
       log('What should we do next? Consider /research, /plan, /navigate commands');
       this.userResolveFn();
@@ -124,59 +126,62 @@ export class ExplorBot {
 
     const agentEmoji = (agent as any).emoji || '';
     const agentName = (agent as any).constructor.name.toLowerCase();
-    log(`${agentEmoji} Created ${agentName} agent`);
+    tag('debug').log(`Created ${agentName} agent`);
 
-    this.agents.push(agent);
+    // Agent is stored by the calling method using a string key
 
     return agent;
   }
 
   agentResearcher(): Researcher {
-    return this.createAgent(({ ai, explorer }) => new Researcher(explorer, ai));
+    return (this.agents['researcher'] ||= this.createAgent(({ ai, explorer }) => new Researcher(explorer, ai)));
   }
 
   agentNavigator(): Navigator {
-    if (!this.navigator) {
-      this.navigator = this.createAgent(({ ai, explorer }) => {
-        const experienceCompactor = this.agentExperienceCompactor();
-        return new Navigator(explorer, ai, experienceCompactor);
-      });
-    }
-    return this.navigator;
+    return (this.agents['navigator'] ||= this.createAgent(({ ai, explorer }) => {
+      return new Navigator(explorer, ai, this.agentExperienceCompactor());
+    }));
   }
 
   agentPlanner(): Planner {
-    return this.createAgent(({ ai, explorer }) => new Planner(explorer, ai));
+    return (this.agents['planner'] ||= this.createAgent(({ ai, explorer }) => new Planner(explorer, ai)));
   }
 
   agentTester(): Tester {
-    return this.createAgent(({ ai, explorer }) => new Tester(explorer, ai));
+    return (this.agents['tester'] ||= this.createAgent(({ ai, explorer }) => new Tester(explorer, ai)));
+  }
+
+  agentCaptain(): Captain {
+    return (this.agents['captain'] ||= new Captain(this));
   }
 
   agentExperienceCompactor(): ExperienceCompactor {
-    return this.createAgent(({ ai, explorer }) => {
+    return (this.agents['experienceCompactor'] ||= this.createAgent(({ ai, explorer }) => {
       const experienceTracker = explorer.getStateManager().getExperienceTracker();
       return new ExperienceCompactor(ai, experienceTracker);
-    });
+    }));
   }
 
-  async research() {
-    log('Researching...');
-    const researcher = this.agentResearcher();
-    researcher.setActor(this.explorer.actor);
-    const conversation = await researcher.research();
-    return conversation;
+  getCurrentPlan(): Plan | undefined {
+    return this.currentPlan;
   }
 
-  async plan() {
-    log('Researching...');
-    const researcher = this.agentResearcher();
-    researcher.setActor(this.explorer.actor);
-    await researcher.research();
-    log('Planning...');
+  async plan(feature?: string) {
     const planner = this.agentPlanner();
-    const scenarios = await planner.plan();
-    this.explorer.scenarios = scenarios;
-    return scenarios;
+    await this.agentResearcher().research();
+    this.currentPlan = await planner.plan(feature);
+    return this.currentPlan;
+  }
+
+  async testOneByOne() {
+    const tester = this.agentTester();
+    if (!this.currentPlan) {
+      throw new Error('No plan found');
+    }
+    const test = this.currentPlan.getPendingTests()[0];
+    if (!test) {
+      throw new Error('No test to test');
+    }
+    await tester.test(test);
   }
 }

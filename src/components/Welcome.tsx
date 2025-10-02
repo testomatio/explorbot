@@ -1,6 +1,6 @@
+import { Box, Text } from 'ink';
 import React from 'react';
 import { useEffect, useState } from 'react';
-import { Box, Text } from 'ink';
 import { ConfigParser } from '../config.js';
 
 interface ConfigInfo {

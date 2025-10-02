@@ -1,6 +1,6 @@
-import React from 'react';
-import { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
+import React from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { CommandHandler } from '../command-handler.js';
 import AutocompletePane from './AutocompletePane.js';
 
@@ -9,9 +9,10 @@ interface InputPaneProps {
   exitOnEmptyInput?: boolean;
   onSubmit?: (value: string) => Promise<void>;
   onCommandStart?: () => void;
+  onCommandComplete?: () => void;
 }
 
-const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput = false, onSubmit, onCommandStart }) => {
+const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput = false, onSubmit, onCommandStart, onCommandComplete }) => {
   const [inputValue, setInputValue] = useState('');
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -39,14 +40,19 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
       onCommandStart?.();
 
       // Check if this is a command (starts with / or I.) or is 'exit'
-      const isCommand = trimmedValue.startsWith('/') || trimmedValue.startsWith('I.') || trimmedValue === 'exit';
+      const isCommand = trimmedValue.startsWith('/') || trimmedValue.startsWith('I.') || trimmedValue === 'exit' || trimmedValue === 'quit';
 
       if (isCommand) {
+        if (onSubmit) {
+          await onSubmit(trimmedValue);
+        }
         // Execute as command directly
         try {
           await commandHandler.executeCommand(trimmedValue);
         } catch (error) {
           addLog(`Command failed: ${error}`);
+        } finally {
+          onCommandComplete?.();
         }
       } else if (onSubmit) {
         // Use the provided submit callback for non-commands
@@ -70,6 +76,16 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
     }
 
     if (key.return) {
+      if (showAutocomplete) {
+        const filteredCommands = commandHandler.getFilteredCommands(inputValue);
+        const chosen = filteredCommands[selectedIndex] || filteredCommands[0];
+        if (chosen) {
+          setInputValue(chosen);
+          setCursorPosition(chosen.length);
+          handleSubmit(chosen);
+          return;
+        }
+      }
       handleSubmit(inputValue);
       return;
     }
@@ -95,13 +111,13 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
     }
 
     // Handle autocomplete navigation
-    if (key.upArrow && showAutocomplete) {
+    if (showAutocomplete && (key.upArrow || (key.shift && key.leftArrow))) {
       const filteredCommands = commandHandler.getFilteredCommands(inputValue);
       setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filteredCommands.length - 1));
       return;
     }
 
-    if (key.downArrow && showAutocomplete) {
+    if (showAutocomplete && (key.downArrow || (key.shift && key.rightArrow))) {
       const filteredCommands = commandHandler.getFilteredCommands(inputValue);
       setSelectedIndex((prev) => (prev < filteredCommands.length - 1 ? prev + 1 : 0));
       return;

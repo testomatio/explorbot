@@ -1,17 +1,14 @@
-import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
+import React, { useState, useEffect } from 'react';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
 
-interface AddKnowledgeProps {
-  customPath?: string;
-}
-
-const AddKnowledge: React.FC<AddKnowledgeProps> = ({ customPath }) => {
+const AddKnowledge: React.FC = () => {
   const [urlPattern, setUrlPattern] = useState('');
   const [description, setDescription] = useState('');
   const [activeField, setActiveField] = useState<'url' | 'description'>('url');
   const [suggestedUrls, setSuggestedUrls] = useState<string[]>([]);
+  const [existingKnowledge, setExistingKnowledge] = useState<string[]>([]);
 
   useEffect(() => {
     try {
@@ -22,6 +19,21 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ customPath }) => {
       console.error('Failed to load suggestions:', error);
     }
   }, []);
+
+  useEffect(() => {
+    if (urlPattern.trim()) {
+      try {
+        const knowledgeTracker = new KnowledgeTracker();
+        const knowledge = knowledgeTracker.getKnowledgeForUrl(urlPattern);
+        setExistingKnowledge(knowledge);
+      } catch (error) {
+        console.error('Failed to load existing knowledge:', error);
+        setExistingKnowledge([]);
+      }
+    } else {
+      setExistingKnowledge([]);
+    }
+  }, [urlPattern]);
 
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
@@ -54,8 +66,9 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ customPath }) => {
 
     try {
       const knowledgeTracker = new KnowledgeTracker();
-      knowledgeTracker.addKnowledge(urlPattern.trim(), description.trim(), customPath);
-      console.log(`\n✅ Knowledge saved successfully`);
+      const result = knowledgeTracker.addKnowledge(urlPattern.trim(), description.trim());
+      const action = result.isNewFile ? 'Created' : 'Updated';
+      console.log(`\n✅ Knowledge ${action} in: ${result.filename}`);
       process.exit(0);
     } catch (error) {
       console.error(`\n❌ Failed to save knowledge: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -102,6 +115,28 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ customPath }) => {
           Wildcards (*) or regexes (^pattern, ~pattern) can be used
         </Text>
       </Box>
+
+      {existingKnowledge.length > 0 && (
+        <Box marginBottom={1} flexDirection="column">
+          <Box marginBottom={1}>
+            <Text color="yellow" bold>
+              📖 Existing Knowledge for this URL:
+            </Text>
+          </Box>
+          <Box borderStyle="single" borderColor="gray" padding={1} flexDirection="column">
+            {existingKnowledge.map((knowledge, index) => (
+              <Box key={index} flexDirection="column" marginBottom={index < existingKnowledge.length - 1 ? 1 : 0}>
+                <Text color="gray">{knowledge}</Text>
+                {index < existingKnowledge.length - 1 && (
+                  <Text color="gray" dimColor>
+                    ---
+                  </Text>
+                )}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
 
       <Box marginBottom={1} flexDirection="column">
         <Box marginBottom={1}>

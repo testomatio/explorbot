@@ -1,10 +1,8 @@
 import path from 'node:path';
 // @ts-ignore
 import * as codeceptjs from 'codeceptjs';
-import type { ExplorbotConfig } from '../explorbot.config.js';
+import type { ExplorbotConfig } from './config.js';
 import Action from './action.js';
-import { ExperienceCompactor } from './ai/experience-compactor.js';
-import type { Task } from './ai/planner.js';
 import { AIProvider } from './ai/provider.js';
 import { ConfigParser } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
@@ -78,23 +76,27 @@ class Explorer {
       playwrightConfig.show = !this.options.headless;
     }
 
+    let debugInfo = '';
+
     if (!playwrightConfig.show && !process.env.CI) {
       if (config.playwright.browser === 'chromium') {
         const debugPort = 9222;
         playwrightConfig.chromium ||= {};
         playwrightConfig.chromium.args = [...(config.playwright.args || []), `--remote-debugging-port=${debugPort}`, '--remote-debugging-address=0.0.0.0'];
 
-        log(`Enabling debug protocol for Chromium at http://localhost:${debugPort}`);
+        debugInfo = `Enabling debug protocol for Chromium at http://localhost:${debugPort}`;
       } else if (config.playwright.browser === 'firefox') {
         const debugPort = 9222;
         playwrightConfig.firefox ||= {};
         playwrightConfig.firefox.args = [...(config.playwright.args || []), `--remote-debugging-port=${debugPort}`];
-        log(`Enabling debug protocol for Firefox at http://localhost:${debugPort}`);
+        debugInfo = `Enabling debug protocol for Firefox at http://localhost:${debugPort}`;
       }
     }
 
-    log(`${playwrightConfig.browser} started in ${playwrightConfig.show ? 'headed' : 'headless'} mode`);
-
+    log(`${playwrightConfig.browser} starting in ${playwrightConfig.show ? 'headed' : 'headless'} mode`);
+    if (debugInfo) {
+      tag('substep').log(debugInfo);
+    }
     return {
       helpers: {
         Playwright: {
@@ -129,6 +131,10 @@ class Explorer {
   }
 
   async start() {
+    if (this.isStarted) {
+      return;
+    }
+
     if (!this.config) {
       await this.initializeContainer();
     }
@@ -159,6 +165,8 @@ class Explorer {
     this.isStarted = true;
 
     this.listenToStateChanged();
+
+    tag('success').log('Browser started, ready to explore');
 
     return I;
   }

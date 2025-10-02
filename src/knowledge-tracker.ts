@@ -74,21 +74,17 @@ export class KnowledgeTracker {
     });
   }
 
-  addKnowledge(urlPattern: string, description: string, customPath?: string): void {
+  addKnowledge(urlPattern: string, description: string): { filename: string; filePath: string; isNewFile: boolean } {
     const configParser = ConfigParser.getInstance();
+    const config = configParser.getConfig();
     const configPath = configParser.getConfigPath();
 
     if (!configPath) {
       throw new Error('No explorbot configuration found. Please run "maclay init" first.');
     }
 
-    let knowledgeDir: string;
-    if (customPath) {
-      knowledgeDir = resolve(customPath);
-    } else {
-      const projectRoot = dirname(configPath);
-      knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
-    }
+    const projectRoot = dirname(configPath);
+    const knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
 
     if (!existsSync(knowledgeDir)) {
       mkdirSync(knowledgeDir, { recursive: true });
@@ -98,24 +94,36 @@ export class KnowledgeTracker {
     const filename = this.generateFilename(normalizedUrl);
     const filePath = join(knowledgeDir, filename);
 
-    const knowledgeContent = `---
-url: ${normalizedUrl}
----
+    const isNewFile = !existsSync(filePath);
 
-${description}
-`;
+    if (isNewFile) {
+      const frontmatter = {
+        url: normalizedUrl,
+        title: '', // Can be populated later
+      };
+      const fileContent = matter.stringify(description, frontmatter);
+      writeFileSync(filePath, fileContent, 'utf8');
+    } else {
+      const existingContent = readFileSync(filePath, 'utf8');
+      const parsed = matter(existingContent);
 
-    writeFileSync(filePath, knowledgeContent, 'utf8');
-  }
+      // Update URL in frontmatter if different
+      const frontmatter = { ...parsed.data, url: normalizedUrl };
+      const existingDescription = parsed.content.trim();
 
-  private normalizeUrl(url: string): string {
-    const trimmed = url.trim();
+      // Append new knowledge with separator
+      let newContent;
+      if (existingDescription) {
+        newContent = existingDescription + '\n\n---\n\n' + description;
+      } else {
+        newContent = description;
+      }
 
-    if (!trimmed) {
-      throw new Error('URL pattern cannot be empty');
+      const fileContent = matter.stringify(newContent, frontmatter);
+      writeFileSync(filePath, fileContent, 'utf8');
     }
 
-    return trimmed;
+    return { filename, filePath, isNewFile };
   }
 
   private generateFilename(url: string): string {
@@ -141,5 +149,22 @@ ${description}
     this.loadKnowledgeFiles();
 
     return this.knowledgeFiles.map((knowledge) => knowledge.url).filter((url) => url && url !== '*');
+  }
+
+  getKnowledgeForUrl(urlPattern: string): string[] {
+    this.loadKnowledgeFiles();
+    const normalizedUrl = this.normalizeUrl(urlPattern);
+
+    return this.knowledgeFiles.filter((knowledge) => knowledge.url === normalizedUrl).map((knowledge) => knowledge.content.trim());
+  }
+
+  normalizeUrl(url: string): string {
+    const trimmed = url.trim();
+
+    if (!trimmed) {
+      throw new Error('URL pattern cannot be empty');
+    }
+
+    return trimmed;
   }
 }

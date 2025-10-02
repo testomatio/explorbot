@@ -1,7 +1,7 @@
+import { minify } from 'html-minifier-next';
 import { parse, parseFragment, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
 import type { HtmlConfig } from '../config.ts';
-import { minify } from 'html-minifier-next';
 
 /**
  * HTML parsing library that preserves original structure while filtering content

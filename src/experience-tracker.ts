@@ -1,9 +1,9 @@
-import { existsSync, statSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import type { ActionResult } from './action-result.js';
-import type { WebPageState } from './state-manager.js';
 import { ConfigParser } from './config.js';
+import type { WebPageState } from './state-manager.js';
 import { createDebug, log, tag } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:experience');

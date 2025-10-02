@@ -15,6 +15,7 @@ import type { UserResolveFunction } from './explorbot.ts';
 import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { createDebug, log, tag } from './utils/logger.js';
+import { throttle } from './utils/throttle.ts';
 
 const debugLog = createDebug('explorbot:action');
 
@@ -40,11 +41,11 @@ class Action {
   private async capturePageState(): Promise<{
     html: string;
     url: string;
-    screenshot: Buffer | null;
+    screenshot?: Buffer;
+    screenshotFile?: string;
     title: string;
     browserLogs: any[];
     htmlFile: string;
-    screenshotFile: string;
     logFile: string;
     h1?: string;
     h2?: string;
@@ -55,13 +56,17 @@ class Action {
     const stateHash = currentState?.hash || 'screenshot';
     const timestamp = Date.now();
 
-    const [url, html, screenshot, title, browserLogs] = await Promise.all([
-      (this.actor as any).grabCurrentUrl?.(),
-      (this.actor as any).grabSource(),
-      (this.actor as any).saveScreenshot(`${stateHash}_${timestamp}.png`),
-      (this.actor as any).grabTitle(),
-      this.captureBrowserLogs(),
-    ]);
+    const [url, html, title, browserLogs] = await Promise.all([(this.actor as any).grabCurrentUrl?.(), (this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
+
+    const screenshotResult: { screenshot?: Buffer; screenshotFile?: string } = {};
+    await throttle(async () => {
+      screenshotResult.screenshot = await (this.actor as any).saveScreenshot(`${stateHash}_${timestamp}.png`);
+      screenshotResult.screenshotFile = `${stateHash}_${timestamp}.png`;
+      const screenshotPath = join('output', screenshotResult.screenshotFile);
+      if (screenshotResult.screenshot) {
+        fs.writeFileSync(screenshotPath, screenshotResult.screenshot);
+      }
+    });
 
     // Extract headings from HTML
     const headings = this.extractHeadings(html);
@@ -70,13 +75,6 @@ class Action {
     const htmlFile = `${stateHash}_${timestamp}.html`;
     const htmlPath = join('output', htmlFile);
     fs.writeFileSync(htmlPath, html, 'utf8');
-
-    // Save screenshot to file
-    const screenshotFile = `${stateHash}_${timestamp}.png`;
-    const screenshotPath = join('output', screenshotFile);
-    if (screenshot) {
-      fs.writeFileSync(screenshotPath, screenshot);
-    }
 
     // Save logs to file
     const logFile = `${stateHash}_${timestamp}.log`;
@@ -93,13 +91,12 @@ class Action {
 
     return {
       html,
-      screenshot,
       title,
       url,
       browserLogs,
       htmlFile,
-      screenshotFile,
       logFile,
+      ...screenshotResult,
       ...headings,
     };
   }
@@ -250,7 +247,7 @@ class Action {
 
   public async waitForInteraction(): Promise<Action> {
     // start with basic approach
-    await this.actor.wait(1);
+    await this.actor.wait(0.5);
     return this;
   }
 

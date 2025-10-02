@@ -3,8 +3,8 @@ import { ActionResult } from '../action-result.js';
 import Action from '../action.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
-import type Explorer from '../explorer.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
+import type Explorer from '../explorer.ts';
 import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.ts';
@@ -16,12 +16,6 @@ import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
 import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
 
-declare namespace CodeceptJS {
-  interface I {
-    [key: string]: any;
-  }
-}
-
 const debugLog = createDebug('explorbot:researcher');
 
 export class Researcher implements Agent {
@@ -31,7 +25,6 @@ export class Researcher implements Agent {
   private provider: Provider;
   private stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
-  actor!: CodeceptJS.I;
 
   constructor(explorer: Explorer, provider: Provider) {
     this.explorer = explorer;
@@ -40,8 +33,9 @@ export class Researcher implements Agent {
     this.experienceTracker = this.stateManager.getExperienceTracker();
   }
 
-  setActor(actor: CodeceptJS.I) {
-    this.actor = actor;
+  static getCachedResearch(state: WebPageState): string {
+    if (!state.hash) return '';
+    return Researcher.researchCache[state.hash];
   }
 
   getSystemMessage(): string {
@@ -60,21 +54,21 @@ export class Researcher implements Agent {
     const stateHash = state.hash || actionResult.getStateHash();
 
     if (stateHash && Researcher.researchCache[stateHash]) {
-      debugLog('Research cache hit, returning...');
+      tag('step').log('Previous research result found');
       state.researchResult ||= Researcher.researchCache[stateHash];
       return Researcher.researchCache[stateHash];
     }
 
     const experienceFileName = 'research_' + actionResult.getStateHash();
     if (this.experienceTracker.hasRecentExperience(experienceFileName)) {
-      debugLog('Recent research result found, returning...');
+      tag('step').log('Using research from the experience file');
       const cached = this.experienceTracker.readExperienceFile(experienceFileName)?.content || '';
       if (stateHash) Researcher.researchCache[stateHash] = cached;
       state.researchResult = cached;
       return cached;
     }
 
-    tag('info').log(this.emoji, `Initiated research for ${state.url} to understand the context...`);
+    tag('info').log(`Researching ${state.url} to understand the context...`);
     setActivity(`${this.emoji} Researching...`, 'action');
     const stateHtml = await actionResult.combinedHtml();
 
@@ -101,12 +95,6 @@ export class Researcher implements Agent {
 
     await loop(
       async ({ stop }) => {
-        if (!this.actor) {
-          debugLog("No actor found, can't investigate more");
-          stop();
-          return;
-        }
-
         conversation.addUserText(this.buildHiddenElementsPrompt());
 
         const hiddenElementsResult = await this.provider.invokeConversation(conversation);
@@ -155,7 +143,7 @@ export class Researcher implements Agent {
               return;
             }
 
-            tag('step').log(this.emoji, `DOM changed, analyzing new HTML nodes...`);
+            tag('step').log(`DOM changed, analyzing new HTML nodes...`);
 
             conversation.addUserText(this.buildSubtreePrompt(codeBlock, htmlChanges));
             const htmlFragmentResult = await this.provider.invokeConversation(conversation);
@@ -163,13 +151,11 @@ export class Researcher implements Agent {
             researchText += dedent`\n\n---
             <expanded_ui_map>
 
-              When executed ${codeBlock}:
+              When executed <code>${codeBlock}</code>:
               ${htmlFragmentResult?.response?.text}
             </expanded_ui_map>`;
 
             // debugLog('Closing modal/popup/dropdown/etc.');
-            // await this.actor.click('//body');
-            // debugLog(`Returning to original page ${state.url}`);
             await this.navigateTo(state.url);
             stop();
           },
@@ -183,9 +169,9 @@ export class Researcher implements Agent {
       },
       {
         maxAttempts: ConfigParser.getInstance().getConfig().action?.retries || 3,
-        catch: async (error, context) => {
+        catch: async ({ error, stop }) => {
           debugLog(error);
-          context.stop();
+          stop();
         },
       }
     );
@@ -197,6 +183,7 @@ export class Researcher implements Agent {
       url: actionResult.relativeUrl,
     });
     tag('multiline').log(researchText);
+    tag('success').log(`Research compelete! ${researchText.length} characters`);
 
     return researchText;
   }
@@ -331,6 +318,7 @@ export class Researcher implements Agent {
     <rules>
     Look for hidden content or collapsible elements that should be expanded:
     - Dropdowns, tabs, accordions, hamburger menus
+    - Look for links that open subpages (pages that have same path but different hash/query params/subpath)
     - "More/show" toggles, expandable sections
     - Hidden navigation menus, sidebar toggles
     - Modal triggers, popup buttons
@@ -400,7 +388,7 @@ export class Researcher implements Agent {
     </output_format>
 
     <example_output>
-    When openinig dropdown at .dropdown by clicking it a submenue appeared:
+    When openinig dropdown at .dropdown by clicking it a submenu appeared:
     This submenue is for interacting with {item name}.
 
     This submenu contains following items:
@@ -409,6 +397,41 @@ export class Researcher implements Agent {
     - [item name]: [CSS/XPath locator]
     </example_output>
       `;
+  }
+
+  async textContent(): Promise<string> {
+    const state = this.stateManager.getCurrentState();
+    if (!state) throw new Error('No state found');
+
+    const actionResult = ActionResult.fromState(state);
+    const html = await actionResult.combinedHtml();
+
+    const prompt = dedent`
+      Transform into markdown. 
+      Identify headers, footers, asides, special application parts and main contant.
+      Content should be in markdown format. If it is content: tables must be tables, lists must be lists. 
+      Navigation elements should be represented as standalone blocks after the content.
+      Do not summarize content, just transform it into markdown.
+      It is important to list all the content text
+      If it is link it must be linked
+      You can summarize footers/navigation/aside elements. 
+      But main conteint should be kept as text and formatted as markdown based on its current markup.
+      Links to external web sites should be avoided in output.
+
+      Break down into sections:
+
+      ## Content Area
+
+      ## Navigation Area
+
+      Here is HTML:
+
+      ${html}
+    `;
+
+    const result = await this.provider.chat([{ role: 'user', content: prompt }]);
+
+    return result.text;
   }
 
   private async navigateTo(url: string): Promise<void> {

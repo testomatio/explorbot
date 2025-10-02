@@ -1,9 +1,9 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import type { Task } from '../ai/planner.js';
+import React from 'react';
+import { Test } from '../test-plan.ts';
 
 interface TaskPaneProps {
-  tasks: Task[];
+  tasks: Test[];
 }
 
 const getStatusIcon = (status: string): string => {
@@ -54,18 +54,14 @@ const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
           <Text color="dim">[{tasks.length} total]</Text>
         </Box>
 
-        {tasks.map((task, taskIndex) => (
-          <Box key={taskIndex} flexDirection="column" marginY={0}>
-            <Box justifyContent="space-between" marginBottom={0}>
-              <Box flexDirection="row">
-                <Text>{getStatusIcon(task.status)}</Text>
-                <Text color="dim" wrap="truncate-end">
-                  {' '}
-                  {task.scenario}
-                </Text>
-              </Box>
-              <Text color={getPriorityColor(task.priority)}>{getPriorityIcon(task.priority)}</Text>
-            </Box>
+        {tasks.map((task: Test, taskIndex) => (
+          <Box key={taskIndex} flexDirection="row" marginY={0}>
+            <Text>{getStatusIcon(task.status)}</Text>
+            <Text color={getPriorityColor(task.priority)}> {getPriorityIcon(task.priority)}</Text>
+            <Text color="dim" wrap="truncate-end">
+              {' '}
+              ({task.scenario})
+            </Text>
           </Box>
         ))}
       </Box>

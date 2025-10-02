@@ -3,17 +3,18 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
+import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
+import { htmlDiff } from '../utils/html-diff.ts';
+import { minifyHtml } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
-import type { Note, Test } from './planner.ts';
+import type { Note, Test } from '../test-plan.ts';
 import { Provider } from './provider.ts';
-import { clearToolCallHistory, createCodeceptJSTools, toolAction } from './tools.ts';
 import { Researcher } from './researcher.ts';
-import { htmlDiff } from '../utils/html-diff.ts';
-import { ConfigParser } from '../config.ts';
-import { minifyHtml } from '../utils/html.ts';
+import { protectionRule } from './rules.ts';
+import { clearToolCallHistory, createCodeceptJSTools, toolAction } from './tools.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
@@ -42,17 +43,6 @@ export class Tester implements Agent {
     Focus on achieving the main scenario goal
     Check expected results as an optional secondary goal, as they can be wrong or not achievable
     </task>
-
-    <free_thinking_rule>
-    Sometimes application can behave differently from expected.
-    You must analyze differences between current and previous pages to understand if they match user flow and the actual behavior.
-    If you notice sucessful message from application, log them with success() tool.
-    If you notice failed message from application, log them with fail() tool.
-    If you see that scenario goal can be achieved in unexpected way, continue testing call success() tool.
-    If you notice any other message, log them with success() or fail() tool.
-    If behavior is unexpected, and you assume it is an application bug, call fail() with explanation.
-    If you notice error from application, call fail() with the error message.
-    </free_thinking_rule>
 
     <approach>
     1. Provide reasoning for your next action in your response
@@ -84,7 +74,17 @@ export class Tester implements Agent {
     - Always remember of INITIAL PAGE and use it as a reference point
     - Use reset() to navigate back to the initial page if needed
     - If your tool calling failed and your url is not the initial page, use reset() to navigate back to the initial page
-    </rules>    
+
+    ${protectionRule}
+    </rules>
+
+    <free_thinking_rule>
+    You primary focus to achieve the SCENARIO GOAL
+    Expected results were pre-planned and may be wrong or not achievable
+    As much as possible use note() to document your findings, observations, and plans during testing.
+    If you see that scenario goal can be achieved in unexpected way, call note() and continue
+    If behavior is unexpected, and you assume it is an application bug, call fail() with explanation.    
+    </free_thinking_rule>
     `;
   }
 
@@ -100,7 +100,7 @@ export class Tester implements Agent {
         inputSchema: z.object({
           reason: z.string().optional().describe('Explanation why you need to navigate'),
         }),
-        execute: async () => {
+        execute: async ({ reason }) => {
           if (this.explorer.getStateManager().getCurrentState()?.url === resetUrl) {
             return {
               success: false,
@@ -109,7 +109,7 @@ export class Tester implements Agent {
               action: 'reset',
             };
           }
-          task.addNote('Resetting to initial page');
+          task.addNote(reason || 'Resetting to initial page');
           return await toolAction(this.explorer.createAction(), (I) => I.amOnPage(resetUrl), 'reset', {})();
         },
       }),
@@ -146,7 +146,7 @@ export class Tester implements Agent {
       success: tool({
         description: dedent`
           Call this tool if one of the expected result has been successfully achieved.
-          You can call this multiple times if multiple expected result are successfully achieved.
+          Also call it if you see a success/info message on a page.
         `,
         inputSchema: z.object({
           outcome: z.string().describe('The exact expected outcome text that was achieved'),
@@ -169,8 +169,9 @@ export class Tester implements Agent {
       }),
       fail: tool({
         description: dedent`
-          Call this tool if one of the expected result cannot be achieved or has failed.
-          You can call this multiple times if multiple expected result have failed.
+          Call this tool if expected result cannot be achieved or has failed.
+          Also call it if you see an error/alert/warning message on a page.
+          Call it you unsuccesfully tried multiple iterations and failed
         `,
         inputSchema: z.object({
           outcome: z.string().describe('The exact expected outcome text that failed'),
@@ -188,6 +189,43 @@ export class Tester implements Agent {
             success: true,
             action: 'fail',
             suggestion: 'Continue testing to check the remaining expected outcomes:' + task.getRemainingExpectations().join(', '),
+          };
+        },
+      }),
+      note: tool({
+        description: dedent`
+          Add one or more notes about your findings, observations, or plans during testing.
+          Use this to document what you've discovered on the page or what you plan to do next.
+          It is highly encouraged to add notes for each action you take.
+
+          Examples:
+          Single note: note("identified form that can create project")
+          Multiple notes: note(["identified form that can create project", "identified button that should create project"])
+          Planning notes: note(["plan to fill form with values x, y", "plan to click on project title"])
+          
+          Use this for documenting:
+          - UI elements you've found (buttons, forms, inputs, etc.)
+          - Your testing strategy and next steps
+          - Observations about page behavior
+          - Locators or selectors you've identified
+        `,
+        inputSchema: z.object({
+          notes: z
+            .union([z.string().describe('A single note to add'), z.array(z.string()).describe('Array of notes to add at once')])
+            .describe('Note(s) to add - can be a single string or array of strings'),
+        }),
+        execute: async ({ notes }) => {
+          const notesArray = Array.isArray(notes) ? notes : [notes];
+
+          for (const noteText of notesArray) {
+            task.addNote(noteText);
+          }
+
+          return {
+            success: true,
+            action: 'note',
+            message: `Added ${notesArray.length} note(s)`,
+            suggestion: 'Continue with your testing strategy based on these findings.',
           };
         },
       }),
@@ -422,31 +460,38 @@ export class Tester implements Agent {
       </initial_page_html>
       </initial_page>
 
-
       <rules>
       - Use only elements that exist in the provided HTML
       - Use click() for buttons, links, and clickable elements
-      - Use force: true for click() if the element exists in HTML but is not clickable
       - Use type() for text input (with optional locator parameter)
+      - Systematically use note() to write your findings, planned actions, observations, etc.
       - Use reset() to navigate back to the original page if needed
-      - Call success(outcome="exact text") when you verify an expected outcome as passed
-      - Call fail(outcome="exact text") when an expected outcome cannot be achieved or has failed
-      - ONLY call stop() if the scenario is completely irrelevant to this page and no expectations can be achieved
+      - Call success() when you see success/info message on a page or when expected outcome is achieved
+      - Call fail() when an expected outcome cannot be achieved or has failed or you see error/alert/warning message on a page
+      - ONLY call stop() if the scenario itself is completely irrelevant to this page and no expectations can be achieved
       - Be precise with locators (CSS or XPath)
-      - Each tool returns the new page state automatically
-      - Always provide reasoning in your response text before calling tools
+      - Each click/type/reset call returns the new page state automatically
       </rules>
     `;
   }
 
   private finishTest(task: Test): void {
     task.finish();
-    tag('info').log(`${this.emoji} Finished testing: ${task.scenario}`);
-    task.getCheckedNotes().forEach((note: Note) => {
-      let icon = '?';
+    tag('info').log(`Finished: ${task.scenario}`);
+    const noteIcons = ['◴', '◵', '◶', '◷'];
+    const lines = task.getCheckedNotes().map((note: Note, index: number) => {
+      let icon = noteIcons[index % noteIcons.length];
       if (note.status === 'passed') icon = '✔';
       if (note.status === 'failed') icon = '✘';
-      tag('substep').log(`${icon} ${note.message}`);
+      return `${icon} ${note.message}`;
     });
+    tag('multiline').log(lines.join('\n'));
+    if (task.isSuccessful) {
+      tag('success').log(`Test ${task.scenario} successful`);
+    } else if (task.hasFailed) {
+      tag('error').log(`Test ${task.scenario} failed`);
+    } else {
+      tag('warning').log(`Test ${task.scenario} completed`);
+    }
   }
 }

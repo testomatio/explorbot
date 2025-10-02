@@ -3,128 +3,16 @@ import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import type Explorer from '../explorer.ts';
-import type { ExperienceTracker } from '../experience-tracker.ts';
 import type { StateManager } from '../state-manager.js';
 import { createDebug, tag } from '../utils/logger.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import figures from 'figures';
+import { protectionRule } from './rules.ts';
+import { Plan, Test } from '../test-plan.ts';
 
 const debugLog = createDebug('explorbot:planner');
-
-export interface Note {
-  message: string;
-  status: 'passed' | 'failed' | null;
-  expected?: boolean;
-}
-
-export class Test {
-  scenario: string;
-  status: 'pending' | 'in_progress' | 'success' | 'failed' | 'done';
-  priority: 'high' | 'medium' | 'low' | 'unknown';
-  expected: string[];
-  notes: Note[];
-  steps: string[];
-  startUrl?: string;
-
-  constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[]) {
-    this.scenario = scenario;
-    this.status = 'pending';
-    this.priority = priority;
-    this.expected = Array.isArray(expectedOutcome) ? expectedOutcome : [expectedOutcome];
-    this.notes = [];
-    this.steps = [];
-  }
-
-  getPrintableNotes(): string {
-    const icons = {
-      passed: figures.tick,
-      failed: figures.cross,
-      no: figures.square,
-    };
-    return this.notes.map((n) => `${icons[n.status || 'no']} ${n.message}`).join('\n');
-  }
-
-  addNote(message: string, status: 'passed' | 'failed' | null = null, expected = false): void {
-    if (!expected && this.expected.includes(message)) {
-      expected = true;
-    }
-
-    const isDuplicate = this.notes.some((note) => note.message === message && note.status === status && note.expected === expected);
-    if (isDuplicate) return;
-
-    this.notes.push({ message, status, expected });
-  }
-
-  addStep(text: string): void {
-    this.steps.push(text);
-  }
-
-  get hasFinished(): boolean {
-    return this.status === 'done' || this.isComplete();
-  }
-
-  get isSuccessful(): boolean {
-    return this.status === 'success';
-  }
-
-  get hasFailed(): boolean {
-    return this.status === 'failed';
-  }
-
-  getCheckedNotes(): Note[] {
-    return this.notes.filter((n) => !!n.status);
-  }
-
-  getCheckedExpectations(): string[] {
-    return this.notes.filter((n) => n.expected && !!n.status).map((n) => n.message);
-  }
-
-  hasAchievedAny(): boolean {
-    return this.notes.some((n) => n.expected && n.status === 'passed');
-  }
-
-  hasAchievedAll(): boolean {
-    return this.notes.filter((n) => n.expected && n.status === 'passed').length === this.expected.length;
-  }
-
-  isComplete(): boolean {
-    return this.notes.filter((n) => n.expected && !!n.status).length === this.expected.length;
-  }
-
-  updateStatus(): void {
-    if (this.hasAchievedAny() && this.isComplete()) {
-      this.status = 'success';
-      return;
-    }
-
-    if (this.isComplete() && this.notes.length && !this.notes.some((n) => n.status === 'passed')) {
-      this.status = 'failed';
-      return;
-    }
-
-    if (this.isComplete()) {
-      this.status = 'done';
-    }
-  }
-
-  start(): void {
-    this.status = 'in_progress';
-    this.addNote('Test started');
-  }
-
-  finish(): void {
-    this.status = 'done';
-    this.updateStatus();
-  }
-
-  getRemainingExpectations(): string[] {
-    const achieved = this.getCheckedExpectations();
-    return this.expected.filter((e) => !achieved.includes(e));
-  }
-}
 
 const TasksSchema = z.object({
   scenarios: z
@@ -143,12 +31,12 @@ const TasksSchema = z.object({
   reasoning: z.string().optional().describe('Brief explanation of the scenario selection'),
 });
 
+let planId = 0;
 export class Planner implements Agent {
   emoji = '📋';
   private explorer: Explorer;
   private provider: Provider;
   private stateManager: StateManager;
-  private experienceTracker: ExperienceTracker;
 
   MIN_TASKS = 3;
   MAX_TASKS = 7;
@@ -157,13 +45,12 @@ export class Planner implements Agent {
     this.explorer = explorer;
     this.provider = provider;
     this.stateManager = explorer.getStateManager();
-    this.experienceTracker = this.stateManager.getExperienceTracker();
   }
 
   getSystemMessage(): string {
     return dedent`
     <role>
-    You are manual QA planneing exporatary testing session of a web application.
+    You are ISTQB certified senior manual QA planning exploratory testing session of a web application.
     </role>
     <task>
       List possible testing scenarios for the web page.
@@ -178,7 +65,7 @@ export class Planner implements Agent {
     `;
   }
 
-  async plan(): Promise<Test[]> {
+  async plan(feature?: string): Promise<Plan> {
     const state = this.stateManager.getCurrentState();
     debugLog('Planning:', state?.url);
     if (!state) throw new Error('No state found');
@@ -186,8 +73,14 @@ export class Planner implements Agent {
     const actionResult = ActionResult.fromState(state);
     const conversation = await this.buildConversation(actionResult);
 
-    tag('info').log(`Initiated planning for ${state.url} to create testing scenarios...`);
-    setActivity('👨‍💻 Planning...', 'action');
+    setActivity(`${this.emoji} Planning...`, 'action');
+    tag('info').log(`Planning test scenarios for ${state.url}...`);
+    if (feature) {
+      tag('step').log(`Focusing on ${feature}`);
+      conversation.addUserText(feature);
+    } else {
+      tag('step').log(`Focusing on main content of this page`);
+    }
 
     debugLog('Sending planning prompt to AI provider with structured output');
 
@@ -214,13 +107,12 @@ export class Planner implements Agent {
       ? `${result.object.reasoning}\n\nScenarios:\n${tasks.map((t) => `- ${t.scenario}`).join('\n')}`
       : `Scenarios:\n${tasks.map((t) => `- ${t.scenario}`).join('\n')}`;
 
-    this.experienceTracker.writeExperienceFile(`plan_${actionResult.getStateHash()}`, summary, {
-      url: actionResult.relativeUrl,
-    });
-
     tag('multiline').log(summary);
+    tag('success').log(`Planning compelete! ${tasks.length} tests proposed`);
 
-    return sortedTasks;
+    const plan = new Plan(state?.url || `Plan ${planId++}`, sortedTasks);
+    plan.initialState(state!);
+    return plan;
   }
 
   private async buildConversation(state: ActionResult): Promise<Conversation> {
@@ -242,7 +134,7 @@ export class Planner implements Agent {
          - Keep each outcome simple and atomic (one check per outcome)
          - Examples: "Success message is displayed", "URL changes to /dashboard", "Submit button is disabled"
          - Avoid combining multiple checks: Instead of "Form submits and shows success", use two outcomes: "Form is submitted", "Success message appears"
-         </task>
+      </task>
 
       <rules>
       Scenarios must involve interaction with the web page (clicking, scrolling or typing).
@@ -255,7 +147,19 @@ export class Planner implements Agent {
       Focus on error or success messages as outcome.
       Focus on URL page change or data persistency after page reload.
       If there are subpages (pages with same URL path) plan testing of those subpages as well
+      If you plan to test CRUD operations, plan them in correct order: create, read, update.
+      Use equivalency classes when planning test scenarios.
+      ${protectionRule}
       </rules>
+
+      <approach>
+      Plan happy path scenarios first to accomplish business goals page allows to achieve.
+      If page has form => provide scenarios to test form input (empty/digits/html chars/html/special characters/injections/etc)
+      If page has filters => check all filters combinations
+      If page has sorting => check all sorting combinations
+      If page has pagination => try navigating to different pages
+      If page has search => try searching for different values and see that only relevant results are shown
+      </approach>
 
       <context>
       URL: ${state.url || 'Unknown'}
@@ -271,12 +175,11 @@ export class Planner implements Agent {
     const currentState = this.stateManager.getCurrentState();
     if (!currentState) throw new Error('No state found');
 
-    if (!currentState.researchResult) {
-      const research = await new Researcher(this.explorer, this.provider).research();
-      conversation.addUserText(`Identified page elements: ${research}`);
-    } else {
-      conversation.addUserText(`Identified page elements: ${currentState.researchResult}`);
+    let research = Researcher.getCachedResearch(currentState);
+    if (!research) {
+      research = await new Researcher(this.explorer, this.provider).research();
     }
+    conversation.addUserText(`Identified page elements: ${research}`);
 
     const tasksMessage = dedent`
     <task>

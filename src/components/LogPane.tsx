@@ -1,13 +1,13 @@
-import React from 'react';
-import { useState, useCallback, useEffect } from 'react';
 import dedent from 'dedent';
 import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
+import React from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { htmlTextSnapshot } from '../utils/html.js';
 marked.use(markedTerminal());
 
 import { Box, Text } from 'ink';
-import type { TaggedLogEntry, LogType } from '../utils/logger.js';
+import type { LogType, TaggedLogEntry } from '../utils/logger.js';
 import { registerLogPane, setVerboseMode, unregisterLogPane } from '../utils/logger.js';
 
 // marked.use(new markedTerminal());
@@ -132,7 +132,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
 
     let marginTop = 0;
     if (log.type === 'info') marginTop = 1;
-    const icon = log.type === 'info' ? '●' : log.type === 'success' ? '✓' : log.type === 'error' ? '✗' : log.type === 'warning' ? '!' : log.type === 'debug' ? '*' : '';
+    const icon = log.type === 'info' ? '◉' : log.type === 'success' ? '✓' : log.type === 'error' ? '✗' : log.type === 'warning' ? '!' : log.type === 'debug' ? '*' : '';
 
     return (
       <Box key={index} columnGap={1} marginTop={marginTop} flexDirection="row">

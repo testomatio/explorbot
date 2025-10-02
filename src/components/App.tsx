@@ -1,14 +1,14 @@
-import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import LogPane from './LogPane.js';
-import InputPane from './InputPane.js';
+import React, { useEffect, useState } from 'react';
+import { CommandHandler } from '../command-handler.js';
+import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
+import type { StateTransition, WebPageState } from '../state-manager.js';
 import ActivityPane from './ActivityPane.js';
+import InputPane from './InputPane.js';
+import LogPane from './LogPane.js';
 import StateTransitionPane from './StateTransitionPane.js';
 import TaskPane from './TaskPane.js';
-import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
-import { CommandHandler } from '../command-handler.js';
-import type { StateTransition, WebPageState } from '../state-manager.js';
-import type { Task } from '../ai/planner.js';
+import { Test } from '../test-plan.ts';
 
 interface AppProps {
   explorBot: ExplorBot;
@@ -20,7 +20,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   const [showInput, setShowInput] = useState(initialShowInput);
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
   const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Test[]>([]);
   const [commandHandler] = useState(() => new CommandHandler(explorBot));
   const [userInputPromise, setUserInputPromise] = useState<{
     resolve: (value: string | null) => void;
@@ -79,7 +79,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   // Listen for task changes
   useEffect(() => {
     const interval = setInterval(() => {
-      const currentTasks = explorBot.getTasks();
+      const currentTasks = explorBot.getCurrentPlan()?.tests || [];
       setTasks(currentTasks);
     }, 1000); // Check every second
 
@@ -102,7 +102,11 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         <LogPane verboseMode={explorBot.getOptions()?.verbose || false} />
       </Box>
 
-      {showInput ? (
+      <Box height={3}>
+        <ActivityPane />
+      </Box>
+
+      {showInput && (
         <>
           <Box height={1} />
           <InputPane
@@ -111,21 +115,20 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
               if (userInputPromise) {
                 userInputPromise.resolve(input);
                 setUserInputPromise(null);
-                setShowInput(false);
               }
+              setShowInput(true);
             }}
             onCommandStart={() => {
-              setShowInput(false);
+              setShowInput(true);
+            }}
+            onCommandComplete={() => {
+              setShowInput(true);
             }}
           />
         </>
-      ) : (
-        <Box height={3}>
-          <ActivityPane />
-        </Box>
       )}
 
-      <Box flexDirection="row" alignItems="flex-start" columnGap={1} height="20%">
+      <Box flexDirection="row" alignItems="flex-start" columnGap={1} minHeight={5}>
         {currentState && (
           <Box width={tasks.length > 0 ? '50%' : '100%'}>
             <StateTransitionPane currentState={currentState} />

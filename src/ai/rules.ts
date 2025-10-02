@@ -7,8 +7,11 @@ export const locatorRule = dedent`
   Do not include element order like /div[2] or /div[2]/div[2] etc in locators.
   Avoid listing unnecessary elements inside locators 
   Use wide-range locators like // or * and prefer elements that have ids, classes, names, or data-id attributes, prefer element ids, classes, names, and other semantic attributes.
+  Locators can be just TEXT of a button or a link
 
   <good locator example>
+    'Login'
+    'Submit'
     'form#user_form input[name="name"]'
     '#content-top #user_name'
     '#content-bottom #user_name'
@@ -59,4 +62,19 @@ export const multipleLocatorRule = dedent`
 
   Solutions should be different, do not repeat the same locator in different solutions.
   The very last solution should use XPath that starts from '//html/body/' XPath and provides path to the element.
+`;
+
+// in rage mode we do not protect from irreversible actions
+export const protectionRule = dedent`
+  ${
+    !!process.env.MACLAY_RAGE
+      ? ''
+      : `
+    DO NOT PERFORM IRREVERSIBLE ACTIONS ON THE PAGE.
+    Do not trigger DELETE operations.
+  `
+  }
+
+  Do not sign out of the application.
+  Do not change current user account settings
 `;
