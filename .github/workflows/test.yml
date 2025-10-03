@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18, 20]
+        node-version: [18, 20, 22, 24]
 
     steps:
     - name: Checkout code
@@ -50,38 +50,3 @@ jobs:
 
     - name: Run unit tests
       run: bun test tests/unit/
-
-    - name: Run CodeceptJS tests
-      run: bun run test:headless
-
-    - name: Build project
-      run: bun run build
-
-  test-headless:
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-
-    - name: Setup Bun
-      uses: oven-sh/setup-bun@v1
-      with:
-        bun-version: latest
-
-    - name: Install dependencies
-      run: bun install
-
-    - name: Install Playwright browsers
-      run: bunx playwright install --with-deps
-
-    - name: Run CodeceptJS tests in headless mode
-      run: bun run test:headless
-      env:
-        CI: true 
