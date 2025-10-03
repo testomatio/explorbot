@@ -17,7 +17,7 @@
     "test": "codeceptjs run",
     "test:headless": "codeceptjs run --headless",
     "test:ui": "bun test tests/ui",
-    "test:unit": "bun test tests/unit --no-coverage",
+    "test:unit": "bun test tests/unit",
     "test:unit:coverage": "bun test tests/unit --coverage && find . -name '.lcov.info*.tmp' -type f -delete 2>/dev/null || true",
     "test:coverage": "bun test tests/unit --coverage --coverage-reporter=text && find . -name '.lcov.info*.tmp' -type f -delete 2>/dev/null || true",
     "test:coverage:html": "echo 'Run: bun test tests/unit --coverage for detailed coverage report'",
