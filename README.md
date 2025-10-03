@@ -39,12 +39,6 @@ Based on page research, Explorbot generates relevant test scenarios prioritized 
 - User experience features (medium priority)
 - Edge cases and validations (low priority)
 
-### Self-Healing Test Execution
-When tests fail, Explorbot doesn't just report errors - it attempts multiple resolution strategies:
-- Alternative element locators
-- Different interaction approaches
-- Contextual problem-solving based on page state
-
 ### Experience-Based Learning
 Explorbot maintains experience files that capture:
 - Successful interaction patterns
@@ -54,29 +48,58 @@ Explorbot maintains experience files that capture:
 
 ## AI Agent Architecture
 
-### Navigator Agent
-The Navigator handles all web interactions and error resolution:
-- Executes CodeceptJS commands for browser automation
-- Analyzes page state after each action
-- Resolves failures using AI-powered problem solving
-- Tries multiple locator strategies when elements aren't found
-- Learns from successful and failed interaction patterns
+Explorbot uses a multi-agent system where each AI agent has a specific role in the exploratory testing process. The agents work together to provide comprehensive, intelligent web application testing.
 
-### Researcher Agent  
-The Researcher performs comprehensive page analysis:
-- Identifies all interactive elements and their functions
-- Maps navigation structures and hidden menus
-- Expands collapsible content to discover full functionality
-- Documents form fields, buttons, and content areas
-- Provides structured analysis for test planning
+### 🧭 Navigator Agent
+The Navigator is the expert test automation engineer who handles all web interactions and error resolution:
 
-### Planner Agent
-The Planner creates test scenarios based on research:
-- Generates business-focused test scenarios
-- Assigns priority levels based on risk and importance
-- Focuses on UI-testable functionality
-- Creates expected outcomes for verification
-- Balances positive and negative test cases
+- Executes browser automation commands (clicks, form fills, navigation)
+- Analyzes page state after each action to verify success
+- Resolves failed interactions using AI-powered problem solving
+- Tries multiple element locator strategies when elements aren't found
+- Learns from successful and failed interaction patterns through experience tracking
+- Provides alternative approaches when primary interactions fail
+
+### 🔍 Researcher Agent
+The Researcher is the exploratory testing specialist who performs comprehensive page analysis:
+
+- Identifies all interactive elements and their specific functions
+- Maps navigation structures, menus, and hidden content areas
+- Expands collapsible content (accordions, tabs, dropdowns) to discover full functionality
+- Documents form fields, buttons, links, and content areas with detailed analysis
+- Provides structured research summaries for test planning
+- Caches research results to avoid redundant analysis
+- Tracks page changes through HTML diffing
+
+### 📋 Planner Agent
+
+- Generates business-focused test scenarios based on research findings
+- Assigns priority levels (HIGH/MEDIUM/LOW) based on risk and business importance
+- Creates specific, verifiable expected outcomes for each scenario
+- Balances positive scenarios (happy paths) with negative scenarios (edge cases)
+- Ensures tests are atomic, independent, and relevant to the page content
+- Focuses on main content areas rather than navigation elements
+- Maintains test plan history to avoid duplicating previous scenarios
+
+### 🧪 Tester Agent
+
+- Executes planned test scenarios using CodeceptJS tools
+- Interacts with web pages to achieve main scenario goals
+- Verifies expected results as secondary objectives
+- Handles test execution failures with adaptive problem solving
+- Tracks state changes and page transitions during testing
+- Documents test outcomes and any deviations from expected behavior
+- Uses research data to understand page context during execution
+
+### 🧑‍✈️ Captain Agent
+The Captain is the orchestrator who coordinates all other agents and manages the overall testing session:
+
+> WORK IN PROGRESS
+
+- Listens to user input in TUI mode and reacts to user commands
+- Can launch other agents
+- Can change the current agent conversation
+- Can update planning, test steps, etc
 
 ## Interactive Terminal Interface
 
@@ -136,6 +159,8 @@ Explorbot provides a real-time TUI (Terminal User Interface) with three main are
 - `/research [url]` - Analyze current page or navigate to URL first
 - `/plan [feature]` - Plan tests for a specific feature or general page testing
 - `/navigate <target>` - AI-assisted navigation to pages or states
+- `/test` - Test planned scenarios
+- `/explore` - Research + plan + test
 
 **CodeceptJS Commands:**
 - `I.amOnPage(url)` - Navigate to a specific page
