@@ -144,7 +144,7 @@ export class CommandHandler implements InputManager {
           for (const test of toExecute) {
             await tester.test(test);
           }
-          tag('success').log(`Test execution finished`);
+          tag('success').log('Test execution finished');
         },
       },
       {

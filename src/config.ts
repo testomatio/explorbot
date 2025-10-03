@@ -188,7 +188,7 @@ export class ConfigParser {
   public static setupTestConfig(): void {
     const instance = ConfigParser.getInstance();
     // Create unique directory names for this test run to ensure isolation
-    const testId = Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+    const testId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const testBaseDir = join(process.cwd(), 'test-dirs', testId);
 
     instance.config = {
@@ -217,7 +217,7 @@ export class ConfigParser {
     const instance = ConfigParser.getInstance();
     if (!instance.config?.dirs) return [];
 
-    return [instance.config.dirs.knowledge, instance.config.dirs.experience, instance.config.dirs.output, dirname(instance.configPath || '')].filter((dir) => dir && dir.includes('test-dirs'));
+    return [instance.config.dirs.knowledge, instance.config.dirs.experience, instance.config.dirs.output, dirname(instance.configPath || '')].filter((dir) => dir?.includes('test-dirs'));
   }
 
   // For testing purposes only - clean up all test directories

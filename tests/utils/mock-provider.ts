@@ -22,7 +22,7 @@ export interface MockProviderConfig {
  * Creates a mock AI provider for testing
  */
 export function createMockProvider(config: MockProviderConfig = {}) {
-  const { responses = [{ text: 'Mock AI response' }], simulateError = false, errorType = 'api', delay = 0 } = config;
+  let { responses = [{ text: 'Mock AI response' }], simulateError = false, errorType = 'api', delay = 0 } = config;
 
   let callCount = 0;
 
@@ -101,14 +101,14 @@ export function createMockProvider(config: MockProviderConfig = {}) {
     async startConversation(messages: any[] = [], tools?: any) {
       const response = await this.generateWithTools(messages, tools || {});
       const conversation = {
-        id: 'mock-conversation-' + Date.now(),
+        id: `mock-conversation-${Date.now()}`,
         messages: [...messages, { role: 'assistant', content: response.text }],
         addAssistantText: (text: string) => {
           conversation.messages.push({ role: 'assistant', content: text });
         },
         clone: () => ({
           ...conversation,
-          id: 'mock-conversation-' + Date.now(),
+          id: `mock-conversation-${Date.now()}`,
         }),
       };
 

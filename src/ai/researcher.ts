@@ -56,7 +56,7 @@ export class Researcher implements Agent {
       return Researcher.researchCache[stateHash];
     }
 
-    const experienceFileName = 'research_' + actionResult.getStateHash();
+    const experienceFileName = `research_${actionResult.getStateHash()}`;
     if (this.experienceTracker.hasRecentExperience(experienceFileName)) {
       tag('step').log('Using research from the experience file');
       const cached = this.experienceTracker.readExperienceFile(experienceFileName)?.content || '';
@@ -126,7 +126,7 @@ export class Researcher implements Agent {
               return;
             }
 
-            if (!currentState.isMatchedBy({ url: state.url + '*' })) {
+            if (!currentState.isMatchedBy({ url: `${state.url}*` })) {
               researchText += `\n\nWhen ${codeBlock} original page changed to ${currentState.url}`;
               debugLog('We moved away from the original page, returning to ${state.url}');
               await this.navigateTo(state.url);
@@ -140,7 +140,7 @@ export class Researcher implements Agent {
               return;
             }
 
-            tag('step').log(`DOM changed, analyzing new HTML nodes...`);
+            tag('step').log('DOM changed, analyzing new HTML nodes...');
 
             conversation.addUserText(this.buildSubtreePrompt(codeBlock, htmlChanges));
             const htmlFragmentResult = await this.provider.invokeConversation(conversation);

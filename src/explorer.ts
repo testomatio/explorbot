@@ -1,9 +1,9 @@
 import path from 'node:path';
 // @ts-ignore
 import * as codeceptjs from 'codeceptjs';
-import type { ExplorbotConfig } from './config.js';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
+import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';

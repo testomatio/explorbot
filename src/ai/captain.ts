@@ -2,8 +2,8 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import type { ExplorBot } from '../explorbot.ts';
-import { createDebug, tag } from '../utils/logger.js';
 import { Test } from '../test-plan.ts';
+import { createDebug, tag } from '../utils/logger.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.js';
 
@@ -134,13 +134,13 @@ export class Captain implements Agent {
           if (title) {
             plan.title = title;
           }
-          if (tests && tests.length) {
+          if (tests?.length) {
             if (!action || action === 'replace') {
               plan.tests.length = 0;
             }
             for (const testInput of tests) {
               const priority = testInput.priority || 'unknown';
-              const expected = testInput.expected && testInput.expected.length ? testInput.expected : [];
+              const expected = testInput.expected?.length ? testInput.expected : [];
               const test = new Test(testInput.scenario, priority, expected);
               plan.addTest(test);
             }

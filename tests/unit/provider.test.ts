@@ -171,9 +171,9 @@ describe('Provider', () => {
   describe('constructor', () => {
     it('should initialize with the provided config', () => {
       expect(provider).toBeDefined();
-      expect(provider['config']).toEqual(aiConfig);
-      expect(typeof provider['provider']).toBe('function');
-      expect(provider['provider']()).toBeDefined();
+      expect(provider.config).toEqual(aiConfig);
+      expect(typeof provider.provider).toBe('function');
+      expect(provider.provider()).toBeDefined();
     });
   });
 
@@ -225,7 +225,7 @@ describe('Provider', () => {
       ];
 
       // Test the filterImages method directly
-      const filtered = provider['filterImages'](messages);
+      const filtered = provider.filterImages(messages);
 
       // When vision is enabled, images should be kept
       expect(filtered[0].content).toHaveLength(2);
@@ -346,7 +346,7 @@ describe('Provider', () => {
         { role: 'user', content: 'Just text' },
       ];
 
-      const filtered = provider['filterImages'](messages);
+      const filtered = provider.filterImages(messages);
 
       expect(filtered[0].content).toHaveLength(1);
       expect(filtered[0].content[0].type).toBe('text');
@@ -367,7 +367,7 @@ describe('Provider', () => {
         },
       ];
 
-      const filtered = provider['filterImages'](messages);
+      const filtered = provider.filterImages(messages);
 
       expect(filtered[0].content).toHaveLength(2);
     });

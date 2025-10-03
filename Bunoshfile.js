@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import dotenv from 'dotenv';
 dotenv.config();
 const highlight = require('cli-highlight').highlight;
-const turndown = require('turndown');
 import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
 
 const { exec, shell, fetch, writeToFile, task, ai } = global.bunosh;
@@ -35,21 +34,6 @@ export async function htmlCombined(fileName) {
   const combinedHtml = await minifyHtml(htmlCombinedSnapshot(html));
   console.log('----------');
   console.log(highlight(combinedHtml, { language: 'markdown' }));
-}
-
-/**
- * Print HTML text for this file
- * @param {file} fileName
- */
-export async function htmlText(fileName) {
-  var TurndownService = require('turndown');
-  const html = fs.readFileSync(fileName, 'utf8');
-  let combinedHtml = await minifyHtml(htmlCombinedSnapshot(html));
-  var turndownService = new TurndownService();
-  combinedHtml = turndownService.turndown(combinedHtml.replaceAll('\n', ''));
-  console.log('----------');
-  console.log(combinedHtml);
-  // console.log(highlight(combinedHtml, { language: 'markdown' }));
 }
 
 export async function htmlAiText(fileName) {

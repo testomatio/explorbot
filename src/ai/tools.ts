@@ -62,7 +62,7 @@ export function toolAction(action: Action, codeFunction: (I: any) => void, actio
       debugLog(`${actionName} failed: ${error}`);
       return {
         success: false,
-        message: 'Tool call has FAILED! ' + String(error),
+        message: `Tool call has FAILED! ${String(error)}`,
         action: actionName,
         ...params,
       };
@@ -206,7 +206,7 @@ export function createCodeceptJSTools(action: Action) {
           debugLog(`Form failed: ${error}`);
           return {
             success: false,
-            message: 'Form execution FAILED! ' + String(error),
+            message: `Form execution FAILED! ${String(error)}`,
             action: 'form',
             codeBlock,
           };

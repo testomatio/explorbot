@@ -464,7 +464,7 @@ function convertNode(node: parse5TreeAdapter.Node): HtmlNode {
 
     if (htmlNode.children && htmlNode.children.length === 1 && htmlNode.children[0].type === 'text') {
       htmlNode.content = htmlNode.children[0].content;
-      delete htmlNode.children;
+      htmlNode.children = undefined;
     }
 
     return htmlNode;

@@ -5,17 +5,17 @@ import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
+import { StateTransition } from '../state-manager.ts';
+import type { Note, Test } from '../test-plan.ts';
 import { htmlDiff } from '../utils/html-diff.ts';
 import { minifyHtml } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
-import type { Note, Test } from '../test-plan.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { protectionRule } from './rules.ts';
 import { clearToolCallHistory, createCodeceptJSTools, toolAction } from './tools.ts';
-import { StateTransition } from '../state-manager.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
@@ -72,8 +72,8 @@ export class Tester implements Agent {
 
     this.explorer.trackSteps(true);
     const offStateChange = this.explorer.getStateManager().onStateChange((event: StateTransition) => {
-      if (event.toState?.url == event.fromState?.url) return;
-      task.addNote('Navigated to ' + event.toState?.url, 'passed');
+      if (event.toState?.url === event.fromState?.url) return;
+      task.addNote(`Navigated to ${event.toState?.url}`, 'passed');
       task.states.push(event.toState);
     });
 
@@ -433,7 +433,7 @@ export class Tester implements Agent {
           return {
             success: true,
             action: 'stop',
-            message: 'Test stopped - scenario is irrelevant: ' + reason,
+            message: `Test stopped - scenario is irrelevant: ${reason}`,
           };
         },
       }),
@@ -457,7 +457,7 @@ export class Tester implements Agent {
           return {
             success: true,
             action: 'success',
-            suggestion: 'Continue testing to check the remaining expected outcomes. ' + task.getRemainingExpectations().join(', '),
+            suggestion: `Continue testing to check the remaining expected outcomes. ${task.getRemainingExpectations().join(', ')}`,
           };
         },
       }),
@@ -482,7 +482,7 @@ export class Tester implements Agent {
           return {
             success: true,
             action: 'fail',
-            suggestion: 'Continue testing to check the remaining expected outcomes:' + task.getRemainingExpectations().join(', '),
+            suggestion: `Continue testing to check the remaining expected outcomes:${task.getRemainingExpectations().join(', ')}`,
           };
         },
       }),

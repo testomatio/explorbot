@@ -176,7 +176,7 @@ ${entry.code}
     }
 
     const newEntryContent = this.generateEntryContent(newEntry);
-    const updatedContent = newEntryContent + '\n\n' + content;
+    const updatedContent = `${newEntryContent}\n\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
     tag('substep').log(` Added successful resolution to: ${stateHash}.md`);

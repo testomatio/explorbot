@@ -1,5 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 import figures from 'figures';
-import { readFileSync, writeFileSync } from 'fs';
 import { WebPageState } from './state-manager.ts';
 
 export interface Note {
@@ -242,9 +242,9 @@ export class Plan {
     for (const test of this.tests) {
       content += `<!-- test\npriority: ${test.priority}\n-->\n`;
       content += `# ${test.scenario}\n\n`;
-      content += `## Requirements\n`;
+      content += '## Requirements\n';
       content += `${test.startUrl || 'Current page'}\n\n`;
-      content += `## Expected\n`;
+      content += '## Expected\n';
 
       for (const expectation of test.expected) {
         content += `* ${expectation}\n`;
@@ -314,7 +314,7 @@ export class Plan {
       }
 
       if (test.expected.length > 0) {
-        content += `**Expected Outcomes:**\n`;
+        content += '**Expected Outcomes:**\n';
         for (const expectation of test.expected) {
           content += `- ${expectation}\n`;
         }
@@ -322,7 +322,7 @@ export class Plan {
       }
 
       if (test.steps.length > 0) {
-        content += `**Steps:**\n`;
+        content += '**Steps:**\n';
         for (const step of test.steps) {
           content += `- ${step}\n`;
         }
@@ -330,7 +330,7 @@ export class Plan {
       }
 
       if (test.notes.length > 0) {
-        content += `**Notes:**\n`;
+        content += '**Notes:**\n';
         for (const note of test.getPrintableNotes()) {
           content += `${note}\n`;
         }

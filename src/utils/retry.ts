@@ -47,7 +47,7 @@ export async function withRetry<T>(operation: () => Promise<T>, options: RetryOp
         throw lastError;
       }
 
-      const delay = Math.min(config.baseDelay * Math.pow(config.backoffMultiplier, attempt - 1), config.maxDelay);
+      const delay = Math.min(config.baseDelay * config.backoffMultiplier ** (attempt - 1), config.maxDelay);
 
       debugLog(`Retrying in ${delay}ms. Error: ${lastError.message}`);
       await new Promise((resolve) => setTimeout(resolve, delay));

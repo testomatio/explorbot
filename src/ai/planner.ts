@@ -4,13 +4,13 @@ import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import type Explorer from '../explorer.ts';
 import type { StateManager } from '../state-manager.js';
+import { Plan, Test } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { protectionRule } from './rules.ts';
-import { Plan, Test } from '../test-plan.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -86,7 +86,7 @@ export class Planner implements Agent {
       tag('step').log(`Focusing on ${feature}`);
       conversation.addUserText(feature);
     } else {
-      tag('step').log(`Focusing on main content of this page`);
+      tag('step').log('Focusing on main content of this page');
     }
 
     debugLog('Sending planning prompt to AI provider with structured output');

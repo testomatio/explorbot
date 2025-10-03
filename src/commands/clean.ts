@@ -46,9 +46,9 @@ export async function cleanCommand(options: CleanOptions = {}): Promise<void> {
       await cleanPath(experiencePath, 'experience');
     }
 
-    console.log(`Cleanup completed successfully!`);
+    console.log('Cleanup completed successfully!');
   } catch (error) {
-    console.error(`Failed to clean:`, error);
+    console.error('Failed to clean:', error);
     process.exit(1);
   } finally {
     // Always restore original working directory

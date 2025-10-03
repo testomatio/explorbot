@@ -142,7 +142,7 @@ class Action {
   async execute(codeOrFunction: string | ((I: CodeceptJS.I) => void)): Promise<Action> {
     let error: Error | null = null;
 
-    setActivity(`🔎 Browsing...`, 'action');
+    setActivity('🔎 Browsing...', 'action');
 
     let codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
     codeString = codeString.replace(/^\(I\) => /, '').trim();
@@ -254,7 +254,7 @@ class Action {
   public async attempt(codeBlock: string, attempt: number, originalMessage: string): Promise<boolean> {
     try {
       debugLog(`Resolution attempt ${attempt}`);
-      setActivity(`🦾 Acting in browser...`, 'action');
+      setActivity('🦾 Acting in browser...', 'action');
 
       const prevActionResult = this.actionResult;
       this.lastError = null;

@@ -411,7 +411,7 @@ export class ActionResult {
     if (pattern.endsWith('/*')) {
       const basePattern = pattern.slice(0, -2); // Remove /*
       if (actualValue === basePattern) return true;
-      if (actualValue.startsWith(basePattern + '/')) return true;
+      if (actualValue.startsWith(`${basePattern}/`)) return true;
     }
 
     // If pattern starts with '^', treat as regex

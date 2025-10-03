@@ -114,7 +114,7 @@ export class KnowledgeTracker {
       // Append new knowledge with separator
       let newContent;
       if (existingDescription) {
-        newContent = existingDescription + '\n\n---\n\n' + description;
+        newContent = `${existingDescription}\n\n---\n\n${description}`;
       } else {
         newContent = description;
       }

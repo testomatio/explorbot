@@ -10,8 +10,8 @@ import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
-import { Researcher } from './researcher.ts';
 import type { Provider } from './provider.js';
+import { Researcher } from './researcher.ts';
 import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
 
 const debugLog = createDebug('explorbot:navigator');

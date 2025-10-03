@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import figureSet from 'figures';
 import { Agent } from './ai/agent.ts';
 import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
@@ -11,11 +12,10 @@ import { Tester } from './ai/tester.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
-import { log, tag, setVerboseMode } from './utils/logger.ts';
 import { Plan } from './test-plan.ts';
-import figureSet from 'figures';
+import { log, setVerboseMode, tag } from './utils/logger.ts';
 
-let planId = 0;
+const planId = 0;
 export interface ExplorBotOptions {
   from?: string;
   verbose?: boolean;
@@ -48,7 +48,7 @@ export class ExplorBot {
   }
 
   get isExploring(): boolean {
-    return this.explorer !== null && this.explorer.isStarted;
+    return this.explorer?.isStarted;
   }
 
   setUserResolve(fn: UserResolveFunction): void {
@@ -64,7 +64,7 @@ export class ExplorBot {
       await this.agentExperienceCompactor().compactAllExperiences();
       if (this.userResolveFn) this.explorer.setUserResolve(this.userResolveFn);
     } catch (error) {
-      console.log(`\n❌ Failed to start:`);
+      console.log('\n❌ Failed to start:');
       if (error instanceof AiError) {
         console.log('  ', error.message);
       } else if (error instanceof Error) {
@@ -107,7 +107,7 @@ export class ExplorBot {
     return this.options;
   }
   isReady(): boolean {
-    return this.explorer !== null && this.explorer.isStarted;
+    return this.explorer?.isStarted;
   }
 
   getConfigParser(): ConfigParser {
@@ -135,29 +135,29 @@ export class ExplorBot {
   }
 
   agentResearcher(): Researcher {
-    return (this.agents['researcher'] ||= this.createAgent(({ ai, explorer }) => new Researcher(explorer, ai)));
+    return (this.agents.researcher ||= this.createAgent(({ ai, explorer }) => new Researcher(explorer, ai)));
   }
 
   agentNavigator(): Navigator {
-    return (this.agents['navigator'] ||= this.createAgent(({ ai, explorer }) => {
+    return (this.agents.navigator ||= this.createAgent(({ ai, explorer }) => {
       return new Navigator(explorer, ai, this.agentExperienceCompactor());
     }));
   }
 
   agentPlanner(): Planner {
-    return (this.agents['planner'] ||= this.createAgent(({ ai, explorer }) => new Planner(explorer, ai)));
+    return (this.agents.planner ||= this.createAgent(({ ai, explorer }) => new Planner(explorer, ai)));
   }
 
   agentTester(): Tester {
-    return (this.agents['tester'] ||= this.createAgent(({ ai, explorer }) => new Tester(explorer, ai)));
+    return (this.agents.tester ||= this.createAgent(({ ai, explorer }) => new Tester(explorer, ai)));
   }
 
   agentCaptain(): Captain {
-    return (this.agents['captain'] ||= new Captain(this));
+    return (this.agents.captain ||= new Captain(this));
   }
 
   agentExperienceCompactor(): ExperienceCompactor {
-    return (this.agents['experienceCompactor'] ||= this.createAgent(({ ai, explorer }) => {
+    return (this.agents.experienceCompactor ||= this.createAgent(({ ai, explorer }) => {
       const experienceTracker = explorer.getStateManager().getExperienceTracker();
       return new ExperienceCompactor(ai, experienceTracker);
     }));

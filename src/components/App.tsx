@@ -3,12 +3,12 @@ import React, { useEffect, useState } from 'react';
 import { CommandHandler } from '../command-handler.js';
 import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
 import type { StateTransition, WebPageState } from '../state-manager.js';
+import { Test } from '../test-plan.ts';
 import ActivityPane from './ActivityPane.js';
 import InputPane from './InputPane.js';
 import LogPane from './LogPane.js';
 import StateTransitionPane from './StateTransitionPane.js';
 import TaskPane from './TaskPane.js';
-import { Test } from '../test-plan.ts';
 
 interface AppProps {
   explorBot: ExplorBot;

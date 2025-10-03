@@ -45,15 +45,14 @@ function matchesSelector(element: parse5TreeAdapter.Element, selector: string): 
     if (eqIndex === -1) {
       // Just attribute existence
       return element.attrs.some((attr) => attr.name === attrContent);
-    } else {
-      // Attribute with value
-      const attrName = attrContent.slice(0, eqIndex);
-      const attrValue = attrContent.slice(eqIndex + 1);
-      // Remove quotes if present
-      const unquotedValue = attrValue.replace(/^["']|["']$/g, '');
-      const attr = element.attrs.find((a) => a.name === attrName);
-      return attr ? attr.value === unquotedValue : false;
     }
+    // Attribute with value
+    const attrName = attrContent.slice(0, eqIndex);
+    const attrValue = attrContent.slice(eqIndex + 1);
+    // Remove quotes if present
+    const unquotedValue = attrValue.replace(/^["']|["']$/g, '');
+    const attr = element.attrs.find((a) => a.name === attrName);
+    return attr ? attr.value === unquotedValue : false;
   }
 
   return false;
@@ -693,13 +692,14 @@ function processHtmlForText(element: parse5TreeAdapter.Element, htmlConfig?: Htm
 
         if (tagName === 'li' || tagName === 'label') {
           switch (tagName) {
-            case 'li':
+            case 'li': {
               // Handle nested lists
               const indent = hasListParent(element) ? '  ' : '';
               // Get all text content for list items (including descendants)
               const fullText = getTextContent(element).trim();
               lines.push(`${indent}- ${fullText}`);
               break;
+            }
             case 'label':
               lines.push(`**${directText}**`);
               break;
@@ -715,10 +715,9 @@ function processHtmlForText(element: parse5TreeAdapter.Element, htmlConfig?: Htm
         // Always process children
         element.childNodes.forEach((child) => processNode(child));
         return;
-      } else {
-        // Process children of non-text elements
-        element.childNodes.forEach((child) => processNode(child));
       }
+      // Process children of non-text elements
+      element.childNodes.forEach((child) => processNode(child));
     }
   };
 

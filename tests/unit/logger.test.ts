@@ -38,8 +38,8 @@ describe('Logger', () => {
 
     // Set test environment
     process.env.INITIAL_CWD = '/tmp';
-    delete process.env.INK_RUNNING;
-    delete process.env.DEBUG;
+    process.env.INK_RUNNING = undefined;
+    process.env.DEBUG = undefined;
 
     // Reset logger state - must be done after env reset
     setVerboseMode(false);

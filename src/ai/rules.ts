@@ -68,7 +68,7 @@ export const multipleLocatorRule = dedent`
 export const protectionRule = dedent`
   <important>
   ${
-    !!process.env.MACLAY_RAGE
+    process.env.MACLAY_RAGE
       ? ''
       : `
     Do not trigger DELETE operations.
