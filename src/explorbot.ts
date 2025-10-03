@@ -13,6 +13,7 @@ import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
 import { log, tag, setVerboseMode } from './utils/logger.ts';
 import { Plan } from './test-plan.ts';
+import figureSet from 'figures';
 
 let planId = 0;
 export interface ExplorBotOptions {
@@ -83,7 +84,7 @@ export class ExplorBot {
     const url = this.options.from || '/';
     await this.visit(url);
     if (this.userResolveFn) {
-      log('What should we do next? Consider /research, /plan, /navigate commands');
+      log('What should we do next? Consider /explore /plan /navigate commands');
       this.userResolveFn();
     } else {
       log('No user resolve function provided, exiting...');
@@ -168,9 +169,33 @@ export class ExplorBot {
 
   async plan(feature?: string) {
     const planner = this.agentPlanner();
-    await this.agentResearcher().research();
+    if (this.currentPlan) {
+      planner.setPreviousPlan(this.currentPlan);
+    }
     this.currentPlan = await planner.plan(feature);
     return this.currentPlan;
+  }
+
+  async explore(feature?: string) {
+    const planner = this.agentPlanner();
+    this.currentPlan = await planner.plan(feature);
+    const tester = this.agentTester();
+    for (const test of this.currentPlan.tests) {
+      await tester.test(test);
+    }
+    tag('info').log(`Completed testing: ${this.currentPlan.title}} ${this.currentPlan.url}`);
+
+    for (const test of this.currentPlan.tests) {
+      if (test.isSuccessful) {
+        tag('success').log(`Test: ${test.scenario}`);
+      } else {
+        tag('error').log(`Test: ${test.scenario}`);
+      }
+      test.getPrintableNotes().forEach((note) => {
+        tag('step').log(note);
+      });
+    }
+    tag('info').log(`${figureSet.tick} ${this.currentPlan.tests.length} tests completed`);
   }
 
   async testOneByOne() {

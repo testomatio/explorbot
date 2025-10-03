@@ -59,7 +59,7 @@ export class CommandHandler implements InputManager {
           if (target) {
             await this.explorBot.getExplorer().visit(target);
           }
-          await this.explorBot.agentResearcher().research();
+          await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!);
           tag('success').log('Research completed');
         },
       },
@@ -114,12 +114,8 @@ export class CommandHandler implements InputManager {
         name: 'explore',
         description: 'Make everything from research to test',
         execute: async (args: string) => {
-          await this.explorBot.agentResearcher().research();
-          await this.explorBot.plan();
-          for (const test of this.explorBot.getCurrentPlan()!.tests) {
-            await this.explorBot.agentTester().test(test);
-          }
-          tag('success').log('Exploration completed');
+          await this.explorBot.explore();
+          tag('info').log('Navigate to other page with /navigate or /explore again to continue exploration');
         },
       },
       {
@@ -139,7 +135,7 @@ export class CommandHandler implements InputManager {
           } else if (args === '*') {
             toExecute.push(...plan.getPendingTests());
           } else if (args.match(/^\d+$/)) {
-            toExecute.push(plan.getPendingTests()[parseInt(args) - 1]);
+            toExecute.push(plan.getPendingTests()[Number.parseInt(args) - 1]);
           } else {
             toExecute.push(...plan.getPendingTests().filter((test) => test.scenario.toLowerCase().includes(args.toLowerCase())));
           }
@@ -288,13 +284,20 @@ export class CommandHandler implements InputManager {
 
   getFilteredCommands(input: string): string[] {
     const trimmedInput = input.trim();
+    const normalizedInput = trimmedInput === '/' ? '' : trimmedInput;
     const slashCommands = this.getAvailableCommands().filter((cmd) => cmd.startsWith('/'));
-    if (!trimmedInput) {
-      return slashCommands.slice(0, 20);
+    const defaultCommands = ['/explore', '/navigate', '/plan', '/research', 'exit'];
+    if (!normalizedInput) {
+      const prioritized = defaultCommands.filter((cmd) => cmd === 'exit' || slashCommands.includes(cmd));
+      const extras = slashCommands.filter((cmd) => !prioritized.includes(cmd) && cmd !== 'exit');
+      const ordered = [...prioritized, ...extras];
+      const unique = ordered.filter((cmd, index) => ordered.indexOf(cmd) === index);
+      return unique.slice(0, 20);
     }
 
-    const searchTerm = trimmedInput.toLowerCase();
-    return slashCommands.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
+    const searchTerm = normalizedInput.toLowerCase();
+    const pool = Array.from(new Set([...slashCommands, 'exit']));
+    return pool.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
   }
 
   setExitOnEmptyInput(enabled: boolean): void {

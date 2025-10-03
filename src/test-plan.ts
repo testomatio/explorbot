@@ -10,11 +10,12 @@ export interface Note {
 
 export class Test {
   scenario: string;
-  status: 'pending' | 'in_progress' | 'success' | 'failed' | 'done';
+  status: 'pending' | 'in_progress' | 'done';
   priority: 'high' | 'medium' | 'low' | 'unknown';
   expected: string[];
   notes: Note[];
   steps: string[];
+  states: WebPageState[];
   startUrl?: string;
 
   constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[]) {
@@ -24,15 +25,22 @@ export class Test {
     this.expected = Array.isArray(expectedOutcome) ? expectedOutcome : [expectedOutcome];
     this.notes = [];
     this.steps = [];
+    this.states = [];
   }
 
-  getPrintableNotes(): string {
-    const icons = {
-      passed: figures.tick,
-      failed: figures.cross,
-      no: figures.square,
-    };
-    return this.notes.map((n) => `${icons[n.status || 'no']} ${n.message}`).join('\n');
+  getPrintableNotes(): string[] {
+    const noteIcons = ['◴', '◵', '◶', '◷'];
+    let noteIndex = 0;
+
+    return this.notes.map((n) => {
+      const icon = n.status === 'passed' ? figures.tick : n.status === 'failed' ? figures.cross : noteIcons[noteIndex++ % noteIcons.length];
+      const prefix = n.expected ? 'EXPECTED: ' : '';
+      return `${icon} ${prefix}${n.message}`;
+    });
+  }
+
+  notesToString(): string {
+    return this.getPrintableNotes().join('\n');
   }
 
   addNote(message: string, status: 'passed' | 'failed' | null = null, expected = false): void {
@@ -55,11 +63,11 @@ export class Test {
   }
 
   get isSuccessful(): boolean {
-    return this.status === 'success';
+    return this.hasFinished && this.hasAchievedAny();
   }
 
   get hasFailed(): boolean {
-    return this.status === 'failed';
+    return this.hasFinished && !this.hasAchievedAny();
   }
 
   getCheckedNotes(): Note[] {
@@ -141,7 +149,7 @@ export class Plan {
     return this.tests.filter((test) => test.status === 'pending');
   }
 
-  get completed(): boolean {
+  get isComplete(): boolean {
     return this.tests.length > 0 && this.tests.every((test) => test.hasFinished);
   }
 
@@ -167,14 +175,15 @@ export class Plan {
     let inExpected = false;
     let priority: 'high' | 'medium' | 'low' | 'unknown' = 'unknown';
 
-    const plan = new Plan('');
+    const plan = new Plan('', []);
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
 
-      if (line.startsWith('<!-- suite -->')) {
+      if (line.startsWith('<!-- suite -->') && !plan.title) {
         title = lines[i + 1]?.replace(/^#\s+/, '') || '';
         plan.title = title;
+        i++; // Skip the title line to avoid processing it as a test
         continue;
       }
 
@@ -245,5 +254,92 @@ export class Plan {
     }
 
     writeFileSync(filePath, content, 'utf-8');
+  }
+
+  getVisitedPages(): WebPageState[] {
+    const visitedStates = this.tests.flatMap((test) => test.states).filter((state) => state.url !== this.url);
+    const uniqueStates = new Map<string, WebPageState>();
+
+    for (const state of visitedStates) {
+      if (!uniqueStates.has(state.url)) {
+        uniqueStates.set(state.url, state);
+      }
+    }
+
+    return Array.from(uniqueStates.values());
+  }
+
+  merge(otherPlan: Plan): Plan {
+    const mergedTitle = this.title && otherPlan.title ? `${this.title} + ${otherPlan.title}` : this.title || otherPlan.title || 'Merged Plan';
+
+    const mergedUrl = this.url || otherPlan.url;
+
+    const mergedTests = [...this.tests];
+
+    // Add tests from other plan, avoiding duplicates based on scenario
+    for (const otherTest of otherPlan.tests) {
+      const isDuplicate = mergedTests.some((test) => test.scenario === otherTest.scenario && test.startUrl === otherTest.startUrl);
+
+      if (!isDuplicate) {
+        mergedTests.push(otherTest);
+      }
+    }
+
+    const mergedPlan = new Plan(mergedTitle, mergedTests);
+    if (mergedUrl) {
+      mergedPlan.url = mergedUrl;
+    }
+
+    return mergedPlan;
+  }
+
+  toAiContext(): string {
+    let content = `# Test Plan: ${this.title}\n\n`;
+
+    if (this.url) {
+      content += `**URL:** ${this.url}\n\n`;
+    }
+
+    content += `**Total Tests:** ${this.tests.length}\n`;
+    content += `**Status:** ${this.isComplete ? 'Complete' : 'In Progress'}\n\n`;
+
+    for (let i = 0; i < this.tests.length; i++) {
+      const test = this.tests[i];
+      content += `## Test ${i + 1}: ${test.scenario}\n\n`;
+      content += `**Priority:** ${test.priority}\n`;
+      content += `**Status:** ${test.status}\n\n`;
+
+      if (test.startUrl) {
+        content += `**Start URL:** ${test.startUrl}\n\n`;
+      }
+
+      if (test.expected.length > 0) {
+        content += `**Expected Outcomes:**\n`;
+        for (const expectation of test.expected) {
+          content += `- ${expectation}\n`;
+        }
+        content += '\n';
+      }
+
+      if (test.steps.length > 0) {
+        content += `**Steps:**\n`;
+        for (const step of test.steps) {
+          content += `- ${step}\n`;
+        }
+        content += '\n';
+      }
+
+      if (test.notes.length > 0) {
+        content += `**Notes:**\n`;
+        for (const note of test.getPrintableNotes()) {
+          content += `${note}\n`;
+        }
+        content += '\n';
+      }
+
+      content += '---\n\n';
+    }
+
+    return content;
   }
 }

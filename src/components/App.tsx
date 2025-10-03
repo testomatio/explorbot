@@ -106,27 +106,25 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         <ActivityPane />
       </Box>
 
-      {showInput && (
-        <>
-          <Box height={1} />
-          <InputPane
-            commandHandler={commandHandler}
-            onSubmit={async (input: string) => {
-              if (userInputPromise) {
-                userInputPromise.resolve(input);
-                setUserInputPromise(null);
-              }
-              setShowInput(true);
-            }}
-            onCommandStart={() => {
-              setShowInput(true);
-            }}
-            onCommandComplete={() => {
-              setShowInput(true);
-            }}
-          />
-        </>
-      )}
+      {showInput && <Box height={1} />}
+      <InputPane
+        commandHandler={commandHandler}
+        onSubmit={async (input: string) => {
+          if (userInputPromise) {
+            userInputPromise.resolve(input);
+            setUserInputPromise(null);
+          }
+          setShowInput(false);
+        }}
+        onCommandStart={() => {
+          setShowInput(false);
+        }}
+        onCommandComplete={() => {
+          setShowInput(false);
+        }}
+        isActive={showInput}
+        visible={showInput}
+      />
 
       <Box flexDirection="row" alignItems="flex-start" columnGap={1} minHeight={5}>
         {currentState && (

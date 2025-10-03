@@ -66,15 +66,16 @@ export const multipleLocatorRule = dedent`
 
 // in rage mode we do not protect from irreversible actions
 export const protectionRule = dedent`
+  <important>
   ${
     !!process.env.MACLAY_RAGE
       ? ''
       : `
-    DO NOT PERFORM IRREVERSIBLE ACTIONS ON THE PAGE.
     Do not trigger DELETE operations.
   `
   }
 
-  Do not sign out of the application.
+  Do not sign out current user of the application.
   Do not change current user account settings
+  </important>
 `;

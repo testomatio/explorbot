@@ -1,6 +1,5 @@
 import { Box, Text } from 'ink';
-import React from 'react';
-import { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 
 interface AutocompletePaneProps {
   commands: string[];
@@ -10,20 +9,22 @@ interface AutocompletePaneProps {
   visible: boolean;
 }
 
-const AutocompletePane: React.FC<AutocompletePaneProps> = ({ commands, input, selectedIndex, onSelect, visible }) => {
-  const [filteredCommands, setFilteredCommands] = useState<string[]>([]);
+const DEFAULT_COMMANDS = ['/explore', '/navigate', '/plan', '/research', 'exit'];
 
-  useEffect(() => {
-    if (!input.trim()) {
-      setFilteredCommands(commands.slice(0, 20));
-      return;
+const AutocompletePane: React.FC<AutocompletePaneProps> = ({ commands, input, selectedIndex, onSelect, visible }) => {
+  const filteredCommands = useMemo(() => {
+    const normalizedInput = input.trim();
+    const effectiveInput = normalizedInput === '/' ? '' : normalizedInput;
+    if (!effectiveInput) {
+      const prioritized = DEFAULT_COMMANDS.filter((cmd) => cmd === 'exit' || commands.includes(cmd));
+      const rest = commands.filter((cmd) => !prioritized.includes(cmd) && cmd !== 'exit');
+      const ordered = [...prioritized, ...rest];
+      return ordered.filter((cmd, index) => ordered.indexOf(cmd) === index).slice(0, 20);
     }
 
-    const searchTerm = input.toLowerCase().replace(/^i\./, '');
-    const filtered = commands.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
-
-    setFilteredCommands(filtered);
-  }, [input, commands]);
+    const searchTerm = effectiveInput.toLowerCase().replace(/^i\./, '');
+    return commands.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
+  }, [commands, input]);
 
   if (!visible || filteredCommands.length === 0) {
     return null;

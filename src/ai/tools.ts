@@ -129,11 +129,88 @@ export function createCodeceptJSTools(action: Action) {
           // let's click and type instead.
           await toolAction(action, (I) => I.click(locator), 'click', { locator })();
           await action.waitForInteraction();
-          await action.execute(`I.pressKey('Delete')`);
           // it's ok even if click not worked, we still can type if element is already focused
           result = await toolAction(action, (I) => I.type(text), 'type', { text })();
         }
         return result;
+      },
+    }),
+
+    form: tool({
+      description: dedent`
+        Execute a sequence of CodeceptJS commands for form interactions.
+        Provide valid CodeceptJS code that starts with I. and can contain multiple commands separated by newlines.
+
+        Example:
+        I.fillField('title', 'My Article')
+        I.selectOption('category', 'Technology')
+        I.click('Save')
+
+        ${locatorRule}
+
+        Prefer stick to action commands like click, fillField, selectOption, etc.
+        Do not use wait functions like waitForText, waitForElement, etc.
+        Do not use other commands than action commands.
+        Do not change navigation with I.amOnPage() or I.reloadPage()
+        Do not save screenshots with I.saveScreenshot()
+      `,
+      inputSchema: z.object({
+        codeBlock: z.string().describe('Valid CodeceptJS code starting with I. Can contain multiple commands separated by newlines.'),
+      }),
+      execute: async ({ codeBlock }) => {
+        if (!codeBlock.trim()) {
+          return {
+            success: false,
+            message: 'CodeBlock cannot be empty',
+            action: 'form',
+            codeBlock,
+          };
+        }
+
+        const lines = codeBlock
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line);
+        const codeLines = lines.filter((line) => !line.startsWith('//'));
+
+        if (!codeLines.every((line) => line.startsWith('I.'))) {
+          return {
+            success: false,
+            message: 'All non-comment lines must start with I.',
+            action: 'form',
+            suggestion: 'Try again but pass valid CodeceptJS code where every non-comment line starts with I.',
+            codeBlock,
+          };
+        }
+
+        try {
+          await action.execute(codeBlock);
+
+          if (action.lastError) {
+            throw action.lastError;
+          }
+
+          const actionResult = action.getActionResult();
+          if (!actionResult) {
+            throw new Error('Form executed but no action result available');
+          }
+
+          return {
+            success: true,
+            message: `Form completed successfully with ${lines.length} commands`,
+            action: 'form',
+            codeBlock,
+            commandsExecuted: lines.length,
+          };
+        } catch (error) {
+          debugLog(`Form failed: ${error}`);
+          return {
+            success: false,
+            message: 'Form execution FAILED! ' + String(error),
+            action: 'form',
+            codeBlock,
+          };
+        }
       },
     }),
   };

@@ -92,7 +92,7 @@ export class Captain implements Agent {
           if (target) {
             await this.explorBot.visit(target);
           }
-          const result = await this.explorBot.agentResearcher().research();
+          const result = await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!);
           return { success: true, summary: result.slice(0, 800) };
         },
       }),
@@ -104,7 +104,7 @@ export class Captain implements Agent {
           if (feature) {
             tag('substep').log(`Captain planning focus: ${feature}`);
           }
-          const newPlan = await this.explorBot.plan();
+          const newPlan = await this.explorBot.agentPlanner().plan();
           return { success: true, tests: newPlan?.tests.length || 0 };
         },
       }),

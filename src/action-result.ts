@@ -10,16 +10,16 @@ const debugLog = createDebug('explorbot:action-state');
 
 interface ActionResultData {
   html: string;
-  url?: string;
-  fullUrl?: string;
+  url?: string | null;
+  fullUrl?: string | undefined;
   screenshot?: Buffer;
   title?: string;
   timestamp?: Date;
   error?: string | null;
-  h1?: string;
-  h2?: string;
-  h3?: string;
-  h4?: string;
+  h1?: string | undefined;
+  h2?: string | undefined;
+  h3?: string | undefined;
+  h4?: string | undefined;
   browserLogs?: any[];
 }
 
@@ -29,23 +29,24 @@ export class ActionResult {
   public readonly title: string = '';
   public readonly error: string | null = null;
   public readonly timestamp: Date = new Date();
-  public readonly h1: string | null = null;
-  public readonly h2: string | null = null;
-  public readonly h3: string | null = null;
-  public readonly h4: string | null = null;
-  public readonly url: string | null = null;
-  public readonly fullUrl: string | null = null;
+  public readonly h1: string | undefined = undefined;
+  public readonly h2: string | undefined = undefined;
+  public readonly h3: string | undefined = undefined;
+  public readonly h4: string | undefined = undefined;
+  public readonly url: string = '';
+  public readonly fullUrl: string | undefined = undefined;
   public readonly browserLogs: any[] = [];
 
   constructor(data: ActionResultData) {
     const defaults = {
       timestamp: new Date(),
       browserLogs: [],
+      url: '',
     };
 
     Object.assign(this, defaults, data);
 
-    if (!this.fullUrl && this.url) {
+    if (!this.fullUrl && this.url && this.url !== '') {
       this.fullUrl = this.url;
     }
 
@@ -62,7 +63,7 @@ export class ActionResult {
     this.saveBrowserLogs();
     this.saveHtmlOutput();
 
-    if (this.url) {
+    if (this.url && this.url !== '') {
       this.url = this.extractStatePath(this.url);
     }
   }
@@ -106,14 +107,14 @@ export class ActionResult {
   }
 
   isSameUrl(state: WebPageState): boolean {
-    if (!this.url) {
+    if (!this.url || this.url === '') {
       return false;
     }
     return this.extractStatePath(state.url) === this.extractStatePath(this.url);
   }
 
   isMatchedBy(state: WebPageState): boolean {
-    if (!this.url) {
+    if (!this.url || this.url === '') {
       return false;
     }
 
@@ -190,7 +191,7 @@ export class ActionResult {
 
     const actionResultData: any = {
       html,
-      url: state.fullUrl || state.url,
+      url: state.fullUrl || state.url || '',
       title: state.title,
       screenshot,
       browserLogs,
@@ -261,7 +262,7 @@ export class ActionResult {
   toAiContext(): string {
     const parts: string[] = [];
 
-    if (this.url) {
+    if (this.url && this.url !== '') {
       parts.push(`<url>${this.url}</url>`);
     }
 
@@ -289,7 +290,7 @@ export class ActionResult {
   }
 
   get relativeUrl(): string | null {
-    if (!this.url) return null;
+    if (!this.url || this.url === '') return null;
 
     try {
       const urlObj = new URL(this.url);
@@ -305,7 +306,7 @@ export class ActionResult {
   getStateHash(): string {
     const parts: string[] = [];
 
-    parts.push(this.relativeUrl || '/');
+    parts.push(this.relativeUrl || this.url || '/');
 
     const headings = ['h1', 'h2'];
 

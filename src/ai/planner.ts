@@ -40,10 +40,13 @@ export class Planner implements Agent {
 
   MIN_TASKS = 3;
   MAX_TASKS = 7;
+  previousPlan: Plan | null = null;
+  researcher: Researcher;
 
   constructor(explorer: Explorer, provider: Provider) {
     this.explorer = explorer;
     this.provider = provider;
+    this.researcher = new Researcher(explorer, provider);
     this.stateManager = explorer.getStateManager();
   }
 
@@ -63,6 +66,10 @@ export class Planner implements Agent {
       Tests must be independent of each other
     </task>
     `;
+  }
+
+  setPreviousPlan(plan: Plan): void {
+    this.previousPlan = plan;
   }
 
   async plan(feature?: string): Promise<Plan> {
@@ -171,15 +178,42 @@ export class Planner implements Agent {
     `;
 
     conversation.addUserText(planningPrompt);
-
-    const currentState = this.stateManager.getCurrentState();
-    if (!currentState) throw new Error('No state found');
-
-    let research = Researcher.getCachedResearch(currentState);
-    if (!research) {
-      research = await new Researcher(this.explorer, this.provider).research();
-    }
+    const research = await this.researcher.research(state);
     conversation.addUserText(`Identified page elements: ${research}`);
+
+    if (this.previousPlan) {
+      conversation.addUserText(dedent`
+        We already launched following tests.
+        Focus on new scenarios, not on already tested ones.
+        Think how can you expand testing and check more scenario based on knowledge from previous tests.
+        What else can be potentially tested based on HTML context and from previous tests?
+        If you created item, check if you can interact with it.
+        If you created item check if you can edit it.
+        It is ALLOWED TO DELETE item you previously created.
+
+        <tests>
+        ${this.previousPlan.toAiContext()}
+        </tests>
+
+        Plan your next tests analyzing the pages we visited during previous testing session:
+
+        <pages>
+        ${this.previousPlan
+          .getVisitedPages()
+          .map(
+            (s) => `
+          <page>${ActionResult.fromState(s).toAiContext()}
+          <page_content>
+          ${Researcher.getCachedResearch(s) || this.researcher.textContent(s)}
+          </page_content>
+          </page>`
+          )
+          .join('\n')}
+        </pages>
+
+        Consider purpose of visited pages when planning new tests.
+        `);
+    }
 
     const tasksMessage = dedent`
     <task>
@@ -191,20 +225,24 @@ export class Planner implements Agent {
          If you are unsure about the priority, set it to LOW.
       2. Start with positive scenarios and then move to negative scenarios
       3. Focus on main content of the page, not in the menu, sidebar or footer
-      4. Focus on tasks you are 100% sure relevant to this page and can be achived from UI.
+      4. Focus on tests you are 100% sure relevant to this page and can be achived from UI.
       5. For each task, provide multiple specific expected outcomes as an array:
          - Keep each outcome simple and atomic (one verification per outcome)
-         - Good examples: ["Success message is displayed", "URL changes to /dashboard", "Submit button becomes disabled"]
-         - Bad example: ["Form submits successfully and shows confirmation with updated data"] (too many checks in one)
+         - Good examples: "Success message is displayed", "URL changes to /dashboard", "Submit button becomes disabled"
+         - Bad example: "Form submits successfully and shows confirmation with updated data" (too many checks in one)
          - Each outcome should be independently verifiable
          - Avoid combining multiple checks into one outcome
-      6. Only tasks that can be tested from web UI should be proposed.
-      7. At least ${this.MIN_TASKS} tasks should be proposed.
+         - Do not add extra prefixes like: TITLE:, TEST:, Scenario: etc. 
+         - Do not wrap text in ** or * quotes, ( or ) brackets.
+         - Avoid using emojis or special characters.
+      6. Only tests that can be tested from web UI should be proposed.
+      7. At least ${this.MIN_TASKS} tests should be proposed.
     </task>
     `;
 
     conversation.addUserText(tasksMessage);
 
+    conversation.autoTrimTag('page_content', 5000);
     return conversation;
   }
 }

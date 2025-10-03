@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { AiError, Provider } from '../../src/ai/provider.js';
+import { ConfigParser } from '../../src/config.js';
 import type { AIConfig } from '../../src/config.js';
 
 // Simple mock implementation without external dependencies
@@ -158,6 +159,8 @@ describe('Provider', () => {
       config: {},
       vision: false,
     };
+    // Initialize ConfigParser to avoid "Configuration not loaded" error
+    ConfigParser.getInstance().loadConfig({});
     provider = new Provider(aiConfig);
   });
 
@@ -320,7 +323,7 @@ describe('Provider', () => {
       expect(conversation).toBeDefined();
       expect(conversation.messages).toHaveLength(1);
       expect(conversation.messages[0].role).toBe('system');
-      expect(conversation.messages[0].content[0].text).toBe(systemMessage);
+      expect(conversation.messages[0].content).toBe(systemMessage);
     });
 
     // Note: invokeConversation test requires message format conversion

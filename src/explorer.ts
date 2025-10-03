@@ -126,6 +126,10 @@ class Explorer {
     return this.stateManager;
   }
 
+  public getCurrentUrl(): string {
+    return this.stateManager.getCurrentState()!.url || '?';
+  }
+
   public getKnowledgeTracker(): KnowledgeTracker {
     return this.knowledgeTracker;
   }

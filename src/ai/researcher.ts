@@ -46,10 +46,7 @@ export class Researcher implements Agent {
     `;
   }
 
-  async research(): Promise<string> {
-    const state = this.stateManager.getCurrentState();
-    if (!state) throw new Error('No state found');
-
+  async research(state: WebPageState): Promise<string> {
     const actionResult = ActionResult.fromState(state);
     const stateHash = state.hash || actionResult.getStateHash();
 
@@ -399,10 +396,7 @@ export class Researcher implements Agent {
       `;
   }
 
-  async textContent(): Promise<string> {
-    const state = this.stateManager.getCurrentState();
-    if (!state) throw new Error('No state found');
-
+  async textContent(state: WebPageState): Promise<string> {
     const actionResult = ActionResult.fromState(state);
     const html = await actionResult.combinedHtml();
 

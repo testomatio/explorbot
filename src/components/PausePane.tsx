@@ -1,10 +1,10 @@
 import chalk from 'chalk';
 import { container, output, recorder, store } from 'codeceptjs';
-import { Box, Text } from 'ink';
-import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput } from 'ink';
+import TextInput from 'ink-text-input';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createDebug, getMethodsOfObject, log } from '../utils/logger.ts';
-// import InputPane from './InputPane.js';
-import AutocompleteInput from './AutocompleteInput.js';
+import AutocompletePane from './AutocompletePane.js';
 
 const debug = createDebug('pause');
 
@@ -32,6 +32,8 @@ const PausePane = ({ onExit, onCommandSubmit }: { onExit: () => void; onCommandS
 
   const [command, setCommand] = useState('');
   const [commands, setCommands] = useState<string[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [autocompleteMode, setAutocompleteMode] = useState(false);
 
   // Reset global state when component is recreated
   useEffect(() => {
@@ -46,7 +48,65 @@ const PausePane = ({ onExit, onCommandSubmit }: { onExit: () => void; onCommandS
       setCommands(['amOnPage', 'click', 'fillField', 'see', 'dontSee', 'seeElement', 'dontSeeElement', 'waitForElement', 'selectOption', 'checkOption']);
     }
   }, []);
-  // Handle the submission of a command
+
+  const prefixedCommands = useMemo(() => commands.map((cmd) => (cmd.startsWith('I.') ? cmd : `I.${cmd}`)), [commands]);
+
+  const filteredCommands = useMemo(() => {
+    if (!prefixedCommands.length) {
+      return [];
+    }
+
+    const normalized = command.trim();
+    if (!normalized) {
+      return prefixedCommands.slice(0, 20);
+    }
+
+    const searchTerm = normalized.toLowerCase().replace(/^i\./, '');
+    return prefixedCommands.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
+  }, [prefixedCommands, command]);
+
+  const showAutocomplete = filteredCommands.length > 0;
+
+  useEffect(() => {
+    if (!showAutocomplete) {
+      setSelectedIndex(0);
+      setAutocompleteMode(false);
+      return;
+    }
+
+    setSelectedIndex((prev) => (prev < filteredCommands.length ? prev : 0));
+  }, [filteredCommands.length, showAutocomplete]);
+
+  useInput((input, key) => {
+    if (!showAutocomplete || !filteredCommands.length) {
+      return;
+    }
+
+    if (key.tab) {
+      const chosen = filteredCommands[selectedIndex] || filteredCommands[0];
+      if (chosen) {
+        setCommand(chosen);
+        setAutocompleteMode(false);
+      }
+      return;
+    }
+
+    if (key.downArrow) {
+      setAutocompleteMode(true);
+      setSelectedIndex((prev) => (filteredCommands.length ? (prev + 1) % filteredCommands.length : 0));
+      return;
+    }
+
+    if (key.upArrow) {
+      setAutocompleteMode(true);
+      setSelectedIndex((prev) => (filteredCommands.length ? (prev > 0 ? prev - 1 : filteredCommands.length - 1) : 0));
+      return;
+    }
+
+    if (key.escape) {
+      setAutocompleteMode(false);
+    }
+  });
   const handleSubmit = async (cmd: string) => {
     // Start a new recorder session for pause
     recorder.session.start('pause');
@@ -107,6 +167,19 @@ const PausePane = ({ onExit, onCommandSubmit }: { onExit: () => void; onCommandS
     onCommandSubmit?.();
   };
 
+  const submitCommand = async (value: string) => {
+    let payload = value;
+    if (showAutocomplete && filteredCommands.length > 0) {
+      const chosen = filteredCommands[autocompleteMode ? selectedIndex : 0];
+      if (!value.trim() || autocompleteMode) {
+        payload = chosen || value;
+      }
+    }
+    await handleSubmit(payload);
+    setAutocompleteMode(false);
+    setSelectedIndex(0);
+  };
+
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="yellow" flexGrow={1} padding={1} marginTop={1}>
       {!command.trim() && (
@@ -117,14 +190,29 @@ const PausePane = ({ onExit, onCommandSubmit }: { onExit: () => void; onCommandS
           <Text color="yellow">- Prefix commands with &quot;=&gt;&quot; for custom commands</Text>
         </>
       )}
-      <Box marginTop={1}>
-        <AutocompleteInput value={command} onChange={setCommand} onSubmit={handleSubmit} placeholder="Enter command..." suggestions={commands} showAutocomplete={true} />
-        {/* <InputPane
-          value={command}
-          onChange={setCommand}
-          onSubmit={handleSubmit}
-          placeholder="Enter command..."
-        /> */}
+      <Box marginTop={1} flexDirection="column">
+        <Box>
+          <Text color="green">&gt; </Text>
+          <TextInput value={command} onChange={setCommand} onSubmit={submitCommand} placeholder="Enter command..." />
+        </Box>
+        <AutocompletePane
+          commands={filteredCommands}
+          input={command}
+          selectedIndex={selectedIndex}
+          onSelect={(index) => {
+            const chosen = filteredCommands[index];
+            if (chosen) {
+              setCommand(chosen);
+              setAutocompleteMode(false);
+            }
+          }}
+          visible={showAutocomplete}
+        />
+        {filteredCommands.length > 0 && (
+          <Text color="gray" dimColor>
+            {autocompleteMode ? '↑↓ navigate, Tab/Enter to select, Esc to exit' : 'Enter for first match, ↓ to navigate'}
+          </Text>
+        )}
       </Box>
     </Box>
   );
