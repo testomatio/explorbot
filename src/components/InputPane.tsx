@@ -71,7 +71,7 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
       inputRef.current = '';
       cursorRef.current = 0;
     },
-    [commandHandler, exitOnEmptyInput, onSubmit, onCommandStart, addLog]
+    [commandHandler, exitOnEmptyInput, onSubmit, onCommandStart, onCommandComplete, addLog]
   );
 
   useEffect(() => {

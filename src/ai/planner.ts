@@ -182,6 +182,7 @@ export class Planner implements Agent {
     conversation.addUserText(`Identified page elements: ${research}`);
 
     if (this.previousPlan) {
+      tag('step').log('Looking at previous plan to expand testing');
       conversation.addUserText(dedent`
         We already launched following tests.
         Focus on new scenarios, not on already tested ones.

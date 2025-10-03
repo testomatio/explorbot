@@ -27,7 +27,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     reject: (reason?: any) => void;
   } | null>(null);
 
-  const startMain = async (): Promise<(() => void) | undefined> => {
+  const startMain = React.useCallback(async (): Promise<(() => void) | undefined> => {
     try {
       setShowInput(false);
       explorBot.setUserResolve(async (error?: Error) => {
@@ -65,7 +65,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       console.error('Exiting gracefully...');
       process.exit(1);
     }
-  };
+  }, [explorBot]);
 
   useEffect(() => {
     startMain()
@@ -74,7 +74,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         console.error('Failed to start ExplorBot:', error);
         process.exit(1);
       });
-  }, []);
+  }, [startMain]);
 
   // Listen for task changes
   useEffect(() => {

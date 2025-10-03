@@ -46,7 +46,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
     return () => {
       unregisterLogPane(addLog);
     };
-  }, []); // Empty dependency array to ensure this only runs once
+  }, [addLog]);
   const getLogStyles = (type: LogType) => {
     switch (type) {
       case 'success':

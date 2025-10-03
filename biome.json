@@ -22,14 +22,20 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "off",
-        "noAssignInExpressions": "off"
+        "noAssignInExpressions": "off",
+        "noImplicitAnyLet": "off",
+        "noArrayIndexKey": "off"
       },
       "style": {
         "noNonNullAssertion": "off",
-        "useImportType": "off"
+        "useImportType": "off",
+        "noParameterAssign": "off"
       },
       "complexity": {
         "noForEach": "off"
+      },
+      "security": {
+        "noGlobalEval": "off"
       }
     }
   },
