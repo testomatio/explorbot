@@ -18,6 +18,7 @@ const defaultOptions: Required<RetryOptions> = {
   retryCondition: (error: Error) => {
     return (
       error.name === 'AI_APICallError' ||
+      error.message.includes('response did not match schema') ||
       error.message.includes('timeout') ||
       error.message.includes('network') ||
       error.message.includes('rate limit')
@@ -25,16 +26,13 @@ const defaultOptions: Required<RetryOptions> = {
   },
 };
 
-export async function withRetry<T>(
-  operation: () => Promise<T>,
-  options: RetryOptions = {}
-): Promise<T> {
+export async function withRetry<T>(operation: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
   const config = { ...defaultOptions, ...options };
   let lastError: Error;
 
   for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
     try {
-      debugLog(`Attempt ${attempt}/${config.maxAttempts}`);
+      if (attempt > 1) debugLog(`Attempt ${attempt}/${config.maxAttempts}`);
       return await operation();
     } catch (error) {
       lastError = error as Error;
@@ -49,10 +47,7 @@ export async function withRetry<T>(
         throw lastError;
       }
 
-      const delay = Math.min(
-        config.baseDelay * Math.pow(config.backoffMultiplier, attempt - 1),
-        config.maxDelay
-      );
+      const delay = Math.min(config.baseDelay * config.backoffMultiplier ** (attempt - 1), config.maxDelay);
 
       debugLog(`Retrying in ${delay}ms. Error: ${lastError.message}`);
       await new Promise((resolve) => setTimeout(resolve, delay));

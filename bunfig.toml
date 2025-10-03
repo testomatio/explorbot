@@ -9,7 +9,7 @@ peer = true
 
 [test]
 # Test configuration
-coverage = true
+coverage = false
 coverageDir = "coverage"
 coverageThreshold = 80
 

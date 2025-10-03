@@ -1,6 +1,6 @@
+import { Box, Text } from 'ink';
 import React from 'react';
 import { useEffect, useState } from 'react';
-import { Box, Text } from 'ink';
 import { ConfigParser } from '../config.js';
 
 interface ConfigInfo {
@@ -28,8 +28,7 @@ const Welcome: React.FC = () => {
           const provider = loadedConfig.ai.provider;
 
           const testModel = provider('test-model');
-          aiProviderName =
-            testModel?.constructor?.name || testModel?.config?.provider;
+          aiProviderName = testModel?.constructor?.name || testModel?.config?.provider;
         }
 
         setConfigInfo({

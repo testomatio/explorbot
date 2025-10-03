@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { Provider, AiError } from '../../src/ai/provider.js';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { AiError, Provider } from '../../src/ai/provider.js';
+import { ConfigParser } from '../../src/config.js';
 import type { AIConfig } from '../../src/config.js';
 
 // Simple mock implementation without external dependencies
@@ -158,6 +159,8 @@ describe('Provider', () => {
       config: {},
       vision: false,
     };
+    // Initialize ConfigParser to avoid "Configuration not loaded" error
+    ConfigParser.getInstance().loadConfig({});
     provider = new Provider(aiConfig);
   });
 
@@ -168,9 +171,9 @@ describe('Provider', () => {
   describe('constructor', () => {
     it('should initialize with the provided config', () => {
       expect(provider).toBeDefined();
-      expect(provider['config']).toEqual(aiConfig);
-      expect(typeof provider['provider']).toBe('function');
-      expect(provider['provider']()).toBeDefined();
+      expect(provider.config).toEqual(aiConfig);
+      expect(typeof provider.provider).toBe('function');
+      expect(provider.provider()).toBeDefined();
     });
   });
 
@@ -222,7 +225,7 @@ describe('Provider', () => {
       ];
 
       // Test the filterImages method directly
-      const filtered = provider['filterImages'](messages);
+      const filtered = provider.filterImages(messages);
 
       // When vision is enabled, images should be kept
       expect(filtered[0].content).toHaveLength(2);
@@ -275,9 +278,7 @@ describe('Provider', () => {
       mockAI.setResponses([{ text: 'Success' }]);
       mockAI.setFailure(true, 5); // Fail more than max retries
 
-      await expect(provider.chat(messages, { maxRetries: 2 })).rejects.toThrow(
-        AiError
-      );
+      await expect(provider.chat(messages, { maxRetries: 2 })).rejects.toThrow(AiError);
     });
 
     // Note: Non-retryable error test is complex to set up with the current mock
@@ -307,9 +308,7 @@ describe('Provider', () => {
       mockAI.setResponses([{ object: { wrongField: 'value' } }]);
 
       // This should throw an AiError due to schema validation
-      await expect(provider.generateObject(messages, schema)).rejects.toThrow(
-        AiError
-      );
+      await expect(provider.generateObject(messages, schema)).rejects.toThrow(AiError);
     });
   });
 
@@ -324,7 +323,7 @@ describe('Provider', () => {
       expect(conversation).toBeDefined();
       expect(conversation.messages).toHaveLength(1);
       expect(conversation.messages[0].role).toBe('system');
-      expect(conversation.messages[0].content[0].text).toBe(systemMessage);
+      expect(conversation.messages[0].content).toBe(systemMessage);
     });
 
     // Note: invokeConversation test requires message format conversion
@@ -347,7 +346,7 @@ describe('Provider', () => {
         { role: 'user', content: 'Just text' },
       ];
 
-      const filtered = provider['filterImages'](messages);
+      const filtered = provider.filterImages(messages);
 
       expect(filtered[0].content).toHaveLength(1);
       expect(filtered[0].content[0].type).toBe('text');
@@ -368,7 +367,7 @@ describe('Provider', () => {
         },
       ];
 
-      const filtered = provider['filterImages'](messages);
+      const filtered = provider.filterImages(messages);
 
       expect(filtered[0].content).toHaveLength(2);
     });

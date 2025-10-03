@@ -22,12 +22,7 @@ export interface MockProviderConfig {
  * Creates a mock AI provider for testing
  */
 export function createMockProvider(config: MockProviderConfig = {}) {
-  const {
-    responses = [{ text: 'Mock AI response' }],
-    simulateError = false,
-    errorType = 'api',
-    delay = 0,
-  } = config;
+  let { responses = [{ text: 'Mock AI response' }], simulateError = false, errorType = 'api', delay = 0 } = config;
 
   let callCount = 0;
 
@@ -106,14 +101,14 @@ export function createMockProvider(config: MockProviderConfig = {}) {
     async startConversation(messages: any[] = [], tools?: any) {
       const response = await this.generateWithTools(messages, tools || {});
       const conversation = {
-        id: 'mock-conversation-' + Date.now(),
+        id: `mock-conversation-${Date.now()}`,
         messages: [...messages, { role: 'assistant', content: response.text }],
         addAssistantText: (text: string) => {
           conversation.messages.push({ role: 'assistant', content: text });
         },
         clone: () => ({
           ...conversation,
-          id: 'mock-conversation-' + Date.now(),
+          id: `mock-conversation-${Date.now()}`,
         }),
       };
 
@@ -121,10 +116,7 @@ export function createMockProvider(config: MockProviderConfig = {}) {
     },
 
     async followUp(conversationId: string, tools?: any) {
-      const response = await this.generateWithTools(
-        [{ role: 'user', content: 'Follow up question' }],
-        tools || {}
-      );
+      const response = await this.generateWithTools([{ role: 'user', content: 'Follow up question' }], tools || {});
 
       return {
         conversation: {
@@ -171,9 +163,7 @@ export function createMockProvider(config: MockProviderConfig = {}) {
  */
 export const MockResponses = {
   // Planner responses
-  createTasks: (
-    tasks: Array<{ scenario: string; priority: 'high' | 'medium' | 'low' }>
-  ) => ({
+  createTasks: (tasks: Array<{ scenario: string; priority: 'high' | 'medium' | 'low' }>) => ({
     tasks: tasks.map((task) => ({
       toolName: 'createTasks',
       args: { tasks: [task] },

@@ -1,12 +1,10 @@
 import type { ExplorBot } from './explorbot.js';
+import { tag } from './utils/logger.js';
 
 export type InputSubmitCallback = (input: string) => Promise<void>;
 
 export interface InputManager {
-  registerInputPane(
-    addLog: (entry: string) => void,
-    onSubmit: InputSubmitCallback
-  ): () => void;
+  registerInputPane(addLog: (entry: string) => void, onSubmit: InputSubmitCallback): () => void;
   getAvailableCommands(): string[];
   getFilteredCommands(input: string): string[];
   setExitOnEmptyInput(enabled: boolean): void;
@@ -15,8 +13,26 @@ export interface InputManager {
 export interface Command {
   name: string;
   description: string;
-  pattern: RegExp;
-  execute: (input: string, explorBot: ExplorBot) => Promise<void>;
+  execute: (args: string, explorBot: ExplorBot) => Promise<void>;
+}
+
+export interface ParsedCommand {
+  name: string;
+  args: string[];
+}
+
+function parseCommand(input: string): ParsedCommand | null {
+  const trimmed = input.trim();
+
+  if (!trimmed.startsWith('/')) {
+    return null;
+  }
+
+  const parts = trimmed.slice(1).split(/\s+/);
+  const name = parts[0]?.toLowerCase();
+  const args = parts.slice(1);
+
+  return { name, args };
 }
 
 export class CommandHandler implements InputManager {
@@ -36,48 +52,104 @@ export class CommandHandler implements InputManager {
   private initializeCommands(): Command[] {
     return [
       {
-        name: '/research',
+        name: 'research',
         description: 'Research current page or navigate to URI and research',
-        pattern: /^\/research(?:\s+(.+))?$/,
-        execute: async (input: string) => {
-          const match = input.match(/^\/research(?:\s+(.+))?$/);
-          const uri = match?.[1]?.trim();
-
-          if (uri) {
-            await this.explorBot.getExplorer().visit(uri);
+        execute: async (uri: string) => {
+          const target = uri.trim();
+          if (target) {
+            await this.explorBot.getExplorer().visit(target);
           }
-          await this.explorBot.getExplorer().research();
+          await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!);
+          tag('success').log('Research completed');
         },
       },
       {
-        name: '/plan',
+        name: 'plan',
         description: 'Plan testing for a feature',
-        pattern: /^\/plan(?:\s+(.+))?$/,
-        execute: async (input: string) => {
-          const match = input.match(/^\/plan(?:\s+(.+))?$/);
-          const feature = match?.[1]?.trim() || '';
-          await this.explorBot.getExplorer().plan(feature);
+        execute: async (feature: string) => {
+          const focus = feature.trim();
+          if (focus) {
+            tag('info').log(`Planning focus: ${focus}`);
+          }
+          await this.explorBot.plan();
+          const plan = this.explorBot.getCurrentPlan();
+          if (!plan?.tests.length) {
+            throw new Error('No test scenarios in the current plan. Please run /plan first to create test scenarios.');
+          }
+          tag('success').log(`Plan ready with ${plan.tests.length} tests`);
         },
       },
       {
-        name: '/navigate',
+        name: 'navigate',
         description: 'Navigate to URI or state using AI',
-        pattern: /^\/navigate(?:\s+(.+))?$/,
-        execute: async (input: string) => {
-          const match = input.match(/^\/navigate(?:\s+(.+))?$/);
-          const target = match?.[1]?.trim();
-
-          if (!target) {
+        execute: async (target: string) => {
+          const destination = target.trim();
+          if (!destination) {
             throw new Error('Navigate command requires a target URI or state');
           }
 
-          await this.explorBot.getExplorer().navigate(target);
+          await this.explorBot.agentNavigator().visit(destination);
+          tag('success').log(`Navigation requested: ${destination}`);
+        },
+      },
+      {
+        name: 'know',
+        description: 'Store knowledge for current page',
+        execute: async (payload: string) => {
+          const note = payload.trim();
+          if (!note) return;
+
+          const explorer = this.explorBot.getExplorer();
+          const state = explorer.getStateManager().getCurrentState();
+          if (!state) {
+            throw new Error('No active page to attach knowledge');
+          }
+
+          const targetUrl = state.url || state.fullUrl || '/';
+          explorer.getKnowledgeTracker().addKnowledge(targetUrl, note);
+          tag('success').log('Knowledge saved for current page');
+        },
+      },
+      {
+        name: 'explore',
+        description: 'Make everything from research to test',
+        execute: async (args: string) => {
+          await this.explorBot.explore();
+          tag('info').log('Navigate to other page with /navigate or /explore again to continue exploration');
+        },
+      },
+      {
+        name: 'test',
+        description: 'Launch tester agent to execute test scenarios',
+        execute: async (args: string) => {
+          if (!this.explorBot.getCurrentPlan()) {
+            throw new Error('No plan found. Please run /plan first to create test scenarios.');
+          }
+          const plan = this.explorBot.getCurrentPlan()!;
+          if (plan.isComplete) {
+            throw new Error('All tests are already complete. Please run /plan to create test scenarios.');
+          }
+          const toExecute = [];
+          if (!args) {
+            toExecute.push(plan.getPendingTests()[0]);
+          } else if (args === '*') {
+            toExecute.push(...plan.getPendingTests());
+          } else if (args.match(/^\d+$/)) {
+            toExecute.push(plan.getPendingTests()[Number.parseInt(args) - 1]);
+          } else {
+            toExecute.push(...plan.getPendingTests().filter((test) => test.scenario.toLowerCase().includes(args.toLowerCase())));
+          }
+          tag('info').log(`Launching ${toExecute.length} test scenarios. Run /test * to execute all tests.`);
+          const tester = this.explorBot.agentTester();
+          for (const test of toExecute) {
+            await tester.test(test);
+          }
+          tag('success').log('Test execution finished');
         },
       },
       {
         name: 'exit',
         description: 'Exit the application',
-        pattern: /^exit$/,
         execute: async () => {
           console.log('\n👋 Goodbye!');
           process.exit(0);
@@ -87,8 +159,12 @@ export class CommandHandler implements InputManager {
   }
 
   getAvailableCommands(): string[] {
+    const slashCommands = this.commands.map((cmd) => `/${cmd.name}`);
+    if (!slashCommands.includes('/quit')) {
+      slashCommands.push('/quit');
+    }
     return [
-      ...this.commands.map((cmd) => cmd.name),
+      ...slashCommands,
       'I.amOnPage',
       'I.click',
       'I.see',
@@ -105,20 +181,39 @@ export class CommandHandler implements InputManager {
   }
 
   getCommandDescriptions(): { name: string; description: string }[] {
-    return [
+    const descriptions = [
       ...this.commands.map((cmd) => ({
-        name: cmd.name,
+        name: `/${cmd.name}`,
         description: cmd.description,
       })),
       { name: 'I.*', description: 'CodeceptJS commands for web interaction' },
     ];
+    descriptions.push({ name: '/quit', description: 'Exit the application' });
+    return descriptions;
   }
 
   async executeCommand(input: string): Promise<void> {
     const trimmedInput = input.trim();
+    const lowered = trimmedInput.toLowerCase();
 
     if (trimmedInput.startsWith('I.')) {
-      await this.executeCodeceptJSCommand(trimmedInput);
+      try {
+        await this.executeCodeceptJSCommand(trimmedInput);
+      } catch (error) {
+        tag('error').log(`CodeceptJS command failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return;
+    }
+
+    if (lowered === 'exit' || lowered === '/exit' || lowered === 'quit' || lowered === '/quit') {
+      const exitCommand = this.commands.find((cmd) => cmd.name === 'exit');
+      if (exitCommand) {
+        try {
+          await exitCommand.execute('', this.explorBot);
+        } catch (error) {
+          tag('error').log(`Exit command failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
       return;
     }
 
@@ -127,14 +222,28 @@ export class CommandHandler implements InputManager {
       return;
     }
 
-    for (const command of this.commands) {
-      if (command.pattern.test(trimmedInput)) {
-        await command.execute(trimmedInput, this.explorBot);
+    const parsed = parseCommand(trimmedInput);
+    if (parsed) {
+      const command = this.commands.find((cmd) => cmd.name === parsed.name);
+      if (command) {
+        const argsString = parsed.args.join(' ');
+        try {
+          await command.execute(argsString, this.explorBot);
+        } catch (error) {
+          tag('error').log(`/${command.name} failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
         return;
       }
     }
 
-    await this.explorBot.getExplorer().visit(trimmedInput);
+    try {
+      const response = await this.explorBot.agentCaptain().handle(trimmedInput);
+      if (response) {
+        console.log(response);
+      }
+    } catch (error) {
+      tag('error').log(`Captain failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private async executeCodeceptJSCommand(input: string): Promise<void> {
@@ -144,19 +253,26 @@ export class CommandHandler implements InputManager {
 
   isCommand(input: string): boolean {
     const trimmedInput = input.trim();
+    const lowered = trimmedInput.toLowerCase();
 
     if (trimmedInput.startsWith('I.')) {
       return true;
     }
 
-    return this.commands.some((cmd) => cmd.pattern.test(trimmedInput));
+    if (lowered === 'exit' || lowered === 'quit' || lowered === '/exit' || lowered === '/quit') {
+      return true;
+    }
+
+    const parsed = parseCommand(trimmedInput);
+    if (parsed) {
+      return this.commands.some((cmd) => cmd.name === parsed.name);
+    }
+
+    return false;
   }
 
   // InputManager implementation
-  registerInputPane(
-    addLog: (entry: string) => void,
-    onSubmit: InputSubmitCallback
-  ): () => void {
+  registerInputPane(addLog: (entry: string) => void, onSubmit: InputSubmitCallback): () => void {
     const pane = { addLog, onSubmit };
     this.registeredInputPanes.add(pane);
 
@@ -168,14 +284,20 @@ export class CommandHandler implements InputManager {
 
   getFilteredCommands(input: string): string[] {
     const trimmedInput = input.trim();
-    if (!trimmedInput) {
-      return this.getAvailableCommands().slice(0, 20);
+    const normalizedInput = trimmedInput === '/' ? '' : trimmedInput;
+    const slashCommands = this.getAvailableCommands().filter((cmd) => cmd.startsWith('/'));
+    const defaultCommands = ['/explore', '/navigate', '/plan', '/research', 'exit'];
+    if (!normalizedInput) {
+      const prioritized = defaultCommands.filter((cmd) => cmd === 'exit' || slashCommands.includes(cmd));
+      const extras = slashCommands.filter((cmd) => !prioritized.includes(cmd) && cmd !== 'exit');
+      const ordered = [...prioritized, ...extras];
+      const unique = ordered.filter((cmd, index) => ordered.indexOf(cmd) === index);
+      return unique.slice(0, 20);
     }
 
-    const searchTerm = trimmedInput.toLowerCase().replace(/^i\./, '');
-    return this.getAvailableCommands()
-      .filter((cmd) => cmd.toLowerCase().includes(searchTerm))
-      .slice(0, 20);
+    const searchTerm = normalizedInput.toLowerCase();
+    const pool = Array.from(new Set([...slashCommands, 'exit']));
+    return pool.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
   }
 
   setExitOnEmptyInput(enabled: boolean): void {
@@ -193,8 +315,7 @@ export class CommandHandler implements InputManager {
     }
 
     // Check if this is a command (starts with / or I.)
-    const isCommand =
-      trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
+    const isCommand = trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
 
     if (isCommand) {
       // Otherwise, execute as command
@@ -206,10 +327,17 @@ export class CommandHandler implements InputManager {
         firstPane?.addLog(`Command failed: ${error}`);
       }
     } else {
-      // If we have registered panes, use the first one's submit callback
       const firstPane = this.registeredInputPanes.values().next().value;
       if (firstPane) {
         await firstPane.onSubmit(trimmedInput);
+      }
+      const response = await this.explorBot.agentCaptain().handle(trimmedInput);
+      if (response) {
+        if (firstPane) {
+          firstPane.addLog(response);
+        } else {
+          console.log(response);
+        }
       }
     }
   }

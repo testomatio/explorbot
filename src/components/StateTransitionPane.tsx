@@ -1,5 +1,5 @@
-import React from 'react';
 import { Box, Text } from 'ink';
+import React from 'react';
 import type { StateTransition, WebPageState } from '../state-manager.js';
 
 interface StateTransitionPaneProps {
@@ -7,19 +7,11 @@ interface StateTransitionPaneProps {
   currentState?: WebPageState;
 }
 
-const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
-  transition,
-  currentState,
-}) => {
+const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({ transition, currentState }) => {
   if (currentState) {
     return (
       <Box flexDirection="column" flexGrow={1}>
-        <Box
-          padding={1}
-          borderStyle="round"
-          borderColor="dim"
-          flexDirection="column"
-        >
+        <Box padding={1} borderStyle="round" borderColor="dim" flexDirection="column">
           <Box flexDirection="row" alignItems="flex-start" marginBottom={1}>
             <Text color="dim">Current Page </Text>
             <Text color="blue" wrap="truncate-end">
@@ -134,12 +126,7 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
 
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box
-        borderStyle="round"
-        borderColor="dim"
-        padding={1}
-        flexDirection="column"
-      >
+      <Box borderStyle="round" borderColor="dim" padding={1} flexDirection="column">
         <Box justifyContent="space-between" marginBottom={1}>
           <Text color="dim">🔄 state changed</Text>
           <Text color="dim">
@@ -150,8 +137,7 @@ const StateTransitionPane: React.FC<StateTransitionPaneProps> = ({
         {differences.map((diff, index) => (
           <Box key={index} marginY={0}>
             <Text color="dim">
-              {diff.key}: <Text color="red">{diff.from}</Text> →{' '}
-              <Text color="green">{diff.to}</Text>
+              {diff.key}: <Text color="red">{diff.from}</Text> → <Text color="green">{diff.to}</Text>
             </Text>
           </Box>
         ))}

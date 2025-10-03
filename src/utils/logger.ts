@@ -1,26 +1,18 @@
-// import debug from 'debug';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigParser } from '../config.js';
 import chalk from 'chalk';
-import { marked } from 'marked';
+import debug from 'debug';
 import dedent from 'dedent';
+import { marked } from 'marked';
+import { ConfigParser } from '../config.js';
 
-export type LogType =
-  | 'info'
-  | 'success'
-  | 'error'
-  | 'warning'
-  | 'debug'
-  | 'substep'
-  | 'step'
-  | 'multiline'
-  | 'html';
+export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'step' | 'multiline' | 'html';
 
 export interface TaggedLogEntry {
   type: LogType;
   content: string;
   timestamp?: Date;
+  originalArgs?: any[];
 }
 
 type LogEntry = TaggedLogEntry;
@@ -47,14 +39,13 @@ class ConsoleDestination implements LogDestination {
   }
 
   write(entry: TaggedLogEntry): void {
-    let styledContent =
-      entry.type === 'debug' ? chalk.gray(entry.content) : entry.content;
+    if (entry.type === 'debug') return; // we use debug for that
+    if (entry.type === 'html') return;
+    let content = entry.content;
     if (entry.type === 'multiline') {
-      styledContent = chalk.gray(
-        dedent(marked.parse(styledContent).toString())
-      );
+      content = chalk.gray(content);
     }
-    console.log(styledContent);
+    console.log(content);
   }
 }
 
@@ -62,33 +53,33 @@ class DebugDestination implements LogDestination {
   private verboseMode = false;
 
   isEnabled(): boolean {
-    return (
-      this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'))
-    );
+    if (process.env.INK_RUNNING) return false;
+    return this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
   }
 
   setVerboseMode(enabled: boolean): void {
     this.verboseMode = enabled;
   }
 
-  write(entry: TaggedLogEntry): void {
+  write(...args: any[]): void {
     if (!this.isEnabled()) return;
-    if (entry.type !== 'debug') return;
 
-    // Debug logs are now handled by the main logger flow
-    // No need for special handling here
+    let namespace = 'explorbot';
+    if (args.length > 1) {
+      namespace = args[0];
+      args = args.slice(1);
+    }
+    debug(namespace).apply(null, args);
   }
 }
 
 class FileDestination implements LogDestination {
   private initialized = false;
   private logFilePath: string | null = null;
-  private verboseMode = false;
+  private verboseMode = true;
 
   isEnabled(): boolean {
-    return (
-      this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'))
-    );
+    return true;
   }
 
   setVerboseMode(enabled: boolean): void {
@@ -96,15 +87,14 @@ class FileDestination implements LogDestination {
   }
 
   write(entry: TaggedLogEntry): void {
+    if (entry.type === 'html') return;
+    if (entry.type === 'multiline') return;
+
     this.ensureInitialized();
     if (this.logFilePath) {
       try {
-        const timestamp =
-          entry.timestamp?.toISOString() || new Date().toISOString();
-        fs.appendFileSync(
-          this.logFilePath,
-          `[${timestamp}] [${entry.type.toUpperCase()}] ${entry.content}\n`
-        );
+        const timestamp = entry.timestamp?.toISOString() || new Date().toISOString();
+        fs.appendFileSync(this.logFilePath, `[${timestamp}] [${entry.type.toUpperCase()}] ${entry.content}\n`);
       } catch (error) {
         console.warn('Failed to write to log file:', error);
       }
@@ -116,31 +106,14 @@ class FileDestination implements LogDestination {
 
     this.initialized = true;
 
-    let outputDir = 'output';
-    let baseDir = process.env.INITIAL_CWD || process.cwd();
-    try {
-      const parser = ConfigParser.getInstance();
-      const config = parser.getConfig();
-      const configPath = parser.getConfigPath();
-      if (configPath) baseDir = path.dirname(configPath);
-      outputDir = path.join(baseDir, config?.dirs?.output || outputDir);
-    } catch {
-      outputDir = path.join(baseDir, outputDir);
-    }
+    const outputDir = ConfigParser.getInstance().getOutputDir();
 
-    try {
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-      this.logFilePath = path.join(outputDir, 'explorbot.log');
-      const timestamp = new Date().toISOString();
-      fs.appendFileSync(
-        this.logFilePath,
-        `\n=== ExplorBot Session Started at ${timestamp} ===\n`
-      );
-    } catch {
-      this.logFilePath = null;
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
     }
+    this.logFilePath = path.join(outputDir, 'explorbot.log');
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(this.logFilePath, `\n\n=== ExplorBot Session Started at ${timestamp} ===\n\n`);
   }
 }
 
@@ -187,7 +160,6 @@ class Logger {
 
   setVerboseMode(enabled: boolean): void {
     this.debugDestination.setVerboseMode(enabled);
-    this.file.setVerboseMode(enabled);
     this.console.setVerboseMode(enabled);
   }
 
@@ -223,6 +195,10 @@ class Logger {
   }
 
   log(type: LogType, ...args: any[]): void {
+    if (type === 'debug') {
+      this.debugDestination.write(...args);
+      return;
+    }
     const content = this.processArgs(args);
     const entry: TaggedLogEntry = {
       type,
@@ -232,9 +208,7 @@ class Logger {
 
     // Write to all enabled destinations in order
     // Note: When console is force enabled, we still want logs in the log pane
-    if (!this.react.isEnabled() && this.console.isEnabled())
-      this.console.write(entry);
-    if (this.debugDestination.isEnabled()) this.debugDestination.write(entry);
+    if (!this.react.isEnabled() && this.console.isEnabled()) this.console.write(entry);
     if (this.file.isEnabled()) this.file.write(entry);
     if (this.react.isEnabled()) this.react.write(entry);
   }
@@ -256,8 +230,7 @@ class Logger {
   }
 
   debug(namespace: string, ...args: any[]): void {
-    const content = this.processArgs(args);
-    this.log('debug', `[${namespace.replace('explorbot:', '')}] ${content}`);
+    this.log('debug', namespace, ...args);
   }
 
   substep(...args: any[]): void {
@@ -297,16 +270,12 @@ export const getMethodsOfObject = (obj: any): string[] => {
   return methods.sort();
 };
 
-export const setVerboseMode = (enabled: boolean) =>
-  logger.setVerboseMode(enabled);
-export const setPreserveConsoleLogs = (enabled: boolean) =>
-  logger.setPreserveConsoleLogs(enabled);
+export const setVerboseMode = (enabled: boolean) => logger.setVerboseMode(enabled);
+export const setPreserveConsoleLogs = (enabled: boolean) => logger.setPreserveConsoleLogs(enabled);
 export const isVerboseMode = () => logger.isVerboseMode();
 
-export const registerLogPane = (addLog: (entry: LogEntry) => void) =>
-  logger.registerLogPane(addLog);
-export const unregisterLogPane = (addLog: (entry: LogEntry) => void) =>
-  logger.unregisterLogPane(addLog);
+export const registerLogPane = (addLog: (entry: LogEntry) => void) => logger.registerLogPane(addLog);
+export const unregisterLogPane = (addLog: (entry: LogEntry) => void) => logger.unregisterLogPane(addLog);
 
 // Legacy alias for backward compatibility
 export const setLogCallback = registerLogPane;

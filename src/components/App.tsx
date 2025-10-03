@@ -1,14 +1,14 @@
-import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import LogPane from './LogPane.js';
-import InputPane from './InputPane.js';
+import React, { useEffect, useState } from 'react';
+import { CommandHandler } from '../command-handler.js';
+import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
+import type { StateTransition, WebPageState } from '../state-manager.js';
+import { Test } from '../test-plan.ts';
 import ActivityPane from './ActivityPane.js';
+import InputPane from './InputPane.js';
+import LogPane from './LogPane.js';
 import StateTransitionPane from './StateTransitionPane.js';
 import TaskPane from './TaskPane.js';
-import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
-import { CommandHandler } from '../command-handler.js';
-import type { StateTransition, WebPageState } from '../state-manager.js';
-import type { Task } from '../ai/planner.js';
 
 interface AppProps {
   explorBot: ExplorBot;
@@ -16,24 +16,18 @@ interface AppProps {
   exitOnEmptyInput?: boolean;
 }
 
-export function App({
-  explorBot,
-  initialShowInput = false,
-  exitOnEmptyInput = false,
-}: AppProps) {
+export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = false }: AppProps) {
   const [showInput, setShowInput] = useState(initialShowInput);
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
-  const [lastTransition, setLastTransition] = useState<StateTransition | null>(
-    null
-  );
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
+  const [tasks, setTasks] = useState<Test[]>([]);
   const [commandHandler] = useState(() => new CommandHandler(explorBot));
   const [userInputPromise, setUserInputPromise] = useState<{
     resolve: (value: string | null) => void;
     reject: (reason?: any) => void;
   } | null>(null);
 
-  const startMain = async (): Promise<(() => void) | undefined> => {
+  const startMain = React.useCallback(async (): Promise<(() => void) | undefined> => {
     try {
       setShowInput(false);
       explorBot.setUserResolve(async (error?: Error) => {
@@ -56,12 +50,10 @@ export function App({
         setCurrentState(initialState);
       }
 
-      const unsubscribe = manager.onStateChange(
-        (transition: StateTransition) => {
-          setLastTransition(transition);
-          setCurrentState(transition.toState);
-        }
-      );
+      const unsubscribe = manager.onStateChange((transition: StateTransition) => {
+        setLastTransition(transition);
+        setCurrentState(transition.toState);
+      });
 
       setShowInput(false);
 
@@ -73,7 +65,7 @@ export function App({
       console.error('Exiting gracefully...');
       process.exit(1);
     }
-  };
+  }, [explorBot]);
 
   useEffect(() => {
     startMain()
@@ -82,12 +74,12 @@ export function App({
         console.error('Failed to start ExplorBot:', error);
         process.exit(1);
       });
-  }, []);
+  }, [startMain]);
 
   // Listen for task changes
   useEffect(() => {
     const interval = setInterval(() => {
-      const currentTasks = explorBot.getTasks();
+      const currentTasks = explorBot.getCurrentPlan()?.tests || [];
       setTasks(currentTasks);
     }, 1000); // Check every second
 
@@ -110,35 +102,31 @@ export function App({
         <LogPane verboseMode={explorBot.getOptions()?.verbose || false} />
       </Box>
 
-      {showInput ? (
-        <>
-          <Box height={1} />
-          <InputPane
-            commandHandler={commandHandler}
-            onSubmit={async (input: string) => {
-              if (userInputPromise) {
-                userInputPromise.resolve(input);
-                setUserInputPromise(null);
-                setShowInput(false);
-              }
-            }}
-            onCommandStart={() => {
-              setShowInput(false);
-            }}
-          />
-        </>
-      ) : (
-        <Box height={3}>
-          <ActivityPane />
-        </Box>
-      )}
+      <Box height={3}>
+        <ActivityPane />
+      </Box>
 
-      <Box
-        flexDirection="row"
-        alignItems="flex-start"
-        columnGap={1}
-        height="20%"
-      >
+      {showInput && <Box height={1} />}
+      <InputPane
+        commandHandler={commandHandler}
+        onSubmit={async (input: string) => {
+          if (userInputPromise) {
+            userInputPromise.resolve(input);
+            setUserInputPromise(null);
+          }
+          setShowInput(false);
+        }}
+        onCommandStart={() => {
+          setShowInput(false);
+        }}
+        onCommandComplete={() => {
+          setShowInput(false);
+        }}
+        isActive={showInput}
+        visible={showInput}
+      />
+
+      <Box flexDirection="row" alignItems="flex-start" columnGap={1} minHeight={5}>
         {currentState && (
           <Box width={tasks.length > 0 ? '50%' : '100%'}>
             <StateTransitionPane currentState={currentState} />

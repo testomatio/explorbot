@@ -1,11 +1,7 @@
-import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
-import {
-  StateManager,
-  type WebPageState,
-  type StateTransition,
-} from '../../src/state-manager';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
+import { StateManager, type StateTransition, type WebPageState } from '../../src/state-manager';
 
 describe('StateManager', () => {
   let stateManager: StateManager;
@@ -85,12 +81,7 @@ describe('StateManager', () => {
         title: 'Test Page',
       });
 
-      stateManager.updateState(
-        actionResult,
-        'I.amOnPage("/test")',
-        undefined,
-        'navigation'
-      );
+      stateManager.updateState(actionResult, 'I.amOnPage("/test")', undefined, 'navigation');
       const history = stateManager.getStateHistory();
 
       expect(history).toHaveLength(1);
@@ -99,15 +90,22 @@ describe('StateManager', () => {
       expect(history[0].codeBlock).toBe('I.amOnPage("/test")');
       expect(history[0].trigger).toBe('navigation');
     });
+
+    it('should default to root path when action result lacks url', () => {
+      const actionResult = new ActionResult({
+        html: '<html></html>',
+      });
+
+      const state = stateManager.updateState(actionResult);
+
+      expect(state.url).toBe('/');
+      expect(stateManager.getCurrentState()?.url).toBe('/');
+    });
   });
 
   describe('updateStateFromBasic', () => {
     it('should create state from basic URL and title', () => {
-      const newState = stateManager.updateStateFromBasic(
-        'https://example.com/dashboard',
-        'Dashboard',
-        'manual'
-      );
+      const newState = stateManager.updateStateFromBasic('https://example.com/dashboard', 'Dashboard', 'manual');
 
       expect(newState.url).toBe('/dashboard');
       expect(newState.title).toBe('Dashboard');
@@ -116,14 +114,8 @@ describe('StateManager', () => {
     });
 
     it('should not update if basic state hash is unchanged', () => {
-      const firstState = stateManager.updateStateFromBasic(
-        'https://example.com/test',
-        'Test'
-      );
-      const secondState = stateManager.updateStateFromBasic(
-        'https://example.com/test',
-        'Test'
-      );
+      const firstState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
+      const secondState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
 
       expect(firstState).toBe(secondState);
       expect(stateManager.getStateHistory()).toHaveLength(1);
@@ -221,10 +213,7 @@ describe('StateManager', () => {
       // Add some visit history
       stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1');
       stateManager.updateStateFromBasic('https://example.com/page2', 'Page 2');
-      stateManager.updateStateFromBasic(
-        'https://example.com/page1',
-        'Page 1 Again'
-      );
+      stateManager.updateStateFromBasic('https://example.com/page1', 'Page 1 Again');
     });
 
     it('should track if state has been visited', () => {
@@ -261,10 +250,7 @@ describe('StateManager', () => {
 
     it('should get recent transitions', () => {
       for (let i = 1; i <= 10; i++) {
-        stateManager.updateStateFromBasic(
-          `https://example.com/page${i}`,
-          `Page ${i}`
-        );
+        stateManager.updateStateFromBasic(`https://example.com/page${i}`, `Page ${i}`);
       }
 
       const recent = stateManager.getRecentTransitions(3);
@@ -272,6 +258,49 @@ describe('StateManager', () => {
       expect(recent[0].toState.url).toBe('/page8');
       expect(recent[1].toState.url).toBe('/page9');
       expect(recent[2].toState.url).toBe('/page10');
+    });
+  });
+
+  describe('dead loop detection', () => {
+    const setHistory = (sequence: string) => {
+      const entries: StateTransition[] = sequence.split('').map((hash, index) => {
+        const toState: WebPageState = { url: hash, hash };
+        const fromState = index === 0 ? null : { url: sequence[index - 1], hash: sequence[index - 1] };
+        return {
+          fromState,
+          toState,
+          codeBlock: '',
+          timestamp: new Date(),
+          trigger: 'manual',
+        };
+      });
+      (stateManager as any).stateHistory = entries;
+      (stateManager as any).currentState = entries.length ? entries[entries.length - 1].toState : null;
+    };
+
+    it('should detect single state dead loop', () => {
+      setHistory('AAAAAAAAAA');
+      expect(stateManager.isInDeadLoop()).toBe(true);
+    });
+
+    it('should detect two state dead loop', () => {
+      setHistory('ABABABABA');
+      expect(stateManager.isInDeadLoop()).toBe(true);
+    });
+
+    it('should detect three state dead loop', () => {
+      setHistory('ABCABCABCABC');
+      expect(stateManager.isInDeadLoop()).toBe(true);
+    });
+
+    it('should ignore short history', () => {
+      setHistory('AAAAA');
+      expect(stateManager.isInDeadLoop()).toBe(false);
+    });
+
+    it('should ignore mixed history', () => {
+      setHistory('ABCDACABBB');
+      expect(stateManager.isInDeadLoop()).toBe(false);
     });
   });
 

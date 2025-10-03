@@ -14,54 +14,67 @@ export interface LoopContext {
   iteration: number;
 }
 
-export async function loop<T>(
-  request: () => Promise<T>,
-  handler: (context: LoopContext) => Promise<T | void>,
-  maxIterations = 3
-): Promise<T> {
-  let result: T | undefined;
+export interface CatchContext {
+  error: Error;
+  stop: () => void;
+  iteration: number;
+}
 
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
+export interface LoopOptions {
+  maxAttempts?: number;
+  catch?: (context: CatchContext) => Promise<void> | void;
+}
+
+export async function loop<T>(handler: (context: LoopContext) => Promise<T>, options?: LoopOptions): Promise<any> {
+  const maxAttempts = options?.maxAttempts ?? 5;
+  const catchHandler = options?.catch;
+
+  let result: any;
+  let shouldStop = false;
+
+  const createStopFunction = () => () => {
+    shouldStop = true;
+    throw new StopError();
+  };
+
+  for (let iteration = 0; iteration < maxAttempts; iteration++) {
     try {
-      debugLog(`Loop iteration ${iteration + 1}/${maxIterations}`);
+      if (iteration > 0) debugLog(`Loop iteration ${iteration + 1}/${maxAttempts}`);
 
       const context: LoopContext = {
-        stop: () => {
-          throw new StopError();
-        },
+        stop: createStopFunction(),
         iteration: iteration + 1,
       };
 
-      // Call request first to get the result
-      const requestResult = await request();
-
-      // Then call handler with the result
-      let handlerResult: T | void;
-      try {
-        handlerResult = await handler(context);
-      } catch (error) {
-        if (error instanceof StopError) {
-          // If handler returned a value before stopping, use it, otherwise use request result
-          result = handlerResult !== undefined ? handlerResult : requestResult;
-          throw error;
-        }
-        throw error;
-      }
-
-      // If handler returns a value, use it as result, otherwise use request result
-      result = handlerResult !== undefined ? handlerResult : requestResult;
-
-      // If we reach here, continue to next iteration unless it's the last one
-      if (iteration === maxIterations - 1) {
-        return result!;
-      }
+      result = await handler(context);
     } catch (error) {
-      if (error instanceof StopError) {
+      if (error instanceof StopError && shouldStop) {
         debugLog(`Loop stopped successfully at iteration ${iteration + 1}`);
-        if (result !== undefined) {
-          return result;
+        return result;
+      }
+
+      if (catchHandler) {
+        try {
+          const catchContext: CatchContext = {
+            error: error as Error,
+            stop: createStopFunction(),
+            iteration: iteration + 1,
+          };
+
+          await catchHandler(catchContext);
+
+          if (shouldStop) {
+            debugLog(`Loop stopped via catch handler at iteration ${iteration + 1}`);
+            return result;
+          }
+          continue;
+        } catch (catchError) {
+          if (catchError instanceof StopError && shouldStop) {
+            debugLog(`Loop stopped via catch handler at iteration ${iteration + 1}`);
+            return result;
+          }
+          throw catchError;
         }
-        throw new Error('Loop stopped but no result available');
       }
 
       debugLog(`Loop error at iteration ${iteration + 1}:`, error);
@@ -69,9 +82,5 @@ export async function loop<T>(
     }
   }
 
-  if (result !== undefined) {
-    return result;
-  }
-
-  throw new Error(`Loop completed ${maxIterations} iterations without result`);
+  return result;
 }

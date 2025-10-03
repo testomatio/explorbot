@@ -1,28 +1,29 @@
 import dedent from 'dedent';
-import type { Provider } from './provider.js';
-import type { WebPageState } from '../state-manager.js';
-import { createCodeceptJSTools } from './tools.js';
-import { tag, createDebug } from '../utils/logger.js';
 import { ActionResult } from '../action-result.js';
+import { ExperienceTracker } from '../experience-tracker.js';
+import Explorer from '../explorer.ts';
+import { KnowledgeTracker } from '../knowledge-tracker.js';
+import type { WebPageState } from '../state-manager.js';
+import { extractCodeBlocks } from '../utils/code-extractor.js';
+import { createDebug, tag } from '../utils/logger.js';
+import { loop } from '../utils/loop.js';
+import type { Agent } from './agent.js';
+import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
+import type { Provider } from './provider.js';
+import { Researcher } from './researcher.ts';
+import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
 
 const debugLog = createDebug('explorbot:navigator');
 
-export interface StateContext {
-  state: WebPageState;
-  knowledge: Array<{ filePath: string; content: string }>;
-  experience: string[];
-  recentTransitions: Array<{
-    fromState: WebPageState | null;
-    toState: WebPageState;
-    codeBlock: string;
-  }>;
-  html?: string;
-}
-
-class Navigator {
+class Navigator implements Agent {
+  emoji = '🧭';
   private provider: Provider;
   private experienceCompactor: ExperienceCompactor;
+  private knowledgeTracker: KnowledgeTracker;
+  private experienceTracker: ExperienceTracker;
+  private currentAction: any = null;
+  private currentUrl: string | null = null;
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
 
@@ -36,41 +37,89 @@ class Navigator {
     You need to resolve the state of the page based on the message.
   </task>
   `;
+  private freeSailSystemPrompt = dedent`
+  <role>
+    You help with exploratory web navigation.
+  </role>
+  <rules>
+    Always propose a single next navigation target that was not visited yet.
+    Base the suggestion only on the provided research notes and HTML snapshot.
+    Respond with exactly two lines:
+    Next: <target>
+    Reason: <short justification>
+  </rules>
+  `;
+  private explorer: Explorer;
 
-  constructor(provider: Provider) {
+  constructor(explorer: Explorer, provider: Provider, experienceCompactor: ExperienceCompactor) {
     this.provider = provider;
-    this.experienceCompactor = new ExperienceCompactor(provider);
+    this.explorer = explorer;
+    this.experienceCompactor = experienceCompactor;
+    this.knowledgeTracker = new KnowledgeTracker();
+    this.experienceTracker = new ExperienceTracker();
   }
 
-  async resolveState(
-    message: string,
-    actionResult: ActionResult,
-    context?: StateContext
-  ): Promise<string> {
-    const state = context?.state;
-    if (!state) {
-      throw new Error('State is required');
-    }
+  async visit(url: string): Promise<void> {
+    try {
+      const action = this.explorer.createAction();
 
-    tag('info').log('AI Navigator resolving state at', state.url);
+      await action.execute(`I.amOnPage('${url}')`);
+      await action.expect(`I.seeInCurrentUrl('${url}')`);
+
+      if (action.lastError) {
+        const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
+        const originalMessage = `
+          I tried to navigate to: ${url}
+          And I expected to see the URL in the browser
+          But I got error: ${action.lastError?.message || 'Navigation failed'}.
+        `.trim();
+
+        // Store action and url for execution in resolveState
+        this.currentAction = action;
+        this.currentUrl = url;
+        await this.resolveState(originalMessage, actionResult);
+      }
+    } catch (error) {
+      console.error(`Failed to visit page ${url}:`, error);
+      throw error;
+    }
+  }
+
+  async resolveState(message: string, actionResult: ActionResult): Promise<boolean> {
+    tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
 
     let knowledge = '';
+    let experience = '';
 
-    if (context?.knowledge.length > 0) {
-      const knowledgeContent = context.knowledge
-        .map((k) => k.content)
-        .join('\n\n');
-
-      tag('substep').log(
-        `Found ${context.knowledge.length} relevant knowledge file(s) for: ${context.state.url}`
-      );
+    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(actionResult);
+    if (relevantKnowledge.length > 0) {
+      const knowledgeContent = relevantKnowledge.map((k) => k.content).join('\n\n');
       knowledge = `
-        <hint>
-        Here is relevant knowledge for this page:
+      <hint>
+      Here is relevant knowledge for this page:
+      ${knowledgeContent}
+      </hint>`;
+    }
 
-        ${knowledgeContent}
-        </hint>`;
+    const relevantExperience = this.experienceTracker.getRelevantExperience(actionResult).map((experience) => experience.content);
+
+    if (relevantExperience.length > 0) {
+      const experienceContent = relevantExperience.join('\n\n---\n\n');
+      experience = await this.experienceCompactor.compactExperience(experienceContent);
+      tag('substep').log(`Found ${relevantExperience.length} experience file(s) for: ${actionResult.url}`);
+
+      experience = dedent`
+      <experience>
+      Here is the experience of interacting with the page.
+      Learn from it to not repeat the same mistakes.
+      If there was found successful solution to an issue, propose it as a first solution.
+      If there is no successful solution, analyze failed intentions and actions and propose new solutions.
+      Focus on successful solutions and avoid failed locators.
+
+      ${experienceContent}
+
+      </experience>`;
     }
 
     const prompt = dedent`
@@ -100,7 +149,7 @@ class Navigator {
 
       ${knowledge}
 
-      ${await this.experienceRule(context)}
+      ${experience}
 
       ${this.actionRule()}
 
@@ -111,223 +160,155 @@ class Navigator {
 
     tag('debug').log('Prompt:', prompt);
 
-    const response = await this.provider.chat([
-      { role: 'user', content: this.systemPrompt },
-      { role: 'user', content: prompt },
-    ]);
+    const conversation = this.provider.startConversation(this.systemPrompt);
+    conversation.addUserText(prompt);
 
-    const aiResponse = response.text;
+    let codeBlocks: string[] = [];
 
-    tag('info').log(aiResponse.split('\n')[0]);
+    let resolved = false;
+    await loop(
+      async ({ stop, iteration }) => {
+        if (codeBlocks.length === 0) {
+          const result = await this.provider.invokeConversation(conversation);
+          if (!result) return;
+          const aiResponse = result?.response?.text;
+          tag('info').log(aiResponse?.split('\n')[0]);
+          debugLog('Received AI response:', aiResponse.length, 'characters');
+          tag('step').log('Resolving navigation issue...');
+          codeBlocks = extractCodeBlocks(aiResponse ?? '');
+        }
 
-    debugLog('Received AI response:', aiResponse.length, 'characters');
-    tag('debug').log(aiResponse);
+        if (codeBlocks.length === 0) {
+          return;
+        }
 
-    return aiResponse;
-  }
+        const codeBlock = codeBlocks[iteration - 1];
+        if (!codeBlock) {
+          stop();
+          return;
+        }
 
-  async changeState(
-    message: string,
-    actionResult: ActionResult,
-    context?: StateContext,
-    actor?: any
-  ): Promise<ActionResult> {
-    const state = context?.state;
-    if (!state) {
-      throw new Error('State is required');
-    }
+        tag('step').log(`Attempting resolution: ${codeBlock}`);
+        resolved = await this.currentAction.attempt(codeBlock, iteration, message);
 
-    if (!actor) {
-      throw new Error('CodeceptJS actor is required for changeState');
-    }
-
-    tag('info').log('AI Navigator changing state for:', state.url);
-    debugLog('Change message:', message);
-
-    const tools = createCodeceptJSTools(actor);
-
-    const systemPrompt = dedent`
-      <role>
-        You are a senior web automation engineer with expertise in CodeceptJS.
-        Your task is to interact with web pages using available tools to achieve user goals.
-      </role>
-      <approach>
-        Analyze the page state, plan your actions, then execute them step by step.
-        Be methodical and precise in your interactions.
-        After each action, you'll automatically receive the updated page state.
-        Use this feedback to decide your next actions dynamically.
-        Continue until the task is complete or you determine it cannot be completed.
-
-        Use click() for buttons, links, and clickable elements.
-        Use type() for text input - you can specify a locator to focus first, or type without locator for active element.
-      </approach>
-    `;
-
-    const userPrompt = dedent`
-      <message>
-        ${message}
-      </message>
-
-      <task>
-        You need to perform actions on the current web page to fulfill the user's request.
-        Use the provided tools (click and type) to interact with the page.
-
-        Each tool call will automatically return the new page state after the action.
-        Use this feedback to dynamically plan your next steps.
-        Continue making tool calls until the task is completed.
-      </task>
-
-      <current_page>
-        ${actionResult.toAiContext()}
-
-        HTML:
-        ${await actionResult.simplifiedHtml()}
-      </current_page>
-    `;
-
-    try {
-      // Use AI SDK's native tool calling with automatic roundtrips
-      tag('info').log('🤖 Starting AI dynamic navigation with tool calling');
-      const response = await this.provider.generateWithTools(
-        [
-          { role: 'user', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        tools,
-        { maxToolRoundtrips: 5 }
-      );
-
-      tag('success').log('Dynamic tool calling completed');
-      debugLog('Final AI response:', response.text);
-
-      // Capture final page state
-      const finalActionResult = await this.capturePageState(actor);
-
-      // Check if task was completed
-      const taskCompleted = await this.isTaskCompleted(
-        message,
-        finalActionResult
-      );
-      if (taskCompleted) {
-        tag('success').log('Task completed successfully');
-      } else {
-        tag('warning').log('Task may not be fully completed');
+        if (resolved) {
+          tag('success').log('Navigation resolved successfully');
+          stop();
+          return;
+        }
+      },
+      {
+        maxAttempts: this.MAX_ATTEMPTS,
+        catch: async (error) => {
+          debugLog(error);
+          resolved = false;
+        },
       }
-
-      return finalActionResult;
-    } catch (error) {
-      tag('error').log('Error during dynamic tool calling:', error);
-
-      // Return current state as fallback
-      return await this.capturePageState(actor);
-    }
-  }
-
-  private async capturePageState(actor: any): Promise<ActionResult> {
-    try {
-      const url = await actor.grabCurrentUrl();
-      const title = await actor.grabTitle();
-      const html = await actor.grabHTMLFrom('body');
-
-      // Try to get screenshot if possible
-      let screenshot = null;
-      try {
-        screenshot = await actor.saveScreenshot();
-      } catch (error) {
-        debugLog('Could not capture screenshot:', error);
-      }
-
-      return new ActionResult({
-        url,
-        title,
-        html,
-        screenshot,
-        timestamp: new Date(),
-      });
-    } catch (error) {
-      throw new Error(`Failed to capture page state: ${error}`);
-    }
-  }
-
-  private locatorRule(): string {
-    return dedent`
-      <locators>
-        Use different locator strategies: button names, input labels, placeholders, CSS, XPath.
-
-        You will need to provide multiple solutions to achieve the result.
-
-        The very first solution should be with shortest and simplest locator.
-        Be specific about locators, check if multiple elements can be selected by the same locator.
-        While the first element can be a good solution, also propose solutions with locators that can pick other valid elements.
-
-        Each new solution should pick the longer and more specific path to element.
-        Each new solution should start with element from higher hierarchy with id or data-id attributes.
-        When suggesting a new XPath locator do not repeat previously used same CSS locator and vice versa.
-        Each new locator should at least take one step up the hierarchy.
-
-        <bad_locator_example>
-          Suggestion 1:
-          #user_email
-
-          Suggestion 2: (is the same as suggestion 1)
-          //*[@id="user_email"]
-        </bad_locator_example>
-
-        <good_locator_example>
-          Suggestion 1:
-          #user_email
-
-          Suggestion 2: (is more specific than suggestion 1)
-          //*[@id="user_form"]//*[@id="user_email"]
-        </good_locator_example>
-
-        If locator is long prefer writing it as XPath.
-        The very last solution should use XPath that starts from '//html/body/' XPath and provides path to the element.
-        XPath locator should always start with // 
-        Do not stick to element order like /div[2] or /div[2]/div[2] etc. 
-        Use wide-range locators like // or * and prefer elements that have ids, classes, names, or data-id attributes, prefer element ids, classes, names, and other semantic attributes.
-
-        <good locator example>
-          I.fillField('form#user_form input[name="name"]', 'Value');
-          I.fillField('#content-top #user_name', 'Value');
-          I.fillField('#content-bottom #user_name', 'Value');
-          I.fillField('#content-top form input[name="name"]', 'Value');
-          I.fillField('//html/body//[@id="content-top"]//form//input[@name="name"]', 'Value');
-          I.fillField('//html/body//[@id="content-bottom"]//form//input[@name="name"]', 'Value');
-        </good locator example>
-
-        <bad locator example>
-          I.fillField('//html/body/div[2]/div[2]/div/form/input[@name="name"]', 'Value');
-          I.fillField('//html/body/div[2]/div[2]/div/form/input[@name="name"]', 'Value');
-        </bad locator example>
-
-        Solutions should be different, do not repeat the same locator in different solutions.
-      </locators>
-    `;
-  }
-
-  private async experienceRule(context: StateContext): Promise<string> {
-    if (!context?.experience.length) return '';
-
-    let experienceContent = context?.experience.join('\n\n---\n\n');
-    experienceContent =
-      await this.experienceCompactor.compactExperience(experienceContent);
-    tag('substep').log(
-      `Found ${context.experience.length} experience file(s) for: ${context.state.url}`
     );
 
-    return dedent`
-      <experience>
-      Here is the experience of interacting with the page.
-      Learn from it to not repeat the same mistakes.
-      If there was found successful solution to an issue, propose it as a first solution.
-      If there is no successful solution, analyze failed intentions and actions and propose new solutions.
-      Focus on successful solutions and avoid failed locators.
+    return resolved;
+  }
 
-      ${experienceContent}
+  async freeSail(actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
+    const stateManager = this.explorer.getStateManager();
+    const state = stateManager.getCurrentState();
+    if (!state) {
+      return null;
+    }
 
-      </experience>
+    const currentActionResult = actionResult || ActionResult.fromState(state);
+    const research = Researcher.getCachedResearch(state) || '';
+    const combinedHtml = await currentActionResult.combinedHtml();
+
+    const history = stateManager.getStateHistory();
+    const visited = new Set<string>();
+    const normalize = (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return '';
+      if (trimmed === '/') return trimmed;
+      const withoutSlash = trimmed.replace(/\/+$/, '');
+      return withoutSlash.toLowerCase();
+    };
+
+    const pushVisited = (value?: string | null) => {
+      if (!value) return;
+      const normalized = normalize(value);
+      if (normalized) visited.add(normalized);
+    };
+
+    history.forEach((transition) => {
+      pushVisited(transition.toState.url);
+      pushVisited(transition.toState.fullUrl);
+    });
+    pushVisited(state.url);
+    pushVisited(state.fullUrl);
+
+    const visitedList = [...visited];
+    const visitedBlock = visitedList.length > 0 ? visitedList.join('\n') : 'none';
+
+    const prompt = dedent`
+      <research>
+      ${research || 'No cached research available'}
+      </research>
+
+      <page_html>
+      ${combinedHtml}
+      </page_html>
+
+      <context>
+      Current URL: ${currentActionResult.url || 'unknown'}
+      Visited URLs:
+      ${visitedBlock}
+      </context>
+
+      <task>
+      Suggest a new navigation target that has not been visited yet and can be reached from the current page.
+      </task>
     `;
+
+    const conversation = this.provider.startConversation(this.freeSailSystemPrompt);
+    conversation.addUserText(prompt);
+
+    let suggestion: { target: string; reason: string } | null = null;
+
+    await loop(
+      async ({ stop }) => {
+        const result = await this.provider.invokeConversation(conversation);
+        const text = result?.response?.text?.trim();
+        if (!text) {
+          stop();
+          return;
+        }
+
+        const nextMatch = text.match(/Next:\s*(.+)/i);
+        const reasonMatch = text.match(/Reason:\s*(.+)/i);
+        const target = nextMatch?.[1]?.trim();
+        if (!target) {
+          stop();
+          return;
+        }
+
+        const normalizedTarget = normalize(target);
+        if (normalizedTarget && visited.has(normalizedTarget)) {
+          conversation.addUserText(
+            dedent`
+            The suggestion "${target}" was already visited. Choose another destination not in this list:
+            ${visitedBlock}
+            `
+          );
+          return;
+        }
+
+        suggestion = {
+          target,
+          reason: reasonMatch?.[1]?.trim() || '',
+        };
+        stop();
+      },
+      { maxAttempts: 3 }
+    );
+
+    return suggestion;
   }
 
   private outputRule(): string {
@@ -348,7 +329,10 @@ class Navigator {
       Check previous solutions, if there is already successful solution, use it!
       CodeceptJS code must start with "I."
       All lines of code must be CodeceptJS code and start with "I."
-      ${this.locatorRule()}
+
+      ${multipleLocatorRule}
+
+      ${generalLocatorRuleText}
       </rules>
 
       <output>

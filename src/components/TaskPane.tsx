@@ -1,9 +1,9 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import type { Task } from '../ai/planner.js';
+import React, { useEffect, useState } from 'react';
+import { Test } from '../test-plan.ts';
 
 interface TaskPaneProps {
-  tasks: Task[];
+  tasks: Test[];
 }
 
 const getStatusIcon = (status: string): string => {
@@ -13,9 +13,9 @@ const getStatusIcon = (status: string): string => {
     case 'failed':
       return '❌';
     case 'pending':
-      return '▢';
+      return '🔳';
     default:
-      return '⮽';
+      return '🔳';
   }
 };
 
@@ -32,49 +32,49 @@ const getPriorityIcon = (priority: string): string => {
   }
 };
 
-const getPriorityColor = (priority: string): string => {
-  switch (priority.toLowerCase()) {
-    case 'high':
-      return 'red';
-    case 'medium':
-      return 'redBright';
-    case 'low':
-      return 'yellow';
-    default:
-      return 'dim';
-  }
-};
-
 const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
+  const [blinkOn, setBlinkOn] = useState(false);
+
+  useEffect(() => {
+    const hasInProgress = tasks.some((task) => task.status === 'in_progress');
+    if (!hasInProgress) {
+      setBlinkOn(false);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setBlinkOn((prev) => !prev);
+    }, 500);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [tasks]);
+
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box
-        borderStyle="round"
-        borderColor="dim"
-        padding={1}
-        flexDirection="column"
-      >
+      <Box borderStyle="round" borderColor="dim" padding={1} flexDirection="column">
         <Box justifyContent="space-between" marginBottom={1}>
           <Text color="dim">📋 Testing Tasks</Text>
           <Text color="dim">[{tasks.length} total]</Text>
         </Box>
 
-        {tasks.map((task, taskIndex) => (
-          <Box key={taskIndex} flexDirection="column" marginY={0}>
-            <Box justifyContent="space-between" marginBottom={0}>
-              <Box flexDirection="row">
-                <Text>{getStatusIcon(task.status)}</Text>
-                <Text color="dim" wrap="truncate-end">
-                  {' '}
-                  {task.scenario}
-                </Text>
-              </Box>
-              <Text color={getPriorityColor(task.priority)}>
-                {getPriorityIcon(task.priority)}
+        {tasks.map((task: Test, taskIndex) => {
+          const inProgress = task.status === 'in_progress';
+          const scenarioColor = inProgress ? 'white' : 'dim';
+          const scenarioDimmed = inProgress ? blinkOn : false;
+
+          return (
+            <Box key={taskIndex} flexDirection="row" marginY={0}>
+              <Text>{getStatusIcon(task.status)}</Text>
+              <Text> {getPriorityIcon(task.priority)}</Text>
+              <Text color={scenarioColor} dimColor={scenarioDimmed} wrap="truncate-end">
+                {' '}
+                {task.scenario}
               </Text>
             </Box>
-          </Box>
-        ))}
+          );
+        })}
       </Box>
     </Box>
   );

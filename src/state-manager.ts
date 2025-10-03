@@ -1,10 +1,11 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
-import { ExperienceTracker } from './experience-tracker.js';
-import { createDebug, tag } from './utils/logger.js';
 import { ConfigParser } from './config.js';
+import { ExperienceTracker } from './experience-tracker.js';
+import { htmlTextSnapshot } from './utils/html.js';
+import { createDebug, tag } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:state');
 
@@ -78,10 +79,7 @@ export class StateManager {
     // Resolve knowledge directory relative to the config file location (project root)
     if (configPath) {
       const projectRoot = dirname(configPath);
-      this.knowledgeDir = join(
-        projectRoot,
-        config.dirs?.knowledge || 'knowledge'
-      );
+      this.knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
     } else {
       this.knowledgeDir = config.dirs?.knowledge || 'knowledge';
     }
@@ -112,9 +110,9 @@ export class StateManager {
   private emitStateChange(event: StateTransition): void {
     // Log HTML content when state changes
     if (event.toState.html && event.toState.html !== event.fromState?.html) {
-      const htmlContent =
-        typeof event.toState.html === 'string' ? event.toState.html : '';
-      tag('html').log(`Page HTML for ${event.toState.url}:\n${htmlContent}`);
+      let htmlContent = event?.toState?.html ?? '';
+      htmlContent = htmlTextSnapshot(htmlContent);
+      // tag('html').log(`Page HTML for ${event.toState.url}:\n${htmlContent}`);
     }
 
     this.stateChangeListeners.forEach((listener) => {
@@ -136,10 +134,11 @@ export class StateManager {
       const url = new URL(fullUrl);
       const path = url.pathname || '/';
       const hash = url.hash || '';
-      return path + hash;
+      const result = path + hash;
+      return result || '/';
     } catch {
       // If URL parsing fails, return as-is
-      return fullUrl;
+      return fullUrl || '/';
     }
   }
 
@@ -154,7 +153,7 @@ export class StateManager {
     trigger: 'manual' | 'navigation' | 'automatic' = 'manual'
   ): WebPageState {
     const path = this.extractStatePath(actionResult.url || '/');
-    const stateHash = actionResult.getStateHash();
+    const stateHash = actionResult.getStateHash() || this.generateBasicHash(path, actionResult.title);
 
     // Check if state has actually changed
     if (this.currentState && this.currentState.hash === stateHash) {
@@ -165,7 +164,7 @@ export class StateManager {
     const newState: WebPageState = {
       url: path,
       title: actionResult.title || 'Unknown Page',
-      fullUrl: actionResult.url || '',
+      fullUrl: actionResult.fullUrl || actionResult.url || '',
       timestamp: actionResult.timestamp,
       hash: stateHash,
       htmlFile: files?.htmlFile,
@@ -194,9 +193,7 @@ export class StateManager {
     // Emit state change event
     this.emitStateChange(transition);
 
-    debugLog(
-      `State updated: ${this.currentState.url} (${this.currentState.hash})`
-    );
+    debugLog(`State updated: ${this.currentState.url} (${this.currentState.hash})`);
 
     return newState;
   }
@@ -215,11 +212,7 @@ export class StateManager {
   /**
    * Update state from basic data (for navigation events)
    */
-  updateStateFromBasic(
-    url: string,
-    title?: string,
-    trigger: 'manual' | 'navigation' | 'automatic' = 'navigation'
-  ): WebPageState {
+  updateStateFromBasic(url: string, title?: string, trigger: 'manual' | 'navigation' | 'automatic' = 'navigation'): WebPageState {
     const path = this.extractStatePath(url);
     const newState: WebPageState = {
       url: path,
@@ -231,7 +224,6 @@ export class StateManager {
 
     // Check if state has actually changed
     if (this.currentState && this.currentState.hash === newState.hash) {
-      debugLog(`State unchanged: ${this.currentState.url} (${newState.hash})`);
       return this.currentState;
     }
 
@@ -251,9 +243,7 @@ export class StateManager {
     // Emit state change event
     this.emitStateChange(transition);
 
-    debugLog(
-      `State updated from basic: ${this.currentState.url} (${this.currentState.hash})`
-    );
+    debugLog(`State updated from navigation: ${this.currentState.url} (${this.currentState.hash})`);
 
     return newState;
   }
@@ -295,10 +285,7 @@ export class StateManager {
   /**
    * Compare two states by their hash
    */
-  statesEqual(
-    state1: WebPageState | null,
-    state2: WebPageState | null
-  ): boolean {
+  statesEqual(state1: WebPageState | null, state2: WebPageState | null): boolean {
     if (!state1 && !state2) return true;
     if (!state1 || !state2) return false;
     return state1.hash === state2.hash;
@@ -313,7 +300,7 @@ export class StateManager {
     return {
       url: path,
       title: actionResult.title || 'Unknown Page',
-      fullUrl: actionResult.url || '',
+      fullUrl: actionResult.fullUrl || actionResult.url || '',
       timestamp: actionResult.timestamp,
       hash: actionResult.getStateHash(),
     };
@@ -324,6 +311,55 @@ export class StateManager {
    */
   getStateHistory(): StateTransition[] {
     return [...this.stateHistory];
+  }
+
+  isInDeadLoop(): boolean {
+    const minWindow = 6;
+    const increment = 3;
+    const stateHashes = this.stateHistory.map((transition) => {
+      const state = transition.toState;
+      return state.hash || this.generateBasicHash(state.url || '/', state.title);
+    });
+
+    debugLog(`Current state hash: ${this.currentState?.hash}`);
+    debugLog(`State hashes: ${stateHashes.join(', ')}`);
+
+    if (stateHashes.length < minWindow) {
+      return false;
+    }
+
+    const currentHash = this.currentState?.hash || stateHashes[stateHashes.length - 1];
+    if (!currentHash) {
+      return false;
+    }
+
+    let windowSize = minWindow;
+    let uniqueLimit = 1;
+
+    while (windowSize <= stateHashes.length) {
+      const window = stateHashes.slice(-windowSize);
+      if (!window.includes(currentHash)) {
+        return false;
+      }
+
+      const unique = new Map<string, number>();
+      for (const hash of window) {
+        unique.set(hash, (unique.get(hash) || 0) + 1);
+        if (unique.size > uniqueLimit) {
+          break;
+        }
+      }
+
+      if (unique.size <= uniqueLimit) {
+        debugLog(`DEAD LOOP DETECTED: ${window.join(', ')}`);
+        return true;
+      }
+
+      windowSize += increment;
+      uniqueLimit += 1;
+    }
+
+    return false;
   }
 
   /**
@@ -340,10 +376,7 @@ export class StateManager {
     const now = new Date();
 
     // Only rescan every 30 seconds to avoid excessive file I/O
-    if (
-      this.lastKnowledgeScan &&
-      now.getTime() - this.lastKnowledgeScan.getTime() < 30000
-    ) {
+    if (this.lastKnowledgeScan && now.getTime() - this.lastKnowledgeScan.getTime() < 30000) {
       return;
     }
 
@@ -373,9 +406,7 @@ export class StateManager {
             content: parsed.content,
           });
 
-          debugLog(
-            `Loaded knowledge file: ${filePath} (pattern: ${urlPattern})`
-          );
+          debugLog(`Loaded knowledge file: ${filePath} (pattern: ${urlPattern})`);
         } catch (error) {
           debugLog(`Failed to load knowledge file ${filePath}:`, error);
         }
@@ -396,9 +427,7 @@ export class StateManager {
     this.scanKnowledgeFiles();
 
     const actionResult = ActionResult.fromState(this.currentState);
-    return this.knowledgeCache.filter((knowledge) =>
-      actionResult.isMatchedBy(knowledge)
-    );
+    return this.knowledgeCache.filter((knowledge) => actionResult.isMatchedBy(knowledge));
   }
 
   /**
@@ -443,18 +472,14 @@ export class StateManager {
    * Check if we've been in this state before
    */
   hasVisitedState(path: string): boolean {
-    return this.stateHistory.some(
-      (transition) => transition.toState.url === path
-    );
+    return this.stateHistory.some((transition) => transition.toState.url === path);
   }
 
   /**
    * Get how many times we've visited a specific path
    */
   getVisitCount(path: string): number {
-    return this.stateHistory.filter(
-      (transition) => transition.toState.url === path
-    ).length;
+    return this.stateHistory.filter((transition) => transition.toState.url === path).length;
   }
 
   /**
@@ -521,10 +546,7 @@ export class StateManager {
     this.lastKnowledgeScan = null;
 
     // Clean up experience tracker if it has cleanup method
-    if (
-      this.experienceTracker &&
-      typeof this.experienceTracker.cleanup === 'function'
-    ) {
+    if (this.experienceTracker && typeof this.experienceTracker.cleanup === 'function') {
       this.experienceTracker.cleanup();
     }
 

@@ -65,10 +65,7 @@ export default config;
   function resolveConfigPath(configPath: string): string {
     const absolutePath = path.resolve(configPath);
 
-    if (
-      fs.existsSync(absolutePath) &&
-      fs.statSync(absolutePath).isDirectory()
-    ) {
+    if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isDirectory()) {
       return path.join(absolutePath, 'explorbot.config.js');
     }
 

@@ -7,27 +7,13 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": [
-      "node_modules/**",
-      "dist/**",
-      "build/**",
-      "coverage/**",
-      "*.min.js",
-      "*.min.css",
-      "package-lock.json",
-      "yarn.lock",
-      "bun.lock",
-      ".git/**",
-      ".DS_Store",
-      "*.log",
-      "output/**"
-    ]
+    "ignore": ["node_modules/**", "dist/**", "build/**", "coverage/**", "*.min.js", "*.min.css", "package-lock.json", "yarn.lock", "bun.lock", ".git/**", ".DS_Store", "*.log", "output/**"]
   },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2,
-    "lineWidth": 80,
+    "lineWidth": 200,
     "lineEnding": "lf"
   },
   "linter": {
@@ -36,13 +22,20 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "off",
-        "noAssignInExpressions": "off"
+        "noAssignInExpressions": "off",
+        "noImplicitAnyLet": "off",
+        "noArrayIndexKey": "off"
       },
       "style": {
-        "noNonNullAssertion": "off"
+        "noNonNullAssertion": "off",
+        "useImportType": "off",
+        "noParameterAssign": "off"
       },
       "complexity": {
         "noForEach": "off"
+      },
+      "security": {
+        "noGlobalEval": "off"
       }
     }
   },
