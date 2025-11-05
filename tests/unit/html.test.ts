@@ -153,6 +153,24 @@ describe('HTML Parsing Library', () => {
       expect(result).not.toContain('<defs');
       expect(result).not.toContain('<g>');
     });
+
+    it('should preserve iframe elements as interactive elements', () => {
+      const html = `
+        <div>
+          <h1>Video Player</h1>
+          <iframe src="https://example.com/video" width="560" height="315" frameborder="0"></iframe>
+          <button>Play</button>
+        </div>
+      `;
+
+      const result = htmlMinimalUISnapshot(html);
+
+      expect(result).toContain('<iframe');
+      expect(result).toContain('src="https://example.com/video"');
+      expect(result).toContain('width="560"');
+      expect(result).toContain('height="315"');
+      expect(result).toContain('<button');
+    });
   });
 
   describe('htmlCombinedSnapshot', () => {
@@ -234,7 +252,7 @@ describe('HTML Parsing Library', () => {
       expect(result).not.toContain('<defs');
     });
 
-    it('should remove script and iframe elements from combined snapshot body', () => {
+    it('should remove script elements but preserve iframe elements from combined snapshot body', () => {
       const html = `
         <html>
           <body>
@@ -249,7 +267,7 @@ describe('HTML Parsing Library', () => {
 
       expect(result).toContain('Visible');
       expect(result).not.toContain('<script');
-      expect(result).not.toContain('<iframe');
+      expect(result).toContain('<iframe');
     });
 
     it('should preserve extended interactive structure without truncating content', () => {
@@ -294,6 +312,280 @@ describe('HTML Parsing Library', () => {
       expect(result).toContain('Companies');
       expect(result).toContain('Signed in as');
       expect(result).toContain('Downloads');
+    });
+
+    it('should preserve iframe elements in combined snapshot', () => {
+      const html = `
+        <html>
+          <body>
+            <h1>Embedded Content</h1>
+            <p>This page contains embedded content below.</p>
+            <iframe src="https://example.com/embed" width="800" height="600" title="Example Embed"></iframe>
+            <div>Additional content after iframe</div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('<iframe');
+      expect(result).toContain('src="https://example.com/embed"');
+      expect(result).not.toContain('width="800"');
+      expect(result).not.toContain('height="600"');
+      expect(result).toContain('title="Example Embed"');
+      expect(result).toContain('Embedded Content');
+      expect(result).toContain('Additional content after iframe');
+    });
+
+    it('should preserve input elements with role=combobox in parent containers with empty text', () => {
+      const html = `
+        <html>
+          <head><title>Test</title></head>
+          <body>
+            <div class="wrapper">
+              <input role="combobox" id="test-combo" placeholder="Title should not be empty" type="search">
+            </div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('<input');
+      expect(result).toContain('role="combobox"');
+      expect(result).toContain('placeholder="Title should not be empty"');
+    });
+
+    it('should preserve iframe in parent containers with empty text', () => {
+      const html = `
+        <html>
+          <head><title>Test</title></head>
+          <body>
+            <div class="editor-wrapper">
+              <div class="monaco-editor">
+                <div class="frame-container">
+                  <iframe src="/ember-monaco/frame.html"></iframe>
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('<iframe');
+      expect(result).toContain('src="/ember-monaco/frame.html"');
+    });
+
+    it('should keep interactive elements even when parent div has no meaningful text', () => {
+      const html = `
+        <html>
+          <body>
+            <div>
+              <div>
+                <button>Click Me</button>
+              </div>
+            </div>
+            <div>
+              <span>
+                <input type="text" placeholder="Enter name">
+              </span>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('<button');
+      expect(result).toContain('Click Me');
+      expect(result).toContain('<input');
+      expect(result).toContain('placeholder="Enter name"');
+    });
+
+    it('should remove empty divs that do not contain interactive elements', () => {
+      const html = `
+        <html>
+          <body>
+            <div class="wrapper">
+              <div class="empty1"></div>
+              <div class="empty2">   </div>
+              <div class="has-button">
+                <button>Submit</button>
+              </div>
+              <div class="short">AB</div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('<button');
+      expect(result).toContain('Submit');
+      expect(result).not.toContain('empty1');
+      expect(result).not.toContain('empty2');
+      expect(result).not.toContain('>AB<');
+    });
+
+    it('should convert data-explorbot-* attributes to regular attributes', () => {
+      const html = `
+        <html>
+          <body>
+            <div data-explorbot-id="main-section">
+              <input data-explorbot-value="test-input" placeholder="Enter text" type="text">
+            </div>
+            <button data-explorbot-action="submit">Submit</button>
+            <span data-explorbot-label="info">Some info text here</span>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).not.toContain('data-explorbot-');
+      expect(result).toContain('id="main-section"');
+      expect(result).toContain('value="test-input"');
+      expect(result).toContain('action="submit"');
+      expect(result).toContain('label="info"');
+    });
+
+    it('should preserve elements with data-explorbot-* attributes even if they would normally be filtered', () => {
+      const html = `
+        <html>
+          <body>
+            <div>
+              <span data-explorbot-key="special">AB</span>
+            </div>
+            <p data-explorbot-important="true">Hi</p>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('key="special"');
+      expect(result).toContain('>AB<');
+      expect(result).toContain('important="true"');
+      expect(result).toContain('>Hi<');
+    });
+
+    it('should filter out elements with hidden classes', () => {
+      const html = `
+        <html>
+          <body>
+            <button class="hidden">Hidden Button</button>
+            <button class="visible">Visible Button</button>
+            <div class="invisible">
+              <input type="text" placeholder="Hidden input">
+            </div>
+            <div class="d-none">
+              <a href="/link">Hidden Link</a>
+            </div>
+            <span class="sr-only">Screen reader only</span>
+            <p class="opacity-0">Invisible text</p>
+            <button class="hide">Old style hidden</button>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('Visible Button');
+      expect(result).not.toContain('Hidden Button');
+      expect(result).not.toContain('Hidden input');
+      expect(result).not.toContain('Hidden Link');
+      expect(result).not.toContain('Screen reader only');
+      expect(result).not.toContain('Invisible text');
+      expect(result).not.toContain('Old style hidden');
+    });
+
+    it('should filter elements with Bootstrap and Tailwind hidden classes', () => {
+      const html = `
+        <html>
+          <body>
+            <div class="d-none">Bootstrap hidden</div>
+            <div class="dn">Tachyons hidden</div>
+            <div class="u-hidden">Utility hidden</div>
+            <div class="is-hidden">BEM hidden</div>
+            <div class="visually-hidden">Visually hidden</div>
+            <div class="visuallyhidden">Visually hidden alt</div>
+            <div>Visible content</div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('Visible content');
+      expect(result).not.toContain('Bootstrap hidden');
+      expect(result).not.toContain('Tachyons hidden');
+      expect(result).not.toContain('Utility hidden');
+      expect(result).not.toContain('BEM hidden');
+      expect(result).not.toContain('Visually hidden');
+    });
+
+    it('should preserve all children of elements with role attribute and clean Tailwind classes', () => {
+      const html = `
+        <html>
+          <body>
+            <div class="ember-basic-dropdown power-select-as-input power-select-as-input-single black mb-4">
+              <div class="ember-view ember-basic-dropdown-trigger flex items-center" role="button" tabindex="0" aria-owns="ember676-content">
+                <span class="ember-power-select-selected-item text-sm font-bold">test</span>
+                <span class="ember-power-select-status-icon ml-2"></span>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('role="button"');
+      expect(result).toContain('tabindex="0"');
+      expect(result).toContain('aria-owns="ember676-content"');
+      expect(result).toContain('<span');
+      expect(result).toContain('test');
+      expect(result).toContain('ember-power-select-selected-item');
+      expect(result).toContain('ember-power-select-status-icon');
+      expect(result).not.toContain('text-sm');
+      expect(result).not.toContain('font-bold');
+      expect(result).not.toContain('ml-2');
+      expect(result).not.toContain('flex');
+      expect(result).not.toContain('items-center');
+      expect(result).not.toContain('mb-4');
+    });
+
+    it('should preserve all children of button elements', () => {
+      const html = `
+        <html>
+          <body>
+            <button class="btn btn-primary bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+              <svg class="w-4 h-4 mr-2"><path d="M0 0"/></svg>
+              <span class="label">Click</span>
+            </button>
+          </body>
+        </html>
+      `;
+
+      const result = htmlCombinedSnapshot(html);
+
+      expect(result).toContain('<button');
+      expect(result).toContain('<svg');
+      expect(result).toContain('<span');
+      expect(result).toContain('Click');
+      expect(result).toContain('class="btn btn-primary"');
+      expect(result).not.toContain('bg-blue-500');
+      expect(result).not.toContain('hover:bg-blue-700');
+      expect(result).not.toContain('text-white');
+      expect(result).not.toContain('font-bold');
+      expect(result).not.toContain('py-2');
+      expect(result).not.toContain('px-4');
+      expect(result).not.toContain('rounded');
+      expect(result).not.toContain('w-4');
+      expect(result).not.toContain('h-4');
+      expect(result).not.toContain('mr-2');
     });
   });
 

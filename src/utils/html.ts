@@ -74,11 +74,13 @@ function matchesAnySelector(element: parse5TreeAdapter.Element, selectors: strin
 
 const TEXT_ELEMENT_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'td', 'th', 'label', 'div', 'span']);
 
-const INTERACTIVE_TAGS = new Set(['a', 'button', 'details', 'input', 'option', 'select', 'summary', 'textarea']);
+const INTERACTIVE_TAGS = new Set(['a', 'button', 'details', 'input', 'option', 'select', 'summary', 'textarea', 'iframe']);
 
 const INTERACTIVE_ROLES = new Set(['button', 'checkbox', 'combobox', 'link', 'listbox', 'radio', 'search', 'switch', 'tab', 'textbox']);
 
 const INTERACTIVE_EVENT_ATTRIBUTES = new Set(['onclick', 'onchange', 'onblur', 'onfocus', 'onmousedown', 'onmouseup']);
+
+const HIDDEN_CLASSES = new Set(['hidden', 'invisible', 'd-none', 'hide', 'dn', 'u-hidden', 'is-hidden', 'visually-hidden', 'sr-only', 'screen-reader-only', 'visuallyhidden', 'opacity-0']);
 
 const TAILWIND_CLASS_PATTERNS: RegExp[] = [
   /^m[trblxy]?-/i,
@@ -170,7 +172,6 @@ const NON_SEMANTIC_TAGS = new Set([
   'template',
   'slot',
   'noscript',
-  'iframe',
   'frame',
   'frameset',
   'object',
@@ -375,21 +376,54 @@ export function sanitizeHtmlString(html: string, htmlConfig?: HtmlConfig): strin
  * Based on CodeceptJS HTML library
  */
 export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['minimal']) {
-  const document = createSanitizedDocument(html);
-  const documentTitle = getDocumentTitle(document);
+  const document = parse(html);
   const trashHtmlClasses = /^(text-|color-|flex-|float-|v-|ember-|d-|border-)/;
-  const removeElements = new Set(NON_SEMANTIC_TAGS);
-  const textElements = ['label', 'h1', 'h2'];
-  const allowedAttrs = ['id', 'for', 'class', 'name', 'type', 'value', 'tabindex', 'aria-labelledby', 'aria-label', 'label', 'placeholder', 'title', 'alt', 'src', 'role'];
+  const removeElements = ['path', 'script'];
 
   function isFilteredOut(node) {
+    // Check exclude selectors first
     if (htmlConfig?.exclude && matchesAnySelector(node, htmlConfig.exclude)) {
       return true;
     }
 
-    if (removeElements.has(node.nodeName.toLowerCase())) return true;
-    if (!('attrs' in node) || !node.attrs) return false;
-    if (node.attrs.find((attr) => attr.name === 'role' && attr.value === 'tooltip')) return true;
+    if (removeElements.includes(node.nodeName)) return true;
+    if (node.attrs) {
+      if (node.attrs.find((attr) => attr.name === 'role' && attr.value === 'tooltip')) return true;
+    }
+    return false;
+  }
+
+  // Define default interactive elements
+  const interactiveElements = ['a', 'input', 'button', 'select', 'textarea', 'option', 'iframe'];
+  const textElements = ['label', 'h1', 'h2'];
+  const allowedRoles = ['button', 'checkbox', 'search', 'textbox', 'tab'];
+  const allowedAttrs = ['id', 'for', 'class', 'name', 'type', 'value', 'tabindex', 'aria-labelledby', 'aria-label', 'label', 'placeholder', 'title', 'alt', 'src', 'width', 'height', 'role'];
+
+  function isInteractive(element) {
+    // Check if element matches include selectors
+    if (htmlConfig?.include && matchesAnySelector(element, htmlConfig.include)) {
+      return true;
+    }
+
+    // Check if element matches exclude selectors
+    if (htmlConfig?.exclude && matchesAnySelector(element, htmlConfig.exclude)) {
+      return false;
+    }
+
+    // Check for data-explorbot attributes (new addition)
+    if (hasExplorbotAttributes(element)) {
+      return true;
+    }
+
+    // Default logic
+    if (element.nodeName === 'input' && element.attrs.find((attr) => attr.name === 'type' && attr.value === 'hidden')) return false;
+    if (interactiveElements.includes(element.nodeName)) return true;
+    if (element.attrs) {
+      if (element.attrs.find((attr) => attr.name === 'contenteditable')) return true;
+      if (element.attrs.find((attr) => attr.name === 'tabindex')) return true;
+      const role = element.attrs.find((attr) => attr.name === 'role');
+      if (role && allowedRoles.includes(role.value)) return true;
+    }
     return false;
   }
 
@@ -400,50 +434,54 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
 
   function hasInteractiveDescendant(node) {
     if (!node.childNodes) return false;
+    let result = false;
+
     for (const childNode of node.childNodes) {
-      if ('tagName' in childNode && shouldKeepInteractive(childNode as parse5TreeAdapter.Element, htmlConfig)) return true;
-      if (hasMeaningfulText(childNode)) return true;
-      if (hasInteractiveDescendant(childNode)) return true;
+      if (isInteractive(childNode) || hasMeaningfulText(childNode)) return true;
+      result = result || hasInteractiveDescendant(childNode);
     }
 
-    return false;
+    return result;
   }
 
   function removeNonInteractive(node) {
     if (node.nodeName !== '#document') {
       const parent = node.parentNode;
-      if (!parent || !('childNodes' in parent)) return false;
       const index = parent.childNodes.indexOf(node);
-      if (index === -1) return false;
 
       if (isFilteredOut(node)) {
         parent.childNodes.splice(index, 1);
         return true;
       }
 
-      if (node.nodeName === '#text' && 'tagName' in parent && (shouldKeepInteractive(parent as parse5TreeAdapter.Element, htmlConfig) || hasMeaningfulText(parent))) {
+      // keep texts for interactive elements
+      if ((isInteractive(parent) || hasMeaningfulText(parent)) && node.nodeName === '#text') {
         node.value = node.value.trim().slice(0, 200);
         if (!node.value) return false;
         return true;
       }
 
-      const parentInteractive = 'tagName' in parent ? shouldKeepInteractive(parent as parse5TreeAdapter.Element, htmlConfig) : false;
-      const nodeInteractive = 'tagName' in node ? shouldKeepInteractive(node as parse5TreeAdapter.Element, htmlConfig) : false;
-
-      if (!parentInteractive && !nodeInteractive && !hasInteractiveDescendant(node) && !hasMeaningfulText(node)) {
+      if (
+        // if parent is interactive, we may need child element to match
+        !isInteractive(parent) &&
+        !isInteractive(node) &&
+        !hasInteractiveDescendant(node) &&
+        !hasMeaningfulText(node)
+      ) {
         parent.childNodes.splice(index, 1);
         return true;
       }
     }
 
-    if ('attrs' in node && node.attrs) {
+    if (node.attrs) {
+      // Filter and keep allowed attributes, accessibility attributes
       node.attrs = node.attrs.filter((attr) => {
         const { name, value } = attr;
         if (name === 'class') {
+          // Remove classes containing digits
           attr.value = value
             .split(' ')
-            .filter((className) => className.length > 0)
-            // remove classes containing digits /
+            // remove classes containing digits/
             .filter((className) => !/\d/.test(className))
             // remove popular trash classes
             .filter((className) => !className.match(trashHtmlClasses))
@@ -454,8 +492,13 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
             .join(' ');
         }
 
-        return allowedAttrs.includes(name);
+        return allowedAttrs.includes(name) || name.startsWith('data-explorbot-');
       });
+    }
+
+    // Convert data-explorbot-* attributes to regular attributes
+    if (node.attrs) {
+      convertExplorbotAttributes(node);
     }
 
     if (node.childNodes) {
@@ -469,7 +512,6 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
 
   // Remove non-interactive elements starting from the root element
   removeNonInteractive(document);
-  ensureDocumentTitle(document, documentTitle);
 
   // Serialize the modified document tree back to HTML
   const serializedHTML = serialize(document);
@@ -477,12 +519,12 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
   return serializedHTML;
 }
 
-export function minifyHtml(html: string): string {
-  return minify(html, {
+export async function minifyHtml(html: string): Promise<string> {
+  return await minify(html, {
     collapseWhitespace: true,
     removeComments: true,
-    removeEmptyElements: true,
-    removeOptionalTags: true,
+    removeEmptyElements: false,
+    removeOptionalTags: false,
   });
 }
 
@@ -491,7 +533,6 @@ export function minifyHtml(html: string): string {
  * Preserves original HTML structure
  */
 export function htmlCombinedSnapshot(html: string, htmlConfig?: HtmlConfig['combined']): string {
-  // Create a shouldKeep function that captures the config
   const shouldKeepWithConfig = (element: parse5TreeAdapter.Element) => {
     return shouldKeepCombined(element, htmlConfig);
   };
@@ -500,8 +541,8 @@ export function htmlCombinedSnapshot(html: string, htmlConfig?: HtmlConfig['comb
   const body = findBody(document);
   if (!body) return html;
 
-  // Recursively filter the tree
   filterTree(body, shouldKeepWithConfig);
+  cleanAllElements(body);
 
   return serialize(document);
 }
@@ -752,6 +793,8 @@ function findBody(document: parse5TreeAdapter.Document): parse5TreeAdapter.Eleme
 }
 
 function shouldKeepInteractive(element: parse5TreeAdapter.Element, selectorConfig?: { include?: string[]; exclude?: string[] }): boolean {
+  if (hasHiddenClass(element)) return false;
+
   if (selectorConfig?.include && matchesAnySelector(element, selectorConfig.include)) {
     return true;
   }
@@ -759,6 +802,8 @@ function shouldKeepInteractive(element: parse5TreeAdapter.Element, selectorConfi
   if (selectorConfig?.exclude && matchesAnySelector(element, selectorConfig.exclude)) {
     return false;
   }
+
+  if (hasExplorbotAttributes(element)) return true;
 
   const tagName = element.tagName.toLowerCase();
   if (tagName === 'input') {
@@ -782,29 +827,30 @@ function shouldKeepInteractive(element: parse5TreeAdapter.Element, selectorConfi
 }
 
 function shouldKeepCombined(element: parse5TreeAdapter.Element, htmlConfig?: HtmlConfig['combined']): boolean {
-  // Check include selectors first
+  if (hasHiddenClass(element)) return false;
+
   if (htmlConfig?.include && matchesAnySelector(element, htmlConfig.include)) {
     return true;
   }
 
-  // Check exclude selectors
   if (htmlConfig?.exclude && matchesAnySelector(element, htmlConfig.exclude)) {
     return false;
   }
 
-  // Keep if interactive
+  if (hasExplorbotAttributes(element)) return true;
+
+  if (getAttribute(element, 'role')) return true;
+
   if (shouldKeepInteractive(element, htmlConfig)) return true;
 
-  // Keep if it's a text element with sufficient content (headers are always kept)
   const tagName = element.tagName.toLowerCase();
   if (TEXT_ELEMENT_TAGS.has(tagName)) {
-    if (tagName.startsWith('h')) return true; // Always keep headers
+    if (tagName.startsWith('h')) return true;
     const text = getTextContent(element).trim();
-    if (text.length <= 5) return false; // Filter short text
+    if (text.length <= 5) return false;
     return true;
   }
 
-  // Keep if it might contain interactive or text elements
   return hasKeepableChildren(element, htmlConfig);
 }
 
@@ -864,10 +910,19 @@ function hasListParent(element: parse5TreeAdapter.Element): boolean {
   return false;
 }
 
+function isInteractiveContainer(element: parse5TreeAdapter.Element): boolean {
+  const tagName = element.tagName.toLowerCase();
+  if (tagName === 'button') return true;
+  if (getAttribute(element, 'role')) return true;
+  return false;
+}
+
 function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5TreeAdapter.Element) => boolean): boolean {
   if (!element.childNodes) return false;
 
-  let hasKeepableContent = false;
+  const isInteractive = isInteractiveContainer(element);
+  let hasKeepableElementChildren = false;
+  let hasTextContent = false;
   const children = [...element.childNodes];
 
   for (let i = children.length - 1; i >= 0; i--) {
@@ -877,44 +932,31 @@ function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5T
       const childElement = child as parse5TreeAdapter.Element;
       const childHasContent = filterTree(childElement, shouldKeep);
 
-      // Check if this element should be removed
-      // Special case: for combined snapshot, remove text elements with short content
+      if (isInteractive) {
+        hasKeepableElementChildren = true;
+        cleanElement(childElement);
+        continue;
+      }
+
       if (!shouldKeep(childElement)) {
-        // For htmlCombinedSnapshot, check if this is a text element that should be filtered
-        const tagName = childElement.tagName.toLowerCase();
-        const isTextElement = TEXT_ELEMENT_TAGS.has(tagName);
-        const isHeader = tagName.startsWith('h');
-
-        if (isTextElement && !isHeader) {
-          const text = getTextContent(childElement).trim();
-          if (text.length <= 5) {
-            // Remove this element even if it has content
-            const index = element.childNodes.indexOf(child);
-            if (index > -1) {
-              element.childNodes.splice(index, 1);
-            }
-            continue;
-          }
-        }
-
-        // If not a text element or it passed the length check, check if it has keepable content
-        if (!childHasContent) {
+        if (hasHiddenClass(childElement) || !childHasContent) {
           const index = element.childNodes.indexOf(child);
           if (index > -1) {
             element.childNodes.splice(index, 1);
           }
-          continue;
+        } else {
+          hasKeepableElementChildren = true;
         }
+        continue;
       }
 
-      hasKeepableContent = true;
+      hasKeepableElementChildren = true;
       cleanElement(childElement);
     } else if (child.nodeName === '#text') {
       const text = (child as parse5TreeAdapter.TextNode).value.trim();
       if (text.length > 0) {
-        hasKeepableContent = true;
+        hasTextContent = true;
       } else {
-        // Remove empty text nodes
         const index = element.childNodes.indexOf(child);
         if (index > -1) {
           element.childNodes.splice(index, 1);
@@ -923,13 +965,40 @@ function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5T
     }
   }
 
-  return hasKeepableContent || shouldKeep(element);
+  if (shouldKeep(element)) {
+    return true;
+  }
+
+  if (hasKeepableElementChildren) {
+    return true;
+  }
+
+  const tagName = element.tagName.toLowerCase();
+  const isTextElement = TEXT_ELEMENT_TAGS.has(tagName);
+  if (isTextElement && hasTextContent) {
+    const text = getTextContent(element).trim();
+    return text.length > 5;
+  }
+
+  return hasTextContent;
+}
+
+function cleanAllElements(element: parse5TreeAdapter.Element): void {
+  cleanElement(element);
+
+  if (!element.childNodes) return;
+
+  for (const child of element.childNodes) {
+    if ('tagName' in child) {
+      cleanAllElements(child as parse5TreeAdapter.Element);
+    }
+  }
 }
 
 function cleanElement(element: parse5TreeAdapter.Element): void {
-  // Keep only important attributes
   const keepAttrs = [
     'id',
+    'class',
     'name',
     'type',
     'value',
@@ -937,9 +1006,13 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
     'aria-label',
     'aria-labelledby',
     'aria-describedby',
+    'aria-owns',
     'role',
     'title',
     'href',
+    'src',
+    'tabindex',
+    'contenteditable',
     'onclick',
     'onmousedown',
     'onmouseup',
@@ -949,11 +1022,30 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
     'disabled',
     'checked',
     'selected',
+    'action',
+    'key',
+    'label',
+    'important',
   ];
 
-  element.attrs = element.attrs.filter((attr) => keepAttrs.includes(attr.name));
+  convertExplorbotAttributes(element);
 
-  // Clean script tags
+  element.attrs = element.attrs.filter((attr) => keepAttrs.includes(attr.name) || attr.name.startsWith('data-explorbot-'));
+
+  for (const attr of element.attrs) {
+    if (attr.name === 'class') {
+      attr.value = attr.value
+        .split(/\s+/)
+        .filter((className) => !/\d/.test(className))
+        .filter((className) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(className)))
+        .join(' ');
+
+      if (!attr.value) {
+        element.attrs = element.attrs.filter((a) => a.name !== 'class');
+      }
+    }
+  }
+
   if (element.tagName.toLowerCase() === 'script') {
     element.childNodes = [];
   }
@@ -977,4 +1069,94 @@ function getTextContent(element: parse5TreeAdapter.Element): string {
 function getAttribute(element: parse5TreeAdapter.Element, name: string): string | undefined {
   const attr = element.attrs.find((a) => a.name === name);
   return attr?.value;
+}
+
+function hasHiddenClass(element: parse5TreeAdapter.Element): boolean {
+  const classAttr = element.attrs.find((attr) => attr.name === 'class');
+  if (!classAttr) return false;
+
+  const classes = classAttr.value.split(/\s+/);
+  return classes.some((className) => HIDDEN_CLASSES.has(className));
+}
+
+/**
+ * Check if element has any data-explorbot-* attributes
+ */
+function hasExplorbotAttributes(element: parse5TreeAdapter.Element): boolean {
+  return element.attrs && element.attrs.some((attr) => attr.name.startsWith('data-explorbot-'));
+}
+
+/**
+ * Convert data-explorbot-* attributes to regular attributes
+ * e.g., data-explorbot-value becomes value
+ */
+function convertExplorbotAttributes(element: parse5TreeAdapter.Element): void {
+  const explorbotAttrs: Array<{ name: string; value: string }> = [];
+
+  // Find all data-explorbot-* attributes
+  element.attrs = element.attrs.filter((attr) => {
+    if (attr.name.startsWith('data-explorbot-')) {
+      const regularName = attr.name.replace('data-explorbot-', '');
+      explorbotAttrs.push({ name: regularName, value: attr.value });
+      return false; // Remove the data-explorbot-* attribute
+    }
+    return true; // Keep other attributes
+  });
+
+  // Add converted attributes
+  element.attrs.push(...explorbotAttrs);
+}
+
+export function extractHeadings(html: string): {
+  h1?: string;
+  h2?: string;
+  h3?: string;
+  h4?: string;
+} {
+  const document = parseFragment(html);
+  const headings: { h1: string[]; h2: string[]; h3: string[]; h4: string[] } = {
+    h1: [],
+    h2: [],
+    h3: [],
+    h4: [],
+  };
+
+  function traverseNodes(node: parse5TreeAdapter.Node): void {
+    if ('tagName' in node) {
+      const element = node as parse5TreeAdapter.Element;
+      const tagName = element.tagName.toLowerCase();
+
+      if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'h4') {
+        const text = getTextContent(element).trim();
+        if (text) {
+          headings[tagName as 'h1' | 'h2' | 'h3' | 'h4'].push(text);
+        }
+      }
+    }
+
+    if ('childNodes' in node) {
+      for (const child of node.childNodes) {
+        traverseNodes(child);
+      }
+    }
+  }
+
+  traverseNodes(document);
+
+  const result: { h1?: string; h2?: string; h3?: string; h4?: string } = {};
+
+  if (headings.h1.length > 0) {
+    result.h1 = headings.h1.join(' | ');
+  }
+  if (headings.h2.length > 0) {
+    result.h2 = headings.h2.join(' | ');
+  }
+  if (headings.h3.length > 0) {
+    result.h3 = headings.h3.join(' | ');
+  }
+  if (headings.h4.length > 0) {
+    result.h4 = headings.h4.join(' | ');
+  }
+
+  return result;
 }

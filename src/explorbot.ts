@@ -14,6 +14,7 @@ import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
 import { Plan } from './test-plan.ts';
 import { log, setVerboseMode, tag } from './utils/logger.ts';
+import { WebPageState } from './state-manager.ts';
 
 const planId = 0;
 export interface ExplorBotOptions {
@@ -23,6 +24,7 @@ export interface ExplorBotOptions {
   path?: string;
   show?: boolean;
   headless?: boolean;
+  incognito?: boolean;
 }
 
 export type UserResolveFunction = (error?: Error) => Promise<string | null>;
@@ -61,7 +63,9 @@ export class ExplorBot {
       this.provider = new AIProvider(this.config.ai);
       this.explorer = new Explorer(this.config, this.provider, this.options);
       await this.explorer.start();
-      await this.agentExperienceCompactor().compactAllExperiences();
+      if (!this.options.incognito) {
+        await this.agentExperienceCompactor().compactAllExperiences();
+      }
       if (this.userResolveFn) this.explorer.setUserResolve(this.userResolveFn);
     } catch (error) {
       console.log('\n❌ Failed to start:');
@@ -93,6 +97,10 @@ export class ExplorBot {
 
   async visit(url: string): Promise<void> {
     return this.agentNavigator().visit(url);
+  }
+
+  getCurrentState(): WebPageState | null {
+    return this.explorer.getStateManager().getCurrentState();
   }
 
   getExplorer(): Explorer {
@@ -140,7 +148,7 @@ export class ExplorBot {
 
   agentNavigator(): Navigator {
     return (this.agents.navigator ||= this.createAgent(({ ai, explorer }) => {
-      return new Navigator(explorer, ai, this.agentExperienceCompactor());
+      return new Navigator(explorer, ai, this.agentExperienceCompactor(), explorer.getStateManager().getExperienceTracker());
     }));
   }
 
@@ -208,5 +216,25 @@ export class ExplorBot {
       throw new Error('No test to test');
     }
     await tester.test(test);
+  }
+
+  async freeride(): Promise<void> {
+    await this.visitInitialState();
+    const { loop } = await import('./utils/loop.js');
+
+    await loop(
+      async () => {
+        await this.explore();
+        const navigator = this.agentNavigator();
+        const suggestion = await navigator.freeSail();
+        if (!suggestion) {
+          tag('info').log('No navigation suggestion available');
+          return;
+        }
+        tag('info').log(`Navigating to: ${suggestion.target} - ${suggestion.reason}`);
+        await this.visit(suggestion.target);
+      },
+      { maxAttempts: Number.POSITIVE_INFINITY }
+    );
   }
 }

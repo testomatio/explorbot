@@ -1,4 +1,6 @@
 import dedent from 'dedent';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ActionResult } from '../action-result.js';
 import Action from '../action.ts';
 import { setActivity } from '../activity.ts';
@@ -21,6 +23,7 @@ const debugLog = createDebug('explorbot:researcher');
 export class Researcher implements Agent {
   emoji = '🔍';
   private static researchCache: Record<string, string> = {};
+  private static researchCacheTimestamps: Record<string, number> = {};
   private explorer: Explorer;
   private provider: Provider;
   private stateManager: StateManager;
@@ -35,7 +38,21 @@ export class Researcher implements Agent {
 
   static getCachedResearch(state: WebPageState): string {
     if (!state.hash) return '';
-    return Researcher.researchCache[state.hash];
+    const ttl = 60 * 60 * 1000;
+    const now = Date.now();
+    const timestamp = Researcher.researchCacheTimestamps[state.hash];
+    if (timestamp && now - timestamp <= ttl) {
+      return Researcher.researchCache[state.hash] || '';
+    }
+    const outputDir = ConfigParser.getInstance().getOutputDir();
+    const researchFile = join(outputDir, 'researc', `${state.hash}.md`);
+    if (!existsSync(researchFile)) return '';
+    const stats = statSync(researchFile);
+    if (now - stats.mtimeMs > ttl) return '';
+    const cached = readFileSync(researchFile, 'utf8');
+    Researcher.researchCache[state.hash] = cached;
+    Researcher.researchCacheTimestamps[state.hash] = now;
+    return cached;
   }
 
   getSystemMessage(): string {
@@ -46,23 +63,24 @@ export class Researcher implements Agent {
     `;
   }
 
-  async research(state: WebPageState): Promise<string> {
-    const actionResult = ActionResult.fromState(state);
+  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean } = {}): Promise<string> {
+    const { screenshot = false, force = false, deep = false } = opts;
+    let actionResult = ActionResult.fromState(state);
     const stateHash = state.hash || actionResult.getStateHash();
+    const ttl = 60 * 60 * 1000;
+    const now = Date.now();
+    const outputDir = stateHash ? ConfigParser.getInstance().getOutputDir() : null;
+    const researchDir = stateHash && outputDir ? join(outputDir, 'research') : null;
+    const researchFile = stateHash && researchDir ? join(researchDir, `${stateHash}.md`) : null;
 
-    if (stateHash && Researcher.researchCache[stateHash]) {
-      tag('step').log('Previous research result found');
-      state.researchResult ||= Researcher.researchCache[stateHash];
-      return Researcher.researchCache[stateHash];
-    }
+    const isOnCurrentState = actionResult.getStateHash() === this.stateManager.getCurrentState()?.hash;
 
-    const experienceFileName = `research_${actionResult.getStateHash()}`;
-    if (this.experienceTracker.hasRecentExperience(experienceFileName)) {
-      tag('step').log('Using research from the experience file');
-      const cached = this.experienceTracker.readExperienceFile(experienceFileName)?.content || '';
-      if (stateHash) Researcher.researchCache[stateHash] = cached;
-      state.researchResult = cached;
-      return cached;
+    if (!force && stateHash) {
+      const cached = this.getCachedResearchResult(stateHash);
+      if (cached) {
+        debugLog('Previous research result found');
+        return cached;
+      }
     }
 
     tag('info').log(`Researching ${state.url} to understand the context...`);
@@ -74,9 +92,27 @@ export class Researcher implements Agent {
 
     const conversation = this.provider.startConversation(this.getSystemMessage());
     conversation.addUserText(prompt);
-    // if (actionResult.screenshot) {
-    //   conversation.addUserImage(actionResult.screenshot.toString('base64'));
-    // }
+
+    let screenshotAnalysis;
+
+    if (screenshot && this.provider.hasVision() && isOnCurrentState) {
+      tag('step').log('Capturing page with screenshot to analyze UI deeper');
+      actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
+      screenshotAnalysis = await this.imageContent(actionResult);
+      if (screenshotAnalysis) {
+        conversation.addUserText(dedent`
+          We analyzed the screenshot and found the following UI elements with their coordinates
+          Your report must include them as their HTML locators:
+
+          Combine data from <ui_map_from_screenshot> with your report.
+          Ensure all elements from <ui_map_from_screenshot> are present in your report.
+          If elements have locators & corrdinates => print both for each element.
+
+          <ui_map_from_screenshot>
+            ${screenshotAnalysis}
+          </ui_map_from_screenshot>`);
+      }
+    }
 
     const result = await this.provider.invokeConversation(conversation);
     if (!result) throw new Error('Failed to get response from provider');
@@ -88,97 +124,113 @@ export class Researcher implements Agent {
     const htmlConfig = ConfigParser.getInstance().getConfig().html;
     let previousHtml = state.html ?? '';
 
-    debugLog('Starting DOM expansion loop to find hidden elements');
+    if (deep) {
+      debugLog('Starting DOM expansion loop to find hidden elements');
 
-    await loop(
-      async ({ stop }) => {
-        conversation.addUserText(this.buildHiddenElementsPrompt());
+      await loop(
+        async ({ stop }) => {
+          conversation.addUserText(this.buildHiddenElementsPrompt());
 
-        const hiddenElementsResult = await this.provider.invokeConversation(conversation);
+          const hiddenElementsResult = await this.provider.invokeConversation(conversation);
 
-        const codeBlocks = extractCodeBlocks(hiddenElementsResult?.response?.text || '');
+          const codeBlocks = extractCodeBlocks(hiddenElementsResult?.response?.text || '');
 
-        if (codeBlocks.length === 0) {
-          debugLog('No hidden elements found to expand, stopping loop');
-          stop();
-          return;
-        }
+          if (codeBlocks.length === 0) {
+            debugLog('No hidden elements found to expand, stopping loop');
+            stop();
+            return;
+          }
 
-        debugLog(`Found ${codeBlocks.length} hidden elements to expand`);
+          debugLog(`Found ${codeBlocks.length} hidden elements to expand`);
 
-        previousHtml = state.html ?? '';
+          previousHtml = state.html ?? '';
 
-        await loop(
-          async ({ stop }) => {
-            const codeBlock = codeBlocks.shift()!;
-            if (!codeBlock) {
-              stop();
-              return;
-            }
+          await loop(
+            async ({ stop }) => {
+              const codeBlock = codeBlocks.shift()!;
+              if (!codeBlock) {
+                stop();
+                return;
+              }
 
-            const action = this.explorer.createAction();
-            tag('step').log(codeBlock || 'No code block');
-            await action.execute(codeBlock);
+              const action = this.explorer.createAction();
+              tag('step').log(codeBlock || 'No code block');
+              await action.attempt(codeBlock, 'expand hidden elements');
 
-            const currentState = action.getActionResult();
-            if (!currentState) {
-              debugLog('No current state found, continuing to next action');
-              return;
-            }
+              const currentState = action.getActionResult();
+              if (!currentState) {
+                debugLog('No current state found, continuing to next action');
+                return;
+              }
 
-            if (!currentState.isMatchedBy({ url: `${state.url}*` })) {
-              researchText += `\n\nWhen ${codeBlock} original page changed to ${currentState.url}`;
-              debugLog('We moved away from the original page, returning to ${state.url}');
-              await this.navigateTo(state.url);
-              return;
-            }
+              if (!currentState.isMatchedBy({ url: `${state.url}*` })) {
+                researchText += `\n\nWhen ${codeBlock} original page changed to ${currentState.url}`;
+                debugLog('We moved away from the original page, returning to ${state.url}');
+                await this.navigateTo(state.url);
+                return;
+              }
 
-            const htmlChanges = htmlDiff(previousHtml, currentState.html ?? '', htmlConfig);
-            if (htmlChanges.added.length === 0) {
-              debugLog('No new HTML nodes added');
-              researchText += `\n\nWhen ${codeBlock} page did not change`;
-              return;
-            }
+              const htmlChanges = await htmlDiff(previousHtml, currentState.html ?? '', htmlConfig);
+              if (htmlChanges.added.length === 0) {
+                debugLog('No new HTML nodes added');
+                researchText += `\n\nWhen ${codeBlock} page did not change`;
+                return;
+              }
 
-            tag('step').log('DOM changed, analyzing new HTML nodes...');
+              tag('step').log('DOM changed, analyzing new HTML nodes...');
 
-            conversation.addUserText(this.buildSubtreePrompt(codeBlock, htmlChanges));
-            const htmlFragmentResult = await this.provider.invokeConversation(conversation);
+              conversation.addUserText(this.buildSubtreePrompt(codeBlock, htmlChanges));
+              const htmlFragmentResult = await this.provider.invokeConversation(conversation);
 
-            researchText += dedent`\n\n---
+              researchText += dedent`\n\n---
             <expanded_ui_map>
 
               When executed <code>${codeBlock}</code>:
               ${htmlFragmentResult?.response?.text}
             </expanded_ui_map>`;
 
-            // debugLog('Closing modal/popup/dropdown/etc.');
-            await this.navigateTo(state.url);
+              // debugLog('Closing modal/popup/dropdown/etc.');
+              await this.navigateTo(state.url);
+              stop();
+            },
+            {
+              maxAttempts: codeBlocks.length,
+              catch: async (error) => {
+                debugLog(error);
+              },
+            }
+          );
+        },
+        {
+          maxAttempts: ConfigParser.getInstance().getConfig().action?.retries || 3,
+          catch: async ({ error, stop }) => {
+            debugLog(error);
             stop();
           },
-          {
-            maxAttempts: codeBlocks.length,
-            catch: async (error) => {
-              debugLog(error);
-            },
-          }
-        );
-      },
-      {
-        maxAttempts: ConfigParser.getInstance().getConfig().action?.retries || 3,
-        catch: async ({ error, stop }) => {
-          debugLog(error);
-          stop();
-        },
-      }
-    );
+        }
+      );
+    }
 
-    state.researchResult = researchText;
-    if (stateHash) Researcher.researchCache[stateHash] = researchText;
+    // if (screenshotAnalysis) {
+    //   researchText += dedent`
+    //     ## Visual UI Map
 
-    this.experienceTracker.writeExperienceFile(experienceFileName, researchText, {
-      url: actionResult.relativeUrl,
-    });
+    //     UI MAP with Element coordinates:
+    //     [Element Name]: (X, Y) coordinates of element to interact with.
+
+    //     <visual_ui_map>
+    //       ${screenshotAnalysis}
+    //     </visual_ui_map>`;
+    //   }
+    // ;
+
+    if (stateHash && researchDir && researchFile) {
+      if (!existsSync(researchDir)) mkdirSync(researchDir, { recursive: true });
+      writeFileSync(researchFile, researchText);
+      Researcher.researchCache[stateHash] = researchText;
+      Researcher.researchCacheTimestamps[stateHash] = Date.now();
+    }
+
     tag('multiline').log(researchText);
     tag('success').log(`Research compelete! ${researchText.length} characters`);
 
@@ -220,9 +272,10 @@ export class Researcher implements Agent {
     - Provider either CSS or XPath locator but not both. Shortest locator is preferred.
     - Research all menus and navigational areas;
     - Focus on interactive elements: forms, buttons, links, clickable elements, etc.
+    - Look for every element that have role= attribute and include it in the report.
     - Structure the report by sections.
     - Focus on UI elements, not on static content.
-    - Ignore purely decorative sidebars and footer-only links.
+    - Ignore purely decorative sidebars and footer-only links or exterbal links to other websites.
     </rules>
 
 
@@ -426,6 +479,166 @@ export class Researcher implements Agent {
     const result = await this.provider.chat([{ role: 'user', content: prompt }]);
 
     return result.text;
+  }
+
+  async imageContent(state: WebPageState, lookFor?: string): Promise<string | null> {
+    const actionResult = ActionResult.fromState(state);
+    const image = actionResult.screenshot;
+    if (!image) {
+      debugLog('No screenshot found', actionResult);
+      return null;
+    }
+    tag('step').log('Analyzing page screenshot');
+
+    const prompt = lookFor
+      ? dedent`
+        <role>
+        You are a precise UI inspector focused on confirming a single interface element on a webpage screenshot.
+        </role>
+
+        <task>
+        Focus ONLY on the element described as: "${lookFor}".
+        Determine whether it is present and usable. If you locate it, respond with a short sentence describing the element and include its coordinates in the format "<description> at <x>X, <y>Y" (numbers must be integers followed by X and Y respectively).
+        If it is not visible or cannot be reached, explain that it was not found and provide a brief suggestion.
+        Do not list other elements.
+        </task>
+
+        <rules>
+        - Keep the answer under two sentences.
+        - Mention if the element is obscured or disabled when applicable.
+        - Always include coordinates only when the element is found.
+        - Coordinates must follow the pattern "123X, 456Y" with X and Y suffixes.
+        </rules>
+
+        URL: ${actionResult.url || 'Unknown'}
+        Title: ${actionResult.title || 'Unknown'}
+
+        The screenshot is provided below.
+        `
+      : dedent`
+        <role>
+        You are UI/UX designer analyzing all UI elements on the webpage
+        </role>
+        Analyze this web page and provide a comprehensive research report in markdown format.
+        <task>
+        Examine the provided page and understand its main purpose from the user perspective.
+        Identify the main user actions of this page.
+        Identify the main content of the page.
+        Identify the main navigation of the page.
+        Provide a comprehensive UI map report in markdown format.
+        List all buttons, forms, inputs, accordions, dropdowns, tabs, etc.
+        Write coordinates of all listed elements
+        </task>
+
+        <rules>
+        - Analyze the web page and provide a comprehensive UI map report.
+        - Explain the main purpose of the page and what user can achieve from this page.
+        - Focus on primary user actions of this page
+        - Provider either CSS or XPath locator but not both. Shortest locator is preferred.
+        - Research all menus and navigational areas;
+        - Focus on interactive elements: forms, buttons, links, clickable elements, etc.
+        - Pay especial attention for clickable icons (hamburgers, ellispsis, toggles, arrows, etc.) and images that are clickable.
+        - Describe clickable icons in text format for easy recognition. Explain in short what that symbol might do in web UI context.
+        - There is no such thing as 'hamburger menu' or 'ellipsis menu' explain what kind of menue it is (main nav, items context menu).
+        - Structure the report by sections.
+        - Focus on UI elements, not on static content.
+        - Ignore purely decorative sidebars and footer-only links.
+        </rules>
+
+
+        URL: ${actionResult.url || 'Unknown'}
+        Title: ${actionResult.title || 'Unknown'}
+
+        <output>
+
+        <output_rules>
+        Please provide a structured analysis in markdown format with the following sections:
+        UI map must be in LLM friendly format: 
+          [element name]: (\\d+X, \\d+Y)
+
+        So each element must have their X and Y appended by X and Y respectively.
+        When printing elements use lists
+        If a section is not present, do not include it in the output.
+        Below is suggested output format
+        If proposed section is not relevant, do not include it in the output.
+
+        Proposed devision is on main/navigation areas. However, you can add other areas if you identify them.
+        List all interactive elements on page and put them into appropriate sections.
+        Group similar interactive elements (like dynamic lists or content) into one item
+        </output_rules>
+
+        <output_format>
+
+        ## Summary
+
+        Brief overview of the page purpose and main content.
+        Identify the purpose of this page and what user can do on this page.
+
+        ## Main Area
+
+        [UI elements that are part of the main content of the page]
+
+        ### Buttons
+        - Button name: (X, Y) coordinates of element to interact with.
+        - Example: "Submit Button": (100X, 200Y)
+
+        ### Inputs
+        - Input name: (X, Y) coordinates of element to interact with.
+        - Example: <input Username>: (100X, 200Y)
+        - Example: <select Gender>: (100X, 200Y)
+
+        ### Tabs (if any)
+        - List of tabs titles and their (X, Y) coordinates of element to interact with.
+        - Example: <tab Login>: (100X, 200Y)
+        - Example: <tab Register>: (100X, 200Y)
+
+        ### Accordions (if any)
+        - List of accordions titles and their (X, Y) coordinates of element to interact with.
+        - Example: <accordion Login>: (100X, 200Y)
+        - Example: <accordion Register>: (100X, 200Y)
+
+        ### Dropdowns (if any)
+        - List of dropdowns titles and their (X, Y) coordinates of element to interact with.
+        - Example: <dropdown [...]>: (100X, 200Y)
+        - Example: <dropdown More Actions>: (100X, 200Y)
+
+        </output_format>
+
+        </output>
+
+        The screenshot is provided below
+        `;
+
+    const result = await this.provider.processImage(prompt, image.toString('base64'));
+
+    return result.text;
+  }
+
+  private getCachedResearchResult(stateHash: string): string {
+    const ttl = 60 * 60 * 1000;
+    const now = Date.now();
+    const timestamp = Researcher.researchCacheTimestamps[stateHash];
+
+    if (timestamp && now - timestamp <= ttl) {
+      const cached = Researcher.researchCache[stateHash];
+      if (cached) return cached;
+    }
+
+    const outputDir = ConfigParser.getInstance().getOutputDir();
+    const researchDir = join(outputDir, 'research');
+    const researchFile = join(researchDir, `${stateHash}.md`);
+
+    if (!existsSync(researchFile)) return '';
+
+    const stats = statSync(researchFile);
+    if (now - stats.mtimeMs > ttl) return '';
+
+    const cached = readFileSync(researchFile, 'utf8');
+    if (!cached) return '';
+
+    Researcher.researchCache[stateHash] = cached;
+    Researcher.researchCacheTimestamps[stateHash] = now;
+    return cached;
   }
 
   private async navigateTo(url: string): Promise<void> {

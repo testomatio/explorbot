@@ -10,6 +10,8 @@ import { createDebug, tag } from './utils/logger.js';
 const debugLog = createDebug('explorbot:state');
 
 export interface WebPageState {
+  /** Unique incremental state identifier */
+  id?: number;
   /** URL path without domain, including hash: /path/to/page#section */
   url: string;
   /** Page title */
@@ -26,15 +28,17 @@ export interface WebPageState {
   screenshotFile?: string;
   /** Log file path */
   logFile?: string;
-  /** Research result */
-  researchResult?: string;
   /** HTML content */
   html?: string;
+
+  notes?: string[];
   /** Page headings */
   h1?: string;
   h2?: string;
   h3?: string;
   h4?: string;
+  ariaSnapshot?: string | null;
+  ariaSnapshotFile?: string;
 }
 
 export interface StateTransition {
@@ -69,6 +73,7 @@ export class StateManager {
   private stateChangeListeners: StateChangeListener[] = [];
   private experienceTracker!: ExperienceTracker;
   private knowledgeDir: string;
+  private nextStateId: number = 1;
 
   constructor() {
     this.experienceTracker = new ExperienceTracker();
@@ -146,52 +151,25 @@ export class StateManager {
    * Update current state from ActionResult
    * Returns the new state, or existing state if hash hasn't changed
    */
-  updateState(
-    actionResult: ActionResult,
-    codeBlock?: string,
-    files?: { htmlFile: string; screenshotFile: string; logFile: string },
-    trigger: 'manual' | 'navigation' | 'automatic' = 'manual'
-  ): WebPageState {
-    const path = this.extractStatePath(actionResult.url || '/');
-    const stateHash = actionResult.getStateHash() || this.generateBasicHash(path, actionResult.title);
-
-    // Check if state has actually changed
-    if (this.currentState && this.currentState.hash === stateHash) {
-      debugLog(`State unchanged: ${this.currentState.url} (${stateHash})`);
-      return this.currentState;
-    }
-
-    const newState: WebPageState = {
-      url: path,
-      title: actionResult.title || 'Unknown Page',
-      fullUrl: actionResult.fullUrl || actionResult.url || '',
-      timestamp: actionResult.timestamp,
-      hash: stateHash,
-      htmlFile: files?.htmlFile,
-      screenshotFile: files?.screenshotFile,
-      logFile: files?.logFile,
-      html: actionResult.html,
-      h1: actionResult.h1 || undefined,
-      h2: actionResult.h2 || undefined,
-      h3: actionResult.h3 || undefined,
-      h4: actionResult.h4 || undefined,
-    };
-
-    // Create transition record
-    const transition: StateTransition = {
-      fromState: this.currentState,
-      toState: newState,
-      codeBlock: codeBlock || '',
-      timestamp: new Date(),
-      trigger,
-    };
-
-    this.stateHistory.push(transition);
+  updateState(actionResult: ActionResult, codeBlock?: string, trigger: 'manual' | 'navigation' | 'automatic' = 'manual'): WebPageState {
     const previousState = this.currentState;
-    this.currentState = newState;
+    const previousHash = previousState?.hash;
 
-    // Emit state change event
-    this.emitStateChange(transition);
+    const newState = actionResult;
+    this.currentState = newState;
+    this.currentState.id = this.nextStateId++;
+
+    if (actionResult.hash !== previousHash) {
+      const transition: StateTransition = {
+        fromState: previousState,
+        toState: newState,
+        codeBlock: codeBlock || '',
+        timestamp: new Date(),
+        trigger,
+      };
+      this.stateHistory.push(transition);
+      this.emitStateChange(transition);
+    }
 
     debugLog(`State updated: ${this.currentState.url} (${this.currentState.hash})`);
 
@@ -199,33 +177,24 @@ export class StateManager {
   }
 
   /**
-   * Create a new state from basic data
-   */
-  newState(state: Partial<WebPageState>): WebPageState {
-    return {
-      url: state.url || '',
-      title: state.title || '',
-      ...state,
-    };
-  }
-
-  /**
    * Update state from basic data (for navigation events)
    */
   updateStateFromBasic(url: string, title?: string, trigger: 'manual' | 'navigation' | 'automatic' = 'navigation'): WebPageState {
     const path = this.extractStatePath(url);
+
+    // no extra navigation happened
+    if (normalizeUrl(this.currentState?.url || '') === normalizeUrl(path)) {
+      return this.currentState!;
+    }
+
     const newState: WebPageState = {
+      id: this.nextStateId++,
       url: path,
       title: title || 'Unknown Page',
       fullUrl: url,
       timestamp: new Date(),
       hash: this.generateBasicHash(path, title),
     };
-
-    // Check if state has actually changed
-    if (this.currentState && this.currentState.hash === newState.hash) {
-      return this.currentState;
-    }
 
     // Create transition record
     const transition: StateTransition = {
@@ -237,10 +206,8 @@ export class StateManager {
     };
 
     this.stateHistory.push(transition);
-    const previousState = this.currentState;
     this.currentState = newState;
 
-    // Emit state change event
     this.emitStateChange(transition);
 
     debugLog(`State updated from navigation: ${this.currentState.url} (${this.currentState.hash})`);
@@ -289,21 +256,6 @@ export class StateManager {
     if (!state1 && !state2) return true;
     if (!state1 || !state2) return false;
     return state1.hash === state2.hash;
-  }
-
-  /**
-   * Create a state from ActionResult without updating current state
-   * Useful for comparisons
-   */
-  createStateFromActionResult(actionResult: ActionResult): WebPageState {
-    const path = this.extractStatePath(actionResult.url || '/');
-    return {
-      url: path,
-      title: actionResult.title || 'Unknown Page',
-      fullUrl: actionResult.fullUrl || actionResult.url || '',
-      timestamp: actionResult.timestamp,
-      hash: actionResult.getStateHash(),
-    };
   }
 
   /**
@@ -438,13 +390,7 @@ export class StateManager {
       return [];
     }
     const actionResult = ActionResult.fromState(this.currentState);
-    return this.experienceTracker
-      .getAllExperience()
-      .filter((experience) => {
-        const experienceState = experience.data as WebPageState;
-        return actionResult.isMatchedBy(experienceState);
-      })
-      .map((experince) => experince.content);
+    return this.experienceTracker.getRelevantExperience(actionResult).map((experience) => experience.content);
   }
 
   /**
@@ -472,14 +418,14 @@ export class StateManager {
    * Check if we've been in this state before
    */
   hasVisitedState(path: string): boolean {
-    return this.stateHistory.some((transition) => transition.toState.url === path);
+    return this.stateHistory.some((transition) => normalizeUrl(transition.toState.url) === normalizeUrl(path));
   }
 
   /**
    * Get how many times we've visited a specific path
    */
   getVisitCount(path: string): number {
-    return this.stateHistory.filter((transition) => transition.toState.url === path).length;
+    return this.stateHistory.filter((transition) => normalizeUrl(transition.toState.url) === normalizeUrl(path)).length;
   }
 
   /**
@@ -487,10 +433,34 @@ export class StateManager {
    */
   getLastVisitToPath(path: string): StateTransition | null {
     for (let i = this.stateHistory.length - 1; i >= 0; i--) {
-      if (this.stateHistory[i].toState.url === path) {
+      if (normalizeUrl(this.stateHistory[i].toState.url) === normalizeUrl(path)) {
         return this.stateHistory[i];
       }
     }
+    return null;
+  }
+
+  /**
+   * Find the previous state for a given URL and state ID from history
+   * Searches backwards through history to find the last state with:
+   * - The same URL
+   * - Different state ID (not the current state)
+   * - HTML or ARIA snapshot available
+   * Stops searching if it encounters a different URL
+   */
+  getPreviousState(): WebPageState | null {
+    for (let i = this.stateHistory.length - 1; i >= 0; i--) {
+      const transition = this.stateHistory[i];
+
+      if (transition.toState.id === this.currentState?.id) {
+        continue;
+      }
+
+      if (transition.toState.html || transition.toState.ariaSnapshot) {
+        return transition.toState;
+      }
+    }
+
     return null;
   }
 
@@ -544,6 +514,7 @@ export class StateManager {
     this.stateChangeListeners = [];
     this.knowledgeCache = [];
     this.lastKnowledgeScan = null;
+    this.nextStateId = 1;
 
     // Clean up experience tracker if it has cleanup method
     if (this.experienceTracker && typeof this.experienceTracker.cleanup === 'function') {
@@ -552,4 +523,8 @@ export class StateManager {
 
     debugLog('StateManager cleanup completed');
   }
+}
+
+function normalizeUrl(url: string): string {
+  return url.replace(/^\/+|\/+$/g, '');
 }

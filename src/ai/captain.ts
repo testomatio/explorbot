@@ -48,9 +48,6 @@ export class Captain implements Agent {
       return 'Unknown state';
     }
     const lines = [`URL: ${state.url || '/'}`, `Title: ${state.title || 'Untitled'}`];
-    if (state.researchResult) {
-      lines.push(`Research: ${state.researchResult.slice(0, 500)}`);
-    }
     return lines.join('\n');
   }
 

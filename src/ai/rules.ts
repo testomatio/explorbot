@@ -1,8 +1,25 @@
 import dedent from 'dedent';
 
 export const locatorRule = dedent`
-  If locator is long prefer writing it as XPath.
-  Stick to semantic attributes like id, class, name, data-id, etc.
+  First look for locators in <aria> section, they target browser internal representation, thus more reliable.
+  Aria locators have role and text, you should provide them in the following format:
+
+  <good_aria_locator_example>
+  { "role": "button", "text": "Login" },
+  { "role": "input", "text": "Name" },
+  { "role": "link", "text": "Forgot your password?" },
+  { "role": "link", "text": "Sign Up" },
+  { "role": "button", "text": "Sign In" },
+  { "role": "button", "text": "Submit" },
+  { "role": "button", "text": "Cancel" }
+  </good_aria_locator_example>
+
+  Aria locators must be formatted as valid JSON object with role and text keys!
+
+  If <aria> section is not present or does not contain relevant locators, look for locators in <html> section.
+
+  If locator is long prefer writing it as XPath.  
+  Stick to semantic attributes like role, aria-*, id, class, name, data-id, etc.  
   XPath locator should always start with //
   Do not include element order like /div[2] or /div[2]/div[2] etc in locators.
   Avoid listing unnecessary elements inside locators 
@@ -12,6 +29,8 @@ export const locatorRule = dedent`
   <good locator example>
     'Login'
     'Submit'
+    'div[role=input][placeholder="Name"]'
+    '[aria-label="Name"]'
     'form#user_form input[name="name"]'
     '#content-top #user_name'
     '#content-bottom #user_name'
@@ -26,6 +45,7 @@ export const locatorRule = dedent`
     '//html/body/div[2]/div[2]/div/form/input[@name="name"]'
   </bad locator example>
 
+  HTML locators must be valid JS strings
 `;
 
 export const multipleLocatorRule = dedent`

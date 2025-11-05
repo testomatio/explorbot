@@ -1,5 +1,6 @@
 import { generateObject, generateText } from 'ai';
 import type { ModelMessage } from 'ai';
+import { readFileSync } from 'node:fs';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
 import { createDebug, tag } from '../utils/logger.js';
@@ -50,17 +51,26 @@ export class Provider {
     ]);
   }
 
-  async invokeConversation(conversation: Conversation, tools?: any, options: any = {}): Promise<{ conversation: Conversation; response: any } | null> {
+  async invokeConversation(conversation: Conversation, tools?: any, options: any = {}): Promise<{ conversation: Conversation; response: any; toolExecutions?: any[] } | null> {
     const response = tools ? await this.generateWithTools(conversation.messages, tools, options) : await this.chat(conversation.messages, options);
     conversation.addAssistantText(response.text);
     this.lastConversation = conversation;
-    return { conversation, response };
+
+    const toolCalls = response.toolCalls || [];
+    const toolResults = response.toolResults || [];
+
+    const toolExecutions = toolCalls.map((call: any, index: number) => ({
+      toolName: call.toolName || '',
+      input: call.input,
+      output: toolResults[index]?.output,
+      wasSuccessful: toolResults[index]?.output?.success || false,
+    }));
+
+    return { conversation, response, toolExecutions };
   }
 
   async chat(messages: ModelMessage[], options: any = {}): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model}`, 'ai');
-
-    messages = this.filterImages(messages);
 
     const config = {
       ...this.config,
@@ -91,8 +101,6 @@ export class Provider {
 
   async generateWithTools(messages: ModelMessage[], tools: any, options: any = {}): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model} with dynamic tools`, 'ai');
-
-    messages = this.filterImages(messages);
 
     const toolNames = Object.keys(tools || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
@@ -145,8 +153,6 @@ export class Provider {
   async generateObject(messages: ModelMessage[], schema: any, options: any = {}): Promise<any> {
     setActivity(`🤖 Asking ${this.config.model} for structured output`, 'ai');
 
-    messages = this.filterImages(messages);
-
     const config = {
       model: this.provider(this.config.model),
       schema,
@@ -181,30 +187,56 @@ export class Provider {
     return this.provider;
   }
 
-  filterImages(messages: ModelMessage[]): ModelMessage[] {
-    if (this.config.vision) {
-      return messages;
+  async processImage(prompt: string, image: string): Promise<any> {
+    if (!this.config.visionModel) {
+      throw new Error('Vision model not configured. Please set ai.visionModel in your config.');
     }
 
-    return messages.map((message) => {
-      if (typeof message.content === 'string') {
-        return message;
-      }
+    setActivity(`🤖 Processing image with ${this.config.visionModel}`, 'ai');
 
-      if (Array.isArray(message.content)) {
-        const filteredContent = message.content.filter((content: any) => {
-          if (content.type === 'image') return false;
-          return true;
+    const imageData = `data:image/png;base64,${image.toString()}`;
+
+    const messages: ModelMessage[] = [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: prompt,
+          },
+          {
+            type: 'image',
+            image: imageData,
+          },
+        ],
+      },
+    ];
+
+    const config = {
+      model: this.provider(this.config.visionModel),
+      ...this.config.config,
+    };
+
+    try {
+      promptLog(`Processing image with prompt: ${prompt}`);
+      const response = await withRetry(async () => {
+        return await generateText({
+          messages,
+          ...config,
         });
+      }, this.getRetryOptions());
 
-        return {
-          ...message,
-          content: filteredContent as any,
-        };
-      }
+      clearActivity();
+      responseLog(response.text);
+      return response;
+    } catch (error: any) {
+      clearActivity();
+      throw new AiError(error.message || error.toString());
+    }
+  }
 
-      return message;
-    });
+  hasVision(): boolean {
+    return this.config.visionModel !== undefined;
   }
 }
 

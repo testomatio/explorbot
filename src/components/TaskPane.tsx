@@ -6,19 +6,6 @@ interface TaskPaneProps {
   tasks: Test[];
 }
 
-const getStatusIcon = (status: string): string => {
-  switch (status) {
-    case 'completed':
-      return '☑️';
-    case 'failed':
-      return '❌';
-    case 'pending':
-      return '🔳';
-    default:
-      return '🔳';
-  }
-};
-
 const getPriorityIcon = (priority: string): string => {
   switch (priority.toLowerCase()) {
     case 'high':
@@ -61,14 +48,22 @@ const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
 
         {tasks.map((task: Test, taskIndex) => {
           const inProgress = task.status === 'in_progress';
-          const scenarioColor = inProgress ? 'white' : 'dim';
-          const scenarioDimmed = inProgress ? blinkOn : false;
+          let taskColor = 'dim';
+          let strikethrough = false;
+
+          if (task.isSuccessful) {
+            taskColor = 'green';
+            strikethrough = true;
+          } else if (task.hasFailed) {
+            taskColor = 'red';
+          } else if (inProgress) {
+            taskColor = blinkOn ? 'white' : 'dim';
+          }
 
           return (
             <Box key={taskIndex} flexDirection="row" marginY={0}>
-              <Text>{getStatusIcon(task.status)}</Text>
               <Text> {getPriorityIcon(task.priority)}</Text>
-              <Text color={scenarioColor} dimColor={scenarioDimmed} wrap="truncate-end">
+              <Text color={taskColor} strikethrough={strikethrough} wrap="truncate-end">
                 {' '}
                 {task.scenario}
               </Text>

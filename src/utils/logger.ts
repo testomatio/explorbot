@@ -195,7 +195,7 @@ class Logger {
   }
 
   log(type: LogType, ...args: any[]): void {
-    if (type === 'debug') {
+    if (type === 'debug' && this.debugDestination.isEnabled()) {
       this.debugDestination.write(...args);
       return;
     }

@@ -40,6 +40,7 @@ interface AIConfig {
     timeout: number;
   };
   vision?: boolean;
+  visionModel?: string;
   maxAttempts?: number;
   retryDelay?: number;
 }

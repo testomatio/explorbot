@@ -12,6 +12,8 @@ export interface ExploreOptions {
   path?: string;
   show?: boolean;
   headless?: boolean;
+  freeride?: boolean;
+  incognito?: boolean;
 }
 
 export async function exploreCommand(options: ExploreOptions) {
@@ -27,10 +29,16 @@ export async function exploreCommand(options: ExploreOptions) {
     path: options.path,
     show: options.show,
     headless: options.headless,
+    incognito: options.incognito,
   };
 
   const explorBot = new ExplorBot(mainOptions);
   await explorBot.start();
+
+  if (options.freeride) {
+    await explorBot.freeride();
+    return;
+  }
 
   if (!process.stdin.isTTY) {
     console.error('Warning: Input not available. Running in non-interactive mode.');

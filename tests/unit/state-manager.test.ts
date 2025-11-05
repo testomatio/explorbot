@@ -81,7 +81,7 @@ describe('StateManager', () => {
         title: 'Test Page',
       });
 
-      stateManager.updateState(actionResult, 'I.amOnPage("/test")', undefined, 'navigation');
+      stateManager.updateState(actionResult, 'I.amOnPage("/test")', 'navigation');
       const history = stateManager.getStateHistory();
 
       expect(history).toHaveLength(1);
@@ -89,6 +89,36 @@ describe('StateManager', () => {
       expect(history[0].toState.url).toBe('/test');
       expect(history[0].codeBlock).toBe('I.amOnPage("/test")');
       expect(history[0].trigger).toBe('navigation');
+    });
+
+    it('should refresh snapshot data when hash stays the same', () => {
+      const initialSnapshot = new ActionResult({
+        html: '<html><body><h1>Test Page</h1></body></html>',
+        url: 'https://example.com/test',
+        title: 'Test Page',
+        h1: 'Test Page',
+        ariaSnapshot: '- button "Original"',
+        ariaSnapshotFile: 'original.aria.yaml',
+      });
+
+      stateManager.updateState(initialSnapshot);
+
+      const updatedSnapshot = new ActionResult({
+        html: '<html><body><h1>Test Page</h1></body></html>',
+        url: 'https://example.com/test',
+        title: 'Test Page',
+        h1: 'Test Page',
+        ariaSnapshot: '- button "Updated"',
+        ariaSnapshotFile: 'updated.aria.yaml',
+      });
+
+      stateManager.updateState(updatedSnapshot);
+
+      const currentState = stateManager.getCurrentState();
+
+      expect(currentState?.ariaSnapshot).toBe('- button "Updated"');
+      expect(currentState?.ariaSnapshotFile).toBe('updated.aria.yaml');
+      expect(stateManager.getStateHistory()).toHaveLength(1);
     });
 
     it('should default to root path when action result lacks url', () => {
@@ -114,10 +144,10 @@ describe('StateManager', () => {
     });
 
     it('should not update if basic state hash is unchanged', () => {
-      const firstState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
+      stateManager.updateStateFromBasic('https://example.com/test', 'Test');
       const secondState = stateManager.updateStateFromBasic('https://example.com/test', 'Test');
 
-      expect(firstState).toBe(secondState);
+      expect(secondState).toBe(stateManager.getCurrentState());
       expect(stateManager.getStateHistory()).toHaveLength(1);
     });
   });

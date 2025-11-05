@@ -38,9 +38,10 @@
     "@ai-sdk/groq": "^2.0.20",
     "@ai-sdk/openai": "^2.0.32",
     "@inkjs/ui": "^2.0.0",
+    "@testomatio/reporter": "^2.3.6",
     "ai": "^5.0.0",
     "cli-highlight": "^2.1.11",
-    "codeceptjs": "^3.7.0",
+    "codeceptjs": "4.0.0-beta.7.esm-aria",
     "commander": "^14.0.1",
     "debug": "^4.4.3",
     "dedent": "^1.6.0",
@@ -77,5 +78,19 @@
   },
   "engines": {
     "node": ">=16.0.0"
+  },
+  "overrides": {
+    "marked-terminal": {
+      "supports-hyperlinks": "2.3.0"
+    },
+    "has-flag": "4.0.0",
+    "supports-color": "7.2.0"
+  },
+  "resolutions": {
+    "marked-terminal": {
+      "supports-hyperlinks": "2.3.0"
+    },
+    "has-flag": "4.0.0",
+    "supports-color": "7.2.0"
   }
 }

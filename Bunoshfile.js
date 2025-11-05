@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 const highlight = require('cli-highlight').highlight;
 import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
+import { chromium } from 'playwright';
+import yaml from 'js-yaml';
 
 const { exec, shell, fetch, writeToFile, task, ai } = global.bunosh;
 
@@ -69,4 +71,40 @@ export async function htmlAiText(fileName) {
     ${combinedHtml}
   `);
   console.log(highlight(result.output, { language: 'markdown' }));
+}
+
+/**
+ * Open a page with Playwright and render accessibility tree in YAML format
+ * @param {string} url - URL to open
+ */
+export async function htmlAccessibility(filename) {
+  let targetUrl = filename;
+
+  targetUrl = 'file://' + process.cwd() + '/' + filename;
+
+  say(`Opening ${targetUrl} and analyzing accessibility tree...`);
+
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage();
+
+  try {
+    await page.goto(targetUrl, { waitUntil: 'networkidle' });
+
+    const accessibilityTree = await page.accessibility.snapshot();
+
+    console.log(accessibilityTree);
+
+    // const yamlOutput = yaml.dump(accessibilityTree, {
+    //   indent: 2,
+    //   lineWidth: 120,
+    //   noRefs: true
+    // });
+
+    // console.log('----------');
+    // console.log(highlight(yamlOutput, { language: 'yaml' }));
+  } catch (error) {
+    yell(`Error analyzing page: ${error.message}`);
+  } finally {
+    await browser.close();
+  }
 }

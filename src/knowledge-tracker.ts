@@ -167,4 +167,19 @@ export class KnowledgeTracker {
 
     return trimmed;
   }
+
+  getStateParameters(state: ActionResult, keys: string[]) {
+    const relevantKnowledge = this.getRelevantKnowledge(state);
+    const result: Record<string, any> = {};
+
+    for (const key of keys) {
+      for (const knowledge of relevantKnowledge) {
+        if (knowledge[key] !== undefined && result[key] === undefined) {
+          result[key] = knowledge[key];
+        }
+      }
+    }
+
+    return result;
+  }
 }

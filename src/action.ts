@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
 import { highlight } from 'cli-highlight';
-import { recorder } from 'codeceptjs';
+import { container, recorder } from 'codeceptjs';
 import dedent from 'dedent';
 import { ActionResult } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
@@ -16,6 +16,8 @@ import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { createDebug, log, tag } from './utils/logger.js';
 import { throttle } from './utils/throttle.ts';
+import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
+import { collectInteractiveNodes } from './utils/aria.ts';
 
 const debugLog = createDebug('explorbot:action');
 
@@ -30,52 +32,44 @@ class Action {
   private action: string | null = null;
   private expectation: string | null = null;
   public lastError: Error | null = null;
+  public playwrightHelper: any;
 
   constructor(actor: CodeceptJS.I, stateManager: StateManager) {
     this.actor = actor;
-    this.experienceTracker = new ExperienceTracker();
     this.stateManager = stateManager;
+    this.experienceTracker = stateManager.getExperienceTracker();
     this.config = ConfigParser.getInstance().getConfig();
+    this.playwrightHelper = container.helpers('Playwright');
   }
 
-  private async capturePageState(): Promise<{
-    html: string;
-    url: string;
-    screenshot?: Buffer;
-    screenshotFile?: string;
-    title: string;
-    browserLogs: any[];
-    htmlFile: string;
-    logFile: string;
-    h1?: string;
-    h2?: string;
-    h3?: string;
-    h4?: string;
-  }> {
+  async caputrePageWithScreenshot(): Promise<ActionResult> {
+    return this.capturePageState({ includeScreenshot: true });
+  }
+
+  async capturePageState({ includeScreenshot = false }: { includeScreenshot?: boolean } = {}): Promise<ActionResult> {
     const currentState = this.stateManager.getCurrentState();
     const stateHash = currentState?.hash || 'screenshot';
     const timestamp = Date.now();
 
     const [url, html, title, browserLogs] = await Promise.all([(this.actor as any).grabCurrentUrl?.(), (this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
 
-    const screenshotResult: { screenshot?: Buffer; screenshotFile?: string } = {};
-    await throttle(async () => {
-      screenshotResult.screenshot = await (this.actor as any).saveScreenshot(`${stateHash}_${timestamp}.png`);
-      screenshotResult.screenshotFile = `${stateHash}_${timestamp}.png`;
-      const screenshotPath = join('output', screenshotResult.screenshotFile);
-      if (screenshotResult.screenshot) {
-        fs.writeFileSync(screenshotPath, screenshotResult.screenshot);
-      }
-    });
+    let screenshotFile: string | undefined = undefined;
 
-    // Extract headings from HTML
-    const headings = this.extractHeadings(html);
+    const makeScreenshot = async () => {
+      await (this.actor as any).saveScreenshot(`${stateHash}_${timestamp}.png`);
+      screenshotFile = `${stateHash}_${timestamp}.png`;
+    };
+
+    if (includeScreenshot) {
+      await makeScreenshot();
+    }
 
     // Save HTML to file
     const htmlFile = `${stateHash}_${timestamp}.html`;
     const htmlPath = join('output', htmlFile);
     fs.writeFileSync(htmlPath, html, 'utf8');
 
+    debugLog('Captured page state');
     // Save logs to file
     const logFile = `${stateHash}_${timestamp}.log`;
     const logPath = join('output', logFile);
@@ -87,39 +81,73 @@ class Action {
     });
     fs.writeFileSync(logPath, `${formattedLogs.join('\n')}\n`, 'utf8');
 
-    debugLog('Page:', { url, title, html: html.substring(0, 100), headings });
+    debugLog('Page:', { url, title, size: html.length, html: html.substring(0, 100) });
 
-    return {
+    // Capture iframe HTML snapshots
+    const iframeSnapshots = await this.captureIframeSnapshots(html);
+
+    let ariaSnapshot: string | null = null;
+    let ariaSnapshotFile: string | undefined = undefined;
+
+    const page = this.playwrightHelper.page;
+    const serializedSnapshot = await page.locator('body').ariaSnapshot();
+    const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
+    const ariaPath = join('output', ariaFileName);
+    fs.writeFileSync(ariaPath, serializedSnapshot, 'utf8');
+    ariaSnapshot = serializedSnapshot;
+    ariaSnapshotFile = ariaFileName;
+
+    const result = new ActionResult({
       html,
       title,
       url,
       browserLogs,
       htmlFile,
       logFile,
-      ...screenshotResult,
-      ...headings,
-    };
+      screenshotFile,
+      iframeSnapshots,
+      ariaSnapshot,
+      ariaSnapshotFile,
+    });
+    this.stateManager.updateState(result);
+    return result;
   }
 
   /**
-   * Extract headings from HTML content
+   * Capture HTML snapshots of all iframes on the page
    */
-  private extractHeadings(html: string): {
-    h1?: string;
-    h2?: string;
-    h3?: string;
-    h4?: string;
-  } {
-    const headings: { h1?: string; h2?: string; h3?: string; h4?: string } = {};
+  private async captureIframeSnapshots(mainHtml: string): Promise<Array<{ src: string; html: string; id?: string }>> {
+    const iframeSnapshots: Array<{ src: string; html: string }> = [];
 
-    ['h1', 'h2', 'h3', 'h4'].forEach((tag) => {
-      const match = html.match(new RegExp(`<${tag}[^>]*>(.*?)</${tag}>`, 'i'));
-      if (match) {
-        headings[tag as keyof typeof headings] = match[1].replace(/<[^>]*>/g, '').trim();
+    if (!/<iframe/i.test(mainHtml)) {
+      return iframeSnapshots;
+    }
+
+    const page = this.playwrightHelper.page;
+    const frames = page.frames();
+
+    for (const frame of frames) {
+      if (frame === page.mainFrame()) {
+        continue;
       }
-    });
 
-    return headings;
+      const url = frame.url();
+      if (url === 'about:blank') {
+        continue;
+      }
+
+      const iframeHtml = await frame.evaluate(() => document.documentElement.outerHTML);
+      const compactedIframeHtml = await minifyHtml(htmlCombinedSnapshot(iframeHtml));
+
+      iframeSnapshots.push({
+        src: url,
+        html: compactedIframeHtml,
+      });
+
+      debugLog(`Captured iframe ${url}: ${compactedIframeHtml.length} characters (compacted)`);
+    }
+
+    return iframeSnapshots;
   }
 
   private async captureBrowserLogs(): Promise<any[]> {
@@ -162,33 +190,10 @@ class Action {
       await recorder.promise();
 
       const pageState = await this.capturePageState();
-      const result = new ActionResult({
-        url: pageState.url,
-        html: pageState.html,
-        screenshot: pageState.screenshot ? fs.readFileSync(pageState.screenshot) : undefined,
-        title: pageState.title,
-        error: error ? errorToString(error) : null,
-        browserLogs: pageState.browserLogs,
-        h1: pageState.h1,
-        h2: pageState.h2,
-        h3: pageState.h3,
-        h4: pageState.h4,
-      });
 
-      // Update state manager with new state and code that led to it
-      // updateState will only create a new state if the hash has changed
-      this.stateManager.updateState(
-        result,
-        codeString,
-        {
-          htmlFile: pageState.htmlFile,
-          screenshotFile: pageState.screenshotFile,
-          logFile: pageState.logFile,
-        },
-        'manual'
-      );
+      this.stateManager.updateState(pageState, codeString);
 
-      this.actionResult = result;
+      this.actionResult = pageState;
     } catch (err) {
       debugLog('Action error', errorToString(err));
       error = err as Error;
@@ -251,11 +256,14 @@ class Action {
     return this;
   }
 
-  public async attempt(codeBlock: string, attempt: number, originalMessage: string): Promise<boolean> {
+  public async attempt(codeBlock: string | ((I: CodeceptJS.I) => void), originalMessage?: string): Promise<boolean> {
     try {
-      debugLog(`Resolution attempt ${attempt}`);
+      debugLog('Resolution attempt...');
       setActivity('🦾 Acting in browser...', 'action');
 
+      if (!this.actionResult) {
+        this.actionResult = ActionResult.fromState(this.stateManager.getCurrentState()!);
+      }
       const prevActionResult = this.actionResult;
       this.lastError = null;
       await this.execute(codeBlock);
@@ -266,15 +274,16 @@ class Action {
       await this.expect(this.expectation!);
 
       tag('success').log('Resolved', this.expectation);
-      await this.experienceTracker.saveSuccessfulResolution(prevActionResult!, originalMessage, codeBlock);
+      if (originalMessage) {
+        await this.experienceTracker.saveSuccessfulResolution(prevActionResult!, originalMessage, codeBlock.toString());
+      }
 
       return true;
     } catch (error) {
-      tag('error').log(`Attempt ${attempt} failed with error:`, error);
-
       const executionError = errorToString(error);
+      tag('error').log(`Attempt failed with error: ${executionError || this.lastError?.toString()}`);
 
-      await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage, codeBlock, executionError, attempt);
+      await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage ?? '', codeBlock.toString(), executionError);
 
       return false;
     }

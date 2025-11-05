@@ -59,8 +59,7 @@ export class CommandHandler implements InputManager {
           if (target) {
             await this.explorBot.getExplorer().visit(target);
           }
-          await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!);
-          tag('success').log('Research completed');
+          await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!, true);
         },
       },
       {
@@ -114,7 +113,7 @@ export class CommandHandler implements InputManager {
         name: 'explore',
         description: 'Make everything from research to test',
         execute: async (args: string) => {
-          await this.explorBot.explore();
+          await this.explorBot.explore(args);
           tag('info').log('Navigate to other page with /navigate or /explore again to continue exploration');
         },
       },
@@ -152,6 +151,7 @@ export class CommandHandler implements InputManager {
         description: 'Exit the application',
         execute: async () => {
           console.log('\n👋 Goodbye!');
+          await this.explorBot.getExplorer().stop();
           process.exit(0);
         },
       },

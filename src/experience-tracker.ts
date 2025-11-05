@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
+import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
 import { createDebug, log, tag } from './utils/logger.js';
 
@@ -19,11 +20,15 @@ interface ExperienceEntry {
 
 export class ExperienceTracker {
   private experienceDir: string;
+  private disabled: boolean;
+  private knowledgeTracker: KnowledgeTracker;
 
-  constructor() {
+  constructor(options: { disabled?: boolean } = {}) {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
     const configPath = configParser.getConfigPath();
+    this.disabled = options.disabled ?? false;
+    this.knowledgeTracker = new KnowledgeTracker();
 
     // Resolve experience directory relative to the config file location (project root)
     if (configPath) {
@@ -33,7 +38,9 @@ export class ExperienceTracker {
       this.experienceDir = config.dirs?.experience || 'experience';
     }
 
-    this.ensureDirectory(this.experienceDir);
+    if (!this.disabled) {
+      this.ensureDirectory(this.experienceDir);
+    }
   }
 
   private getExperienceDirectories(): string[] {
@@ -67,6 +74,9 @@ export class ExperienceTracker {
   }
 
   private ensureDirectory(dir: string): void {
+    if (this.disabled) {
+      return;
+    }
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
@@ -80,12 +90,18 @@ export class ExperienceTracker {
   }
 
   writeExperienceFile(stateHash: string, content: string, frontmatter?: any): void {
+    if (this.disabled) {
+      return;
+    }
     const filePath = this.getExperienceFilePath(stateHash);
     const fileContent = matter.stringify(content, frontmatter || {});
     writeFileSync(filePath, fileContent, 'utf8');
   }
 
   hasRecentExperience(stateHash: string, prefix = ''): boolean {
+    if (this.disabled) {
+      return false;
+    }
     if (prefix) {
       stateHash = `${prefix}_${stateHash}`;
     }
@@ -110,6 +126,9 @@ export class ExperienceTracker {
   }
 
   private ensureExperienceFile(state: ActionResult): string {
+    if (this.disabled) {
+      return '';
+    }
     const stateHash = state.getStateHash();
     const filePath = this.getExperienceFilePath(stateHash);
 
@@ -125,6 +144,9 @@ export class ExperienceTracker {
   }
 
   private appendToExperienceFile(state: ActionResult, entry: ExperienceEntry): void {
+    if (this.disabled) {
+      return;
+    }
     const filePath = this.ensureExperienceFile(state);
 
     const newEntryContent = this.generateEntryContent(entry);
@@ -145,10 +167,18 @@ ${entry.code}
     return content;
   }
 
-  async saveFailedAttempt(state: ActionResult, originalMessage: string, code: string, executionError: string | null, attempt: number): Promise<void> {
+  async saveFailedAttempt(state: ActionResult, originalMessage: string, code: string, executionError: string | null): Promise<void> {
+    if (this.disabled) {
+      return;
+    }
+    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(state);
+    const writingDisabled = relevantKnowledge.some((knowledge) => knowledge.noExperienceWriting === true || knowledge.noExperienceWriting === 'true');
+    if (writingDisabled) {
+      return;
+    }
     const newEntry: ExperienceEntry = {
       timestamp: new Date().toISOString(),
-      attempt,
+      attempt: 1,
       status: 'failed',
       code,
       error: this.compactError(executionError),
@@ -156,10 +186,18 @@ ${entry.code}
     };
 
     this.appendToExperienceFile(state, newEntry);
-    tag('substep').log(`Added failed attempt ${attempt} to: ${state.getStateHash()}.md`);
+    tag('substep').log(`Added failed attempt to: ${state.getStateHash()}.md`);
   }
 
   async saveSuccessfulResolution(state: ActionResult, originalMessage: string, code: string): Promise<void> {
+    if (this.disabled) {
+      return;
+    }
+    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(state);
+    const writingDisabled = relevantKnowledge.some((knowledge) => knowledge.noExperienceWriting === true || knowledge.noExperienceWriting === 'true');
+    if (writingDisabled) {
+      return;
+    }
     const newEntry: ExperienceEntry = {
       timestamp: new Date().toISOString(),
       status: 'success',
@@ -217,6 +255,11 @@ ${entry.code}
   }
 
   getRelevantExperience(state: ActionResult): { filePath: string; data: any; content: string }[] {
+    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(state);
+    const readingDisabled = relevantKnowledge.some((knowledge) => knowledge.noExperienceReading === true || knowledge.noExperienceReading === 'true');
+    if (readingDisabled) {
+      return [];
+    }
     return this.getAllExperience().filter((experience) => {
       const experienceState = experience.data as WebPageState;
       return state.url === experienceState.url || (experienceState.url && state.url && (state.url.includes(experienceState.url) || experienceState.url.includes(state.url)));

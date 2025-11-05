@@ -1,13 +1,13 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
+import { join } from 'node:path';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
-import { StateTransition } from '../state-manager.ts';
+import type { StateTransition, WebPageState } from '../state-manager.ts';
 import type { Note, Test } from '../test-plan.ts';
-import { htmlDiff } from '../utils/html-diff.ts';
 import { minifyHtml } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
@@ -15,7 +15,8 @@ import type { Agent } from './agent.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { protectionRule } from './rules.ts';
-import { clearToolCallHistory, createCodeceptJSTools, toolAction } from './tools.ts';
+import { clearToolCallHistory, createCodeceptJSTools } from './tools.ts';
+import type { Conversation } from './conversation.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
@@ -24,7 +25,7 @@ export class Tester implements Agent {
   private explorer: Explorer;
   private provider: Provider;
 
-  MAX_ITERATIONS = 15;
+  MAX_ITERATIONS = 20;
   researcher: any;
 
   constructor(explorer: Explorer, provider: Provider) {
@@ -33,26 +34,17 @@ export class Tester implements Agent {
     this.researcher = new Researcher(explorer, provider);
   }
 
-  async test(task: Test, url?: string): Promise<{ success: boolean }> {
+  async test(task: Test): Promise<{ success: boolean }> {
     const state = this.explorer.getStateManager().getCurrentState();
     if (!state) throw new Error('No state found');
-
-    if (!url) url = task.startUrl;
-    if (url && state.url !== url) {
-      await this.explorer.visit(url);
-    }
 
     tag('info').log(`Testing scenario: ${task.scenario}`);
     setActivity(`🧪 Testing: ${task.scenario}`, 'action');
 
-    const actionResult = ActionResult.fromState(state);
-    const tools = {
-      ...createCodeceptJSTools(this.explorer.createAction()),
-      ...this.createTestFlowTools(task, state.url),
-    };
+    const initialState = ActionResult.fromState(state);
 
     const conversation = this.provider.startConversation(this.getSystemMessage());
-    const initialPrompt = await this.buildTestPrompt(task, actionResult);
+    const initialPrompt = await this.buildTestPrompt(task, initialState);
     conversation.addUserText(initialPrompt);
     conversation.autoTrimTag('initlal_page', 100_000);
     if (conversation.hasTag('expanded_ui_map')) {
@@ -65,53 +57,80 @@ export class Tester implements Agent {
 
     debugLog('Starting test execution with tools');
 
-    let lastResponse = '';
-
     clearToolCallHistory();
     task.start();
+    await this.explorer.startTest(task);
 
-    this.explorer.trackSteps(true);
+    if (task.startUrl !== initialState.url) {
+      debugLog(`Navigating to ${task.startUrl}`);
+      await this.explorer.visit(task.startUrl!);
+    }
+
     const offStateChange = this.explorer.getStateManager().onStateChange((event: StateTransition) => {
       if (event.toState?.url === event.fromState?.url) return;
       task.addNote(`Navigated to ${event.toState?.url}`, 'passed');
       task.states.push(event.toState);
     });
 
+    let stateId: number | undefined = 0;
+    const codeceptjsTools = createCodeceptJSTools(this.explorer.createAction());
     await loop(
       async ({ stop, iteration }) => {
+        debugLog('iteration', iteration);
+        const tools = Object.fromEntries(
+          Object.entries({
+            ...codeceptjsTools,
+            ...this.createTestFlowTools(task),
+          }).filter(([tool]) => {
+            if (!this.provider.hasVision() && tool === 'clickXY') return false;
+            return true;
+          })
+        );
+
+        const currentState = ActionResult.fromState(this.explorer.getStateManager().getCurrentState()!);
+
         debugLog(`Test ${task.scenario} iteration ${iteration}`);
 
+        // move out from iframe if we have it
+        await this.explorer.switchToMainFrame();
+
+        if (this.explorer.getStateManager().isInDeadLoop()) {
+          task.addNote('Dead loop detected. Stopped', 'failed');
+          stop();
+          return;
+        }
+
+        // to keep conversation compact we remove old HTMLs
+        conversation.cleanupTag('page_html', '...cleaned HTML...', 2);
+
+        let outcomeStatus = '';
+        if (task.getPrintableNotes()) {
+          outcomeStatus = dedent`
+            Your interaction log notes:
+            <notes>
+            ${task.getPrintableNotes()}
+            </notes>
+            Use your previous interaction notes to guide your next actions.
+            Do not perform the same checks.
+            Do not do unsuccesful clicks again.
+          `;
+        }
+
+        const remaining = task.getRemainingExpectations();
+        if (remaining.length > 0) {
+          outcomeStatus += `\nExpected steps to check: ${remaining.join(', ')}`;
+        }
+
+        const knowledge = this.getKnowledge(currentState);
+        const stateHasChanged = currentState.id !== stateId;
+
         if (iteration > 1) {
-          const newState = this.explorer.getStateManager().getCurrentState()!;
-          const newActionResult = ActionResult.fromState(newState);
-
-          if (this.explorer.getStateManager().isInDeadLoop()) {
-            task.addNote('Dead loop detected. Stopped', 'failed');
-            stop();
-            return;
+          if (!stateHasChanged) {
+            debugLog('  state not changed');
           }
 
-          // to keep conversation compact we remove old HTMLs
-          conversation.cleanupTag('page_html', '...cleaned HTML...', 2);
-
-          let outcomeStatus = '';
-          if (task.getPrintableNotes()) {
-            outcomeStatus = dedent`
-              Your interaction log notes: 
-              <notes>
-              ${task.getPrintableNotes()}
-              </notes>
-              Use your previous interaction notes to guide your next actions.
-              Do not perform the same checks.
-              Do not do unsuccesful clicks again.
-            `;
-          }
-
-          const remaining = task.getRemainingExpectations();
-          if (remaining.length > 0) {
-            outcomeStatus += `\nExpected steps to check: ${remaining.join(', ')}`;
-          }
-
+          const previousState = this.explorer.getStateManager().getPreviousState();
+          debugLog('  state has changed');
           const retryPrompt = dedent`
             Continue testing to check the expected results.
 
@@ -119,61 +138,98 @@ export class Tester implements Agent {
 
             ${remaining.length > 0 ? `Expected steps to check:\nTry to check them and list your findings\n\n<remaining_expectations>\n${remaining.join('\n- ')}\n</remaining_expectations>` : ''}
 
-            Provide your reasoning for the next action in your response.
+            ${knowledge}
           `;
 
-          if (actionResult.isSameUrl({ url: newState.url })) {
-            const diff = htmlDiff(actionResult.html, newState.html ?? '', ConfigParser.getInstance().getConfig().html);
-            if (diff.added.length > 0) {
-              conversation.addUserText(dedent`
-                ${retryPrompt}
-                The page has changed. The following elements have been added
-                Try to interact with them in case they are relevant to the scenario
+          const isSameUrl = previousState?.url === currentState.url;
 
-                <page_html>
-                ${await minifyHtml(diff.subtree)}
+          switch (true) {
+            case !isSameUrl || !previousState:
+              debugLog(`Page state has changed. Researching ${currentState.url}`);
+              const newResearch = await this.researcher.research(currentState);
+              conversation.addUserText(dedent`
+                The page state has changed. Here is the change page
+
+                <page>
+                  INITIAL URL: ${initialState.url}
+                  CURRENT URL: ${currentState.url}
+
+                  PAGE STATE:
+                  <page_summary>
+                  ${currentState.toAiContext()}
+                  </page_summary>
+                  <page_html>
+                  ${await currentState.combinedHtml()}
+                  </page_html>
+
+                  <page_ui_map>
+                  ${newResearch}
+                  </page_ui_map>
+                </page>
+
+                When calling click() and type() tools use only HTML provided in <page_html> context.
+                When calling clickXY follow coordinates from <page_html>.
+              `);
+              break;
+            case isSameUrl:
+              const diff = await currentState.diff(ActionResult.fromState(previousState));
+              await diff.calculate();
+              debugLog(`Page has changed. Diffing ${currentState.url}`, diff.ariaChanged, diff.htmlSubtree);
+              conversation.addUserText(dedent`
+                The page has changed. 
+
+                Aria snapshots diff:
+
+                <aria>
+                ${diff.ariaChanged}
+                </aria>
+
+
+                ${
+                  diff.ariaRemoved
+                    ? `
+                  Removed elements:
+                  <removed_aria_elements>
+                    ${diff.ariaRemoved}
+                  </removed_aria_elements>
+                  `
+                    : ''
+                }
+
+                New Elements:
+                <page_new_html>
+                ${await minifyHtml(diff.htmlSubtree)}
                 </page_html>
-              `);
-            } else {
-              conversation.addUserText(dedent`
-                ${retryPrompt}
-                The page was not changed. No new elements were added!
-                Try doing something differently
-              `);
-            }
-          } else {
-            const newResearch = await this.researcher.research(newActionResult);
-            conversation.addUserText(dedent`
-              ${retryPrompt}
-              The page state has changed. Here is the change page
 
-              <page>
-                INITIAL URL: ${actionResult.url}
-                CURRENT URL: ${newActionResult.url}
+                Current Page State is:
 
-                PAGE STATE:
                 <page_summary>
-                ${await newActionResult.toAiContext()}
+                ${currentState.toAiContext()}
                 </page_summary>
-                <page_html>
-                ${await newActionResult.combinedHtml()}
-                </page_html>
+              `);
+              break;
 
-                <page_ui_map>
-                ${newResearch}
-                </page_ui_map>
-              </page>
-
-              When calling click() and type() tools use only HTML provided in <page_html> context.              
-              If you don't see element you need to interact with -> call reset() to navigate back.
-            `);
+            case isSameUrl && !diff.hasChanges():
+              conversation.addUserText('Page did not change from previous state.');
+              break;
+            default:
+              conversation.addUserText(retryPrompt);
           }
         }
+
+        const progressReport = await this.analyzeProgress(iteration, task, currentState);
+        if (progressReport) {
+          conversation.addUserText(progressReport);
+        }
+
+        stateId = currentState.id;
 
         const result = await this.provider.invokeConversation(conversation, tools, {
           maxToolRoundtrips: 5,
           toolChoice: 'required',
         });
+
+        debugLog(result?.toolExecutions);
 
         if (task.hasFinished) {
           stop();
@@ -181,12 +237,6 @@ export class Tester implements Agent {
         }
 
         if (!result) throw new Error('Failed to get response from provider');
-
-        lastResponse = result.response.text;
-
-        if (lastResponse) {
-          task.addNote(lastResponse);
-        }
 
         if (iteration >= this.MAX_ITERATIONS) {
           task.addNote('Max iterations reached. Stopped');
@@ -197,7 +247,6 @@ export class Tester implements Agent {
       {
         maxAttempts: this.MAX_ITERATIONS,
         catch: async ({ error, stop }) => {
-          task.status = 'failed';
           tag('error').log(`Test execution error: ${error}`);
           debugLog(error);
           stop();
@@ -205,9 +254,10 @@ export class Tester implements Agent {
       }
     );
 
+    await this.finalReview(task);
     offStateChange();
-    this.explorer.trackSteps(false);
-    this.finishTest(task);
+    await this.finishTest(task);
+    this.explorer.stopTest(task);
 
     return {
       success: task.isSuccessful,
@@ -244,7 +294,7 @@ export class Tester implements Agent {
     </task>
 
     <approach>
-    1. Provide reasoning for your next action in your response
+    1. Provide explanation for your next action in your response
     2. Analyze the current page state and identify elements needed for the scenario
     3. Plan the sequence of actions required to achieve the scenario goal or expected outcomes
     4. Execute actions step by step using the available tools
@@ -297,10 +347,122 @@ export class Tester implements Agent {
     `;
   }
 
-  private async buildTestPrompt(task: Test, actionResult: ActionResult): Promise<string> {
+  private async analyzeProgress(iteration: number, task: Test, actionResult: ActionResult): Promise<string> {
+    if (iteration % 5 !== 0) return '';
+
+    const notes = task.getPrintableNotes() || 'No notes recorded yet.';
+    const html = await minifyHtml(await actionResult.combinedHtml());
+    const schema = z.object({
+      assessment: z.string().describe('Short review of current progress toward the main scenario goal'),
+      suggestion: z.string().describe('Specific next action recommendation'),
+      recommendReset: z.boolean().optional().describe('Whether calling reset() is advised before continuing'),
+    });
+
+    const response = await this.provider.generateObject(
+      [
+        {
+          role: 'system',
+          content: dedent`
+            You are reviewing ongoing exploratory testing.
+            Analyze if the current actions align with the main scenario goal and propose the most useful next step.
+          `,
+        },
+        {
+          role: 'user',
+          content: dedent`
+            SCENARIO GOAL: ${task.scenario}
+            CURRENT URL: ${actionResult.url}
+
+            <current_state>
+            ${await actionResult.toAiContext()}
+            </current_state>
+
+            <current_html>
+            ${html}
+            </current_html>
+
+            <notes>
+            ${notes}
+            </notes>
+
+            Provide a short assessment, suggest the next best action, and indicate if reset() is recommended.
+          `,
+        },
+      ],
+      schema
+    );
+
+    const result = response?.object;
+    if (!result) return '';
+
+    const recommendation = result.recommendReset ? 'AI suggests considering reset() before proceeding.' : '';
+    const report = dedent`
+      Progress checkpoint after ${iteration} steps:
+      ${result.assessment}
+      Next suggestion: ${result.suggestion}
+      ${recommendation}
+    `;
+
+    task.addNote(result.assessment);
+    return report;
+  }
+
+  private async finalReview(task: Test): Promise<void> {
+    const notes = task.notesToString() || 'No notes recorded.';
+    const schema = z.object({
+      summary: z.string().describe('Concise overview of the test findings'),
+      scenarioAchieved: z.boolean().describe('Indicates if the scenario goal appears satisfied'),
+      recommendation: z.string().optional().describe('Follow-up suggestion if needed'),
+    });
+
+    const response = await this.provider.generateObject(
+      [
+        {
+          role: 'system',
+          content: dedent`
+            You evaluate exploratory test notes.
+            Summarize findings and decide whether the main scenario goal is fulfilled.
+          `,
+        },
+        {
+          role: 'user',
+          content: dedent`
+            Scenario: ${task.scenario}
+
+            <notes>
+            ${notes}
+            </notes>
+
+            <steps>
+            ${task.steps.map((s) => `- ${s}`).join('\n')}
+            </steps>
+
+            Based on the notes check if the scenario goal was actually accomplished.
+            Write a brief one line summary (one line only) to summarize the test findings.
+          `,
+        },
+      ],
+      schema
+    );
+
+    const result = response?.object;
+    if (!result) return;
+
+    task.summary = result.summary;
+    if (result.scenarioAchieved) {
+      task.addNote(result.summary, 'passed', true);
+    } else {
+      task.addNote(result.summary);
+    }
+
+    if (result.recommendation) {
+      task.addNote(result.recommendation);
+    }
+  }
+
+  private getKnowledge(actionResult: ActionResult): string {
     const knowledgeFiles = this.explorer.getKnowledgeTracker().getRelevantKnowledge(actionResult);
 
-    let knowledge = '';
     if (knowledgeFiles.length > 0) {
       const knowledgeContent = knowledgeFiles
         .map((k) => k.content)
@@ -308,7 +470,7 @@ export class Tester implements Agent {
         .join('\n\n');
 
       tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge file(s)`);
-      knowledge = dedent`
+      return dedent`
         <hint>
         Here is relevant knowledge for this page:
 
@@ -317,7 +479,13 @@ export class Tester implements Agent {
       `;
     }
 
-    const research = this.researcher.research(actionResult);
+    return '';
+  }
+
+  private async buildTestPrompt(task: Test, actionResult: ActionResult): Promise<string> {
+    const knowledge = this.getKnowledge(actionResult);
+
+    const research = await this.researcher.research(actionResult);
 
     const html = await actionResult.combinedHtml();
 
@@ -343,7 +511,7 @@ export class Tester implements Agent {
       - Only call stop() if the scenario is completely irrelevant to this page
       - Each tool call will return the updated page state
 
-      IMPORTANT: Provide reasoning for each action you take in your response text before calling tools.
+      IMPORTANT: Provide explanation for each action you take in your response text before calling tools.
       </task>
 
       <initial_page>
@@ -371,6 +539,8 @@ export class Tester implements Agent {
       - Use only elements that exist in the provided HTML
       - Use click() for buttons, links, and clickable elements
       - Use type() for text input (with optional locator parameter)
+      - Use form() for forms with multiple inputs
+      - when creating or editing items via form() or type() and you have no restrictions on string values, prefer use combination of pet names+latin words
       - Systematically use note() to write your findings, planned actions, observations, etc.
       - Use reset() to navigate back to ${actionResult.url} if needed. Do not call it if you are already on the initial page.
       - Call success() when you see success/info message on a page or when expected outcome is achieved
@@ -382,7 +552,9 @@ export class Tester implements Agent {
     `;
   }
 
-  private createTestFlowTools(task: Test, resetUrl: string) {
+  private createTestFlowTools(task: Test) {
+    const resetUrl = task.startUrl;
+    const visitedUrls = task.getVisitedUrls();
     return {
       reset: tool({
         description: dedent`
@@ -395,7 +567,7 @@ export class Tester implements Agent {
           reason: z.string().optional().describe('Explanation why you need to navigate'),
         }),
         execute: async ({ reason }) => {
-          if (this.explorer.getStateManager().getCurrentState()?.url === resetUrl) {
+          if (this.explorer.getStateManager().getCurrentState()?.url === resetUrl!) {
             return {
               success: false,
               message: 'Reset failed - already on initial page!',
@@ -403,8 +575,175 @@ export class Tester implements Agent {
               action: 'reset',
             };
           }
-          task.addNote(reason || 'Resetting to initial page');
-          return await toolAction(this.explorer.createAction(), (I) => I.amOnPage(resetUrl), 'reset', {})();
+          const explanation = reason || 'Resetting to initial page';
+          const targetUrl = resetUrl!;
+          task.addNote(explanation);
+          const resetAction = this.explorer.createAction();
+          const success = await resetAction.attempt((I) => I.amOnPage(targetUrl), explanation);
+
+          if (success) {
+            return {
+              success: true,
+              action: 'reset',
+              message: `Navigated back to ${targetUrl}`,
+              explanation,
+            };
+          }
+
+          const result: any = {
+            success: false,
+            action: 'reset',
+            message: `Failed to navigate back to ${targetUrl}`,
+            suggestion: 'Try navigating manually or use stop() if the scenario can no longer continue.',
+            explanation,
+          };
+
+          if (resetAction.lastError) {
+            result.error = resetAction.lastError.toString();
+          }
+
+          return result;
+        },
+      }),
+      // navigate: tool({
+      //   description: dedent`
+      //     Navigate to a page that was already visited during this test.
+      //     If you think you are on the wrong page call this tool to navigate to the correct page.
+      //     Only use URLs that are already in the navigation history of this scenario.
+
+      //     Available URLs: ${visitedUrls.join(', ')}
+      //   `,
+      //   inputSchema: z.object({
+      //     url: z.string().describe('Previously visited URL to revisit'),
+      //   }),
+      //   execute: async ({ url }) => {
+      //     console.log('visitedUrls', visitedUrls);
+      //     return;
+      //     if (!visitedUrls.includes(url)) {
+      //       return {
+      //         success: false,
+      //         action: 'navigate',
+      //         message: `You can navigate only to already visited URLs: ${visitedUrls.join(', ')}`,
+      //         suggestion: `Use only previously visited URLs: ${visitedUrls.join(', ')}`,
+      //       };
+      //     }
+
+      //     await this.explorer.visit(url);
+      //     task.addNote(`Navigated to ${url}`, 'passed');
+      //     return {
+      //       success: true,
+      //       action: 'navigate',
+      //       message: `Navigated to ${url}`,
+      //     };
+      //   },
+      // }),
+      screenshot: tool({
+        description: dedent`
+          Capture the current page as a screenshot and analyze it when an expected element is missing.
+          Use it to get UI coordinates from researcher output and follow up with clickXY if necessary.
+        `,
+        inputSchema: z.object({
+          lookFor: z.string().describe('Element or information you want to locate on the screenshot.'),
+        }),
+        execute: async ({ lookFor }) => {
+          const timestamp = Date.now();
+          const fileName = `look-for-${timestamp}.png`;
+          const explanation = `Capture screenshot to investigate ${lookFor}`;
+          const stateManager = this.explorer.getStateManager();
+          const baseState = stateManager.getCurrentState();
+          let screenshotFile = baseState?.screenshotFile;
+
+          if (!screenshotFile) {
+            const screenshotAction = this.explorer.createAction();
+            const captured = await screenshotAction.attempt((I) => I.saveScreenshot(fileName), explanation);
+
+            if (!captured) {
+              const failure: Record<string, any> = {
+                success: false,
+                action: 'screenshot',
+                lookFor,
+                message: 'Failed to capture screenshot.',
+                suggestion: 'Ensure the page is fully loaded and try again.',
+              };
+
+              if (screenshotAction.lastError) {
+                failure.error = screenshotAction.lastError.toString();
+              }
+
+              return failure;
+            }
+
+            screenshotFile = fileName;
+          }
+
+          const stateForAnalysis: WebPageState = {
+            ...(baseState ?? { url: '/', fullUrl: '/', title: '' }),
+            screenshotFile,
+          };
+
+          let analysis: string | null = null;
+          let coordinatesHint: string | undefined;
+          let coordinates: { x: number; y: number } | undefined;
+
+          try {
+            analysis = await this.researcher.imageContent(stateForAnalysis, lookFor);
+
+            if (analysis) {
+              const relevantLine = analysis
+                .split('\n')
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .find((line) => line.toLowerCase().includes(lookFor.toLowerCase()) || /\d+X,\s*\d+Y/i.test(line));
+
+              if (relevantLine) {
+                coordinatesHint = relevantLine;
+                const match = relevantLine.match(/(\d+)X,\s*(\d+)Y/i);
+                if (match) {
+                  coordinates = { x: Number(match[1]), y: Number(match[2]) };
+                }
+              }
+            }
+          } catch (error) {
+            debugLog('Screenshot analysis failed', error);
+            const failure: Record<string, any> = {
+              success: false,
+              action: 'screenshot',
+              lookFor,
+              message: 'Failed to analyze screenshot.',
+              suggestion: 'Ensure the page is loaded or tab is focused, then retry or use a different approach.',
+            };
+
+            if (error instanceof Error) {
+              failure.error = error.message;
+            } else if (typeof error === 'string') {
+              failure.error = error;
+            }
+
+            return failure;
+          }
+
+          const outputDir = ConfigParser.getInstance().getOutputDir();
+          const screenshotPath = join(outputDir, screenshotFile);
+
+          let suggestion = 'Inspect the analysis to derive locators or coordinates, then proceed with clickXY if needed.';
+          if (coordinates) {
+            suggestion = `Use clickXY with x=${coordinates.x} and y=${coordinates.y} if interaction is required.`;
+          } else if (coordinatesHint) {
+            suggestion = `Use clickXY with the coordinates mentioned here: ${coordinatesHint}.`;
+          }
+
+          return {
+            success: true,
+            action: 'screenshot',
+            lookFor,
+            message: `Screenshot captured for ${lookFor}.`,
+            screenshotFile,
+            screenshotPath,
+            analysis: analysis || undefined,
+            coordinatesHint,
+            coordinates,
+            suggestion,
+          };
         },
       }),
       stop: tool({
@@ -449,7 +788,6 @@ export class Tester implements Agent {
           tag('success').log(`✔ ${outcome}`);
           task.addNote(outcome, 'passed', true);
 
-          task.updateStatus();
           if (task.isComplete()) {
             task.finish();
           }
@@ -465,7 +803,9 @@ export class Tester implements Agent {
         description: dedent`
           Call this tool if expected result cannot be achieved or has failed.
           Also call it if you see an error/alert/warning message on a page.
-          Call it you unsuccesfully tried multiple iterations and failed
+          Call it you unsuccesfully tried multiple iterations and failed.
+
+          If the expected result was expected to fail call success() instead of fail().
         `,
         inputSchema: z.object({
           outcome: z.string().describe('The exact expected outcome text that failed'),
@@ -474,7 +814,6 @@ export class Tester implements Agent {
           tag('warning').log(`✘ ${outcome}`);
           task.addNote(outcome, 'failed', true);
 
-          task.updateStatus();
           if (task.isComplete()) {
             task.finish();
           }

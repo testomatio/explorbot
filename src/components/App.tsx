@@ -28,6 +28,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   } | null>(null);
 
   const startMain = React.useCallback(async (): Promise<(() => void) | undefined> => {
+    process.env.INK_RUNNING = 'true';
     try {
       setShowInput(false);
       explorBot.setUserResolve(async (error?: Error) => {

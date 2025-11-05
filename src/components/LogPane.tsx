@@ -76,7 +76,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
 
   const renderLogEntry = (log: TaggedLogEntry, index: number) => {
     // Skip debug logs when not in verbose mode AND DEBUG env var is not set
-    const shouldShowDebug = verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
+    const shouldShowDebug = verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:')) || process.env.DEBUG === '*';
     if (log.type === 'debug' && !shouldShowDebug) {
       return null;
     }

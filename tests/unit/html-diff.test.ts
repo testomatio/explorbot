@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { htmlDiff } from '../../src/utils/html-diff.ts';
 
 describe('HTML Diff', () => {
-  it('should detect no changes in identical HTML', () => {
+  it('should detect no changes in identical HTML', async () => {
     const html1 = `
       <html>
         <body>
@@ -21,7 +21,7 @@ describe('HTML Diff', () => {
       </html>
     `;
 
-    const result = htmlDiff(html1, html2);
+    const result = await htmlDiff(html1, html2);
 
     expect(result.similarity).toBe(100);
     expect(result.added).toHaveLength(0);
@@ -30,7 +30,7 @@ describe('HTML Diff', () => {
     expect(result.subtree).toBe('');
   });
 
-  it('should detect added text content', () => {
+  it('should detect added text content', async () => {
     const html1 = `
       <html>
         <body>
@@ -50,7 +50,7 @@ describe('HTML Diff', () => {
       </html>
     `;
 
-    const result = htmlDiff(html1, html2);
+    const result = await htmlDiff(html1, html2);
 
     expect(result.similarity).toBeLessThan(100);
     expect(result.added).toContain('TEXT:This is a test paragraph.');
@@ -61,7 +61,7 @@ describe('HTML Diff', () => {
     expect(result.subtree).toContain('<button>Click me</button>');
   });
 
-  it('should detect removed elements without subtree', () => {
+  it('should detect removed elements without subtree', async () => {
     const html1 = `
       <html>
         <body>
@@ -81,7 +81,7 @@ describe('HTML Diff', () => {
       </html>
     `;
 
-    const result = htmlDiff(html1, html2);
+    const result = await htmlDiff(html1, html2);
 
     expect(result.similarity).toBeLessThan(100);
     expect(result.removed).toContain('A:Login');
@@ -89,7 +89,7 @@ describe('HTML Diff', () => {
     expect(result.subtree).toBe('');
   });
 
-  it('should detect form field changes and additions', () => {
+  it('should detect form field changes and additions', async () => {
     const html1 = `
       <form>
         <input type="text" name="username" placeholder="Enter username">
@@ -105,7 +105,7 @@ describe('HTML Diff', () => {
       </form>
     `;
 
-    const result = htmlDiff(html1, html2);
+    const result = await htmlDiff(html1, html2);
 
     expect(result.similarity).toBeLessThan(100);
     expect(result.added).toContain('INPUT:Enter password');
@@ -116,18 +116,18 @@ describe('HTML Diff', () => {
     expect(result.added).toContain('BUTTON:Login');
   });
 
-  it('should handle HTML fragments', () => {
+  it('should handle HTML fragments', async () => {
     const html1 = '<div>Hello world</div>';
     const html2 = '<div>Hello world <span>extra</span></div>';
 
-    const result = htmlDiff(html1, html2);
+    const result = await htmlDiff(html1, html2);
 
     expect(result.similarity).toBeLessThan(100);
     expect(result.added.length).toBeGreaterThan(0);
     expect(result.subtree).toContain('<span>extra</span>');
   });
 
-  it('should calculate similarity percentage correctly', () => {
+  it('should calculate similarity percentage correctly', async () => {
     const html1 = `
       <html>
         <body>
@@ -150,14 +150,14 @@ describe('HTML Diff', () => {
       </html>
     `;
 
-    const result = htmlDiff(html1, html2);
+    const result = await htmlDiff(html1, html2);
 
     expect(result.similarity).toBeGreaterThan(30);
     expect(result.similarity).toBeLessThan(40);
     expect(result.subtree).toBe('');
   });
 
-  it('should retain ancestors for nested additions', () => {
+  it('should retain ancestors for nested additions', async () => {
     const original = `
       <ul>
         <li>First item</li>
@@ -171,7 +171,7 @@ describe('HTML Diff', () => {
       </ul>
     `;
 
-    const result = htmlDiff(original, modified);
+    const result = await htmlDiff(original, modified);
 
     expect(result.subtree).toContain('<html');
     expect(result.subtree).toContain('<body>');
@@ -180,18 +180,18 @@ describe('HTML Diff', () => {
     expect(result.subtree).not.toContain('First item');
   });
 
-  it('should capture text-only changes', () => {
+  it('should capture text-only changes', async () => {
     const original = '<button>Submit</button>';
     const modified = '<button>Confirm</button>';
 
-    const result = htmlDiff(original, modified);
+    const result = await htmlDiff(original, modified);
 
     expect(result.subtree).toBe('');
     expect(result.added).toContain('BUTTON:Confirm');
     expect(result.removed).toContain('BUTTON:Submit');
   });
 
-  it('should sanitize scripts and non-semantic nodes from diff output', () => {
+  it('should sanitize scripts and non-semantic nodes from diff output', async () => {
     const original = `
       <html>
         <body>
@@ -211,7 +211,7 @@ describe('HTML Diff', () => {
       </html>
     `;
 
-    const result = htmlDiff(original, modified);
+    const result = await htmlDiff(original, modified);
 
     expect(result.subtree).not.toContain('<script');
     expect(result.subtree).not.toContain('<iframe');

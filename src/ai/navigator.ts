@@ -51,12 +51,12 @@ class Navigator implements Agent {
   `;
   private explorer: Explorer;
 
-  constructor(explorer: Explorer, provider: Provider, experienceCompactor: ExperienceCompactor) {
+  constructor(explorer: Explorer, provider: Provider, experienceCompactor: ExperienceCompactor, experienceTracker?: ExperienceTracker) {
     this.provider = provider;
     this.explorer = explorer;
     this.experienceCompactor = experienceCompactor;
     this.knowledgeTracker = new KnowledgeTracker();
-    this.experienceTracker = new ExperienceTracker();
+    this.experienceTracker = experienceTracker || new ExperienceTracker();
   }
 
   async visit(url: string): Promise<void> {
@@ -79,6 +79,7 @@ class Navigator implements Agent {
         this.currentUrl = url;
         await this.resolveState(originalMessage, actionResult);
       }
+      await action.caputrePageWithScreenshot();
     } catch (error) {
       console.error(`Failed to visit page ${url}:`, error);
       throw error;
@@ -112,10 +113,12 @@ class Navigator implements Agent {
       experience = dedent`
       <experience>
       Here is the experience of interacting with the page.
-      Learn from it to not repeat the same mistakes.
+      Learn from it AND DO NOT REPEAT THE SAME MISTAKES.
       If there was found successful solution to an issue, propose it as a first solution.
-      If there is no successful solution, analyze failed intentions and actions and propose new solutions.
-      Focus on successful solutions and avoid failed locators.
+      If there are no successful solutions, analyze failed intentions and actions to avoid them.
+      Do not try again same failed solutions
+
+      Focus on successful solutions and avoid actions and locators that caused errors in past.
 
       ${experienceContent}
 
@@ -149,9 +152,9 @@ class Navigator implements Agent {
 
       ${knowledge}
 
-      ${experience}
-
       ${this.actionRule()}
+
+      ${experience}
 
       ${this.outputRule()}
     `;
@@ -189,7 +192,7 @@ class Navigator implements Agent {
         }
 
         tag('step').log(`Attempting resolution: ${codeBlock}`);
-        resolved = await this.currentAction.attempt(codeBlock, iteration, message);
+        resolved = await this.currentAction.attempt(codeBlock, message);
 
         if (resolved) {
           tag('success').log('Navigation resolved successfully');

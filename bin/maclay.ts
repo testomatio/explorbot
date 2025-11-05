@@ -19,6 +19,8 @@ program
   .option('-p, --path <path>', 'Working directory path')
   .option('-s, --show', 'Show browser window')
   .option('--headless', 'Run browser in headless mode (opposite of --show)')
+  .option('--freeride', 'Continuously explore and navigate to new pages')
+  .option('--incognito', 'Run without recording experiences')
   .helpOption('-h, --help', 'Show this help message')
   .action(exploreCommand);
 

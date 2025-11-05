@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": ["node_modules/**", "dist/**", "build/**", "coverage/**", "*.min.js", "*.min.css", "package-lock.json", "yarn.lock", "bun.lock", ".git/**", ".DS_Store", "*.log", "output/**"]
+    "ignore": ["node_modules/**", "dist/**", "build/**", "coverage/**", ".bun/**", "*.min.js", "*.min.css", "package-lock.json", "yarn.lock", "bun.lock", ".git/**", ".DS_Store", "*.log", "output/**"]
   },
   "formatter": {
     "enabled": true,

@@ -13,6 +13,8 @@ bun.lockb
 .env.test.local
 .env.production.local
 
+.bun
+
 # Build outputs
 dist/
 build/

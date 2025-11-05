@@ -1,7 +1,7 @@
 import { parse, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
 import type { HtmlConfig } from '../config.ts';
-import { sanitizeHtmlDocument } from './html.ts';
+import { minifyHtml, sanitizeHtmlDocument } from './html.ts';
 
 export interface HtmlDiffResult {
   added: string[];
@@ -28,9 +28,155 @@ type ParentNode = parse5TreeAdapter.Document | parse5TreeAdapter.Element;
 type NodeMap = Map<string, ElementNode>;
 
 /**
+ * Get text content from an element node.
+ */
+function getTextContent(element: parse5TreeAdapter.Element): string {
+  let text = '';
+  function processNode(node: parse5TreeAdapter.Node) {
+    if (node.nodeName === '#text') {
+      text += (node as parse5TreeAdapter.TextNode).value;
+    } else if ('childNodes' in node) {
+      node.childNodes.forEach(processNode);
+    }
+  }
+  processNode(element);
+  return text;
+}
+
+/**
+ * Extract document title from a parsed HTML document.
+ */
+function getDocumentTitle(document: parse5TreeAdapter.Document): string | null {
+  if (!document.childNodes) return null;
+
+  const htmlElement = document.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'html');
+
+  if (!htmlElement || !htmlElement.childNodes) {
+    return null;
+  }
+
+  const headElement = htmlElement.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'head');
+
+  if (!headElement || !headElement.childNodes) {
+    return null;
+  }
+
+  const titleElement = headElement.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'title');
+
+  if (!titleElement) {
+    return null;
+  }
+
+  const text = getTextContent(titleElement).trim();
+  return text.length > 0 ? text : null;
+}
+
+/**
+ * Ensure document has a title element in head section.
+ */
+function ensureDocumentTitle(document: parse5TreeAdapter.Document, titleText: string | null): void {
+  if (!titleText || !document.childNodes) {
+    return;
+  }
+
+  const htmlElement = document.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'html');
+
+  if (!htmlElement) {
+    return;
+  }
+
+  const namespace = htmlElement.namespaceURI || 'http://www.w3.org/1999/xhtml';
+
+  let headElement = htmlElement.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'head');
+
+  if (!headElement) {
+    headElement = {
+      nodeName: 'head',
+      tagName: 'head',
+      attrs: [],
+      namespaceURI: namespace,
+      childNodes: [],
+      parentNode: htmlElement,
+    } as parse5TreeAdapter.Element;
+
+    // Insert head before body if possible, otherwise prepend
+    const bodyIndex = htmlElement.childNodes.findIndex((node) => 'tagName' in node && node.tagName?.toLowerCase() === 'body');
+
+    if (bodyIndex === -1) {
+      htmlElement.childNodes.push(headElement);
+    } else {
+      htmlElement.childNodes.splice(bodyIndex, 0, headElement);
+    }
+  } else {
+    headElement.childNodes = [];
+  }
+
+  const titleElement: parse5TreeAdapter.Element = {
+    nodeName: 'title',
+    tagName: 'title',
+    attrs: [],
+    namespaceURI: namespace,
+    childNodes: [],
+    parentNode: headElement,
+  };
+
+  const textNode: parse5TreeAdapter.TextNode = {
+    nodeName: '#text',
+    value: titleText,
+  };
+
+  (textNode as any).parentNode = titleElement;
+  titleElement.childNodes.push(textNode);
+  headElement.childNodes.push(titleElement);
+}
+
+/**
+ * Type representing nodes that can have child nodes.
+ */
+type ParentNodeLike = parse5TreeAdapter.Document | parse5TreeAdapter.DocumentFragment | parse5TreeAdapter.Element;
+
+/**
+ * Check if a node has child nodes.
+ */
+function hasChildNodes(node: unknown): node is ParentNodeLike {
+  return typeof node === 'object' && node !== null && 'childNodes' in node && Array.isArray((node as any).childNodes);
+}
+
+/**
+ * Remove elements with specified tags from a node tree.
+ */
+function stripElementsByTag(node: ParentNodeLike, tagsToRemove: Set<string>): void {
+  if (!node.childNodes) return;
+
+  for (let i = node.childNodes.length - 1; i >= 0; i--) {
+    const child = node.childNodes[i];
+
+    // Remove comments
+    if (child.nodeName === '#comment') {
+      node.childNodes.splice(i, 1);
+      continue;
+    }
+
+    // Remove elements with matching tags
+    if ('tagName' in child && child.tagName) {
+      const tagName = child.tagName.toLowerCase();
+      if (tagsToRemove.has(tagName)) {
+        node.childNodes.splice(i, 1);
+        continue;
+      }
+      // Recursively process child elements
+      stripElementsByTag(child as ParentNodeLike, tagsToRemove);
+    } else if (hasChildNodes(child)) {
+      // Recursively process non-element nodes that have children
+      stripElementsByTag(child as ParentNodeLike, tagsToRemove);
+    }
+  }
+}
+
+/**
  * Compares two HTML documents and returns differences along with a diff subtree.
  */
-export function htmlDiff(originalHtml: string, modifiedHtml: string, htmlConfig?: HtmlConfig): HtmlDiffResult {
+export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlConfig?: HtmlConfig): Promise<HtmlDiffResult> {
   const originalDocument = parseDocument(originalHtml, htmlConfig);
   const modifiedDocument = parseDocument(modifiedHtml, htmlConfig);
 
@@ -43,7 +189,7 @@ export function htmlDiff(originalHtml: string, modifiedHtml: string, htmlConfig?
   const similarity = calculateSimilarity(originalLines, modifiedLines);
   const { added, removed } = findDifferences(originalLines, modifiedLines);
 
-  const { subtree, structuralTopLevelPaths } = buildDiffSubtree(originalDocument, modifiedDocument);
+  const { subtree, structuralTopLevelPaths } = await buildDiffSubtree(originalDocument, modifiedDocument);
 
   const structuralAdditions = structuralTopLevelPaths.map((path) => `ELEMENT:${path}`);
   const allAdded = [...added, ...structuralAdditions];
@@ -61,10 +207,91 @@ export function htmlDiff(originalHtml: string, modifiedHtml: string, htmlConfig?
 
 /**
  * Parse HTML into a document, wrapping fragments with html/body for consistency.
+ * Uses custom sanitization that removes iframes for diff purposes.
  */
 function parseDocument(html: string, htmlConfig?: HtmlConfig): DocumentNode {
-  return sanitizeHtmlDocument(html, htmlConfig);
+  const document = parse(html);
+  const documentTitle = getDocumentTitle(document);
+  sanitizeDocumentTreeForDiff(document);
+  ensureDocumentTitle(document, documentTitle);
+  return document;
 }
+
+/**
+ * Custom sanitization for html-diff that removes iframes in addition to standard non-semantic tags.
+ */
+function sanitizeDocumentTreeForDiff(document: parse5TreeAdapter.Document): void {
+  // Remove standard non-semantic tags
+  stripElementsByTag(document, new Set([...NON_SEMANTIC_TAGS, 'iframe']));
+  pruneDocumentHeadForDiff(document);
+}
+
+/**
+ * Prune non-essential elements from document head for diff purposes.
+ * Only keeps title element, removes everything else.
+ */
+function pruneDocumentHeadForDiff(document: parse5TreeAdapter.Document): void {
+  if (!document.childNodes) return;
+
+  const htmlElement = document.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'html');
+
+  if (!htmlElement || !htmlElement.childNodes) {
+    return;
+  }
+
+  const headElement = htmlElement.childNodes.find((node): node is parse5TreeAdapter.Element => 'tagName' in node && node.tagName?.toLowerCase() === 'head');
+
+  if (!headElement || !headElement.childNodes) {
+    return;
+  }
+
+  for (let i = headElement.childNodes.length - 1; i >= 0; i--) {
+    const child = headElement.childNodes[i];
+    if ('tagName' in child && child.tagName) {
+      const tagName = child.tagName.toLowerCase();
+      if (tagName !== 'title') {
+        headElement.childNodes.splice(i, 1);
+      }
+      continue;
+    }
+
+    // Remove non-element nodes (like text, comments)
+    headElement.childNodes.splice(i, 1);
+  }
+}
+
+// Copy NON_SEMANTIC_TAGS from html.ts to avoid circular imports
+const NON_SEMANTIC_TAGS = new Set([
+  'style',
+  'script',
+  'link',
+  'meta',
+  'base',
+  'template',
+  'slot',
+  'noscript',
+  'frame',
+  'frameset',
+  'object',
+  'embed',
+  'path',
+  'polygon',
+  'polyline',
+  'circle',
+  'ellipse',
+  'line',
+  'rect',
+  'defs',
+  'g',
+  'symbol',
+  'use',
+  'mask',
+  'pattern',
+  'clippath',
+  'animate',
+  'animatetransform',
+  'animatecolor',
+]);
 
 /**
  * Returns the body (preferred) or html element converted into HtmlNode for flattening.
@@ -145,7 +372,7 @@ const directTextDiffer = (current: ElementNode, previous: ElementNode): boolean 
 /**
  * Build a diff subtree representing new or changed elements in the modified document.
  */
-function buildDiffSubtree(originalDocument: DocumentNode, modifiedDocument: DocumentNode): { subtree: string; structuralTopLevelPaths: string[] } {
+async function buildDiffSubtree(originalDocument: DocumentNode, modifiedDocument: DocumentNode): Promise<{ subtree: string; structuralTopLevelPaths: string[] }> {
   const originalMap = collectElementMap(originalDocument);
   const modifiedMap = collectElementMap(modifiedDocument);
 
@@ -218,8 +445,11 @@ function buildDiffSubtree(originalDocument: DocumentNode, modifiedDocument: Docu
     diffMap.set(path, clone);
   }
 
+  const serialized = serialize(diffDocument).trim();
+  const compacted = serialized ? await minifyHtml(serialized) : '';
+
   return {
-    subtree: serialize(diffDocument).trim(),
+    subtree: compacted,
     structuralTopLevelPaths: [...addedTopLevel, ...changedTopLevel],
   };
 }

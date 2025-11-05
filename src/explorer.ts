@@ -1,6 +1,7 @@
-import path from 'node:path';
+import path, { join } from 'node:path';
 // @ts-ignore
 import * as codeceptjs from 'codeceptjs';
+import { createTest } from 'codeceptjs/lib/mocha/test.js';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
 import type { ExplorbotConfig } from './config.js';
@@ -9,6 +10,9 @@ import type { UserResolveFunction } from './explorbot.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import { StateManager } from './state-manager.js';
 import { createDebug, log, tag } from './utils/logger.js';
+import { Test } from './test-plan.ts';
+import { ActionResult } from './action-result.ts';
+import { Reporter, TestomatioReporter } from './reporter.ts';
 
 declare global {
   namespace NodeJS {
@@ -34,15 +38,17 @@ class Explorer {
   private knowledgeTracker!: KnowledgeTracker;
   config: ExplorbotConfig;
   private userResolveFn: UserResolveFunction | null = null;
-  private options?: { show?: boolean; headless?: boolean };
+  private options?: { show?: boolean; headless?: boolean; incognito?: boolean };
+  private reporter!: Reporter;
 
-  constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean }) {
+  constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean }) {
     this.config = config;
     this.aiProvider = aiProvider;
     this.options = options;
     this.initializeContainer();
-    this.stateManager = new StateManager();
+    this.stateManager = new StateManager({ incognito: this.options?.incognito });
     this.knowledgeTracker = new KnowledgeTracker();
+    this.reporter = new Reporter();
   }
 
   private initializeContainer() {
@@ -64,9 +70,7 @@ class Explorer {
     }
   }
 
-  private convertToCodeceptConfig(config: ExplorbotConfig): {
-    helpers: { Playwright: any };
-  } {
+  private convertToCodeceptConfig(config: ExplorbotConfig): any {
     const playwrightConfig = { ...config.playwright };
 
     if (this.options?.show !== undefined) {
@@ -101,6 +105,7 @@ class Explorer {
       helpers: {
         Playwright: {
           ...playwrightConfig,
+          highlightElement: true,
         },
       },
     };
@@ -170,6 +175,8 @@ class Explorer {
 
     this.listenToStateChanged();
 
+    codeceptjs.event.dispatcher.emit('global.before');
+    this.reporter.startRun();
     tag('success').log('Browser started, ready to explore');
 
     return I;
@@ -179,34 +186,77 @@ class Explorer {
     return new Action(this.actor, this.stateManager);
   }
 
-  visit(url: string) {
-    return this.createAction().execute(`I.amOnPage('${url}')`);
+  async visit(url: string) {
+    await this.closeOtherTabs();
+
+    const serializedUrl = JSON.stringify(url);
+    const currentState = this.stateManager.getCurrentState();
+    const actionResult = currentState ? ActionResult.fromState(currentState) : null;
+
+    const { statePush = false, wait, waitForElement } = this.knowledgeTracker.getStateParameters(actionResult!, ['statePush', 'wait', 'waitForElement']);
+
+    const action = this.createAction();
+
+    if (statePush) {
+      await action.execute(`I.executeScript(() => { window.history.pushState({}, '', ${serializedUrl}); window.dispatchEvent(new PopStateEvent('popstate')); })`);
+    } else {
+      await action.execute(`I.amOnPage(${serializedUrl})`);
+    }
+
+    if (wait !== undefined) {
+      console.log('Waiting for', wait);
+      await action.execute(`I.wait(${wait})`);
+    }
+
+    if (waitForElement) {
+      await action.execute(`I.waitForElement(${JSON.stringify(waitForElement)})`);
+    }
+
+    return action;
+  }
+
+  async switchToMainFrame() {
+    if (this.playwrightHelper.frame) {
+      debugLog('Switching to main frame');
+      await this.playwrightHelper.switchTo();
+    }
   }
 
   setUserResolve(userResolveFn: UserResolveFunction): void {
     this.userResolveFn = userResolveFn;
   }
 
-  trackSteps(enable = true) {
-    if (enable) {
-      codeceptjs.event.dispatcher.on('step.start', stepTracker);
-    } else {
-      codeceptjs.event.dispatcher.off('step.start', stepTracker);
-    }
-  }
-
   private listenToStateChanged(): void {
     if (!this.playwrightHelper) {
-      debugLog('⚠️ Playwright helper not available for state monitoring');
+      debugLog('Playwright helper not available for state monitoring');
       return;
     }
 
     try {
       const page = this.playwrightHelper.page;
       if (!page) {
-        debugLog('⚠️ Playwright page not available for state monitoring');
+        debugLog('Playwright page not available for state monitoring');
         return;
       }
+      const initialPage = page;
+      const context = this.playwrightHelper.page.context();
+
+      context.on('page', async (newPage: any) => {
+        if (newPage === initialPage) {
+          return;
+        }
+
+        tag('info').log('New browser tab detected. Switching to it');
+
+        await newPage.waitForLoadState();
+        await newPage.bringToFront();
+
+        this.playwrightHelper.page = newPage;
+
+        this.stateManager.updateStateFromBasic(await newPage.url(), await newPage.title(), 'navigation');
+
+        debugLog(`Successfully switched to new tab`);
+      });
 
       page.on('framenavigated', async (frame: any) => {
         if (frame !== page.mainFrame()) return;
@@ -220,26 +270,15 @@ class Explorer {
           debugLog('Failed to get page title:', error);
         }
 
-        // Update state from navigation
+        // // Update state from navigation
         this.stateManager.updateStateFromBasic(newUrl, newTitle, 'navigation');
 
         await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // try {
-        //   const action = this.createAction();
-        //   await action.execute('// Automatic state capture on navigation');
-        // } catch (error) {
-        //   const errorMessage = error instanceof Error ? error.message : String(error);
-        //   console.warn(
-        //     '⚠️ Failed to capture state on navigation:',
-        //     errorMessage
-        //   );
-        // }
       });
 
-      debugLog('👂 Listening for automatic state changes');
+      debugLog('Listening for automatic state changes');
     } catch (error) {
-      debugLog('⚠️ Failed to set up state change monitoring:', error);
+      debugLog('Failed to set up state change monitoring:', error);
     }
   }
 
@@ -248,17 +287,98 @@ class Explorer {
       return;
     }
 
+    codeceptjs.event.dispatcher.emit('global.after');
+    codeceptjs.event.dispatcher.emit('global.result');
+    this.reporter.finishRun();
     await this.playwrightHelper._stopBrowser();
     await codeceptjs.recorder.stop();
   }
+
+  async startTest(test: Test) {
+    // await this.reporter.reportTest(test);
+    const codeceptjsTest = toCodeceptjsTest(test);
+    const stepTracker = (step: any) => {
+      if (!step.toCode) {
+        return;
+      }
+      // if (step.name === 'fillField' || step.name === 'appendField') {
+      //   this.stateManager.getCurrentState()?.notes.push(`Filled field ${step.locator} with value ${step.value}`);
+      // }
+      if (step?.name?.startsWith('grab')) return;
+      test.addStep(step.toString());
+      if (!this.stateManager.getCurrentState()) return;
+
+      const lastScreenshot = ActionResult.fromState(this.stateManager.getCurrentState()!).screenshotFile;
+      if (!lastScreenshot) return;
+
+      test.addArtifact(join(ConfigParser.getInstance().getOutputDir(), lastScreenshot));
+    };
+    codeceptjs.event.dispatcher.emit('test.before', codeceptjsTest);
+    codeceptjs.event.dispatcher.emit('test.start', codeceptjsTest);
+    codeceptjs.event.dispatcher.on('step.passed', stepTracker);
+    codeceptjs.event.dispatcher.on('test.after', () => {
+      codeceptjs.event.dispatcher.off('step.passed', stepTracker);
+    });
+  }
+
+  async stopTest(test: Test) {
+    await this.reporter.reportTest(test);
+    const codeceptjsTest = toCodeceptjsTest(test);
+
+    if (test.isSuccessful) {
+      codeceptjsTest.state = 'passed';
+      codeceptjs.event.dispatcher.emit('test.passed', codeceptjsTest);
+    } else {
+      codeceptjsTest.state = 'failed';
+      codeceptjs.event.dispatcher.emit('test.failed', codeceptjsTest);
+    }
+
+    codeceptjs.event.dispatcher.emit('test.finish', codeceptjsTest);
+    codeceptjs.event.dispatcher.emit('test.after', codeceptjsTest);
+  }
+
+  private async closeOtherTabs(): Promise<void> {
+    if (!this.playwrightHelper) {
+      return;
+    }
+
+    const context = this.playwrightHelper.page.context();
+    const pages = context.pages();
+
+    if (pages.length <= 1) {
+      return;
+    }
+
+    debugLog(`Found ${pages.length} tabs, cleaning up to keep only the first one`);
+
+    const firstPage = pages[0];
+    const tabsToClose = pages.slice(1);
+
+    for (const page of tabsToClose) {
+      await page.close();
+      debugLog(`Closed extra tab: ${await page.url()}`);
+    }
+
+    await firstPage.bringToFront();
+
+    this.playwrightHelper.page = firstPage;
+
+    debugLog(`Cleaned up tabs, now focused on: ${await firstPage.url()}`);
+  }
 }
 
-function stepTracker(step: any) {
-  if (!step.toCode) {
-    return;
-  }
-  if (step?.name?.startsWith('grab')) return;
-  tag('step').log(step.toCode());
+function toCodeceptjsTest(test: Test): any {
+  const parent = {
+    title: 'Auto-Explorotary Testing',
+    fullTitle: () => 'Auto-Explorotary Testing',
+  };
+
+  const codeceptjsTest = createTest(test.scenario, () => {});
+  codeceptjsTest.parent = parent;
+  codeceptjsTest.fullTitle = () => parent.title + ' ' + test.scenario;
+  codeceptjsTest.state = 'pending';
+  codeceptjsTest.notes = test.getPrintableNotes();
+  return codeceptjsTest;
 }
 
 export default Explorer;

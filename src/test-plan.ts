@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import figures from 'figures';
 import { WebPageState } from './state-manager.ts';
 
@@ -6,41 +7,61 @@ export interface Note {
   message: string;
   status: 'passed' | 'failed' | null;
   expected?: boolean;
+  step?: boolean;
 }
 
 export class Test {
+  id: string;
   scenario: string;
   status: 'pending' | 'in_progress' | 'done';
   priority: 'high' | 'medium' | 'low' | 'unknown';
   expected: string[];
+  plannedSteps: string[];
   notes: Note[];
   steps: string[];
+  description?: string;
   states: WebPageState[];
-  startUrl?: string;
+  startUrl: string;
+  plan?: Plan;
+  summary: string;
+  artifacts: string[];
 
-  constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[]) {
+  constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
+    this.id = `${createHash('md5').update(scenario).digest('hex').slice(0, 8)}_${Date.now().toString(36)}`;
     this.scenario = scenario;
     this.status = 'pending';
     this.priority = priority;
     this.expected = Array.isArray(expectedOutcome) ? expectedOutcome : [expectedOutcome];
+    this.plannedSteps = plannedSteps;
     this.notes = [];
     this.steps = [];
     this.states = [];
+    this.startUrl = startUrl;
+    this.artifacts = [];
+    this.summary = '';
   }
 
   getPrintableNotes(): string[] {
-    const noteIcons = ['◴', '◵', '◶', '◷'];
-    let noteIndex = 0;
-
     return this.notes.map((n) => {
-      const icon = n.status === 'passed' ? figures.tick : n.status === 'failed' ? figures.cross : noteIcons[noteIndex++ % noteIcons.length];
+      const icon = n.status === 'passed' ? figures.tick : n.status === 'failed' ? figures.cross : figures.circle;
       const prefix = n.expected ? 'EXPECTED: ' : '';
-      return `${icon} ${prefix}${n.message}`;
+      return `${icon} ${n.message} ${prefix}`;
     });
+  }
+
+  getVisitedUrls({ localOnly = false }: { localOnly?: boolean } = {}): string[] {
+    if (this.plan && !localOnly) {
+      return this.plan.tests.flatMap((t) => t.getVisitedUrls({ localOnly: true }));
+    }
+    return [...new Set([this.startUrl, ...this.states.map((s) => s.url)].filter((value): value is string => Boolean(value) && value.trim() !== ''))];
   }
 
   notesToString(): string {
     return this.getPrintableNotes().join('\n');
+  }
+
+  addArtifact(artifact: string): void {
+    this.artifacts.push(artifact);
   }
 
   addNote(message: string, status: 'passed' | 'failed' | null = null, expected = false): void {
@@ -52,6 +73,10 @@ export class Test {
     if (isDuplicate) return;
 
     this.notes.push({ message, status, expected });
+  }
+
+  addState(state: WebPageState): void {
+    this.states.push(state);
   }
 
   addStep(text: string): void {
@@ -90,22 +115,6 @@ export class Test {
     return this.notes.filter((n) => n.expected && !!n.status).length === this.expected.length;
   }
 
-  updateStatus(): void {
-    if (this.hasAchievedAny() && this.isComplete()) {
-      this.status = 'success';
-      return;
-    }
-
-    if (this.isComplete() && this.notes.length && !this.notes.some((n) => n.status === 'passed')) {
-      this.status = 'failed';
-      return;
-    }
-
-    if (this.isComplete()) {
-      this.status = 'done';
-    }
-  }
-
   start(): void {
     this.status = 'in_progress';
     this.addNote('Test started');
@@ -113,7 +122,6 @@ export class Test {
 
   finish(): void {
     this.status = 'done';
-    this.updateStatus();
   }
 
   getRemainingExpectations(): string[] {
@@ -124,21 +132,17 @@ export class Test {
 
 export class Plan {
   title: string;
-  tests: Test[];
+  tests: Test[] = [];
   url?: string;
 
-  constructor(title: string, tests: Test[]) {
+  constructor(title: string) {
     this.title = title;
     if (title.startsWith('/')) this.url = title;
-    this.tests = tests;
   }
 
   addTest(test: Test): void {
+    test.plan = this;
     this.tests.push(test);
-  }
-
-  initialState(state: WebPageState): void {
-    this.url = state.url;
   }
 
   listTests(): Test[] {
@@ -172,10 +176,11 @@ export class Plan {
     let title = '';
     let currentTest: Test | null = null;
     let inRequirements = false;
+    let inSteps = false;
     let inExpected = false;
     let priority: 'high' | 'medium' | 'low' | 'unknown' = 'unknown';
 
-    const plan = new Plan('', []);
+    const plan = new Plan('');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -198,18 +203,28 @@ export class Plan {
         currentTest = new Test(scenario, priority, []);
         plan.addTest(currentTest);
         inRequirements = false;
+        inSteps = false;
         inExpected = false;
         continue;
       }
 
       if (currentTest && line === '## Requirements') {
         inRequirements = true;
+        inSteps = false;
+        inExpected = false;
+        continue;
+      }
+
+      if (currentTest && line === '## Steps') {
+        inRequirements = false;
+        inSteps = true;
         inExpected = false;
         continue;
       }
 
       if (currentTest && line === '## Expected') {
         inRequirements = false;
+        inSteps = false;
         inExpected = true;
         continue;
       }
@@ -219,9 +234,75 @@ export class Plan {
         continue;
       }
 
+      if (currentTest && inSteps && line.startsWith('* ')) {
+        let step = line.replace(/^\*\s+/, '');
+
+        // Check for multiline content (indented lines following the * line)
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextLine = lines[j];
+          const trimmedNext = nextLine.trim();
+
+          // Stop if we hit a new list item (line starting with * at the beginning)
+          if (nextLine.match(/^\*\s+/)) {
+            break;
+          }
+
+          // Stop if we hit a section marker or end marker
+          if (trimmedNext.startsWith('##') || trimmedNext.startsWith('<!--')) {
+            break;
+          }
+
+          // If line starts with spaces (indented), it's part of this step
+          if (nextLine.startsWith('  ')) {
+            step += '\n' + nextLine;
+            j++;
+          } else if (trimmedNext === '') {
+            // Stop on empty lines (they separate steps)
+            break;
+          } else {
+            break;
+          }
+        }
+
+        currentTest.plannedSteps.push(step);
+        i = j - 1; // Update loop counter to skip processed lines
+        continue;
+      }
+
       if (currentTest && inExpected && line.startsWith('* ')) {
-        const expectation = line.replace(/^\*\s+/, '');
+        let expectation = line.replace(/^\*\s+/, '');
+
+        // Check for multiline content (indented lines following the * line)
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextLine = lines[j];
+          const trimmedNext = nextLine.trim();
+
+          // Stop if we hit a new list item (line starting with * at the beginning)
+          if (nextLine.match(/^\*\s+/)) {
+            break;
+          }
+
+          // Stop if we hit a section marker or end marker
+          if (trimmedNext.startsWith('##') || trimmedNext.startsWith('<!--')) {
+            break;
+          }
+
+          // If line starts with spaces (indented), it's part of this expectation
+          if (nextLine.startsWith('  ')) {
+            expectation += '\n' + nextLine;
+            j++;
+          } else if (trimmedNext === '') {
+            // Stop on empty lines (they separate expectations)
+            break;
+          } else {
+            break;
+          }
+        }
+
         currentTest.expected.push(expectation);
+        i = j - 1; // Update loop counter to skip processed lines
         continue;
       }
 
@@ -244,10 +325,31 @@ export class Plan {
       content += `# ${test.scenario}\n\n`;
       content += '## Requirements\n';
       content += `${test.startUrl || 'Current page'}\n\n`;
+
+      if (test.plannedSteps.length > 0) {
+        content += '## Steps\n';
+        for (const step of test.plannedSteps) {
+          const lines = step.split('\n');
+          content += `* ${lines[0]}\n`;
+
+          // Add indented continuation lines
+          for (let i = 1; i < lines.length; i++) {
+            content += `${lines[i]}\n`;
+          }
+        }
+        content += '\n';
+      }
+
       content += '## Expected\n';
 
       for (const expectation of test.expected) {
-        content += `* ${expectation}\n`;
+        const lines = expectation.split('\n');
+        content += `* ${lines[0]}\n`;
+
+        // Add indented continuation lines
+        for (let i = 1; i < lines.length; i++) {
+          content += `${lines[i]}\n`;
+        }
       }
 
       content += '\n';
@@ -285,7 +387,10 @@ export class Plan {
       }
     }
 
-    const mergedPlan = new Plan(mergedTitle, mergedTests);
+    const mergedPlan = new Plan(mergedTitle);
+    for (const test of mergedTests) {
+      mergedPlan.addTest(test);
+    }
     if (mergedUrl) {
       mergedPlan.url = mergedUrl;
     }
@@ -311,6 +416,14 @@ export class Plan {
 
       if (test.startUrl) {
         content += `**Start URL:** ${test.startUrl}\n\n`;
+      }
+
+      if (test.plannedSteps.length > 0) {
+        content += '**Planned Steps:**\n';
+        for (const step of test.plannedSteps) {
+          content += `- ${step}\n`;
+        }
+        content += '\n';
       }
 
       if (test.expected.length > 0) {
