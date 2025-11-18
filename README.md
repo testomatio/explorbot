@@ -128,7 +128,7 @@ Explorbot provides a real-time TUI (Terminal User Interface) with three main are
 │   ⯈ AddScenario(Verify company name field is pre-populated, HIGH)                                  │
 │   ⯈ AddScenario(Change company name and verify persistence, HIGH)                                   │
 │   ⯈ AddScenario(Navigate away and return to verify name persists, HIGH)                            │
-│ Done. Press [ESC] to enable input                                                                   │
+│ Done. Press [ESC] to enable input. Press [CTRL + t] to toggle session timer                                                                          │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ > /plan user-management                                                                             │
@@ -153,6 +153,8 @@ Explorbot provides a real-time TUI (Terminal User Interface) with three main are
 
 **Tasks Pane**: Shows generated test scenarios with priorities and status
 
+**Session Timer**: An optional timer displayed next to the activity line at the bottom of the TUI. It shows how much time has been spent in the current Explorbot session and can be toggled on and off with the `CTRL + t` key.
+
 ### Available Commands
 
 **Application Commands:**
@@ -167,6 +169,12 @@ Explorbot provides a real-time TUI (Terminal User Interface) with three main are
 - `I.click(locator)` - Click elements on the page
 - `I.fillField(locator, value)` - Fill form inputs
 - All standard CodeceptJS commands are supported
+
+### Keyboard Shortcuts
+While using the TUI:
+- `ESC` — enable the input line when Explorbot is waiting for commands
+- `t` — toggle the session timer panel that shows elapsed time for the current session
+- `Ctrl + C` — exit the current Explorbot session
 
 ## Command Line Usage
 

@@ -32,7 +32,7 @@ const ActivityPane: React.FC = () => {
   if (!activity) {
     return (
       <Box height={1} paddingX={1}>
-        <Text dimColor>Done. Press [ESC] to enable input</Text>
+        <Text dimColor>Done. Press [ESC] to enable input. Press [CTRL + t] to toggle session timer.</Text>
       </Box>
     );
   }
