@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from 'ink';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CommandHandler } from '../command-handler.js';
 import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
 import type { StateTransition, WebPageState } from '../state-manager.js';
@@ -9,6 +9,7 @@ import InputPane from './InputPane.js';
 import LogPane from './LogPane.js';
 import StateTransitionPane from './StateTransitionPane.js';
 import TaskPane from './TaskPane.js';
+import SessionTimer from './SessionTimer.js';
 
 interface AppProps {
   explorBot: ExplorBot;
@@ -17,6 +18,8 @@ interface AppProps {
 }
 
 export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = false }: AppProps) {
+  const sessionStartedAtRef = useRef<number>(Date.now());
+  const [showSessionTimer, setShowSessionTimer] = useState(false);
   const [showInput, setShowInput] = useState(initialShowInput);
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
   const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
@@ -87,15 +90,22 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     return () => clearInterval(interval);
   }, [explorBot]);
 
-  // Handle keyboard input - ESC to enable input, Ctrl-C to exit
   useInput((input, key) => {
+    if (key.ctrl && input === 't') {
+      setShowSessionTimer((prev) => !prev);
+      return;
+    }
+
     if (key.escape) {
       setShowInput(true);
+      return;
     }
+
     if (key.ctrl && input === 'c') {
       process.exit(0);
     }
   });
+
 
   return (
     <Box flexDirection="column">
@@ -103,8 +113,17 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         <LogPane verboseMode={explorBot.getOptions()?.verbose || false} />
       </Box>
 
-      <Box height={3}>
+      <Box
+        height={3}
+        flexDirection="row"
+        justifyContent="space-between"
+        alignItems="center"
+        paddingX={1}
+      >
         <ActivityPane />
+        {showSessionTimer && (
+          <SessionTimer startedAt={sessionStartedAtRef.current} />
+        )}
       </Box>
 
       {showInput && <Box height={1} />}
