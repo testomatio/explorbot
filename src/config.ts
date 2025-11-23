@@ -29,6 +29,17 @@ interface PlaywrightConfig {
   args?: string[];
 }
 
+interface AgentConfig {
+  model?: string;
+}
+
+interface AgentsConfig {
+  tester?: AgentConfig;
+  navigator?: AgentConfig;
+  researcher?: AgentConfig;
+  planner?: AgentConfig;
+}
+
 interface AIConfig {
   provider: any;
   model: string;
@@ -43,6 +54,7 @@ interface AIConfig {
   visionModel?: string;
   maxAttempts?: number;
   retryDelay?: number;
+  agents?: AgentsConfig;
 }
 
 interface HtmlConfig {
@@ -89,7 +101,7 @@ const config: ExplorbotConfig = {
   },
 };
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig };
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig };
 
 export class ConfigParser {
   private static instance: ConfigParser;

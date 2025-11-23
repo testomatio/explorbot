@@ -35,6 +35,15 @@ export class Provider {
     this.provider = this.config.provider;
   }
 
+  getModelForAgent(agentName?: string): string {
+    if (!agentName) {
+      return this.config.model;
+    }
+
+    const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
+    return agentConfig?.model || this.config.model;
+  }
+
   private getRetryOptions(options: any = {}): RetryOptions {
     return {
       ...this.defaultRetryOptions,
@@ -42,17 +51,21 @@ export class Provider {
     };
   }
 
-  startConversation(systemMessage: string) {
-    return new Conversation([
-      {
-        role: 'system',
-        content: systemMessage,
-      },
-    ]);
+  startConversation(systemMessage: string, agentName?: string) {
+    const model = this.getModelForAgent(agentName);
+    return new Conversation(
+      [
+        {
+          role: 'system',
+          content: systemMessage,
+        },
+      ],
+      model
+    );
   }
 
   async invokeConversation(conversation: Conversation, tools?: any, options: any = {}): Promise<{ conversation: Conversation; response: any; toolExecutions?: any[] } | null> {
-    const response = tools ? await this.generateWithTools(conversation.messages, tools, options) : await this.chat(conversation.messages, options);
+    const response = tools ? await this.generateWithTools(conversation.messages, conversation.model, tools, options) : await this.chat(conversation.messages, conversation.model, options);
     conversation.addAssistantText(response.text);
     this.lastConversation = conversation;
 
@@ -69,13 +82,14 @@ export class Provider {
     return { conversation, response, toolExecutions };
   }
 
-  async chat(messages: ModelMessage[], options: any = {}): Promise<any> {
-    setActivity(`🤖 Asking ${this.config.model}`, 'ai');
+  async chat(messages: ModelMessage[], model: string, options: any = {}): Promise<any> {
+    setActivity(`🤖 Asking ${model}`, 'ai');
+    promptLog(`Using model: ${model}`);
 
     const config = {
       ...this.config,
       ...options,
-      model: this.provider(this.config.model),
+      model: this.provider(model),
     };
 
     promptLog(messages[messages.length - 1].content);
@@ -99,8 +113,9 @@ export class Provider {
     }
   }
 
-  async generateWithTools(messages: ModelMessage[], tools: any, options: any = {}): Promise<any> {
-    setActivity(`🤖 Asking ${this.config.model} with dynamic tools`, 'ai');
+  async generateWithTools(messages: ModelMessage[], model: string, tools: any, options: any = {}): Promise<any> {
+    setActivity(`🤖 Asking ${model} with dynamic tools`, 'ai');
+    promptLog(`Using model: ${model}`);
 
     const toolNames = Object.keys(tools || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
@@ -108,7 +123,7 @@ export class Provider {
     promptLog(messages[messages.length - 1].content);
 
     const config = {
-      model: this.provider(this.config.model),
+      model: this.provider(model),
       tools,
       maxToolRoundtrips: options.maxToolRoundtrips || 5,
       toolChoice: 'auto',
@@ -150,11 +165,13 @@ export class Provider {
     }
   }
 
-  async generateObject(messages: ModelMessage[], schema: any, options: any = {}): Promise<any> {
-    setActivity(`🤖 Asking ${this.config.model} for structured output`, 'ai');
+  async generateObject(messages: ModelMessage[], schema: any, model?: string, options: any = {}): Promise<any> {
+    const modelToUse = model || this.config.model;
+    setActivity(`🤖 Asking ${modelToUse} for structured output`, 'ai');
+    promptLog(`Using model: ${modelToUse}`);
 
     const config = {
-      model: this.provider(this.config.model),
+      model: this.provider(modelToUse),
       schema,
       ...this.config.config,
       ...options,

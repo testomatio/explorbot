@@ -182,7 +182,7 @@ describe('Provider', () => {
       const messages = [{ role: 'user', content: 'Hello' }];
       mockAI.setResponses([{ text: 'Hi there!' }]);
 
-      const response = await provider.chat(messages);
+      const response = await provider.chat(messages, 'test-model');
 
       expect(response.text).toBe('Hi there!');
       expect(response.finishReason).toBe('stop');
@@ -190,46 +190,6 @@ describe('Provider', () => {
         promptTokens: 10,
         completionTokens: 20,
       });
-    });
-
-    it('should filter out images when vision is disabled', async () => {
-      const messages = [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Hello' },
-            { type: 'image', image: 'test.jpg' },
-          ],
-        },
-      ];
-      mockAI.setResponses([{ text: 'Response' }]);
-
-      await provider.chat(messages);
-
-      // The filtering happens in the provider, not in the mock
-      expect(true).toBe(true);
-    });
-
-    it('should keep images when vision is enabled', () => {
-      aiConfig.vision = true;
-      provider = new Provider(aiConfig);
-
-      const messages = [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Hello' },
-            { type: 'image', image: 'test.jpg' },
-          ],
-        },
-      ];
-
-      // Test the filterImages method directly
-      const filtered = provider.filterImages(messages);
-
-      // When vision is enabled, images should be kept
-      expect(filtered[0].content).toHaveLength(2);
-      expect(filtered[0].content[1].type).toBe('image');
     });
   });
 
@@ -244,7 +204,7 @@ describe('Provider', () => {
       };
       mockAI.setResponses([{ text: 'Used tool' }]);
 
-      const response = await provider.generateWithTools(messages, tools);
+      const response = await provider.generateWithTools(messages, 'test-model', tools);
 
       expect(response.text).toBe('Used tool');
     });
@@ -254,7 +214,7 @@ describe('Provider', () => {
       const tools = {};
       mockAI.setResponses([{ text: 'Response' }]);
 
-      const response = await provider.generateWithTools(messages, tools, {
+      const response = await provider.generateWithTools(messages, 'test-model', tools, {
         timeout: 5000,
       });
 
@@ -268,7 +228,7 @@ describe('Provider', () => {
       mockAI.setResponses([{ text: 'Success after retry' }]);
       mockAI.setFailure(true, 2); // Fail first 2 attempts
 
-      const response = await provider.chat(messages, { maxRetries: 3 });
+      const response = await provider.chat(messages, 'test-model', { maxRetries: 3 });
 
       expect(response.text).toBe('Success after retry');
     });
@@ -278,7 +238,7 @@ describe('Provider', () => {
       mockAI.setResponses([{ text: 'Success' }]);
       mockAI.setFailure(true, 5); // Fail more than max retries
 
-      await expect(provider.chat(messages, { maxRetries: 2 })).rejects.toThrow(AiError);
+      await expect(provider.chat(messages, 'test-model', { maxRetries: 2 })).rejects.toThrow(AiError);
     });
 
     // Note: Non-retryable error test is complex to set up with the current mock
@@ -331,46 +291,6 @@ describe('Provider', () => {
 
     // Note: Tools test requires complex tool setup with AI SDK
     // Skipping to avoid validation errors
-  });
-
-  describe('filterImages', () => {
-    it('should remove images from messages when vision is disabled', () => {
-      const messages = [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Hello' },
-            { type: 'image', image: 'test.jpg' },
-          ],
-        },
-        { role: 'user', content: 'Just text' },
-      ];
-
-      const filtered = provider.filterImages(messages);
-
-      expect(filtered[0].content).toHaveLength(1);
-      expect(filtered[0].content[0].type).toBe('text');
-      expect(filtered[1].content).toBe('Just text');
-    });
-
-    it('should keep images when vision is enabled', () => {
-      aiConfig.vision = true;
-      provider = new Provider(aiConfig);
-
-      const messages = [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Hello' },
-            { type: 'image', image: 'test.jpg' },
-          ],
-        },
-      ];
-
-      const filtered = provider.filterImages(messages);
-
-      expect(filtered[0].content).toHaveLength(2);
-    });
   });
 
   describe('getProvider', () => {

@@ -90,7 +90,7 @@ export class Researcher implements Agent {
     debugLog('Researching web page:', actionResult.url);
     const prompt = this.buildResearchPrompt(actionResult, stateHtml);
 
-    const conversation = this.provider.startConversation(this.getSystemMessage());
+    const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
     conversation.addUserText(prompt);
 
     let screenshotAnalysis;
@@ -476,7 +476,8 @@ export class Researcher implements Agent {
       ${html}
     `;
 
-    const result = await this.provider.chat([{ role: 'user', content: prompt }]);
+    const model = this.provider.getModelForAgent('researcher');
+    const result = await this.provider.chat([{ role: 'user', content: prompt }], model);
 
     return result.text;
   }

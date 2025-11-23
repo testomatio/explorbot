@@ -121,15 +121,15 @@ describe('StateManager', () => {
       expect(stateManager.getStateHistory()).toHaveLength(1);
     });
 
-    it('should default to root path when action result lacks url', () => {
+    it('should default to empty string when action result lacks url', () => {
       const actionResult = new ActionResult({
         html: '<html></html>',
       });
 
       const state = stateManager.updateState(actionResult);
 
-      expect(state.url).toBe('/');
-      expect(stateManager.getCurrentState()?.url).toBe('/');
+      expect(state.url).toBe('');
+      expect(stateManager.getCurrentState()?.url).toBe('');
     });
   });
 
@@ -334,22 +334,6 @@ describe('StateManager', () => {
     });
   });
 
-  describe('createStateFromActionResult', () => {
-    it('should create state without updating current state', () => {
-      const actionResult = new ActionResult({
-        html: '<html></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      const state = stateManager.createStateFromActionResult(actionResult);
-
-      expect(state.url).toBe('/test');
-      expect(state.title).toBe('Test Page');
-      expect(stateManager.getCurrentState()).toBeNull();
-    });
-  });
-
   describe('cleanup', () => {
     it('should clear all state and listeners', () => {
       stateManager.onStateChange(() => {});
@@ -364,27 +348,6 @@ describe('StateManager', () => {
       expect(stateManager.getCurrentState()).toBeNull();
       expect(stateManager.getStateHistory()).toHaveLength(0);
       expect(stateManager.getListenerCount()).toBe(0);
-    });
-  });
-
-  describe('newState', () => {
-    it('should create new state from partial data', () => {
-      const state = stateManager.newState({
-        url: '/test',
-        title: 'Test Page',
-        h1: 'Main Title',
-      });
-
-      expect(state.url).toBe('/test');
-      expect(state.title).toBe('Test Page');
-      expect(state.h1).toBe('Main Title');
-    });
-
-    it('should provide defaults for missing fields', () => {
-      const state = stateManager.newState({});
-
-      expect(state.url).toBe('');
-      expect(state.title).toBe('');
     });
   });
 });

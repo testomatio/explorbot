@@ -101,7 +101,7 @@ export class Planner implements Agent {
 
     debugLog('Sending planning prompt to AI provider with structured output');
 
-    const result = await this.provider.generateObject(conversation.messages, TasksSchema);
+    const result = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model);
 
     if (!result?.object?.scenarios || result.object.scenarios.length === 0) {
       throw new Error('No tasks were created successfully');
@@ -128,7 +128,8 @@ export class Planner implements Agent {
   }
 
   private async buildConversation(state: ActionResult): Promise<Conversation> {
-    const conversation = new Conversation();
+    const model = this.provider.getModelForAgent('planner');
+    const conversation = new Conversation([], model);
 
     conversation.addUserText(this.getSystemMessage());
 

@@ -129,6 +129,9 @@ mock.module('codeceptjs', () => {
     accessibility: {
       snapshot: async () => null,
     },
+    locator: (selector: string) => ({
+      ariaSnapshot: async () => '',
+    }),
   };
 
   const playwrightHelper = {

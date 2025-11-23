@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StopError, loop } from '../../src/utils/loop.js';
+import { ConfigParser } from '../../src/config.js';
 
 describe('loop', () => {
+  beforeEach(() => {
+    ConfigParser.setupTestConfig();
+  });
+
   it('should succeed on first attempt', async () => {
     const handler = vi.fn().mockImplementation(async ({ stop }) => {
       const value = 'success';

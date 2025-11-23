@@ -106,24 +106,15 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     }
   });
 
-
   return (
     <Box flexDirection="column">
       <Box flexDirection="column" flexGrow={1}>
         <LogPane verboseMode={explorBot.getOptions()?.verbose || false} />
       </Box>
 
-      <Box
-        height={3}
-        flexDirection="row"
-        justifyContent="space-between"
-        alignItems="center"
-        paddingX={1}
-      >
+      <Box height={3} flexDirection="row" justifyContent="space-between" alignItems="center" paddingX={1}>
         <ActivityPane />
-        {showSessionTimer && (
-          <SessionTimer startedAt={sessionStartedAtRef.current} />
-        )}
+        {showSessionTimer && <SessionTimer startedAt={sessionStartedAtRef.current} />}
       </Box>
 
       {showInput && <Box height={1} />}

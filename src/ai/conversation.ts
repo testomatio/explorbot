@@ -3,11 +3,13 @@ import type { ModelMessage } from 'ai';
 export class Conversation {
   id: string;
   messages: ModelMessage[];
+  model: string;
   private autoTrimRules: Map<string, number>;
 
-  constructor(messages: ModelMessage[] = []) {
+  constructor(messages: ModelMessage[] = [], model?: string) {
     this.id = this.generateId();
     this.messages = messages;
+    this.model = model || '';
     this.autoTrimRules = new Map();
   }
 
@@ -56,7 +58,7 @@ export class Conversation {
   }
 
   clone(): Conversation {
-    return new Conversation([...this.messages]);
+    return new Conversation([...this.messages], this.model);
   }
 
   cleanupTag(tagName: string, replacement: string, keepLast = 0): void {

@@ -163,7 +163,7 @@ class Navigator implements Agent {
 
     tag('debug').log('Prompt:', prompt);
 
-    const conversation = this.provider.startConversation(this.systemPrompt);
+    const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
     let codeBlocks: string[] = [];
@@ -269,7 +269,7 @@ class Navigator implements Agent {
       </task>
     `;
 
-    const conversation = this.provider.startConversation(this.freeSailSystemPrompt);
+    const conversation = this.provider.startConversation(this.freeSailSystemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
     let suggestion: { target: string; reason: string } | null = null;

@@ -43,7 +43,7 @@ export class Tester implements Agent {
 
     const initialState = ActionResult.fromState(state);
 
-    const conversation = this.provider.startConversation(this.getSystemMessage());
+    const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
     const initialPrompt = await this.buildTestPrompt(task, initialState);
     conversation.addUserText(initialPrompt);
     conversation.autoTrimTag('initlal_page', 100_000);
@@ -358,6 +358,7 @@ export class Tester implements Agent {
       recommendReset: z.boolean().optional().describe('Whether calling reset() is advised before continuing'),
     });
 
+    const model = this.provider.getModelForAgent('tester');
     const response = await this.provider.generateObject(
       [
         {
@@ -389,7 +390,8 @@ export class Tester implements Agent {
           `,
         },
       ],
-      schema
+      schema,
+      model
     );
 
     const result = response?.object;
@@ -415,6 +417,7 @@ export class Tester implements Agent {
       recommendation: z.string().optional().describe('Follow-up suggestion if needed'),
     });
 
+    const model = this.provider.getModelForAgent('tester');
     const response = await this.provider.generateObject(
       [
         {
@@ -442,7 +445,8 @@ export class Tester implements Agent {
           `,
         },
       ],
-      schema
+      schema,
+      model
     );
 
     const result = response?.object;

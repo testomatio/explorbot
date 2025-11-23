@@ -58,16 +58,7 @@ describe('StateManager Events', () => {
       title: 'Page 2',
     });
 
-    stateManager.updateState(
-      actionResult,
-      'I.click("button")',
-      {
-        htmlFile: 'page2.html',
-        screenshotFile: 'page2.png',
-        logFile: 'page2.log',
-      },
-      'manual'
-    );
+    stateManager.updateState(actionResult, 'I.click("button")', 'manual');
 
     expect(events).toHaveLength(2);
     expect(events[1].fromState?.url).toBe('/page1');

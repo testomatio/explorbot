@@ -18,6 +18,20 @@ const config = {
       maxRetries: 3,
       timeout: 30000, // 30 seconds timeout
     },
+    agents: {
+      tester: {
+        // model: 'llama-3.1-70b-versatile',
+      },
+      navigator: {
+        // model: 'llama-3.1-70b-versatile',
+      },
+      researcher: {
+        // model: 'llama-3.1-70b-versatile',
+      },
+      planner: {
+        // model: 'llama-3.1-70b-versatile',
+      },
+    },
   },
 };
 

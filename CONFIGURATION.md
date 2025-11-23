@@ -29,9 +29,13 @@ The configuration system automatically detects and loads configuration files fro
 ```typescript
 interface ExplorbotConfig {
   playwright: PlaywrightConfig;
+  ai: AIConfig;
   app: AppConfig;
   output: OutputConfig;
   test: TestConfig;
+  html?: HtmlConfig;
+  action?: ActionConfig;
+  dirs?: DirsConfig;
 }
 ```
 
@@ -55,6 +59,47 @@ interface PlaywrightConfig {
     height: number;
   };
   args: string[];
+}
+```
+
+### AI Configuration
+
+```typescript
+interface AIConfig {
+  provider: any;                    // AI provider function (e.g., openai, anthropic, groq)
+  model: string;                    // Default model name
+  apiKey?: string;                  // API key for the provider
+  config?: Record<string, any>;     // Additional provider-specific config
+  visionModel?: string;             // Model to use for vision/screenshot analysis
+  maxAttempts?: number;             // Max retry attempts for AI calls
+  retryDelay?: number;              // Delay between retries
+  agents?: AgentsConfig;            // Agent-specific model overrides
+}
+
+interface AgentsConfig {
+  tester?: { model?: string };      // Override model for Tester agent
+  navigator?: { model?: string };   // Override model for Navigator agent
+  researcher?: { model?: string };  // Override model for Researcher agent
+  planner?: { model?: string };     // Override model for Planner agent
+}
+```
+
+**Agent-Specific Models**: Each agent (tester, navigator, researcher, planner) can use a different AI model. If not specified, the default model from `ai.model` is used. This allows you to:
+- Use faster/cheaper models for simple tasks
+- Use more capable models for complex reasoning
+- Balance cost and performance across different agents
+
+Example:
+```typescript
+ai: {
+  provider: openai,
+  model: 'gpt-5-mini',         // Default model for all agents
+  agents: {
+    tester: {
+      model: 'gpt-5'            // Use more capable model for testing
+    },
+    // navigator, researcher, planner will use gpt-5-mini
+  }
 }
 ```
 
@@ -99,7 +144,28 @@ interface TestConfig {
 
 ```typescript
 // explorbot.config.ts
+import { openai } from '@ai-sdk/openai';
+
 export default {
+  ai: {
+    provider: openai,
+    model: 'gpt-5',
+    apiKey: process.env.OPENAI_API_KEY,
+    visionModel: 'gpt-5',
+    config: {
+      temperature: 0.7,
+      maxTokens: 4000,
+    },
+    // Optional: Override models for specific agents
+    agents: {
+      tester: {
+        model: 'gpt-5'
+      },
+      navigator: {
+        model: 'gpt-5-mini'
+      }
+    }
+  },
   playwright: {
     browser: 'chromium',
     url: 'http://localhost:3000',

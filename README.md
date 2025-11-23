@@ -314,10 +314,18 @@ The system automatically matches relevant knowledge and experience files to curr
 
 2. **Configure your AI provider** in `explorbot.config.js`:
    ```javascript
+   import { openai } from '@ai-sdk/openai';
+
    export default {
      ai: {
-       provider: 'openai', // or 'anthropic'
-       apiKey: process.env.AI_API_KEY
+       provider: openai,
+       model: 'gpt-5',
+       apiKey: process.env.OPENAI_API_KEY,
+       // Optional: configure different models per agent
+       agents: {
+         tester: { model: 'gpt-5' },
+         navigator: { model: 'gpt-5-mini' }
+       }
      },
      playwright: {
        browser: 'chromium',
@@ -369,10 +377,24 @@ maclay clean --type all
 Create `explorbot.config.js` or `explorbot.config.ts` in your project:
 
 ```typescript
+import { openai } from '@ai-sdk/openai';
+
 export default {
   ai: {
-    provider: 'openai', // or 'anthropic'
-    apiKey: process.env.AI_API_KEY
+    provider: openai,           // or anthropic, groq
+    model: 'gpt-5',             // Default model for all agents
+    apiKey: process.env.OPENAI_API_KEY,
+
+    // Optional: Override models for specific agents
+    agents: {
+      tester: {
+        model: 'gpt-5'          // Use more capable model for testing
+      },
+      navigator: {
+        model: 'gpt-5-mini'     // Use faster model for navigation
+      }
+      // researcher and planner will use the default model
+    }
   },
   playwright: {
     browser: 'chromium',
@@ -381,6 +403,8 @@ export default {
   }
 }
 ```
+
+**Agent-Specific Models**: You can configure different AI models for each agent (tester, navigator, researcher, planner) to optimize for cost and performance. If not specified, all agents use the default model.
 
 ## Installation
 

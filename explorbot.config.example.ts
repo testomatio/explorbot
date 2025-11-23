@@ -148,7 +148,7 @@ const config: ExplorbotConfig = {
 
     // Option 1: OpenAI
     provider: openai,
-    model: 'gpt-4o',
+    model: 'gpt-5',
     apiKey: process.env.OPENAI_API_KEY || '',
 
     // Option 2: Anthropic
@@ -175,6 +175,23 @@ const config: ExplorbotConfig = {
     streaming: true,
     retryAttempts: 3,
     retryDelay: 1000,
+
+    // Optional: Agent-specific model configuration
+    // Each agent can override the default model
+    agents: {
+      tester: {
+        // model: 'gpt-5',  // Override for tester agent
+      },
+      navigator: {
+        // model: 'gpt-5',  // Override for navigator agent
+      },
+      researcher: {
+        // model: 'gpt-5',  // Override for researcher agent
+      },
+      planner: {
+        // model: 'gpt-5',  // Override for planner agent
+      },
+    },
   },
 
   // Action configuration
