@@ -65,6 +65,7 @@
     "marked": "^16.2.0",
     "marked-terminal": "^7.3.0",
     "micromatch": "^4.0.8",
+    "ora-classic": "^5.4.2",
     "parse5": "^8.0.0",
     "playwright": "^1.40.0",
     "react": "^19.1.1",
