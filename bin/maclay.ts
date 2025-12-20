@@ -24,12 +24,7 @@ program
   .helpOption('-h, --help', 'Show this help message')
   .action(exploreCommand);
 
-program
-  .command('clean')
-  .description('Clean generated files and folders')
-  .option('-t, --type <type>', 'Type of cleaning: artifacts, experience, or all', 'artifacts')
-  .option('-p, --path <path>', 'Custom path to clean')
-  .action(cleanCommand);
+program.command('clean').description('Clean generated files and folders').option('-t, --type <type>', 'Type of cleaning: artifacts, experience, or all', 'artifacts').option('-p, --path <path>', 'Custom path to clean').action(cleanCommand);
 
 program
   .command('init')

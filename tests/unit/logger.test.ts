@@ -1,22 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { ConfigParser } from '../../src/config.js';
-import {
-  type TaggedLogEntry,
-  createDebug,
-  getMethodsOfObject,
-  isVerboseMode,
-  log,
-  logError,
-  logSubstep,
-  logSuccess,
-  logWarning,
-  registerLogPane,
-  setPreserveConsoleLogs,
-  setVerboseMode,
-  tag,
-  unregisterLogPane,
-} from '../../src/utils/logger';
+import { type TaggedLogEntry, createDebug, getMethodsOfObject, isVerboseMode, log, logError, logSubstep, logSuccess, logWarning, registerLogPane, setPreserveConsoleLogs, setVerboseMode, tag, unregisterLogPane } from '../../src/utils/logger';
 
 describe('Logger', () => {
   let originalEnv: any;

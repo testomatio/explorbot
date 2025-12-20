@@ -73,7 +73,7 @@ export class StateManager {
   private stateChangeListeners: StateChangeListener[] = [];
   private experienceTracker!: ExperienceTracker;
   private knowledgeDir: string;
-  private nextStateId: number = 1;
+  private nextStateId = 1;
 
   constructor() {
     this.experienceTracker = new ExperienceTracker();
@@ -148,8 +148,7 @@ export class StateManager {
   }
 
   /**
-   * Update current state from ActionResult
-   * Returns the new state, or existing state if hash hasn't changed
+   * Update current state from ActionResult and record transition if state changed
    */
   updateState(actionResult: ActionResult, codeBlock?: string, trigger: 'manual' | 'navigation' | 'automatic' = 'manual'): WebPageState {
     const previousState = this.currentState;
@@ -266,7 +265,7 @@ export class StateManager {
   }
 
   isInDeadLoop(): boolean {
-    const minWindow = 6;
+    const minWindow = 10;
     const increment = 3;
     const stateHashes = this.stateHistory.map((transition) => {
       const state = transition.toState;
@@ -441,23 +440,27 @@ export class StateManager {
   }
 
   /**
-   * Find the previous state for a given URL and state ID from history
-   * Searches backwards through history to find the last state with:
-   * - The same URL
-   * - Different state ID (not the current state)
-   * - HTML or ARIA snapshot available
-   * Stops searching if it encounters a different URL
+   * Get previous state from history for comparison.
+   * If the last transition changed URL, returns the fromState (for URL change detection).
+   * Otherwise returns the most recent toState with content (for diffing).
    */
   getPreviousState(): WebPageState | null {
+    if (this.stateHistory.length === 0) return null;
+
+    const lastTransition = this.stateHistory[this.stateHistory.length - 1];
+
+    if (lastTransition.fromState?.url !== lastTransition.toState?.url) {
+      return lastTransition.fromState;
+    }
+
     for (let i = this.stateHistory.length - 1; i >= 0; i--) {
-      const transition = this.stateHistory[i];
+      const toState = this.stateHistory[i].toState;
 
-      if (transition.toState.id === this.currentState?.id) {
-        continue;
-      }
+      if (!toState) continue;
+      if (toState.id === this.currentState?.id) continue;
 
-      if (transition.toState.html || transition.toState.ariaSnapshot) {
-        return transition.toState;
+      if (toState.html || toState.ariaSnapshot) {
+        return toState;
       }
     }
 

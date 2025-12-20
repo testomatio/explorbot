@@ -38,6 +38,8 @@ interface AgentsConfig {
   navigator?: AgentConfig;
   researcher?: AgentConfig;
   planner?: AgentConfig;
+  'experience-compactor'?: AgentConfig;
+  captain?: AgentConfig;
 }
 
 interface AIConfig {
@@ -45,6 +47,12 @@ interface AIConfig {
   model: string;
   apiKey?: string;
   config?: Record<string, any>;
+  langfuse?: {
+    enabled?: boolean;
+    publicKey?: string;
+    secretKey?: string;
+    baseUrl?: string;
+  };
   tools?: {
     enabled: boolean;
     maxConcurrency: number;
@@ -246,17 +254,7 @@ export class ConfigParser {
   }
 
   private findConfigFile(): string | null {
-    const possiblePaths = [
-      'explorbot.config.js',
-      'explorbot.config.mjs',
-      'explorbot.config.ts',
-      'config/explorbot.config.js',
-      'config/explorbot.config.mjs',
-      'config/explorbot.config.ts',
-      'src/config/explorbot.config.js',
-      'src/config/explorbot.config.mjs',
-      'src/config/explorbot.config.ts',
-    ];
+    const possiblePaths = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts', 'config/explorbot.config.js', 'config/explorbot.config.mjs', 'config/explorbot.config.ts', 'src/config/explorbot.config.js', 'src/config/explorbot.config.mjs', 'src/config/explorbot.config.ts'];
 
     for (const path of possiblePaths) {
       const fullPath = resolve(process.cwd(), path);

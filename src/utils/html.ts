@@ -2,6 +2,7 @@ import { minify } from 'html-minifier-next';
 import { parse, parseFragment, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
 import type { HtmlConfig } from '../config.ts';
+import dedent from 'dedent';
 
 /**
  * HTML parsing library that preserves original structure while filtering content
@@ -1159,4 +1160,12 @@ export function extractHeadings(html: string): {
   }
 
   return result;
+}
+
+export function codeToMarkdown(code: string): string {
+  return `
+\`\`\`
+${code}
+\`\`\`
+  `;
 }

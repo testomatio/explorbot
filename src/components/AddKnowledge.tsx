@@ -103,13 +103,7 @@ const AddKnowledge: React.FC = () => {
           <Text color="blue">URL Pattern:</Text>
         </Box>
         <Box borderStyle="single" borderColor={activeField === 'url' ? 'blue' : 'gray'} padding={1}>
-          <TextInput
-            value={urlPattern}
-            onChange={setUrlPattern}
-            onSubmit={handleUrlSubmit}
-            placeholder={suggestedUrls.length > 0 ? suggestedUrls[0] : 'e.g., /login, *, ^/admin, ~dashboard'}
-            focus={activeField === 'url'}
-          />
+          <TextInput value={urlPattern} onChange={setUrlPattern} onSubmit={handleUrlSubmit} placeholder={suggestedUrls.length > 0 ? suggestedUrls[0] : 'e.g., /login, *, ^/admin, ~dashboard'} focus={activeField === 'url'} />
         </Box>
         <Text color="gray" dimColor>
           Wildcards (*) or regexes (^pattern, ~pattern) can be used
@@ -143,13 +137,7 @@ const AddKnowledge: React.FC = () => {
           <Text color={activeField === 'description' ? 'blue' : 'gray'}>Description:</Text>
         </Box>
         <Box borderStyle="single" borderColor={activeField === 'description' ? 'blue' : 'gray'} padding={1}>
-          <TextInput
-            value={description}
-            onChange={setDescription}
-            onSubmit={handleDescriptionSubmit}
-            placeholder="Describe actions, locators, or page behavior..."
-            focus={activeField === 'description'}
-          />
+          <TextInput value={description} onChange={setDescription} onSubmit={handleDescriptionSubmit} placeholder="Describe actions, locators, or page behavior..." focus={activeField === 'description'} />
         </Box>
         <Text color="gray" dimColor>
           Actions that should or should not be used, locators, validation rules, etc.

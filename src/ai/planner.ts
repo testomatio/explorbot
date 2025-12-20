@@ -6,6 +6,7 @@ import type Explorer from '../explorer.ts';
 import type { StateManager } from '../state-manager.js';
 import { Plan, Test } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.js';
+import { Observability } from '../observability.ts';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Provider } from './provider.js';
@@ -21,16 +22,10 @@ const TasksSchema = z.object({
       z.object({
         scenario: z.string().describe('A single sentence describing what to test'),
         priority: z.enum(['high', 'medium', 'low', 'unknown']).describe('Priority of the task based on importance and risk'),
-        steps: z
-          .array(z.string())
-          .describe(
-            'List of steps to perform for this scenario. Each step should be a specific action (e.g., "Click on Login button", "Enter username in email field", "Submit the form"). Keep steps atomic and actionable.'
-          ),
+        steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Click on Login button", "Enter username in email field", "Submit the form"). Keep steps atomic and actionable.'),
         expectedOutcomes: z
           .array(z.string())
-          .describe(
-            'List of expected outcomes that can be verified. Each outcome should be simple, specific, and easy to check (e.g., "Success message appears", "URL changes to /dashboard", "Form field shows error"). Keep outcomes atomic - do not combine multiple checks into one.'
-          ),
+          .describe('List of expected outcomes that can be verified. Each outcome should be simple, specific, and easy to check (e.g., "Success message appears", "URL changes to /dashboard", "Form field shows error"). Keep outcomes atomic - do not combine multiple checks into one.'),
       })
     )
     .describe('List of testing scenarios'),
@@ -83,48 +78,54 @@ export class Planner implements Agent {
   }
 
   async plan(feature?: string): Promise<Plan> {
-    const state = this.stateManager.getCurrentState();
-    debugLog('Planning:', state?.url);
-    if (!state) throw new Error('No state found');
+    return Observability.run(
+      'planner.plan',
+      {
+        tags: ['planner'],
+      },
+      async () => {
+        const state = this.stateManager.getCurrentState();
+        debugLog('Planning:', state?.url);
+        if (!state) throw new Error('No state found');
 
-    const actionResult = ActionResult.fromState(state);
-    const conversation = await this.buildConversation(actionResult);
+        const actionResult = ActionResult.fromState(state);
+        const conversation = await this.buildConversation(actionResult);
 
-    setActivity(`${this.emoji} Planning...`, 'action');
-    tag('info').log(`Planning test scenarios for ${state.url}...`);
-    if (feature) {
-      tag('step').log(`Focusing on ${feature}`);
-      conversation.addUserText(feature);
-    } else {
-      tag('step').log('Focusing on main content of this page');
-    }
+        setActivity(`${this.emoji} Planning...`, 'action');
+        tag('info').log(`Planning test scenarios for ${state.url}...`);
+        if (feature) {
+          tag('step').log(`Focusing on ${feature}`);
+          conversation.addUserText(feature);
+        } else {
+          tag('step').log('Focusing on main content of this page');
+        }
 
-    debugLog('Sending planning prompt to AI provider with structured output');
+        debugLog('Sending planning prompt to AI provider with structured output');
 
-    const result = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model);
+        const result = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model);
 
-    if (!result?.object?.scenarios || result.object.scenarios.length === 0) {
-      throw new Error('No tasks were created successfully');
-    }
+        if (!result?.object?.scenarios || result.object.scenarios.length === 0) {
+          throw new Error('No tasks were created successfully');
+        }
 
-    const tests: Test[] = result.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, state.url, s.steps || []));
+        const tests: Test[] = result.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, state.url, s.steps || []));
 
-    debugLog('Created tests:', tests);
+        debugLog('Created tests:', tests);
 
-    const planName = result.object.planName || `Plan ${planId++}`;
-    const summary = result.object.reasoning
-      ? `${result.object.reasoning}\n\nScenarios:\n${tests.map((t) => `- ${t.scenario}`).join('\n')}`
-      : `Scenarios:\n${tests.map((t) => `- ${t.scenario}`).join('\n')}`;
+        const planName = result.object.planName || `Plan ${planId++}`;
+        const summary = result.object.reasoning ? `${result.object.reasoning}\n\nScenarios:\n${tests.map((t) => `- ${t.scenario}`).join('\n')}` : `Scenarios:\n${tests.map((t) => `- ${t.scenario}`).join('\n')}`;
 
-    tag('multiline').log(summary);
-    tag('success').log(`Planning complete! ${tests.length} tests proposed for: ${planName}`);
+        tag('multiline').log(summary);
+        tag('success').log(`Planning complete! ${tests.length} tests proposed for: ${planName}`);
 
-    const plan = new Plan(planName);
-    tests.forEach((t) => {
-      t.startUrl = state.url;
-      plan.addTest(t);
-    });
-    return plan;
+        const plan = new Plan(planName);
+        tests.forEach((t) => {
+          t.startUrl = state.url;
+          plan.addTest(t);
+        });
+        return plan;
+      }
+    );
   }
 
   private async buildConversation(state: ActionResult): Promise<Conversation> {

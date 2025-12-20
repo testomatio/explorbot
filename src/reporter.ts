@@ -1,4 +1,4 @@
-import { Client, STATUS } from '@testomatio/reporter';
+import { Client } from '@testomatio/reporter';
 import { createDebug, log } from './utils/logger.js';
 import { Test } from './test-plan.js';
 import type { Step } from '@testomatio/reporter/types/types.js';
@@ -39,9 +39,9 @@ export class Reporter {
     try {
       let status = null;
       if (test.isSuccessful) {
-        status = STATUS.PASSED;
+        status = 'passed';
       } else if (test.hasFailed) {
-        status = STATUS.FAILED;
+        status = 'failed';
       }
 
       const steps: Step[] = test.getPrintableNotes().map((note) => ({
@@ -55,8 +55,8 @@ export class Reporter {
         title: test.scenario,
         suite_title: test.plan?.title || 'Auto-Exploratory Testing',
         steps,
-        stack: test.steps.join('\n'),
-        files: test.artifacts || [],
+        stack: Object.values(test.steps).join('\n'),
+        files: Object.values(test.artifacts) || [],
         message: test.summary || '',
       };
 

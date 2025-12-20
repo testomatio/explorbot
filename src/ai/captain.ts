@@ -36,7 +36,7 @@ export class Captain implements Agent {
 
   private ensureConversation(): Conversation {
     if (!this.conversation) {
-      this.conversation = this.explorBot.getProvider().startConversation(this.systemPrompt());
+      this.conversation = this.explorBot.getProvider().startConversation(this.systemPrompt(), 'captain');
     }
     return this.conversation;
   }

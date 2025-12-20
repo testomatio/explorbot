@@ -256,11 +256,7 @@ priority: high
 
     test('should save planned steps to markdown', () => {
       const plan = new Plan('Test Suite');
-      const test = new Test('Test with Steps', 'high', ['Success message is displayed', 'URL changes to /dashboard'], '/test-page', [
-        'Click on Login button',
-        'Enter username in email field',
-        'Submit the form',
-      ]);
+      const test = new Test('Test with Steps', 'high', ['Success message is displayed', 'URL changes to /dashboard'], '/test-page', ['Click on Login button', 'Enter username in email field', 'Submit the form']);
 
       plan.addTest(test);
       plan.saveToMarkdown(testFilePath);

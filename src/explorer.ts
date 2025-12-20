@@ -12,7 +12,7 @@ import { StateManager } from './state-manager.js';
 import { createDebug, log, tag } from './utils/logger.js';
 import { Test } from './test-plan.ts';
 import { ActionResult } from './action-result.ts';
-import { Reporter, TestomatioReporter } from './reporter.ts';
+import { Reporter } from './reporter.ts';
 
 declare global {
   namespace NodeJS {
@@ -305,13 +305,14 @@ class Explorer {
       //   this.stateManager.getCurrentState()?.notes.push(`Filled field ${step.locator} with value ${step.value}`);
       // }
       if (step?.name?.startsWith('grab')) return;
-      test.addStep(step.toString());
+      test.addStep(step.toCode());
       if (!this.stateManager.getCurrentState()) return;
 
       const lastScreenshot = ActionResult.fromState(this.stateManager.getCurrentState()!).screenshotFile;
       if (!lastScreenshot) return;
 
-      test.addArtifact(join(ConfigParser.getInstance().getOutputDir(), lastScreenshot));
+      const screenshotPath = join(ConfigParser.getInstance().getOutputDir(), lastScreenshot);
+      test.addArtifact(screenshotPath);
     };
     codeceptjs.event.dispatcher.emit('test.before', codeceptjsTest);
     codeceptjs.event.dispatcher.emit('test.start', codeceptjsTest);

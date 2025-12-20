@@ -148,6 +148,7 @@ class Logger {
   private debugDestination = new DebugDestination();
   private file = new FileDestination();
   public react = new ReactDestination();
+  private truncateTags: string[] = ['page_html'];
 
   private constructor() {}
 
@@ -179,8 +180,28 @@ class Logger {
     this.react.unregisterLogPane(addLog);
   }
 
+  addTruncateTag(tagName: string): void {
+    if (!this.truncateTags.includes(tagName)) {
+      this.truncateTags.push(tagName);
+    }
+  }
+
+  private truncateTagContent(content: string, tagName: string): string {
+    const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tagRegex = new RegExp(`<${escapedTag}>([\\s\\S]*?)<\\/${escapedTag}>`, 'g');
+    return content.replace(tagRegex, (match, innerContent) => {
+      const trimmed = innerContent.trim();
+      const totalLength = trimmed.length;
+      if (totalLength <= 100) {
+        return `<${tagName}>\n    ${trimmed}\n</${tagName}>`;
+      }
+      const truncated = trimmed.substring(0, 100);
+      return `<${tagName}>\n    ${truncated}.... (${totalLength}chars total)\n</${tagName}>`;
+    });
+  }
+
   private processArgs(args: any[]): string {
-    return args
+    const processed = args
       .map((arg) => {
         if (typeof arg === 'object' && arg !== null) {
           try {
@@ -192,11 +213,24 @@ class Logger {
         return String(arg);
       })
       .join(' ');
+
+    let result = processed;
+    for (const tag of this.truncateTags) {
+      result = this.truncateTagContent(result, tag);
+    }
+    return result;
   }
 
   log(type: LogType, ...args: any[]): void {
     if (type === 'debug' && this.debugDestination.isEnabled()) {
-      this.debugDestination.write(...args);
+      let namespace = 'explorbot';
+      let contentArgs = args;
+      if (args.length > 1) {
+        namespace = String(args[0]);
+        contentArgs = args.slice(1);
+      }
+      const processedContent = this.processArgs(contentArgs);
+      this.debugDestination.write(namespace, processedContent);
       return;
     }
     const content = this.processArgs(args);
@@ -276,6 +310,7 @@ export const isVerboseMode = () => logger.isVerboseMode();
 
 export const registerLogPane = (addLog: (entry: LogEntry) => void) => logger.registerLogPane(addLog);
 export const unregisterLogPane = (addLog: (entry: LogEntry) => void) => logger.unregisterLogPane(addLog);
+export const addTruncateTag = (tagName: string) => logger.addTruncateTag(tagName);
 
 // Legacy alias for backward compatibility
 export const setLogCallback = registerLogPane;

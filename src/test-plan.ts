@@ -1,51 +1,54 @@
-import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import figures from 'figures';
 import { WebPageState } from './state-manager.ts';
+import { uniqSessionName } from './utils/unique-names.ts';
+import { parsePlanFromMarkdown, savePlanToMarkdown, planToAiContext } from './utils/test-plan-markdown.ts';
 
 export interface Note {
   message: string;
   status: 'passed' | 'failed' | null;
-  expected?: boolean;
   step?: boolean;
 }
 
 export class Test {
   id: string;
   scenario: string;
+  sessionName?: string;
   status: 'pending' | 'in_progress' | 'done';
   priority: 'high' | 'medium' | 'low' | 'unknown';
   expected: string[];
   plannedSteps: string[];
-  notes: Note[];
-  steps: string[];
+  notes: Record<string, Note>;
+  steps: Record<string, string>;
   description?: string;
   states: WebPageState[];
   startUrl: string;
   plan?: Plan;
   summary: string;
-  artifacts: string[];
+  artifacts: Record<string, string>;
+  private timestampCounter: number = 0;
 
   constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     this.id = `${createHash('md5').update(scenario).digest('hex').slice(0, 8)}_${Date.now().toString(36)}`;
     this.scenario = scenario;
     this.status = 'pending';
+    this.sessionName = uniqSessionName();
     this.priority = priority;
     this.expected = Array.isArray(expectedOutcome) ? expectedOutcome : [expectedOutcome];
     this.plannedSteps = plannedSteps;
-    this.notes = [];
-    this.steps = [];
+    this.notes = {};
+    this.steps = {};
     this.states = [];
     this.startUrl = startUrl;
-    this.artifacts = [];
+    this.artifacts = {};
     this.summary = '';
+    this.timestampCounter = 0;
   }
 
   getPrintableNotes(): string[] {
-    return this.notes.map((n) => {
+    return Object.values(this.notes).map((n) => {
       const icon = n.status === 'passed' ? figures.tick : n.status === 'failed' ? figures.cross : figures.circle;
-      const prefix = n.expected ? 'EXPECTED: ' : '';
-      return `${icon} ${n.message} ${prefix}`;
+      return `${icon} ${n.message}`;
     });
   }
 
@@ -57,22 +60,22 @@ export class Test {
   }
 
   notesToString(): string {
-    return this.getPrintableNotes().join('\n');
+    return this.getPrintableNotes()
+      .map((n) => `- ${n}`)
+      .join('\n');
   }
 
   addArtifact(artifact: string): void {
-    this.artifacts.push(artifact);
+    const timestamp = `${performance.now()}_${this.timestampCounter++}`;
+    this.artifacts[timestamp] = artifact;
   }
 
-  addNote(message: string, status: 'passed' | 'failed' | null = null, expected = false): void {
-    if (!expected && this.expected.includes(message)) {
-      expected = true;
-    }
-
-    const isDuplicate = this.notes.some((note) => note.message === message && note.status === status && note.expected === expected);
+  addNote(message: string, status: 'passed' | 'failed' | null = null): void {
+    const isDuplicate = Object.values(this.notes).some((note) => note.message === message && note.status === status);
     if (isDuplicate) return;
 
-    this.notes.push({ message, status, expected });
+    const timestamp = `${performance.now()}_${this.timestampCounter++}`;
+    this.notes[timestamp] = { message, status };
   }
 
   addState(state: WebPageState): void {
@@ -80,7 +83,8 @@ export class Test {
   }
 
   addStep(text: string): void {
-    this.steps.push(text);
+    const timestamp = `${performance.now()}_${this.timestampCounter++}`;
+    this.steps[timestamp] = text;
   }
 
   get hasFinished(): boolean {
@@ -96,23 +100,31 @@ export class Test {
   }
 
   getCheckedNotes(): Note[] {
-    return this.notes.filter((n) => !!n.status);
+    return Object.values(this.notes).filter((n) => !!n.status);
   }
 
   getCheckedExpectations(): string[] {
-    return this.notes.filter((n) => n.expected && !!n.status).map((n) => n.message);
+    return this.expected.filter((expectation) => {
+      return Object.values(this.notes).some((note) => note.message === expectation && !!note.status);
+    });
   }
 
   hasAchievedAny(): boolean {
-    return this.notes.some((n) => n.expected && n.status === 'passed');
+    return this.expected.some((expectation) => {
+      return Object.values(this.notes).some((note) => note.message === expectation && note.status === 'passed');
+    });
   }
 
   hasAchievedAll(): boolean {
-    return this.notes.filter((n) => n.expected && n.status === 'passed').length === this.expected.length;
+    return this.expected.every((expectation) => {
+      return Object.values(this.notes).some((note) => note.message === expectation && note.status === 'passed');
+    });
   }
 
   isComplete(): boolean {
-    return this.notes.filter((n) => n.expected && !!n.status).length === this.expected.length;
+    return this.expected.every((expectation) => {
+      return Object.values(this.notes).some((note) => note.message === expectation && !!note.status);
+    });
   }
 
   start(): void {
@@ -127,6 +139,35 @@ export class Test {
   getRemainingExpectations(): string[] {
     const achieved = this.getCheckedExpectations();
     return this.expected.filter((e) => !achieved.includes(e));
+  }
+
+  getLog(): Array<{ type: 'step' | 'note' | 'artifact'; content: string; timestamp: number }> {
+    const merged: Record<string, { type: 'step' | 'note' | 'artifact'; content: string }> = {};
+
+    for (const [key, text] of Object.entries(this.steps)) {
+      merged[key] = { type: 'step', content: text };
+    }
+
+    for (const [key, note] of Object.entries(this.notes)) {
+      merged[key] = { type: 'note', content: note.message };
+    }
+
+    for (const [key, artifact] of Object.entries(this.artifacts)) {
+      merged[key] = { type: 'artifact', content: artifact };
+    }
+
+    return Object.entries(merged)
+      .map(([timestampKey, item]) => ({
+        ...item,
+        timestamp: parseFloat(timestampKey.split('_')[0]),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  getLogString(): string {
+    return this.getLog()
+      .map((item) => (item.type === 'step' ? '  ' : '') + `${item.content}`)
+      .join('\n');
   }
 }
 
@@ -165,197 +206,14 @@ export class Plan {
     return this.tests.length > 0 && this.tests.every((test) => test.hasFailed);
   }
 
-  updateStatus(): void {
-    this.tests.forEach((test) => test.updateStatus());
-  }
+  updateStatus(): void {}
 
   static fromMarkdown(filePath: string): Plan {
-    const content = readFileSync(filePath, 'utf-8');
-    const lines = content.split('\n');
-
-    let title = '';
-    let currentTest: Test | null = null;
-    let inRequirements = false;
-    let inSteps = false;
-    let inExpected = false;
-    let priority: 'high' | 'medium' | 'low' | 'unknown' = 'unknown';
-
-    const plan = new Plan('');
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-
-      if (line.startsWith('<!-- suite -->') && !plan.title) {
-        title = lines[i + 1]?.replace(/^#\s+/, '') || '';
-        plan.title = title;
-        i++; // Skip the title line to avoid processing it as a test
-        continue;
-      }
-
-      if (line.startsWith('<!-- test')) {
-        const priorityMatch = line.match(/priority:\s*(\w+)/);
-        priority = (priorityMatch?.[1] as 'high' | 'medium' | 'low' | 'unknown') || 'unknown';
-        continue;
-      }
-
-      if (line.startsWith('# ') && currentTest === null) {
-        const scenario = line.replace(/^#\s+/, '');
-        currentTest = new Test(scenario, priority, []);
-        plan.addTest(currentTest);
-        inRequirements = false;
-        inSteps = false;
-        inExpected = false;
-        continue;
-      }
-
-      if (currentTest && line === '## Requirements') {
-        inRequirements = true;
-        inSteps = false;
-        inExpected = false;
-        continue;
-      }
-
-      if (currentTest && line === '## Steps') {
-        inRequirements = false;
-        inSteps = true;
-        inExpected = false;
-        continue;
-      }
-
-      if (currentTest && line === '## Expected') {
-        inRequirements = false;
-        inSteps = false;
-        inExpected = true;
-        continue;
-      }
-
-      if (currentTest && inRequirements && line && !line.startsWith('##')) {
-        currentTest.startUrl = line;
-        continue;
-      }
-
-      if (currentTest && inSteps && line.startsWith('* ')) {
-        let step = line.replace(/^\*\s+/, '');
-
-        // Check for multiline content (indented lines following the * line)
-        let j = i + 1;
-        while (j < lines.length) {
-          const nextLine = lines[j];
-          const trimmedNext = nextLine.trim();
-
-          // Stop if we hit a new list item (line starting with * at the beginning)
-          if (nextLine.match(/^\*\s+/)) {
-            break;
-          }
-
-          // Stop if we hit a section marker or end marker
-          if (trimmedNext.startsWith('##') || trimmedNext.startsWith('<!--')) {
-            break;
-          }
-
-          // If line starts with spaces (indented), it's part of this step
-          if (nextLine.startsWith('  ')) {
-            step += '\n' + nextLine;
-            j++;
-          } else if (trimmedNext === '') {
-            // Stop on empty lines (they separate steps)
-            break;
-          } else {
-            break;
-          }
-        }
-
-        currentTest.plannedSteps.push(step);
-        i = j - 1; // Update loop counter to skip processed lines
-        continue;
-      }
-
-      if (currentTest && inExpected && line.startsWith('* ')) {
-        let expectation = line.replace(/^\*\s+/, '');
-
-        // Check for multiline content (indented lines following the * line)
-        let j = i + 1;
-        while (j < lines.length) {
-          const nextLine = lines[j];
-          const trimmedNext = nextLine.trim();
-
-          // Stop if we hit a new list item (line starting with * at the beginning)
-          if (nextLine.match(/^\*\s+/)) {
-            break;
-          }
-
-          // Stop if we hit a section marker or end marker
-          if (trimmedNext.startsWith('##') || trimmedNext.startsWith('<!--')) {
-            break;
-          }
-
-          // If line starts with spaces (indented), it's part of this expectation
-          if (nextLine.startsWith('  ')) {
-            expectation += '\n' + nextLine;
-            j++;
-          } else if (trimmedNext === '') {
-            // Stop on empty lines (they separate expectations)
-            break;
-          } else {
-            break;
-          }
-        }
-
-        currentTest.expected.push(expectation);
-        i = j - 1; // Update loop counter to skip processed lines
-        continue;
-      }
-
-      if (line.startsWith('<!-- test -->') || line.startsWith('<!-- suite -->')) {
-        currentTest = null;
-        inRequirements = false;
-        inExpected = false;
-        priority = 'unknown';
-      }
-    }
-
-    return plan;
+    return parsePlanFromMarkdown(filePath);
   }
 
   saveToMarkdown(filePath: string): void {
-    let content = `<!-- suite -->\n# ${this.title}\n\n`;
-
-    for (const test of this.tests) {
-      content += `<!-- test\npriority: ${test.priority}\n-->\n`;
-      content += `# ${test.scenario}\n\n`;
-      content += '## Requirements\n';
-      content += `${test.startUrl || 'Current page'}\n\n`;
-
-      if (test.plannedSteps.length > 0) {
-        content += '## Steps\n';
-        for (const step of test.plannedSteps) {
-          const lines = step.split('\n');
-          content += `* ${lines[0]}\n`;
-
-          // Add indented continuation lines
-          for (let i = 1; i < lines.length; i++) {
-            content += `${lines[i]}\n`;
-          }
-        }
-        content += '\n';
-      }
-
-      content += '## Expected\n';
-
-      for (const expectation of test.expected) {
-        const lines = expectation.split('\n');
-        content += `* ${lines[0]}\n`;
-
-        // Add indented continuation lines
-        for (let i = 1; i < lines.length; i++) {
-          content += `${lines[i]}\n`;
-        }
-      }
-
-      content += '\n';
-    }
-
-    writeFileSync(filePath, content, 'utf-8');
+    savePlanToMarkdown(this, filePath);
   }
 
   getVisitedPages(): WebPageState[] {
@@ -399,60 +257,6 @@ export class Plan {
   }
 
   toAiContext(): string {
-    let content = `# Test Plan: ${this.title}\n\n`;
-
-    if (this.url) {
-      content += `**URL:** ${this.url}\n\n`;
-    }
-
-    content += `**Total Tests:** ${this.tests.length}\n`;
-    content += `**Status:** ${this.isComplete ? 'Complete' : 'In Progress'}\n\n`;
-
-    for (let i = 0; i < this.tests.length; i++) {
-      const test = this.tests[i];
-      content += `## Test ${i + 1}: ${test.scenario}\n\n`;
-      content += `**Priority:** ${test.priority}\n`;
-      content += `**Status:** ${test.status}\n\n`;
-
-      if (test.startUrl) {
-        content += `**Start URL:** ${test.startUrl}\n\n`;
-      }
-
-      if (test.plannedSteps.length > 0) {
-        content += '**Planned Steps:**\n';
-        for (const step of test.plannedSteps) {
-          content += `- ${step}\n`;
-        }
-        content += '\n';
-      }
-
-      if (test.expected.length > 0) {
-        content += '**Expected Outcomes:**\n';
-        for (const expectation of test.expected) {
-          content += `- ${expectation}\n`;
-        }
-        content += '\n';
-      }
-
-      if (test.steps.length > 0) {
-        content += '**Steps:**\n';
-        for (const step of test.steps) {
-          content += `- ${step}\n`;
-        }
-        content += '\n';
-      }
-
-      if (test.notes.length > 0) {
-        content += '**Notes:**\n';
-        for (const note of test.getPrintableNotes()) {
-          content += `${note}\n`;
-        }
-        content += '\n';
-      }
-
-      content += '---\n\n';
-    }
-
-    return content;
+    return planToAiContext(this);
   }
 }

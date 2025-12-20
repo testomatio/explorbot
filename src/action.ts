@@ -256,7 +256,7 @@ class Action {
     return this;
   }
 
-  public async attempt(codeBlock: string | ((I: CodeceptJS.I) => void), originalMessage?: string): Promise<boolean> {
+  public async attempt(codeBlock: string | ((I: CodeceptJS.I) => void), originalMessage?: string, experience: boolean = true): Promise<boolean> {
     try {
       debugLog('Resolution attempt...');
       setActivity('🦾 Acting in browser...', 'action');
@@ -274,16 +274,18 @@ class Action {
       await this.expect(this.expectation!);
 
       tag('success').log('Resolved', this.expectation);
-      if (originalMessage) {
+      if (originalMessage && experience) {
         await this.experienceTracker.saveSuccessfulResolution(prevActionResult!, originalMessage, codeBlock.toString());
       }
 
       return true;
     } catch (error) {
       const executionError = errorToString(error);
-      tag('error').log(`Attempt failed with error: ${executionError || this.lastError?.toString()}`);
+      tag('error').log(`Attempt failed with error: ${codeBlock.toString()}: ${executionError || this.lastError?.toString()}`);
 
-      await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage ?? '', codeBlock.toString(), executionError);
+      if (experience) {
+        await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage ?? '', codeBlock.toString(), executionError);
+      }
 
       return false;
     }

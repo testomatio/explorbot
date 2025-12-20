@@ -7,17 +7,7 @@ describe('aria', () => {
 
     const summary = summarizeInteractiveNodes(snapshot);
 
-    expect(summary).toEqual([
-      'combobox "Title of template": PetSuiteTemplate',
-      'button "test test" [expanded]',
-      'option "test" [selected]',
-      'option "suite"',
-      'option "code"',
-      'option "defect"',
-      'option "meta"',
-      'option "notification-slack"',
-      'option "notification-ms-teams"',
-    ]);
+    expect(summary).toEqual(['combobox "Title of template": PetSuiteTemplate', 'button "test test" [expanded]', 'option "test" [selected]', 'option "suite"', 'option "code"', 'option "defect"', 'option "meta"', 'option "notification-slack"', 'option "notification-ms-teams"']);
   });
 
   it('drops non-interactive nodes without interactive descendants', () => {

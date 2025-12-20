@@ -17,6 +17,7 @@ import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
 import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
+import { codeToMarkdown } from '../utils/html.ts';
 
 const debugLog = createDebug('explorbot:researcher');
 
@@ -45,7 +46,7 @@ export class Researcher implements Agent {
       return Researcher.researchCache[state.hash] || '';
     }
     const outputDir = ConfigParser.getInstance().getOutputDir();
-    const researchFile = join(outputDir, 'researc', `${state.hash}.md`);
+    const researchFile = join(outputDir, 'research', `${state.hash}.md`);
     if (!existsSync(researchFile)) return '';
     const stats = statSync(researchFile);
     if (now - stats.mtimeMs > ttl) return '';
@@ -85,7 +86,21 @@ export class Researcher implements Agent {
 
     tag('info').log(`Researching ${state.url} to understand the context...`);
     setActivity(`${this.emoji} Researching...`, 'action');
-    const stateHtml = await actionResult.combinedHtml();
+
+    if (isOnCurrentState && !actionResult.ariaSnapshot) {
+      debugLog('Capturing accessibility tree for current state');
+      actionResult = await this.explorer.createAction().capturePageState();
+    }
+
+    let stateHtml = await actionResult.combinedHtml();
+
+    if (this.isBodyEmpty(stateHtml) && isOnCurrentState) {
+      debugLog('HTML body is empty, refreshing page');
+      tag('step').log('Page body is empty, refreshing...');
+      await this.navigateTo(actionResult.url);
+      actionResult = await this.explorer.createAction().capturePageState();
+      stateHtml = await actionResult.combinedHtml();
+    }
 
     debugLog('Researching web page:', actionResult.url);
     const prompt = this.buildResearchPrompt(actionResult, stateHtml);
@@ -101,16 +116,16 @@ export class Researcher implements Agent {
       screenshotAnalysis = await this.imageContent(actionResult);
       if (screenshotAnalysis) {
         conversation.addUserText(dedent`
-          We analyzed the screenshot and found the following UI elements with their coordinates
-          Your report must include them as their HTML locators:
+              We analyzed the screenshot and found the following UI elements with their coordinates
+              Your report must include them as their HTML locators:
 
-          Combine data from <ui_map_from_screenshot> with your report.
-          Ensure all elements from <ui_map_from_screenshot> are present in your report.
-          If elements have locators & corrdinates => print both for each element.
+              Combine data from <ui_map_from_screenshot> with your report.
+              Ensure all elements from <ui_map_from_screenshot> are present in your report.
+              If elements have locators & corrdinates => print both for each element.
 
-          <ui_map_from_screenshot>
-            ${screenshotAnalysis}
-          </ui_map_from_screenshot>`);
+              <ui_map_from_screenshot>
+                ${screenshotAnalysis}
+              </ui_map_from_screenshot>`);
       }
     }
 
@@ -195,6 +210,9 @@ export class Researcher implements Agent {
             },
             {
               maxAttempts: codeBlocks.length,
+              observability: {
+                agent: 'researcher',
+              },
               catch: async (error) => {
                 debugLog(error);
               },
@@ -203,6 +221,9 @@ export class Researcher implements Agent {
         },
         {
           maxAttempts: ConfigParser.getInstance().getConfig().action?.retries || 3,
+          observability: {
+            agent: 'researcher',
+          },
           catch: async ({ error, stop }) => {
             debugLog(error);
             stop();
@@ -211,18 +232,30 @@ export class Researcher implements Agent {
       );
     }
 
-    // if (screenshotAnalysis) {
-    //   researchText += dedent`
-    //     ## Visual UI Map
+    let ariaSnapshot = actionResult.ariaSnapshot;
 
-    //     UI MAP with Element coordinates:
-    //     [Element Name]: (X, Y) coordinates of element to interact with.
+    if (!ariaSnapshot || ariaSnapshot.trim() === '') {
+      if (isOnCurrentState) {
+        debugLog('Accessibility tree is empty, refreshing page');
+        tag('step').log('Accessibility tree is empty, refreshing...');
+        await this.navigateTo(actionResult.url);
+        actionResult = await this.explorer.createAction().capturePageState();
+        ariaSnapshot = actionResult.ariaSnapshot;
+      }
+    }
 
-    //     <visual_ui_map>
-    //       ${screenshotAnalysis}
-    //     </visual_ui_map>`;
-    //   }
-    // ;
+    if (ariaSnapshot) {
+      researchText += dedent`
+
+          ## Accessibility Tree
+
+          The accessibility tree represents the semantic structure of the page as exposed to assistive technologies.
+          This provides a comprehensive view of all interactive elements and their relationships.
+
+          ${codeToMarkdown(ariaSnapshot)}
+
+          `;
+    }
 
     if (stateHash && researchDir && researchFile) {
       if (!existsSync(researchDir)) mkdirSync(researchDir, { recursive: true });
@@ -473,7 +506,7 @@ export class Researcher implements Agent {
 
       Here is HTML:
 
-      ${html}
+      ${codeToMarkdown(html)}
     `;
 
     const model = this.provider.getModelForAgent('researcher');
@@ -640,6 +673,14 @@ export class Researcher implements Agent {
     Researcher.researchCache[stateHash] = cached;
     Researcher.researchCacheTimestamps[stateHash] = now;
     return cached;
+  }
+
+  private isBodyEmpty(html: string): boolean {
+    if (!html) return true;
+    const bodyMatch = html.match(/<body[^>]*>(.*?)<\/body>/is);
+    if (!bodyMatch) return true;
+    const bodyContent = bodyMatch[1].trim();
+    return bodyContent === '';
   }
 
   private async navigateTo(url: string): Promise<void> {

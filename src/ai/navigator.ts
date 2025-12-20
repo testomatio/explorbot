@@ -12,7 +12,7 @@ import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
+import { actionRule, outputRule, verificationActionRule, verificationOutputRule } from './rules.js';
 
 const debugLog = createDebug('explorbot:navigator');
 
@@ -152,11 +152,11 @@ class Navigator implements Agent {
 
       ${knowledge}
 
-      ${this.actionRule()}
+      ${actionRule}
 
       ${experience}
 
-      ${this.outputRule()}
+      ${outputRule(this.MAX_ATTEMPTS)}
     `;
 
     debugLog('Sending prompt to AI provider');
@@ -202,6 +202,9 @@ class Navigator implements Agent {
       },
       {
         maxAttempts: this.MAX_ATTEMPTS,
+        observability: {
+          agent: 'navigator',
+        },
         catch: async (error) => {
           debugLog(error);
           resolved = false;
@@ -308,157 +311,136 @@ class Navigator implements Agent {
         };
         stop();
       },
-      { maxAttempts: 3 }
+      {
+        maxAttempts: 3,
+        observability: {
+          agent: 'navigator',
+        },
+      }
     );
 
     return suggestion;
   }
 
-  private outputRule(): string {
-    return dedent`
+  async verifyState(message: string, actionResult: ActionResult): Promise<boolean> {
+    tag('info').log('AI Navigator verifying state at', actionResult.url);
+    debugLog('Verification message:', message);
 
-      <rules>
-      Do not invent locators, focus only on locators from HTML PAGE.
-      Provide up to ${this.MAX_ATTEMPTS} various code suggestions to achieve the result.
-      If there was already succesful solution in <experince> use it as a first solution.
+    let knowledge = '';
+    let experience = '';
 
-      If no succesful solution was found in <experince> propose codeblocks for each area that can help to achieve the result.
-      Do not stick only to the first found element as it might be hidden or not availble on the page.
-      If you think HTML contains several areas that can help to achieve the result, propose codeblocks for each such area.
-      Use exact locators that can pick the elements from each areas.
-      Detect such duplicated areas by looking for duplicate IDs, data-ids, forms, etc.
+    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(actionResult);
+    if (relevantKnowledge.length > 0) {
+      const knowledgeContent = relevantKnowledge.map((k) => k.content).join('\n\n');
+      knowledge = `
+      <hint>
+      Here is relevant knowledge for this page:
+      ${knowledgeContent}
+      </hint>`;
+    }
 
-      In <explanation> write only one line without heading or bullet list or any other formatting.
-      Check previous solutions, if there is already successful solution, use it!
-      CodeceptJS code must start with "I."
-      All lines of code must be CodeceptJS code and start with "I."
+    const relevantExperience = this.experienceTracker.getRelevantExperience(actionResult).map((exp) => exp.content);
 
-      ${multipleLocatorRule}
+    if (relevantExperience.length > 0) {
+      const experienceContent = relevantExperience.join('\n\n---\n\n');
+      experience = await this.experienceCompactor.compactExperience(experienceContent);
+      tag('substep').log(`Found ${relevantExperience.length} experience file(s) for: ${actionResult.url}`);
 
-      ${generalLocatorRuleText}
-      </rules>
+      experience = dedent`
+      <experience>
+      Here is the experience of interacting with the page.
+      Learn from it AND DO NOT REPEAT THE SAME MISTAKES.
+      If there was found successful solution to an issue, propose it as a first solution.
 
-      <output>
-      Your response must start explanation of what you are going to do to achive the result
-      It is important to explain intention before proposing code.
-      Response must also valid CodeceptJS code in code blocks.
-      Propose codeblock from succesful solutions in <experince> first if they exist.
-      Use only locators from HTML PAGE that was passed in <page> context.
-      </output>
+      ${experienceContent}
 
+      </experience>`;
+    }
 
-      <output_format>
-        <explanation>
+    const prompt = dedent`
+      <message>
+        ${message}
+      </message>
 
-        \`\`\`js
-        <code>
-        \`\`\`
-        </code>
-        <code>
-        \`\`\`
-        </code>
-        <code>
-        \`\`\`
-        </code>
-      </output_format>
+      <task>
+        Identify what assertion the user wants to verify on the page.
+        Propose different CodeceptJS assertion code blocks to verify the expected state.
+        Use only data from the <page> context to plan the verification.
+        Try various locators and approaches to verify the assertion.
+      </task>
 
-      <example_output>
-      Trying to fill the form on the page
+      <page>
+        ${actionResult.toAiContext()}
 
-      \`\`\`js
-        I.fillField('Name', 'Value');
-        I.click('Submit');
-      \`\`\`
+        HTML:
 
-      \`\`\`js
-        I.fillField('//form/input[@name="name"]', 'Value');
-      \`\`\`
+        ${await actionResult.simplifiedHtml()}
+      </page>
 
-      \`\`\`js
-        I.fillField('#app .form input[name="name"]', 'Value');
-      \`\`\`
+      ${knowledge}
 
-      \`\`\`js
-        I.fillField('/html/body/div/div/div/form/input[@name="name"]', 'Value');
-      \`\`\`
-      </example_output>
+      ${verificationActionRule}
 
-      If you don't know the answer, answer as:
+      ${experience}
 
-      <example_output>
-      \`\`\`js
-        throw new Error('No resolution');
-      \`\`\`
-      </example_output>
+      ${verificationOutputRule(this.MAX_ATTEMPTS)}
     `;
-  }
 
-  private actionRule() {
-    return dedent`
-    <actions>
-    ### I.click
+    debugLog('Sending verification prompt to AI provider');
+    tag('debug').log('Prompt:', prompt);
 
-    clicks on the element by its locator or by coordinates
+    const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
+    conversation.addUserText(prompt);
 
-    <example>
-      I.click('Button'); // clicks on the button with text "Button"
-      I.click('.button'); // clicks on the button with class "button"
-      I.click('.button', 'user.form'); // clicks on the button with class "button" inside the form with id "user.form"
-      I.click('//user/button'); // clicks on the button with XPath "//user/button"
-      I.click('body', null, { position: { x: 20, y: 40 } }) // clicks on the body at position 20, 40
-    </example>
+    let codeBlocks: string[] = [];
+    let verified = false;
 
-    It is preferred to use button or link texts.
-    If it doesn't work, use CSS or XPath locators.
-    If it doesn't work, use coordinates.
+    const action = this.explorer.createAction();
 
+    await loop(
+      async ({ stop, iteration }) => {
+        if (codeBlocks.length === 0) {
+          const result = await this.provider.invokeConversation(conversation);
+          if (!result) return;
+          const aiResponse = result?.response?.text;
+          tag('info').log(aiResponse?.split('\n')[0]);
+          debugLog('Received AI response:', aiResponse.length, 'characters');
+          tag('step').log('Verifying assertion...');
+          codeBlocks = extractCodeBlocks(aiResponse ?? '');
+        }
 
-    ### I.fillField
+        if (codeBlocks.length === 0) {
+          return;
+        }
 
-    fills the field with the given value
+        const codeBlock = codeBlocks[iteration - 1];
+        if (!codeBlock) {
+          stop();
+          return;
+        }
 
-    <example>
-      I.fillField('Username', 'John'); // fills the field located by name or placeholder or label "Username" with the text "John"
-      I.fillField('//user/input', 'John'); // fills the field located by XPath "//user/input" with the text "John"
-    </example>
+        tag('step').log(`Attempting verification: ${codeBlock}`);
+        verified = await action.attempt(codeBlock, message, false);
 
-    ### I.type
+        if (verified) {
+          tag('success').log('Verification passed');
+          stop();
+          return;
+        }
+      },
+      {
+        maxAttempts: this.MAX_ATTEMPTS,
+        observability: {
+          agent: 'navigator',
+        },
+        catch: async (error) => {
+          debugLog(error);
+          verified = false;
+        },
+      }
+    );
 
-    type sends keyboard keys to the browser window, use it if fillField doesn't work.
-    for instance, for highy customized input fields.
-
-    <example>
-      I.type('John'); // types the text "John" into the active element
-    </example>
-
-    Check example output:
-
-    Assuming the follwing code if executed will change the state of the page:
-
-    <example output>
-      I.fillField('Name', 'Value');
-      I.click('Submit');
-    </example output>
-
-    ### I.selectOption
-
-    In case you deal with select elements, use selectOption instead of fillField.
-
-    <example>
-      I.selectOption('Choose Plan', 'Monthly'); // select by label
-      I.selectOption('subscription', 'Monthly'); // match option by text
-      I.selectOption('subscription', '0'); // or by value
-      I.selectOption('//form/select[@name=account]','Premium');
-      I.selectOption('form select[name=account]', 'Premium');
-      I.selectOption({css: 'form select[name=account]'}, 'Premium');
-    </example>
-
-    [DO NEVER USE OTHER CODECEPTJS COMMANDS THAN PROPOSED HERE]
-    [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML]
-    [DO NOT USE WAIT FUNCTIONS]
-
-    </actions>
-    `;
+    return verified;
   }
 }
 

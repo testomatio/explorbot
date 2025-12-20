@@ -163,21 +163,7 @@ export class CommandHandler implements InputManager {
     if (!slashCommands.includes('/quit')) {
       slashCommands.push('/quit');
     }
-    return [
-      ...slashCommands,
-      'I.amOnPage',
-      'I.click',
-      'I.see',
-      'I.fillField',
-      'I.selectOption',
-      'I.checkOption',
-      'I.pressKey',
-      'I.wait',
-      'I.waitForElement',
-      'I.waitForVisible',
-      'I.waitForInvisible',
-      'I.scrollTo',
-    ];
+    return [...slashCommands, 'I.amOnPage', 'I.click', 'I.see', 'I.fillField', 'I.selectOption', 'I.checkOption', 'I.pressKey', 'I.wait', 'I.waitForElement', 'I.waitForVisible', 'I.waitForInvisible', 'I.scrollTo'];
   }
 
   getCommandDescriptions(): { name: string; description: string }[] {

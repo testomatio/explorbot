@@ -1,180 +1,104 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import { platform } from 'node:os';
 import Action from '../action.js';
 import { createDebug } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import { locatorRule, multipleLocatorRule } from './rules.ts';
+import { htmlCombinedSnapshot } from '../utils/html.js';
+import type Explorer from '../explorer.ts';
+import { Researcher } from './researcher.ts';
+import { Navigator } from './navigator.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
-export function clearToolCallHistory() {}
+function successToolResult(action: string, data?: Record<string, any>) {
+  return {
+    success: true,
+    action,
+    ...data,
+  };
+}
 
-export function createCodeceptJSTools(action: Action) {
+function failedToolResult(action: string, message: string, data?: Record<string, any>) {
+  return {
+    success: false,
+    action,
+    message,
+    ...data,
+  };
+}
+
+export function createCodeceptJSTools(action: Action, noteFn: (note: string) => void = () => {}) {
   return {
     click: tool({
       description: dedent`
         Perform a click on an element by its locator. ARIA, CSS or XPath locators are equally supported.
         Prefer ARIA locators first over CSS or XPath locators.
         Follow semantic attributes when interacting with clickable elements like buttons, links, role=button etc, or elements have aria-label or aria-roledescription attributes.
+        Can pass a text of clickable element instead of locator (click('Login'), click('Submit'), click('Save'), etc)
 
         ${locatorRule}
+
+        Do not use :contains in locator, as click() searches an element by text by default.
+
+        click('button:contains("Login")') use clickByText tool instead
+
+        
       `,
       inputSchema: z.object({
         locator: z.string().describe('ARIA, CSS or XPath locator for the element to click.'),
         explanation: z.string().describe('Reason for selecting this click action.'),
       }),
       execute: async ({ locator, explanation }) => {
-        let result: any = {
-          success: false,
-          message: 'Nothing was executed',
-          action: 'click',
-          suggestion: 'Try again with different locator',
-          explanation,
-        };
+        noteFn(explanation);
+        locator = stringToJson(locator);
 
-        if (locator.startsWith('{') && locator.endsWith('}')) {
-          locator = JSON.parse(locator);
-        }
+        debugLog('Click locator:', locator);
 
         const clickSuccess = await action.attempt((I) => I.click(locator), explanation);
         if (clickSuccess) {
           await action.capturePageState();
-
-          result = {
-            success: true,
-            action: 'click',
-            locator,
-            explanation,
-          };
-          return result;
+          return successToolResult('click');
         }
 
-        let errorMessage = action.lastError ? action.lastError.toString() : '';
-
-        const forceClickSuccess = await action.attempt((I) => I.forceClick(locator), explanation);
-        if (forceClickSuccess) {
-          await action.capturePageState();
-          result = {
-            success: true,
-            action: 'click',
-            locator,
-            explanation,
-            message: 'Click succeeded but ignoring visibility checks. Element may behave unexpectedly',
-            suggestion: 'Next time use clickXY tool for this element, and click on it by X, Y coordinates if they are available.',
-          };
-          return result;
-        }
-
-        if (action.lastError) {
-          errorMessage = action.lastError.toString();
-        }
-
-        const elementVisible = await action.attempt((I) => I.seeElement(locator), explanation);
-
-        await action.capturePageState();
-
-        if (!elementVisible) {
-          result = {
-            success: false,
-            action: 'click',
-            locator,
-            explanation,
-            message: 'The element is either not visible or not clickable',
-            suggestion: dedent`
-              Do not try to interact with this element by any locator.
-              Try clicking it by coordinates using clickXY tool if they are available.
-              If it is not possible suggest a different approach.
-            `,
-          };
-          if (errorMessage) {
-            result.error = errorMessage;
-          }
-          return result;
-        }
-
-        result = {
-          success: false,
-          action: 'click',
-          locator,
-          explanation,
-          message: 'Click did not succeed even though the element is visible.',
+        return failedToolResult('click', 'Click did not succeed.', {
+          message: action.lastError ? action.lastError.toString() : '',
           suggestion: 'Try a different locator or interact using clickXY if coordinates are available.',
-        };
-        if (errorMessage) {
-          result.error = errorMessage;
-        }
-        return result;
+        });
       },
     }),
 
-    seeElement: tool({
+    clickByText: tool({
       description: dedent`
-        Quickly verify that an element became visible or interactable.
-        Use it to confirm alerts, dropdowns, toolbars, or overlays appeared.
-        Provide several locator options if there are alternative selectors for the same element.
+        Click on a button or link by its text within a specific context element.
+        Use this when you need to click an element by text but there are multiple elements with the same text on the page.
+        The context locator narrows down the search area to a specific container.
 
-        ${locatorRule}
-        ${multipleLocatorRule}
+        Example: clickByText('Submit', '.modal-footer') - clicks Submit button inside modal footer
+        Example: clickByText('Delete', '//div[@class="user-row"][1]') - clicks Delete in first user row
       `,
       inputSchema: z.object({
-        locators: z.array(z.string()).min(1).describe('Array of locators to check sequentially until one is found. Must provide at least one locator.'),
-        explanation: z.string().describe('Reason for verifying element visibility.'),
+        text: z.string().describe('Text of the button or link to click'),
+        context: z.string().describe('CSS or XPath locator for the container element to search within'),
+        explanation: z.string().describe('Reason for selecting this click action.'),
       }),
-      execute: async ({ locators, explanation }) => {
-        if (!locators.length) {
-          return {
-            success: false,
-            action: 'seeElement',
-            message: 'Provide at least one locator to verify.',
-            suggestion: 'Add CSS or XPath selector that should match the element.',
-            explanation,
-          };
+      execute: async ({ text, context, explanation }) => {
+        noteFn(explanation);
+        context = stringToJson(context);
+
+        debugLog('ClickByText:', text, 'in context:', context);
+
+        const clickSuccess = await action.attempt((I) => I.click(text, context), explanation);
+        if (clickSuccess) {
+          await action.capturePageState();
+          return successToolResult('clickByText');
         }
 
-        let result: any = {
-          success: false,
-          action: 'seeElement',
-          explanation,
-        };
-
-        await loop(
-          async ({ stop }) => {
-            const locator = locators.shift();
-            if (!locator) {
-              stop();
-              return;
-            }
-
-            await action.attempt((I) => I.seeElement(locator), explanation);
-
-            if (action.lastError) {
-              result = {
-                success: false,
-                action: 'seeElement',
-                locator,
-                explanation,
-                message: `Failed to confirm element visibility with provided locators ${locator}.`,
-              };
-              return;
-            }
-
-            const html = await action.getActor().grabHtmlFrom(locator);
-
-            result = {
-              success: true,
-              action: 'seeElement',
-              locator,
-              explanation,
-              elementHtml: html || '',
-            };
-            stop();
-          },
-          { maxAttempts: locators.length }
-        );
-
-        return result;
+        return failedToolResult('clickByText', 'Click by text did not succeed.', {
+          message: action.lastError ? action.lastError.toString() : '',
+          suggestion: 'Verify the text matches exactly and the context locator is correct. Try using click() with a more specific locator instead.',
+        });
       },
     }),
 
@@ -187,43 +111,21 @@ export function createCodeceptJSTools(action: Action) {
       inputSchema: z.object({
         x: z.number().describe('X coordinate in pixels'),
         y: z.number().describe('Y coordinate in pixels'),
-        explanation: z.string().describe('Reason for clicking by coordinates.'),
+        explanation: z.string().optional().describe('Reason for clicking by coordinates.'),
       }),
       execute: async ({ x, y, explanation }) => {
-        const success = await action.attempt(
-          (I) =>
-            I.usePlaywrightTo('click by coordinates', async ({ page }: { page: any }) => {
-              await page.mouse.click(x, y);
-            }),
-          explanation
-        );
+        if (explanation) noteFn(explanation);
+        const success = await action.attempt((I) => I.clickXY(x, y), explanation);
 
         await action.capturePageState();
 
         if (success) {
-          return {
-            success: true,
-            action: 'clickXY',
-            x,
-            y,
-            explanation,
-          };
+          return successToolResult('clickXY');
         }
 
-        const result: any = {
-          success: false,
-          action: 'clickXY',
-          x,
-          y,
-          explanation,
-          message: 'Click by coordinates failed.',
-        };
-
-        if (action.lastError) {
-          result.error = action.lastError.toString();
-        }
-
-        return result;
+        return failedToolResult('clickXY', 'Click by coordinates failed.', {
+          ...(action.lastError && { error: action.lastError.toString() }),
+        });
       },
     }),
 
@@ -231,23 +133,22 @@ export function createCodeceptJSTools(action: Action) {
       description: 'Send keyboard input to a field by its locator. After typing, the page state will be automatically captured and returned.',
       inputSchema: z.object({
         text: z.string().describe('The text to type'),
-        locator: z.string().describe('CSS or XPath locator for the field to fill'),
-        explanation: z.string().describe('Reason for providing this input.'),
+        locator: z.string().optional().describe('CSS or XPath locator for the field to fill'),
+        explanation: z.string().optional().describe('Reason for providing this input.'),
       }),
       execute: async ({ text, locator, explanation }) => {
+        if (explanation) noteFn(explanation);
         const selectAllKey = ['CommandOrControl', 'a'];
 
-        await action.attempt((I) => I.fillField(locator, text), explanation);
+        if (locator) {
+          locator = stringToJson(locator);
+          await action.attempt((I) => I.fillField(locator, text), explanation);
 
-        if (!action.lastError) {
-          return {
-            success: true,
-            message: `Input field ${locator} was filled with value ${text}`,
-            action: 'type',
-            locator,
-            text,
-            explanation,
-          };
+          if (!action.lastError) {
+            return successToolResult('type', {
+              message: `Input field ${locator} was filled with value ${text}`,
+            });
+          }
         }
 
         await action.attempt((I) => I.click(locator), explanation);
@@ -259,27 +160,16 @@ export function createCodeceptJSTools(action: Action) {
         }, explanation);
 
         if (!action.lastError) {
-          return {
-            success: true,
-            action: 'type',
-            locator,
-            text,
-            explanation,
+          return successToolResult('type', {
             message: 'type() tool worked by clicking element and typing in values',
-          };
+          });
         }
 
         await action.capturePageState();
 
-        return {
-          success: false,
-          action: 'type',
-          locator,
-          text,
-          explanation,
-          message: `type() tool failed ${action.lastError?.toString()}`,
+        return failedToolResult('type', `type() tool failed ${action.lastError?.toString()}`, {
           suggestion: 'Try again with different locator or use clickXY tool to click on the element by coordinates and then calling type() without a locator',
-        };
+        });
       },
     }),
 
@@ -289,13 +179,13 @@ export function createCodeceptJSTools(action: Action) {
         When you have a form on a page or multiple input elements to interact with.
         Prefer using form() when interacting with iframe elements, switch to iframe context with I.switchTo(<iframe_locator>)
         Prefer to use it instead of click() and type() when dealing with multiple elements.
+        Do not submit form, just fill it in
 
         Provide valid CodeceptJS code that starts with I. and can contain multiple commands separated by newlines.
 
         Example:
         I.fillField('title', 'My Article')
         I.selectOption('category', 'Technology')
-        I.click('Save')
 
         ${locatorRule}
 
@@ -310,14 +200,9 @@ export function createCodeceptJSTools(action: Action) {
         explanation: z.string().describe('Reason for submitting this form sequence.'),
       }),
       execute: async ({ codeBlock, explanation }) => {
+        noteFn(explanation);
         if (!codeBlock.trim()) {
-          return {
-            success: false,
-            message: 'CodeBlock cannot be empty',
-            action: 'form',
-            codeBlock,
-            explanation,
-          };
+          return failedToolResult('form', 'CodeBlock cannot be empty');
         }
 
         const lines = codeBlock
@@ -327,122 +212,169 @@ export function createCodeceptJSTools(action: Action) {
         const codeLines = lines.filter((line) => !line.startsWith('//'));
 
         if (!codeLines.every((line) => line.startsWith('I.'))) {
-          return {
-            success: false,
-            message: 'All non-comment lines must start with I.',
-            action: 'form',
+          return failedToolResult('form', 'All non-comment lines must start with I.', {
             suggestion: 'Try again but pass valid CodeceptJS code where every non-comment line starts with I.',
-            codeBlock,
-            explanation,
-          };
+          });
         }
 
         await action.attempt(codeBlock, explanation);
 
         if (action.lastError) {
           const message = action.lastError ? String(action.lastError) : 'Unknown error';
-          return {
-            success: false,
-            message: `Form execution FAILED! ${message}`,
-            suggestion: "Try again looking at the error message. If this won't work use different locators or fill the fields one by one using click() and type() tools",
-            action: 'form',
-            codeBlock,
-            explanation,
-          };
+          return failedToolResult('form', `Form execution FAILED! ${message}`, {
+            suggestion: dedent`
+              Look into error message and identify which commands passed and which failed.
+              Continue execution using step-by-step approach using click() and type() tools.`,
+          });
         }
 
         await action.capturePageState();
 
-        return {
-          success: true,
-          message: `Form completed successfully with ${lines.length} commands`,
-          action: 'form',
-          codeBlock,
+        return successToolResult('form', {
+          message: `Form completed successfully with ${lines.length} commands.`,
+          suggestion: 'Verify the form was filled in correctly using see() tool. Submit if needed by using click() tool.',
           commandsExecuted: lines.length,
-          explanation,
-        };
+        });
       },
     }),
+  };
+}
 
+export function createAgentTools({
+  explorer,
+  researcher,
+  navigator,
+}: {
+  explorer: Explorer;
+  researcher: Researcher;
+  navigator: Navigator;
+}): any {
+  return {
     see: tool({
       description: dedent`
-        Take a screenshot and use AI to analyze if the page contains the requested element.
-        This tool is useful for verifying visual elements that may be difficult to locate with traditional selectors.
-        The AI will analyze the screenshot and determine if the requested element is present and usable.
+        Check the page contents based on current page state and screenshot
+        This tool will trigger visual research to check the page contents on request
+        Use it to to verify the actions were performed correctly and the page is in the expected state
+
+        <example>
+        request: "Check current state of the Login form"
+        result: "Login form is visible with username and password fields, username is filled with 'testuser' and password is empty' 
+        </example>
       `,
       inputSchema: z.object({
-        request: z.string().describe('Description of the element or content to look for in the screenshot'),
-        explanation: z.string().describe('Reason for searching for this element'),
+        request: z.string().describe('LLM-friendly description of the page contents to look for. 1-3 sentences. No more than 100 words.'),
       }),
-      execute: async ({ request, explanation }) => {
+      execute: async ({ request }) => {
         try {
+          const action = explorer.createAction();
           const actionResult = await action.caputrePageWithScreenshot();
 
           if (!actionResult.screenshot) {
-            return {
-              success: false,
-              action: 'see',
-              request,
-              explanation,
-              message: 'Failed to capture screenshot for analysis',
-            };
+            return failedToolResult('see', 'Failed to capture screenshot for analysis');
           }
 
-          const explorer = action.getExplorer();
-          if (!explorer) {
-            return {
-              success: false,
-              action: 'see',
-              request,
-              explanation,
-              message: 'Explorer not available for AI analysis',
-            };
-          }
-
-          const researcher = explorer.getResearcher();
-          if (!researcher) {
-            return {
-              success: false,
-              action: 'see',
-              request,
-              explanation,
-              message: 'Researcher not available for AI analysis',
-            };
-          }
-
-          const currentState = actionResult.getState();
-          const analysisResult = await researcher.imageContent(currentState, request);
+          const analysisResult = await researcher.imageContent(actionResult, request);
 
           if (!analysisResult) {
-            return {
-              success: false,
-              action: 'see',
-              request,
-              explanation,
-              message: 'AI analysis failed to process the screenshot',
-            };
+            return failedToolResult('see', 'AI analysis failed to process the screenshot');
           }
 
-          return {
-            success: true,
-            action: 'see',
-            request,
-            explanation,
+          return successToolResult('see', {
             analysis: analysisResult,
             message: `Successfully analyzed screenshot for: ${request}`,
-          };
+            suggestion: 'If an expected data was seen on a page, call verify() to ensure it can be located in DOM',
+          });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
-          return {
-            success: false,
-            action: 'see',
-            request,
-            explanation,
-            message: `See tool failed: ${errorMessage}`,
+          return failedToolResult('see', `See tool failed: ${errorMessage}`, {
             error: errorMessage,
-          };
+          });
+        }
+      },
+    }),
+
+    verify: tool({
+      description: dedent`
+        Verify an assertion about the current page state using AI-powered verification.
+        This tool uses the Navigator's verifyState method to check if the page matches the expected condition.
+        Do not ask research for the same page you already researched.
+        The AI will attempt multiple verification strategies using CodeceptJS assertions.
+      `,
+      inputSchema: z.object({
+        assertion: z.string().describe('The assertion or condition to verify on the current page (e.g., "User is logged in", "Form validation error is displayed")'),
+      }),
+      execute: async ({ assertion }) => {
+        try {
+          const action = explorer.createAction();
+          const actionResult = await action.capturePageState();
+          const verified = await navigator.verifyState(assertion, actionResult);
+
+          if (verified) {
+            return successToolResult('verify', {
+              message: `Verification passed: ${assertion}`,
+            });
+          }
+
+          return failedToolResult('verify', `Verification failed: ${assertion}`, {
+            suggestion: 'The assertion could not be verified. Check if the condition is actually present on the page or try a different assertion.',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('verify', `Verify tool failed: ${errorMessage}`, {
+            error: errorMessage,
+          });
+        }
+      },
+    }),
+
+    research: tool({
+      description: dedent`
+        Research the current page to understand its structure, UI elements, and navigation.
+        This tool provides a comprehensive UI map report including forms, buttons, menus, and other interactive elements.
+        Use it when you need to understand the page layout before interacting with it.
+      `,
+      inputSchema: z.object({}),
+      execute: async () => {
+        try {
+          const stateManager = explorer.getStateManager();
+          const currentState = stateManager.getCurrentState();
+
+          if (!currentState) {
+            return failedToolResult('research', 'No current page state available. Navigate to a page first.');
+          }
+
+          const researchResult = await researcher.research(currentState, { screenshot: true });
+
+          return successToolResult('research', {
+            analysis: researchResult,
+            message: `Successfully researched page: ${currentState.url}.`,
+            suggestion: 'You received comprehensive UI map report. Use it to understand the page structure and navigate to the elements. Do not ask for research() if you have <page_ui_map> for current page.',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('research', `Research tool failed: ${errorMessage}`, {
+            error: errorMessage,
+          });
         }
       },
     }),
   };
+}
+
+function stringToJson(str: string): any {
+  if (!str) return null;
+  const firstWord = str.split(' ')[0];
+  if (['link', 'button', 'input', 'select', 'textarea', 'option', 'combobox'].includes(firstWord)) {
+    return {
+      role: firstWord,
+      text: str
+        .slice(firstWord.length)
+        .trim()
+        .replace(/^['"]|['"]$/g, ''),
+    };
+  }
+  if (str.startsWith('{') && str.endsWith('}')) {
+    return JSON.parse(str);
+  }
+  return str;
 }

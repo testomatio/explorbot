@@ -1,8 +1,12 @@
 import { generateObject, generateText } from 'ai';
 import type { ModelMessage } from 'ai';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { LangfuseExporter } from 'langfuse-vercel';
 import { readFileSync } from 'node:fs';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
+import { Observability } from '../observability.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { Conversation } from './conversation.js';
@@ -14,18 +18,14 @@ const responseLog = createDebug('explorbot:provider:in');
 export class Provider {
   private config: AIConfig;
   private provider: any = null;
+  private telemetryEnabled = false;
+  private otelSdk: NodeSDK | null = null;
   private defaultRetryOptions: RetryOptions = {
     maxAttempts: 3,
     baseDelay: 10,
     maxDelay: 10000,
     retryCondition: (error: Error) => {
-      return (
-        error.name === 'AI_APICallError' ||
-        error.message.includes('timeout') ||
-        error.message.includes('network') ||
-        error.message.includes('rate limit') ||
-        error.message.includes('AI request timeout')
-      );
+      return error.name === 'AI_APICallError' || error.message.includes('timeout') || error.message.includes('network') || error.message.includes('rate limit') || error.message.includes('AI request timeout');
     },
   };
   lastConversation: Conversation | null = null;
@@ -33,6 +33,7 @@ export class Provider {
   constructor(config: AIConfig) {
     this.config = config;
     this.provider = this.config.provider;
+    this.initLangfuse();
   }
 
   getModelForAgent(agentName?: string): string {
@@ -48,6 +49,55 @@ export class Provider {
     return {
       ...this.defaultRetryOptions,
       maxAttempts: options.maxRetries || this.defaultRetryOptions.maxAttempts,
+    };
+  }
+
+  private initLangfuse() {
+    const langfuseConfig = this.config.langfuse;
+    const publicKey = langfuseConfig?.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
+    const secretKey = langfuseConfig?.secretKey || process.env.LANGFUSE_SECRET_KEY;
+    const baseUrl = langfuseConfig?.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST;
+    const enabled = langfuseConfig?.enabled ?? Boolean(publicKey && secretKey);
+
+    if (!enabled || !publicKey || !secretKey) {
+      return;
+    }
+
+    const exporter = new LangfuseExporter({
+      publicKey,
+      secretKey,
+      baseUrl,
+    });
+    this.otelSdk = new NodeSDK({
+      traceExporter: exporter,
+      instrumentations: [getNodeAutoInstrumentations()],
+    });
+    void this.otelSdk.start();
+    this.telemetryEnabled = true;
+  }
+
+  private getTelemetry(options: any) {
+    if (!this.telemetryEnabled) {
+      return undefined;
+    }
+
+    const runTelemetry = Observability.getTelemetry();
+
+    if (!options.experimental_telemetry) {
+      return runTelemetry || { isEnabled: true };
+    }
+
+    if (!runTelemetry) {
+      return options.experimental_telemetry;
+    }
+
+    return {
+      ...runTelemetry,
+      ...options.experimental_telemetry,
+      metadata: {
+        ...runTelemetry.metadata,
+        ...options.experimental_telemetry.metadata,
+      },
     };
   }
 
@@ -72,6 +122,9 @@ export class Provider {
     const toolCalls = response.toolCalls || [];
     const toolResults = response.toolResults || [];
 
+    // Note: addToolExecutions was removed from Conversation class
+    // Tool executions are now handled internally by the AI SDK
+
     const toolExecutions = toolCalls.map((call: any, index: number) => ({
       toolName: call.toolName || '',
       input: call.input,
@@ -86,9 +139,11 @@ export class Provider {
     setActivity(`🤖 Asking ${model}`, 'ai');
     promptLog(`Using model: ${model}`);
 
+    const telemetry = this.getTelemetry(options);
     const config = {
-      ...this.config,
+      ...(this.config.config || {}),
       ...options,
+      ...(telemetry ? { experimental_telemetry: telemetry } : {}),
       model: this.provider(model),
     };
 
@@ -122,13 +177,15 @@ export class Provider {
     promptLog('Available tools:', toolNames);
     promptLog(messages[messages.length - 1].content);
 
+    const telemetry = this.getTelemetry(options);
     const config = {
-      model: this.provider(model),
       tools,
       maxToolRoundtrips: options.maxToolRoundtrips || 5,
       toolChoice: 'auto',
-      ...this.config.config,
+      ...(this.config.config || {}),
       ...options,
+      ...(telemetry ? { experimental_telemetry: telemetry } : {}),
+      model: this.provider(model),
     };
 
     try {
@@ -158,8 +215,10 @@ export class Provider {
 
       return response;
     } catch (error: any) {
-      console.log(error.messages);
-      console.log(error.tools);
+      if (error.constructor.name === 'AI_APICallError') {
+        responseLog(error.message);
+        return error.message;
+      }
       clearActivity();
       throw error;
     }
@@ -170,11 +229,13 @@ export class Provider {
     setActivity(`🤖 Asking ${modelToUse} for structured output`, 'ai');
     promptLog(`Using model: ${modelToUse}`);
 
+    const telemetry = this.getTelemetry(options);
     const config = {
-      model: this.provider(modelToUse),
       schema,
-      ...this.config.config,
+      ...(this.config.config || {}),
       ...options,
+      ...(telemetry ? { experimental_telemetry: telemetry } : {}),
+      model: this.provider(modelToUse),
     };
 
     try {
@@ -229,9 +290,11 @@ export class Provider {
       },
     ];
 
+    const telemetry = this.getTelemetry({});
     const config = {
+      ...(this.config.config || {}),
+      ...(telemetry ? { experimental_telemetry: telemetry } : {}),
       model: this.provider(this.config.visionModel),
-      ...this.config.config,
     };
 
     try {

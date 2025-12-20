@@ -9,6 +9,7 @@ import { Planner } from './ai/planner.ts';
 import { AIProvider, AiError } from './ai/provider.ts';
 import { Researcher } from './ai/researcher.ts';
 import { Tester } from './ai/tester.ts';
+import { createAgentTools } from './ai/tools.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
@@ -157,7 +158,12 @@ export class ExplorBot {
   }
 
   agentTester(): Tester {
-    return (this.agents.tester ||= this.createAgent(({ ai, explorer }) => new Tester(explorer, ai)));
+    return (this.agents.tester ||= this.createAgent(({ ai, explorer }) => {
+      const researcher = this.agentResearcher();
+      const navigator = this.agentNavigator();
+      const tools = createAgentTools({ explorer, researcher, navigator });
+      return new Tester(explorer, ai, researcher, tools);
+    }));
   }
 
   agentCaptain(): Captain {
