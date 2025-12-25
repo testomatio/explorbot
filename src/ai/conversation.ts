@@ -4,12 +4,14 @@ export class Conversation {
   id: string;
   messages: ModelMessage[];
   model: string;
+  telemetryFunctionId?: string;
   private autoTrimRules: Map<string, number>;
 
-  constructor(messages: ModelMessage[] = [], model?: string) {
+  constructor(messages: ModelMessage[] = [], model?: string, telemetryFunctionId?: string) {
     this.id = this.generateId();
     this.messages = messages;
     this.model = model || '';
+    this.telemetryFunctionId = telemetryFunctionId;
     this.autoTrimRules = new Map();
   }
 
@@ -35,6 +37,10 @@ export class Conversation {
   }
 
   addAssistantText(text: string): void {
+    // Skip empty or whitespace-only messages
+    if (!text || text.trim() === '') {
+      return;
+    }
     this.messages.push({
       role: 'assistant',
       content: this.applyAutoTrim(text),
@@ -58,7 +64,7 @@ export class Conversation {
   }
 
   clone(): Conversation {
-    return new Conversation([...this.messages], this.model);
+    return new Conversation([...this.messages], this.model, this.telemetryFunctionId);
   }
 
   cleanupTag(tagName: string, replacement: string, keepLast = 0): void {
@@ -79,11 +85,16 @@ export class Conversation {
     this.autoTrimRules.set(tagName, maxLength);
   }
 
-  hasTag(tagName: string): boolean {
+  hasTag(tagName: string, lastN?: number): boolean {
     const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`<${escapedTag}>`, 'g');
 
-    for (const message of this.messages) {
+    let messagesToCheck = this.messages;
+    if (lastN) {
+      messagesToCheck = this.messages.slice(Math.max(0, this.messages.length - lastN));
+    }
+
+    for (const message of messagesToCheck) {
       if (typeof message.content === 'string' && regex.test(message.content)) {
         return true;
       }

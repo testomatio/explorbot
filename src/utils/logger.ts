@@ -4,7 +4,9 @@ import chalk from 'chalk';
 import debug from 'debug';
 import dedent from 'dedent';
 import { marked } from 'marked';
+import { context, trace, type Span } from '@opentelemetry/api';
 import { ConfigParser } from '../config.js';
+import { Observability } from '../observability.ts';
 
 export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'step' | 'multiline' | 'html';
 
@@ -117,6 +119,51 @@ class FileDestination implements LogDestination {
   }
 }
 
+class SpanDestination implements LogDestination {
+  isEnabled(): boolean {
+    return Observability.isTracing();
+  }
+
+  write(entry: TaggedLogEntry): void {
+    if (entry.type !== 'step') return;
+    const activeSpan = stepSpanParent;
+    if (!activeSpan) return;
+    const tracer = trace.getTracer('ai');
+    const step = entry.originalArgs?.[0];
+    const stepError = entry.originalArgs?.[1];
+    if (!step?.toCode) {
+      return;
+    }
+    const stepName = step?.name ? `I.${step.name}` : 'I.step';
+    const stepInput = typeof step?.toCode === 'function' ? step.toCode() : entry.content;
+    const errorFromStep = step?.error;
+    const errorMessage =
+      stepError && typeof stepError === 'object' && 'message' in stepError && typeof stepError.message === 'string'
+        ? stepError.message
+        : errorFromStep && typeof errorFromStep === 'object' && 'message' in errorFromStep && typeof errorFromStep.message === 'string'
+          ? errorFromStep.message
+          : stepError && typeof stepError === 'string'
+            ? stepError
+            : undefined;
+    const stepOutput = errorMessage ? `failed: ${errorMessage}` : step?.status || (step?.failed ? 'failed' : step?.success ? 'success' : 'passed');
+    const span = tracer.startSpan(stepName, undefined, trace.setSpan(context.active(), activeSpan));
+    span.setAttribute('ai.prompt', stepInput);
+    span.setAttribute('ai.toolCall.args', stepInput);
+    span.setAttribute('ai.response.text', stepOutput);
+    span.setAttribute('ai.toolCall.result', stepOutput);
+    span.setAttribute('log.timestamp', entry.timestamp?.toISOString() || new Date().toISOString());
+    if (step) {
+      try {
+        const parsedStep = typeof step === 'string' ? JSON.parse(step) : step;
+        span.setAttribute('ai.telemetry.metadata.step', JSON.stringify(parsedStep));
+      } catch {
+        span.setAttribute('ai.telemetry.metadata.step', '[unserializable step]');
+      }
+    }
+    span.end();
+  }
+}
+
 class ReactDestination implements LogDestination {
   private logPane: ((entry: LogEntry) => void) | null = null;
 
@@ -147,6 +194,7 @@ class Logger {
   private console = new ConsoleDestination();
   private debugDestination = new DebugDestination();
   private file = new FileDestination();
+  private span = new SpanDestination();
   public react = new ReactDestination();
   private truncateTags: string[] = ['page_html'];
 
@@ -233,17 +281,22 @@ class Logger {
       this.debugDestination.write(namespace, processedContent);
       return;
     }
-    const content = this.processArgs(args);
+    let content = this.processArgs(args);
+    if (type === 'step' && args[0]?.toCode) {
+      content = args[0].toCode();
+    }
     const entry: TaggedLogEntry = {
       type,
       content,
       timestamp: new Date(),
+      originalArgs: args,
     };
 
     // Write to all enabled destinations in order
     // Note: When console is force enabled, we still want logs in the log pane
     if (!this.react.isEnabled() && this.console.isEnabled()) this.console.write(entry);
     if (this.file.isEnabled()) this.file.write(entry);
+    if (this.span.isEnabled()) this.span.write(entry);
     if (this.react.isEnabled()) this.react.write(entry);
   }
 
@@ -277,6 +330,7 @@ class Logger {
 }
 
 const logger = Logger.getInstance();
+let stepSpanParent: Span | null = null;
 
 export const tag = (type: LogType) => ({
   log: (...args: any[]) => logger.log(type, ...args),
@@ -311,6 +365,9 @@ export const isVerboseMode = () => logger.isVerboseMode();
 export const registerLogPane = (addLog: (entry: LogEntry) => void) => logger.registerLogPane(addLog);
 export const unregisterLogPane = (addLog: (entry: LogEntry) => void) => logger.unregisterLogPane(addLog);
 export const addTruncateTag = (tagName: string) => logger.addTruncateTag(tagName);
+export const setStepSpanParent = (span: Span | null) => {
+  stepSpanParent = span;
+};
 
 // Legacy alias for backward compatibility
 export const setLogCallback = registerLogPane;

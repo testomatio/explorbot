@@ -1,35 +1,95 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import Action from '../action.js';
 import { createDebug } from '../utils/logger.js';
-import { loop } from '../utils/loop.js';
-import { locatorRule, multipleLocatorRule } from './rules.ts';
-import { htmlCombinedSnapshot } from '../utils/html.js';
+import { locatorRule } from './rules.ts';
 import type Explorer from '../explorer.ts';
 import { Researcher } from './researcher.ts';
 import { Navigator } from './navigator.ts';
+import { ActionResult } from '../action-result.ts';
+import { minifyHtml } from '../utils/html.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
-function successToolResult(action: string, data?: Record<string, any>) {
-  return {
-    success: true,
-    action,
-    ...data,
+interface PageDiff {
+  urlChanged: boolean;
+  previousUrl?: string;
+  currentUrl: string;
+  ariaChanges?: string | null;
+  htmlChanges?: string | null;
+}
+
+const PAGE_DIFF_SUGGESTION = 'Analyze page diff and plan next steps.';
+
+async function calculatePageDiff(explorer: Explorer, previousState: ActionResult | null): Promise<PageDiff | null> {
+  const stateManager = explorer.getStateManager();
+  const currentWebState = stateManager.getCurrentState();
+
+  if (!currentWebState) {
+    return null;
+  }
+
+  // If state IDs are the same, no diff needed
+  if (previousState?.id !== undefined && currentWebState.id === previousState.id) {
+    return null;
+  }
+
+  const currentState = ActionResult.fromState(currentWebState);
+  const urlChanged = previousState ? !currentState.isSameUrl({ url: previousState.url }) : true;
+
+  if (!previousState) {
+    return {
+      urlChanged: true,
+      currentUrl: currentState.url,
+    };
+  }
+
+  const diff = await currentState.diff(previousState);
+  await diff.calculate();
+
+  const result: PageDiff = {
+    urlChanged,
+    previousUrl: previousState.url,
+    currentUrl: currentState.url,
   };
+
+  if (diff.ariaChanged) {
+    result.ariaChanges = diff.ariaChanged;
+  }
+
+  if (diff.htmlDiff && diff.htmlSubtree) {
+    result.htmlChanges = await minifyHtml(diff.htmlSubtree);
+  }
+
+  return result;
+}
+
+function successToolResult(action: string, data?: Record<string, any>) {
+  const result: Record<string, any> = { success: true, action, ...data };
+  if (data?.pageDiff) {
+    result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
+  }
+  return result;
 }
 
 function failedToolResult(action: string, message: string, data?: Record<string, any>) {
-  return {
-    success: false,
-    action,
-    message,
-    ...data,
-  };
+  const result: Record<string, any> = { success: false, action, message, ...data };
+  if (data?.pageDiff) {
+    result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
+  }
+  return result;
 }
 
-export function createCodeceptJSTools(action: Action, noteFn: (note: string) => void = () => {}) {
+export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string) => void = () => {}) {
+  const stateManager = explorer.getStateManager();
+
+  // Capture previous state as ActionResult before action (loads HTML/aria from files)
+  const getPreviousState = (): ActionResult | null => {
+    const currentState = stateManager.getCurrentState();
+    if (!currentState) return null;
+    return ActionResult.fromState(currentState);
+  };
+
   return {
     click: tool({
       description: dedent`
@@ -40,65 +100,86 @@ export function createCodeceptJSTools(action: Action, noteFn: (note: string) => 
 
         ${locatorRule}
 
-        Do not use :contains in locator, as click() searches an element by text by default.
-
-        click('button:contains("Login")') use clickByText tool instead
-
-        
+        Do not use :contains CSS pseudo-selector - it is not supported.
+        To click by text with context, use clickByText() tool instead.
       `,
       inputSchema: z.object({
         locator: z.string().describe('ARIA, CSS or XPath locator for the element to click.'),
         explanation: z.string().describe('Reason for selecting this click action.'),
       }),
       execute: async ({ locator, explanation }) => {
-        noteFn(explanation);
-        locator = stringToJson(locator);
+        try {
+          noteFn(explanation);
+          debugLog('Click locator:', locator);
 
-        debugLog('Click locator:', locator);
+          const previousState = getPreviousState();
+          const action = explorer.createAction();
+          const clickSuccess = await action.attempt((I) => I.click(locator), explanation);
 
-        const clickSuccess = await action.attempt((I) => I.click(locator), explanation);
-        if (clickSuccess) {
-          await action.capturePageState();
-          return successToolResult('click');
+          const pageDiff = await calculatePageDiff(explorer, previousState);
+
+          if (clickSuccess) {
+            return successToolResult('click', { pageDiff });
+          }
+
+          const currentState = stateManager.getCurrentState();
+          const page = !pageDiff && currentState && ActionResult.fromState(currentState).toAiContext();
+
+          return failedToolResult('click', action.lastError?.toString() || 'Click did not succeed', {
+            pageDiff,
+            page,
+            suggestion: 'Try a different locator, prefer ARIA locators. Use clickByText() for text with context. Use see() to find coordinates, then clickXY.',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('click', `Click tool failed: ${errorMessage}`);
         }
-
-        return failedToolResult('click', 'Click did not succeed.', {
-          message: action.lastError ? action.lastError.toString() : '',
-          suggestion: 'Try a different locator or interact using clickXY if coordinates are available.',
-        });
       },
     }),
 
     clickByText: tool({
       description: dedent`
         Click on a button or link by its text within a specific context element.
-        Use this when you need to click an element by text but there are multiple elements with the same text on the page.
-        The context locator narrows down the search area to a specific container.
+        Use this instead of click() when you need context parameter to narrow the search area.
+        
+        Main difference from click():
+        - click(locator) - clicks by locator directly, no context parameter
+        - clickByText(text, context) - clicks by text within a context container
 
         Example: clickByText('Submit', '.modal-footer') - clicks Submit button inside modal footer
         Example: clickByText('Delete', '//div[@class="user-row"][1]') - clicks Delete in first user row
+        
+        ${locatorRule}
       `,
       inputSchema: z.object({
         text: z.string().describe('Text of the button or link to click'),
-        context: z.string().describe('CSS or XPath locator for the container element to search within'),
+        context: z.string().describe('ARIA, CSS or XPath locator for the container element to search within'),
         explanation: z.string().describe('Reason for selecting this click action.'),
       }),
       execute: async ({ text, context, explanation }) => {
-        noteFn(explanation);
-        context = stringToJson(context);
+        try {
+          noteFn(explanation);
+          debugLog('ClickByText:', text, 'in context:', context);
 
-        debugLog('ClickByText:', text, 'in context:', context);
+          const previousState = getPreviousState();
+          const action = explorer.createAction();
+          const clickSuccess = await action.attempt((I) => I.click(text, context), explanation);
 
-        const clickSuccess = await action.attempt((I) => I.click(text, context), explanation);
-        if (clickSuccess) {
-          await action.capturePageState();
-          return successToolResult('clickByText');
+          const pageDiff = await calculatePageDiff(explorer, previousState);
+
+          if (clickSuccess) {
+            return successToolResult('clickByText', { pageDiff });
+          }
+
+          return failedToolResult('clickByText', 'Click by text did not succeed.', {
+            error: action.lastError ? action.lastError.toString() : '',
+            pageDiff,
+            suggestion: 'Verify the text matches exactly and the context locator is correct. Try using see() tool to find element coordinates, then use clickXY tool.',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('clickByText', `ClickByText tool failed: ${errorMessage}`);
         }
-
-        return failedToolResult('clickByText', 'Click by text did not succeed.', {
-          message: action.lastError ? action.lastError.toString() : '',
-          suggestion: 'Verify the text matches exactly and the context locator is correct. Try using click() with a more specific locator instead.',
-        });
       },
     }),
 
@@ -114,127 +195,236 @@ export function createCodeceptJSTools(action: Action, noteFn: (note: string) => 
         explanation: z.string().optional().describe('Reason for clicking by coordinates.'),
       }),
       execute: async ({ x, y, explanation }) => {
-        if (explanation) noteFn(explanation);
-        const success = await action.attempt((I) => I.clickXY(x, y), explanation);
+        try {
+          if (explanation) noteFn(explanation);
 
-        await action.capturePageState();
+          const previousState = getPreviousState();
+          const action = explorer.createAction();
+          const success = await action.attempt((I) => I.clickXY(x, y), explanation);
 
-        if (success) {
-          return successToolResult('clickXY');
+          const pageDiff = await calculatePageDiff(explorer, previousState);
+
+          if (success) {
+            return successToolResult('clickXY', { pageDiff });
+          }
+
+          return failedToolResult('clickXY', 'Click by coordinates failed.', {
+            ...(action.lastError && { error: action.lastError.toString() }),
+            pageDiff,
+            suggestion: 'Use see() to verify correct coordinates from the screenshot.',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('clickXY', `ClickXY tool failed: ${errorMessage}`);
         }
-
-        return failedToolResult('clickXY', 'Click by coordinates failed.', {
-          ...(action.lastError && { error: action.lastError.toString() }),
-        });
       },
     }),
 
     type: tool({
-      description: 'Send keyboard input to a field by its locator. After typing, the page state will be automatically captured and returned.',
+      description: dedent`
+        Send keyboard input to a field. After typing, the page state will be automatically captured and returned.
+        Omit locator if input is already focused.
+        
+        ${locatorRule}
+      `,
       inputSchema: z.object({
         text: z.string().describe('The text to type'),
-        locator: z.string().optional().describe('CSS or XPath locator for the field to fill'),
+        locator: z.string().optional().describe('ARIA, CSS or XPath locator for the field. If omitted, types into currently focused element.'),
         explanation: z.string().optional().describe('Reason for providing this input.'),
       }),
       execute: async ({ text, locator, explanation }) => {
-        if (explanation) noteFn(explanation);
-        const selectAllKey = ['CommandOrControl', 'a'];
+        try {
+          if (explanation) noteFn(explanation);
 
-        if (locator) {
-          locator = stringToJson(locator);
+          const previousState = getPreviousState();
+          const action = explorer.createAction();
+
+          // No locator - type into currently focused element
+          if (!locator) {
+            await action.attempt((I) => I.type(text), explanation);
+            const pageDiff = await calculatePageDiff(explorer, previousState);
+
+            if (!action.lastError) {
+              return successToolResult('type', {
+                message: `Typed "${text}" into focused element`,
+                pageDiff,
+              });
+            }
+
+            return failedToolResult('type', `type() failed: ${action.lastError?.toString()}`, {
+              pageDiff,
+              suggestion: 'Provide a locator for the input field. Use see() to identify the correct element to fill in.',
+            });
+          }
+
+          // With locator - try fillField first
           await action.attempt((I) => I.fillField(locator, text), explanation);
 
           if (!action.lastError) {
+            const pageDiff = await calculatePageDiff(explorer, previousState);
             return successToolResult('type', {
               message: `Input field ${locator} was filled with value ${text}`,
+              pageDiff,
             });
           }
-        }
 
-        await action.attempt((I) => I.click(locator), explanation);
+          // Fallback: click + select all + delete + type
+          const selectAllKey = ['CommandOrControl', 'a'];
+          await action.attempt((I) => I.click(locator), explanation);
 
-        await action.attempt(async (I) => {
-          await I.pressKey(selectAllKey);
-          await I.pressKey('Delete');
-          await I.type(text);
-        }, explanation);
+          await action.attempt(async (I) => {
+            await I.pressKey(selectAllKey);
+            await I.pressKey('Delete');
+            await I.type(text);
+          }, explanation);
 
-        if (!action.lastError) {
-          return successToolResult('type', {
-            message: 'type() tool worked by clicking element and typing in values',
+          const pageDiff = await calculatePageDiff(explorer, previousState);
+
+          if (!action.lastError) {
+            return successToolResult('type', {
+              message: 'type() worked by clicking element and typing in values',
+              pageDiff,
+            });
+          }
+
+          return failedToolResult('type', `type() failed: ${action.lastError?.toString()}`, {
+            pageDiff,
+            suggestion: 'Try a different locator or use clickXY to focus the field first, then call type() without locator.',
           });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('type', `Type tool failed: ${errorMessage}`);
         }
+      },
+    }),
 
-        await action.capturePageState();
+    select: tool({
+      description: dedent`
+        Select an option from a dropdown, listbox, combobox, or select element.
+        
+        I.selectOption(<locator>, <value>)
+        
+        Works with: <select>, listbox, combobox, dropdown buttons, and custom select components.
+        Value can be option text, value attribute, or label.
+        
+        ${locatorRule}
+        
+        <example>
+          I.selectOption('Country', 'United States');
+          I.selectOption({ role: 'combobox', text: 'Select country' }, 'USA');
+          I.selectOption('#country-select', 'US');
+          I.selectOption('[name="country"]', 'United States');
+        </example>
+      `,
+      inputSchema: z.object({
+        locator: z.string().describe('ARIA, CSS, XPath locator, or label text for the select/combobox element'),
+        option: z.string().describe('The option to select - can be visible text, value attribute, or label'),
+        explanation: z.string().optional().describe('Reason for selecting this option.'),
+      }),
+      execute: async ({ locator, option, explanation }) => {
+        try {
+          if (explanation) noteFn(explanation);
+          debugLog('Select locator:', locator, 'option:', option);
 
-        return failedToolResult('type', `type() tool failed ${action.lastError?.toString()}`, {
-          suggestion: 'Try again with different locator or use clickXY tool to click on the element by coordinates and then calling type() without a locator',
-        });
+          const previousState = getPreviousState();
+          const action = explorer.createAction();
+          const selectSuccess = await action.attempt((I) => I.selectOption(locator, option), explanation);
+
+          const pageDiff = await calculatePageDiff(explorer, previousState);
+
+          if (selectSuccess) {
+            return successToolResult('select', {
+              message: `Option "${option}" was selected in ${locator}`,
+              pageDiff,
+            });
+          }
+
+          const currentState = stateManager.getCurrentState();
+          const page = !pageDiff && currentState && ActionResult.fromState(currentState).toAiContext();
+
+          return failedToolResult('select', action.lastError?.toString() || 'Select option did not succeed', {
+            pageDiff,
+            page,
+            suggestion: 'Verify the locator points to a select/combobox element. For custom dropdowns, try click() to open it first, then click() to select the option.',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('select', `Select tool failed: ${errorMessage}`);
+        }
       },
     }),
 
     form: tool({
       description: dedent`
-        Use this tools to run a code block with miltiple codeceptjs commands
-        When you have a form on a page or multiple input elements to interact with.
-        Prefer using form() when interacting with iframe elements, switch to iframe context with I.switchTo(<iframe_locator>)
-        Prefer to use it instead of click() and type() when dealing with multiple elements.
-        Do not submit form, just fill it in
-
-        Provide valid CodeceptJS code that starts with I. and can contain multiple commands separated by newlines.
-
-        Example:
+        Execute raw CodeceptJS code block with multiple commands.
+        
+        Use cases:
+        - Working with iframes (switch context with I.switchTo)
+        - Performing multiple form actions in a single batch
+        - Complex interactions requiring sequential commands
+        
+        Example - filling a form:
         I.fillField('title', 'My Article')
         I.selectOption('category', 'Technology')
-
+        
+        Example - working with iframe:
+        I.switchTo('#payment-iframe')
+        I.fillField('card', '4242424242424242')
+        I.fillField('cvv', '123')
+        I.switchTo()
+        
         ${locatorRule}
-
-        Prefer stick to action commands like click, fillField, selectOption, etc.
-        Do not use wait functions like waitForText, waitForElement, etc.
-        Do not use other commands than action commands.
-        Do not change navigation with I.amOnPage() or I.reloadPage()
-        Do not save screenshots with I.saveScreenshot()
+        
+        Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
+        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot
       `,
       inputSchema: z.object({
         codeBlock: z.string().describe('Valid CodeceptJS code starting with I. Can contain multiple commands separated by newlines.'),
-        explanation: z.string().describe('Reason for submitting this form sequence.'),
+        explanation: z.string().describe('Reason for executing this code sequence.'),
       }),
       execute: async ({ codeBlock, explanation }) => {
-        noteFn(explanation);
-        if (!codeBlock.trim()) {
-          return failedToolResult('form', 'CodeBlock cannot be empty');
-        }
+        try {
+          noteFn(explanation);
+          if (!codeBlock.trim()) {
+            return failedToolResult('form', 'CodeBlock cannot be empty');
+          }
 
-        const lines = codeBlock
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line);
-        const codeLines = lines.filter((line) => !line.startsWith('//'));
+          const lines = codeBlock
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line);
+          const codeLines = lines.filter((line) => !line.startsWith('//'));
 
-        if (!codeLines.every((line) => line.startsWith('I.'))) {
-          return failedToolResult('form', 'All non-comment lines must start with I.', {
-            suggestion: 'Try again but pass valid CodeceptJS code where every non-comment line starts with I.',
+          if (!codeLines.every((line) => line.startsWith('I.'))) {
+            return failedToolResult('form', 'All non-comment lines must start with I.', {
+              suggestion: 'Try again but pass valid CodeceptJS code where every non-comment line starts with I.',
+            });
+          }
+
+          const previousState = getPreviousState();
+          const action = explorer.createAction();
+          await action.attempt(codeBlock, explanation);
+
+          const pageDiff = await calculatePageDiff(explorer, previousState);
+
+          if (action.lastError) {
+            const message = action.lastError ? String(action.lastError) : 'Unknown error';
+            return failedToolResult('form', `Form execution FAILED! ${message}`, {
+              pageDiff,
+              suggestion: 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and type() tools.',
+            });
+          }
+
+          return successToolResult('form', {
+            message: `Form completed successfully with ${lines.length} commands.`,
+            commandsExecuted: lines.length,
+            pageDiff,
+            suggestion: 'Verify the form was filled in correctly using see() tool. Submit if needed by using click() tool.',
           });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('form', `Form tool failed: ${errorMessage}`);
         }
-
-        await action.attempt(codeBlock, explanation);
-
-        if (action.lastError) {
-          const message = action.lastError ? String(action.lastError) : 'Unknown error';
-          return failedToolResult('form', `Form execution FAILED! ${message}`, {
-            suggestion: dedent`
-              Look into error message and identify which commands passed and which failed.
-              Continue execution using step-by-step approach using click() and type() tools.`,
-          });
-        }
-
-        await action.capturePageState();
-
-        return successToolResult('form', {
-          message: `Form completed successfully with ${lines.length} commands.`,
-          suggestion: 'Verify the form was filled in correctly using see() tool. Submit if needed by using click() tool.',
-          commandsExecuted: lines.length,
-        });
       },
     }),
   };
@@ -252,9 +442,9 @@ export function createAgentTools({
   return {
     see: tool({
       description: dedent`
-        Check the page contents based on current page state and screenshot
-        This tool will trigger visual research to check the page contents on request
-        Use it to to verify the actions were performed correctly and the page is in the expected state
+        Check the page contents based on current page state and screenshot.
+        This tool will trigger visual research to check the page contents on request.
+        Use it to verify the actions were performed correctly and the page is in the expected state.
 
         <example>
         request: "Check current state of the Login form"
@@ -273,7 +463,7 @@ export function createAgentTools({
             return failedToolResult('see', 'Failed to capture screenshot for analysis');
           }
 
-          const analysisResult = await researcher.imageContent(actionResult, request);
+          const analysisResult = await researcher.answerQuestionAboutScreenshot(actionResult, request);
 
           if (!analysisResult) {
             return failedToolResult('see', 'AI analysis failed to process the screenshot');
@@ -293,15 +483,63 @@ export function createAgentTools({
       },
     }),
 
+    context: tool({
+      description: dedent`
+        Get current page HTML and ARIA snapshot.
+        
+        DO NOT call this if:
+        - You just performed an action (pageDiff already provided in response)
+        - You already have recent <page_html>/<page_aria> in context
+        - You're about to perform an action (you'll get pageDiff after)
+        
+        Call ONLY when:
+        - Context is stale (many conversation turns since last state update)
+        - You suspect page changed externally (timers, auto-refresh)
+        - You need fresh state before planning next actions
+      `,
+      inputSchema: z.object({
+        reason: z.string().describe('Why do you need fresh context? Required to prevent overuse.'),
+      }),
+      execute: async ({ reason }) => {
+        try {
+          const stateManager = explorer.getStateManager();
+          const currentState = stateManager.getCurrentState();
+
+          if (!currentState) {
+            return failedToolResult('context', 'No current page state available.');
+          }
+
+          const actionResult = ActionResult.fromState(currentState);
+          const html = await actionResult.simplifiedHtml();
+          const aria = currentState.ariaSnapshot || '';
+
+          return successToolResult('context', {
+            url: currentState.url,
+            title: currentState.title,
+            suggestion: 'If not enough context received, call see() to visually identify elements in page contents',
+            aria,
+            html,
+            reminder: 'Context provided. Do not call context() again until you perform actions or suspect page changed.',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('context', `Context tool failed: ${errorMessage}`);
+        }
+      },
+    }),
+
     verify: tool({
       description: dedent`
         Verify an assertion about the current page state using AI-powered verification.
         This tool uses the Navigator's verifyState method to check if the page matches the expected condition.
-        Do not ask research for the same page you already researched.
+        Be precise and explicit in your assertion request to avoid false positives.
+        Ask the question including the context and if possible the current user flow.
+        Identify which page area you are referring to and which must be asserted.
+        If possible provide context locator to narrow down the search area.
         The AI will attempt multiple verification strategies using CodeceptJS assertions.
       `,
       inputSchema: z.object({
-        assertion: z.string().describe('The assertion or condition to verify on the current page (e.g., "User is logged in", "Form validation error is displayed")'),
+        assertion: z.string().describe('The assertion or condition to verify on the current page (e.g., "User is logged in", "Form validation error is displayed in the footer")'),
       }),
       execute: async ({ assertion }) => {
         try {
@@ -330,11 +568,25 @@ export function createAgentTools({
     research: tool({
       description: dedent`
         Research the current page to understand its structure, UI elements, and navigation.
-        This tool provides a comprehensive UI map report including forms, buttons, menus, and other interactive elements.
-        Use it when you need to understand the page layout before interacting with it.
+        This tool provides UI map report including forms, buttons, menus, and other interactive elements.
+        
+        DO NOT call this if:
+        - You already have <page_ui_map> or <initial_page_ui_map> in context
+        - You just navigated to a page (research is provided automatically)
+        - You're on the same page you already researched
+        - pageDiff was small (minor changes don't need full research)
+        
+        Call ONLY when:
+        - Page structure is unclear and no UI map was provided
+        - You need to discover hidden/collapsed elements not in current context
+        - Page has dramatically changed after previous action
+        
+        Avoid calling this tool twice in a row.
       `,
-      inputSchema: z.object({}),
-      execute: async () => {
+      inputSchema: z.object({
+        reason: z.string().describe('Why do you need research? What information is missing from existing context?'),
+      }),
+      execute: async ({ reason }) => {
         try {
           const stateManager = explorer.getStateManager();
           const currentState = stateManager.getCurrentState();
@@ -358,23 +610,44 @@ export function createAgentTools({
         }
       },
     }),
-  };
-}
 
-function stringToJson(str: string): any {
-  if (!str) return null;
-  const firstWord = str.split(' ')[0];
-  if (['link', 'button', 'input', 'select', 'textarea', 'option', 'combobox'].includes(firstWord)) {
-    return {
-      role: firstWord,
-      text: str
-        .slice(firstWord.length)
-        .trim()
-        .replace(/^['"]|['"]$/g, ''),
-    };
-  }
-  if (str.startsWith('{') && str.endsWith('}')) {
-    return JSON.parse(str);
-  }
-  return str;
+    interact: tool({
+      description: dedent`
+        Execute an action on the current page using AI-powered interaction.
+        Use this to perform actions like clicking buttons, selecting options, filling forms, etc.
+        The AI will generate and try multiple CodeceptJS code strategies to accomplish the instruction.
+      `,
+      inputSchema: z.object({
+        instruction: z.string().describe('What action to perform on the page, e.g. "select new suite option", "click the Submit button"'),
+      }),
+      execute: async ({ instruction }) => {
+        try {
+          const stateManager = explorer.getStateManager();
+          const currentState = stateManager.getCurrentState();
+
+          if (!currentState) {
+            return failedToolResult('interact', 'No current page state available. Navigate to a page first.');
+          }
+
+          const actionResult = ActionResult.fromState(currentState);
+          const success = await navigator.resolveState(instruction, actionResult);
+
+          if (success) {
+            return successToolResult('interact', {
+              message: `Successfully executed: ${instruction}`,
+            });
+          }
+
+          return failedToolResult('interact', `Failed to execute: ${instruction}`, {
+            suggestion: 'The action could not be completed. Try a different instruction or use more specific element descriptions.',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('interact', `Interact tool failed: ${errorMessage}`, {
+            error: errorMessage,
+          });
+        }
+      },
+    }),
+  };
 }

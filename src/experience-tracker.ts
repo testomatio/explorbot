@@ -16,6 +16,7 @@ interface ExperienceEntry {
   attempt?: number;
   error?: string | null;
   originalMessage: string;
+  explanation?: string;
 }
 
 export class ExperienceTracker {
@@ -154,13 +155,15 @@ export class ExperienceTracker {
   }
 
   private generateEntryContent(entry: ExperienceEntry): string {
+    const filteredCode = entry.code.replace(/I\.amOnPage\s*\([^)]*\)/gs, '');
     const content = `### ${entry.error ? 'Failed Attempt' : 'Successful Attempt'}
 
 ${entry.originalMessage ? `Purpose: ${entry.originalMessage}` : ''}
+${entry.explanation ? `Solution: ${entry.explanation}` : ''}
 ${entry.error ? `${entry.error} from:` : ''}
 
 \`\`\`javascript
-${entry.code}
+${filteredCode}
 \`\`\`
 `;
 
@@ -189,7 +192,17 @@ ${entry.code}
     tag('substep').log(`Added failed attempt to: ${state.getStateHash()}.md`);
   }
 
-  async saveSuccessfulResolution(state: ActionResult, originalMessage: string, code: string): Promise<void> {
+  updateSummary(state: ActionResult, summary: string): void {
+    if (this.disabled) return;
+    const stateHash = state.getStateHash();
+    this.ensureExperienceFile(state);
+    const { content, data } = this.readExperienceFile(stateHash);
+    data.summary = summary;
+    this.writeExperienceFile(stateHash, content, data);
+    debugLog(`Updated summary for ${stateHash}`);
+  }
+
+  async saveSuccessfulResolution(state: ActionResult, originalMessage: string, code: string, explanation?: string): Promise<void> {
     if (this.disabled) {
       return;
     }
@@ -204,6 +217,7 @@ ${entry.code}
       code,
       error: null,
       originalMessage: originalMessage.split('\n')[0],
+      explanation,
     };
 
     const stateHash = state.getStateHash();

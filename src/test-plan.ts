@@ -4,59 +4,50 @@ import { WebPageState } from './state-manager.ts';
 import { uniqSessionName } from './utils/unique-names.ts';
 import { parsePlanFromMarkdown, savePlanToMarkdown, planToAiContext } from './utils/test-plan-markdown.ts';
 
+export const TestResult = {
+  PASSED: 'passed',
+  FAILED: 'failed',
+} as const;
+
+export type TestResultType = (typeof TestResult)[keyof typeof TestResult] | null;
+
+export const TestStatus = {
+  PENDING: 'pending',
+  IN_PROGRESS: 'in_progress',
+  DONE: 'done',
+} as const;
+
+export type TestStatusType = (typeof TestStatus)[keyof typeof TestStatus];
+
 export interface Note {
   message: string;
-  status: 'passed' | 'failed' | null;
+  status: TestResultType;
   step?: boolean;
 }
 
-export class Test {
+export class Task {
   id: string;
-  scenario: string;
-  sessionName?: string;
-  status: 'pending' | 'in_progress' | 'done';
-  priority: 'high' | 'medium' | 'low' | 'unknown';
-  expected: string[];
-  plannedSteps: string[];
+  description: string;
   notes: Record<string, Note>;
   steps: Record<string, string>;
-  description?: string;
   states: WebPageState[];
   startUrl: string;
-  plan?: Plan;
-  summary: string;
-  artifacts: Record<string, string>;
-  private timestampCounter: number = 0;
+  protected timestampCounter = 0;
 
-  constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
-    this.id = `${createHash('md5').update(scenario).digest('hex').slice(0, 8)}_${Date.now().toString(36)}`;
-    this.scenario = scenario;
-    this.status = 'pending';
-    this.sessionName = uniqSessionName();
-    this.priority = priority;
-    this.expected = Array.isArray(expectedOutcome) ? expectedOutcome : [expectedOutcome];
-    this.plannedSteps = plannedSteps;
+  constructor(description: string, startUrl = '') {
+    this.id = `${createHash('md5').update(description).digest('hex').slice(0, 8)}_${Date.now().toString(36)}`;
+    this.description = description;
     this.notes = {};
     this.steps = {};
     this.states = [];
     this.startUrl = startUrl;
-    this.artifacts = {};
-    this.summary = '';
-    this.timestampCounter = 0;
   }
 
   getPrintableNotes(): string[] {
     return Object.values(this.notes).map((n) => {
-      const icon = n.status === 'passed' ? figures.tick : n.status === 'failed' ? figures.cross : figures.circle;
+      const icon = n.status === TestResult.PASSED ? figures.tick : n.status === TestResult.FAILED ? figures.cross : figures.circle;
       return `${icon} ${n.message}`;
     });
-  }
-
-  getVisitedUrls({ localOnly = false }: { localOnly?: boolean } = {}): string[] {
-    if (this.plan && !localOnly) {
-      return this.plan.tests.flatMap((t) => t.getVisitedUrls({ localOnly: true }));
-    }
-    return [...new Set([this.startUrl, ...this.states.map((s) => s.url)].filter((value): value is string => Boolean(value) && value.trim() !== ''))];
   }
 
   notesToString(): string {
@@ -65,12 +56,7 @@ export class Test {
       .join('\n');
   }
 
-  addArtifact(artifact: string): void {
-    const timestamp = `${performance.now()}_${this.timestampCounter++}`;
-    this.artifacts[timestamp] = artifact;
-  }
-
-  addNote(message: string, status: 'passed' | 'failed' | null = null): void {
+  addNote(message: string, status: TestResultType = null): void {
     const isDuplicate = Object.values(this.notes).some((note) => note.message === message && note.status === status);
     if (isDuplicate) return;
 
@@ -87,16 +73,79 @@ export class Test {
     this.steps[timestamp] = text;
   }
 
+  getLog(): Array<{ type: 'step' | 'note'; content: string; timestamp: number }> {
+    const merged: Record<string, { type: 'step' | 'note'; content: string }> = {};
+
+    for (const [key, text] of Object.entries(this.steps)) {
+      merged[key] = { type: 'step', content: text };
+    }
+
+    for (const [key, note] of Object.entries(this.notes)) {
+      merged[key] = { type: 'note', content: note.message };
+    }
+
+    return Object.entries(merged)
+      .map(([timestampKey, item]) => ({
+        ...item,
+        timestamp: Number.parseFloat(timestampKey.split('_')[0]),
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  getLogString(): string {
+    return this.getLog()
+      .map((item) => (item.type === 'step' ? '  ' : '') + `${item.content}`)
+      .join('\n');
+  }
+}
+
+export class Test extends Task {
+  scenario: string;
+  sessionName?: string;
+  status: TestStatusType;
+  result: TestResultType;
+  priority: 'high' | 'medium' | 'low' | 'unknown';
+  expected: string[];
+  plannedSteps: string[];
+  plan?: Plan;
+  summary: string;
+  artifacts: Record<string, string>;
+
+  constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
+    super(scenario, startUrl);
+    this.scenario = scenario;
+    this.status = TestStatus.PENDING;
+    this.result = null;
+    this.sessionName = uniqSessionName();
+    this.priority = priority;
+    this.expected = Array.isArray(expectedOutcome) ? expectedOutcome : [expectedOutcome];
+    this.plannedSteps = plannedSteps;
+    this.artifacts = {};
+    this.summary = '';
+  }
+
+  getVisitedUrls({ localOnly = false }: { localOnly?: boolean } = {}): string[] {
+    if (this.plan && !localOnly) {
+      return this.plan.tests.flatMap((t) => t.getVisitedUrls({ localOnly: true }));
+    }
+    return [...new Set([this.startUrl, ...this.states.map((s) => s.url)].filter((value): value is string => Boolean(value) && value.trim() !== ''))];
+  }
+
+  addArtifact(artifact: string): void {
+    const timestamp = `${performance.now()}_${this.timestampCounter++}`;
+    this.artifacts[timestamp] = artifact;
+  }
+
   get hasFinished(): boolean {
-    return this.status === 'done' || this.isComplete();
+    return this.status === TestStatus.DONE || this.isComplete();
   }
 
   get isSuccessful(): boolean {
-    return this.hasFinished && this.hasAchievedAny();
+    return this.hasFinished && this.result === TestResult.PASSED;
   }
 
   get hasFailed(): boolean {
-    return this.hasFinished && !this.hasAchievedAny();
+    return this.hasFinished && this.result === TestResult.FAILED;
   }
 
   getCheckedNotes(): Note[] {
@@ -111,13 +160,13 @@ export class Test {
 
   hasAchievedAny(): boolean {
     return this.expected.some((expectation) => {
-      return Object.values(this.notes).some((note) => note.message === expectation && note.status === 'passed');
+      return Object.values(this.notes).some((note) => note.message === expectation && note.status === TestResult.PASSED);
     });
   }
 
   hasAchievedAll(): boolean {
     return this.expected.every((expectation) => {
-      return Object.values(this.notes).some((note) => note.message === expectation && note.status === 'passed');
+      return Object.values(this.notes).some((note) => note.message === expectation && note.status === TestResult.PASSED);
     });
   }
 
@@ -128,12 +177,13 @@ export class Test {
   }
 
   start(): void {
-    this.status = 'in_progress';
+    this.status = TestStatus.IN_PROGRESS;
     this.addNote('Test started');
   }
 
-  finish(): void {
-    this.status = 'done';
+  finish(result: TestResultType = TestResult.FAILED): void {
+    this.status = TestStatus.DONE;
+    this.result = result;
   }
 
   getRemainingExpectations(): string[] {
@@ -141,7 +191,7 @@ export class Test {
     return this.expected.filter((e) => !achieved.includes(e));
   }
 
-  getLog(): Array<{ type: 'step' | 'note' | 'artifact'; content: string; timestamp: number }> {
+  override getLog(): Array<{ type: 'step' | 'note' | 'artifact'; content: string; timestamp: number }> {
     const merged: Record<string, { type: 'step' | 'note' | 'artifact'; content: string }> = {};
 
     for (const [key, text] of Object.entries(this.steps)) {
@@ -159,15 +209,9 @@ export class Test {
     return Object.entries(merged)
       .map(([timestampKey, item]) => ({
         ...item,
-        timestamp: parseFloat(timestampKey.split('_')[0]),
+        timestamp: Number.parseFloat(timestampKey.split('_')[0]),
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
-  }
-
-  getLogString(): string {
-    return this.getLog()
-      .map((item) => (item.type === 'step' ? '  ' : '') + `${item.content}`)
-      .join('\n');
   }
 }
 

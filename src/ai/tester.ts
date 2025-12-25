@@ -7,8 +7,8 @@ import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
-import type { Note, Test } from '../test-plan.ts';
-import { codeToMarkdown, minifyHtml } from '../utils/html.ts';
+import { TestResult, type TestResultType, type Note, type Test } from '../test-plan.ts';
+import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
@@ -26,7 +26,7 @@ export class Tester implements Agent {
   private provider: Provider;
 
   MAX_ITERATIONS = 30;
-  ACTION_TOOLS = ['click', 'type', 'clickXY', 'form'];
+  ACTION_TOOLS = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form'];
   ASSERTION_TOOLS = ['verify'];
   researcher: Researcher;
   agentTools: any;
@@ -78,11 +78,11 @@ export class Tester implements Agent {
 
     const offStateChange = this.explorer.getStateManager().onStateChange((event: StateTransition) => {
       if (event.toState?.url === event.fromState?.url) return;
-      task.addNote(`Navigated to ${event.toState?.url}`, 'passed');
+      task.addNote(`Navigated to ${event.toState?.url}`, TestResult.PASSED);
       task.states.push(event.toState);
     });
 
-    const codeceptjsTools = createCodeceptJSTools(this.explorer.createAction(), (note) => task.addNote(note));
+    const codeceptjsTools = createCodeceptJSTools(this.explorer, (note) => task.addNote(note));
     let actionPerformed = true;
     let assertionPerformed = false;
     const toolCallsLog: any[] = [];
@@ -107,7 +107,7 @@ export class Tester implements Agent {
         await this.explorer.switchToMainFrame();
 
         if (this.explorer.getStateManager().isInDeadLoop()) {
-          task.addNote('Dead loop detected. Stopped', 'failed');
+          task.addNote('Dead loop detected. Stopped', TestResult.FAILED);
           stop();
           return;
         }
@@ -117,8 +117,27 @@ export class Tester implements Agent {
 
         if (iteration > 1 && actionPerformed) {
           let nextStep = '';
+          // re-inject HTML and ARIA snapshots to not lose context
+          if (!conversation.hasTag('page_html', 5)) {
+            nextStep += dedent`
+              Context:
+
+              <page>
+              CURRENT URL: ${currentState.url}
+              CURRENT TITLE: ${currentState.title}
+              </page>
+
+              <page_aria>
+              ${currentState.ariaSnapshot}
+              </page_aria>
+
+              <page_html>
+              ${currentState.html}
+              </page_html>
+            `;
+          }
+
           nextStep += await this.prepareInstructionsForNextStep(task);
-          nextStep += await this.prepareContextForNextStep(currentState);
           if (iteration % 5 === 0) {
             nextStep += await this.analyzeProgress(task, currentState, toolCallsLog);
           }
@@ -143,19 +162,33 @@ export class Tester implements Agent {
           toolCallsLog.push(...(result?.toolExecutions || []));
         }
 
+        if (actionPerformed && !wasSuccessful) {
+          result?.toolExecutions
+            ?.filter((execution: any) => execution.input.explanation)
+            .forEach((execution: any) => {
+              task.addNote(`Failed to ${execution.input.explanation} (${execution.toolName})`, TestResult.FAILED);
+            });
+        }
+
         if (actionPerformed && wasSuccessful) {
           conversation.addUserText(await this.promptLogStep(task));
           await this.provider.invokeConversation(conversation, tools, { toolChoice: 'required' });
         }
 
-        if (assertionPerformed && wasSuccessful) {
+        if (assertionPerformed) {
           const message = result?.toolExecutions?.find((execution: any) => execution.toolName === 'verify')?.output?.message || '';
-          task.addNote(`Assertion passed: ${message}`, 'passed');
-          conversation.addUserText(dedent`
-                Assertion succesfully passed: ${message}
+          task.addNote(message, wasSuccessful ? TestResult.PASSED : TestResult.FAILED);
+          if (wasSuccessful) {
+            conversation.addUserText(dedent`
+                Assertion "${message}" succesfully passed!
 
-                Do not perform assertion again, proceed with testing and call actions to achieve the scenario goal or expected outcomes.
-              `);
+                Proceed with next steps and call actions to achieve the scenario goal or expected outcomes.
+
+                Expected outcomes to check:
+                ${task.expected.map((expectation) => `- ${expectation}`).join('\n')}
+                Do not perform the same assertion again
+            `);
+          }
         }
 
         if (task.hasFinished) {
@@ -192,91 +225,6 @@ export class Tester implements Agent {
       success: task.isSuccessful,
       ...task,
     };
-  }
-
-  private async prepareContextForNextStep(currentState: ActionResult): Promise<string> {
-    const stateManager = this.explorer.getStateManager();
-    const previousState = stateManager.getPreviousState();
-    const isSameUrl = previousState?.url === currentState.url;
-
-    if (!isSameUrl || !previousState) {
-      debugLog(`Page state has changed. Researching ${currentState.url}`);
-      const newResearch = await this.researcher.research(currentState);
-      return dedent`
-        The page state has changed. Here is the new page
-
-        <page>
-          CURRENT URL: ${currentState.url}
-
-          PAGE STATE:
-          <page_summary>
-          ${codeToMarkdown(currentState.toAiContext())}
-          </page_summary>
-
-          <page_ui_map>
-          ${newResearch}
-          </page_ui_map>
-        </page>
-
-        Use accessibility tree data from <page_aria> to understand page structure.
-        Use HTML from <page_html> to understand page structure.
-      `;
-    }
-
-    const diff = await currentState.diff(ActionResult.fromState(previousState));
-    await diff.calculate();
-    debugLog(`Page has changed. Diffing ${currentState.url}`, diff.ariaChanged);
-
-    if (!diff.hasChanges()) {
-      return dedent`
-
-         Page did not change from previous state. ${currentState.url}
-        
-        Current Page State:
-        
-        <page_summary>
-        ${codeToMarkdown(currentState.toAiContext())}
-        </page_summary>
-
-        <page_html>
-        ${codeToMarkdown(await minifyHtml(await currentState.combinedHtml()))}
-        </page_html>
-      `;
-    }
-
-    if (diff.ariaChanged) {
-      return dedent`
-        The page has changed.
-
-        Accessibility tree changes:
-        <aria_changes>
-        ${diff.ariaChanged}
-        </aria_changes>
-
-        Current Page State:
-        <page_summary>
-        ${currentState.toAiContext()}
-        </page_summary>
-
-        <task>
-        If this change is expected and is relevant to scenario goal, use verify() tool to ensure the action was successful.
-        Then continue testing and perform next actions.
-        </task>
-      `;
-    }
-
-    return dedent`
-      The page has changed but accessibility tree shows no significant changes.
-
-      Current Page State:
-      <page_summary>
-      ${codeToMarkdown(currentState.toAiContext())}
-      </page_summary>
-
-      <page_html>
-      ${codeToMarkdown(await minifyHtml(diff.htmlSubtree))}
-      </page_html>
-    `;
   }
 
   private async prepareInstructionsForNextStep(task: Test): Promise<string> {
@@ -342,7 +290,9 @@ export class Tester implements Agent {
   }
 
   private finishTest(task: Test): void {
-    task.finish();
+    if (!task.hasFinished) {
+      task.finish(TestResult.FAILED);
+    }
     tag('info').log(`Finished: ${task.scenario}`);
 
     tag('multiline').log(task.getPrintableNotes());
@@ -378,18 +328,11 @@ export class Tester implements Agent {
     5.1 If you see page changed interact with that page to achieve a result
     5.2 Always look for the current URL you are on and use only elements that exist in the current page
     5.3 If you see the page is irrelevant to current scenario, call reset() tool to return to the initial page
-    6. If expected outcome was verified call record({ notes: ["..."], status: "success" }) tool
-    6.1 If expected outcome was already checked, to not check it again
-    7. If expected outcome was not achieved call record({ notes: ["..."], status: "fail" }) tool
-    7.1 If you have noticed an error message, call record({ notes: ["error message"], status: "fail" })
-    7.2 If behavior is unexpected, and you assume it is an application bug, call record({ notes: ["explanation"], status: "fail" })
-    7.3 If there are error or failure message (identify them by class names or text) on a page call record({ notes: ["error message"], status: "fail" })
-    8. Continue trying to achieve expected results
-    8.1 Some expectations can be wrong so it's ok to skip them and continue testing
-    9. Use reset() if you navigate too far from the desired state
-    10. Use finish() when all goals are achieved and verified
-    11. ONLY use stop() if the scenario is fundamentally incompatible with the initial page and other pages you visited
-    12. Be methodical and precise in your interactions
+    6. Some expectations can be wrong so it's ok to skip them and continue testing
+    7. Use finish() when all goals are achieved and verified
+    8. ONLY use stop() if the scenario is fundamentally incompatible with the initial page and other pages you visited
+    9. Be methodical and precise in your interactions
+    10. Use record({ notes: ["..."] }) to document your findings, observations, and plans during testing.
     </approach>
 
     <rules>
@@ -456,6 +399,8 @@ export class Tester implements Agent {
             - If goal was already achieved and verified suggest finishing the test with finish() tool.
             - If no progress is made, suggest to use reset() tool to navigate back to the initial page.
             - If test has no progress for too long, suggest to use stop() tool to stop the test.
+            - Look for failed tool calls and identify which actions were not accomplished.
+            - If tool didn't succeed even after several attempts, you must mention it in the assessment.
             </rules>
 
             <current_state>
@@ -540,7 +485,8 @@ export class Tester implements Agent {
 
     task.summary = result.summary;
     if (result.scenarioAchieved) {
-      task.addNote(result.summary, 'passed');
+      task.addNote(result.summary, TestResult.PASSED);
+      task.finish(TestResult.PASSED);
     } else {
       task.addNote(result.summary);
     }
@@ -612,6 +558,8 @@ export class Tester implements Agent {
       <initial_page_summary>
       ${codeToMarkdown(actionResult.toAiContext())}
       </initial_page_summary>
+
+      
 
       <initial_page_knowledge>
       THIS IS IMPORTANT INFORMATION FROM SENIOR QA ON THIS PAGE
@@ -715,8 +663,8 @@ export class Tester implements Agent {
           const message = `Test stopped - scenario is irrelevant: ${reason}`;
           tag('warning').log(`❌ ${message}`);
 
-          task.addNote(message, 'failed');
-          task.finish();
+          task.addNote(message, TestResult.FAILED);
+          task.finish(TestResult.FAILED);
 
           return {
             success: true,
@@ -744,8 +692,8 @@ export class Tester implements Agent {
         inputSchema: z.object({}),
         execute: async () => {
           tag('success').log(`Test finished successfully`);
-          task.addNote('Test finished successfully', 'passed');
-          task.finish();
+          task.addNote('Test finished successfully', TestResult.PASSED);
+          task.finish(TestResult.PASSED);
 
           return {
             success: true,
@@ -757,6 +705,9 @@ export class Tester implements Agent {
       record: tool({
         description: dedent`
           Record test results, outcomes, or notes during testing.
+          
+          DO NOT CALL THIS TOOL TWICE IN A ROW.
+          Use it only after each action or assertion performed.
           
           Notes must be SHORT - no longer than 10 words each.
           Be explicit: which action was done, which element interactied with
@@ -785,11 +736,11 @@ export class Tester implements Agent {
           status: z.enum(['fail', 'success']).optional().describe('Status: "success" for achieved outcomes, "fail" for failed outcomes, null for general notes'),
         }),
         execute: async (input) => {
-          let mappedStatus: 'passed' | 'failed' | null = null;
+          let mappedStatus: TestResultType = null;
           if (input.status === 'success') {
-            mappedStatus = 'passed';
+            mappedStatus = TestResult.PASSED;
           } else if (input.status === 'fail') {
-            mappedStatus = 'failed';
+            mappedStatus = TestResult.FAILED;
           }
 
           for (const noteText of input.notes) {
@@ -803,7 +754,8 @@ export class Tester implements Agent {
           }
 
           if (input.status !== null && task.isComplete()) {
-            task.finish();
+            const hasPassed = task.hasAchievedAny();
+            task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);
           }
 
           const remainingExpectations = task.getRemainingExpectations();

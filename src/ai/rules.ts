@@ -1,10 +1,38 @@
 import dedent from 'dedent';
 
 export const locatorRule = dedent`
-  First look for locators in <aria> section, they target browser internal representation, thus more reliable.
-  Aria locators have role and text, you should provide them in the following format:
+  <locator_priority>
+  Use the following priority when selecting locators:
 
-  Aria locators must be formatted as valid JSON object with role and text keys!
+  1. ARIA locators (first choice) - target browser's accessibility tree, most reliable
+     Use JSON format: { "role": "button", "text": "Login" }
+     Best for: buttons, links, inputs, form controls, dropdowns, checkboxes, radio buttons
+  
+  2. Text locators (second choice) - use only when text is unique on the page
+     Example: 'Login', 'Submit', 'Username'
+     Skip if the same text appears multiple times on the page
+  
+  3. CSS selectors (third choice) - when ARIA/text don't work
+     Prefer semantic attributes: id, name, data-testid, aria-label, placeholder
+     Example: '#login-btn', '[data-testid="submit"]', 'form#login input[name="email"]'
+  
+  4. XPath (last resort) - for complex hierarchy or when CSS can't express the path
+     Always start with //, never use positional indices like [1], [2]
+     Example: '//form[@id="login"]//input[@name="email"]'
+  </locator_priority>
+
+  <disambiguation>
+  When multiple elements could match the request, select based on intent:
+  1. Match the context of recent actions - if filling a form, use elements in that same form
+  2. Follow form flow - forms are filled top-to-bottom, left-to-right
+     - If you just filled a field, the next target is likely below/after it in the DOM
+  3. Use ARIA snapshot to identify element state (focused, visible, selected, expanded, etc.)
+  4. Match semantic proximity - elements near fields you just interacted with
+
+  Once the correct element is identified pick the best unique locator following priority: ARIA → CSS → XPath
+  </disambiguation>
+
+  ARIA locators must specify role. Specify locator type as JSON string with role and text keys.
 
   <good_aria_locator_example>
   { "role": "button", "text": "Login" },
@@ -16,10 +44,7 @@ export const locatorRule = dedent`
   { "role": "button", "text": "Cancel" }
   </good_aria_locator_example>
 
-  Prefer ARIA locators over CSS/XPath locators.
-  If <aria> section is not present or does not contain relevant locators, look for CSS/XPath locators in <html> section.
-  Use ARIA locators when interacting with form elements
-  Use ARIA locators when interacting with select, dropdown, combobox, radio buttons, checkboxes, etc
+  If <aria> section is not present or element is not found there, fall back to CSS/XPath locators from <html> section.
 
   Stick to semantic attributes like role, aria-*, id, class, name, data-id, etc.  
   XPath locator should always start with //
@@ -27,13 +52,9 @@ export const locatorRule = dedent`
   Avoid listing unnecessary elements inside locators
   Avoid locators that with names of frontend frameworks (vue, react, angular, etc) and numbers in them
   Avoid locators that seem to have generated ids or class names (long random numbers, uuids, etc)
-  Use wide-range locators like // or * and prefer elements that have ids, classes, names, or data-id attributes, prefer element ids, classes, names, and other semantic attributes.
   CSS pseudo classes ARE NOT SUPPORTED. DO NOT use :contains, :first, :last, :nth-child, :nth-last-child, :nth-of-type, :nth-last-of-type, :only-child, :only-of-type, :empty, :not, etc
 
   <good locator example>
-    { "role": "button", "text": "Login" },
-    { "role": "input", "text": "Name" },
-    { "role": "combobox", "text": "Enabled" },
     'div[role=input][placeholder="Name"]'
     '[aria-label="Name"]'
     'form#user_form input[name="name"]'
@@ -45,11 +66,11 @@ export const locatorRule = dedent`
   </good locator example>
 
   <bad locator example>
-    'button:contains("Login")'
-    '//table//tbody/tr[1]//button[contains(@onclick='fn()')]")
-    '//html/body/div[2]/div[2]/div/form/input[@name="name"]'
-    '//html/body/div[2]/div[2]/div/form/input[@name="name"]'
-    vue-button-123
+    'button:contains("Login")' // contains not supported, use { "role":"button", "text":"Login" }
+    '//table//tbody/tr[1]//button[contains(@onclick='fn()')]") // onclick is not semantic attribute
+    '//html/body/div[2]/div[2]/div/form/input[@name="name"]' // position mentioned
+    '//html/body/vue-button-123 // vue-framework specific locator
+    'link "New Template"'  // WRONG: malformed string, use {"role":"link","text":"New Template"}
   </bad locator example>
 
   HTML locators must be valid JS strings
@@ -58,18 +79,25 @@ export const locatorRule = dedent`
 export const multipleLocatorRule = dedent`
   You will need to provide multiple solutions to achieve the result.
   
-  Use different locator strategies: button names, input labels, placeholders, CSS, XPath.
+  <short_vs_long_locators>
+  Short locators = minimal selector that uniquely identifies the element
+  - ARIA and Text locators are always short: { "role": "button", "text": "Submit" }, 'Login'
+  - Short CSS: #email, [data-testid="submit"]
+  
+  Long locators = add ancestor context for resilience
+  - CSS with ancestors: form#login #email, .modal .form input[name="email"]
+  - XPath with path: //form[@id="login"]//input[@name="email"]
+  - Full path to body (lowest priority): //html/body//div[@id="app"]//form//input[@name="email"]
+  </short_vs_long_locators>
 
-  The very first solution should be with shortest and simplest locator.
+  Start with short locators (ARIA/Text first), then progressively try longer CSS/XPath.
+  Long locators with full path are lowest priority but should still be tried as fallback.
+  
   Be specific about locators, check if multiple elements can be selected by the same locator.
-  While the first element can be a good solution, also propose solutions with locators that can pick other valid elements.
+  Each new solution should add ancestor context, stepping up the hierarchy.
+  When suggesting XPath, do not repeat the same CSS locator and vice versa.
 
-  Each new solution should pick the longer and more specific path to element.
-  Each new solution should start with element from higher hierarchy with id or data-id attributes.
-  When suggesting a new XPath locator do not repeat previously used same CSS locator and vice versa.
-  Each new locator should at least take one step up the hierarchy.
-
-  Don not include comments into code blocks.
+  Do not include comments into code blocks.
 
   <bad_locator_example>
   Suggestion 1:
@@ -80,15 +108,20 @@ export const multipleLocatorRule = dedent`
   </bad_locator_example>
 
   <good_locator_example>
-    Suggestion 1:
+    Suggestion 1 (short - ARIA):
+    { "role": "textbox", "text": "Email" }
+
+    Suggestion 2 (short - CSS):
     #user_email
 
-    Suggestion 2: (is more specific than suggestion 1)
-    //*[@id="user_form"]//*[@id="user_email"]
+    Suggestion 3 (long - CSS with ancestor):
+    #user_form #user_email
+
+    Suggestion 4 (long - XPath with full path):
+    //html/body//form[@id="user_form"]//input[@id="user_email"]
   </good_locator_example>
 
   Solutions should be different, do not repeat the same locator in different solutions.
-  The very last solution should use XPath that starts from '//html/body/' XPath and provides path to the element.
 `;
 
 // in rage mode we do not protect from irreversible actions
@@ -119,19 +152,29 @@ export const actionRule = dedent`
   <actions>
   ### I.click
 
-  clicks on the element by its locator or by coordinates
+  clicks on the element by its locator
+  
+  I.click(<locator>, <context_locator>)
+
+  locators can be ARIA, CSS, or XPath locators.
+  
+  Use context parameter (second argument) to narrow click area when:
+  - The same text/button appears multiple times on page
+  - You need to click inside a specific form, modal, or section
+  Context should be a CSS selector pointing to a unique container.
 
   <example>
-    I.click('Button'); // clicks on the button with text "Button"
-    I.click('.button'); // clicks on the button with class "button"
-    I.click('.button', 'user.form'); // clicks on the button with class "button" inside the form with id "user.form"
-    I.click('//user/button'); // clicks on the button with XPath "//user/button"
-    I.click('body', null, { position: { x: 20, y: 40 } }) // clicks on the body at position 20, 40
+    I.click('Submit', '#login-form');
+    I.click('Button', '.sidebar');
+    I.click({ role: 'button', text: 'Button' }, '.sidebar');
+    I.click({ role: 'combobox', text: 'Select age' }, '.settings-panel');
+    I.click('.sidebar .button');
+    I.click('//form[@id="login"]//button');
   </example>
 
-  It is preferred to use button or link texts.
-  If it doesn't work, use CSS or XPath locators.
-  If it doesn't work, use coordinates.
+  Prefer text/ARIA locators with context over complex CSS/XPath selectors.
+  If locator doesn't work, try CSS or XPath locators.
+  If nothing works, use clickXY as last resort.
 
 
   ### I.fillField
@@ -185,59 +228,94 @@ export const verificationActionRule = dedent`
   <actions>
   ### I.see
 
-  checks that text is visible on the page
+  I.see(<text>, <context>)
+
+  Checks that text is visible inside a specific element.
+  Context parameter is REQUIRED - never use I.see without context.
 
   <example>
-    I.see('Welcome'); // checks text "Welcome" is visible anywhere on page
-    I.see('Welcome', '.message'); // checks text "Welcome" is visible inside element with class "message"
-    I.see('Welcome', '#header'); // checks text inside element with id "header"
-  </example>
-
-  ### I.seeInTitle
-
-  checks that page title contains expected text
-
-  <example>
-    I.seeInTitle('Dashboard'); // checks page title contains "Dashboard"
-  </example>
-
-  ### I.seeInSource
-
-  checks that page source contains expected text (including hidden elements)
-
-  <example>
-    I.seeInSource('<div class="hidden">'); // checks raw HTML source
+    I.see('Welcome', '.message');
+    I.see('Welcome', '#header');
+    I.see('Success', '.notification');
   </example>
 
   ### I.seeElement
 
-  checks that element is present on the page
+  I.seeElement(<locator>)
+
+  Checks that element is present on the page.
+  Prefer ARIA locators for reliable element detection.
 
   <example>
-    I.seeElement('.success-message'); // checks element with class exists
-    I.seeElement('#submit-button'); // checks element with id exists
-    I.seeElement('//div[@data-testid="result"]'); // checks element by XPath
+    I.seeElement({"role":"button","text":"Submit"});
+    I.seeElement({"role":"alert","text":"Success"});
+    I.seeElement('#submit-button');
+    I.seeElement('.success-message');
+  </example>
+
+  ### I.seeInTitle
+
+  I.seeInTitle(<text>)
+
+  Checks that page title contains expected text.
+
+  <example>
+    I.seeInTitle('Dashboard');
+  </example>
+
+  ### I.seeInSource
+
+  I.seeInSource(<text>)
+
+  Checks that page source contains expected text (including hidden elements).
+
+  <example>
+    I.seeInSource('<div class="hidden">');
   </example>
 
   ### I.dontSee
 
-  checks that text is NOT visible on the page
+  I.dontSee(<text>, <context>)
+
+  Checks that text is NOT visible inside a specific element.
+  Context parameter is REQUIRED - never use I.dontSee without context.
 
   <example>
-    I.dontSee('Error'); // checks text "Error" is not visible
-    I.dontSee('Error', '.alert'); // checks text is not visible in specific element
+    I.dontSee('Error', '.alert');
+    I.dontSee('Failed', '.status');
+  </example>
+
+  ### I.dontSeeElement
+
+  I.dontSeeElement(<locator>)
+
+  Checks that element is NOT present on the page.
+
+  <example>
+    I.dontSeeElement('#error-message');
+    I.dontSeeElement({"role":"alert","text":"Error"});
   </example>
 
   ### I.dontSeeInSource
 
-  checks that page source does NOT contain expected text
+  I.dontSeeInSource(<text>)
+
+  Checks that page source does NOT contain expected text.
 
   <example>
-    I.dontSeeInSource('error-class'); // checks raw HTML does not contain text
+    I.dontSeeInSource('error-class');
   </example>
 
+  <verification_rules>
+  Be strict in assertions to avoid false positives.
+  Prefer I.seeElement() with ARIA locators - most reliable.
+  I.see() and I.dontSee() MUST include context parameter.
+  Only use locators that exist in the provided HTML or ARIA snapshot.
+  Verify exact conditions, not approximate matches.
+  </verification_rules>
+
   [DO NEVER USE OTHER CODECEPTJS COMMANDS THAN PROPOSED HERE]
-  [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML]
+  [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML OR ARIA SNAPSHOT]
   [DO NOT USE WAIT FUNCTIONS]
 
   </actions>
@@ -249,9 +327,9 @@ export function outputRule(maxAttempts: number): string {
     <rules>
     Do not invent locators, focus only on locators from HTML PAGE.
     Provide up to ${maxAttempts} various code suggestions to achieve the result.
-    If there was already succesful solution in <experince> use it as a first solution.
+    If there was already successful solution in <experience> use it as a first solution.
 
-    If no succesful solution was found in <experince> propose codeblocks for each area that can help to achieve the result.
+    If no successful solution was found in <experience> propose codeblocks for each area that can help to achieve the result.
     Do not stick only to the first found element as it might be hidden or not availble on the page.
     If you think HTML contains several areas that can help to achieve the result, propose codeblocks for each such area.
     Use exact locators that can pick the elements from each areas.
@@ -271,7 +349,7 @@ export function outputRule(maxAttempts: number): string {
     Your response must start explanation of what you are going to do to achive the result
     It is important to explain intention before proposing code.
     Response must also valid CodeceptJS code in code blocks.
-    Propose codeblock from succesful solutions in <experince> first if they exist.
+    Propose codeblock from successful solutions in <experience> first if they exist.
     Use only locators from HTML PAGE that was passed in <page> context.
     </output>
 
@@ -367,7 +445,7 @@ export function verificationOutputRule(maxAttempts: number): string {
     Verifying that welcome message is visible on the page
 
     \`\`\`js
-      I.see('Welcome');
+      I.seeElement({"role":"heading","text":"Welcome"});
     \`\`\`
 
     \`\`\`js

@@ -42,7 +42,8 @@ export class ExperienceCompactor implements Agent {
         { role: 'user', content: this.getSystemPrompt() },
         { role: 'user', content: prompt },
       ],
-      model
+      model,
+      { telemetryFunctionId: 'experience.compact' }
     );
     return response.text;
   }
@@ -230,6 +231,7 @@ Your task is to compact experience data from test automation attempts.
 - Highlight which locators failed and why
 - Common error patterns - group similar errors
 - Structure the output with clear sections (Successful Solutions, Failed Locators, Common Errors)
+- Remove all I.amOnPage, I.grab, and I.see calls from compacted experiences
 - Your task is ONLY to compact the current experience data.
 - Be explicit and short. Do not add any proposals or explanations on your own.
 </rules>

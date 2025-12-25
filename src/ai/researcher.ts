@@ -113,7 +113,7 @@ export class Researcher implements Agent {
     if (screenshot && this.provider.hasVision() && isOnCurrentState) {
       tag('step').log('Capturing page with screenshot to analyze UI deeper');
       actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
-      screenshotAnalysis = await this.imageContent(actionResult);
+      screenshotAnalysis = await this.analyzeScreenshotForUIElements(actionResult);
       if (screenshotAnalysis) {
         conversation.addUserText(dedent`
               We analyzed the screenshot and found the following UI elements with their coordinates
@@ -234,17 +234,15 @@ export class Researcher implements Agent {
 
     let ariaSnapshot = actionResult.ariaSnapshot;
 
-    if (!ariaSnapshot || ariaSnapshot.trim() === '') {
-      if (isOnCurrentState) {
-        debugLog('Accessibility tree is empty, refreshing page');
-        tag('step').log('Accessibility tree is empty, refreshing...');
-        await this.navigateTo(actionResult.url);
-        actionResult = await this.explorer.createAction().capturePageState();
-        ariaSnapshot = actionResult.ariaSnapshot;
-      }
+    if ((!ariaSnapshot || ariaSnapshot.trim() === '') && isOnCurrentState) {
+      debugLog('Accessibility tree is empty, capturing fresh state');
+      tag('step').log('Capturing accessibility tree...');
+      const freshAction = this.explorer.createAction();
+      const freshState = await freshAction.capturePageState();
+      ariaSnapshot = freshState.ariaSnapshot;
     }
 
-    if (ariaSnapshot) {
+    if (ariaSnapshot && ariaSnapshot.trim() !== '') {
       researchText += dedent`
 
           ## Accessibility Tree
@@ -255,6 +253,8 @@ export class Researcher implements Agent {
           ${codeToMarkdown(ariaSnapshot)}
 
           `;
+    } else {
+      debugLog('No accessibility tree available for this page');
     }
 
     if (stateHash && researchDir && researchFile) {
@@ -262,6 +262,11 @@ export class Researcher implements Agent {
       writeFileSync(researchFile, researchText);
       Researcher.researchCache[stateHash] = researchText;
       Researcher.researchCacheTimestamps[stateHash] = Date.now();
+    }
+
+    const summary = this.extractSummary(researchText);
+    if (summary) {
+      this.experienceTracker.updateSummary(actionResult, summary);
     }
 
     tag('multiline').log(researchText);
@@ -504,52 +509,34 @@ export class Researcher implements Agent {
 
       ## Navigation Area
 
-      Here is HTML:
-
+      <page_html>
       ${codeToMarkdown(html)}
+      </page_html>
     `;
 
     const model = this.provider.getModelForAgent('researcher');
-    const result = await this.provider.chat([{ role: 'user', content: prompt }], model);
+    const result = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.textContent' });
 
     return result.text;
   }
 
-  async imageContent(state: WebPageState, lookFor?: string): Promise<string | null> {
+  private getScreenshotFromState(state: WebPageState): { actionResult: ActionResult; image: Buffer } | null {
     const actionResult = ActionResult.fromState(state);
     const image = actionResult.screenshot;
     if (!image) {
       debugLog('No screenshot found', actionResult);
       return null;
     }
-    tag('step').log('Analyzing page screenshot');
+    return { actionResult, image };
+  }
 
-    const prompt = lookFor
-      ? dedent`
-        <role>
-        You are a precise UI inspector focused on confirming a single interface element on a webpage screenshot.
-        </role>
+  async analyzeScreenshotForUIElements(state: WebPageState): Promise<string | null> {
+    const screenshotData = this.getScreenshotFromState(state);
+    if (!screenshotData) return null;
 
-        <task>
-        Focus ONLY on the element described as: "${lookFor}".
-        Determine whether it is present and usable. If you locate it, respond with a short sentence describing the element and include its coordinates in the format "<description> at <x>X, <y>Y" (numbers must be integers followed by X and Y respectively).
-        If it is not visible or cannot be reached, explain that it was not found and provide a brief suggestion.
-        Do not list other elements.
-        </task>
-
-        <rules>
-        - Keep the answer under two sentences.
-        - Mention if the element is obscured or disabled when applicable.
-        - Always include coordinates only when the element is found.
-        - Coordinates must follow the pattern "123X, 456Y" with X and Y suffixes.
-        </rules>
-
-        URL: ${actionResult.url || 'Unknown'}
-        Title: ${actionResult.title || 'Unknown'}
-
-        The screenshot is provided below.
-        `
-      : dedent`
+    const { actionResult, image } = screenshotData;
+    tag('step').log('Analyzing page screenshot for UI elements');
+    const prompt = dedent`
         <role>
         You are UI/UX designer analyzing all UI elements on the webpage
         </role>
@@ -644,7 +631,77 @@ export class Researcher implements Agent {
         `;
 
     const result = await this.provider.processImage(prompt, image.toString('base64'));
+    return result.text;
+  }
 
+  async checkElementLocation(state: WebPageState, elementDescription: string): Promise<string | null> {
+    const screenshotData = this.getScreenshotFromState(state);
+    if (!screenshotData) return null;
+
+    const { actionResult, image } = screenshotData;
+    tag('step').log('Checking element location on screenshot');
+    const prompt = dedent`
+        <role>
+        You are a precise UI inspector focused on confirming a single interface element on a webpage screenshot.
+        </role>
+
+        <task>
+        Focus ONLY on the element described as: "${elementDescription}".
+        Determine whether it is present and usable. If you locate it, respond with a short sentence describing the element and include its coordinates in the format "<description> at <x>X, <y>Y" (numbers must be integers followed by X and Y respectively).
+        If it is not visible or cannot be reached, explain that it was not found and provide a brief suggestion.
+        Do not list other elements.
+        </task>
+
+        <rules>
+        - Keep the answer under two sentences.
+        - Mention if the element is obscured or disabled when applicable.
+        - Always include coordinates only when the element is found.
+        - Coordinates must follow the pattern "123X, 456Y" with X and Y suffixes.
+        </rules>
+
+        URL: ${actionResult.url || 'Unknown'}
+        Title: ${actionResult.title || 'Unknown'}
+
+        The screenshot is provided below.
+        `;
+
+    const result = await this.provider.processImage(prompt, image.toString('base64'));
+    return result.text;
+  }
+
+  async answerQuestionAboutScreenshot(state: WebPageState, question: string): Promise<string | null> {
+    const screenshotData = this.getScreenshotFromState(state);
+    if (!screenshotData) return null;
+
+    const { actionResult, image } = screenshotData;
+    tag('step').log('Answering question about screenshot');
+    const prompt = dedent`
+        <role>
+        You are a UI analyst examining a webpage screenshot to answer specific questions about its state or content.
+        </role>
+
+        <task>
+        Answer the following question about the webpage screenshot: "${question}"
+        
+        Examine the screenshot carefully and provide a clear, concise answer based on what you observe.
+        Be specific and factual in your response.
+        If the question cannot be answered from the screenshot alone, explain what information is missing.
+        </task>
+
+        <rules>
+        - Provide a direct answer to the question.
+        - Be specific and reference visual elements when relevant.
+        - If the answer requires checking form fields, buttons, or other UI elements, describe their state clearly.
+        - Keep the response focused and under 5 sentences unless more detail is needed.
+        </rules>
+
+        URL: ${actionResult.url || 'Unknown'}
+        Title: ${actionResult.title || 'Unknown'}
+
+        The screenshot is provided below.
+        `;
+
+    const result = await this.provider.processImage(prompt, image.toString('base64'));
     return result.text;
   }
 
@@ -681,6 +738,14 @@ export class Researcher implements Agent {
     if (!bodyMatch) return true;
     const bodyContent = bodyMatch[1].trim();
     return bodyContent === '';
+  }
+
+  private extractSummary(researchText: string): string {
+    const summaryMatch = researchText.match(/## Summary\s*\n+([\s\S]*?)(?=\n##|$)/i);
+    if (!summaryMatch) return '';
+    const summaryContent = summaryMatch[1].trim();
+    const firstLine = summaryContent.split('\n')[0].trim();
+    return firstLine.slice(0, 200);
   }
 
   private async navigateTo(url: string): Promise<void> {

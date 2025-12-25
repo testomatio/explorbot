@@ -28,7 +28,10 @@ if (!isValid()) {
 When updating do the smallest change possible
 Follow KISS and YAGNI principles
 Avoid repetetive code patterns
+Avoid ternary operators!
 Avoid creating extra functions that were not explicitly set
+
+DUPLICATING CODE IS A SIN YOU WILL BURN IN ROBOT HELL FOR THAT! Always look if this code was already wirtten and doesn't need to be reintroduced again
 
 ## Build
 

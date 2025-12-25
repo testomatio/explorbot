@@ -3,7 +3,11 @@ import React from 'react';
 import { useEffect, useState } from 'react';
 import { type ActivityEntry, addActivityListener, removeActivityListener } from '../activity.ts';
 
-const ActivityPane: React.FC = () => {
+interface ActivityPaneProps {
+  isInputVisible?: boolean;
+}
+
+const ActivityPane: React.FC<ActivityPaneProps> = React.memo(({ isInputVisible = false }) => {
   const [activity, setActivity] = useState<ActivityEntry | null>(null);
   const [animationState, setAnimationState] = useState(0);
 
@@ -30,6 +34,9 @@ const ActivityPane: React.FC = () => {
   }, [activity]);
 
   if (!activity) {
+    if (isInputVisible) {
+      return null;
+    }
     return (
       <Box height={1} paddingX={1}>
         <Text dimColor>Done. Press [ESC] to enable input. Press [CTRL + t] to toggle session timer.</Text>
@@ -64,6 +71,6 @@ const ActivityPane: React.FC = () => {
       </Text>
     </Box>
   );
-};
+});
 
 export default ActivityPane;

@@ -12,7 +12,7 @@ import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import { actionRule, outputRule, verificationActionRule, verificationOutputRule } from './rules.js';
+import { actionRule, locatorRule, outputRule, verificationActionRule } from './rules.js';
 
 const debugLog = createDebug('explorbot:navigator');
 
@@ -144,9 +144,9 @@ class Navigator implements Agent {
       <page>
         ${actionResult.toAiContext()}
 
-        HTML:
-
+        <page_html>
         ${await actionResult.simplifiedHtml()}
+        </page_html>
       </page>
 
 
@@ -372,18 +372,18 @@ class Navigator implements Agent {
       <page>
         ${actionResult.toAiContext()}
 
-        HTML:
-
+        <page_html>
         ${await actionResult.simplifiedHtml()}
+        </page_html>
       </page>
 
       ${knowledge}
 
       ${verificationActionRule}
 
-      ${experience}
+      ${locatorRule}
 
-      ${verificationOutputRule(this.MAX_ATTEMPTS)}
+      ${experience}
     `;
 
     debugLog('Sending verification prompt to AI provider');

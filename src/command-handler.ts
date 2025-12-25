@@ -1,4 +1,5 @@
 import type { ExplorBot } from './explorbot.js';
+import { htmlTextSnapshot } from './utils/html.js';
 import { tag } from './utils/logger.js';
 
 export type InputSubmitCallback = (input: string) => Promise<void>;
@@ -115,6 +116,51 @@ export class CommandHandler implements InputManager {
         execute: async (args: string) => {
           await this.explorBot.explore(args);
           tag('info').log('Navigate to other page with /navigate or /explore again to continue exploration');
+        },
+      },
+      {
+        name: 'aria',
+        description: 'Print ARIA snapshot for current page',
+        execute: async (args: string) => {
+          const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+          if (!state) {
+            throw new Error('No active page to snapshot');
+          }
+          const ariaSnapshot = state.ariaSnapshot;
+          if (!ariaSnapshot) {
+            throw new Error('No ARIA snapshot available for current page');
+          }
+          const wantsShort = args.split(/\s+/).includes('short') || args.includes('--short');
+          if (wantsShort) {
+            tag('multiline').log(`ARIA Snapshot:\n\n${ariaSnapshot}`);
+            return;
+          }
+          tag('snapshot').log(`ARIA Snapshot:\n\n${ariaSnapshot}`);
+        },
+      },
+      {
+        name: 'html',
+        description: 'Print HTML snapshot for current page',
+        execute: async (args: string) => {
+          const manager = this.explorBot.getExplorer().getStateManager();
+          const state = manager.getCurrentState();
+          if (!state) {
+            throw new Error('No active page to snapshot');
+          }
+          let html = state.html;
+          if (!html && state.htmlFile) {
+            html = manager.loadHtmlFromFile(state.htmlFile) || '';
+          }
+          if (!html) {
+            throw new Error('No HTML snapshot available for current page');
+          }
+          const wantsFull = args.split(/\s+/).includes('full') || args.includes('--full');
+          if (!wantsFull) {
+            tag('html').log(html);
+            return;
+          }
+          const markdown = htmlTextSnapshot(html);
+          tag('snapshot').log(`HTML Content:\n\n${markdown}`);
         },
       },
       {
@@ -272,7 +318,7 @@ export class CommandHandler implements InputManager {
     const trimmedInput = input.trim();
     const normalizedInput = trimmedInput === '/' ? '' : trimmedInput;
     const slashCommands = this.getAvailableCommands().filter((cmd) => cmd.startsWith('/'));
-    const defaultCommands = ['/explore', '/navigate', '/plan', '/research', 'exit'];
+    const defaultCommands = ['/explore', '/navigate', '/plan', '/research', '/aria', '/html', 'exit'];
     if (!normalizedInput) {
       const prioritized = defaultCommands.filter((cmd) => cmd === 'exit' || slashCommands.includes(cmd));
       const extras = slashCommands.filter((cmd) => !prioritized.includes(cmd) && cmd !== 'exit');

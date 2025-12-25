@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
+import * as codeceptjs from 'codeceptjs';
 import dedent from 'dedent';
 import { ActionResult } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
@@ -14,12 +15,52 @@ import { ExperienceTracker } from './experience-tracker.js';
 import type { UserResolveFunction } from './explorbot.ts';
 import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
-import { createDebug, log, tag } from './utils/logger.js';
+import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
+import { context, trace } from '@opentelemetry/api';
+import { Observability } from './observability.ts';
 import { throttle } from './utils/throttle.ts';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { collectInteractiveNodes } from './utils/aria.ts';
 
 const debugLog = createDebug('explorbot:action');
+let stepLoggerRegistered = false;
+let stepLoggerTarget: string[] | null = null;
+
+const stepLogger = (step: any, error?: any) => {
+  if (!step?.toCode) {
+    return;
+  }
+  if (step.name?.startsWith('grab')) return;
+  const stepCode = step.toCode();
+  if (stepLoggerTarget) {
+    stepLoggerTarget.push(stepCode);
+  }
+  if (error) {
+    tag('step').log(step, error);
+    return;
+  }
+  tag('step').log(step);
+};
+
+const registerStepLogger = (target: string[]) => {
+  stepLoggerTarget = target;
+  if (stepLoggerRegistered) {
+    return;
+  }
+  stepLoggerRegistered = true;
+  codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, stepLogger);
+  codeceptjs.event.dispatcher.on(codeceptjs.event.step.failed, stepLogger);
+};
+
+const unregisterStepLogger = () => {
+  stepLoggerTarget = null;
+  if (!stepLoggerRegistered) {
+    return;
+  }
+  stepLoggerRegistered = false;
+  codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, stepLogger);
+  codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, stepLogger);
+};
 
 class Action {
   private actor: CodeceptJS.I;
@@ -174,7 +215,13 @@ class Action {
 
     let codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
     codeString = codeString.replace(/^\(I\) => /, '').trim();
-    // tag('step').log(highlight(codeString, { language: 'javascript' }));
+
+    const executedSteps: string[] = [];
+    registerStepLogger(executedSteps);
+    const activeSpan = Observability.getSpan();
+    const tracer = trace.getTracer('ai');
+    const stepSpan = activeSpan ? tracer.startSpan('codeceptjs.step', undefined, trace.setSpan(context.active(), activeSpan)) : null;
+    setStepSpanParent(stepSpan);
     try {
       debugLog('Executing action:', codeString);
 
@@ -190,6 +237,9 @@ class Action {
       await recorder.promise();
 
       const pageState = await this.capturePageState();
+      if (executedSteps.length > 0) {
+        codeString = executedSteps.join('\n');
+      }
 
       this.stateManager.updateState(pageState, codeString);
 
@@ -201,6 +251,11 @@ class Action {
       await recorder.start();
       throw err;
     } finally {
+      unregisterStepLogger();
+      if (stepSpan) {
+        stepSpan.end();
+      }
+      setStepSpanParent(null);
       clearActivity();
     }
 
@@ -256,7 +311,7 @@ class Action {
     return this;
   }
 
-  public async attempt(codeBlock: string | ((I: CodeceptJS.I) => void), originalMessage?: string, experience: boolean = true): Promise<boolean> {
+  public async attempt(codeBlock: string | ((I: CodeceptJS.I) => void), originalMessage?: string, experience = true): Promise<boolean> {
     try {
       debugLog('Resolution attempt...');
       setActivity('🦾 Acting in browser...', 'action');
@@ -280,6 +335,7 @@ class Action {
 
       return true;
     } catch (error) {
+      this.lastError = error as Error;
       const executionError = errorToString(error);
       tag('error').log(`Attempt failed with error: ${codeBlock.toString()}: ${executionError || this.lastError?.toString()}`);
 
