@@ -48,7 +48,7 @@
     "@testomatio/reporter": "^2.3.9",
     "ai": "^5.0.0",
     "cli-highlight": "^2.1.11",
-    "codeceptjs": "4.0.1-beta.18",
+    "codeceptjs": "4.0.1-beta.23",
     "commander": "^14.0.1",
     "debug": "^4.4.3",
     "dedent": "^1.6.0",

@@ -19,7 +19,6 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [autoCompleteTriggered, setAutoCompleteTriggered] = useState(false);
   const inputRef = useRef(inputValue);
   const cursorRef = useRef(cursorPosition);
   const historyRef = useRef<string[]>([]);
@@ -76,12 +75,16 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
 
       setInputValue('');
       setCursorPosition(0);
-      setShowAutocomplete(false);
-      setSelectedIndex(0);
+      if (showAutocomplete) {
+        setShowAutocomplete(false);
+      }
+      if (selectedIndex !== 0) {
+        setSelectedIndex(0);
+      }
       inputRef.current = '';
       cursorRef.current = 0;
     },
-    [commandHandler, addLog]
+    [commandHandler, addLog, selectedIndex, showAutocomplete]
   );
 
   useEffect(() => {
@@ -111,13 +114,17 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
       cursorRef.current = nextCursor;
       setInputValue(newValue);
       setCursorPosition(nextCursor);
-      setSelectedIndex(0);
-      setAutoCompleteTriggered(false);
-      setShowAutocomplete(shouldShowAutocomplete(newValue));
+      if (selectedIndex !== 0) {
+        setSelectedIndex(0);
+      }
+      const nextShowAutocomplete = shouldShowAutocomplete(newValue);
+      if (showAutocomplete !== nextShowAutocomplete) {
+        setShowAutocomplete(nextShowAutocomplete);
+      }
       historyIndexRef.current = -1;
       historyDraftRef.current = '';
     },
-    [shouldShowAutocomplete]
+    [selectedIndex, shouldShowAutocomplete, showAutocomplete]
   );
 
   useInput(
@@ -297,9 +304,13 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         cursorRef.current = nextValue.length;
         setInputValue(nextValue);
         setCursorPosition(nextValue.length);
-        setSelectedIndex(0);
-        setAutoCompleteTriggered(false);
-        setShowAutocomplete(shouldShowAutocomplete(nextValue));
+        if (selectedIndex !== 0) {
+          setSelectedIndex(0);
+        }
+        const nextShowAutocomplete = shouldShowAutocomplete(nextValue);
+        if (showAutocomplete !== nextShowAutocomplete) {
+          setShowAutocomplete(nextShowAutocomplete);
+        }
         return;
       }
 
@@ -314,9 +325,13 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
           cursorRef.current = nextValue.length;
           setInputValue(nextValue);
           setCursorPosition(nextValue.length);
-          setSelectedIndex(0);
-          setAutoCompleteTriggered(false);
-          setShowAutocomplete(shouldShowAutocomplete(nextValue));
+          if (selectedIndex !== 0) {
+            setSelectedIndex(0);
+          }
+          const nextShowAutocomplete = shouldShowAutocomplete(nextValue);
+          if (showAutocomplete !== nextShowAutocomplete) {
+            setShowAutocomplete(nextShowAutocomplete);
+          }
           return;
         }
         historyIndexRef.current += 1;
@@ -325,9 +340,13 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         cursorRef.current = nextValue.length;
         setInputValue(nextValue);
         setCursorPosition(nextValue.length);
-        setSelectedIndex(0);
-        setAutoCompleteTriggered(false);
-        setShowAutocomplete(shouldShowAutocomplete(nextValue));
+        if (selectedIndex !== 0) {
+          setSelectedIndex(0);
+        }
+        const nextShowAutocomplete = shouldShowAutocomplete(nextValue);
+        if (showAutocomplete !== nextShowAutocomplete) {
+          setShowAutocomplete(nextShowAutocomplete);
+        }
         return;
       }
 
@@ -339,9 +358,10 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
           cursorRef.current = selectedCommand.length;
           setInputValue(selectedCommand);
           setShowAutocomplete(false);
-          setSelectedIndex(0);
           setCursorPosition(selectedCommand.length);
-          setAutoCompleteTriggered(true);
+          if (selectedIndex !== 0) {
+            setSelectedIndex(0);
+          }
         }
         return;
       }
@@ -356,9 +376,13 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
           cursorRef.current = nextCursor;
           setInputValue(newValue);
           setCursorPosition(nextCursor);
-          setSelectedIndex(0);
-          setAutoCompleteTriggered(false);
-          setShowAutocomplete(shouldShowAutocomplete(newValue));
+          if (selectedIndex !== 0) {
+            setSelectedIndex(0);
+          }
+          const nextShowAutocomplete = shouldShowAutocomplete(newValue);
+          if (showAutocomplete !== nextShowAutocomplete) {
+            setShowAutocomplete(nextShowAutocomplete);
+          }
           historyIndexRef.current = -1;
           historyDraftRef.current = '';
         }
@@ -404,12 +428,13 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         cursorRef.current = selectedCommand.length;
         setInputValue(selectedCommand);
         setShowAutocomplete(false);
-        setSelectedIndex(0);
         setCursorPosition(selectedCommand.length);
-        setAutoCompleteTriggered(true);
+        if (selectedIndex !== 0) {
+          setSelectedIndex(0);
+        }
       }
     },
-    [commandHandler]
+    [commandHandler, selectedIndex]
   );
 
   if (!visible) {

@@ -3,6 +3,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
 import { ExperienceTracker } from '../experience-tracker.js';
+import { executionController } from '../execution-controller.ts';
 import type { ExplorBot } from '../explorbot.ts';
 import { Task, Test } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.js';
@@ -42,15 +43,10 @@ export class Captain implements Agent {
     - If the goal is achieved (correct page, correct state) - call done() immediately
     - If the action worked but result is not as expected - try next action
     - Do NOT add extra steps beyond what was asked
+    - Start with currently focused/visible area on the page
+    - Always validate page HTML/ARIA and ask for see() to verify that the page is in the expected state
     </rules>
 
-    <tools>
-    - click(locator): Click an element
-    - type(text, locator?): Type text
-    - form(codeBlock): Multiple actions
-    - record(note): Log what action was performed
-    - done(summary): Call when the user's request is fulfilled
-    </tools>
     `;
   }
 
@@ -63,6 +59,10 @@ export class Captain implements Agent {
     if (!this.conversation) {
       return this.resetConversation();
     }
+    return this.conversation;
+  }
+
+  getConversation(): Conversation | null {
     return this.conversation;
   }
 
@@ -267,14 +267,20 @@ export class Captain implements Agent {
       return await this.handleSaveResponse(input);
     }
 
+    const stateManager = this.explorBot.getExplorer().getStateManager();
+    const currentState = stateManager.getCurrentState();
+
+    if (!currentState) {
+      tag('warning').log(this.emoji, 'No page loaded. Use /navigate or I.amOnPage() first.');
+      return null;
+    }
+
     const conversation = options.reset ? this.resetConversation() : this.ensureConversation();
     let isDone = false;
     let finalSummary: string | null = null;
 
-    const stateManager = this.explorBot.getExplorer().getStateManager();
-    const currentState = stateManager.getCurrentState();
-    const startUrl = currentState?.url || '';
-    const initialActionResult = currentState ? ActionResult.fromState(currentState) : null;
+    const startUrl = currentState.url || '';
+    const initialActionResult = ActionResult.fromState(currentState);
     const task = new Task(input, startUrl);
     const historyStart = stateManager.getStateHistory().length;
 
@@ -302,7 +308,7 @@ export class Captain implements Agent {
     ${input}
     </request>
 
-    Do exactly what is asked. Call done() immediately after.
+    Execute the request using available tools. Call done() only after completing the action.
     `;
 
     conversation.addUserText(initialPrompt);
@@ -317,8 +323,41 @@ export class Captain implements Agent {
           return;
         }
 
+        if (!conversation.hasTag('page_html', 5)) {
+          conversation.addUserText(dedent`
+            Context:
+
+            <page>
+            CURRENT URL: ${currentState.url}
+            CURRENT TITLE: ${currentState.title}
+            </page>
+
+            <page_aria>
+            ${currentState.ariaSnapshot}
+            </page_aria>
+
+            <page_html>
+            ${currentState.html}
+            </page_html>
+          `);
+        }
+
+        const interruptInput = await executionController.checkInterrupt();
+        if (interruptInput) {
+          const newContext = await this.getPageContext();
+          conversation.addUserText(dedent`
+            ${newContext}
+
+            <user_redirect>
+            ${interruptInput}
+            </user_redirect>
+
+            The user has interrupted and wants to change direction. Follow the new instruction.
+          `);
+        }
+
         const result = await this.explorBot.getProvider().invokeConversation(conversation, tools, {
-          maxToolRoundtrips: 1,
+          maxToolRoundtrips: 5,
           toolChoice: 'auto',
         });
 

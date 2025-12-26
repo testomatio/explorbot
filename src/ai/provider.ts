@@ -215,11 +215,11 @@ export class Provider {
 
       return response;
     } catch (error: any) {
+      clearActivity();
       if (error.constructor.name === 'AI_APICallError') {
         responseLog(error.message);
-        return error.message;
+        throw new AiError(error.message);
       }
-      clearActivity();
       throw error;
     }
   }

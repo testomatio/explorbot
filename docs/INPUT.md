@@ -8,12 +8,7 @@
 
 ## Proposed Direction
 
-Add a new component `InputReadline` that is feature-flagged and can be toggled on without removing the existing `InputPane` behavior.
-
-## Feature Flag
-
-- Use environment flag `FEATURE_READLINE=true` to enable the new component.
-- Default stays on the current `InputPane` when the flag is not set.
+Add a new component `InputReadline` as the default input without removing the existing `InputPane` behavior.
 
 ## InputReadline Behavior
 

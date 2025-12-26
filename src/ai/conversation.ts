@@ -73,6 +73,24 @@ export class Conversation {
     const regex = new RegExp(`<${escapedTag}>[\\s\\S]*?<\\/${escapedTag}>`, 'g');
     const replacementText = `<${tagName}>${replacement}</${tagName}>`;
 
+    if (keepLast > 0 && messagesToProcess > 0) {
+      const lastMessages = this.messages.slice(messagesToProcess);
+      const hasTag = lastMessages.some((msg) => typeof msg.content === 'string' && new RegExp(`<${escapedTag}>`).test(msg.content));
+      if (!hasTag) {
+        const contentRegex = new RegExp(`<${escapedTag}>([\\s\\S]*?)<\\/${escapedTag}>`, 'g');
+        const contents: string[] = [];
+        for (let i = 0; i < messagesToProcess; i++) {
+          const msg = this.messages[i];
+          if (typeof msg.content === 'string') {
+            contents.push(...[...msg.content.matchAll(contentRegex)].map((m) => m[1]));
+          }
+        }
+        if (contents.length > 0 && typeof lastMessages[lastMessages.length - 1]?.content === 'string') {
+          lastMessages[lastMessages.length - 1].content += ` <${tagName}>${contents.join('\n')}</${tagName}>`;
+        }
+      }
+    }
+
     for (let i = 0; i < messagesToProcess; i++) {
       const message = this.messages[i];
       if (typeof message.content === 'string') {

@@ -1,12 +1,13 @@
 import { Box, Text, useInput } from 'ink';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CommandHandler } from '../command-handler.js';
+import { executionController } from '../execution-controller.ts';
 import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
 import type { StateTransition, WebPageState } from '../state-manager.js';
 import { Test } from '../test-plan.ts';
 import ActivityPane from './ActivityPane.js';
-import InputPane from './InputPane.js';
 import InputReadline from './InputReadline.js';
+import InputPane from './InputPane.js';
 import LogPane from './LogPane.js';
 import StateTransitionPane from './StateTransitionPane.js';
 import TaskPane from './TaskPane.js';
@@ -20,10 +21,10 @@ interface AppProps {
 
 export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = false }: AppProps) {
   const sessionStartedAtRef = useRef<number>(Date.now());
-  const useReadline = process.env.FEATURE_READLINE === 'true' || process.env.FEATURE_READLINE === '1';
-  const InputComponent = useReadline ? InputReadline : InputPane;
+  const InputComponent = InputReadline;
   const [showSessionTimer, setShowSessionTimer] = useState(false);
   const [showInput, setShowInput] = useState(initialShowInput);
+  const [interruptPrompt, setInterruptPrompt] = useState<string | null>(null);
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
   const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
   const [tasks, setTasks] = useState<Test[]>([]);
@@ -32,6 +33,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     resolve: (value: string | null) => void;
     reject: (reason?: any) => void;
   } | null>(null);
+  const interruptResolveRef = useRef<((value: string | null) => void) | null>(null);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -93,6 +95,21 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     };
   }, [explorBot]);
 
+  useEffect(() => {
+    executionController.setInterruptCallback(async () => {
+      setInterruptPrompt('Execution interrupted. What should we do instead?');
+      setShowInput(true);
+
+      return new Promise<string | null>((resolve) => {
+        interruptResolveRef.current = resolve;
+      });
+    });
+
+    return () => {
+      executionController.reset();
+    };
+  }, []);
+
   // Listen for task changes - only update if tasks actually changed
   const tasksRef = useRef<Test[]>([]);
   useEffect(() => {
@@ -114,7 +131,9 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     }
 
     if (key.escape) {
-      setShowInput(true);
+      if (!showInput) {
+        executionController.interrupt();
+      }
       return;
     }
 
@@ -124,6 +143,14 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   });
 
   const handleInputSubmit = useCallback(async (input: string) => {
+    if (interruptResolveRef.current) {
+      interruptResolveRef.current(input);
+      interruptResolveRef.current = null;
+      setInterruptPrompt(null);
+      setShowInput(false);
+      return;
+    }
+
     if (userInputPromiseRef.current) {
       userInputPromiseRef.current.resolve(input);
       userInputPromiseRef.current = null;
@@ -151,6 +178,11 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       </Box>
 
       {showInput && <Box height={1} />}
+      {interruptPrompt && showInput && (
+        <Box paddingX={1}>
+          <Text color="yellow">{interruptPrompt}</Text>
+        </Box>
+      )}
       <InputComponent commandHandler={commandHandler} onSubmit={handleInputSubmit} onCommandStart={handleCommandStart} onCommandComplete={handleCommandComplete} isActive={showInput} visible={showInput} />
 
       <Box flexDirection="row" alignItems="flex-start" columnGap={1} minHeight={5}>

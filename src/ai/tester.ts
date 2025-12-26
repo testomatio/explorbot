@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
+import { executionController } from '../execution-controller.ts';
 import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { TestResult, type TestResultType, type Note, type Test } from '../test-plan.ts';
@@ -24,6 +25,7 @@ export class Tester implements Agent {
   emoji = '🧪';
   private explorer: Explorer;
   private provider: Provider;
+  private currentConversation: Conversation | null = null;
 
   MAX_ITERATIONS = 30;
   ACTION_TOOLS = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form'];
@@ -39,6 +41,10 @@ export class Tester implements Agent {
     this.agentTools = agentTools;
   }
 
+  getConversation(): Conversation | null {
+    return this.currentConversation;
+  }
+
   async test(task: Test): Promise<{ success: boolean }> {
     const state = this.explorer.getStateManager().getCurrentState();
     if (!state) throw new Error('No state found');
@@ -49,6 +55,7 @@ export class Tester implements Agent {
     const initialState = ActionResult.fromState(state);
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
+    this.currentConversation = conversation;
 
     const outputDir = ConfigParser.getInstance().getOutputDir();
     this.executionLogFile = join(outputDir, `tester_${task.sessionName}.md`);
@@ -110,6 +117,22 @@ export class Tester implements Agent {
           task.addNote('Dead loop detected. Stopped', TestResult.FAILED);
           stop();
           return;
+        }
+
+        const interruptInput = await executionController.checkInterrupt();
+        if (interruptInput) {
+          conversation.addUserText(dedent`
+            <page>
+            CURRENT URL: ${currentState.url}
+            CURRENT TITLE: ${currentState.title}
+            </page>
+
+            <user_redirect>
+            ${interruptInput}
+            </user_redirect>
+
+            The user has interrupted and wants to change direction. Follow the new instruction.
+          `);
         }
 
         conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);

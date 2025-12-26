@@ -110,6 +110,34 @@ describe('Conversation', () => {
 
       expect(conversation.messages[0].content).toBe('Message <page_html>Old</page_html>');
     });
+
+    it('should preserve tag contents in last message when keepLast is set and last message is empty', () => {
+      const conversation = new Conversation();
+      conversation.addUserText('Message 1 <page_html><div>Important content</div></page_html>');
+      conversation.addUserText('Message 2 <page_html><span>More content</span></page_html>');
+      conversation.addAssistantText('');
+
+      conversation.cleanupTag('page_html', '...cleaned...', 1);
+
+      expect(conversation.messages[0].content).toBe('Message 1 <page_html>...cleaned...</page_html>');
+      expect(conversation.messages[1].content).toBe('Message 2 <page_html>...cleaned...</page_html>');
+      expect(conversation.messages[2].content).toContain('<page_html>');
+      expect(conversation.messages[2].content).toContain('Important content');
+      expect(conversation.messages[2].content).toContain('More content');
+    });
+
+    it('should preserve tag contents when keepLast is set and last message does not contain tag', () => {
+      const conversation = new Conversation();
+      conversation.addUserText('First <page_html><div>Content to preserve</div></page_html>');
+      conversation.addAssistantText('Response without tag');
+
+      conversation.cleanupTag('page_html', '...cleaned...', 1);
+
+      expect(conversation.messages[0].content).toBe('First <page_html>...cleaned...</page_html>');
+      expect(conversation.messages[1].content).toContain('Response without tag');
+      expect(conversation.messages[1].content).toContain('<page_html>');
+      expect(conversation.messages[1].content).toContain('Content to preserve');
+    });
   });
 
   describe('autoTrimTag', () => {

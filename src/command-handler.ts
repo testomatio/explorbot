@@ -271,7 +271,7 @@ export class CommandHandler implements InputManager {
     try {
       const response = await this.explorBot.agentCaptain().handle(trimmedInput);
       if (response) {
-        console.log(response);
+        tag('multiline').log(response);
       }
     } catch (error) {
       tag('error').log(`Captain failed: ${error instanceof Error ? error.message : String(error)}`);

@@ -599,6 +599,8 @@ export function createAgentTools({
 
           return successToolResult('research', {
             analysis: researchResult,
+            html: await ActionResult.fromState(currentState).combinedHtml(),
+            aria: await ActionResult.fromState(currentState).ariaSnapshot,
             message: `Successfully researched page: ${currentState.url}.`,
             suggestion: 'You received comprehensive UI map report. Use it to understand the page structure and navigate to the elements. Do not ask for research() if you have <page_ui_map> for current page.',
           });
