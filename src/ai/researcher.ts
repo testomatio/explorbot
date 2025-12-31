@@ -510,7 +510,7 @@ export class Researcher implements Agent {
       ## Navigation Area
 
       <page_html>
-      ${codeToMarkdown(html)}
+      ${html}
       </page_html>
     `;
 

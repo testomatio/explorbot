@@ -11,6 +11,7 @@ import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import { createAgentTools, createCodeceptJSTools } from './tools.ts';
+import { locatorRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:captain');
 
@@ -36,6 +37,8 @@ export class Captain implements Agent {
     You execute exactly what the user asks - nothing more.
     </role>
 
+    ${locatorRule}
+
     <rules>
     - Do the MINIMUM required to fulfill the request
     - After each action, call record() to log what you did
@@ -45,6 +48,7 @@ export class Captain implements Agent {
     - Do NOT add extra steps beyond what was asked
     - Start with currently focused/visible area on the page
     - Always validate page HTML/ARIA and ask for see() to verify that the page is in the expected state
+    - Follow <locator_priority> rules when selecting locators for all tools
     </rules>
 
     `;

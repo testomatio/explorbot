@@ -15,7 +15,7 @@ import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { protectionRule } from './rules.ts';
+import { protectionRule, locatorRule } from './rules.ts';
 import { createCodeceptJSTools } from './tools.ts';
 import type { Conversation } from './conversation.ts';
 
@@ -155,7 +155,7 @@ export class Tester implements Agent {
               </page_aria>
 
               <page_html>
-              ${currentState.html}
+              ${await currentState.combinedHtml()}
               </page_html>
             `;
           }
@@ -335,6 +335,8 @@ export class Tester implements Agent {
     Your task is to execute testing scenario by interacting with web pages using available tools.
     </role>
 
+    ${locatorRule}
+
     <task>
     You will be provided with scenario goal which should be achieved.
     Expected results will help you to achieve the scenario goal.
@@ -368,9 +370,19 @@ export class Tester implements Agent {
     - Use reset() to navigate back to the initial page if needed
     - When you see form with inputs, use form() tool to fill its values it
     - Before submitting form, check all inputs were filled in correctly using see() tool
-    - When you interact with form with inputs, ensure that you click corresponding button to save its data.
-
+    - When you interact with form with inputs, ensure that you click corresponding button to save its data
+    - Follow <locator_priority> rules when selecting locators for all tools
+    - Before retrying your actions check maybe they already achived expected results. Use see() tool for that
+    - When filling complex form with lot of actions performed, use see() to look which fields were filled and which are not
     </rules>
+
+    <accessibility_issues>
+      If you can't interact with element due incorrect accesibility markup, record accessibility issue with status="fail"
+      Describe the page and origin of accessibility issue in notes and suggest how markup can be improved
+      Use 'A11y: ' prefix when recording accessibility issues
+      We need to collect only accessibility issues that harden our navigation and tool calling
+      Do not scan for all possible accessibility issues, only the ones that affect our testing
+    </accessibility_issues>
 
     <free_thinking_rule>
     You primary focus to achieve the SCENARIO GOAL
@@ -413,6 +425,7 @@ export class Tester implements Agent {
             Check if the current actions are aligned with the main scenario goal.
             If there are unsuccessful steps, suggest a different approach to achieve the main scenario goal.
             Provide a short comprehensive assessment of the current progress.
+            Identify tool call that failed due to incorrect accesibility HTML markup.
             Provide suggestions for next steps.
             </task>
 
@@ -425,6 +438,15 @@ export class Tester implements Agent {
             - Look for failed tool calls and identify which actions were not accomplished.
             - If tool didn't succeed even after several attempts, you must mention it in the assessment.
             </rules>
+
+
+            <accessibility_issues>
+            If you identified that some actions were not achived due to improper accesibility markup, you should mention this in the assessment.
+            Describe the page and origin of accessibility issue in notes and suggest how markup can be improved.
+            Suggest the accessibility changes that can improve page navigation and tool calling.
+            Use 'A11y: ' prefix when recording accessibility issues
+            You should collect only accessibility issues that harden our navigation and tool calling
+          </accessibility_issues>
 
             <current_state>
             ${await actionResult.toAiContext()}
@@ -466,6 +488,7 @@ export class Tester implements Agent {
     const schema = z.object({
       summary: z.string().describe('Concise overview of the test findings'),
       scenarioAchieved: z.boolean().describe('Indicates if the scenario goal appears satisfied'),
+      accessibilityIssues: z.string().optional().describe('List of accessibility issues found during testing'),
       recommendation: z.string().optional().describe('Follow-up suggestion if needed'),
     });
 
@@ -749,8 +772,7 @@ export class Tester implements Agent {
           - You see an error/alert/warning message on a page
           - You unsuccessfully tried multiple iterations and failed
           - If the expected result was expected to fail, use status="success" instead
-          
-          
+
           Example:
           - record({ notes: ["clicked login button", "login form appeared", "fill credentials"], status: "success" })
         `,

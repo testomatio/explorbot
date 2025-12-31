@@ -1,3 +1,4 @@
+import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { createDebug } from './logger.js';
 
@@ -13,7 +14,7 @@ export class StopError extends Error {
 export interface LoopContext {
   stop: () => void;
   iteration: number;
-  pause: (context?: Record<string, unknown>) => Promise<void>;
+  pause: (prompt?: string) => Promise<string | null>;
 }
 
 export interface CatchContext {
@@ -34,20 +35,9 @@ export interface LoopOptions {
   };
 }
 
-export async function pause(context: Record<string, unknown> = {}): Promise<void> {
-  const iteration = context.iteration;
-  if (typeof iteration === 'number') {
-    console.log(`<PAUSED ${iteration}: Press Enter to continue>`);
-  } else {
-    console.log('<PAUSED: Press Enter to continue>');
-  }
-  await new Promise<void>((resolve) => {
-    process.stdin.resume();
-    process.stdin.once('data', () => {
-      process.stdin.pause();
-      resolve();
-    });
-  });
+export async function pause(prompt?: string): Promise<string | null> {
+  const message = prompt || 'Paused. Enter new instruction or press Enter to continue:';
+  return await executionController.requestInput(message);
 }
 
 export async function loop<T>(handler: (context: LoopContext) => Promise<T>, options?: LoopOptions): Promise<any> {
@@ -70,7 +60,7 @@ export async function loop<T>(handler: (context: LoopContext) => Promise<T>, opt
         const context: LoopContext = {
           stop: createStopFunction(),
           iteration: iteration + 1,
-          pause: (context?: Record<string, unknown>) => pause({ iteration: iteration + 1, ...(context || {}) }),
+          pause: (prompt?: string) => pause(prompt),
         };
 
         result = await handler(context);

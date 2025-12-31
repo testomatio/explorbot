@@ -2,7 +2,6 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { createDebug } from '../utils/logger.js';
-import { locatorRule } from './rules.ts';
 import type Explorer from '../explorer.ts';
 import { Researcher } from './researcher.ts';
 import { Navigator } from './navigator.ts';
@@ -98,7 +97,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         Follow semantic attributes when interacting with clickable elements like buttons, links, role=button etc, or elements have aria-label or aria-roledescription attributes.
         Can pass a text of clickable element instead of locator (click('Login'), click('Submit'), click('Save'), etc)
 
-        ${locatorRule}
+        Follow <locator_priority> rules from system prompt for locator selection.
 
         Do not use :contains CSS pseudo-selector - it is not supported.
         To click by text with context, use clickByText() tool instead.
@@ -149,7 +148,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         Example: clickByText('Submit', '.modal-footer') - clicks Submit button inside modal footer
         Example: clickByText('Delete', '//div[@class="user-row"][1]') - clicks Delete in first user row
         
-        ${locatorRule}
+        Follow <locator_priority> rules from system prompt for locator selection.
       `,
       inputSchema: z.object({
         text: z.string().describe('Text of the button or link to click'),
@@ -225,7 +224,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         Send keyboard input to a field. After typing, the page state will be automatically captured and returned.
         Omit locator if input is already focused.
         
-        ${locatorRule}
+        Follow <locator_priority> rules from system prompt for locator selection.
       `,
       inputSchema: z.object({
         text: z.string().describe('The text to type'),
@@ -307,7 +306,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         Works with: <select>, listbox, combobox, dropdown buttons, and custom select components.
         Value can be option text, value attribute, or label.
         
-        ${locatorRule}
+        Follow <locator_priority> rules from system prompt for locator selection.
         
         <example>
           I.selectOption('Country', 'United States');
@@ -373,7 +372,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         I.fillField('cvv', '123')
         I.switchTo()
         
-        ${locatorRule}
+        Follow <locator_priority> rules from system prompt for locator selection.
         
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
         Do not use: wait functions, amOnPage, reloadPage, saveScreenshot

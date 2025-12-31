@@ -68,33 +68,51 @@ export class Conversation {
   }
 
   cleanupTag(tagName: string, replacement: string, keepLast = 0): void {
-    const messagesToProcess = Math.max(0, this.messages.length - keepLast);
     const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`<${escapedTag}>[\\s\\S]*?<\\/${escapedTag}>`, 'g');
     const replacementText = `<${tagName}>${replacement}</${tagName}>`;
 
-    if (keepLast > 0 && messagesToProcess > 0) {
-      const lastMessages = this.messages.slice(messagesToProcess);
-      const hasTag = lastMessages.some((msg) => typeof msg.content === 'string' && new RegExp(`<${escapedTag}>`).test(msg.content));
-      if (!hasTag) {
-        const contentRegex = new RegExp(`<${escapedTag}>([\\s\\S]*?)<\\/${escapedTag}>`, 'g');
-        const contents: string[] = [];
-        for (let i = 0; i < messagesToProcess; i++) {
-          const msg = this.messages[i];
-          if (typeof msg.content === 'string') {
-            contents.push(...[...msg.content.matchAll(contentRegex)].map((m) => m[1]));
-          }
+    if (keepLast === 0) {
+      for (const message of this.messages) {
+        if (typeof message.content === 'string') {
+          message.content = message.content.replace(regex, replacementText);
         }
-        if (contents.length > 0 && typeof lastMessages[lastMessages.length - 1]?.content === 'string') {
-          lastMessages[lastMessages.length - 1].content += ` <${tagName}>${contents.join('\n')}</${tagName}>`;
+      }
+      return;
+    }
+
+    const allMatches: Array<{ messageIndex: number; startIndex: number; endIndex: number }> = [];
+    for (let i = 0; i < this.messages.length; i++) {
+      const message = this.messages[i];
+      if (typeof message.content === 'string') {
+        const matches = [...message.content.matchAll(new RegExp(`<${escapedTag}>[\\s\\S]*?<\\/${escapedTag}>`, 'g'))];
+        for (const match of matches) {
+          if (match.index !== undefined) {
+            allMatches.push({ messageIndex: i, startIndex: match.index, endIndex: match.index + match[0].length });
+          }
         }
       }
     }
 
-    for (let i = 0; i < messagesToProcess; i++) {
+    const keepCount = Math.min(keepLast, allMatches.length);
+    const keepMatches = allMatches.slice(-keepCount);
+    const keepSet = new Set(keepMatches.map((m) => `${m.messageIndex}:${m.startIndex}`));
+
+    for (let i = 0; i < this.messages.length; i++) {
       const message = this.messages[i];
       if (typeof message.content === 'string') {
-        message.content = message.content.replace(regex, replacementText);
+        const matches = [...message.content.matchAll(new RegExp(`<${escapedTag}>[\\s\\S]*?<\\/${escapedTag}>`, 'g'))];
+        let result = message.content;
+        for (let j = matches.length - 1; j >= 0; j--) {
+          const match = matches[j];
+          if (match.index !== undefined) {
+            const key = `${i}:${match.index}`;
+            if (!keepSet.has(key)) {
+              result = result.substring(0, match.index) + replacementText + result.substring(match.index + match[0].length);
+            }
+          }
+        }
+        message.content = result;
       }
     }
   }

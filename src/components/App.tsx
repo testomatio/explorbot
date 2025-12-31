@@ -96,8 +96,8 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   }, [explorBot]);
 
   useEffect(() => {
-    executionController.setInterruptCallback(async () => {
-      setInterruptPrompt('Execution interrupted. What should we do instead?');
+    executionController.setInputCallback(async (prompt: string) => {
+      setInterruptPrompt(prompt);
       setShowInput(true);
 
       return new Promise<string | null>((resolve) => {

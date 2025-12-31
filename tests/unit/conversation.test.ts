@@ -25,7 +25,7 @@ describe('Conversation', () => {
       expect(conversation.messages[0].content).toBe('<page_html>...cleaned...</page_html> and <page_html>...cleaned...</page_html>');
     });
 
-    it('should keep last N messages unchanged when keepLast is specified', () => {
+    it('should keep last N tags unchanged when keepLast is specified', () => {
       const conversation = new Conversation();
       conversation.addUserText('Message 1 <page_html><div>Old 1</div></page_html>');
       conversation.addUserText('Message 2 <page_html><div>Old 2</div></page_html>');
@@ -111,7 +111,7 @@ describe('Conversation', () => {
       expect(conversation.messages[0].content).toBe('Message <page_html>Old</page_html>');
     });
 
-    it('should preserve tag contents in last message when keepLast is set and last message is empty', () => {
+    it('should keep last tag when keepLast is 1 and last message is empty', () => {
       const conversation = new Conversation();
       conversation.addUserText('Message 1 <page_html><div>Important content</div></page_html>');
       conversation.addUserText('Message 2 <page_html><span>More content</span></page_html>');
@@ -120,23 +120,19 @@ describe('Conversation', () => {
       conversation.cleanupTag('page_html', '...cleaned...', 1);
 
       expect(conversation.messages[0].content).toBe('Message 1 <page_html>...cleaned...</page_html>');
-      expect(conversation.messages[1].content).toBe('Message 2 <page_html>...cleaned...</page_html>');
-      expect(conversation.messages[2].content).toContain('<page_html>');
-      expect(conversation.messages[2].content).toContain('Important content');
-      expect(conversation.messages[2].content).toContain('More content');
+      expect(conversation.messages[1].content).toBe('Message 2 <page_html><span>More content</span></page_html>');
+      expect(conversation.messages[2].content).toBe('');
     });
 
-    it('should preserve tag contents when keepLast is set and last message does not contain tag', () => {
+    it('should keep last tag when keepLast is set and last message does not contain tag', () => {
       const conversation = new Conversation();
       conversation.addUserText('First <page_html><div>Content to preserve</div></page_html>');
       conversation.addAssistantText('Response without tag');
 
       conversation.cleanupTag('page_html', '...cleaned...', 1);
 
-      expect(conversation.messages[0].content).toBe('First <page_html>...cleaned...</page_html>');
-      expect(conversation.messages[1].content).toContain('Response without tag');
-      expect(conversation.messages[1].content).toContain('<page_html>');
-      expect(conversation.messages[1].content).toContain('Content to preserve');
+      expect(conversation.messages[0].content).toBe('First <page_html><div>Content to preserve</div></page_html>');
+      expect(conversation.messages[1].content).toBe('Response without tag');
     });
   });
 
