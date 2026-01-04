@@ -166,7 +166,7 @@ export class ExplorBot {
       const researcher = this.agentResearcher();
       const navigator = this.agentNavigator();
       const tools = createAgentTools({ explorer, researcher, navigator });
-      return new Tester(explorer, ai, researcher, tools);
+      return new Tester(explorer, ai, researcher, navigator, tools);
     }));
   }
 

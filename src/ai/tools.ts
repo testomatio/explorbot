@@ -51,7 +51,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
 
           if (clickSuccess) {
             noteFn(explanation);
-            return successToolResult('click', { pageDiff });
+            return successToolResult('click', { pageDiff, code: clickCommand });
           }
 
           const currentState = stateManager.getCurrentState();
@@ -60,7 +60,8 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
           return failedToolResult('click', action.lastError?.toString() || 'Click did not succeed', {
             pageDiff,
             page,
-            suggestion: 'Try a different locator, prefer ARIA locators. Use clickByText() for text with context. Use see() to find coordinates, then clickXY.',
+            code: clickCommand,
+            suggestion: 'Try a different locator or use visualClick() tool for visual fallback.',
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
@@ -96,19 +97,21 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
 
           const previousState = getPreviousState();
           const action = explorer.createAction();
-          const clickSuccess = await action.attempt(`I.click(${JSON.stringify(text)}, ${formatLocator(container)})`, explanation);
+          const clickCommand = `I.click(${JSON.stringify(text)}, ${formatLocator(container)})`;
+          const clickSuccess = await action.attempt(clickCommand, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
           if (clickSuccess) {
             noteFn(explanation);
-            return successToolResult('clickByText', { pageDiff });
+            return successToolResult('clickByText', { pageDiff, code: clickCommand });
           }
 
           return failedToolResult('clickByText', 'Click by text did not succeed.', {
             error: action.lastError ? action.lastError.toString() : '',
             pageDiff,
-            suggestion: 'Verify the text matches exactly and the container locator is correct. Try using see() tool to find element coordinates, then use clickXY tool.',
+            code: clickCommand,
+            suggestion: 'Verify text and container. If still failing, use visualClick() for visual fallback.',
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
@@ -134,17 +137,19 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
 
           const previousState = getPreviousState();
           const action = explorer.createAction();
-          const success = await action.attempt(`I.clickXY(${x}, ${y})`, explanation);
+          const clickCommand = `I.clickXY(${x}, ${y})`;
+          const success = await action.attempt(clickCommand, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
           if (success) {
-            return successToolResult('clickXY', { pageDiff });
+            return successToolResult('clickXY', { pageDiff, code: clickCommand });
           }
 
           return failedToolResult('clickXY', 'Click by coordinates failed.', {
             ...(action.lastError && { error: action.lastError.toString() }),
             pageDiff,
+            code: clickCommand,
             suggestion: 'Use see() to verify correct coordinates from the screenshot.',
           });
         } catch (error) {
@@ -173,24 +178,28 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
 
           // No locator - type into currently focused element
           if (!locator) {
-            await action.attempt(`I.type(${JSON.stringify(text)})`, explanation);
+            const typeCommand = `I.type(${JSON.stringify(text)})`;
+            await action.attempt(typeCommand, explanation);
             const pageDiff = await calculatePageDiff(explorer, previousState);
 
             if (!action.lastError) {
               return successToolResult('type', {
                 message: `Typed "${text}" into focused element`,
                 pageDiff,
+                code: typeCommand,
               });
             }
 
             return failedToolResult('type', `type() failed: ${action.lastError?.toString()}`, {
               pageDiff,
+              code: typeCommand,
               suggestion: 'Provide a locator for the input field. Use see() to identify the correct element to fill in.',
             });
           }
 
           // With locator - try fillField first
-          await action.attempt(`I.fillField(${formatLocator(locator)}, ${JSON.stringify(text)})`, explanation);
+          const fillCommand = `I.fillField(${formatLocator(locator)}, ${JSON.stringify(text)})`;
+          await action.attempt(fillCommand, explanation);
 
           if (!action.lastError) {
             noteFn(explanation);
@@ -198,13 +207,15 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
             return successToolResult('type', {
               message: `Input field ${locator} was filled with value ${text}`,
               pageDiff,
+              code: fillCommand,
             });
           }
 
           // Fallback: click + select all + delete + type
           await action.attempt(`I.click(${formatLocator(locator)})`, explanation);
 
-          await action.attempt(`I.pressKey(['CommandOrControl', 'a']); I.pressKey('Delete'); I.type(${JSON.stringify(text)})`, explanation);
+          const fallbackCommand = `I.pressKey(['CommandOrControl', 'a']); I.pressKey('Delete'); I.type(${JSON.stringify(text)})`;
+          await action.attempt(fallbackCommand, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
@@ -212,11 +223,13 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
             return successToolResult('type', {
               message: 'type() worked by clicking element and typing in values',
               pageDiff,
+              code: fallbackCommand,
             });
           }
 
           return failedToolResult('type', `type() failed: ${action.lastError?.toString()}`, {
             pageDiff,
+            code: fillCommand,
             suggestion: 'Try a different locator or use clickXY to focus the field first, then call type() without locator.',
           });
         } catch (error) {
@@ -255,7 +268,8 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
 
           const previousState = getPreviousState();
           const action = explorer.createAction();
-          const selectSuccess = await action.attempt(`I.selectOption(${formatLocator(locator)}, ${JSON.stringify(option)})`, explanation);
+          const selectCommand = `I.selectOption(${formatLocator(locator)}, ${JSON.stringify(option)})`;
+          const selectSuccess = await action.attempt(selectCommand, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
@@ -264,6 +278,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
             return successToolResult('select', {
               message: `Option "${option}" was selected in ${locator}`,
               pageDiff,
+              code: selectCommand,
             });
           }
 
@@ -273,6 +288,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
           return failedToolResult('select', action.lastError?.toString() || 'Select option did not succeed', {
             pageDiff,
             page,
+            code: selectCommand,
             suggestion: 'Verify the locator points to a select/combobox element. For custom dropdowns, try click() to open it first, then click() to select the option.',
           });
         } catch (error) {
@@ -339,6 +355,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
             const message = action.lastError ? String(action.lastError) : 'Unknown error';
             return failedToolResult('form', `Form execution FAILED! ${message}`, {
               pageDiff,
+              code: codeBlock,
               suggestion: 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and type() tools.',
             });
           }
@@ -347,6 +364,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
             message: `Form completed successfully with ${lines.length} commands.`,
             commandsExecuted: lines.length,
             pageDiff,
+            code: codeBlock,
             suggestion: 'Verify the form was filled in correctly using see() tool. Submit if needed by using click() tool.',
           });
         } catch (error) {
@@ -584,6 +602,79 @@ export function createAgentTools({
           return failedToolResult('interact', `Interact tool failed: ${errorMessage}`, {
             error: errorMessage,
           });
+        }
+      },
+    }),
+
+    visualClick: tool({
+      description: dedent`
+        Click an element by visual identification when locator-based click() fails.
+
+        Use this as fallback when:
+        - click() or clickByText() failed multiple times
+        - Element is visually present but not accessible via locators
+        - Custom/canvas elements that don't have proper DOM structure
+
+        This tool analyzes screenshot to locate element and clicks at its coordinates.
+      `,
+      inputSchema: z.object({
+        element: z.string().describe('Visual description of element to click (e.g., "blue Submit button in the modal footer", "Settings gear icon in top right")'),
+        context: z.string().describe('What you already tried and why it failed - helps with accurate identification'),
+      }),
+      execute: async ({ element, context }) => {
+        try {
+          const stateManager = explorer.getStateManager();
+          const currentState = stateManager.getCurrentState();
+
+          if (!currentState) {
+            return failedToolResult('visualClick', 'No current page state available.');
+          }
+
+          const previousState = ActionResult.fromState(currentState);
+          const action = explorer.createAction();
+          const actionResult = await action.caputrePageWithScreenshot();
+
+          if (!actionResult.screenshot) {
+            return failedToolResult('visualClick', 'Failed to capture screenshot for visual analysis');
+          }
+
+          const locationResult = await researcher.checkElementLocation(actionResult, element);
+
+          if (!locationResult) {
+            return failedToolResult('visualClick', 'Visual analysis failed to process the screenshot');
+          }
+
+          const coordMatch = locationResult.match(/(\d+)X,\s*(\d+)Y/i);
+
+          if (!coordMatch) {
+            return failedToolResult('visualClick', `Element not found: ${locationResult}`, {
+              analysis: locationResult,
+              suggestion: 'Element may not be visible on screen. Try scrolling or check if element exists.',
+            });
+          }
+
+          const x = Number.parseInt(coordMatch[1], 10);
+          const y = Number.parseInt(coordMatch[2], 10);
+
+          const clickSuccess = await action.attempt(`I.clickXY(${x}, ${y})`, `Visual click: ${element}`);
+          const pageDiff = await calculatePageDiff(explorer, previousState);
+
+          if (clickSuccess) {
+            return successToolResult('visualClick', {
+              message: `Clicked "${element}" at coordinates (${x}, ${y})`,
+              analysis: locationResult,
+              pageDiff,
+            });
+          }
+
+          return failedToolResult('visualClick', 'Click at coordinates failed', {
+            coordinates: { x, y },
+            analysis: locationResult,
+            pageDiff,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('visualClick', `visualClick tool failed: ${errorMessage}`);
         }
       },
     }),

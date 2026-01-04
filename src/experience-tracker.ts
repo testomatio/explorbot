@@ -300,4 +300,76 @@ ${filteredCode}
     // Clear any in-memory state if needed
     // The actual files will be cleaned up by test cleanup
   }
+
+  saveSessionExperience(state: ActionResult, entry: SessionExperienceEntry): void {
+    if (this.disabled) return;
+
+    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(state);
+    const writingDisabled = relevantKnowledge.some((knowledge) => knowledge.noExperienceWriting === true || knowledge.noExperienceWriting === 'true');
+    if (writingDisabled) return;
+
+    this.ensureExperienceFile(state);
+    const stateHash = state.getStateHash();
+    const { content, data } = this.readExperienceFile(stateHash);
+
+    const sessionContent = this.generateSessionContent(entry);
+    const updatedContent = `${sessionContent}\n${content}`;
+    this.writeExperienceFile(stateHash, updatedContent, data);
+
+    tag('substep').log(`Added session experience to: ${stateHash}.md`);
+  }
+
+  private generateSessionContent(entry: SessionExperienceEntry): string {
+    const resultLabel = entry.result.toUpperCase();
+
+    let content = `## SESSION: ${entry.scenario}\n`;
+    content += `**Agent**: ${entry.agent} | **Result**: ${resultLabel} | **Date**: ${entry.timestamp}\n\n`;
+
+    content += '### Steps\n\n';
+    let stepNum = 1;
+    for (const step of entry.steps) {
+      const icon = step.status === 'passed' ? '[PASS]' : step.status === 'failed' ? '[FAIL]' : '[-]';
+      if (step.code) {
+        content += `${stepNum}. ${icon} ${step.message}\n\n`;
+        content += '```js\n';
+        content += `${step.code}\n`;
+        content += '```\n\n';
+        if (step.pageChange) {
+          content += `${step.pageChange}\n\n`;
+        }
+        stepNum++;
+      }
+    }
+
+    if (entry.nextStep) {
+      content += `### Next Step\n${entry.nextStep}\n\n`;
+    }
+
+    content += '---\n';
+    return content;
+  }
+}
+
+export interface SessionStep {
+  message: string;
+  status: 'passed' | 'failed' | 'neutral';
+  tool?: string;
+  code?: string;
+  pageChange?: string;
+}
+
+export interface PageChange {
+  url: string;
+  summary: string;
+  actions: string[];
+}
+
+export interface SessionExperienceEntry {
+  timestamp: string;
+  agent: 'tester' | 'captain';
+  scenario: string;
+  result: 'success' | 'partial' | 'failed';
+  steps: SessionStep[];
+  pageChanges: PageChange[];
+  nextStep?: string;
 }

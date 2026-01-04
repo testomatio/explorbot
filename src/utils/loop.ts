@@ -11,10 +11,20 @@ export class StopError extends Error {
   }
 }
 
+export class InterruptError extends Error {
+  userInput: string | null;
+  constructor(userInput: string | null) {
+    super('Loop interrupted by user');
+    this.name = 'InterruptError';
+    this.userInput = userInput;
+  }
+}
+
 export interface LoopContext {
   stop: () => void;
   iteration: number;
   pause: (prompt?: string) => Promise<string | null>;
+  userInput: string | null;
 }
 
 export interface CatchContext {
@@ -25,6 +35,9 @@ export interface CatchContext {
 
 export interface LoopOptions {
   maxAttempts?: number;
+  interruptible?: boolean;
+  interruptPrompt?: string;
+  onInterrupt?: (userInput: string | null, context: LoopContext) => Promise<void> | void;
   catch?: (context: CatchContext) => Promise<void> | void;
   observability?: {
     name?: string;
@@ -40,13 +53,24 @@ export async function pause(prompt?: string): Promise<string | null> {
   return await executionController.requestInput(message);
 }
 
+async function raceWithInterrupt<T>(promise: Promise<T>): Promise<{ result: T; interrupted: false } | { interrupted: true }> {
+  const interruptPromise = executionController.waitForInterrupt().then(() => ({ interrupted: true as const }));
+  const resultPromise = promise.then((result) => ({ result, interrupted: false as const }));
+
+  return Promise.race([resultPromise, interruptPromise]);
+}
+
 export async function loop<T>(handler: (context: LoopContext) => Promise<T>, options?: LoopOptions): Promise<any> {
   const run = async () => {
     const maxAttempts = options?.maxAttempts ?? 5;
     const catchHandler = options?.catch;
+    const interruptible = options?.interruptible ?? true;
+    const interruptPrompt = options?.interruptPrompt;
+    const onInterrupt = options?.onInterrupt;
 
     let result: any;
     let shouldStop = false;
+    let pendingUserInput: string | null = null;
 
     const createStopFunction = () => () => {
       shouldStop = true;
@@ -61,9 +85,37 @@ export async function loop<T>(handler: (context: LoopContext) => Promise<T>, opt
           stop: createStopFunction(),
           iteration: iteration + 1,
           pause: (prompt?: string) => pause(prompt),
+          userInput: pendingUserInput,
         };
+        pendingUserInput = null;
 
-        result = await handler(context);
+        if (!interruptible) {
+          result = await handler(context);
+          continue;
+        }
+
+        const raceResult = await raceWithInterrupt(handler(context));
+
+        if (raceResult.interrupted) {
+          debugLog(`Loop interrupted at iteration ${iteration + 1}`);
+          const userInput = await executionController.handleInterrupt(interruptPrompt);
+
+          if (userInput === null || userInput.toLowerCase() === 'stop' || userInput.toLowerCase() === 'exit') {
+            debugLog('User requested stop');
+            shouldStop = true;
+            return result;
+          }
+
+          pendingUserInput = userInput;
+
+          if (onInterrupt) {
+            await onInterrupt(userInput, context);
+          }
+
+          continue;
+        }
+
+        result = raceResult.result;
       } catch (error) {
         if (error instanceof StopError && shouldStop) {
           debugLog(`Loop stopped successfully at iteration ${iteration + 1}`);

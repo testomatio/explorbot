@@ -2,7 +2,6 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
-import { executionController } from '../execution-controller.ts';
 import { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
@@ -13,6 +12,7 @@ import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import { locatorRule, sectionContextRule } from './rules.ts';
 import { createAgentTools, createCodeceptJSTools } from './tools.ts';
+import { Historian } from './historian.ts';
 
 const debugLog = createDebug('explorbot:captain');
 
@@ -24,12 +24,14 @@ export class Captain implements Agent {
   private explorBot: ExplorBot;
   private conversation: Conversation | null = null;
   private experienceTracker: ExperienceTracker;
+  private historian: Historian;
   private awaitingSave = false;
   private pendingExperience: { state: ActionResult; intent: string; summary: string; code: string } | null = null;
 
   constructor(explorBot: ExplorBot) {
     this.explorBot = explorBot;
     this.experienceTracker = new ExperienceTracker();
+    this.historian = new Historian(explorBot.getProvider(), this.experienceTracker);
   }
 
   private systemPrompt(): string {
@@ -48,6 +50,8 @@ export class Captain implements Agent {
     - Do NOT add extra steps beyond what was asked
     - Always validate page HTML/ARIA and ask for see() to verify that the page is in the expected state
     - Follow <locator_priority> rules when selecting locators for all tools
+    - If click() or clickByText() fails 2+ times with different locators, use visualClick() tool
+    - visualClick() uses screenshot analysis to find element coordinates and click automatically
     </rules>
 
     ${locatorRule}
@@ -344,8 +348,10 @@ export class Captain implements Agent {
     conversation.addUserText(initialPrompt);
     tag('info').log(this.emoji, `Processing: ${input}`);
 
+    const allToolExecutions: any[] = [];
+
     await loop(
-      async ({ stop, iteration }) => {
+      async ({ stop, iteration, userInput }) => {
         debugLog(`Captain iteration ${iteration}`);
 
         if (isDone) {
@@ -355,14 +361,13 @@ export class Captain implements Agent {
 
         await this.reinjectContextIfNeeded(conversation, currentState);
 
-        const interruptInput = await executionController.checkInterrupt();
-        if (interruptInput) {
+        if (userInput) {
           const newContext = await this.getPageContext();
           conversation.addUserText(dedent`
             ${newContext}
 
             <user_redirect>
-            ${interruptInput}
+            ${userInput}
             </user_redirect>
 
             The user has interrupted and wants to change direction. Follow the new instruction.
@@ -380,6 +385,9 @@ export class Captain implements Agent {
         }
 
         const toolNames = result?.toolExecutions?.map((e: any) => e.toolName) || [];
+        if (result?.toolExecutions) {
+          allToolExecutions.push(...result.toolExecutions);
+        }
 
         debugLog('Tools called:', toolNames.join(', '));
 
@@ -390,6 +398,7 @@ export class Captain implements Agent {
       },
       {
         maxAttempts: MAX_STEPS,
+        interruptPrompt: 'Captain interrupted. Enter new instruction (or "stop" to cancel):',
         observability: {
           agent: 'captain',
         },
@@ -410,6 +419,8 @@ export class Captain implements Agent {
     if (notes.length > 0) {
       tag('multiline').log(`Task log:\n${notes.join('\n')}`);
     }
+
+    await this.historian.saveCaptainSession(task, initialActionResult, allToolExecutions, finalSummary);
 
     if (finalSummary && initialActionResult) {
       const steps = this.collectSteps(historyStart);

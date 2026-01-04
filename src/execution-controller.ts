@@ -7,6 +7,7 @@ export class ExecutionController extends EventEmitter {
   private static instance: ExecutionController;
   private interrupted = false;
   private inputCallback: InputCallback | null = null;
+  private interruptResolvers: Array<() => void> = [];
 
   private constructor() {
     super();
@@ -27,16 +28,36 @@ export class ExecutionController extends EventEmitter {
     if (this.interrupted) return;
     this.interrupted = true;
     this.emit('interrupt');
+    for (const resolve of this.interruptResolvers) {
+      resolve();
+    }
+    this.interruptResolvers = [];
   }
 
   isInterrupted(): boolean {
     return this.interrupted;
   }
 
+  waitForInterrupt(): Promise<void> {
+    if (this.interrupted) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.interruptResolvers.push(resolve);
+    });
+  }
+
   async checkInterrupt(): Promise<string | null> {
     if (!this.interrupted) return null;
 
     const userInput = await this.requestInput('Execution interrupted. What should we do instead?');
+    this.interrupted = false;
+    return userInput;
+  }
+
+  async handleInterrupt(prompt?: string): Promise<string | null> {
+    const message = prompt || 'Execution interrupted. Enter new instruction (or "stop"/"exit" to cancel):';
+    const userInput = await this.requestInput(message);
     this.interrupted = false;
     return userInput;
   }
@@ -66,6 +87,7 @@ export class ExecutionController extends EventEmitter {
 
   reset(): void {
     this.interrupted = false;
+    this.interruptResolvers = [];
   }
 }
 

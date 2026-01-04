@@ -5,7 +5,6 @@ import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
-import { executionController } from '../execution-controller.ts';
 import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
@@ -16,8 +15,10 @@ import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
+import { Navigator } from './navigator.ts';
 import { locatorRule, protectionRule, sectionContextRule } from './rules.ts';
 import { createCodeceptJSTools } from './tools.ts';
+import { Historian } from './historian.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
@@ -31,16 +32,20 @@ export class Tester implements Agent {
   ACTION_TOOLS = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form'];
   ASSERTION_TOOLS = ['verify'];
   researcher: Researcher;
+  navigator: Navigator;
   agentTools: any;
   executionLogFile: string | null = null;
   private previousUrl: string | null = null;
   private previousStateHash: string | null = null;
+  private historian: Historian;
 
-  constructor(explorer: Explorer, provider: Provider, researcher: Researcher, agentTools?: any) {
+  constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
     this.explorer = explorer;
     this.provider = provider;
     this.researcher = researcher;
+    this.navigator = navigator;
     this.agentTools = agentTools;
+    this.historian = new Historian(provider, explorer.getStateManager().getExperienceTracker());
   }
 
   getConversation(): Conversation | null {
@@ -90,7 +95,7 @@ export class Tester implements Agent {
     let assertionPerformed = false;
     const toolCallsLog: any[] = [];
     await loop(
-      async ({ stop, pause, iteration }) => {
+      async ({ stop, pause, iteration, userInput }) => {
         debugLog('iteration', iteration);
         const currentState = ActionResult.fromState(this.explorer.getStateManager().getCurrentState()!);
 
@@ -115,8 +120,7 @@ export class Tester implements Agent {
           return;
         }
 
-        const interruptInput = await executionController.checkInterrupt();
-        if (interruptInput) {
+        if (userInput) {
           conversation.addUserText(dedent`
             <page>
             CURRENT URL: ${currentState.url}
@@ -124,7 +128,7 @@ export class Tester implements Agent {
             </page>
 
             <user_redirect>
-            ${interruptInput}
+            ${userInput}
             </user_redirect>
 
             The user has interrupted and wants to change direction. Follow the new instruction.
@@ -207,19 +211,20 @@ export class Tester implements Agent {
       },
       {
         maxAttempts: this.MAX_ITERATIONS,
+        interruptPrompt: 'Test interrupted. Enter new instruction (or "stop" to cancel):',
         observability: {
           agent: 'tester',
           sessionId: task.sessionName,
         },
         catch: async ({ error, stop }) => {
           tag('error').log(`Test execution error: ${error}`);
-          // debugLog(error);
           stop();
         },
       }
     );
 
     await this.finalReview(task);
+    await this.historian.saveTestSession(task, initialState, toolCallsLog, conversation);
     offStateChange();
     await this.finishTest(task);
     this.explorer.stopTest(task);
@@ -754,29 +759,56 @@ export class Tester implements Agent {
       finish: tool({
         description: dedent`
           Finish the current test successfully because all goals are achieved and verified.
-          ONLY use this when you have successfully completed the scenario goal and verified that
-          all expected outcomes have been achieved.
+          ONLY use this when you have successfully completed the scenario goal.
 
-          Use this when:
-          - The main scenario goal has been successfully achieved
-          - All expected outcomes have been verified and recorded
-          - You have confirmed that the test objectives are complete
+          IMPORTANT: You MUST provide a specific assertion to verify the final state.
+          The assertion should describe what data or state change should be visible on the page.
+
+          Examples of good assertions:
+          - "New user 'john@example.com' is visible in the users list"
+          - "Success message 'Item created' is displayed"
+          - "The form shows saved values: name='Test', email='test@test.com'"
+          - "Cart shows 2 items with total $50.00"
 
           DO NOT use this if:
-          - Only some outcomes were achieved (continue testing to achieve remaining ones)
-          - You're unsure if goals are met (use record() to verify first)
           - You haven't verified the outcomes yet
+          - You're unsure what to verify
         `,
-        inputSchema: z.object({}),
-        execute: async () => {
-          tag('success').log('Test finished successfully');
+        inputSchema: z.object({
+          verify: z.string().describe('Specific assertion to verify on the page before finishing (e.g., "New item appears in the list", "Success message is displayed")'),
+        }),
+        execute: async ({ verify }) => {
+          const state = this.explorer.getStateManager().getCurrentState();
+          if (!state) {
+            return {
+              success: false,
+              action: 'finish',
+              message: 'No page state available for verification',
+            };
+          }
+
+          const actionResult = ActionResult.fromState(state);
+          const verified = await this.navigator.verifyState(verify, actionResult);
+
+          if (!verified) {
+            task.addNote(`Verification failed: ${verify}`, TestResult.FAILED);
+            return {
+              success: false,
+              action: 'finish',
+              message: `Verification failed: ${verify}`,
+              suggestion: 'Check if the expected state is actually present on the page. Use see() to analyze current state.',
+            };
+          }
+
+          tag('success').log(`Test finished - verified: ${verify}`);
+          task.addNote(`Verified: ${verify}`, TestResult.PASSED);
           task.addNote('Test finished successfully', TestResult.PASSED);
           task.finish(TestResult.PASSED);
 
           return {
             success: true,
             action: 'finish',
-            message: 'Test finished successfully',
+            message: `Test finished successfully. Verified: ${verify}`,
           };
         },
       }),
