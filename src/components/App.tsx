@@ -6,12 +6,12 @@ import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
 import type { StateTransition, WebPageState } from '../state-manager.js';
 import { Test } from '../test-plan.ts';
 import ActivityPane from './ActivityPane.js';
-import InputReadline from './InputReadline.js';
 import InputPane from './InputPane.js';
+import InputReadline from './InputReadline.js';
 import LogPane from './LogPane.js';
+import SessionTimer from './SessionTimer.js';
 import StateTransitionPane from './StateTransitionPane.js';
 import TaskPane from './TaskPane.js';
-import SessionTimer from './SessionTimer.js';
 
 interface AppProps {
   explorBot: ExplorBot;

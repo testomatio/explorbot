@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import figures from 'figures';
 import { WebPageState } from './state-manager.ts';
+import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown } from './utils/test-plan-markdown.ts';
 import { uniqSessionName } from './utils/unique-names.ts';
-import { parsePlanFromMarkdown, savePlanToMarkdown, planToAiContext } from './utils/test-plan-markdown.ts';
 
 export const TestResult = {
   PASSED: 'passed',
@@ -21,7 +21,7 @@ export type TestStatusType = (typeof TestStatus)[keyof typeof TestStatus];
 
 export interface Note {
   message: string;
-  status: TestResultType;
+  status?: TestResultType;
   step?: boolean;
 }
 
@@ -45,8 +45,7 @@ export class Task {
 
   getPrintableNotes(): string[] {
     return Object.values(this.notes).map((n) => {
-      const icon = n.status === TestResult.PASSED ? figures.tick : n.status === TestResult.FAILED ? figures.cross : figures.circle;
-      return `${icon} ${n.message}`;
+      return `${n.status?.toUpperCase() || ''} ${n.message}`.trim();
     });
   }
 

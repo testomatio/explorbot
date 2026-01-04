@@ -13,9 +13,9 @@ import { createAgentTools } from './ai/tools.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
+import { WebPageState } from './state-manager.ts';
 import { Plan } from './test-plan.ts';
 import { log, setVerboseMode, tag } from './utils/logger.ts';
-import { WebPageState } from './state-manager.ts';
 
 const planId = 0;
 export interface ExplorBotOptions {
@@ -59,6 +59,10 @@ export class ExplorBot {
   }
 
   async start(): Promise<void> {
+    if (this.explorer?.isStarted) {
+      return;
+    }
+
     try {
       this.config = await this.configParser.loadConfig(this.options);
       this.provider = new AIProvider(this.config.ai);

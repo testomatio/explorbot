@@ -63,8 +63,7 @@ describe('ExperienceTracker', () => {
       expect(existsSync(filePath)).toBe(true);
 
       const content = readFileSync(filePath, 'utf8');
-      expect(content).toContain('Failed Attempt');
-      expect(content).toContain('Purpose: Click the login button');
+      expect(content).toContain('### FAILED: Click the login button');
       expect(content).toContain('Element not found: #login-btn');
       expect(content).toContain('I.click("#login-btn")');
     });
@@ -113,11 +112,10 @@ describe('ExperienceTracker', () => {
       expect(existsSync(filePath)).toBe(true);
 
       const content = readFileSync(filePath, 'utf8');
-      expect(content).toContain('Successful Attempt');
-      expect(content).toContain('Purpose: Navigate to dashboard');
+      expect(content).toContain('### SUCCEEDED: Navigate to dashboard');
       expect(content).toContain('I.click("Dashboard")');
       // The file contains both successful and failed attempts
-      expect(content).toContain('Failed Attempt');
+      expect(content).toContain('### FAILED:');
     });
 
     it('should prepend successful resolution before existing content', async () => {
@@ -138,8 +136,8 @@ describe('ExperienceTracker', () => {
       const content = readFileSync(filePath, 'utf8');
 
       // Success should appear before failure in content
-      const successIndex = content.indexOf('Successful Attempt');
-      const failureIndex = content.indexOf('Failed Attempt');
+      const successIndex = content.indexOf('### SUCCEEDED:');
+      const failureIndex = content.indexOf('### FAILED:');
 
       expect(successIndex).toBeGreaterThan(-1);
       expect(failureIndex).toBeGreaterThan(-1);
@@ -190,7 +188,7 @@ describe('ExperienceTracker', () => {
       const stateHash = actionResult.getStateHash();
       const { content, data } = experienceTracker.readExperienceFile(stateHash);
 
-      expect(content).toContain('Successful Attempt');
+      expect(content).toContain('### SUCCEEDED: Test action');
       expect(content).toContain('I.click("Test")');
       expect(data.url).toBe('/test');
       expect(data.title).toBe('Test Page');

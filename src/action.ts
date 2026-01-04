@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
+import { context, trace } from '@opentelemetry/api';
 import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
@@ -13,54 +14,15 @@ import { ConfigParser } from './config.js';
 import type { ExplorbotConfig } from './config.js';
 import { ExperienceTracker } from './experience-tracker.js';
 import type { UserResolveFunction } from './explorbot.ts';
-import type { StateManager } from './state-manager.js';
-import { extractCodeBlocks } from './utils/code-extractor.js';
-import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
-import { context, trace } from '@opentelemetry/api';
 import { Observability } from './observability.ts';
-import { throttle } from './utils/throttle.ts';
-import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
+import type { StateManager } from './state-manager.js';
 import { collectInteractiveNodes } from './utils/aria.ts';
+import { extractCodeBlocks } from './utils/code-extractor.js';
+import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
+import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
+import { throttle } from './utils/throttle.ts';
 
 const debugLog = createDebug('explorbot:action');
-let stepLoggerRegistered = false;
-let stepLoggerTarget: string[] | null = null;
-
-const stepLogger = (step: any, error?: any) => {
-  if (!step?.toCode) {
-    return;
-  }
-  if (step.name?.startsWith('grab')) return;
-  const stepCode = step.toCode();
-  if (stepLoggerTarget) {
-    stepLoggerTarget.push(stepCode);
-  }
-  if (error) {
-    tag('step').log(step, error);
-    return;
-  }
-  tag('step').log(step);
-};
-
-const registerStepLogger = (target: string[]) => {
-  stepLoggerTarget = target;
-  if (stepLoggerRegistered) {
-    return;
-  }
-  stepLoggerRegistered = true;
-  codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, stepLogger);
-  codeceptjs.event.dispatcher.on(codeceptjs.event.step.failed, stepLogger);
-};
-
-const unregisterStepLogger = () => {
-  stepLoggerTarget = null;
-  if (!stepLoggerRegistered) {
-    return;
-  }
-  stepLoggerRegistered = false;
-  codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, stepLogger);
-  codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, stepLogger);
-};
 
 class Action {
   private actor: CodeceptJS.I;
@@ -208,13 +170,12 @@ class Action {
     }
   }
 
-  async execute(codeOrFunction: string | ((I: CodeceptJS.I) => void)): Promise<Action> {
+  async execute(code: string): Promise<Action> {
     let error: Error | null = null;
 
     setActivity('🔎 Browsing...', 'action');
 
-    let codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
-    codeString = codeString.replace(/^\(I\) => /, '').trim();
+    let codeString = code.replace(/^\(I\) => /, '').trim();
 
     const executedSteps: string[] = [];
     registerStepLogger(executedSteps);
@@ -225,12 +186,7 @@ class Action {
     try {
       debugLog('Executing action:', codeString);
 
-      let codeFunction: any;
-      if (typeof codeOrFunction === 'function') {
-        codeFunction = codeOrFunction;
-      } else {
-        codeFunction = new Function('I', codeString);
-      }
+      const codeFunction = new Function('I', codeString);
       codeFunction(this.actor);
 
       await recorder.add(() => sleep(this.config.action?.delay || 500)); // wait for the action to be executed
@@ -311,7 +267,7 @@ class Action {
     return this;
   }
 
-  public async attempt(codeBlock: string | ((I: CodeceptJS.I) => void), originalMessage?: string, experience = true): Promise<boolean> {
+  public async attempt(codeBlock: string, originalMessage?: string, experience = true): Promise<boolean> {
     try {
       debugLog('Resolution attempt...');
       setActivity('🦾 Acting in browser...', 'action');
@@ -323,24 +279,27 @@ class Action {
       this.lastError = null;
       await this.execute(codeBlock);
 
+      if (!this.expectation && originalMessage) {
+        this.expectation = originalMessage;
+      }
+
       if (!this.expectation) {
         return true;
       }
-      await this.expect(this.expectation!);
 
       tag('success').log('Resolved', this.expectation);
       if (originalMessage && experience) {
-        await this.experienceTracker.saveSuccessfulResolution(prevActionResult!, originalMessage, codeBlock.toString());
+        await this.experienceTracker.saveSuccessfulResolution(prevActionResult!, originalMessage, codeBlock);
       }
 
       return true;
     } catch (error) {
       this.lastError = error as Error;
       const executionError = errorToString(error);
-      tag('error').log(`Attempt failed with error: ${codeBlock.toString()}: ${executionError || this.lastError?.toString()}`);
+      tag('error').log(`Attempt failed with error: ${codeBlock}: ${executionError || this.lastError?.toString()}`);
 
       if (experience) {
-        await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage ?? '', codeBlock.toString(), executionError);
+        await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage ?? '', codeBlock, executionError);
       }
 
       return false;
@@ -375,3 +334,42 @@ function errorToString(error: any): string {
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+let stepLoggerRegistered = false;
+let stepLoggerTarget: string[] | null = null;
+
+const stepLogger = (step: any, error?: any) => {
+  if (!step?.toCode) {
+    return;
+  }
+  if (step.name?.startsWith('grab')) return;
+  const stepCode = step.toCode();
+  if (stepLoggerTarget) {
+    stepLoggerTarget.push(stepCode);
+  }
+  if (error) {
+    tag('step').log(step, error);
+    return;
+  }
+  tag('step').log(step);
+};
+
+const registerStepLogger = (target: string[]) => {
+  stepLoggerTarget = target;
+  if (stepLoggerRegistered) {
+    return;
+  }
+  stepLoggerRegistered = true;
+  codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, stepLogger);
+  codeceptjs.event.dispatcher.on(codeceptjs.event.step.failed, stepLogger);
+};
+
+const unregisterStepLogger = () => {
+  stepLoggerTarget = null;
+  if (!stepLoggerRegistered) {
+    return;
+  }
+  stepLoggerRegistered = false;
+  codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, stepLogger);
+  codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, stepLogger);
+};

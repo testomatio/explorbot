@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import dotenv from 'dotenv';
 dotenv.config();
 const highlight = require('cli-highlight').highlight;
-import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
-import { chromium } from 'playwright';
 import yaml from 'js-yaml';
+import { chromium } from 'playwright';
+import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
 
 const { exec, shell, fetch, writeToFile, task, ai } = global.bunosh;
 

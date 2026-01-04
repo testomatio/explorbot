@@ -1,6 +1,6 @@
-import dedent from 'dedent';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import Action from '../action.ts';
 import { setActivity } from '../activity.ts';
@@ -11,15 +11,24 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.ts';
 import { type HtmlDiffResult, htmlDiff } from '../utils/html-diff.ts';
+import { codeToMarkdown, isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
-import { locatorRule as generalLocatorRuleText, multipleLocatorRule } from './rules.js';
-import { codeToMarkdown } from '../utils/html.ts';
+import { locatorRule as generalLocatorRuleText, multipleLocatorRule, sectionUiMapRule } from './rules.js';
 
 const debugLog = createDebug('explorbot:researcher');
+
+const POSSIBLE_SECTIONS = {
+  focus: 'focused overlay (modal, drawer, popup, active form)',
+  list: 'list area (items collection, table, cards, or list view)',
+  detail: 'detail area (selected item preview or full details)',
+  panes: 'screen is split into equal panes, describe each pane',
+  content: 'main area of page',
+  menu: 'navigation area',
+};
 
 export class Researcher implements Agent {
   emoji = '🔍';
@@ -29,6 +38,8 @@ export class Researcher implements Agent {
   private provider: Provider;
   private stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
+  private hasScreenshotToAnalyze = false;
+  private actionResult?: ActionResult;
 
   constructor(explorer: Explorer, provider: Provider) {
     this.explorer = explorer;
@@ -66,15 +77,13 @@ export class Researcher implements Agent {
 
   async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean } = {}): Promise<string> {
     const { screenshot = false, force = false, deep = false } = opts;
-    let actionResult = ActionResult.fromState(state);
-    const stateHash = state.hash || actionResult.getStateHash();
+    this.actionResult = ActionResult.fromState(state);
+    const stateHash = state.hash || this.actionResult.getStateHash();
     const ttl = 60 * 60 * 1000;
     const now = Date.now();
     const outputDir = stateHash ? ConfigParser.getInstance().getOutputDir() : null;
     const researchDir = stateHash && outputDir ? join(outputDir, 'research') : null;
     const researchFile = stateHash && researchDir ? join(researchDir, `${stateHash}.md`) : null;
-
-    const isOnCurrentState = actionResult.getStateHash() === this.stateManager.getCurrentState()?.hash;
 
     if (!force && stateHash) {
       const cached = this.getCachedResearchResult(stateHash);
@@ -87,45 +96,23 @@ export class Researcher implements Agent {
     tag('info').log(`Researching ${state.url} to understand the context...`);
     setActivity(`${this.emoji} Researching...`, 'action');
 
-    if (isOnCurrentState && !actionResult.ariaSnapshot) {
-      debugLog('Capturing accessibility tree for current state');
-      actionResult = await this.explorer.createAction().capturePageState();
-    }
+    const isOnCurrentState = this.actionResult.getStateHash() === this.stateManager.getCurrentState()?.hash;
+    await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
 
-    let stateHtml = await actionResult.combinedHtml();
+    debugLog('Researching web page:', this.actionResult.url);
 
-    if (this.isBodyEmpty(stateHtml) && isOnCurrentState) {
-      debugLog('HTML body is empty, refreshing page');
-      tag('step').log('Page body is empty, refreshing...');
-      await this.navigateTo(actionResult.url);
-      actionResult = await this.explorer.createAction().capturePageState();
-      stateHtml = await actionResult.combinedHtml();
-    }
+    this.hasScreenshotToAnalyze = screenshot && this.provider.hasVision() && isOnCurrentState;
 
-    debugLog('Researching web page:', actionResult.url);
-    const prompt = this.buildResearchPrompt(actionResult, stateHtml);
+    const prompt = await this.buildResearchPrompt();
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
     conversation.addUserText(prompt);
 
-    let screenshotAnalysis;
-
-    if (screenshot && this.provider.hasVision() && isOnCurrentState) {
-      tag('step').log('Capturing page with screenshot to analyze UI deeper');
-      actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
-      screenshotAnalysis = await this.analyzeScreenshotForUIElements(actionResult);
+    if (this.hasScreenshotToAnalyze) {
+      this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
+      const screenshotAnalysis = await this.analyzeScreenshotForUIElements();
       if (screenshotAnalysis) {
-        conversation.addUserText(dedent`
-              We analyzed the screenshot and found the following UI elements with their coordinates
-              Your report must include them as their HTML locators:
-
-              Combine data from <ui_map_from_screenshot> with your report.
-              Ensure all elements from <ui_map_from_screenshot> are present in your report.
-              If elements have locators & corrdinates => print both for each element.
-
-              <ui_map_from_screenshot>
-                ${screenshotAnalysis}
-              </ui_map_from_screenshot>`);
+        this.addScreenshotPrompt(conversation, screenshotAnalysis);
       }
     }
 
@@ -136,125 +123,8 @@ export class Researcher implements Agent {
 
     let researchText = response.text;
 
-    const htmlConfig = ConfigParser.getInstance().getConfig().html;
-    let previousHtml = state.html ?? '';
-
     if (deep) {
-      debugLog('Starting DOM expansion loop to find hidden elements');
-
-      await loop(
-        async ({ stop }) => {
-          conversation.addUserText(this.buildHiddenElementsPrompt());
-
-          const hiddenElementsResult = await this.provider.invokeConversation(conversation);
-
-          const codeBlocks = extractCodeBlocks(hiddenElementsResult?.response?.text || '');
-
-          if (codeBlocks.length === 0) {
-            debugLog('No hidden elements found to expand, stopping loop');
-            stop();
-            return;
-          }
-
-          debugLog(`Found ${codeBlocks.length} hidden elements to expand`);
-
-          previousHtml = state.html ?? '';
-
-          await loop(
-            async ({ stop }) => {
-              const codeBlock = codeBlocks.shift()!;
-              if (!codeBlock) {
-                stop();
-                return;
-              }
-
-              const action = this.explorer.createAction();
-              tag('step').log(codeBlock || 'No code block');
-              await action.attempt(codeBlock, 'expand hidden elements');
-
-              const currentState = action.getActionResult();
-              if (!currentState) {
-                debugLog('No current state found, continuing to next action');
-                return;
-              }
-
-              if (!currentState.isMatchedBy({ url: `${state.url}*` })) {
-                researchText += `\n\nWhen ${codeBlock} original page changed to ${currentState.url}`;
-                debugLog('We moved away from the original page, returning to ${state.url}');
-                await this.navigateTo(state.url);
-                return;
-              }
-
-              const htmlChanges = await htmlDiff(previousHtml, currentState.html ?? '', htmlConfig);
-              if (htmlChanges.added.length === 0) {
-                debugLog('No new HTML nodes added');
-                researchText += `\n\nWhen ${codeBlock} page did not change`;
-                return;
-              }
-
-              tag('step').log('DOM changed, analyzing new HTML nodes...');
-
-              conversation.addUserText(this.buildSubtreePrompt(codeBlock, htmlChanges));
-              const htmlFragmentResult = await this.provider.invokeConversation(conversation);
-
-              researchText += dedent`\n\n---
-            <expanded_ui_map>
-
-              When executed <code>${codeBlock}</code>:
-              ${htmlFragmentResult?.response?.text}
-            </expanded_ui_map>`;
-
-              // debugLog('Closing modal/popup/dropdown/etc.');
-              await this.navigateTo(state.url);
-              stop();
-            },
-            {
-              maxAttempts: codeBlocks.length,
-              observability: {
-                agent: 'researcher',
-              },
-              catch: async (error) => {
-                debugLog(error);
-              },
-            }
-          );
-        },
-        {
-          maxAttempts: ConfigParser.getInstance().getConfig().action?.retries || 3,
-          observability: {
-            agent: 'researcher',
-          },
-          catch: async ({ error, stop }) => {
-            debugLog(error);
-            stop();
-          },
-        }
-      );
-    }
-
-    let ariaSnapshot = actionResult.ariaSnapshot;
-
-    if ((!ariaSnapshot || ariaSnapshot.trim() === '') && isOnCurrentState) {
-      debugLog('Accessibility tree is empty, capturing fresh state');
-      tag('step').log('Capturing accessibility tree...');
-      const freshAction = this.explorer.createAction();
-      const freshState = await freshAction.capturePageState();
-      ariaSnapshot = freshState.ariaSnapshot;
-    }
-
-    if (ariaSnapshot && ariaSnapshot.trim() !== '') {
-      researchText += dedent`
-
-          ## Accessibility Tree
-
-          The accessibility tree represents the semantic structure of the page as exposed to assistive technologies.
-          This provides a comprehensive view of all interactive elements and their relationships.
-
-          ${codeToMarkdown(ariaSnapshot)}
-
-          `;
-    } else {
-      debugLog('No accessibility tree available for this page');
+      researchText += await this.performDeepAnalysis(conversation, state, state.html ?? '');
     }
 
     if (stateHash && researchDir && researchFile) {
@@ -266,16 +136,210 @@ export class Researcher implements Agent {
 
     const summary = this.extractSummary(researchText);
     if (summary) {
-      this.experienceTracker.updateSummary(actionResult, summary);
+      this.experienceTracker.updateSummary(this.actionResult!, summary);
     }
 
     tag('multiline').log(researchText);
-    tag('success').log(`Research compelete! ${researchText.length} characters`);
+    tag('success').log(`Research complete! ${researchText.length} characters`);
 
     return researchText;
   }
 
-  private buildResearchPrompt(actionResult: ActionResult, html: string): string {
+  private async performDeepAnalysis(conversation: Conversation, state: WebPageState, initialHtml: string): Promise<string> {
+    debugLog('Starting DOM expansion loop to find hidden elements');
+
+    const htmlConfig = ConfigParser.getInstance().getConfig().html;
+    let additionalResearch = '';
+    let previousHtml = initialHtml;
+
+    await loop(
+      async ({ stop }) => {
+        conversation.addUserText(this.buildHiddenElementsPrompt());
+
+        const hiddenElementsResult = await this.provider.invokeConversation(conversation);
+
+        const codeBlocks = extractCodeBlocks(hiddenElementsResult?.response?.text || '');
+
+        if (codeBlocks.length === 0) {
+          debugLog('No hidden elements found to expand, stopping loop');
+          stop();
+          return;
+        }
+
+        debugLog(`Found ${codeBlocks.length} hidden elements to expand`);
+
+        previousHtml = state.html ?? '';
+
+        await loop(
+          async ({ stop }) => {
+            const codeBlock = codeBlocks.shift()!;
+            if (!codeBlock) {
+              stop();
+              return;
+            }
+
+            const action = this.explorer.createAction();
+            tag('step').log(codeBlock || 'No code block');
+            await action.attempt(codeBlock, 'expand hidden elements');
+
+            const currentState = action.getActionResult();
+            if (!currentState) {
+              debugLog('No current state found, continuing to next action');
+              return;
+            }
+
+            if (!currentState.isMatchedBy({ url: `${state.url}*` })) {
+              additionalResearch += `\n\nWhen ${codeBlock} original page changed to ${currentState.url}`;
+              debugLog(`We moved away from the original page, returning to ${state.url}`);
+              await this.navigateTo(state.url);
+              return;
+            }
+
+            const htmlChanges = await htmlDiff(previousHtml, currentState.html ?? '', htmlConfig);
+            if (htmlChanges.added.length === 0) {
+              debugLog('No new HTML nodes added');
+              additionalResearch += `\n\nWhen ${codeBlock} page did not change`;
+              return;
+            }
+
+            tag('step').log('DOM changed, analyzing new HTML nodes...');
+
+            conversation.addUserText(this.buildSubtreePrompt(codeBlock, htmlChanges));
+            const htmlFragmentResult = await this.provider.invokeConversation(conversation);
+
+            additionalResearch += dedent`\n\n---
+            <expanded_ui_map>
+
+              When executed <code>${codeBlock}</code>:
+              ${htmlFragmentResult?.response?.text}
+            </expanded_ui_map>`;
+
+            await this.navigateTo(state.url);
+            stop();
+          },
+          {
+            maxAttempts: codeBlocks.length,
+            observability: {
+              agent: 'researcher',
+            },
+            catch: async (error) => {
+              debugLog(error);
+            },
+          }
+        );
+      },
+      {
+        maxAttempts: ConfigParser.getInstance().getConfig().action?.retries || 3,
+        observability: {
+          agent: 'researcher',
+        },
+        catch: async ({ error, stop }) => {
+          debugLog(error);
+          stop();
+        },
+      }
+    );
+
+    return additionalResearch;
+  }
+
+  private async ensureNavigated(url: string, screenshot?: boolean): Promise<void> {
+    if (!this.actionResult) {
+      debugLog('No action result, navigating to URL');
+      await this.navigateTo(url);
+      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot });
+      return;
+    }
+
+    const isOnCurrentState = this.actionResult.getStateHash() === this.stateManager.getCurrentState()?.hash;
+    const stateHtml = await this.actionResult.combinedHtml();
+    const isEmpty = isBodyEmpty(stateHtml);
+
+    if (!isEmpty && isOnCurrentState) {
+      if ((!this.actionResult.screenshot && screenshot) || !this.actionResult.ariaSnapshot) {
+        this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot });
+      }
+      return;
+    }
+
+    if (isEmpty) {
+      debugLog('HTML body is empty, refreshing page');
+      tag('step').log('Page body is empty, refreshing...');
+    } else {
+      debugLog('Not on current state, navigating to URL');
+      tag('step').log('Navigating to URL...');
+    }
+
+    await this.navigateTo(url);
+    this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot ?? false });
+  }
+
+  private buildResearchTaskPrompt(): string {
+    return dedent`
+      <task>
+      Examine the provided page and explain its main purpose from the user perspective.
+      Identify the main user actions of this page.
+      Break down the page by sections and identify structural patterns.
+      Provide a comprehensive UI map report in markdown format.
+      </task>
+
+      <rules>
+      - Explain what the user can achieve on this page.
+      - Focus on primary user actions and interactive elements only.
+      - Research all menus and navigational areas.
+      - Ignore purely decorative sidebars, footer-only links, and external links.
+      - Detect layout patterns: list/detail split, 2-pane, or 3-pane layouts.
+      - If multiple elements match, pick the element inside the most relevant section and closest to recent UI context.
+      - UI map table must include ARIA, CSS, XPath, and Coordinates for every element.
+      - ARIA locator must be JSON with role and text keys.
+      </rules>
+
+      <section_identification>
+      Identify page sections in this priority order:
+      ${Object.entries(POSSIBLE_SECTIONS)
+        .map(([name, description]) => `* ${name}: ${description}`)
+        .join('\n')}
+
+      - Sections can overlap, prefer more detailed sections over broader ones.
+      - If a proposed section is not relevant or not detected, do not include it.
+      - Each section must have a container CSS locator.
+      - UI map CSS and XPath locators must include the section container as the scope.
+      </section_identification>
+
+      <section_format>
+      ## Section Name
+
+      Explanation of this section and its purpose.
+
+      Section Container CSS Locator: '...'
+
+      Elements:
+
+      Use a table with columns: Element | ARIA | CSS | XPath | Coordinates
+      </section_format>
+      <section_example>
+      ## Focus Section
+
+      Login modal dialog that appears as an overlay when user clicks the login button. This modal contains a form for user authentication with email and password fields, along with submit and cancel actions.
+
+      Section Container CSS Locator: '[role="dialog"]'
+
+      Elements:
+
+      | Element | ARIA | CSS | XPath | Coordinates |
+      | 'Email' | { role: 'textbox', text: 'Email' } | '[role="dialog"] input[name="email"]' | '//div[@role="dialog"]//input[@name="email"]' | (400, 280) |
+      | 'Password' | { role: 'textbox', text: 'Password' } | '[role="dialog"] input[name="password"]' | '//div[@role="dialog"]//input[@name="password"]' | (400, 340) |
+      | 'Sign In' | { role: 'button', text: 'Sign In' } | '[role="dialog"] button[type="submit"]' | '//div[@role="dialog"]//button[@type="submit"]' | (400, 400) |
+      | 'Cancel' | { role: 'button', text: 'Cancel' } | '[role="dialog"] button.cancel-btn' | '//div[@role="dialog"]//button[contains(@class,"cancel-btn")]' | (500, 400) |
+      | 'Close' | { role: 'button', text: 'Close' } | '[role="dialog"] .close-btn' | '//div[@role="dialog"]//button[@aria-label="Close"]' | (750, 150) |
+      </section_example>
+    `;
+  }
+
+  private async buildResearchPrompt(): Promise<string> {
+    if (!this.actionResult) throw new Error('actionResult is not set');
+
+    const html = await this.actionResult.combinedHtml();
     const knowledgeFiles = this.stateManager.getRelevantKnowledge();
 
     let knowledge = '';
@@ -285,7 +349,7 @@ export class Researcher implements Agent {
         .filter((k) => !!k)
         .join('\n\n');
 
-      tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge file(s) for: ${actionResult.url}`);
+      tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge file(s) for: ${this.actionResult.url}`);
       knowledge = `
         <hint>
         Here is relevant knowledge for this page:
@@ -294,103 +358,41 @@ export class Researcher implements Agent {
         </hint>`;
     }
 
-    return dedent`Analyze this web page and provide a comprehensive research report in markdown format.
-    <task>
-    Examine the provided page and understand its main purpose from the user perspective.
-    Identify the main user actions of this page.
-    Identify the main content of the page.
-    Identify the main navigation of the page.
-    Provide a comprehensive UI map report in markdown format.
-    </task>
+    return dedent`
+      Analyze this web page and provide a comprehensive research report in markdown format.
 
-    <rules>
-    - Analyze the web page and provide a UI map report.
-    - Explain the main purpose of the page and what user can achieve from this page.
-    - Focus on primary user actions of this page
-    - Provider either CSS or XPath locator but not both. Shortest locator is preferred.
-    - Research all menus and navigational areas;
-    - Focus on interactive elements: forms, buttons, links, clickable elements, etc.
-    - Look for every element that have role= attribute and include it in the report.
-    - Structure the report by sections.
-    - Focus on UI elements, not on static content.
-    - Ignore purely decorative sidebars and footer-only links or exterbal links to other websites.
-    </rules>
+      ${this.buildResearchTaskPrompt()}
+
+      URL: ${this.actionResult.url || 'Unknown'}
+      Title: ${this.actionResult.title || 'Unknown'}
+
+      <context>
+      HTML Content:
+      ${html}
+      </context>
+
+      ${knowledge}
+
+      <output>
+
+      <output_rules>
+      - Please provide a structured analysis in markdown format divided by sections
+      - Use tables for section UI maps only.
+      - List sections by provided priorities: ${Object.keys(POSSIBLE_SECTIONS).join(', ')}
+      - If a section is not present, do not include it in the output.
+      - Include coordinates when available from screenshot analysis. Use "-" when not available.
+      - If some sections are not present, do not include them in the output.
+      - Proposed sections must be relevant to the page.
+      - List all interactive elements on page and put them into appropriate sections.
+      - Group similar interactive elements (like dynamic lists or content) into one item
+      - At minimum include Main section if no other sections are clear.
+      - For pane sections, explain the relationship between panes.
+      - Each section must include only its relevant UI elements.   
+      - Follow <section_format> and provided <section_example> when describing sections:   
+      </output_rules>
 
 
-    URL: ${actionResult.url || 'Unknown'}
-    Title: ${actionResult.title || 'Unknown'}
-
-    <context>
-    HTML Content:
-    ${html}
-
-    </context>
-
-    ${knowledge}
-
-    <output>
-
-    <output_rules>
-    Please provide a structured analysis in markdown format with the following sections:
-    UI map must be in LLM friendly format: [element name]: [CSS/XPath locator]
-    Do not use tables, use lists instead.
-    If a section is not present, do not include it in the output.
-    Below is suggested output format
-    If proposed section is not relevant, do not include it in the output.
-    When listing elements, mark their visibility - visible, hidden, collapsed, etc.
-
-    If some sections are not present, do not include them in the output.
-    Proposed sections must be relevant to the page.
-
-    Proposed devision is on main/navigation areas however, you can add other areas if you identify them.
-    List all interactive elements on page and put them into appropriate sections.
-    Group similar interactive elements (like dynamic lists or content) into one item
-    </output_rules>
-
-    <output_format>
-
-    ## Summary
-
-    Brief overview of the page purpose and main content.
-    Identify the purpose of this page and what user can do on this page.
-
-    ## Main Area
-
-    [UI elements that are part of the main content of the page]
-
-    ### Buttons
-    - Button name: CSS/XPath locator
-    - Example: "Submit Button": "button[type='submit']" or "//button[@type='submit']"    
-
-    ### Forms
-    - Form name: CSS/XPath locator
-    - Example: "Login Form": "form#login" or "//form[@id='login']"
-
-    ### Tabs (if any)
-    - List of tabs titles and their CSS/XPath locator
-
-    ### Content (if any)
-    - Content area name: CSS/XPath locator
-    - Example: "Article Header": "h1.article-title" or "//h1[@class='article-title']"    
-
-    ### Accordions (if any)
-    - List of accordions titles and their CSS/XPath locator
-
-    ### Dropdowns (if any)
-    - List of dropdowns titles and their CSS/XPath locator    
-
-    ## Navigation Area
-
-    ### Menus
-    - Menu name: CSS/XPath locator
-    - Example: "Main Navigation": "nav.main-menu" or "//nav[@class='main-menu']"
-
-    ...
-
-    </output_format>
-    </output>
-
-`;
+    `;
   }
 
   private buildHiddenElementsPrompt(): string {
@@ -530,37 +532,42 @@ export class Researcher implements Agent {
     return { actionResult, image };
   }
 
-  async analyzeScreenshotForUIElements(state: WebPageState): Promise<string | null> {
-    const screenshotData = this.getScreenshotFromState(state);
+  async analyzeScreenshotForUIElements(): Promise<string | null> {
+    if (!this.actionResult) return null;
+    const screenshotData = this.getScreenshotFromState(this.actionResult);
     if (!screenshotData) return null;
 
     const { actionResult, image } = screenshotData;
     tag('step').log('Analyzing page screenshot for UI elements');
+
     const prompt = dedent`
         <role>
         You are UI/UX designer analyzing all UI elements on the webpage
         </role>
         Analyze this web page and provide a comprehensive research report in markdown format.
+
         <task>
         Examine the provided page and understand its main purpose from the user perspective.
-        Identify the main user actions of this page.
-        Identify the main content of the page.
-        Identify the main navigation of the page.
-        Provide a comprehensive UI map report in markdown format.
-        List all buttons, forms, inputs, accordions, dropdowns, tabs, etc.
-        Write coordinates of all listed elements
+
+        Then proceed with:
+        - Identify the main user actions of this page.
+        - Identify the main content of the page.
+        - Identify the main navigation of the page.
+        - Provide a comprehensive UI map report in markdown format.
+        - List all buttons, forms, inputs, accordions, dropdowns, tabs, etc.
+        - Write coordinates of all listed elements
         </task>
 
         <rules>
         - Analyze the web page and provide a comprehensive UI map report.
         - Explain the main purpose of the page and what user can achieve from this page.
         - Focus on primary user actions of this page
-        - Provider either CSS or XPath locator but not both. Shortest locator is preferred.
+        - Provide ARIA, CSS, and XPath locators. Shortest locator is preferred.
         - Research all menus and navigational areas;
         - Focus on interactive elements: forms, buttons, links, clickable elements, etc.
-        - Pay especial attention for clickable icons (hamburgers, ellispsis, toggles, arrows, etc.) and images that are clickable.
+        - Pay especial attention for clickable icons (hamburgers, ellipsis, toggles, arrows, etc.) and images that are clickable.
         - Describe clickable icons in text format for easy recognition. Explain in short what that symbol might do in web UI context.
-        - There is no such thing as 'hamburger menu' or 'ellipsis menu' explain what kind of menue it is (main nav, items context menu).
+        - There is no such thing as 'hamburger menu' or 'ellipsis menu' explain what kind of menu it is (main nav, items context menu).
         - Structure the report by sections.
         - Focus on UI elements, not on static content.
         - Ignore purely decorative sidebars and footer-only links.
@@ -573,55 +580,47 @@ export class Researcher implements Agent {
         <output>
 
         <output_rules>
-        Please provide a structured analysis in markdown format with the following sections:
-        UI map must be in LLM friendly format: 
-          [element name]: (\\d+X, \\d+Y)
-
-        So each element must have their X and Y appended by X and Y respectively.
-        When printing elements use lists
+        Please provide a structured analysis in markdown format.
+        Use tables for section UI maps only.
         If a section is not present, do not include it in the output.
-        Below is suggested output format
-        If proposed section is not relevant, do not include it in the output.
 
-        Proposed devision is on main/navigation areas. However, you can add other areas if you identify them.
+        Section order: Summary -> list/detail/panes/content/menu in priority order
         List all interactive elements on page and put them into appropriate sections.
-        Group similar interactive elements (like dynamic lists or content) into one item
+        Group similar interactive elements (like dynamic lists or content) into one item.
         </output_rules>
+
+        <element_format>
+        ${sectionUiMapRule}
+        ARIA locator format: { role: 'role', text: 'visible text' }
+        CSS selector: shortest unique selector based on visual appearance
+        XPath: shortest unique selector based on visual appearance
+        Coordinates: (X, Y) - center point of the element
+
+        Example:
+        | Element | ARIA | CSS | XPath | Coordinates |
+        | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button.btn-signin' | '//button[@class="btn-signin"]' | (450, 320) |
+        | 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' | '//input[@id="email"]' | (300, 200) |
+        | 'Settings' | { role: 'link', text: 'Settings' } | 'a.settings-link' | '//a[@class="settings-link"]' | (850, 50) |
+        | 'Menu Toggle' | { role: 'button', text: 'Menu' } | '.hamburger-btn' | '//button[contains(@class,"hamburger-btn")]' | (30, 25) |
+
+        Group elements by type (Buttons, Links, Inputs, etc.) within each section.
+        </element_format>
 
         <output_format>
 
         ## Summary
 
         Brief overview of the page purpose and main content.
-        Identify the purpose of this page and what user can do on this page.
 
-        ## Main Area
+        ## Section Name
 
-        [UI elements that are part of the main content of the page]
+        Explanation
 
-        ### Buttons
-        - Button name: (X, Y) coordinates of element to interact with.
-        - Example: "Submit Button": (100X, 200Y)
+        Section CSS Locator: '...'
 
-        ### Inputs
-        - Input name: (X, Y) coordinates of element to interact with.
-        - Example: <input Username>: (100X, 200Y)
-        - Example: <select Gender>: (100X, 200Y)
-
-        ### Tabs (if any)
-        - List of tabs titles and their (X, Y) coordinates of element to interact with.
-        - Example: <tab Login>: (100X, 200Y)
-        - Example: <tab Register>: (100X, 200Y)
-
-        ### Accordions (if any)
-        - List of accordions titles and their (X, Y) coordinates of element to interact with.
-        - Example: <accordion Login>: (100X, 200Y)
-        - Example: <accordion Register>: (100X, 200Y)
-
-        ### Dropdowns (if any)
-        - List of dropdowns titles and their (X, Y) coordinates of element to interact with.
-        - Example: <dropdown [...]>: (100X, 200Y)
-        - Example: <dropdown More Actions>: (100X, 200Y)
+        #### Section UI Map:
+        | Element | ARIA | CSS | XPath | Coordinates |
+        | 'Element Name' | { role: 'button', text: '...' } | 'css' | '//button[@type="button"]' | (X, Y) |
 
         </output_format>
 
@@ -732,14 +731,6 @@ export class Researcher implements Agent {
     return cached;
   }
 
-  private isBodyEmpty(html: string): boolean {
-    if (!html) return true;
-    const bodyMatch = html.match(/<body[^>]*>(.*?)<\/body>/is);
-    if (!bodyMatch) return true;
-    const bodyContent = bodyMatch[1].trim();
-    return bodyContent === '';
-  }
-
   private extractSummary(researchText: string): string {
     const summaryMatch = researchText.match(/## Summary\s*\n+([\s\S]*?)(?=\n##|$)/i);
     if (!summaryMatch) return '';
@@ -752,5 +743,16 @@ export class Researcher implements Agent {
     const action = this.explorer.createAction();
     await action.execute(`I.amOnPage("${url}")`);
     await action.expect(`I.seeInCurrentUrl('${url}')`);
+  }
+
+  private addScreenshotPrompt(conversation: Conversation, screenshotAnalysis: string): void {
+    conversation.addUserText(dedent`
+      <screenshot_analysis>
+      ${screenshotAnalysis}
+      </screenshot_analysis>
+
+      Review the screenshot analysis above and incorporate any additional UI elements or insights into your report.
+      Pay attention to visual elements that may not be captured in HTML (icons, images, visual indicators).
+    `);
   }
 }

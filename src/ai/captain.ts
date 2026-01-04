@@ -2,20 +2,21 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
-import { ExperienceTracker } from '../experience-tracker.js';
 import { executionController } from '../execution-controller.ts';
+import { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
+import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
+import { locatorRule, sectionContextRule } from './rules.ts';
 import { createAgentTools, createCodeceptJSTools } from './tools.ts';
-import { locatorRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:captain');
 
-const MAX_STEPS = 5;
+const MAX_STEPS = 10;
 const ACTION_TOOLS = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form', 'navigate', 'record'];
 
 export class Captain implements Agent {
@@ -37,20 +38,19 @@ export class Captain implements Agent {
     You execute exactly what the user asks - nothing more.
     </role>
 
-    ${locatorRule}
-
     <rules>
     - Do the MINIMUM required to fulfill the request
+    - Call research() tool to get deep understanding of the current page
     - After each action, call record() to log what you did
     - Check if the expected result is achieved
     - If the goal is achieved (correct page, correct state) - call done() immediately
     - If the action worked but result is not as expected - try next action
     - Do NOT add extra steps beyond what was asked
-    - Start with currently focused/visible area on the page
     - Always validate page HTML/ARIA and ask for see() to verify that the page is in the expected state
     - Follow <locator_priority> rules when selecting locators for all tools
     </rules>
 
+    ${locatorRule}
     `;
   }
 
@@ -77,8 +77,7 @@ export class Captain implements Agent {
     }
 
     const actionResult = ActionResult.fromState(state);
-    const html = await actionResult.simplifiedHtml();
-    const aria = state.ariaSnapshot || '';
+    const researcher = this.explorBot.agentResearcher();
 
     return dedent`
     <page>
@@ -86,12 +85,14 @@ export class Captain implements Agent {
     Title: ${state.title || 'Untitled'}
 
     <page_aria>
-    ${aria}
+    ${actionResult.ariaSnapshot}
     </page_aria>
 
     <page_html>
-    ${html}
+    ${await actionResult.simplifiedHtml()}
     </page_html>
+
+    ${await researcher.research(state)}
     </page>
     `;
   }
@@ -114,6 +115,31 @@ export class Captain implements Agent {
       .join('\n')}
     </plan>
     `;
+  }
+
+  private async reinjectContextIfNeeded(conversation: Conversation, currentState: WebPageState): Promise<void> {
+    if (conversation.hasTag('page_html', 5)) return Promise.resolve();
+
+    const actionResult = ActionResult.fromState(currentState);
+    const html = await actionResult.combinedHtml();
+    const context = dedent`
+        Context:
+
+        <page>
+        CURRENT URL: ${currentState.url}
+        CURRENT TITLE: ${currentState.title}
+        </page>
+
+        <page_aria>
+        ${actionResult.ariaSnapshot}
+        </page_aria>
+
+        <page_html>
+        ${html}
+        </page_html>
+      `;
+    conversation.addUserText(context);
+    return Promise.resolve();
   }
 
   private ownTools(task: Task, onDone: (summary: string) => void) {
@@ -327,24 +353,7 @@ export class Captain implements Agent {
           return;
         }
 
-        if (!conversation.hasTag('page_html', 5)) {
-          conversation.addUserText(dedent`
-            Context:
-
-            <page>
-            CURRENT URL: ${currentState.url}
-            CURRENT TITLE: ${currentState.title}
-            </page>
-
-            <page_aria>
-            ${currentState.ariaSnapshot}
-            </page_aria>
-
-            <page_html>
-            ${currentState.html}
-            </page_html>
-          `);
-        }
+        await this.reinjectContextIfNeeded(conversation, currentState);
 
         const interruptInput = await executionController.checkInterrupt();
         if (interruptInput) {
@@ -371,33 +380,12 @@ export class Captain implements Agent {
         }
 
         const toolNames = result?.toolExecutions?.map((e: any) => e.toolName) || [];
-        const actionPerformed = toolNames.some((name: string) => ACTION_TOOLS.includes(name));
 
         debugLog('Tools called:', toolNames.join(', '));
 
         if (isDone) {
           stop();
           return;
-        }
-
-        if (iteration >= MAX_STEPS) {
-          tag('warning').log('Max steps reached');
-          stop();
-          return;
-        }
-
-        if (actionPerformed && !isDone) {
-          conversation.cleanupTag('page_aria', '...cleaned...', 1);
-          conversation.cleanupTag('page_html', '...cleaned...', 1);
-
-          const newContext = await this.getPageContext();
-          conversation.addUserText(dedent`
-            Action completed. Page state:
-            ${newContext}
-
-            If the request is fulfilled, call done(summary) NOW.
-            Only continue if the original request is NOT yet complete.
-          `);
         }
       },
       {

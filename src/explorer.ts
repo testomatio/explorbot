@@ -2,17 +2,17 @@ import path, { join } from 'node:path';
 // @ts-ignore
 import * as codeceptjs from 'codeceptjs';
 import { createTest } from 'codeceptjs/lib/mocha/test.js';
+import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
-import { StateManager } from './state-manager.js';
-import { createDebug, log, tag } from './utils/logger.js';
-import { Test } from './test-plan.ts';
-import { ActionResult } from './action-result.ts';
 import { Reporter } from './reporter.ts';
+import { StateManager } from './state-manager.js';
+import { Test } from './test-plan.ts';
+import { createDebug, log, tag } from './utils/logger.js';
 
 declare global {
   namespace NodeJS {
@@ -101,12 +101,16 @@ class Explorer {
     if (debugInfo) {
       tag('substep').log(debugInfo);
     }
+    const PlaywrightConfig = {
+      ...playwrightConfig,
+      highlightElement: true,
+      strict: true,
+      fullPageScreenshots: true,
+    };
+    tag('debug').log(JSON.stringify(PlaywrightConfig, null, 2));
     return {
       helpers: {
-        Playwright: {
-          ...playwrightConfig,
-          highlightElement: true,
-        },
+        Playwright: PlaywrightConfig,
       },
     };
   }

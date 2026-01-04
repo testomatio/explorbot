@@ -3,10 +3,10 @@ import { join } from 'node:path';
 import micromatch from 'micromatch';
 import { ConfigParser, type HtmlConfig } from './config.ts';
 import type { WebPageState } from './state-manager.ts';
+import { diffAriaSnapshots, summarizeInteractiveNodes } from './utils/aria.ts';
+import { type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
 import { extractHeadings, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
-import { summarizeInteractiveNodes, diffAriaSnapshots } from './utils/aria.ts';
 import { createDebug } from './utils/logger.ts';
-import { htmlDiff, type HtmlDiffResult } from './utils/html-diff.ts';
 
 const debugLog = createDebug('explorbot:state');
 

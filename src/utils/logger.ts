@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { type Span, context, trace } from '@opentelemetry/api';
 import chalk from 'chalk';
 import debug from 'debug';
 import dedent from 'dedent';
 import { marked } from 'marked';
-import { context, trace, type Span } from '@opentelemetry/api';
 import { ConfigParser } from '../config.js';
 import { Observability } from '../observability.ts';
 
@@ -147,14 +147,13 @@ class SpanDestination implements LogDestination {
             : undefined;
     const stepOutput = errorMessage ? `failed: ${errorMessage}` : step?.status || (step?.failed ? 'failed' : step?.success ? 'success' : 'passed');
     const span = tracer.startSpan(stepName, undefined, trace.setSpan(context.active(), activeSpan));
-    span.setAttribute('ai.prompt', stepInput);
-    span.setAttribute('ai.toolCall.args', stepInput);
-    span.setAttribute('ai.response.text', stepOutput);
-    span.setAttribute('ai.toolCall.result', stepOutput);
+    span.setAttribute('ai.toolCall.name', stepName);
+    span.setAttribute('ai.toolCall.args', JSON.stringify({ command: stepInput }));
+    span.setAttribute('ai.toolCall.result', JSON.stringify({ status: stepOutput }));
     span.setAttribute('log.timestamp', entry.timestamp?.toISOString() || new Date().toISOString());
     if (step) {
       try {
-        const parsedStep = typeof step === 'string' ? JSON.parse(step) : step;
+        const parsedStep = typeof step === 'string' ? JSON.parse(step) : step.simplify();
         span.setAttribute('ai.telemetry.metadata.step', JSON.stringify(parsedStep));
       } catch {
         span.setAttribute('ai.telemetry.metadata.step', '[unserializable step]');

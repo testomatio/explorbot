@@ -1,7 +1,7 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { Plan, Test } from '../../src/test-plan.ts';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Plan, Test } from '../../src/test-plan.ts';
 
 describe('Plan', () => {
   const testFilePath = join('/tmp', 'test-plan.md');

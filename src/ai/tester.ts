@@ -1,23 +1,23 @@
+import { join } from 'node:path';
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import { join } from 'node:path';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import { executionController } from '../execution-controller.ts';
 import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
-import { TestResult, type TestResultType, type Note, type Test } from '../test-plan.ts';
+import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
+import type { Conversation } from './conversation.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { protectionRule, locatorRule } from './rules.ts';
+import { locatorRule, protectionRule, sectionContextRule } from './rules.ts';
 import { createCodeceptJSTools } from './tools.ts';
-import type { Conversation } from './conversation.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
@@ -33,6 +33,8 @@ export class Tester implements Agent {
   researcher: Researcher;
   agentTools: any;
   executionLogFile: string | null = null;
+  private previousUrl: string | null = null;
+  private previousStateHash: string | null = null;
 
   constructor(explorer: Explorer, provider: Provider, researcher: Researcher, agentTools?: any) {
     this.explorer = explorer;
@@ -52,6 +54,9 @@ export class Tester implements Agent {
     tag('info').log(`Testing scenario: ${task.scenario}`);
     setActivity(`🧪 Testing: ${task.scenario}`, 'action');
 
+    this.previousUrl = null;
+    this.previousStateHash = null;
+
     const initialState = ActionResult.fromState(state);
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
@@ -63,15 +68,6 @@ export class Tester implements Agent {
 
     const initialPrompt = await this.buildTestPrompt(task, initialState);
     conversation.addUserText(initialPrompt);
-    // Note: autoTrimTag and hasTag functionality removed from Conversation class
-    if (false) {
-      // Disabled since hasTag was removed
-      conversation.addUserText(dedent`
-            When dealing with elements from <expanded_ui_map> ensure they are visible.
-            Call the same codeblock to make them visible.
-            <ui_map> and <expanded_ui_map> are relevant only for initial page or similar pages.
-          `);
-    }
 
     debugLog('Starting test execution with tools');
 
@@ -89,7 +85,7 @@ export class Tester implements Agent {
       task.states.push(event.toState);
     });
 
-    const codeceptjsTools = createCodeceptJSTools(this.explorer, (note) => task.addNote(note));
+    const codeceptjsTools = createCodeceptJSTools(this.explorer, (note) => task.addNote(note, TestResult.PASSED));
     let actionPerformed = true;
     let assertionPerformed = false;
     const toolCallsLog: any[] = [];
@@ -138,31 +134,15 @@ export class Tester implements Agent {
         conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);
         conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
 
-        if (iteration > 1 && actionPerformed) {
+        if (iteration > 1) {
           let nextStep = '';
-          // re-inject HTML and ARIA snapshots to not lose context
-          if (!conversation.hasTag('page_html', 5)) {
-            nextStep += dedent`
-              Context:
+          nextStep += await this.reinjectContextIfNeeded(iteration, currentState);
 
-              <page>
-              CURRENT URL: ${currentState.url}
-              CURRENT TITLE: ${currentState.title}
-              </page>
-
-              <page_aria>
-              ${currentState.ariaSnapshot}
-              </page_aria>
-
-              <page_html>
-              ${await currentState.combinedHtml()}
-              </page_html>
-            `;
-          }
-
-          nextStep += await this.prepareInstructionsForNextStep(task);
-          if (iteration % 5 === 0) {
-            nextStep += await this.analyzeProgress(task, currentState, toolCallsLog);
+          if (actionPerformed) {
+            nextStep += await this.prepareInstructionsForNextStep(task);
+            if (iteration % 5 === 0) {
+              nextStep += await this.analyzeProgress(task, currentState, toolCallsLog);
+            }
           }
           conversation.addUserText(nextStep);
         }
@@ -280,6 +260,88 @@ export class Tester implements Agent {
     return outcomeStatus;
   }
 
+  private async reinjectContextIfNeeded(iteration: number, currentState: ActionResult): Promise<string> {
+    const currentUrl = currentState.url;
+    const currentStateHash = currentState.hash;
+
+    const isNewUrl = this.previousUrl !== currentUrl;
+    const isStateChanged = !isNewUrl && this.previousStateHash !== currentStateHash;
+
+    this.previousUrl = currentUrl;
+    this.previousStateHash = currentStateHash;
+
+    // page changed, auto-research and reinject context
+    if (isNewUrl) {
+      const research = await this.researcher.research(currentState);
+      let uiMapSection = '';
+      if (research) {
+        uiMapSection = dedent`
+
+          Page UI Map
+          The complete UI map of a page (can be oudated)
+          <page_ui_map>
+          ${research}
+          </page_ui_map>
+        `;
+      }
+
+      return dedent`
+        Context:
+
+        <page>
+        CURRENT URL: ${currentState.url}
+        CURRENT TITLE: ${currentState.title}
+        </page>
+
+        <page_aria>
+        ${currentState.ariaSnapshot}
+        </page_aria>
+        ${uiMapSection}
+
+        Use <page_ui_map> to understand the page structure and its main elements.
+        However, <page_ui_map> is not always up to date, use <page_aria> and <page_html> to understand the ACTUAL state of the page
+        Do not interact with elements that are not listed in <page_aria> and <page_html>
+        Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
+      `;
+    }
+
+    if (isStateChanged) {
+      const combinedHtml = await currentState.combinedHtml();
+      return dedent`
+        Context (state changed):
+
+        <page>
+        CURRENT URL: ${currentState.url}
+        CURRENT TITLE: ${currentState.title}
+        </page>
+
+        <page_html>
+        ${combinedHtml}
+        </page_html>
+
+        <page_aria>
+        ${currentState.ariaSnapshot}
+        </page_aria>
+      `;
+    }
+
+    // Only reinject context every 5 iterations
+    if (iteration % 5) return '';
+
+    return dedent`
+      Context:
+
+      <page>
+      CURRENT URL: ${currentState.url}
+      CURRENT TITLE: ${currentState.title}
+      </page>
+
+      <page_aria>
+      ${currentState.ariaSnapshot}
+      </page_aria>
+    `;
+  }
+
   private async promptLogStep(task: Test): Promise<string> {
     let logPrompt = dedent`
       <task>
@@ -337,6 +399,8 @@ export class Tester implements Agent {
 
     ${locatorRule}
 
+    ${sectionContextRule}
+
     <task>
     You will be provided with scenario goal which should be achieved.
     Expected results will help you to achieve the scenario goal.
@@ -361,14 +425,25 @@ export class Tester implements Agent {
     </approach>
 
     <rules>
-    - Check for success messages to verify if expected outcomes are achieved
+    - Refer to UI Map from <page_ui_map> to understand the page structure and its main elements
+    - Use only elements that exist in the provided ARIA tree or HTML, <page_aria> and <page_html>
+    - Use click() for buttons, links, and clickable elements
+    - Use type() for text input (with optional locator parameter)
+    - Use form() for forms with multiple inputs
+    - Use container CSS locators from <page_ui_map> to interact with elements inside sections
+    - Systematically use record({ notes: ["..."] }) to write your findings, planned actions, observations, etc.
+    - Call record({ notes: ["..."], status: "success" }) when you see success/info message on a page or when expected outcome is achieved
+    - Call record({ notes: ["..."], status: "fail" }) when an expected outcome cannot be achieved or has failed or you see error/alert/warning message on a page
+    - Call finish() when all goals are achieved and verified
+    - ONLY call stop() if the scenario itself is completely irrelevant to this page and no expectations can be achieved
+    - Use reset() to navigate back to the initial page if needed. Do not call it if you are already on the initial page
+    - Be precise with locators (CSS or XPath)
+    - Each click/type call returns the new page state automatically
+    - Check for success messages from tool calls to verify if expected outcomes are achieved
     - Check for error messages to understand if there are issues
     - Verify if data was correctly saved and changes are reflected on the page
     - By default, you receive accessibility tree data which shows interactive elements and page structure
-    - Understand current context by following <page_summary>, <page_aria>, and <page_ui_map>
-    - Use the page your are on to achieve expected results
-    - Use reset() to navigate back to the initial page if needed
-    - When you see form with inputs, use form() tool to fill its values it
+    - Understand current context by following <page_html>, <page_aria>, and <page_ui_map>
     - Before submitting form, check all inputs were filled in correctly using see() tool
     - When you interact with form with inputs, ensure that you click corresponding button to save its data
     - Follow <locator_priority> rules when selecting locators for all tools
@@ -567,14 +642,8 @@ export class Tester implements Agent {
   private async buildTestPrompt(task: Test, actionResult: ActionResult): Promise<string> {
     const knowledge = this.getKnowledge(actionResult);
 
-    const research = await this.researcher.research(actionResult);
-
-    const html = await actionResult.combinedHtml();
-
     return dedent`
       <task>
-      Execute the following testing scenario using the available tools (click, type, reset, record, finish, and stop).
-
       SCENARIO GOAL: ${task.scenario}
 
       EXPECTED RESULTS:
@@ -586,53 +655,16 @@ export class Tester implements Agent {
       </expected_results>
 
       Your goal is to perform actions on the web page and verify the expected outcomes.
-      - Call record({ notes: ["exact outcome text"] }) each time you perform action towards the step goal
-      - Call record({ notes: ["exact outcome text"], status: "success" }) each time you verify an expected outcome
-      - Call record({ notes: ["exact outcome text"], status: "fail" }) each time an expected outcome cannot be achieved
-      - You can check multiple outcomes - call record() for each one verified
-      - The test succeeds if at least one outcome is achieved
-      - Call finish() when all goals are achieved and verified
-      - Only call stop() if the scenario is completely irrelevant to this page
-      - Each tool call will return the updated page state
-
-      IMPORTANT: Provide explanation for each action you take in your response text before calling tools.
+      Try to achieve as many goals as possible.
+      If goal is not achievable, log that and skip to next one.
+      Do not hallucinate that goal was achieved when it was not.
       </task>
 
-      <initial_page>
-      INITIAL URL: ${actionResult.url}
-
-      <initial_page_summary>
-      ${codeToMarkdown(actionResult.toAiContext())}
-      </initial_page_summary>
-
-      
-
-      <initial_page_knowledge>
-      THIS IS IMPORTANT INFORMATION FROM SENIOR QA ON THIS PAGE
+      <task_specific>
+      - When creating or editing items via form() or type() and you have no restrictions on string values, prefer including ${task.sessionName} in the value
+      - Initial page URL: ${actionResult.url}
+      </task_specific>
       ${knowledge}
-      </initial_page_knowledge>
-
-      <initial_page_ui_map>
-      ${research}
-      </initial_page_ui_map>
-
-      </initial_page>
-
-      <rules>
-      - Use only elements that exist in the provided accessibility tree or HTML
-      - Use click() for buttons, links, and clickable elements
-      - Use type() for text input (with optional locator parameter)
-      - Use form() for forms with multiple inputs
-      - when creating or editing items via form() or type() and you have no restrictions on string values, prefer including ${task.sessionName} in the value
-      - Systematically use record({ notes: ["..."] }) to write your findings, planned actions, observations, etc.
-      - Use reset() to navigate back to ${actionResult.url} if needed. Do not call it if you are already on the initial page.
-      - Call record({ notes: ["..."], status: "success" }) when you see success/info message on a page or when expected outcome is achieved
-      - Call record({ notes: ["..."], status: "fail" }) when an expected outcome cannot be achieved or has failed or you see error/alert/warning message on a page
-      - Call finish() when all goals are achieved and verified
-      - ONLY call stop() if the scenario itself is completely irrelevant to this page and no expectations can be achieved
-      - Be precise with locators (CSS or XPath)
-      - Each click/type call returns the new page state automatically
-      </rules>
     `;
   }
 
@@ -663,7 +695,7 @@ export class Tester implements Agent {
           const targetUrl = resetUrl!;
           task.addNote(explanation);
           const resetAction = this.explorer.createAction();
-          const success = await resetAction.attempt((I) => I.amOnPage(targetUrl), explanation);
+          const success = await resetAction.attempt(`I.amOnPage(${JSON.stringify(targetUrl)})`, explanation);
 
           if (success) {
             return {
@@ -737,14 +769,14 @@ export class Tester implements Agent {
         `,
         inputSchema: z.object({}),
         execute: async () => {
-          tag('success').log(`Test finished successfully`);
+          tag('success').log('Test finished successfully');
           task.addNote('Test finished successfully', TestResult.PASSED);
           task.finish(TestResult.PASSED);
 
           return {
             success: true,
             action: 'finish',
-            message: `Test finished successfully`,
+            message: 'Test finished successfully',
           };
         },
       }),

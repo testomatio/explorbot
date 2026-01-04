@@ -1,83 +1,15 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import { createDebug } from '../utils/logger.js';
-import type Explorer from '../explorer.ts';
-import { Researcher } from './researcher.ts';
-import { Navigator } from './navigator.ts';
 import { ActionResult } from '../action-result.ts';
+import type Explorer from '../explorer.ts';
 import { minifyHtml } from '../utils/html.ts';
+import { createDebug } from '../utils/logger.js';
+import { Navigator } from './navigator.ts';
+import { Researcher } from './researcher.ts';
+import { sectionContextRule, sectionUiMapRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:tools');
-
-interface PageDiff {
-  urlChanged: boolean;
-  previousUrl?: string;
-  currentUrl: string;
-  ariaChanges?: string | null;
-  htmlChanges?: string | null;
-}
-
-const PAGE_DIFF_SUGGESTION = 'Analyze page diff and plan next steps.';
-
-async function calculatePageDiff(explorer: Explorer, previousState: ActionResult | null): Promise<PageDiff | null> {
-  const stateManager = explorer.getStateManager();
-  const currentWebState = stateManager.getCurrentState();
-
-  if (!currentWebState) {
-    return null;
-  }
-
-  // If state IDs are the same, no diff needed
-  if (previousState?.id !== undefined && currentWebState.id === previousState.id) {
-    return null;
-  }
-
-  const currentState = ActionResult.fromState(currentWebState);
-  const urlChanged = previousState ? !currentState.isSameUrl({ url: previousState.url }) : true;
-
-  if (!previousState) {
-    return {
-      urlChanged: true,
-      currentUrl: currentState.url,
-    };
-  }
-
-  const diff = await currentState.diff(previousState);
-  await diff.calculate();
-
-  const result: PageDiff = {
-    urlChanged,
-    previousUrl: previousState.url,
-    currentUrl: currentState.url,
-  };
-
-  if (diff.ariaChanged) {
-    result.ariaChanges = diff.ariaChanged;
-  }
-
-  if (diff.htmlDiff && diff.htmlSubtree) {
-    result.htmlChanges = await minifyHtml(diff.htmlSubtree);
-  }
-
-  return result;
-}
-
-function successToolResult(action: string, data?: Record<string, any>) {
-  const result: Record<string, any> = { success: true, action, ...data };
-  if (data?.pageDiff) {
-    result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
-  }
-  return result;
-}
-
-function failedToolResult(action: string, message: string, data?: Record<string, any>) {
-  const result: Record<string, any> = { success: false, action, message, ...data };
-  if (data?.pageDiff) {
-    result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
-  }
-  return result;
-}
 
 export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string) => void = () => {}) {
   const stateManager = explorer.getStateManager();
@@ -92,32 +24,33 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
   return {
     click: tool({
       description: dedent`
-        Perform a click on an element by its locator. ARIA, CSS or XPath locators are equally supported.
-        Prefer ARIA locators first over CSS or XPath locators.
+        Perform a click on an element by its locator. Prefer ARIA locators as the main argument.
+        Use CSS or XPath locators only when ARIA is not available.
         Follow semantic attributes when interacting with clickable elements like buttons, links, role=button etc, or elements have aria-label or aria-roledescription attributes.
-        Can pass a text of clickable element instead of locator (click('Login'), click('Submit'), click('Save'), etc)
+        To click by text, use clickByText() tool instead.
 
         Follow <locator_priority> rules from system prompt for locator selection.
 
-        Do not use :contains CSS pseudo-selector - it is not supported.
-        To click by text with context, use clickByText() tool instead.
+        AVOID :contains CSS pseudo-selector - it is not supported! Use clickByText() instead.
       `,
       inputSchema: z.object({
         locator: z.string().describe('ARIA, CSS or XPath locator for the element to click.'),
+        container: z.string().optional().describe('CSS selector that shows where we need to perform action'),
         explanation: z.string().describe('Reason for selecting this click action.'),
       }),
-      execute: async ({ locator, explanation }) => {
+      execute: async ({ locator, container, explanation }) => {
         try {
-          noteFn(explanation);
           debugLog('Click locator:', locator);
 
           const previousState = getPreviousState();
           const action = explorer.createAction();
-          const clickSuccess = await action.attempt((I) => I.click(locator), explanation);
+          const clickCommand = container ? `I.click(${formatLocator(locator)}, ${formatLocator(container)})` : `I.click(${formatLocator(locator)})`;
+          const clickSuccess = await action.attempt(clickCommand, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
           if (clickSuccess) {
+            noteFn(explanation);
             return successToolResult('click', { pageDiff });
           }
 
@@ -138,42 +71,44 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
 
     clickByText: tool({
       description: dedent`
-        Click on a button or link by its text within a specific context element.
-        Use this instead of click() when you need context parameter to narrow the search area.
+        Click on a button or link by its text or ARIA locator within a specific container element.
+        Use this instead of click() when you need container parameter to narrow the search area.
         
         Main difference from click():
-        - click(locator) - clicks by locator directly, no context parameter
-        - clickByText(text, context) - clicks by text within a context container
+        - click(locator) - clicks by locator directly, no container parameter
+        - clickByText(text, container) - clicks by text within a container
 
         Example: clickByText('Submit', '.modal-footer') - clicks Submit button inside modal footer
         Example: clickByText('Delete', '//div[@class="user-row"][1]') - clicks Delete in first user row
+        Example: clickByText({ role: 'button', text: 'Delete' }, '.item-1') - clicks Delete in item 1
         
         Follow <locator_priority> rules from system prompt for locator selection.
       `,
       inputSchema: z.object({
         text: z.string().describe('Text of the button or link to click'),
-        context: z.string().describe('ARIA, CSS or XPath locator for the container element to search within'),
+        container: z.string().describe('ARIA, CSS or XPath locator for the container element to search within'),
         explanation: z.string().describe('Reason for selecting this click action.'),
       }),
-      execute: async ({ text, context, explanation }) => {
+      execute: async ({ text, container, explanation }) => {
         try {
           noteFn(explanation);
-          debugLog('ClickByText:', text, 'in context:', context);
+          debugLog('ClickByText:', text, 'in container:', container);
 
           const previousState = getPreviousState();
           const action = explorer.createAction();
-          const clickSuccess = await action.attempt((I) => I.click(text, context), explanation);
+          const clickSuccess = await action.attempt(`I.click(${JSON.stringify(text)}, ${formatLocator(container)})`, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
           if (clickSuccess) {
+            noteFn(explanation);
             return successToolResult('clickByText', { pageDiff });
           }
 
           return failedToolResult('clickByText', 'Click by text did not succeed.', {
             error: action.lastError ? action.lastError.toString() : '',
             pageDiff,
-            suggestion: 'Verify the text matches exactly and the context locator is correct. Try using see() tool to find element coordinates, then use clickXY tool.',
+            suggestion: 'Verify the text matches exactly and the container locator is correct. Try using see() tool to find element coordinates, then use clickXY tool.',
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
@@ -199,7 +134,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
 
           const previousState = getPreviousState();
           const action = explorer.createAction();
-          const success = await action.attempt((I) => I.clickXY(x, y), explanation);
+          const success = await action.attempt(`I.clickXY(${x}, ${y})`, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
@@ -229,18 +164,16 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
       inputSchema: z.object({
         text: z.string().describe('The text to type'),
         locator: z.string().optional().describe('ARIA, CSS or XPath locator for the field. If omitted, types into currently focused element.'),
-        explanation: z.string().optional().describe('Reason for providing this input.'),
+        explanation: z.string().describe('Reason for providing this input.'),
       }),
       execute: async ({ text, locator, explanation }) => {
         try {
-          if (explanation) noteFn(explanation);
-
           const previousState = getPreviousState();
           const action = explorer.createAction();
 
           // No locator - type into currently focused element
           if (!locator) {
-            await action.attempt((I) => I.type(text), explanation);
+            await action.attempt(`I.type(${JSON.stringify(text)})`, explanation);
             const pageDiff = await calculatePageDiff(explorer, previousState);
 
             if (!action.lastError) {
@@ -257,9 +190,10 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
           }
 
           // With locator - try fillField first
-          await action.attempt((I) => I.fillField(locator, text), explanation);
+          await action.attempt(`I.fillField(${formatLocator(locator)}, ${JSON.stringify(text)})`, explanation);
 
           if (!action.lastError) {
+            noteFn(explanation);
             const pageDiff = await calculatePageDiff(explorer, previousState);
             return successToolResult('type', {
               message: `Input field ${locator} was filled with value ${text}`,
@@ -268,14 +202,9 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
           }
 
           // Fallback: click + select all + delete + type
-          const selectAllKey = ['CommandOrControl', 'a'];
-          await action.attempt((I) => I.click(locator), explanation);
+          await action.attempt(`I.click(${formatLocator(locator)})`, explanation);
 
-          await action.attempt(async (I) => {
-            await I.pressKey(selectAllKey);
-            await I.pressKey('Delete');
-            await I.type(text);
-          }, explanation);
+          await action.attempt(`I.pressKey(['CommandOrControl', 'a']); I.pressKey('Delete'); I.type(${JSON.stringify(text)})`, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
@@ -318,20 +247,20 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
       inputSchema: z.object({
         locator: z.string().describe('ARIA, CSS, XPath locator, or label text for the select/combobox element'),
         option: z.string().describe('The option to select - can be visible text, value attribute, or label'),
-        explanation: z.string().optional().describe('Reason for selecting this option.'),
+        explanation: z.string().describe('Reason for selecting this option.'),
       }),
       execute: async ({ locator, option, explanation }) => {
         try {
-          if (explanation) noteFn(explanation);
           debugLog('Select locator:', locator, 'option:', option);
 
           const previousState = getPreviousState();
           const action = explorer.createAction();
-          const selectSuccess = await action.attempt((I) => I.selectOption(locator, option), explanation);
+          const selectSuccess = await action.attempt(`I.selectOption(${formatLocator(locator)}, ${JSON.stringify(option)})`, explanation);
 
           const pageDiff = await calculatePageDiff(explorer, previousState);
 
           if (selectSuccess) {
+            noteFn(explanation);
             return successToolResult('select', {
               message: `Option "${option}" was selected in ${locator}`,
               pageDiff,
@@ -601,7 +530,15 @@ export function createAgentTools({
             html: await ActionResult.fromState(currentState).combinedHtml(),
             aria: await ActionResult.fromState(currentState).ariaSnapshot,
             message: `Successfully researched page: ${currentState.url}.`,
-            suggestion: 'You received comprehensive UI map report. Use it to understand the page structure and navigate to the elements. Do not ask for research() if you have <page_ui_map> for current page.',
+            suggestion: dedent`
+              You received comprehensive UI map report. Use it to understand the page structure and navigate to the elements. 
+              Do not ask for research() if you have <page_ui_map> for current page.
+              Follow <section_context_rule> when selecting locators for all tools.
+
+              If sections are listed in report use section container locators when picking elements from inside sections:
+
+              ${sectionContextRule}
+            `,
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
@@ -651,4 +588,85 @@ export function createAgentTools({
       },
     }),
   };
+}
+
+interface PageDiff {
+  urlChanged: boolean;
+  previousUrl?: string;
+  currentUrl: string;
+  ariaChanges?: string | null;
+  htmlChanges?: string | null;
+}
+
+const PAGE_DIFF_SUGGESTION = 'Analyze page diff and plan next steps.';
+
+async function calculatePageDiff(explorer: Explorer, previousState: ActionResult | null): Promise<PageDiff | null> {
+  const stateManager = explorer.getStateManager();
+  const currentWebState = stateManager.getCurrentState();
+
+  if (!currentWebState) {
+    return null;
+  }
+
+  // If state IDs are the same, no diff needed
+  if (previousState?.id !== undefined && currentWebState.id === previousState.id) {
+    return null;
+  }
+
+  const currentState = ActionResult.fromState(currentWebState);
+  const urlChanged = previousState ? !currentState.isSameUrl({ url: previousState.url }) : true;
+
+  if (!previousState) {
+    return {
+      urlChanged: true,
+      currentUrl: currentState.url,
+    };
+  }
+
+  const diff = await currentState.diff(previousState);
+  await diff.calculate();
+
+  const result: PageDiff = {
+    urlChanged,
+    previousUrl: previousState.url,
+    currentUrl: currentState.url,
+  };
+
+  if (diff.ariaChanged) {
+    result.ariaChanges = diff.ariaChanged;
+  }
+
+  if (diff.htmlDiff && diff.htmlSubtree) {
+    result.htmlChanges = await minifyHtml(diff.htmlSubtree);
+  }
+
+  return result;
+}
+
+function formatLocator(locator: string): string {
+  try {
+    const parsed = JSON.parse(locator);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // Not JSON, treat as regular string
+  }
+  return JSON.stringify(locator);
+}
+
+function successToolResult(action: string, data?: Record<string, any>) {
+  const result: Record<string, any> = { success: true, action, ...data };
+  if (data?.pageDiff) {
+    result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
+  }
+  return result;
+}
+
+function failedToolResult(action: string, message: string, data?: Record<string, any>) {
+  const result: Record<string, any> = { success: false, action, message, ...data };
+  if (data?.pageDiff) {
+    result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
+  }
+  return result;
 }

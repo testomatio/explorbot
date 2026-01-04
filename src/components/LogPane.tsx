@@ -18,7 +18,7 @@ interface LogPaneProps {
   verboseMode: boolean;
 }
 
-const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
+const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
   const [logs, setLogs] = useState<TaggedLogEntry[]>([]);
 
   const addLog = useCallback((logEntry: TaggedLogEntry) => {
@@ -84,7 +84,7 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
 
     if (log.type === 'multiline') {
       return (
-        <Box key={index} borderStyle="classic" marginY={1} padding={1} borderColor="dim" height={17} overflow="hidden">
+        <Box key={index} borderStyle="classic" marginY={1} padding={1} borderColor="dim" overflow="hidden">
           <Text color="gray" dimColor>
             {dedent(marked.parse(String(log.content)).toString())}
           </Text>
@@ -149,6 +149,6 @@ const LogPane: React.FC<LogPaneProps> = ({ verboseMode }) => {
   };
 
   return <Box flexDirection="column">{logs.map((log, index) => renderLogEntry(log, index)).filter(Boolean)}</Box>;
-};
+});
 
 export default LogPane;

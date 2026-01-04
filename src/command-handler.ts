@@ -60,7 +60,10 @@ export class CommandHandler implements InputManager {
           if (target) {
             await this.explorBot.getExplorer().visit(target);
           }
-          await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!, true);
+          await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!, {
+            screenshot: true,
+            force: true,
+          });
         },
       },
       {

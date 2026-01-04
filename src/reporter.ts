@@ -1,7 +1,7 @@
 import { Client } from '@testomatio/reporter';
-import { createDebug, log } from './utils/logger.js';
-import { Test } from './test-plan.js';
 import type { Step } from '@testomatio/reporter/types/types.js';
+import { Test } from './test-plan.js';
+import { createDebug, log } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:reporter');
 
@@ -19,8 +19,13 @@ export class Reporter {
       return;
     }
 
+    if (!process.env.TESTOMATIO) {
+      return;
+    }
+
     try {
-      await this.client.createRun();
+      const timeoutMs = Number(process.env.TESTOMATIO_TIMEOUT_MS || '15000');
+      await Promise.race([this.client.createRun(), new Promise((resolve) => setTimeout(resolve, timeoutMs))]);
       this.isRunStarted = true;
       debugLog('Testomat.io run started');
     } catch (error) {

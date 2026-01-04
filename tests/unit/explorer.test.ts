@@ -195,9 +195,9 @@ mock.module('codeceptjs/lib/mocha/test.js', () => ({
   }),
 }));
 
-import Explorer from '../../src/explorer.ts';
 import { AIProvider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
+import Explorer from '../../src/explorer.ts';
 import { Reporter } from '../../src/reporter.ts';
 
 describe('Explorer', () => {

@@ -1,9 +1,8 @@
-import { generateObject, generateText } from 'ai';
-import type { ModelMessage } from 'ai';
+import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { LangfuseExporter } from 'langfuse-vercel';
-import { readFileSync } from 'node:fs';
+import { generateObject, generateText } from 'ai';
+import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
 import { Observability } from '../observability.ts';
@@ -63,13 +62,13 @@ export class Provider {
       return;
     }
 
-    const exporter = new LangfuseExporter({
+    const processor = new LangfuseSpanProcessor({
       publicKey,
       secretKey,
       baseUrl,
     });
     this.otelSdk = new NodeSDK({
-      traceExporter: exporter,
+      spanProcessors: [processor],
       instrumentations: [getNodeAutoInstrumentations()],
     });
     void this.otelSdk.start();
@@ -116,14 +115,19 @@ export class Provider {
 
   async invokeConversation(conversation: Conversation, tools?: any, options: any = {}): Promise<{ conversation: Conversation; response: any; toolExecutions?: any[] } | null> {
     const response = tools ? await this.generateWithTools(conversation.messages, conversation.model, tools, options) : await this.chat(conversation.messages, conversation.model, options);
-    conversation.addAssistantText(response.text);
+
+    const responseMessages = response.response?.messages || [];
+    if (responseMessages.length > 0) {
+      conversation.messages.push(...responseMessages);
+      tag('debug').log('Added', responseMessages.length, 'messages from response');
+    } else {
+      conversation.addAssistantText(response.text || '');
+    }
+
     this.lastConversation = conversation;
 
     const toolCalls = response.toolCalls || [];
     const toolResults = response.toolResults || [];
-
-    // Note: addToolExecutions was removed from Conversation class
-    // Tool executions are now handled internally by the AI SDK
 
     const toolExecutions = toolCalls.map((call: any, index: number) => ({
       toolName: call.toolName || '',

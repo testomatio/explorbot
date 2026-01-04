@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { tag } from './utils/logger.ts';
+import * as readline from 'node:readline';
 
 export type InputCallback = (prompt: string) => Promise<string | null>;
 
@@ -42,12 +42,26 @@ export class ExecutionController extends EventEmitter {
   }
 
   async requestInput(prompt: string): Promise<string | null> {
-    if (!this.inputCallback) {
-      tag('warning').log(prompt);
-      return null;
+    if (this.inputCallback) {
+      return await this.inputCallback(prompt);
     }
 
-    return await this.inputCallback(prompt);
+    return await this.readlineInput(prompt);
+  }
+
+  private async readlineInput(prompt: string): Promise<string | null> {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    return new Promise<string | null>((resolve) => {
+      rl.question(`${prompt}\n> `, (answer) => {
+        rl.close();
+        const trimmed = answer.trim();
+        resolve(trimmed || null);
+      });
+    });
   }
 
   reset(): void {

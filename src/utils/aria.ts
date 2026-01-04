@@ -330,6 +330,45 @@ const parseAriaSnapshot = (snapshot: string | null): AriaNode[] => {
   return pruneNodes(roots);
 };
 
+export interface FocusAreaResult {
+  detected: boolean;
+  type: 'dialog' | 'modal' | null;
+  name: string | null;
+}
+
+export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
+  const nodes = parseAriaSnapshot(snapshot);
+
+  const findFocusArea = (nodeList: AriaNode[]): FocusAreaResult | null => {
+    for (const node of nodeList) {
+      if (node.role === 'dialog' || node.role === 'alertdialog') {
+        return {
+          detected: true,
+          type: 'dialog',
+          name: node.name || null,
+        };
+      }
+
+      if (node.attributes.modal === true || node.attributes.modal === 'true') {
+        return {
+          detected: true,
+          type: 'modal',
+          name: node.name || null,
+        };
+      }
+
+      const childResult = findFocusArea(node.children);
+      if (childResult) {
+        return childResult;
+      }
+    }
+    return null;
+  };
+
+  const result = findFocusArea(nodes);
+  return result || { detected: false, type: null, name: null };
+};
+
 export const collectInteractiveNodes = (snapshot: string | null): Array<Record<string, unknown>> => {
   const nodes = parseAriaSnapshot(snapshot);
   const result: Array<Record<string, unknown>> = [];

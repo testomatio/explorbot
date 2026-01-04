@@ -1,8 +1,8 @@
+import dedent from 'dedent';
 import { minify } from 'html-minifier-next';
 import { parse, parseFragment, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
 import type { HtmlConfig } from '../config.ts';
-import dedent from 'dedent';
 
 /**
  * HTML parsing library that preserves original structure while filtering content
@@ -1168,4 +1168,12 @@ export function codeToMarkdown(code: string): string {
 ${code}
 \`\`\`
   `;
+}
+
+export function isBodyEmpty(html: string): boolean {
+  if (!html) return true;
+  const bodyMatch = html.match(/<body[^>]*>(.*?)<\/body>/is);
+  if (!bodyMatch) return true;
+  const bodyContent = bodyMatch[1].trim();
+  return bodyContent === '';
 }

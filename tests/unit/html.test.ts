@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot } from '../../src/utils/html.ts';
+import { htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
 
 // Load test HTML files
 const githubHtml = readFileSync(join(process.cwd(), 'test-data/github.html'), 'utf8');
@@ -644,6 +644,68 @@ describe('HTML Parsing Library', () => {
       expect(result).toContain('This is long enough');
       expect(result).not.toContain('Ok');
       expect(result).not.toContain('Hi');
+    });
+  });
+
+  describe('isBodyEmpty', () => {
+    it('should return true for empty html', () => {
+      expect(isBodyEmpty('')).toBe(true);
+    });
+
+    it('should return true for null/undefined html', () => {
+      expect(isBodyEmpty(null as any)).toBe(true);
+      expect(isBodyEmpty(undefined as any)).toBe(true);
+    });
+
+    it('should return true when body tag is missing', () => {
+      const html = '<html><head><title>Test</title></head></html>';
+      expect(isBodyEmpty(html)).toBe(true);
+    });
+
+    it('should return true when body is empty', () => {
+      const html = '<html><body></body></html>';
+      expect(isBodyEmpty(html)).toBe(true);
+    });
+
+    it('should return true when body contains only whitespace', () => {
+      const html = '<html><body>   \n\t  </body></html>';
+      expect(isBodyEmpty(html)).toBe(true);
+    });
+
+    it('should return false when body contains content', () => {
+      const html = '<html><body><div>Content</div></body></html>';
+      expect(isBodyEmpty(html)).toBe(false);
+    });
+
+    it('should return false when body contains text', () => {
+      const html = '<html><body>Hello World</body></html>';
+      expect(isBodyEmpty(html)).toBe(false);
+    });
+
+    it('should handle body with attributes', () => {
+      const html = '<html><body class="main" id="page-body"></body></html>';
+      expect(isBodyEmpty(html)).toBe(true);
+    });
+
+    it('should handle body with attributes and content', () => {
+      const html = '<html><body class="main"><p>Text</p></body></html>';
+      expect(isBodyEmpty(html)).toBe(false);
+    });
+
+    it('should handle multiline body content', () => {
+      const html = `<html>
+        <body>
+          <div>
+            <p>Content here</p>
+          </div>
+        </body>
+      </html>`;
+      expect(isBodyEmpty(html)).toBe(false);
+    });
+
+    it('should handle case-insensitive body tag', () => {
+      const html = '<html><BODY>Content</BODY></html>';
+      expect(isBodyEmpty(html)).toBe(false);
     });
   });
 });

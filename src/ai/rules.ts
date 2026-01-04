@@ -76,6 +76,25 @@ export const locatorRule = dedent`
   HTML locators must be valid JS strings
 `;
 
+export const sectionUiMapRule = dedent`
+  <ui_map_rule>
+  List UI elements as a markdown table:
+  | Element | ARIA | CSS | XPath | Coordinates |
+  | 'Save' | { role: 'button', text: 'Save' } | '.save-btn' | '//button[@type="submit"]' | (X, Y) |
+
+  Always include ARIA + CSS + XPath for each element.
+
+  - ARIA locator must be valid JSON with bother role and text keys: { role: ..., text: ...}
+  - CSS locator must be valid CSS selector starting from container element
+  - XPath locator must be valid XPath selector starting from container element
+
+
+  IMPORTANT: Do not include section container CSS locator into listed elements CSS/XPath locators.  
+  Include Coordinates only when available from screenshot analysis, otherwise use "-" in the Coordinates column.
+  Coordinates are the center point in pixels: (X, Y).
+  </ui_map_rule>
+`;
+
 export const multipleLocatorRule = dedent`
   You will need to provide multiple solutions to achieve the result.
   
@@ -140,6 +159,26 @@ export const protectionRule = dedent`
   </important>
 `;
 
+export const sectionContextRule = dedent`
+  <section_context_rule>
+  When clicking elements, use the section Context Locator for disambiguation:
+
+  1. Identify which section contains the target element
+  2. Get the Context Locator from that section in the UI map
+
+  For ARIA/Text locators - use context as second parameter:
+  - clickByText('Submit', '.modal-content')  // element in Focus Section
+  - clickByText({ role: 'button', text: 'Save' }, '.main')  // element in Main Section
+  - clickByText('Home', 'nav')  // element in Navigation
+
+  For CSS locators - prepend section context:
+  - click('.main button.submit')  // instead of click('button.submit')
+  - click('[role="dialog"] .close-btn')  // for modal elements
+
+  This prevents clicking wrong elements when same text/locator appears in multiple sections.
+  </section_context_rule>
+`;
+
 export const generalWordsRule = dedent`
   Avoid using general words like "the page", "the element", "the button", "the input", "the link", "the form", "the table", "the list", "the item", "the page", "the element", "the button", "the input", "the link", "the form", "the table", "the list", "the item", "the page", "the element", "the button", "the input", "the link", "the form", "the table", "the list", "the item".
   "comprehensive",
@@ -157,6 +196,7 @@ export const actionRule = dedent`
   I.click(<locator>, <context_locator>)
 
   locators can be ARIA, CSS, or XPath locators.
+  Prefer ARIA locators as the main argument, use CSS/XPath only when ARIA is not available.
   
   Use context parameter (second argument) to narrow click area when:
   - The same text/button appears multiple times on page

@@ -34,10 +34,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.17",
-    "@ai-sdk/groq": "^2.0.20",
-    "@ai-sdk/openai": "^2.0.32",
+    "@ai-sdk/anthropic": "^3.0",
+    "@ai-sdk/groq": "^3.0",
+    "@ai-sdk/openai": "^3.0",
     "@inkjs/ui": "^2.0.0",
+    "@langfuse/otel": "^4.5.1",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.67.3",
     "@opentelemetry/instrumentation": "^0.208.0",
@@ -46,9 +47,9 @@
     "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@opentelemetry/semantic-conventions": "^1.38.0",
     "@testomatio/reporter": "^2.3.9",
-    "ai": "^5.0.0",
+    "ai": "^6.0.6",
     "cli-highlight": "^2.1.11",
-    "codeceptjs": "4.0.1-beta.23",
+    "codeceptjs": "4.0.1-beta.25",
     "commander": "^14.0.1",
     "debug": "^4.4.3",
     "dedent": "^1.6.0",
@@ -61,7 +62,6 @@
     "ink-select-input": "^6.2.0",
     "ink-text-input": "^6.0.0",
     "langfuse": "^3.5.0",
-    "langfuse-vercel": "^3.38.6",
     "marked": "^16.2.0",
     "marked-terminal": "^7.3.0",
     "micromatch": "^4.0.8",
@@ -92,9 +92,6 @@
     "node": ">=16.0.0"
   },
   "overrides": {
-    "marked-terminal": {
-      "supports-hyperlinks": "2.3.0"
-    },
     "has-flag": "4.0.0",
     "supports-color": "7.2.0"
   },

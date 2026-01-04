@@ -156,11 +156,11 @@ export class ExperienceTracker {
 
   private generateEntryContent(entry: ExperienceEntry): string {
     const filteredCode = entry.code.replace(/I\.amOnPage\s*\([^)]*\)/gs, '');
-    const content = `### ${entry.error ? 'Failed Attempt' : 'Successful Attempt'}
+    const status = entry.error ? 'FAILED' : 'SUCCEEDED';
+    const content = `### ${status}: ${entry.originalMessage}
 
-${entry.originalMessage ? `Purpose: ${entry.originalMessage}` : ''}
 ${entry.explanation ? `Solution: ${entry.explanation}` : ''}
-${entry.error ? `${entry.error} from:` : ''}
+${entry.error ? entry.error : ''}
 
 \`\`\`javascript
 ${filteredCode}
@@ -220,6 +220,7 @@ ${filteredCode}
       explanation,
     };
 
+    this.ensureExperienceFile(state);
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
     if (content.includes(code)) {
