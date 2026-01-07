@@ -22,17 +22,55 @@ export type TestStatusType = (typeof TestStatus)[keyof typeof TestStatus];
 export interface Note {
   message: string;
   status?: TestResultType;
-  step?: boolean;
+  startTime: number;
+  endTime: number;
+}
+
+export class ActiveNote {
+  private task: Task;
+  startTime: number;
+  message: string;
+  status?: TestResultType;
+
+  constructor(task: Task, message: string, status?: TestResultType) {
+    this.task = task;
+    this.startTime = performance.now();
+    this.message = message;
+    this.status = status;
+  }
+
+  commit(finalStatus?: TestResultType): void {
+    const endTime = performance.now();
+    this.task.finishNote(this, endTime, finalStatus);
+  }
+
+  getMessage(): string {
+    return this.message;
+  }
+
+  getStartTime(): number {
+    return this.startTime;
+  }
+}
+
+export interface StepData {
+  text: string;
+  duration?: number;
+  status?: string;
+  error?: string;
+  log?: string;
+  noteStartTime?: number;
 }
 
 export class Task {
   id: string;
   description: string;
   notes: Record<string, Note>;
-  steps: Record<string, string>;
+  steps: Record<string, StepData>;
   states: WebPageState[];
   startUrl: string;
   protected timestampCounter = 0;
+  private activeNote?: ActiveNote;
 
   constructor(description: string, startUrl = '') {
     this.id = `${createHash('md5').update(description).digest('hex').slice(0, 8)}_${Date.now().toString(36)}`;
@@ -41,6 +79,26 @@ export class Task {
     this.steps = {};
     this.states = [];
     this.startUrl = startUrl;
+  }
+
+  startNote(message: string, status?: TestResultType): ActiveNote {
+    if (this.activeNote) {
+      this.activeNote.commit();
+    }
+    const note = new ActiveNote(this, message, status);
+    this.activeNote = note;
+    return note;
+  }
+
+  finishNote(activeNote: ActiveNote, endTime: number, finalStatus?: TestResultType): void {
+    const timestamp = `${activeNote.getStartTime()}_${this.timestampCounter++}`;
+    this.notes[timestamp] = {
+      message: activeNote.getMessage(),
+      status: finalStatus || activeNote.status,
+      startTime: activeNote.getStartTime(),
+      endTime,
+    };
+    this.activeNote = undefined;
   }
 
   getPrintableNotes(): string[] {
@@ -59,24 +117,25 @@ export class Task {
     const isDuplicate = Object.values(this.notes).some((note) => note.message === message && note.status === status);
     if (isDuplicate) return;
 
-    const timestamp = `${performance.now()}_${this.timestampCounter++}`;
-    this.notes[timestamp] = { message, status };
+    const now = performance.now();
+    const timestamp = `${now}_${this.timestampCounter++}`;
+    this.notes[timestamp] = { message, status, startTime: now, endTime: now };
   }
 
   addState(state: WebPageState): void {
     this.states.push(state);
   }
 
-  addStep(text: string): void {
+  addStep(text: string, duration?: number, status?: string, error?: string, log?: string): void {
     const timestamp = `${performance.now()}_${this.timestampCounter++}`;
-    this.steps[timestamp] = text;
+    this.steps[timestamp] = { text, duration, status, error, log, noteStartTime: this.activeNote?.getStartTime() };
   }
 
-  getLog(): Array<{ type: 'step' | 'note'; content: string; timestamp: number }> {
-    const merged: Record<string, { type: 'step' | 'note'; content: string }> = {};
+  getLog(): Array<{ type: 'step' | 'note' | 'artifact'; content: string; timestamp: number }> {
+    const merged: Record<string, { type: 'step' | 'note' | 'artifact'; content: string }> = {};
 
-    for (const [key, text] of Object.entries(this.steps)) {
-      merged[key] = { type: 'step', content: text };
+    for (const [key, stepData] of Object.entries(this.steps)) {
+      merged[key] = { type: 'step', content: stepData.text };
     }
 
     for (const [key, note] of Object.entries(this.notes)) {
@@ -93,7 +152,7 @@ export class Task {
 
   getLogString(): string {
     return this.getLog()
-      .map((item) => (item.type === 'step' ? '  ' : '') + `${item.content}`)
+      .map((item) => `${item.type === 'step' ? '  ' : ''}${item.content}`)
       .join('\n');
   }
 }
@@ -130,7 +189,8 @@ export class Test extends Task {
     return [...new Set([this.startUrl, ...this.states.map((s) => s.url)].filter((value): value is string => Boolean(value) && value.trim() !== ''))];
   }
 
-  addArtifact(artifact: string): void {
+  addArtifact(artifact?: string): void {
+    if (!artifact) return;
     const timestamp = `${performance.now()}_${this.timestampCounter++}`;
     this.artifacts[timestamp] = artifact;
   }
@@ -178,11 +238,13 @@ export class Test extends Task {
   start(): void {
     this.status = TestStatus.IN_PROGRESS;
     this.addNote('Test started');
+    this.plan?.notifyChange();
   }
 
   finish(result: TestResultType = TestResult.FAILED): void {
     this.status = TestStatus.DONE;
     this.result = result;
+    this.plan?.notifyChange();
   }
 
   getRemainingExpectations(): string[] {
@@ -193,8 +255,8 @@ export class Test extends Task {
   override getLog(): Array<{ type: 'step' | 'note' | 'artifact'; content: string; timestamp: number }> {
     const merged: Record<string, { type: 'step' | 'note' | 'artifact'; content: string }> = {};
 
-    for (const [key, text] of Object.entries(this.steps)) {
-      merged[key] = { type: 'step', content: text };
+    for (const [key, stepData] of Object.entries(this.steps)) {
+      merged[key] = { type: 'step', content: stepData.text };
     }
 
     for (const [key, note] of Object.entries(this.notes)) {
@@ -214,10 +276,13 @@ export class Test extends Task {
   }
 }
 
+type PlanChangeListener = (tests: Test[]) => void;
+
 export class Plan {
   title: string;
   tests: Test[] = [];
   url?: string;
+  private changeListeners: PlanChangeListener[] = [];
 
   constructor(title: string) {
     this.title = title;
@@ -227,6 +292,21 @@ export class Plan {
   addTest(test: Test): void {
     test.plan = this;
     this.tests.push(test);
+    this.notifyChange();
+  }
+
+  onTestsChange(listener: PlanChangeListener): () => void {
+    this.changeListeners.push(listener);
+    return () => {
+      const index = this.changeListeners.indexOf(listener);
+      if (index > -1) this.changeListeners.splice(index, 1);
+    };
+  }
+
+  notifyChange(): void {
+    for (const listener of this.changeListeners) {
+      listener(this.tests);
+    }
   }
 
   listTests(): Test[] {

@@ -6,6 +6,7 @@ import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
 import type { StateTransition, WebPageState } from '../state-manager.js';
 import { Test } from '../test-plan.ts';
 import ActivityPane from './ActivityPane.js';
+import Autocomplete from './Autocomplete.js';
 import InputPane from './InputPane.js';
 import InputReadline from './InputReadline.js';
 import LogPane from './LogPane.js';
@@ -110,18 +111,33 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     };
   }, []);
 
-  // Listen for task changes - only update if tasks actually changed
-  const tasksRef = useRef<Test[]>([]);
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const currentTasks = explorBot.getCurrentPlan()?.tests || [];
-      if (currentTasks.length !== tasksRef.current.length || currentTasks.some((t, i) => t !== tasksRef.current[i])) {
-        tasksRef.current = currentTasks;
-        setTasks(currentTasks);
-      }
-    }, 1000);
+  const planRef = useRef<ReturnType<typeof explorBot.getCurrentPlan>>(undefined);
+  const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
 
-    return () => clearInterval(interval);
+  useEffect(() => {
+    const subscribeToPlan = (plan: NonNullable<ReturnType<typeof explorBot.getCurrentPlan>>) => {
+      if (unsubscribeRef.current) unsubscribeRef.current();
+      planRef.current = plan;
+      setTasks([...plan.tests]);
+      unsubscribeRef.current = plan.onTestsChange((updatedTests) => {
+        setTasks([...updatedTests]);
+      });
+    };
+
+    const initialPlan = explorBot.getCurrentPlan();
+    if (initialPlan) subscribeToPlan(initialPlan);
+
+    const interval = setInterval(() => {
+      const currentPlan = explorBot.getCurrentPlan();
+      if (currentPlan && currentPlan !== planRef.current) {
+        subscribeToPlan(currentPlan);
+      }
+    }, 2000);
+
+    return () => {
+      clearInterval(interval);
+      if (unsubscribeRef.current) unsubscribeRef.current();
+    };
   }, [explorBot]);
 
   useInput((input, key) => {
@@ -138,7 +154,9 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     }
 
     if (key.ctrl && input === 'c') {
-      process.exit(0);
+      explorBot.stop().then(() => {
+        process.exit(0);
+      });
     }
   });
 
@@ -196,6 +214,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
             <TaskPane tasks={tasks} />
           </Box>
         )}
+        <Autocomplete />
       </Box>
     </Box>
   );

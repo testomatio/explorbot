@@ -19,6 +19,7 @@ import { Navigator } from './navigator.ts';
 import { locatorRule, protectionRule, sectionContextRule } from './rules.ts';
 import { createCodeceptJSTools } from './tools.ts';
 import { Historian } from './historian.ts';
+import { Quartermaster } from './quartermaster.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
@@ -38,6 +39,7 @@ export class Tester implements Agent {
   private previousUrl: string | null = null;
   private previousStateHash: string | null = null;
   private historian: Historian;
+  private quartermaster: Quartermaster;
 
   constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
     this.explorer = explorer;
@@ -46,6 +48,11 @@ export class Tester implements Agent {
     this.navigator = navigator;
     this.agentTools = agentTools;
     this.historian = new Historian(provider, explorer.getStateManager().getExperienceTracker());
+    const quartermasterConfig = ConfigParser.getInstance().getConfig().ai?.agents?.quartermaster;
+    this.quartermaster = new Quartermaster(provider, {
+      disabled: quartermasterConfig?.enabled === false,
+      model: quartermasterConfig?.model,
+    });
   }
 
   getConversation(): Conversation | null {
@@ -90,7 +97,7 @@ export class Tester implements Agent {
       task.states.push(event.toState);
     });
 
-    const codeceptjsTools = createCodeceptJSTools(this.explorer, (note) => task.addNote(note, TestResult.PASSED));
+    const codeceptjsTools = createCodeceptJSTools(this.explorer, task);
     let actionPerformed = true;
     let assertionPerformed = false;
     const toolCallsLog: any[] = [];
@@ -160,9 +167,10 @@ export class Tester implements Agent {
 
         debugLog('tool executions:', result?.toolExecutions?.map((execution: any) => execution.toolName).join(', '));
 
-        const toolNames = result?.toolExecutions?.filter((execution: any) => execution.wasSuccessful)?.map((execution: any) => execution.toolName) || [];
-        actionPerformed = !!toolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
-        assertionPerformed = !!toolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
+        const allToolNames = result?.toolExecutions?.map((execution: any) => execution.toolName) || [];
+        const successfulToolNames = result?.toolExecutions?.filter((execution: any) => execution.wasSuccessful)?.map((execution: any) => execution.toolName) || [];
+        actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
+        assertionPerformed = !!successfulToolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
         const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
 
         if (actionPerformed) {
@@ -171,15 +179,10 @@ export class Tester implements Agent {
 
         if (actionPerformed && !wasSuccessful) {
           result?.toolExecutions
-            ?.filter((execution: any) => execution.input.explanation)
+            ?.filter((execution: any) => !execution.wasSuccessful && execution.input?.explanation)
             .forEach((execution: any) => {
               task.addNote(`Failed to ${execution.input.explanation} (${execution.toolName})`, TestResult.FAILED);
             });
-        }
-
-        if (actionPerformed && wasSuccessful) {
-          conversation.addUserText(await this.promptLogStep(task));
-          await this.provider.invokeConversation(conversation, tools, { toolChoice: 'required' });
         }
 
         if (assertionPerformed) {
@@ -224,7 +227,10 @@ export class Tester implements Agent {
     );
 
     await this.finalReview(task);
-    await this.historian.saveTestSession(task, initialState, toolCallsLog, conversation);
+    await this.historian.saveSession(task, initialState, conversation);
+
+    await this.quartermaster.analyzeSession(task, initialState, conversation);
+
     offStateChange();
     await this.finishTest(task);
     this.explorer.stopTest(task);
@@ -402,10 +408,6 @@ export class Tester implements Agent {
     Your task is to execute testing scenario by interacting with web pages using available tools.
     </role>
 
-    ${locatorRule}
-
-    ${sectionContextRule}
-
     <task>
     You will be provided with scenario goal which should be achieved.
     Expected results will help you to achieve the scenario goal.
@@ -456,14 +458,6 @@ export class Tester implements Agent {
     - When filling complex form with lot of actions performed, use see() to look which fields were filled and which are not
     </rules>
 
-    <accessibility_issues>
-      If you can't interact with element due incorrect accesibility markup, record accessibility issue with status="fail"
-      Describe the page and origin of accessibility issue in notes and suggest how markup can be improved
-      Use 'A11y: ' prefix when recording accessibility issues
-      We need to collect only accessibility issues that harden our navigation and tool calling
-      Do not scan for all possible accessibility issues, only the ones that affect our testing
-    </accessibility_issues>
-
     <free_thinking_rule>
     You primary focus to achieve the SCENARIO GOAL
     Expected results were pre-planned and may be wrong or not achievable
@@ -475,15 +469,57 @@ export class Tester implements Agent {
     If behavior is unexpected, and irrelevant to scenario, but you assume it is an application bug, call record({ notes: ["explanation"], status: "fail" }).
     If you have succesfully achieved some unexpected outcome, call record({ notes: ["exact outcome text"], status: "success" })
     </free_thinking_rule>
+
+    ${locatorRule}
+
+    ${sectionContextRule}
+
     `;
   }
 
   private async analyzeProgress(task: Test, actionResult: ActionResult, toolCallsLog: any[]): Promise<string> {
     const notes = task.getPrintableNotes() || 'No notes recorded yet.';
+
+    const recentToolCalls = toolCallsLog.slice(-10);
+    const failedToolCalls = recentToolCalls.filter((tool: any) => !tool.wasSuccessful);
+    const actionToolFailures = failedToolCalls.filter((tool: any) => this.ACTION_TOOLS.includes(tool.toolName));
+
+    const persistentFailureThreshold = 3;
+    const hasPersistentFailures = actionToolFailures.length >= persistentFailureThreshold;
+
+    const sameToolFailedRepeatedly = recentToolCalls
+      .filter((tool: any) => !tool.wasSuccessful && this.ACTION_TOOLS.includes(tool.toolName))
+      .reduce((acc: Record<string, number>, tool: any) => {
+        const key = `${tool.toolName}:${tool.input?.locator || tool.input?.text || 'unknown'}`;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+
+    const hasRepeatedSameFailure = Object.values(sameToolFailedRepeatedly).some((count: number) => count >= persistentFailureThreshold);
+
     const schema = z.object({
       assessment: z.string().describe('Short review of current progress toward the main scenario goal'),
       suggestion: z.string().describe('Specific next action recommendation'),
+      recommendReset: z.boolean().optional().describe('Recommend reset() if persistent failures suggest navigation issues'),
+      recommendStop: z.boolean().optional().describe('Recommend stop() if test is fundamentally incompatible or cannot proceed'),
     });
+
+    const failureContext =
+      hasPersistentFailures || hasRepeatedSameFailure
+        ? dedent`
+      <critical_failures>
+      WARNING: Persistent tool failures detected!
+      - Recent failed action tool calls: ${actionToolFailures.length}
+      - Same tool/locator failed repeatedly: ${hasRepeatedSameFailure ? 'YES' : 'NO'}
+      
+      Failed tools in recent calls:
+      ${actionToolFailures.map((tool: any) => `- ${tool.toolName}${tool.input?.locator ? ` (${tool.input.locator})` : ''}${tool.input?.explanation ? `: ${tool.input.explanation}` : ''}`).join('\n')}
+      
+      This indicates the test may be stuck or the scenario is incompatible with the current page state.
+      You MUST recommend either reset() to return to initial page, or stop() if the scenario is fundamentally incompatible.
+      </critical_failures>
+    `
+        : '';
 
     const model = this.provider.getModelForAgent('tester');
     const response = await this.provider.generateObject(
@@ -505,7 +541,6 @@ export class Tester implements Agent {
             Check if the current actions are aligned with the main scenario goal.
             If there are unsuccessful steps, suggest a different approach to achieve the main scenario goal.
             Provide a short comprehensive assessment of the current progress.
-            Identify tool call that failed due to incorrect accesibility HTML markup.
             Provide suggestions for next steps.
             </task>
 
@@ -513,20 +548,15 @@ export class Tester implements Agent {
             - Check if the current actions are aligned with the main scenario goal.
             - If there are failures accessing elements, suggest to use see() tool to analyze the page.
             - If goal was already achieved and verified suggest finishing the test with finish() tool.
-            - If no progress is made, suggest to use reset() tool to navigate back to the initial page.
-            - If test has no progress for too long, suggest to use stop() tool to stop the test.
             - Look for failed tool calls and identify which actions were not accomplished.
             - If tool didn't succeed even after several attempts, you must mention it in the assessment.
+            - CRITICAL: If persistent failures are detected (3+ recent failures or same tool/locator failing repeatedly), you MUST recommend either:
+              * reset() - if navigation issues suggest returning to initial page might help
+              * stop() - if the scenario is fundamentally incompatible with the page and cannot proceed
+            - Do not recommend continuing with the same failing approach when persistent failures are detected.
             </rules>
 
-
-            <accessibility_issues>
-            If you identified that some actions were not achived due to improper accesibility markup, you should mention this in the assessment.
-            Describe the page and origin of accessibility issue in notes and suggest how markup can be improved.
-            Suggest the accessibility changes that can improve page navigation and tool calling.
-            Use 'A11y: ' prefix when recording accessibility issues
-            You should collect only accessibility issues that harden our navigation and tool calling
-          </accessibility_issues>
+            ${failureContext}
 
             <current_state>
             ${await actionResult.toAiContext()}
@@ -537,10 +567,10 @@ export class Tester implements Agent {
             </notes>
 
             <called_tools>
-            ${toolCallsLog.map((tool) => `- ${JSON.stringify(tool)}`).join('\n')}
+            ${recentToolCalls.map((tool) => `- ${tool.toolName}${tool.wasSuccessful ? ' [SUCCESS]' : ' [FAILED]'}${tool.input?.explanation ? `: ${tool.input.explanation}` : ''}${tool.input?.locator ? ` (locator: ${tool.input.locator})` : ''}`).join('\n')}
             </called_tools>
 
-            Provide a short assessment, suggest the next best action, and indicate if reset() is recommended.
+            Provide a short assessment, suggest the next best action, and indicate if reset() or stop() is recommended.
           `,
         },
       ],
@@ -551,12 +581,18 @@ export class Tester implements Agent {
     const result = response?.object;
     if (!result) return '';
 
-    const recommendation = result.recommendReset ? 'AI suggests considering reset() before proceeding.' : '';
+    let recommendation = '';
+    if (result.recommendStop) {
+      recommendation = 'CRITICAL: AI strongly recommends using stop() - test appears fundamentally incompatible.';
+    } else if (result.recommendReset) {
+      recommendation = 'AI suggests using reset() to return to initial page and try different approach.';
+    }
+
     const report = dedent`
       Progress checkpoint after ${toolCallsLog.length} tool calls:
       ${result.assessment}
       Next suggestion: ${result.suggestion}
-      ${recommendation}
+      ${recommendation ? `\n${recommendation}` : ''}
     `;
 
     task.addNote(result.assessment);
@@ -568,7 +604,6 @@ export class Tester implements Agent {
     const schema = z.object({
       summary: z.string().describe('Concise overview of the test findings'),
       scenarioAchieved: z.boolean().describe('Indicates if the scenario goal appears satisfied'),
-      accessibilityIssues: z.string().optional().describe('List of accessibility issues found during testing'),
       recommendation: z.string().optional().describe('Follow-up suggestion if needed'),
     });
 
@@ -593,7 +628,7 @@ export class Tester implements Agent {
 
             <steps>
             ${Object.values(task.steps)
-              .map((s) => `- ${s}`)
+              .map((s) => `- ${s.text}`)
               .join('\n')}
             </steps>
 
@@ -663,12 +698,9 @@ export class Tester implements Agent {
       Try to achieve as many goals as possible.
       If goal is not achievable, log that and skip to next one.
       Do not hallucinate that goal was achieved when it was not.
-      </task>
+      When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
+      Initial page URL: ${actionResult.url}
 
-      <task_specific>
-      - When creating or editing items via form() or type() and you have no restrictions on string values, prefer including ${task.sessionName} in the value
-      - Initial page URL: ${actionResult.url}
-      </task_specific>
       ${knowledge}
     `;
   }

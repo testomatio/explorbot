@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
+import { ConfigParser } from '../config.ts';
 import { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
@@ -13,6 +14,7 @@ import type { Conversation } from './conversation.js';
 import { locatorRule, sectionContextRule } from './rules.ts';
 import { createAgentTools, createCodeceptJSTools } from './tools.ts';
 import { Historian } from './historian.ts';
+import { Quartermaster } from './quartermaster.ts';
 
 const debugLog = createDebug('explorbot:captain');
 
@@ -25,6 +27,7 @@ export class Captain implements Agent {
   private conversation: Conversation | null = null;
   private experienceTracker: ExperienceTracker;
   private historian: Historian;
+  private quartermaster: Quartermaster;
   private awaitingSave = false;
   private pendingExperience: { state: ActionResult; intent: string; summary: string; code: string } | null = null;
 
@@ -32,6 +35,11 @@ export class Captain implements Agent {
     this.explorBot = explorBot;
     this.experienceTracker = new ExperienceTracker();
     this.historian = new Historian(explorBot.getProvider(), this.experienceTracker);
+    const quartermasterConfig = ConfigParser.getInstance().getConfig().ai?.agents?.quartermaster;
+    this.quartermaster = new Quartermaster(explorBot.getProvider(), {
+      disabled: quartermasterConfig?.enabled === false,
+      model: quartermasterConfig?.model,
+    });
   }
 
   private systemPrompt(): string {
@@ -96,7 +104,7 @@ export class Captain implements Agent {
     ${await actionResult.simplifiedHtml()}
     </page_html>
 
-    ${await researcher.research(state)}
+    ${await researcher.research(state, { data: true })}
     </page>
     `;
   }
@@ -242,10 +250,7 @@ export class Captain implements Agent {
 
   private tools(task: Task, onDone: (summary: string) => void) {
     const explorer = this.explorBot.getExplorer();
-    const codeceptjsTools = createCodeceptJSTools(explorer, (note) => {
-      task.addNote(note);
-      tag('substep').log(note);
-    });
+    const codeceptjsTools = createCodeceptJSTools(explorer, task);
 
     const agentTools = createAgentTools({
       explorer,
@@ -348,8 +353,6 @@ export class Captain implements Agent {
     conversation.addUserText(initialPrompt);
     tag('info').log(this.emoji, `Processing: ${input}`);
 
-    const allToolExecutions: any[] = [];
-
     await loop(
       async ({ stop, iteration, userInput }) => {
         debugLog(`Captain iteration ${iteration}`);
@@ -385,10 +388,6 @@ export class Captain implements Agent {
         }
 
         const toolNames = result?.toolExecutions?.map((e: any) => e.toolName) || [];
-        if (result?.toolExecutions) {
-          allToolExecutions.push(...result.toolExecutions);
-        }
-
         debugLog('Tools called:', toolNames.join(', '));
 
         if (isDone) {
@@ -415,17 +414,18 @@ export class Captain implements Agent {
       tag('warning').log(this.emoji, 'Request may not be fully completed');
     }
 
+    await this.historian.saveSession(task, initialActionResult, conversation);
+    await this.quartermaster.analyzeSession(task, initialActionResult, conversation);
+
     const notes = task.getPrintableNotes();
     if (notes.length > 0) {
       tag('multiline').log(`Task log:\n${notes.join('\n')}`);
     }
 
-    await this.historian.saveCaptainSession(task, initialActionResult, allToolExecutions, finalSummary);
-
-    if (finalSummary && initialActionResult) {
+    if (finalSummary) {
       const steps = this.collectSteps(historyStart);
       if (steps.length > 0) {
-        const summaryLine = finalSummary.split('\n')[0];
+        const summaryLine = (finalSummary as string).split('\n')[0];
         this.pendingExperience = {
           state: initialActionResult,
           intent: input,

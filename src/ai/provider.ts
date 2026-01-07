@@ -24,7 +24,7 @@ export class Provider {
     baseDelay: 10,
     maxDelay: 10000,
     retryCondition: (error: Error) => {
-      return error.name === 'AI_APICallError' || error.message.includes('timeout') || error.message.includes('network') || error.message.includes('rate limit') || error.message.includes('AI request timeout');
+      return error.name === 'AI_APICallError' || error.message.includes('timeout') || error.message.includes('network') || error.message.includes('rate limit') || error.message.includes('AI request timeout') || error.message.includes('schema') || error.message.includes('No object generated');
     },
   };
   lastConversation: Conversation | null = null;

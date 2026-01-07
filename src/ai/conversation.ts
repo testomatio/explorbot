@@ -1,5 +1,12 @@
 import type { ModelMessage } from 'ai';
 
+export interface ToolExecution {
+  toolName: string;
+  input: any;
+  output: any;
+  wasSuccessful: boolean;
+}
+
 export class Conversation {
   id: string;
   messages: ModelMessage[];
@@ -159,5 +166,35 @@ export class Conversation {
 
   private generateId(): string {
     return `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  getToolExecutions(): ToolExecution[] {
+    const toolCalls = new Map<string, any>();
+    for (const message of this.messages) {
+      if (message.role !== 'assistant') continue;
+      if (!Array.isArray(message.content)) continue;
+      for (const part of message.content) {
+        if (part.type !== 'tool-call') continue;
+        toolCalls.set(part.toolCallId, part.input);
+      }
+    }
+
+    const executions: ToolExecution[] = [];
+    for (const message of this.messages) {
+      if (message.role !== 'tool') continue;
+      if (!Array.isArray(message.content)) continue;
+      for (const part of message.content) {
+        if (part.type !== 'tool-result') continue;
+        const output = part.output as Record<string, any>;
+        executions.push({
+          toolName: part.toolName,
+          input: toolCalls.get(part.toolCallId) || {},
+          output,
+          wasSuccessful: output?.success !== false,
+        });
+      }
+    }
+
+    return executions;
   }
 }

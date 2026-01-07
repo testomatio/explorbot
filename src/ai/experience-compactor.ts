@@ -1,5 +1,6 @@
 import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
+import dedent from 'dedent';
 import { z } from 'zod';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import { createDebug, log } from '../utils/logger.js';
@@ -144,25 +145,27 @@ export class ExperienceCompactor implements Agent {
   }
 
   private buildMergePrompt(urls: string[]): string {
-    return `Analyze these experience file URLs and identify groups that represent the same page type with dynamic URL parameters.
+    return dedent`
+      Analyze these experience file URLs and identify groups that represent the same page type with dynamic URL parameters.
 
-<urls>
-${urls.map((u, i) => `${i + 1}. ${u}`).join('\n')}
-</urls>
+      <urls>
+      ${urls.map((u, i) => `${i + 1}. ${u}`).join('\n')}
+      </urls>
 
-<rules>
-- Identify URLs that represent the same page structure but with different dynamic values (IDs, slugs, etc.)
-- Example: /item/101, /item/102, /item/105 should be grouped with pattern ~/item/\\d+~
-- Example: /user/john, /user/jane should be grouped with pattern ~/user/[^/]+~
-- Only group URLs that are clearly the same page type with dynamic segments
-- Do NOT group unrelated pages
-- Return regex patterns wrapped in ~ delimiters (e.g., ~/path/\\d+~)
-- If no URLs should be merged, return empty mergeGroups array
-</rules>
+      <rules>
+      - Identify URLs that represent the same page structure but with different dynamic values (IDs, slugs, etc.)
+      - Example: /item/101, /item/102, /item/105 should be grouped with pattern ~/item/\\d+~
+      - Example: /user/john, /user/jane should be grouped with pattern ~/user/[^/]+~
+      - Only group URLs that are clearly the same page type with dynamic segments
+      - Do NOT group unrelated pages
+      - Return regex patterns wrapped in ~ delimiters (e.g., ~/path/\\d+~)
+      - If no URLs should be merged, return empty mergeGroups array
+      </rules>
 
-Return JSON with mergeGroups array. Each group should have:
-- urls: array of URLs that should be merged
-- pattern: regex pattern (wrapped in ~) that matches all URLs in the group`;
+      Return JSON with mergeGroups array. Each group should have:
+      - urls: array of URLs that should be merged
+      - pattern: regex pattern (wrapped in ~) that matches all URLs in the group
+    `;
   }
 
   private async mergeExperienceGroup(group: MergeGroup): Promise<void> {
@@ -213,67 +216,50 @@ Return JSON with mergeGroups array. Each group should have:
   }
 
   private getSystemPrompt(): string {
-    return `
-You are an expert test automation engineer specializing in CodeceptJS.
-Your task is to compact experience data from test automation attempts.
-
-`;
+    return dedent`
+      You are an expert test automation engineer specializing in CodeceptJS.
+      Your task is to compact experience data from test automation attempts into clean markdown format.
+    `;
   }
 
   private buildCompactionPrompt(content: string): string {
-    return `
-<rules>
-- Focus on successful attempts and working code blocks
-- Keep output under ${this.MAX_LENGTH / 5} words while preserving the most valuable information-
-- Identify and document failed locators that should be avoided
-- Group similar errors to reduce noise
-- Preserve all successful CodeceptJS code blocks with their intentions
-- Highlight which locators failed and why
-- Common error patterns - group similar errors
-- Structure the output with clear sections (Successful Solutions, Failed Locators, Common Errors)
-- Remove all I.amOnPage, I.grab, and I.see calls from compacted experiences
-- Your task is ONLY to compact the current experience data.
-- Be explicit and short. Do not add any proposals or explanations on your own.
-</rules>
+    return dedent`
+      <rules>
+      - Use markdown headers only (##, ###) - NO XML tags or wrappers in output
+      - Merge successful sessions if they overlap or are similar
+      - Keep maximum 5 unsuccessful sessions/attempts (most recent or most informative)
+      - Remove all I.amOnPage, I.grab, and I.see calls from compacted experiences
+      - Keep output under ${this.MAX_LENGTH} characters
+      - Be explicit and short - no proposals or explanations
+      </rules>
 
-<output>
-Format your response as structured text MARKDOWN format prepared for LLM usage.
-Use <success>, <locators>, <bad_example> sections to structure the output by context.
-In each section provide code blocks and intention of the code block.
-Keep the output under ${this.MAX_LENGTH} characters
-Proposed output format:
+      <output_format>
+      Use this markdown structure:
 
-<output_format>
-<successfu_attempts>
-  <attempt>
-  - <purpose>
-    \`\`\`js
-    <code>
-    \`\`\`
-  </attempt>
-  ...
-</successful_attempts>
+      ## Successful Sessions
 
-<locators>
-  - <locator> - [accessible or not accessible locator for this Page, if accessible what it refers to]
-</locators>
+      For each successful session or merged group:
+      - Purpose: what was accomplished
+      \`\`\`js
+      // working code
+      \`\`\`
 
-<failed_attempts>
-  - <purpose>
-    \`\`\`js
-    <code>
-    \`\`\`
-  ...
-</failed_attempts>
-</output_format>
-</output>
+      ## Unsuccessful Attempts
 
-Please compact this experience data from test automation attempts:
+      Keep only the 5 most recent or informative failed attempts:
 
-<context>
-${content}
-</context>
+      - Purpose: what was attempted
+      \`\`\`js
+      // failed code
+      \`\`\`
+      Reason: why it failed
+      </output_format>
 
-`;
+      <context>
+      ${content}
+      </context>
+
+      Compact this experience data following the format above.
+    `;
   }
 }

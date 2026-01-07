@@ -3,6 +3,7 @@ import { marked } from 'marked';
 import { markedTerminal } from 'marked-terminal';
 import React from 'react';
 import { useCallback, useEffect, useState } from 'react';
+import stripAnsi from 'strip-ansi';
 import { htmlTextSnapshot } from '../utils/html.js';
 marked.use(markedTerminal());
 
@@ -20,31 +21,56 @@ interface LogPaneProps {
 
 const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
   const [logs, setLogs] = useState<TaggedLogEntry[]>([]);
+  const pendingLogsRef = React.useRef<TaggedLogEntry[]>([]);
+  const flushTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const addLog = useCallback((logEntry: TaggedLogEntry) => {
+  const flushLogs = useCallback(() => {
+    if (pendingLogsRef.current.length === 0) return;
+
+    const newLogs = pendingLogsRef.current;
+    pendingLogsRef.current = [];
+    flushTimeoutRef.current = null;
+
     setLogs((prevLogs: TaggedLogEntry[]) => {
-      // Skip duplicate consecutive logs
-      if (prevLogs.length === 0) return [logEntry];
+      const result = [...prevLogs];
 
-      const lastLog = prevLogs[prevLogs.length - 1];
-      if (
-        lastLog.type === logEntry.type &&
-        lastLog.content === logEntry.content &&
-        // Check if it's within 1 second to avoid legitimate duplicates
-        Math.abs((lastLog.timestamp?.getTime() || 0) - (logEntry.timestamp?.getTime() || 0)) < 1000
-      ) {
-        return prevLogs;
+      for (const logEntry of newLogs) {
+        if (result.length === 0) {
+          result.push(logEntry);
+          continue;
+        }
+
+        const lastLog = result[result.length - 1];
+        if (lastLog.type === logEntry.type && lastLog.content === logEntry.content && Math.abs((lastLog.timestamp?.getTime() || 0) - (logEntry.timestamp?.getTime() || 0)) < 1000) {
+          continue;
+        }
+
+        result.push(logEntry);
       }
 
-      return [...prevLogs, logEntry];
+      return result;
     });
   }, []);
+
+  const addLog = useCallback(
+    (logEntry: TaggedLogEntry) => {
+      pendingLogsRef.current.push(logEntry);
+
+      if (!flushTimeoutRef.current) {
+        flushTimeoutRef.current = setTimeout(flushLogs, 150);
+      }
+    },
+    [flushLogs]
+  );
 
   useEffect(() => {
     registerLogPane(addLog);
 
     return () => {
       unregisterLogPane(addLog);
+      if (flushTimeoutRef.current) {
+        clearTimeout(flushTimeoutRef.current);
+      }
     };
   }, [addLog]);
   const getLogStyles = (type: LogType) => {
@@ -83,10 +109,15 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
     const styles = getLogStyles(log.type);
 
     if (log.type === 'multiline') {
+      const parsed = marked.parse(String(log.content)).toString();
+      const cleaned = stripAnsi(dedent(parsed));
+      const lines = cleaned.split('\n');
+      const maxLines = 30;
+      const truncated = lines.length > maxLines ? lines.slice(0, maxLines).join('\n') + `\n... (${lines.length - maxLines} more lines)` : cleaned;
       return (
         <Box key={index} borderStyle="classic" marginY={1} padding={1} borderColor="dim" overflow="hidden">
           <Text color="gray" dimColor>
-            {dedent(marked.parse(String(log.content)).toString())}
+            {truncated}
           </Text>
         </Box>
       );
@@ -148,7 +179,9 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
     );
   };
 
-  return <Box flexDirection="column">{logs.map((log, index) => renderLogEntry(log, index)).filter(Boolean)}</Box>;
+  const maxLogs = 100;
+  const visibleLogs = logs.length > maxLogs ? logs.slice(-maxLogs) : logs;
+  return <Box flexDirection="column">{visibleLogs.map((log, index) => renderLogEntry(log, index)).filter(Boolean)}</Box>;
 });
 
 export default LogPane;

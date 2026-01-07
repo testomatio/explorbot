@@ -30,13 +30,23 @@ Follow KISS and YAGNI principles
 Avoid repetetive code patterns
 Avoid ternary operators!
 Avoid creating extra functions that were not explicitly set
+Use dedent when formatting prompts
 
 DUPLICATING CODE IS A SIN YOU WILL BURN IN ROBOT HELL FOR THAT! Always look if this code was already wirtten and doesn't need to be reintroduced again
 
+## Separation of concerns
+
+Follow separation of concerns principle when implementing new features:
+
+- logic for AI agents should be inside agent classes
+- shared logic for html/aria should be added to corresponding files in util/ dir
+- TUI and tsx should contain only logic of TUI interaction, all business logic must be moved to corresponding agents
+- tools only contain tool definitions, result parsing, etc
+
 ## Build
 
-Run `npm run format` after each code change
-After big changes run linter: `npm run lint:fix`
+Run `bun run format` after each code change
+After big changes run linter: `bun run lint:fix`
 **Never use NodeJS**
 This application is only Bun
 

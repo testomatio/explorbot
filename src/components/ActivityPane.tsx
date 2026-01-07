@@ -28,7 +28,7 @@ const ActivityPane: React.FC<ActivityPaneProps> = React.memo(({ isInputVisible =
 
     const interval = setInterval(() => {
       setAnimationState((prev) => (prev + 1) % 4);
-    }, 500);
+    }, 1200);
 
     return () => clearInterval(interval);
   }, [activity]);

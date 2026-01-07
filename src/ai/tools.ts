@@ -1,9 +1,9 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import { ActionResult } from '../action-result.ts';
+import { ActionResult, type ToolResultMetadata } from '../action-result.ts';
 import type Explorer from '../explorer.ts';
-import { minifyHtml } from '../utils/html.ts';
+import { TestResult, type Task } from '../test-plan.js';
 import { createDebug } from '../utils/logger.js';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
@@ -11,15 +11,10 @@ import { sectionContextRule, sectionUiMapRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
-export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string) => void = () => {}) {
-  const stateManager = explorer.getStateManager();
+export const CODECEPT_TOOLS = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form'] as const;
 
-  // Capture previous state as ActionResult before action (loads HTML/aria from files)
-  const getPreviousState = (): ActionResult | null => {
-    const currentState = stateManager.getCurrentState();
-    if (!currentState) return null;
-    return ActionResult.fromState(currentState);
-  };
+export function createCodeceptJSTools(explorer: Explorer, task: Task) {
+  const stateManager = explorer.getStateManager();
 
   return {
     click: tool({
@@ -39,31 +34,34 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         explanation: z.string().describe('Reason for selecting this click action.'),
       }),
       execute: async ({ locator, container, explanation }) => {
+        const activeNote = task.startNote(explanation);
         try {
           debugLog('Click locator:', locator);
 
-          const previousState = getPreviousState();
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
           const action = explorer.createAction();
           const clickCommand = container ? `I.click(${formatLocator(locator)}, ${formatLocator(container)})` : `I.click(${formatLocator(locator)})`;
           const clickSuccess = await action.attempt(clickCommand, explanation);
 
-          const pageDiff = await calculatePageDiff(explorer, previousState);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, locator);
 
           if (clickSuccess) {
-            noteFn(explanation);
-            return successToolResult('click', { pageDiff, code: clickCommand });
+            activeNote.commit(TestResult.PASSED);
+            return successToolResult('click', { ...toolResult, code: clickCommand });
           }
 
-          const currentState = stateManager.getCurrentState();
-          const page = !pageDiff && currentState && ActionResult.fromState(currentState).toAiContext();
+          const page = !toolResult?.pageDiff && ActionResult.fromState(stateManager.getCurrentState()!).toAiContext();
+          const errorMsg = action.lastError?.toString() || 'Click did not succeed';
 
-          return failedToolResult('click', action.lastError?.toString() || 'Click did not succeed', {
-            pageDiff,
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('click', errorMsg, {
+            ...toolResult,
             page,
             code: clickCommand,
             suggestion: 'Try a different locator or use visualClick() tool for visual fallback.',
           });
         } catch (error) {
+          activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('click', `Click tool failed: ${errorMessage}`);
         }
@@ -74,7 +72,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
       description: dedent`
         Click on a button or link by its text or ARIA locator within a specific container element.
         Use this instead of click() when you need container parameter to narrow the search area.
-        
+
         Main difference from click():
         - click(locator) - clicks by locator directly, no container parameter
         - clickByText(text, container) - clicks by text within a container
@@ -82,38 +80,43 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         Example: clickByText('Submit', '.modal-footer') - clicks Submit button inside modal footer
         Example: clickByText('Delete', '//div[@class="user-row"][1]') - clicks Delete in first user row
         Example: clickByText({ role: 'button', text: 'Delete' }, '.item-1') - clicks Delete in item 1
-        
+
         Follow <locator_priority> rules from system prompt for locator selection.
+        DO NOT PICK body, html as container. Be specific about the container element in HTML.
+        Request HTML context if needed to provide valid CSS locator
       `,
       inputSchema: z.object({
         text: z.string().describe('Text of the button or link to click'),
-        container: z.string().describe('ARIA, CSS or XPath locator for the container element to search within'),
+        container: z.string().describe('CSS locator for the container element to search within'),
         explanation: z.string().describe('Reason for selecting this click action.'),
       }),
       execute: async ({ text, container, explanation }) => {
+        const activeNote = task.startNote(explanation);
         try {
-          noteFn(explanation);
           debugLog('ClickByText:', text, 'in container:', container);
 
-          const previousState = getPreviousState();
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
           const action = explorer.createAction();
           const clickCommand = `I.click(${JSON.stringify(text)}, ${formatLocator(container)})`;
           const clickSuccess = await action.attempt(clickCommand, explanation);
 
-          const pageDiff = await calculatePageDiff(explorer, previousState);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, text);
 
           if (clickSuccess) {
-            noteFn(explanation);
-            return successToolResult('clickByText', { pageDiff, code: clickCommand });
+            activeNote.commit(TestResult.PASSED);
+            return successToolResult('clickByText', { ...toolResult, code: clickCommand });
           }
 
-          return failedToolResult('clickByText', 'Click by text did not succeed.', {
-            error: action.lastError ? action.lastError.toString() : '',
-            pageDiff,
+          const errorMsg = action.lastError ? action.lastError.toString() : 'Click by text did not succeed';
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('clickByText', errorMsg, {
+            ...toolResult,
+            error: errorMsg,
             code: clickCommand,
             suggestion: 'Verify text and container. If still failing, use visualClick() for visual fallback.',
           });
         } catch (error) {
+          activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('clickByText', `ClickByText tool failed: ${errorMessage}`);
         }
@@ -132,27 +135,31 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         explanation: z.string().optional().describe('Reason for clicking by coordinates.'),
       }),
       execute: async ({ x, y, explanation }) => {
+        const activeNote = explanation ? task.startNote(explanation) : task.startNote(`Click at coordinates (${x}, ${y})`);
         try {
-          if (explanation) noteFn(explanation);
-
-          const previousState = getPreviousState();
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+          const coordLocator = `(${x}, ${y})`;
           const action = explorer.createAction();
           const clickCommand = `I.clickXY(${x}, ${y})`;
           const success = await action.attempt(clickCommand, explanation);
 
-          const pageDiff = await calculatePageDiff(explorer, previousState);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, coordLocator);
 
           if (success) {
-            return successToolResult('clickXY', { pageDiff, code: clickCommand });
+            activeNote.commit(TestResult.PASSED);
+            return successToolResult('clickXY', { ...toolResult, code: clickCommand });
           }
 
-          return failedToolResult('clickXY', 'Click by coordinates failed.', {
+          const errorMsg = action.lastError?.toString() || 'Click by coordinates failed';
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('clickXY', errorMsg, {
+            ...toolResult,
             ...(action.lastError && { error: action.lastError.toString() }),
-            pageDiff,
             code: clickCommand,
             suggestion: 'Use see() to verify correct coordinates from the screenshot.',
           });
         } catch (error) {
+          activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('clickXY', `ClickXY tool failed: ${errorMessage}`);
         }
@@ -163,7 +170,7 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
       description: dedent`
         Send keyboard input to a field. After typing, the page state will be automatically captured and returned.
         Omit locator if input is already focused.
-        
+
         Follow <locator_priority> rules from system prompt for locator selection.
       `,
       inputSchema: z.object({
@@ -172,67 +179,73 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         explanation: z.string().describe('Reason for providing this input.'),
       }),
       execute: async ({ text, locator, explanation }) => {
+        const activeNote = task.startNote(explanation);
         try {
-          const previousState = getPreviousState();
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+          const targetLocator = locator || 'focused';
           const action = explorer.createAction();
 
-          // No locator - type into currently focused element
           if (!locator) {
             const typeCommand = `I.type(${JSON.stringify(text)})`;
             await action.attempt(typeCommand, explanation);
-            const pageDiff = await calculatePageDiff(explorer, previousState);
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, targetLocator);
 
             if (!action.lastError) {
+              activeNote.commit(TestResult.PASSED);
               return successToolResult('type', {
+                ...toolResult,
                 message: `Typed "${text}" into focused element`,
-                pageDiff,
                 code: typeCommand,
               });
             }
 
-            return failedToolResult('type', `type() failed: ${action.lastError?.toString()}`, {
-              pageDiff,
+            const errorMsg = `type() failed: ${action.lastError?.toString()}`;
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('type', errorMsg, {
+              ...toolResult,
               code: typeCommand,
               suggestion: 'Provide a locator for the input field. Use see() to identify the correct element to fill in.',
             });
           }
 
-          // With locator - try fillField first
           const fillCommand = `I.fillField(${formatLocator(locator)}, ${JSON.stringify(text)})`;
           await action.attempt(fillCommand, explanation);
 
           if (!action.lastError) {
-            noteFn(explanation);
-            const pageDiff = await calculatePageDiff(explorer, previousState);
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, targetLocator);
+            activeNote.commit(TestResult.PASSED);
             return successToolResult('type', {
+              ...toolResult,
               message: `Input field ${locator} was filled with value ${text}`,
-              pageDiff,
               code: fillCommand,
             });
           }
 
-          // Fallback: click + select all + delete + type
           await action.attempt(`I.click(${formatLocator(locator)})`, explanation);
 
           const fallbackCommand = `I.pressKey(['CommandOrControl', 'a']); I.pressKey('Delete'); I.type(${JSON.stringify(text)})`;
           await action.attempt(fallbackCommand, explanation);
 
-          const pageDiff = await calculatePageDiff(explorer, previousState);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, targetLocator);
 
           if (!action.lastError) {
+            activeNote.commit(TestResult.PASSED);
             return successToolResult('type', {
+              ...toolResult,
               message: 'type() worked by clicking element and typing in values',
-              pageDiff,
               code: fallbackCommand,
             });
           }
 
-          return failedToolResult('type', `type() failed: ${action.lastError?.toString()}`, {
-            pageDiff,
+          const errorMsg = `type() failed: ${action.lastError?.toString()}`;
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('type', errorMsg, {
+            ...toolResult,
             code: fillCommand,
             suggestion: 'Try a different locator or use clickXY to focus the field first, then call type() without locator.',
           });
         } catch (error) {
+          activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('type', `Type tool failed: ${errorMessage}`);
         }
@@ -242,14 +255,14 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
     select: tool({
       description: dedent`
         Select an option from a dropdown, listbox, combobox, or select element.
-        
+
         I.selectOption(<locator>, <value>)
-        
+
         Works with: <select>, listbox, combobox, dropdown buttons, and custom select components.
         Value can be option text, value attribute, or label.
-        
+
         Follow <locator_priority> rules from system prompt for locator selection.
-        
+
         <example>
           I.selectOption('Country', 'United States');
           I.selectOption({ role: 'combobox', text: 'Select country' }, 'USA');
@@ -263,35 +276,38 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         explanation: z.string().describe('Reason for selecting this option.'),
       }),
       execute: async ({ locator, option, explanation }) => {
+        const activeNote = task.startNote(explanation);
         try {
           debugLog('Select locator:', locator, 'option:', option);
 
-          const previousState = getPreviousState();
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
           const action = explorer.createAction();
           const selectCommand = `I.selectOption(${formatLocator(locator)}, ${JSON.stringify(option)})`;
           const selectSuccess = await action.attempt(selectCommand, explanation);
 
-          const pageDiff = await calculatePageDiff(explorer, previousState);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, locator);
 
           if (selectSuccess) {
-            noteFn(explanation);
+            activeNote.commit(TestResult.PASSED);
             return successToolResult('select', {
+              ...toolResult,
               message: `Option "${option}" was selected in ${locator}`,
-              pageDiff,
               code: selectCommand,
             });
           }
 
-          const currentState = stateManager.getCurrentState();
-          const page = !pageDiff && currentState && ActionResult.fromState(currentState).toAiContext();
+          const page = !toolResult?.pageDiff && ActionResult.fromState(stateManager.getCurrentState()!).toAiContext();
+          const errorMsg = action.lastError?.toString() || 'Select option did not succeed';
 
-          return failedToolResult('select', action.lastError?.toString() || 'Select option did not succeed', {
-            pageDiff,
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('select', errorMsg, {
+            ...toolResult,
             page,
             code: selectCommand,
             suggestion: 'Verify the locator points to a select/combobox element. For custom dropdowns, try click() to open it first, then click() to select the option.',
           });
         } catch (error) {
+          activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('select', `Select tool failed: ${errorMessage}`);
         }
@@ -301,24 +317,24 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
     form: tool({
       description: dedent`
         Execute raw CodeceptJS code block with multiple commands.
-        
+
         Use cases:
         - Working with iframes (switch context with I.switchTo)
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
-        
+
         Example - filling a form:
         I.fillField('title', 'My Article')
         I.selectOption('category', 'Technology')
-        
+
         Example - working with iframe:
         I.switchTo('#payment-iframe')
         I.fillField('card', '4242424242424242')
         I.fillField('cvv', '123')
         I.switchTo()
-        
+
         Follow <locator_priority> rules from system prompt for locator selection.
-        
+
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
         Do not use: wait functions, amOnPage, reloadPage, saveScreenshot
       `,
@@ -327,9 +343,10 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
         explanation: z.string().describe('Reason for executing this code sequence.'),
       }),
       execute: async ({ codeBlock, explanation }) => {
+        const activeNote = task.startNote(explanation);
         try {
-          noteFn(explanation);
           if (!codeBlock.trim()) {
+            activeNote.commit(TestResult.FAILED);
             return failedToolResult('form', 'CodeBlock cannot be empty');
           }
 
@@ -340,34 +357,39 @@ export function createCodeceptJSTools(explorer: Explorer, noteFn: (note: string)
           const codeLines = lines.filter((line) => !line.startsWith('//'));
 
           if (!codeLines.every((line) => line.startsWith('I.'))) {
+            activeNote.commit(TestResult.FAILED);
             return failedToolResult('form', 'All non-comment lines must start with I.', {
               suggestion: 'Try again but pass valid CodeceptJS code where every non-comment line starts with I.',
             });
           }
 
-          const previousState = getPreviousState();
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+          const formLocator = codeLines[0] || 'form';
           const action = explorer.createAction();
           await action.attempt(codeBlock, explanation);
 
-          const pageDiff = await calculatePageDiff(explorer, previousState);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, formLocator);
 
           if (action.lastError) {
             const message = action.lastError ? String(action.lastError) : 'Unknown error';
+            activeNote.commit(TestResult.FAILED);
             return failedToolResult('form', `Form execution FAILED! ${message}`, {
-              pageDiff,
+              ...toolResult,
               code: codeBlock,
               suggestion: 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and type() tools.',
             });
           }
 
+          activeNote.commit(TestResult.PASSED);
           return successToolResult('form', {
+            ...toolResult,
             message: `Form completed successfully with ${lines.length} commands.`,
             commandsExecuted: lines.length,
-            pageDiff,
             code: codeBlock,
             suggestion: 'Verify the form was filled in correctly using see() tool. Submit if needed by using click() tool.',
           });
         } catch (error) {
+          activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('form', `Form tool failed: ${errorMessage}`);
         }
@@ -541,11 +563,10 @@ export function createAgentTools({
             return failedToolResult('research', 'No current page state available. Navigate to a page first.');
           }
 
-          const researchResult = await researcher.research(currentState, { screenshot: true });
+          const researchResult = await researcher.research(currentState, { screenshot: true, data: true });
 
           return successToolResult('research', {
             analysis: researchResult,
-            html: await ActionResult.fromState(currentState).combinedHtml(),
             aria: await ActionResult.fromState(currentState).ariaSnapshot,
             message: `Successfully researched page: ${currentState.url}.`,
             suggestion: dedent`
@@ -657,20 +678,20 @@ export function createAgentTools({
           const y = Number.parseInt(coordMatch[2], 10);
 
           const clickSuccess = await action.attempt(`I.clickXY(${x}, ${y})`, `Visual click: ${element}`);
-          const pageDiff = await calculatePageDiff(explorer, previousState);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, element);
 
           if (clickSuccess) {
             return successToolResult('visualClick', {
+              ...toolResult,
               message: `Clicked "${element}" at coordinates (${x}, ${y})`,
               analysis: locationResult,
-              pageDiff,
             });
           }
 
           return failedToolResult('visualClick', 'Click at coordinates failed', {
+            ...toolResult,
             coordinates: { x, y },
             analysis: locationResult,
-            pageDiff,
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
@@ -681,58 +702,7 @@ export function createAgentTools({
   };
 }
 
-interface PageDiff {
-  urlChanged: boolean;
-  previousUrl?: string;
-  currentUrl: string;
-  ariaChanges?: string | null;
-  htmlChanges?: string | null;
-}
-
 const PAGE_DIFF_SUGGESTION = 'Analyze page diff and plan next steps.';
-
-async function calculatePageDiff(explorer: Explorer, previousState: ActionResult | null): Promise<PageDiff | null> {
-  const stateManager = explorer.getStateManager();
-  const currentWebState = stateManager.getCurrentState();
-
-  if (!currentWebState) {
-    return null;
-  }
-
-  // If state IDs are the same, no diff needed
-  if (previousState?.id !== undefined && currentWebState.id === previousState.id) {
-    return null;
-  }
-
-  const currentState = ActionResult.fromState(currentWebState);
-  const urlChanged = previousState ? !currentState.isSameUrl({ url: previousState.url }) : true;
-
-  if (!previousState) {
-    return {
-      urlChanged: true,
-      currentUrl: currentState.url,
-    };
-  }
-
-  const diff = await currentState.diff(previousState);
-  await diff.calculate();
-
-  const result: PageDiff = {
-    urlChanged,
-    previousUrl: previousState.url,
-    currentUrl: currentState.url,
-  };
-
-  if (diff.ariaChanged) {
-    result.ariaChanges = diff.ariaChanged;
-  }
-
-  if (diff.htmlDiff && diff.htmlSubtree) {
-    result.htmlChanges = await minifyHtml(diff.htmlSubtree);
-  }
-
-  return result;
-}
 
 function formatLocator(locator: string): string {
   try {

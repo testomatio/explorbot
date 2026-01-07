@@ -31,6 +31,7 @@ interface PlaywrightConfig {
 
 interface AgentConfig {
   model?: string;
+  enabled?: boolean;
 }
 
 interface AgentsConfig {
@@ -40,6 +41,7 @@ interface AgentsConfig {
   planner?: AgentConfig;
   'experience-compactor'?: AgentConfig;
   captain?: AgentConfig;
+  quartermaster?: AgentConfig;
 }
 
 interface AIConfig {

@@ -1,19 +1,13 @@
 import { z } from 'zod';
 import type { ActionResult } from '../action-result.ts';
 import { ExperienceTracker, type PageChange, type SessionExperienceEntry, type SessionStep } from '../experience-tracker.ts';
-import type { Test, Task } from '../test-plan.ts';
+import type { Task } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.ts';
-import type { Conversation } from './conversation.ts';
+import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
+import { CODECEPT_TOOLS } from './tools.ts';
 
 const debugLog = createDebug('explorbot:historian');
-
-interface ToolExecution {
-  toolName: string;
-  input: any;
-  output: any;
-  wasSuccessful: boolean;
-}
 
 export class Historian {
   private provider: Provider;
@@ -24,18 +18,19 @@ export class Historian {
     this.experienceTracker = experienceTracker || new ExperienceTracker();
   }
 
-  async saveTestSession(task: Test, initialState: ActionResult, toolExecutions: ToolExecution[], conversation: Conversation): Promise<void> {
-    debugLog('Saving test session experience');
+  async saveSession(task: Task, initialState: ActionResult, conversation: Conversation): Promise<void> {
+    debugLog('Saving session experience');
 
-    const steps = this.extractSteps(task, toolExecutions);
-    const pageChanges = await this.buildPageChanges(task, toolExecutions);
+    const toolExecutions = conversation.getToolExecutions();
+    const steps = this.extractSteps(toolExecutions);
+    const pageChanges = await this.buildPageChanges(toolExecutions, initialState.url || '');
     const result = this.determineResult(task);
     const nextStep = this.determineNextStep(task);
 
     const entry: SessionExperienceEntry = {
       timestamp: new Date().toISOString(),
-      agent: 'tester',
-      scenario: task.scenario,
+      agent: 'scenario' in task ? 'tester' : 'captain',
+      scenario: task.description,
       result,
       steps,
       pageChanges,
@@ -43,28 +38,7 @@ export class Historian {
     };
 
     this.experienceTracker.saveSessionExperience(initialState, entry);
-    tag('substep').log(`Historian saved session for: ${task.scenario}`);
-  }
-
-  async saveCaptainSession(task: Task, initialState: ActionResult, toolExecutions: ToolExecution[], summary: string | null): Promise<void> {
-    debugLog('Saving captain session experience');
-
-    const steps = this.extractStepsFromTask(task, toolExecutions);
-    const pageChanges = await this.buildPageChangesFromExecutions(toolExecutions, initialState.url || '');
-    const result = this.determineCaptainResult(task, summary);
-
-    const entry: SessionExperienceEntry = {
-      timestamp: new Date().toISOString(),
-      agent: 'captain',
-      scenario: task.description,
-      result,
-      steps,
-      pageChanges,
-      nextStep: summary || undefined,
-    };
-
-    this.experienceTracker.saveSessionExperience(initialState, entry);
-    tag('substep').log(`Historian saved captain session for: ${task.description}`);
+    tag('substep').log(`Historian saved session for: ${task.description}`);
   }
 
   private formatPageDiff(pageDiff: any): string | undefined {
@@ -85,34 +59,11 @@ export class Historian {
     return parts.length > 0 ? parts.join('. ') : undefined;
   }
 
-  private extractSteps(task: Test, toolExecutions: ToolExecution[]): SessionStep[] {
+  private extractSteps(toolExecutions: ToolExecution[]): SessionStep[] {
     const steps: SessionStep[] = [];
-    const codeceptTools = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form'];
 
     for (const exec of toolExecutions) {
-      if (!codeceptTools.includes(exec.toolName)) continue;
-      if (!exec.output?.code) continue;
-
-      const message = exec.input?.explanation || `Executed ${exec.toolName}`;
-
-      steps.push({
-        message,
-        status: exec.wasSuccessful ? 'passed' : 'failed',
-        tool: exec.toolName,
-        code: exec.output.code,
-        pageChange: this.formatPageDiff(exec.output.pageDiff),
-      });
-    }
-
-    return steps;
-  }
-
-  private extractStepsFromTask(task: Task, toolExecutions: ToolExecution[] = []): SessionStep[] {
-    const steps: SessionStep[] = [];
-    const codeceptTools = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form'];
-
-    for (const exec of toolExecutions) {
-      if (!codeceptTools.includes(exec.toolName)) continue;
+      if (!CODECEPT_TOOLS.includes(exec.toolName as any)) continue;
       if (!exec.output?.code) continue;
 
       const message = exec.input?.explanation || exec.input?.note || `Executed ${exec.toolName}`;
@@ -129,37 +80,7 @@ export class Historian {
     return steps;
   }
 
-  private async buildPageChanges(task: Test, toolExecutions: ToolExecution[]): Promise<PageChange[]> {
-    const changes: PageChange[] = [];
-    let currentUrl = task.startUrl || '';
-    let actions: string[] = [];
-
-    for (const state of task.states) {
-      if (state.url && state.url !== currentUrl) {
-        if (actions.length > 0 || changes.length === 0) {
-          const summary = await this.summarizePageActivity(currentUrl, actions);
-          changes.push({ url: currentUrl, summary, actions: [...actions] });
-        }
-        currentUrl = state.url;
-        actions = [];
-      }
-    }
-
-    for (const exec of toolExecutions) {
-      if (exec.wasSuccessful && exec.input?.explanation) {
-        actions.push(exec.input.explanation);
-      }
-    }
-
-    if (actions.length > 0 || changes.length === 0) {
-      const summary = await this.summarizePageActivity(currentUrl, actions);
-      changes.push({ url: currentUrl, summary, actions });
-    }
-
-    return changes;
-  }
-
-  private async buildPageChangesFromExecutions(toolExecutions: ToolExecution[], startUrl: string): Promise<PageChange[]> {
+  private async buildPageChanges(toolExecutions: ToolExecution[], startUrl: string): Promise<PageChange[]> {
     const actions: string[] = [];
 
     for (const exec of toolExecutions) {
@@ -194,24 +115,50 @@ export class Historian {
     return response?.object?.summary || 'Page visited';
   }
 
-  private determineResult(task: Test): 'success' | 'partial' | 'failed' {
-    if (task.isSuccessful) return 'success';
-    if (task.hasAchievedAny()) return 'partial';
-    return 'failed';
-  }
+  private determineResult(task: Task): 'success' | 'partial' | 'failed' {
+    if ('isSuccessful' in task && (task as any).isSuccessful) return 'success';
+    if ('hasAchievedAny' in task && (task as any).hasAchievedAny()) return 'partial';
 
-  private determineCaptainResult(task: Task, summary: string | null): 'success' | 'partial' | 'failed' {
-    if (summary) return 'success';
     const hasPassedNotes = Object.values(task.notes).some((n) => n.status === 'passed');
     if (hasPassedNotes) return 'partial';
     return 'failed';
   }
 
-  private determineNextStep(task: Test): string | undefined {
-    const remaining = task.getRemainingExpectations();
+  private determineNextStep(task: Task): string | undefined {
+    if (!('getRemainingExpectations' in task)) return undefined;
+
+    const remaining = (task as any).getRemainingExpectations();
     if (remaining.length > 0) {
       return `Continue checking: ${remaining.join(', ')}`;
     }
     return undefined;
+  }
+
+  toCode(conversation: Conversation, scenario: string): string {
+    const toolExecutions = conversation.getToolExecutions();
+    const successfulSteps = toolExecutions.filter((exec) => exec.wasSuccessful && CODECEPT_TOOLS.includes(exec.toolName as any) && exec.output?.code);
+
+    if (successfulSteps.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = [];
+    lines.push(`// Test: ${scenario}`);
+    lines.push(`Scenario('${this.escapeString(scenario)}', ({ I }) => {`);
+
+    for (const exec of successfulSteps) {
+      const comment = exec.input?.explanation || exec.input?.note;
+      if (comment) {
+        lines.push(`  // ${comment}`);
+      }
+      lines.push(`  ${exec.output.code}`);
+    }
+
+    lines.push('});');
+    return lines.join('\n');
+  }
+
+  private escapeString(str: string): string {
+    return str.replace(/'/g, "\\'").replace(/\n/g, ' ');
   }
 }

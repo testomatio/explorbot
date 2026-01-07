@@ -108,14 +108,18 @@ class FileDestination implements LogDestination {
 
     this.initialized = true;
 
-    const outputDir = ConfigParser.getInstance().getOutputDir();
+    try {
+      const outputDir = ConfigParser.getInstance().getOutputDir();
 
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      this.logFilePath = path.join(outputDir, 'explorbot.log');
+      const timestamp = new Date().toISOString();
+      fs.appendFileSync(this.logFilePath, `\n\n=== ExplorBot Session Started at ${timestamp} ===\n\n`);
+    } catch {
+      this.logFilePath = null;
     }
-    this.logFilePath = path.join(outputDir, 'explorbot.log');
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(this.logFilePath, `\n\n=== ExplorBot Session Started at ${timestamp} ===\n\n`);
   }
 }
 
@@ -165,6 +169,7 @@ class SpanDestination implements LogDestination {
 
 class ReactDestination implements LogDestination {
   private logPane: ((entry: LogEntry) => void) | null = null;
+  private pendingLogs: TaggedLogEntry[] = [];
 
   isEnabled(): boolean {
     return this.logPane !== null;
@@ -172,14 +177,28 @@ class ReactDestination implements LogDestination {
 
   write(entry: TaggedLogEntry): void {
     if (!this.isEnabled()) {
-      console.log(entry.content);
+      if (process.env.INK_RUNNING) {
+        this.pendingLogs.push(entry);
+      }
       return;
+    }
+    if (this.pendingLogs.length > 0) {
+      for (const pending of this.pendingLogs) {
+        this.logPane!(pending);
+      }
+      this.pendingLogs = [];
     }
     this.logPane!(entry);
   }
 
   registerLogPane(addLog: (entry: LogEntry) => void): void {
     this.logPane = addLog;
+    if (this.pendingLogs.length > 0) {
+      for (const pending of this.pendingLogs) {
+        this.logPane(pending);
+      }
+      this.pendingLogs = [];
+    }
   }
 
   unregisterLogPane(addLog: (entry: LogEntry) => void): void {
@@ -291,12 +310,13 @@ class Logger {
       originalArgs: args,
     };
 
-    // Write to all enabled destinations in order
-    // Note: When console is force enabled, we still want logs in the log pane
-    if (!this.react.isEnabled() && this.console.isEnabled()) this.console.write(entry);
     if (this.file.isEnabled()) this.file.write(entry);
     if (this.span.isEnabled()) this.span.write(entry);
-    if (this.react.isEnabled()) this.react.write(entry);
+    if (process.env.INK_RUNNING) {
+      this.react.write(entry);
+    } else if (this.console.isEnabled()) {
+      this.console.write(entry);
+    }
   }
 
   info(...args: any[]): void {

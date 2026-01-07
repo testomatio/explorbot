@@ -102,8 +102,9 @@ class Explorer {
       tag('substep').log(debugInfo);
     }
     const PlaywrightConfig = {
-      ...playwrightConfig,
+      timeout: 1000,
       highlightElement: true,
+      ...playwrightConfig,
       strict: true,
       fullPageScreenshots: true,
     };
@@ -259,7 +260,7 @@ class Explorer {
 
         this.stateManager.updateStateFromBasic(await newPage.url(), await newPage.title(), 'navigation');
 
-        debugLog(`Successfully switched to new tab`);
+        debugLog('Successfully switched to new tab');
       });
 
       page.on('framenavigated', async (frame: any) => {
@@ -293,23 +294,19 @@ class Explorer {
 
     codeceptjs.event.dispatcher.emit('global.after');
     codeceptjs.event.dispatcher.emit('global.result');
-    this.reporter.finishRun();
-    await this.playwrightHelper._stopBrowser();
-    await codeceptjs.recorder.stop();
+    await Promise.all([this.reporter.finishRun(), this.playwrightHelper._stopBrowser(), codeceptjs.recorder.stop()]);
   }
 
   async startTest(test: Test) {
-    // await this.reporter.reportTest(test);
     const codeceptjsTest = toCodeceptjsTest(test);
-    const stepTracker = (step: any) => {
-      if (!step.toCode) {
-        return;
-      }
-      // if (step.name === 'fillField' || step.name === 'appendField') {
-      //   this.stateManager.getCurrentState()?.notes.push(`Filled field ${step.locator} with value ${step.value}`);
-      // }
+
+    const stepHandler = (step: any, status?: string, error?: string, log?: string) => {
+      if (!step.toCode) return;
       if (step?.name?.startsWith('grab')) return;
-      test.addStep(step.toCode());
+      if (step?.name?.startsWith('save')) return;
+
+      test.addStep(step.toCode(), step.duration, status, error, log);
+
       if (!this.stateManager.getCurrentState()) return;
 
       const lastScreenshot = ActionResult.fromState(this.stateManager.getCurrentState()!).screenshotFile;
@@ -318,11 +315,26 @@ class Explorer {
       const screenshotPath = join(ConfigParser.getInstance().getOutputDir(), lastScreenshot);
       test.addArtifact(screenshotPath);
     };
+
+    const dialogHandler = (dialog: any) => {
+      const dialogType = dialog.type();
+      const dialogMessage = dialog.message();
+      test.addNote(`Native dialog ${dialogType} appeared: ${dialogMessage}. Accepted automatically`);
+      dialog.accept();
+    };
+
+    this.playwrightHelper?.page?.on('dialog', dialogHandler);
+
     codeceptjs.event.dispatcher.emit('test.before', codeceptjsTest);
     codeceptjs.event.dispatcher.emit('test.start', codeceptjsTest);
-    codeceptjs.event.dispatcher.on('step.passed', stepTracker);
+    codeceptjs.event.dispatcher.on('step.passed', (step: any) => stepHandler(step, 'passed'));
+    codeceptjs.event.dispatcher.on('step.failed', (step: any, error: any) => {
+      stepHandler(step, 'failed', error?.message || String(error), error?.stack);
+    });
     codeceptjs.event.dispatcher.on('test.after', () => {
-      codeceptjs.event.dispatcher.off('step.passed', stepTracker);
+      codeceptjs.event.dispatcher.off('step.passed', stepHandler);
+      codeceptjs.event.dispatcher.off('step.failed', stepHandler);
+      this.playwrightHelper?.page?.off('dialog', dialogHandler);
     });
   }
 
@@ -380,7 +392,7 @@ function toCodeceptjsTest(test: Test): any {
 
   const codeceptjsTest = createTest(test.scenario, () => {});
   codeceptjsTest.parent = parent;
-  codeceptjsTest.fullTitle = () => parent.title + ' ' + test.scenario;
+  codeceptjsTest.fullTitle = () => `${parent.title} ${test.scenario}`;
   codeceptjsTest.state = 'pending';
   codeceptjsTest.notes = test.getPrintableNotes();
   return codeceptjsTest;

@@ -19,7 +19,7 @@ const getPriorityIcon = (priority: string): string => {
   }
 };
 
-const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
+const TaskPane: React.FC<TaskPaneProps> = React.memo(({ tasks }) => {
   const [blinkOn, setBlinkOn] = useState(false);
 
   useEffect(() => {
@@ -31,7 +31,7 @@ const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
 
     const interval = setInterval(() => {
       setBlinkOn((prev) => !prev);
-    }, 500);
+    }, 1500);
 
     return () => {
       clearInterval(interval);
@@ -73,6 +73,6 @@ const TaskPane: React.FC<TaskPaneProps> = ({ tasks }) => {
       </Box>
     </Box>
   );
-};
+});
 
 export default TaskPane;

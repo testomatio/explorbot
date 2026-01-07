@@ -1,7 +1,7 @@
 import { parse, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
 import type { HtmlConfig } from '../config.ts';
-import { minifyHtml, sanitizeHtmlDocument } from './html.ts';
+import { minifyHtml, sanitizeHtmlDocument, sanitizeHtmlString } from './html.ts';
 
 export interface HtmlDiffResult {
   added: string[];
@@ -446,7 +446,8 @@ async function buildDiffSubtree(originalDocument: DocumentNode, modifiedDocument
   }
 
   const serialized = serialize(diffDocument).trim();
-  const compacted = serialized ? await minifyHtml(serialized) : '';
+  const cleaned = sanitizeHtmlString(serialized);
+  const compacted = cleaned ? await minifyHtml(cleaned) : '';
 
   return {
     subtree: compacted,

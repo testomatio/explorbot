@@ -69,6 +69,7 @@
     "parse5": "^8.0.0",
     "playwright": "^1.40.0",
     "react": "^19.1.1",
+    "strip-ansi": "^7.1.2",
     "turndown": "^7.2.1",
     "unique-names-generator": "^4.7.1",
     "yargs": "^17.7.2",

@@ -1177,3 +1177,66 @@ export function isBodyEmpty(html: string): boolean {
   const bodyContent = bodyMatch[1].trim();
   return bodyContent === '';
 }
+
+/**
+ * Extract HTML snippet around a targeted element based on locator
+ * Used for accessibility analysis to show what element was being targeted
+ */
+export function extractTargetedHtml(html: string, locator: string): string {
+  if (!html || !locator) return '';
+
+  const searchTerms: string[] = [];
+
+  // XPath locator
+  if (locator.startsWith('//') || locator.startsWith('(//')) {
+    const textMatch = locator.match(/text\(\)\s*=\s*['"]([^'"]+)['"]/i);
+    if (textMatch) searchTerms.push(textMatch[1]);
+
+    const attrMatch = locator.match(/@[\w-]+\s*=\s*['"]([^'"]+)['"]/g);
+    if (attrMatch) {
+      for (const match of attrMatch) {
+        const valueMatch = match.match(/['"]([^'"]+)['"]/);
+        if (valueMatch) searchTerms.push(valueMatch[1]);
+      }
+    }
+  } else if (locator.startsWith('{')) {
+    // JSON locator (Playwright-style)
+    try {
+      const parsed = JSON.parse(locator);
+      if (parsed.text) searchTerms.push(parsed.text);
+      if (parsed.name) searchTerms.push(parsed.name);
+    } catch {}
+  } else {
+    // CSS selector or text
+    const cleanLoc = locator.replace(/['"]/g, '');
+    if (!cleanLoc.startsWith('.') && !cleanLoc.startsWith('#') && !cleanLoc.includes('[')) {
+      searchTerms.push(cleanLoc);
+    }
+    const classMatch = cleanLoc.match(/\.([a-zA-Z0-9_-]+)/);
+    if (classMatch) searchTerms.push(classMatch[1]);
+    const idMatch = cleanLoc.match(/#([a-zA-Z0-9_-]+)/);
+    if (idMatch) searchTerms.push(idMatch[1]);
+  }
+
+  for (const term of searchTerms) {
+    if (term.length < 2) continue;
+    const idx = html.indexOf(term);
+    if (idx === -1) continue;
+
+    const start = Math.max(0, html.lastIndexOf('<', idx));
+    let depth = 0;
+    let end = start;
+    for (let i = start; i < html.length && i < start + 1000; i++) {
+      if (html[i] === '<' && html[i + 1] !== '/') depth++;
+      if (html[i] === '<' && html[i + 1] === '/') depth--;
+      if (depth === 0 && html[i] === '>') {
+        end = i + 1;
+        break;
+      }
+    }
+    const snippet = html.slice(start, Math.min(end, start + 500));
+    return snippet.trim();
+  }
+
+  return '';
+}

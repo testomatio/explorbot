@@ -75,8 +75,8 @@ export class Researcher implements Agent {
     `;
   }
 
-  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean } = {}): Promise<string> {
-    const { screenshot = false, force = false, deep = false } = opts;
+  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean } = {}): Promise<string> {
+    const { screenshot = false, force = false, deep = false, data = false } = opts;
     this.actionResult = ActionResult.fromState(state);
     const stateHash = state.hash || this.actionResult.getStateHash();
     const ttl = 60 * 60 * 1000;
@@ -125,6 +125,11 @@ export class Researcher implements Agent {
 
     if (deep) {
       researchText += await this.performDeepAnalysis(conversation, state, state.html ?? '');
+    }
+
+    if (data) {
+      const extractedData = await this.extractData(state);
+      researchText += `\n\n## Data\n\n${extractedData}`;
     }
 
     if (stateHash && researchDir && researchFile) {
@@ -190,7 +195,7 @@ export class Researcher implements Agent {
 
             if (!currentState.isMatchedBy({ url: `${state.url}*` })) {
               additionalResearch += `\n\nWhen ${codeBlock} original page changed to ${currentState.url}`;
-              debugLog(`We moved away from the original page, returning to ${state.url}`);
+              tag('step').log(`We moved away from the original page, returning to ${state.url}`);
               await this.navigateTo(state.url);
               return;
             }
@@ -213,6 +218,13 @@ export class Researcher implements Agent {
               When executed <code>${codeBlock}</code>:
               ${htmlFragmentResult?.response?.text}
             </expanded_ui_map>`;
+
+            await this.cancelInUi();
+
+            if (state.ariaSnapshot && currentState.ariaSnapshot && state.ariaSnapshot === currentState.ariaSnapshot) {
+              debugLog('Aria snapshots match, staying on current page');
+              return;
+            }
 
             await this.navigateTo(state.url);
             stop();
@@ -681,7 +693,7 @@ export class Researcher implements Agent {
 
         <task>
         Answer the following question about the webpage screenshot: "${question}"
-        
+
         Examine the screenshot carefully and provide a clear, concise answer based on what you observe.
         Be specific and factual in your response.
         If the question cannot be answered from the screenshot alone, explain what information is missing.
@@ -701,6 +713,85 @@ export class Researcher implements Agent {
         `;
 
     const result = await this.provider.processImage(prompt, image.toString('base64'));
+    return result.text;
+  }
+
+  async extractData(state: WebPageState): Promise<string> {
+    const actionResult = ActionResult.fromState(state);
+    tag('step').log('Extracting data from page');
+
+    const html = await actionResult.combinedHtml();
+
+    const prompt = dedent`
+      <task>
+      Extract all domain-specific content data items from this HTML page.
+      Focus only on actual content entities that represent business data, not navigation or UI controls.
+      </task>
+
+      <rules>
+      Include:
+      - Articles, posts, products, items, entries, records, cards, listings
+      - User profiles, accounts, entities
+      - Documents, files, resources that can be accessed individually
+      - Any data items that have their own detail pages
+      - Content that represents actual domain entities (users, products, tasks, etc.)
+
+      Exclude:
+      - Navigation menus, breadcrumbs, pagination controls
+      - Buttons, form inputs, search boxes, filters
+      - Headers, footers, sidebars (unless they contain actual content items)
+      - UI controls, toolbars, action buttons
+      - Links that are purely navigational (home, about, contact, etc.)
+      - Decorative elements, logos, icons without content
+      - Empty placeholders or loading states
+
+      Type requirements:
+      - The type field must be explicit and specific to the domain
+      - Use precise type names: "article", "comment", "product", "review", "order", etc.
+      - Never use generic terms like "content", "item", "element", "entry", "data"
+      - Infer the specific type from context, HTML structure, URL patterns, or semantic meaning
+      - Each distinct domain entity type should have its own specific name
+      </rules>
+
+      <output_format>
+      Return a markdown table with columns: type | title | link | meta
+
+      - type: Explicit and specific category of the content item. Must be a precise type name, not generic terms.
+        Examples: "article", "comment", "product", "user", "task", "document", "post", "review", "order", "project".
+        DO NOT use generic types like "content", "item", "element", "entry" - always use the specific domain type.
+        If unsure, infer the type from the context, URL structure, or surrounding elements.
+      - title: Display name or heading of the item
+      - link: URL or relative path to the item's detail page if available, otherwise "-"
+      - meta: Additional metadata (author, date, status, etc.) as key-value pairs or "-"
+      </output_format>
+
+      <example>
+      For a blog listing page with comments, extract:
+      | type | title | link | meta |
+      | article | "Getting Started with Testing" | "/articles/getting-started" | "author: John, date: 2024-01-15" |
+      | article | "Advanced Patterns" | "/articles/advanced-patterns" | "author: Jane, date: 2024-01-20" |
+      | comment | "Great tutorial!" | "/articles/getting-started#comment-1" | "author: Alice, date: 2024-01-16" |
+
+      Correct types: "article", "comment", "product", "review", "user", "order"
+      Incorrect types: "content", "item", "element", "entry", "data"
+
+      Do NOT include navigation like:
+      - "Home" link
+      - "Next Page" button
+      - Search input field
+      - Category filter dropdown
+      </example>
+
+      URL: ${actionResult.url || 'Unknown'}
+      Title: ${actionResult.title || 'Unknown'}
+
+      HTML:
+      ${html}
+    `;
+
+    const model = this.provider.getModelForAgent('researcher');
+    const result = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.extractData' });
+
     return result.text;
   }
 
@@ -743,6 +834,12 @@ export class Researcher implements Agent {
     const action = this.explorer.createAction();
     await action.execute(`I.amOnPage("${url}")`);
     await action.expect(`I.seeInCurrentUrl('${url}')`);
+  }
+
+  private async cancelInUi()
+  {
+    const action = this.explorer.createAction();
+    await action.execute(`I.click('//body')`);
   }
 
   private addScreenshotPrompt(conversation: Conversation, screenshotAnalysis: string): void {

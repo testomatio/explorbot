@@ -5,7 +5,7 @@ import { ConfigParser, type HtmlConfig } from './config.ts';
 import type { WebPageState } from './state-manager.ts';
 import { diffAriaSnapshots, summarizeInteractiveNodes } from './utils/aria.ts';
 import { type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
-import { extractHeadings, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
+import { extractHeadings, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
 
 const debugLog = createDebug('explorbot:state');
@@ -28,6 +28,21 @@ interface ActionResultData extends WebPageState {
   iframeSnapshots?: Array<{ src: string; html: string; id?: string }>;
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
+}
+
+export interface PageDiff {
+  urlChanged: boolean;
+  previousUrl?: string;
+  currentUrl: string;
+  ariaChanges?: string | null;
+  htmlChanges?: string | null;
+}
+
+export interface ToolResultMetadata {
+  url: string;
+  locator: string;
+  targetedHtml: string;
+  pageDiff: PageDiff | null;
 }
 
 export class ActionResult implements ActionResultData {
@@ -503,6 +518,54 @@ export class ActionResult implements ActionResultData {
 
   async diff(previousState: ActionResult | null): Promise<Diff> {
     return new Diff(this, previousState);
+  }
+
+  async toToolResult(previousState: ActionResult | null, locator: string): Promise<ToolResultMetadata> {
+    const result: ToolResultMetadata = {
+      url: previousState?.url || '',
+      locator,
+      targetedHtml: '',
+      pageDiff: null,
+    };
+
+    if (previousState) {
+      const html = await previousState.simplifiedHtml();
+      result.targetedHtml = extractTargetedHtml(html, locator);
+    }
+
+    if (previousState?.id !== undefined && this.id === previousState.id) {
+      return result;
+    }
+
+    const urlChanged = previousState ? !this.isSameUrl({ url: previousState.url }) : true;
+
+    if (!previousState) {
+      result.pageDiff = {
+        urlChanged: true,
+        currentUrl: this.url,
+      };
+      return result;
+    }
+
+    const diff = await this.diff(previousState);
+    await diff.calculate();
+
+    const pageDiff: PageDiff = {
+      urlChanged,
+      previousUrl: previousState.url,
+      currentUrl: this.url,
+    };
+
+    if (diff.ariaChanged) {
+      pageDiff.ariaChanges = diff.ariaChanged;
+    }
+
+    if (diff.htmlDiff && diff.htmlSubtree) {
+      pageDiff.htmlChanges = await minifyHtml(diff.htmlSubtree);
+    }
+
+    result.pageDiff = pageDiff;
+    return result;
   }
 
   private globMatch(pattern: string, str: string): boolean {

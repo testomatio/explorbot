@@ -36,6 +36,48 @@ export class Reporter {
     process.env.TESTOMATIO_STEPS_PASSED = 'true';
   }
 
+  protected combineStepsAndNotes(test: Test): Step[] {
+    const noteEntries = Object.entries(test.notes)
+      .map(([timestampKey, note]) => ({
+        startTime: note.startTime,
+        message: note.message,
+        status: note.status,
+      }))
+      .sort((a, b) => a.startTime - b.startTime);
+
+    const stepEntries = Object.entries(test.steps)
+      .map(([timestampKey, stepData]) => ({
+        noteStartTime: stepData.noteStartTime,
+        text: stepData.text,
+        duration: stepData.duration,
+        error: stepData.error,
+        log: stepData.log,
+      }))
+      .filter((step) => step.noteStartTime !== undefined);
+
+    const steps: Step[] = [];
+
+    for (const noteEntry of noteEntries) {
+      const noteSteps = stepEntries
+        .filter((step) => step.noteStartTime === noteEntry.startTime)
+        .map((entry) => ({
+          category: 'framework',
+          title: entry.text,
+          duration: entry.duration ?? 0,
+          ...Object.fromEntries(Object.entries(entry).filter(([k]) => k !== 'noteStartTime' && k !== 'text' && k !== 'duration')),
+        }));
+
+      steps.push({
+        category: 'user',
+        title: noteEntry.message,
+        duration: 0,
+        steps: noteSteps.length > 0 ? noteSteps : undefined,
+      });
+    }
+
+    return steps;
+  }
+
   async reportTest(test: Test): Promise<void> {
     if (!this.isRunStarted) {
       return;
@@ -49,18 +91,16 @@ export class Reporter {
         status = 'failed';
       }
 
-      const steps: Step[] = test.getPrintableNotes().map((note) => ({
-        category: 'user',
-        title: note,
-        duration: 1,
-      }));
+      const steps = this.combineStepsAndNotes(test);
 
       const testData = {
         rid: test.id,
         title: test.scenario,
         suite_title: test.plan?.title || 'Auto-Exploratory Testing',
         steps,
-        stack: Object.values(test.steps).join('\n'),
+        logs: Object.values(test.steps)
+          .map((stepData) => stepData.text)
+          .join('\n'),
         files: Object.values(test.artifacts) || [],
         message: test.summary || '',
       };

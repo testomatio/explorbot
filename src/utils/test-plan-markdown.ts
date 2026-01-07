@@ -217,7 +217,7 @@ export function planToAiContext(plan: Plan): string {
     if (Object.keys(test.steps).length > 0) {
       content += '**Steps:**\n';
       for (const step of Object.values(test.steps)) {
-        content += `- ${step}\n`;
+        content += `- ${step.text}\n`;
       }
       content += '\n';
     }

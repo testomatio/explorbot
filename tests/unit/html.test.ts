@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
+import { extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
 
 // Load test HTML files
 const githubHtml = readFileSync(join(process.cwd(), 'test-data/github.html'), 'utf8');
@@ -706,6 +706,115 @@ describe('HTML Parsing Library', () => {
     it('should handle case-insensitive body tag', () => {
       const html = '<html><BODY>Content</BODY></html>';
       expect(isBodyEmpty(html)).toBe(false);
+    });
+  });
+
+  describe('extractTargetedHtml', () => {
+    it('should return empty string for empty inputs', () => {
+      expect(extractTargetedHtml('', 'button')).toBe('');
+      expect(extractTargetedHtml('<div>test</div>', '')).toBe('');
+    });
+
+    it('should extract HTML snippet by text locator', () => {
+      const html = '<div><button class="primary">Submit</button><span>Other</span></div>';
+      const result = extractTargetedHtml(html, 'Submit');
+
+      expect(result).toContain('Submit');
+      expect(result).toContain('<button');
+    });
+
+    it('should extract HTML snippet by class selector', () => {
+      const html = '<div><button class="btn-primary submit-btn">Click me</button></div>';
+      const result = extractTargetedHtml(html, '.btn-primary');
+
+      expect(result).toContain('btn-primary');
+      expect(result).toContain('<button');
+    });
+
+    it('should extract HTML snippet by id selector', () => {
+      const html = '<div><input id="username" type="text" placeholder="Enter username"></div>';
+      const result = extractTargetedHtml(html, '#username');
+
+      expect(result).toContain('id="username"');
+      expect(result).toContain('<input');
+    });
+
+    it('should extract HTML snippet by XPath text locator', () => {
+      const html = '<div><a href="/login">Sign In</a><button>Cancel</button></div>';
+      const result = extractTargetedHtml(html, '//a[text()="Sign In"]');
+
+      expect(result).toContain('Sign In');
+      expect(result).toContain('<a');
+    });
+
+    it('should extract HTML snippet by XPath attribute locator', () => {
+      const html = '<div><button data-testid="close-btn">X</button></div>';
+      const result = extractTargetedHtml(html, '//*[@data-testid="close-btn"]');
+
+      expect(result).toContain('close-btn');
+      expect(result).toContain('<button');
+    });
+
+    it('should extract HTML snippet by JSON locator with text', () => {
+      const html = '<div><span role="button">Delete</span></div>';
+      const result = extractTargetedHtml(html, '{"text":"Delete"}');
+
+      expect(result).toContain('Delete');
+      expect(result).toContain('<span');
+    });
+
+    it('should extract HTML snippet by JSON locator with name', () => {
+      const html = '<div><input name="email" type="email"></div>';
+      const result = extractTargetedHtml(html, '{"name":"email"}');
+
+      expect(result).toContain('name="email"');
+      expect(result).toContain('<input');
+    });
+
+    it('should return empty string when locator not found', () => {
+      const html = '<div><button>Submit</button></div>';
+      const result = extractTargetedHtml(html, 'Cancel');
+
+      expect(result).toBe('');
+    });
+
+    it('should skip single-character search terms', () => {
+      const html = '<div><button>A</button></div>';
+      const result = extractTargetedHtml(html, 'A');
+
+      expect(result).toBe('');
+    });
+
+    it('should extract nested elements correctly', () => {
+      const html = '<form><div class="field"><label>Email</label><input type="email"></div></form>';
+      const result = extractTargetedHtml(html, 'Email');
+
+      expect(result).toContain('Email');
+      expect(result).toContain('<label');
+    });
+
+    it('should handle multiple XPath attribute matches', () => {
+      const html = '<div><input type="text" name="username" placeholder="Enter name"></div>';
+      const result = extractTargetedHtml(html, '//input[@name="username"][@type="text"]');
+
+      expect(result).toContain('username');
+      expect(result).toContain('<input');
+    });
+
+    it('should handle grouped XPath locators', () => {
+      const html = '<div><a href="/page">First Link</a><a href="/other">Second Link</a></div>';
+      const result = extractTargetedHtml(html, '(//a[text()="First Link"])[1]');
+
+      expect(result).toContain('First Link');
+      expect(result).toContain('<a');
+    });
+
+    it('should limit snippet length to prevent excessive output', () => {
+      const longContent = 'x'.repeat(1000);
+      const html = `<div class="wrapper"><p>${longContent}</p></div>`;
+      const result = extractTargetedHtml(html, '.wrapper');
+
+      expect(result.length).toBeLessThanOrEqual(500);
     });
   });
 });

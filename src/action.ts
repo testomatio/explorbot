@@ -295,6 +295,14 @@ class Action {
       return true;
     } catch (error) {
       this.lastError = error as Error;
+
+      if (error && typeof error === 'object') {
+        const errorObj = error as { fetchDetails?: () => Promise<string> };
+        if (typeof errorObj.fetchDetails === 'function') {
+          await errorObj.fetchDetails();
+        }
+      }
+
       const executionError = errorToString(error);
       tag('error').log(`Attempt failed with error: ${codeBlock}: ${executionError || this.lastError?.toString()}`);
 

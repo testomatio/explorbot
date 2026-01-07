@@ -2,7 +2,7 @@ import { Box, Text, useInput } from 'ink';
 import React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommandHandler } from '../command-handler.js';
-import AutocompletePane from './AutocompletePane.js';
+import { setAutocompleteState } from './autocomplete-store.js';
 
 interface InputReadlineProps {
   commandHandler: CommandHandler;
@@ -39,6 +39,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
   const historyIndexRef = useRef(-1);
   const historyDraftRef = useRef('');
   const wasActiveRef = useRef(isActive);
+  const autocompleteStateRef = useRef({ commands: [] as string[], selectedIndex: 0, visible: false });
 
   const onSubmitRef = useRef(onSubmit);
   const onCommandStartRef = useRef(onCommandStart);
@@ -393,6 +394,26 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
+      if (input === ' ' && showAutocompleteRef.current) {
+        const currentValue = inputRef.current;
+        const currentCursor = cursorRef.current;
+        const newValue = currentValue.slice(0, currentCursor) + ' ' + currentValue.slice(currentCursor);
+        const nextCursor = currentCursor + 1;
+        inputRef.current = newValue;
+        cursorRef.current = nextCursor;
+        selectedIndexRef.current = 0;
+        showAutocompleteRef.current = false;
+        historyIndexRef.current = -1;
+        historyDraftRef.current = '';
+        setInputState({
+          value: newValue,
+          cursor: nextCursor,
+          selectedIndex: 0,
+          showAutocomplete: false,
+        });
+        return;
+      }
+
       if (key.backspace || key.delete) {
         if (cursorRef.current > 0) {
           const currentValue = inputRef.current;
@@ -448,25 +469,17 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
 
   const filteredCommands = showAutocomplete ? commandHandler.getFilteredCommands(inputValue) : [];
 
-  const handleAutocompleteSelect = useCallback(
-    (index: number) => {
-      const commands = commandHandler.getFilteredCommands(inputRef.current);
-      if (index < commands.length) {
-        const selectedCommand = commands[index];
-        inputRef.current = selectedCommand;
-        cursorRef.current = selectedCommand.length;
-        showAutocompleteRef.current = false;
-        selectedIndexRef.current = 0;
-        setInputState({
-          value: selectedCommand,
-          cursor: selectedCommand.length,
-          showAutocomplete: false,
-          selectedIndex: 0,
-        });
-      }
-    },
-    [commandHandler]
-  );
+  useEffect(() => {
+    const nextVisible = visible && showAutocomplete && filteredCommands.length > 0;
+    const nextCommands = nextVisible ? filteredCommands : [];
+    const nextIndex = nextVisible ? selectedIndex : 0;
+    const prev = autocompleteStateRef.current;
+    if (prev.visible === nextVisible && prev.selectedIndex === nextIndex && prev.commands.length === nextCommands.length && prev.commands.every((cmd, index) => cmd === nextCommands[index])) {
+      return;
+    }
+    autocompleteStateRef.current = { commands: nextCommands, selectedIndex: nextIndex, visible: nextVisible };
+    setAutocompleteState(autocompleteStateRef.current);
+  }, [filteredCommands, selectedIndex, showAutocomplete, visible]);
 
   if (!visible) {
     return null;
@@ -495,8 +508,6 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
           </Box>
         );
       })}
-
-      <AutocompletePane commands={filteredCommands} input={inputValue} selectedIndex={selectedIndex} onSelect={handleAutocompleteSelect} visible={showAutocomplete} />
     </Box>
   );
 });

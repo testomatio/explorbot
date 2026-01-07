@@ -1,4 +1,5 @@
 import type { ExplorBot } from './explorbot.js';
+import { ActionResult } from './action-result.js';
 import { htmlTextSnapshot } from './utils/html.js';
 import { tag } from './utils/logger.js';
 
@@ -55,14 +56,16 @@ export class CommandHandler implements InputManager {
       {
         name: 'research',
         description: 'Research current page or navigate to URI and research',
-        execute: async (uri: string) => {
-          const target = uri.trim();
+        execute: async (args: string) => {
+          const includeData = args.includes('--data');
+          const target = args.replace('--data', '').trim();
           if (target) {
             await this.explorBot.getExplorer().visit(target);
           }
           await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!, {
             screenshot: true,
             force: true,
+            data: includeData,
           });
         },
       },
@@ -145,18 +148,28 @@ export class CommandHandler implements InputManager {
         name: 'html',
         description: 'Print HTML snapshot for current page',
         execute: async (args: string) => {
-          const manager = this.explorBot.getExplorer().getStateManager();
+          const explorer = this.explorBot.getExplorer();
+          const manager = explorer.getStateManager();
           const state = manager.getCurrentState();
           if (!state) {
             throw new Error('No active page to snapshot');
           }
+
           let html = state.html;
           if (!html && state.htmlFile) {
             html = manager.loadHtmlFromFile(state.htmlFile) || '';
           }
+
+          if (!html || html.trim().length < 100) {
+            tag('info').log('Capturing fresh page content...');
+            const actionResult = await explorer.createAction().capturePageState();
+            html = actionResult.html;
+          }
+
           if (!html) {
             throw new Error('No HTML snapshot available for current page');
           }
+
           const wantsFull = args.split(/\s+/).includes('full') || args.includes('--full');
           if (!wantsFull) {
             tag('html').log(html);
@@ -164,6 +177,30 @@ export class CommandHandler implements InputManager {
           }
           const markdown = htmlTextSnapshot(html);
           tag('snapshot').log(`HTML Content:\n\n${markdown}`);
+        },
+      },
+      {
+        name: 'data',
+        description: 'Extract structured data from current page',
+        execute: async (args: string) => {
+          const explorer = this.explorBot.getExplorer();
+          const state = explorer.getStateManager().getCurrentState();
+          if (!state) {
+            throw new Error('No active page to extract data from');
+          }
+
+          const actionResult = ActionResult.fromState(state);
+
+          if (!actionResult.html || actionResult.html.trim().length < 100) {
+            tag('info').log('Capturing fresh page content...');
+            const freshResult = await explorer.createAction().capturePageState();
+            const table = await this.explorBot.agentResearcher().extractData(freshResult);
+            tag('multiline').log(table);
+            return;
+          }
+
+          const table = await this.explorBot.agentResearcher().extractData(state);
+          tag('multiline').log(table);
         },
       },
       {
@@ -321,7 +358,7 @@ export class CommandHandler implements InputManager {
     const trimmedInput = input.trim();
     const normalizedInput = trimmedInput === '/' ? '' : trimmedInput;
     const slashCommands = this.getAvailableCommands().filter((cmd) => cmd.startsWith('/'));
-    const defaultCommands = ['/explore', '/navigate', '/plan', '/research', '/aria', '/html', 'exit'];
+    const defaultCommands = ['/explore', '/navigate', '/plan', '/research', '/refresh', '/aria', '/html', '/data', 'exit'];
     if (!normalizedInput) {
       const prioritized = defaultCommands.filter((cmd) => cmd === 'exit' || slashCommands.includes(cmd));
       const extras = slashCommands.filter((cmd) => !prioritized.includes(cmd) && cmd !== 'exit');
