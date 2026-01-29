@@ -47,30 +47,44 @@ Edit `explorbot.config.js`:
 import { createGroq } from '@ai-sdk/groq';
 
 const groq = createGroq({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: process.env.GROQ_API_KEY,  // Set GROQ_API_KEY in your environment
 });
 
 export default {
   playwright: {
-    browser: 'chromium',
-    url: 'https://your-app.com',  // Your app URL
+    browser: 'chromium',             // Browser engine: chromium, firefox, or webkit
+    url: 'https://your-app.com',     // Starting URL for your application
   },
   ai: {
-    provider: groq,
-    model: 'gpt-oss-20b',
-    visionModel: 'llama-scout-4',
+    provider: groq,                  // AI provider instance (Vercel AI SDK)
+    model: 'gpt-oss-20b',            // Main model for agents
+    visionModel: 'llama-scout-4',    // Vision model for screenshot analysis
   },
 };
 ```
 
-**Model recommendations:** Use fast, cheap models with structured output + tool use. Avoid expensive SOTA models (GPT-5, Claude Opus) — they're slow and not cost-effective for exploratory testing.
+**What each field does:**
 
-| Purpose | Recommended |
-|---------|-------------|
-| Main model | `gpt-oss-20b` |
-| Vision model | `llama-scout-4` |
+| Field | Purpose |
+|-------|---------|
+| `playwright.browser` | Browser to automate. Chromium recommended for best compatibility. |
+| `playwright.url` | Your app's URL. Explorbot starts here when you run `/explore`. |
+| `ai.provider` | AI provider from Vercel AI SDK. We recommend Groq for speed. |
+| `ai.model` | Main model used by all agents. Must support tool use + structured output. |
+| `ai.visionModel` | Model for analyzing screenshots. Used by Researcher agent. |
 
-**Recommended providers** (500-1000 TPS): Groq, Cerebras
+> [!IMPORTANT]
+> **Use fast, lightweight models.** Explorbot agents make many rapid API calls. Expensive SOTA models (GPT-5, Claude Opus) are overkill — they're slow and will burn through your budget. Stick with efficient models like `gpt-oss-20b`.
+
+**Recommended setup:**
+
+| Purpose | Model | Provider |
+|---------|-------|----------|
+| Main model | `gpt-oss-20b` | Groq, Cerebras |
+| Vision model | `llama-scout-4` | Groq, Cerebras |
+
+> [!NOTE]
+> We recommend providers with 500-1000 TPS (tokens per second) for smooth operation. Groq and Cerebras offer this level of throughput.
 
 See [docs/providers.md](docs/providers.md) for OpenAI, Anthropic, and other providers.
 
@@ -78,21 +92,22 @@ See [docs/providers.md](docs/providers.md) for OpenAI, Anthropic, and other prov
 
 ```mermaid
 flowchart LR
-    A[Navigator] --> B[Researcher] --> C[Planner] --> D[Tester]
-    A -- "goes to page" --> B
-    B -- "analyzes UI" --> C
-    C -- "suggests tests" --> D
-    D -- "runs tests" --> A
+    N[🧭 Navigator] --> R[🔍 Researcher] --> P[📋 Planner] --> T[🧪 Tester]
 ```
 
-Four AI agents work together:
-
-1. **Navigator** — Opens pages, clicks buttons, fills forms
-2. **Researcher** — Analyzes UI to understand what's testable
-3. **Planner** — Generates prioritized test scenarios
-4. **Tester** — Executes tests with automatic error recovery
+| 🧭 Navigator | 🔍 Researcher | 📋 Planner | 🧪 Tester |
+|--------------|---------------|------------|-----------|
+| Opens pages | Analyzes UI | Generates test scenarios | Executes tests |
+| Clicks buttons, fills forms | Discovers all interactive elements | Assigns priorities (HIGH/MED/LOW) | Adapts when things fail |
+| Self-heals broken selectors | Expands hidden content | Balances positive & negative cases | Documents results |
 
 Run `/explore` and watch the cycle: research → plan → test → repeat.
+
+**Supporting components:**
+
+* **Historian** — saves sessions as CodeceptJS code, learns from experience
+* **Quartermaster** — analyzes pages for A11y issues (axe-core + semantic)
+* **Reporter** — sends test results to Testomat.io
 
 ## Basic Usage
 
