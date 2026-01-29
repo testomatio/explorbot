@@ -96,7 +96,7 @@ program
       log(`Working in directory: ${resolvedPath}`);
     }
 
-    const defaultConfig = `import { openai } from 'ai';
+    const defaultConfig = `import { <your provider here> } from 'ai';
 
 const config = {
   playwright: {
@@ -106,9 +106,9 @@ const config = {
   },
 
   ai: {
-    provider: openai,
-    model: 'gpt-4o',
-    apiKey: process.env.OPENAI_API_KEY || '',
+    provider: <your provider here>,
+    model: '<your model here>',
+    apiKey: '<your api key here>',
   },
 };
 

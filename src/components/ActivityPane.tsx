@@ -35,7 +35,11 @@ const ActivityPane: React.FC<ActivityPaneProps> = React.memo(({ isInputVisible =
 
   if (!activity) {
     if (isInputVisible) {
-      return null;
+      return (
+        <Box height={1} paddingX={1}>
+          <Text dimColor>Enter command or press Enter to continue</Text>
+        </Box>
+      );
     }
     return (
       <Box height={1} paddingX={1}>

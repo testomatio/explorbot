@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import * as readline from 'node:readline';
+import { clearActivity } from './activity.ts';
 
 export type InputCallback = (prompt: string) => Promise<string | null>;
 
@@ -25,13 +26,18 @@ export class ExecutionController extends EventEmitter {
   }
 
   interrupt(): void {
+    clearActivity();
     if (this.interrupted) return;
     this.interrupted = true;
     this.emit('interrupt');
+    const hasWaiters = this.interruptResolvers.length > 0;
     for (const resolve of this.interruptResolvers) {
       resolve();
     }
     this.interruptResolvers = [];
+    if (!hasWaiters) {
+      this.emit('idle-interrupt');
+    }
   }
 
   isInterrupted(): boolean {

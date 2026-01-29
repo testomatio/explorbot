@@ -26,69 +26,71 @@ Traditional test automation is a grind: write scripts, update selectors, fix fla
 
 ## Quick Start
 
+**1. Install dependencies**
+
 ```bash
-# 1. Install dependencies
 bun install
-
-# 2. Create config file
-explorbot init
-
-# 3. Configure your AI provider and app URL (see below)
-
-# 4. Start exploring
-explorbot explore
 ```
 
-### Configuration
+**2. Initialize config**
 
-Edit `explorbot.config.js`:
+```bash
+explorbot init
+```
+
+**3. Edit `explorbot.config.js`** — set your app URL and AI provider:
+
+> [!IMPORTANT]
+> **Use fast, lightweight models.** Explorbot agents make many rapid API calls. Expensive SOTA models (GPT-5, Claude Opus) are overkill — slow and costly. Stick with `gpt-oss-20b` or similar. Recommended providers (500-1000 TPS): Groq, Cerebras. 
+
+Groq is used in this example but you can use any provider supported by Vercel AI SDK. See [docs/providers.md](docs/providers.md) for other providers.
 
 ```javascript
 import { createGroq } from '@ai-sdk/groq';
 
 const groq = createGroq({
-  apiKey: process.env.GROQ_API_KEY,  // Set GROQ_API_KEY in your environment
+  apiKey: process.env.GROQ_API_KEY,  // Set in .env file (loaded automatically)
 });
 
 export default {
   playwright: {
-    browser: 'chromium',             // Browser engine: chromium, firefox, or webkit
-    url: 'https://your-app.com',     // Starting URL for your application
+    browser: 'chromium',
+    url: 'https://your-app.com',     // <-- Your app URL
   },
   ai: {
-    provider: groq,                  // AI provider instance (Vercel AI SDK)
-    model: 'gpt-oss-20b',            // Main model for agents
-    visionModel: 'llama-scout-4',    // Vision model for screenshot analysis
+    provider: groq,
+    model: 'gpt-oss-20b',            // Fast model with tool use
+    visionModel: 'llama-scout-4',    // Fast vision model
   },
 };
 ```
 
-**What each field does:**
+**4. Add knowledge** (optional but recommended)
 
-| Field | Purpose |
-|-------|---------|
-| `playwright.browser` | Browser to automate. Chromium recommended for best compatibility. |
-| `playwright.url` | Your app's URL. Explorbot starts here when you run `/explore`. |
-| `ai.provider` | AI provider from Vercel AI SDK. We recommend Groq for speed. |
-| `ai.model` | Main model used by all agents. Must support tool use + structured output. |
-| `ai.visionModel` | Model for analyzing screenshots. Used by Researcher agent. |
+If your app requires authentication, tell Explorbot how to log in:
 
-> [!IMPORTANT]
-> **Use fast, lightweight models.** Explorbot agents make many rapid API calls. Expensive SOTA models (GPT-5, Claude Opus) are overkill — they're slow and will burn through your budget. Stick with efficient models like `gpt-oss-20b`.
+```bash
+# Interactive mode
+explorbot know
 
-**Recommended setup:**
-
-| Purpose | Model | Provider |
-|---------|-------|----------|
-| Main model | `gpt-oss-20b` | Groq, Cerebras |
-| Vision model | `llama-scout-4` | Groq, Cerebras |
+# Or via CLI
+explorbot know "/login" "Use credentials: admin@example.com / secret123"
+```
 
 > [!NOTE]
-> We recommend providers with 500-1000 TPS (tokens per second) for smooth operation. Groq and Cerebras offer this level of throughput.
+> Use `*` as URL pattern to add general knowledge that applies to all pages. See [docs/knowledge.md](docs/knowledge.md) for more.
 
-See [docs/providers.md](docs/providers.md) for OpenAI, Anthropic, and other providers.
+**5. Run**
+
+```bash
+explorbot explore --from /sub-page
+```
+
+This launches the Terminal UI. Requires a modern terminal (iTerm2, WARP, Kitty, Ghostty, Windows Terminal). On Windows, use WSL.
 
 ## How It Works
+
+Explorbot explores websites, analyzes their UI, and proposes tests — which it can then execute. It controls its own browser through CodeceptJS → Playwright (no MCP involved).
 
 ```mermaid
 flowchart LR
@@ -163,24 +165,15 @@ This gives you reliability where it matters and flexibility where you need it. E
 
 ## Teaching Explorbot
 
-Add domain knowledge in `./knowledge/` to help Explorbot understand your app:
-
-```markdown
----
-url: /login
----
-
-Test credentials: test@example.com / test123
-Submit button disabled until email validates.
-```
-
-Explorbot also learns automatically — it saves what works in `./experience/` and gets smarter over time.
+* **Knowledge** (`./knowledge/`) — Tell Explorbot about your app: credentials, form rules, navigation quirks. See [docs/knowledge.md](docs/knowledge.md).
+* **Experience** (`./experience/`) — Explorbot learns automatically from successful interactions and saves what works.
 
 ## Further Reading
 
-- [docs/commands.md](docs/commands.md) — Full terminal command reference
-- [docs/providers.md](docs/providers.md) — AI provider configuration (OpenAI, Anthropic, etc.)
-- [docs/agents.md](docs/agents.md) — Detailed agent descriptions and capabilities
+- [docs/commands.md](docs/commands.md) — Terminal command reference
+- [docs/knowledge.md](docs/knowledge.md) — Knowledge system and URL patterns
+- [docs/providers.md](docs/providers.md) — AI provider configuration
+- [docs/agents.md](docs/agents.md) — Agent descriptions and capabilities
 
 ---
 

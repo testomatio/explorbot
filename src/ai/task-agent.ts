@@ -103,6 +103,11 @@ export abstract class TaskAgent {
     if (!this.shouldAskUser()) return;
 
     const userHelp = await this.askUserForHelp(context);
+
+    this.consecutiveFailures = 0;
+    this.consecutiveNonActionCalls = 0;
+    this.recentFailedExecutions = [];
+
     if (!userHelp) return;
 
     const success = await this.executeUserSuggestion(actionResult, context, userHelp);
@@ -123,7 +128,7 @@ export abstract class TaskAgent {
       const purpose = purposes[0] || context;
 
       const attempts = this.recentFailedExecutions.map((t) => {
-        const locator = t.input?.locator || t.input?.text || t.input?.commands?.[0] || 'unknown';
+        const locator = t.input?.locator || t.input?.text || t.input?.codeBlock || t.input?.commands?.[0] || t.input?.explanation || 'unknown';
         return `  - ${t.toolName}: ${typeof locator === 'object' ? JSON.stringify(locator) : locator}`;
       });
 
