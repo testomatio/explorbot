@@ -185,7 +185,8 @@ export class Conversation {
       if (!Array.isArray(message.content)) continue;
       for (const part of message.content) {
         if (part.type !== 'tool-result') continue;
-        const output = part.output as Record<string, any>;
+        const rawOutput = part.output as Record<string, any>;
+        const output = rawOutput?.type === 'json' && rawOutput?.value ? rawOutput.value : rawOutput;
         executions.push({
           toolName: part.toolName,
           input: toolCalls.get(part.toolCallId) || {},

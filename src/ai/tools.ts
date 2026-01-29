@@ -350,11 +350,14 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
     form: tool({
       description: dedent`
         Execute raw CodeceptJS code block with multiple commands.
+        USE THIS TOOL for all keyboard interactions: I.fillField, I.type, I.pressKey.
 
         Follow <actions> from system prompt for available commands.
         Follow <locator_priority> from system prompt for locator selection.
 
         Use cases:
+        - Typing into input fields (I.fillField, I.type)
+        - Pressing keyboard keys (I.pressKey)
         - Working with iframes (switch context with I.switchTo)
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
@@ -362,6 +365,14 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         Example - filling a form:
         I.fillField({"role":"textbox","text":"Title"}, 'My Article')
         I.selectOption({"role":"combobox","text":"Category"}, 'Technology')
+
+        Example - typing into Monaco editor or rich text:
+        I.click({"role":"textbox","text":"Description"})
+        I.type('This is the description text')
+
+        Example - pressing keys:
+        I.pressKey('Enter')
+        I.pressKey(['Control', 'a'])
 
         Example - working with iframe:
         I.switchTo('#payment-iframe')

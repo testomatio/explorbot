@@ -17,7 +17,8 @@ import type { Conversation } from './conversation.ts';
 import { Navigator } from './navigator.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, locatorRule, protectionRule, sectionContextRule } from './rules.ts';
+import { actionRule, focusedElementRule, locatorRule, protectionRule, sectionContextRule } from './rules.ts';
+import { extractFocusedElement } from '../utils/aria.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools } from './tools.ts';
 
@@ -118,8 +119,6 @@ export class Tester extends TaskAgent implements Agent {
         };
 
         debugLog(`Test ${task.scenario} iteration ${iteration}`);
-
-        await this.explorer.switchToMainFrame();
 
         if (this.explorer.getStateManager().isInDeadLoop()) {
           task.addNote('Dead loop detected. Stopped', TestResult.FAILED);
@@ -226,6 +225,9 @@ export class Tester extends TaskAgent implements Agent {
 
     await this.finalReview(task);
     await this.getHistorian().saveSession(task, initialState, conversation);
+    if (task.plan) {
+      this.getHistorian().savePlanToFile(task.plan);
+    }
     await this.getQuartermaster().analyzeSession(task, initialState, conversation);
 
     offStateChange();
@@ -278,7 +280,37 @@ export class Tester extends TaskAgent implements Agent {
     this.previousUrl = currentUrl;
     this.previousStateHash = currentStateHash;
 
-    // page changed, auto-research and reinject context
+    let context = '';
+
+    const focusedElement = extractFocusedElement(currentState.ariaSnapshot);
+    if (focusedElement) {
+      const isTextInput = ['textbox', 'combobox', 'searchbox'].includes(focusedElement.role);
+      context += dedent`
+        <current_focus>
+        FOCUSED: ${focusedElement.role} "${focusedElement.name}"${focusedElement.value ? ` (current value: "${focusedElement.value}")` : ''}
+        ${isTextInput ? focusedElementRule : ''}
+        </current_focus>
+      `;
+    } else {
+      context += dedent`
+        <no_focus>
+        ⚠️ NO INPUT ELEMENT IS FOCUSED
+        For keyboard interactions use form() tool which handles clicking and typing together.
+        Do NOT use type() or pressKey() tools directly - they require a focused input element.
+        </no_focus>
+      `;
+    }
+
+    if (this.explorer.isInsideIframe()) {
+      const iframeInfo = this.explorer.getCurrentIframeInfo();
+      context += dedent`
+        <iframe_context>
+        ⚠️ INSIDE IFRAME: ${iframeInfo}
+        You are currently inside an iframe. Call I.switchTo() (without arguments) to exit before interacting with elements outside the iframe.
+        </iframe_context>
+      `;
+    }
+
     if (isNewUrl) {
       const research = await this.researcher.research(currentState);
       let uiMapSection = '';
@@ -293,7 +325,7 @@ export class Tester extends TaskAgent implements Agent {
         `;
       }
 
-      return dedent`
+      context += dedent`
         Context:
 
         <page>
@@ -311,11 +343,12 @@ export class Tester extends TaskAgent implements Agent {
         Do not interact with elements that are not listed in <page_aria> and <page_html>
         Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
       `;
+      return context;
     }
 
     if (isStateChanged) {
       const combinedHtml = await currentState.combinedHtml();
-      return dedent`
+      context += dedent`
         Context (state changed):
 
         <page>
@@ -331,9 +364,11 @@ export class Tester extends TaskAgent implements Agent {
         ${currentState.ariaSnapshot}
         </page_aria>
       `;
+      return context;
     }
 
-    // Only reinject context every 5 iterations
+    if (context) return context;
+
     if (iteration % 5) return '';
 
     return dedent`

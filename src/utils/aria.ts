@@ -483,6 +483,39 @@ const formatDiffItem = (item: string, count: number): string => {
   return item;
 };
 
+export interface FocusedElementInfo {
+  role: string;
+  name: string;
+  value?: string;
+  attributes?: string[];
+}
+
+export function extractFocusedElement(ariaSnapshot: string | null): FocusedElementInfo | null {
+  if (!ariaSnapshot) return null;
+
+  const focusedMatch = ariaSnapshot.match(/-\s*(\w+)\s+"([^"]*)"([^:\n]*)\[focused\](?::\s*(.*))?/);
+  if (!focusedMatch) return null;
+
+  const [, role, name, attributesStr, value] = focusedMatch;
+
+  const attributes: string[] = [];
+  if (attributesStr) {
+    const attrMatches = attributesStr.matchAll(/\[([^\]]+)\]/g);
+    for (const match of attrMatches) {
+      if (match[1] !== 'focused') {
+        attributes.push(match[1]);
+      }
+    }
+  }
+
+  return {
+    role,
+    name,
+    ...(value && { value: value.trim() }),
+    ...(attributes.length > 0 && { attributes }),
+  };
+}
+
 export const diffAriaSnapshots = (previous: string | null, current: string | null): string | null => {
   const previousEntries = flattenInteractiveNodes(previous);
   const currentEntries = flattenInteractiveNodes(current);

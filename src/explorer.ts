@@ -227,6 +227,15 @@ class Explorer {
     }
   }
 
+  isInsideIframe(): boolean {
+    return !!this.playwrightHelper.frame;
+  }
+
+  getCurrentIframeInfo(): string | null {
+    if (!this.playwrightHelper.frame) return null;
+    return this.playwrightHelper.frame.url() || 'unknown iframe';
+  }
+
   setUserResolve(userResolveFn: UserResolveFunction): void {
     this.userResolveFn = userResolveFn;
   }

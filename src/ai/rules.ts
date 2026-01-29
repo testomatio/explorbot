@@ -159,6 +159,26 @@ export const protectionRule = dedent`
   </important>
 `;
 
+export const focusedElementRule = dedent`
+  <focused_element_actions>
+  When a text input element is focused (textbox, combobox, contenteditable):
+
+  To CLEAR the field before typing:
+  - I.pressKey(['Meta', 'a']);  // Select all (use 'Control' on Windows/Linux)
+  - I.pressKey('Backspace');    // Delete selection
+
+  To TYPE into the focused element:
+  - I.type('text to enter');    // Types into currently focused element
+
+  For comboboxes/dropdowns:
+  - I.type('search text');      // Filter options by typing
+  - I.pressKey('Enter');        // Select highlighted option
+
+  IMPORTANT: type() works WITHOUT a locator when element is already focused.
+  If focus is on wrong element, click the correct field first.
+  </focused_element_actions>
+`;
+
 export const sectionContextRule = dedent`
   <section_context_rule>
   When clicking elements, use the section Context Locator for disambiguation:
@@ -230,8 +250,8 @@ export const actionRule = dedent`
 
   ### I.type
 
-  type sends keyboard keys to the browser window, use it if fillField doesn't work.
-  for instance, for highy customized input fields.
+  Types text into the currently focused element. Use when fillField doesn't work,
+  for instance, for highly customized input fields like Monaco editors or rich text editors.
 
   I.type(<text>)
 
@@ -239,21 +259,45 @@ export const actionRule = dedent`
     I.type('John'); // types the text "John" into the active element
   </example>
 
-  Should be used ONLY on active input field (click it first).
-  DOES NOT receive any locator, just text to type
+  IMPORTANT: Requires an active/focused input field. Click the field first if not focused.
+  DOES NOT receive any locator, just text to type.
+
+  ### I.pressKey
+
+  Sends keyboard key presses to the browser. Use for special keys or key combinations.
+
+  I.pressKey(<key>)
+  I.pressKey([<modifier>, <key>])
+
+  <example>
+    I.pressKey('Enter');           // Press Enter key
+    I.pressKey('Escape');          // Press Escape key
+    I.pressKey('Tab');             // Press Tab key
+    I.pressKey('Backspace');       // Press Backspace key
+    I.pressKey(['Control', 'a']); // Select all (Ctrl+A)
+    I.pressKey(['Meta', 'a']);    // Select all on Mac (Cmd+A)
+    I.pressKey(['Shift', 'Tab']); // Shift+Tab to go back
+    I.pressKey('ArrowDown');      // Navigate dropdown options
+  </example>
+
+  IMPORTANT: Requires an active/focused element for most keys.
+  Commonly used after I.type() to submit forms or navigate dropdowns.
 
   ### I.switchTo
 
-  Switches to the iframe by its locator.
-  Use it to switch to the iframe that contains the input field you want to type in.
+  Switches browser context to/from an iframe.
 
-  I.switchTo(<locator>)
+  I.switchTo(<locator>) - switch INTO an iframe
+  I.switchTo()          - switch back to MAIN page (exit iframe)
 
   <example>
-    I.switchTo('#payment-iframe');
-    I.type('John');
-    I.switchTo();
+    I.switchTo('#payment-iframe'); // Enter iframe
+    I.fillField('Card', '4242');   // Interact inside iframe
+    I.switchTo();                  // Exit back to main page
   </example>
+
+  IMPORTANT: When inside an iframe, you can only interact with elements inside that iframe.
+  Call I.switchTo() without arguments to exit the iframe before interacting with main page elements.
 
   ### I.selectOption
 

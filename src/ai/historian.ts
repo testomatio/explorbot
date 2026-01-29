@@ -1,7 +1,10 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { z } from 'zod';
 import type { ActionResult } from '../action-result.ts';
+import { ConfigParser } from '../config.ts';
 import { ExperienceTracker, type PageChange, type SessionExperienceEntry, type SessionStep } from '../experience-tracker.ts';
-import type { Task } from '../test-plan.ts';
+import { type Plan, type Task, type Test } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
@@ -38,6 +41,11 @@ export class Historian {
     };
 
     this.experienceTracker.saveSessionExperience(initialState, entry);
+
+    if ('scenario' in task) {
+      (task as Test).generatedCode = this.toCode(conversation, task.description);
+    }
+
     tag('substep').log(`Historian saved session for: ${task.description}`);
   }
 
@@ -143,19 +151,78 @@ export class Historian {
     }
 
     const lines: string[] = [];
-    lines.push(`// Test: ${scenario}`);
     lines.push(`Scenario('${this.escapeString(scenario)}', ({ I }) => {`);
 
     for (const exec of successfulSteps) {
-      const comment = exec.input?.explanation || exec.input?.note;
-      if (comment) {
-        lines.push(`  // ${comment}`);
+      const explanation = exec.input?.explanation || exec.input?.note;
+      if (explanation) {
+        lines.push('');
+        lines.push(`  Section('${this.escapeString(explanation)}');`);
       }
-      lines.push(`  ${exec.output.code}`);
+      const code = exec.output.code;
+      const codeLines = code.includes('\n') ? code.split('\n') : code.split('; ');
+      for (const codeLine of codeLines) {
+        const trimmed = codeLine.trim();
+        if (trimmed) {
+          lines.push(`  ${trimmed}`);
+        }
+      }
     }
 
     lines.push('});');
     return lines.join('\n');
+  }
+
+  savePlanToFile(plan: Plan): string {
+    const lines: string[] = [];
+
+    lines.push(`import { Section } from 'codeceptjs/steps';`);
+    lines.push('');
+    lines.push(`Feature('${this.escapeString(plan.title)}')`);
+    lines.push('');
+
+    const startUrl = plan.url || plan.tests[0]?.startUrl;
+    if (startUrl) {
+      lines.push('Before(({ I }) => {');
+      lines.push(`  I.amOnPage('${this.escapeString(startUrl)}');`);
+      lines.push('});');
+      lines.push('');
+    }
+
+    for (const test of plan.tests) {
+      if (test.generatedCode) {
+        if (test.isSuccessful) {
+          lines.push(test.generatedCode);
+        } else {
+          lines.push(`// FAILED: ${test.scenario}`);
+          lines.push(test.generatedCode.replace(/Scenario\(/, 'Scenario.skip('));
+        }
+        lines.push('');
+        continue;
+      }
+
+      lines.push(`Scenario.todo('${this.escapeString(test.scenario)}', ({ I }) => {`);
+      if (test.plannedSteps.length > 0) {
+        for (const step of test.plannedSteps) {
+          lines.push(`  // ${step}`);
+        }
+      } else {
+        lines.push(`  // ${test.scenario}`);
+      }
+      lines.push('});');
+      lines.push('');
+    }
+
+    const outputDir = ConfigParser.getInstance().getOutputDir();
+    const testsDir = join(outputDir, 'tests');
+    mkdirSync(testsDir, { recursive: true });
+
+    const filename = plan.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    const filePath = join(testsDir, `${filename}.js`);
+    writeFileSync(filePath, lines.join('\n'));
+
+    tag('substep').log(`Saved plan tests to: ${filePath}`);
+    return filePath;
   }
 
   private escapeString(str: string): string {

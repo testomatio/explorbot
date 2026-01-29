@@ -168,6 +168,7 @@ export class Test extends Task {
   plan?: Plan;
   summary: string;
   artifacts: Record<string, string>;
+  generatedCode?: string;
 
   constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);
