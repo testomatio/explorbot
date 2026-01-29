@@ -80,7 +80,7 @@ export class KnowledgeTracker {
     const configPath = configParser.getConfigPath();
 
     if (!configPath) {
-      throw new Error('No explorbot configuration found. Please run "maclay init" first.');
+      throw new Error('No explorbot configuration found. Please run "explorbot init" first.');
     }
 
     const projectRoot = dirname(configPath);

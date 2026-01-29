@@ -11,7 +11,7 @@ import { log, setPreserveConsoleLogs } from '../src/utils/logger.js';
 
 const program = new Command();
 
-program.name('maclay').description('AI-powered web exploration tool');
+program.name('explorbot').description('AI-powered web exploration tool');
 
 program
   .command('explore')
@@ -141,7 +141,7 @@ export default config;
       log('Next steps:');
       log('1. Set your API key in the config file or as environment variable');
       log('2. Customize the configuration as needed');
-      log('3. Run: maclay explore');
+      log('3. Run: explorbot explore');
 
       if (!fs.existsSync('./output')) {
         fs.mkdirSync('./output', { recursive: true });

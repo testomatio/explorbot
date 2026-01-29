@@ -124,35 +124,35 @@ There are also CodeceptJS commands availble:
 
 ## Command Line Usage
 
-Explorbot uses the `maclay` CLI command (defined in `bin/maclay.ts`):
+Explorbot uses the `explorbot` CLI command (defined in `bin/explorbot-cli.ts`):
 
 ### Interactive exploration with TUI:
 ```bash
-maclay explore
-maclay explore --from https://example.com/login
-maclay explore --path ./my-project
-maclay explore --config ./custom-config.js
-maclay explore --verbose  # or --debug
+explorbot explore
+explorbot explore --from https://example.com/login
+explorbot explore --path ./my-project
+explorbot explore --config ./custom-config.js
+explorbot explore --verbose  # or --debug
 ```
 
 ### Initialize project configuration:
 ```bash
-maclay init
-maclay init --config-path ./explorbot.config.js
-maclay init --force  # overwrite existing config
+explorbot init
+explorbot init --config-path ./explorbot.config.js
+explorbot init --force  # overwrite existing config
 ```
 
 ### Add domain knowledge:
 ```bash
-maclay add-knowledge  # or maclay knows
-maclay add-knowledge --path ./knowledge
+explorbot add-knowledge  # or explorbot knows
+explorbot add-knowledge --path ./knowledge
 ```
 
 ### Clean generated files:
 ```bash
-maclay clean  # clean artifacts only
-maclay clean --type experience
-maclay clean --type all
+explorbot clean  # clean artifacts only
+explorbot clean --type experience
+explorbot clean --type all
 ```
 
 Note: Non-interactive mode is planned but not yet implemented.

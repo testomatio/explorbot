@@ -3,5 +3,8 @@
   "project": {
     "name": "explorbot",
     "description": "CLI app with React Ink, CodeceptJS, and Playwright"
+  },
+  "enabledPlugins": {
+    "crafting-effective-readmes@agent-toolkit": true
   }
 }

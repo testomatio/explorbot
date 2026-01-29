@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { ActionResult } from '../action-result.ts';
 import { ConfigParser } from '../config.ts';
+import type { StateManager, StateTransition, WebPageState } from '../state-manager.ts';
 import type { Task } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import type { Conversation, ToolExecution } from './conversation.ts';
@@ -11,9 +12,23 @@ import { CODECEPT_TOOLS } from './tools.ts';
 
 const debugLog = createDebug('explorbot:quartermaster');
 
-interface UISuggestion {
-  type: 'accessibility' | 'ux' | 'assumption';
-  locator: string;
+interface AxeViolation {
+  id: string;
+  impact: 'critical' | 'serious' | 'moderate' | 'minor';
+  description: string;
+  helpUrl: string;
+  nodes: Array<{ html: string; target: string[] }>;
+}
+
+interface PageAnalysis {
+  url: string;
+  stateHash: string;
+  timestamp: string;
+  axeViolations: AxeViolation[];
+}
+
+interface SemanticIssue {
+  type: 'unclear_intention' | 'confusing_naming' | 'hard_to_interact';
   element: string;
   issue: string;
   suggestion: string;
@@ -22,26 +37,45 @@ interface UISuggestion {
 interface AnalysisReport {
   scenario: string;
   timestamp: string;
-  suggestions: UISuggestion[];
+  url: string;
+  axeViolations: AxeViolation[];
+  semanticIssues: SemanticIssue[];
 }
 
 export class Quartermaster {
   private provider: Provider;
-  private enabled: boolean;
   private model?: string;
   private outputDir: string;
+  private pageAnalyses: Map<string, PageAnalysis> = new Map();
+  private unsubscribe: (() => void) | null = null;
+  private playwrightHelper: any = null;
+  private pendingAnalyses: Promise<void>[] = [];
 
-  constructor(provider: Provider, options?: { disabled?: boolean; model?: string }) {
+  constructor(provider: Provider, options?: { model?: string }) {
     this.provider = provider;
-    this.enabled = !(options?.disabled ?? false);
     this.model = options?.model;
 
     const configParser = ConfigParser.getInstance();
-    this.outputDir = join(configParser.getOutputDir(), 'suggestions');
+    this.outputDir = join(configParser.getOutputDir(), 'a11y');
+  }
 
-    if (this.enabled) {
-      this.ensureDirectory();
+  start(playwrightHelper: any, stateManager: StateManager): void {
+    this.playwrightHelper = playwrightHelper;
+    this.ensureDirectory();
+
+    this.unsubscribe = stateManager.onStateChange((event) => {
+      this.onPageChange(event);
+    });
+
+    debugLog('Quartermaster started, listening for page changes');
+  }
+
+  stop(): void {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
     }
+    debugLog('Quartermaster stopped');
   }
 
   private ensureDirectory(): void {
@@ -50,44 +84,89 @@ export class Quartermaster {
     }
   }
 
-  async analyzeSession(task: Task, initialState: ActionResult, conversation: Conversation): Promise<AnalysisReport | null> {
-    if (!this.enabled) return null;
+  private onPageChange(event: StateTransition): void {
+    const state = event.toState;
+    if (!state?.hash) return;
+    if (this.pageAnalyses.has(state.hash)) return;
+
+    const analysisPromise = this.runAxeAnalysis(state).catch((err) => {
+      debugLog('Axe analysis failed:', err);
+    });
+
+    this.pendingAnalyses.push(analysisPromise);
+  }
+
+  private async runAxeAnalysis(state: WebPageState): Promise<void> {
+    const page = this.playwrightHelper?.page;
+    if (!page || !state.hash) {
+      debugLog('No page available for axe analysis');
+      return;
+    }
 
     try {
+      const { AxeBuilder } = await import('@axe-core/playwright');
+      const results = await new AxeBuilder({ page }).analyze();
+
+      const violations: AxeViolation[] = results.violations.map((v) => ({
+        id: v.id,
+        impact: v.impact as AxeViolation['impact'],
+        description: v.description,
+        helpUrl: v.helpUrl,
+        nodes: v.nodes.map((n) => ({
+          html: n.html,
+          target: n.target as string[],
+        })),
+      }));
+
+      this.pageAnalyses.set(state.hash, {
+        url: state.url,
+        stateHash: state.hash,
+        timestamp: new Date().toISOString(),
+        axeViolations: violations,
+      });
+
+      debugLog(`Axe analysis complete for ${state.url}: ${violations.length} violations`);
+    } catch (error) {
+      debugLog('Axe analysis error:', error);
+    }
+  }
+
+  async analyzeSession(task: Task, initialState: ActionResult, conversation: Conversation): Promise<AnalysisReport | null> {
+    await Promise.all(this.pendingAnalyses);
+    this.pendingAnalyses = [];
+
+    try {
+      const stateHash = initialState.getStateHash();
+      const pageAnalysis = this.pageAnalyses.get(stateHash);
+
       const toolExecutions = conversation.getToolExecutions();
       const codeceptExecutions = toolExecutions.filter((e) => CODECEPT_TOOLS.includes(e.toolName as any));
 
-      if (codeceptExecutions.length === 0) return null;
-
-      const failedExecutions = codeceptExecutions.filter((e) => !e.wasSuccessful);
-      if (failedExecutions.length === 0) {
-        debugLog('No failed interactions to analyze');
+      if (codeceptExecutions.length === 0 && !pageAnalysis?.axeViolations.length) {
+        debugLog('No interactions or violations to analyze');
         return null;
       }
 
-      debugLog(`Analyzing ${failedExecutions.length} failed interactions`);
+      const axeViolations = pageAnalysis?.axeViolations || [];
+      const semanticIssues = await this.generateSemanticAnalysis(axeViolations, codeceptExecutions, initialState);
 
-      const suggestions = await this.generateSuggestions(codeceptExecutions);
-      if (suggestions.length === 0) return null;
+      if (axeViolations.length === 0 && semanticIssues.length === 0) {
+        debugLog('No issues found');
+        return null;
+      }
 
       const report: AnalysisReport = {
         scenario: task.description,
         timestamp: new Date().toISOString(),
-        suggestions,
+        url: initialState.url || '',
+        axeViolations,
+        semanticIssues,
       };
 
-      const stateHash = initialState.getStateHash();
-      try {
-        this.saveReport(stateHash, report);
-      } catch (error) {
-        debugLog('Failed to save report:', error);
-      }
+      this.saveReport(stateHash, report);
+      this.addNotesToTask(task, report);
 
-      for (const suggestion of suggestions) {
-        task.addNote(`💡 [${suggestion.locator}] ${suggestion.element}: ${suggestion.suggestion}`);
-      }
-
-      tag('substep').log(`Quartermaster: ${suggestions.length} UI suggestion(s)`);
+      tag('substep').log(`Quartermaster: ${axeViolations.length} technical + ${semanticIssues.length} semantic issues`);
       return report;
     } catch (error) {
       debugLog('Quartermaster analysis failed:', error);
@@ -95,127 +174,109 @@ export class Quartermaster {
     }
   }
 
-  private async generateSuggestions(executions: ToolExecution[]): Promise<UISuggestion[]> {
+  private async generateSemanticAnalysis(axeViolations: AxeViolation[], executions: ToolExecution[], initialState: ActionResult): Promise<SemanticIssue[]> {
     const failedExecs = executions.filter((e) => !e.wasSuccessful);
-    const successfulExecs = executions.filter((e) => e.wasSuccessful);
+    if (failedExecs.length === 0 && axeViolations.length === 0) return [];
 
-    const issues: Array<{ failed: ToolExecution; resolved?: ToolExecution }> = [];
+    const axeSummary = axeViolations
+      .slice(0, 10)
+      .map((v) => `[${v.impact}] ${v.id}: ${v.description}`)
+      .join('\n');
 
-    for (const failed of failedExecs) {
-      const resolvedAfter = successfulExecs.find((s) => executions.indexOf(s) > executions.indexOf(failed) && this.isSimilarTarget(failed, s));
-      issues.push({ failed, resolved: resolvedAfter });
-    }
+    const failedActions = failedExecs
+      .slice(0, 10)
+      .map((e) => {
+        const locator = e.input?.locator || e.output?.locator || '';
+        const error = e.output?.message || 'Failed';
+        return `${e.toolName}("${locator}"): ${error}`;
+      })
+      .join('\n');
 
-    if (issues.length === 0) return [];
-
-    const issueDescriptions = issues.map((issue) => {
-      const f = issue.failed;
-      const locator = f.input?.locator || f.output?.locator || '';
-      const html = f.output?.targetedHtml || '';
-      const error = f.output?.message || 'Element not found';
-
-      let desc = `Action: ${f.toolName}("${locator}")\nError: ${error}`;
-      if (html) desc += `\nHTML context:\n${html.slice(0, 500)}`;
-      if (issue.resolved) {
-        const resolvedLocator = issue.resolved.input?.locator || issue.resolved.output?.locator || '';
-        desc += `\nWorkaround used: ${issue.resolved.toolName}("${resolvedLocator}")`;
-      }
-      return desc;
-    });
+    const ariaSnapshot = initialState.ariaSnapshot?.slice(0, 3000) || '';
 
     const schema = z.object({
-      suggestions: z.array(
+      issues: z.array(
         z.object({
-          type: z.enum(['accessibility', 'ux', 'assumption']).describe('Type of issue'),
-          locator: z.string().describe('The selector/locator that was used (e.g., "button Search", ".sticky-header button", "[aria-label=Search]")'),
-          element: z.string().describe('Brief element description (e.g., "Search button", "Login form")'),
-          issue: z.string().describe('What went wrong in one sentence'),
-          suggestion: z.string().describe('Actionable improvement suggestion in one sentence'),
+          type: z.enum(['unclear_intention', 'confusing_naming', 'hard_to_interact']).describe('Type of semantic issue'),
+          element: z.string().describe('Brief element description'),
+          issue: z.string().describe('What is confusing or problematic'),
+          suggestion: z.string().describe('Actionable improvement suggestion'),
         })
       ),
     });
 
-    const prompt = `Analyze these UI interaction failures and provide actionable suggestions for improving the web application.
+    const prompt = `Analyze this page for semantic UX issues that automated tools cannot detect.
 
-## Failed Interactions
-${issueDescriptions.join('\n\n---\n\n')}
+## Technical Violations (axe-core)
+${axeSummary || 'None'}
 
-For each issue, determine:
-- **accessibility**: Element not findable due to missing ARIA, poor semantics, or structure
-- **ux**: Element hidden, too small, covered by another element, or timing issues
-- **assumption**: Expected content/message not present, wrong page title, missing feedback
+## Failed Agent Interactions
+${failedActions || 'None'}
 
-Provide ONE clear, actionable suggestion per issue. Focus on what the UI developer should fix.
-Examples of good suggestions:
-- "Add aria-label to the search icon button for screen reader support"
-- "Ensure the dropdown menu is visible before clicking menu items"
-- "Display a confirmation message after form submission"`;
+## Page Structure (ARIA)
+${ariaSnapshot}
+
+Focus on issues that require human judgment:
+- **unclear_intention**: Button/link text doesn't match actual behavior
+- **confusing_naming**: Ambiguous labels, inconsistent terminology
+- **hard_to_interact**: Controls requiring non-obvious sequences
+
+Provide 0-5 high-signal issues. Skip obvious technical violations already covered by axe-core.
+Focus on what would confuse a real user or caused the agent to make mistakes.`;
 
     const response = await this.provider.generateObject(
       [
-        { role: 'system', content: 'You are a UI/UX expert providing actionable suggestions to improve web application usability and accessibility.' },
+        { role: 'system', content: 'You are a UX expert analyzing pages for semantic issues that confuse users.' },
         { role: 'user', content: prompt },
       ],
       schema,
       this.model
     );
 
-    return response?.object?.suggestions || [];
+    return response?.object?.issues || [];
   }
 
-  private isSimilarTarget(a: ToolExecution, b: ToolExecution): boolean {
-    if (a.toolName !== b.toolName) return false;
-
-    const normalizeLocator = (loc: string) => loc.toLowerCase().replace(/['"]/g, '');
-    const locA = normalizeLocator(a.output?.locator || a.input?.locator || '');
-    const locB = normalizeLocator(b.output?.locator || b.input?.locator || '');
-
-    if (locA.includes(locB) || locB.includes(locA)) return true;
-
-    const textA = (a.output?.targetedHtml || '').toLowerCase();
-    const textB = (b.output?.targetedHtml || '').toLowerCase();
-    if (textA && textB && (textA.includes(textB.slice(0, 50)) || textB.includes(textA.slice(0, 50)))) {
-      return true;
+  private addNotesToTask(task: Task, report: AnalysisReport): void {
+    const criticalViolations = report.axeViolations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
+    for (const v of criticalViolations.slice(0, 3)) {
+      task.addNote(`🔴 A11Y [${v.impact}] ${v.id}: ${v.description}`);
     }
 
-    return false;
+    for (const issue of report.semanticIssues.slice(0, 3)) {
+      task.addNote(`💡 UX [${issue.type}] ${issue.element}: ${issue.suggestion}`);
+    }
   }
 
   private saveReport(stateHash: string, report: AnalysisReport): void {
     const filePath = join(this.outputDir, `${stateHash}.md`);
     const content = this.formatReportMarkdown(report);
     writeFileSync(filePath, content, 'utf8');
-    debugLog(`Saved suggestions report to ${filePath}`);
+    debugLog(`Saved a11y report to ${filePath}`);
   }
 
   private formatReportMarkdown(report: AnalysisReport): string {
-    let content = `## UI Suggestions: ${report.scenario}\n\n`;
+    let content = `## A11Y Analysis: ${report.url}\n\n`;
+    content += `**Scenario**: ${report.scenario}\n`;
     content += `**Date**: ${report.timestamp}\n\n`;
 
-    const byType = {
-      accessibility: report.suggestions.filter((s) => s.type === 'accessibility'),
-      ux: report.suggestions.filter((s) => s.type === 'ux'),
-      assumption: report.suggestions.filter((s) => s.type === 'assumption'),
-    };
-
-    if (byType.accessibility.length > 0) {
-      content += '### Accessibility\n\n';
-      for (const s of byType.accessibility) {
-        content += `- **${s.element}** \`${s.locator}\`: ${s.issue}\n  → ${s.suggestion}\n\n`;
+    if (report.axeViolations.length > 0) {
+      content += '### Technical Violations (axe-core)\n\n';
+      for (const v of report.axeViolations) {
+        content += `- [${v.impact}] **${v.id}**: ${v.description}\n`;
+        content += `  [Learn more](${v.helpUrl})\n`;
+        for (const node of v.nodes.slice(0, 2)) {
+          content += `  - \`${node.target.join(' > ')}\`\n`;
+        }
+        content += '\n';
       }
     }
 
-    if (byType.ux.length > 0) {
-      content += '### UX/Visibility\n\n';
-      for (const s of byType.ux) {
-        content += `- **${s.element}** \`${s.locator}\`: ${s.issue}\n  → ${s.suggestion}\n\n`;
-      }
-    }
-
-    if (byType.assumption.length > 0) {
-      content += '### Missing Feedback\n\n';
-      for (const s of byType.assumption) {
-        content += `- **${s.element}** \`${s.locator}\`: ${s.issue}\n  → ${s.suggestion}\n\n`;
+    if (report.semanticIssues.length > 0) {
+      content += '### Semantic Issues (LLM analysis)\n\n';
+      for (const issue of report.semanticIssues) {
+        content += `- **${issue.type}** - ${issue.element}\n`;
+        content += `  Issue: ${issue.issue}\n`;
+        content += `  → ${issue.suggestion}\n\n`;
       }
     }
 

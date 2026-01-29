@@ -47,19 +47,13 @@ export abstract class TaskAgent {
     return this._historian;
   }
 
+  setQuartermaster(quartermaster: Quartermaster): void {
+    this._quartermaster = quartermaster;
+  }
+
   protected getQuartermaster(): Quartermaster {
     if (this._quartermaster) return this._quartermaster;
-
-    const config = ConfigParser.getInstance().getConfig().ai?.agents?.quartermaster;
-    if (config?.enabled === false) {
-      return createNullProxy<Quartermaster>();
-    }
-
-    this._quartermaster = new Quartermaster(this.getProvider(), {
-      disabled: false,
-      model: config?.model,
-    });
-    return this._quartermaster;
+    return createNullProxy<Quartermaster>();
   }
 
   protected trackToolExecutions(toolExecutions: any[]): void {

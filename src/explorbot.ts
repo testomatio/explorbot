@@ -7,6 +7,7 @@ import { ExperienceCompactor } from './ai/experience-compactor.ts';
 import { Navigator } from './ai/navigator.ts';
 import { Planner } from './ai/planner.ts';
 import { AIProvider, AiError } from './ai/provider.ts';
+import { Quartermaster } from './ai/quartermaster.ts';
 import { Researcher } from './ai/researcher.ts';
 import { Tester } from './ai/tester.ts';
 import { createAgentTools } from './ai/tools.ts';
@@ -86,6 +87,7 @@ export class ExplorBot {
   }
 
   async stop(): Promise<void> {
+    this.agents.quartermaster?.stop();
     await this.explorer.stop();
   }
 
@@ -162,16 +164,28 @@ export class ExplorBot {
   }
 
   agentTester(): Tester {
-    return (this.agents.tester ||= this.createAgent(({ ai, explorer }) => {
-      const researcher = this.agentResearcher();
-      const navigator = this.agentNavigator();
-      const tools = createAgentTools({ explorer, researcher, navigator });
-      return new Tester(explorer, ai, researcher, navigator, tools);
-    }));
+    if (!this.agents.tester) {
+      this.agents.tester = this.createAgent(({ ai, explorer }) => {
+        const researcher = this.agentResearcher();
+        const navigator = this.agentNavigator();
+        const tools = createAgentTools({ explorer, researcher, navigator });
+        return new Tester(explorer, ai, researcher, navigator, tools);
+      });
+
+      const qm = this.agentQuartermaster();
+      if (qm) this.agents.tester.setQuartermaster(qm);
+    }
+    return this.agents.tester;
   }
 
   agentCaptain(): Captain {
-    return (this.agents.captain ||= new Captain(this));
+    if (!this.agents.captain) {
+      this.agents.captain = new Captain(this);
+
+      const qm = this.agentQuartermaster();
+      if (qm) this.agents.captain.setQuartermaster(qm);
+    }
+    return this.agents.captain;
   }
 
   agentExperienceCompactor(): ExperienceCompactor {
@@ -179,6 +193,19 @@ export class ExplorBot {
       const experienceTracker = explorer.getStateManager().getExperienceTracker();
       return new ExperienceCompactor(ai, experienceTracker);
     }));
+  }
+
+  agentQuartermaster(): Quartermaster | null {
+    const config = this.config.ai?.agents?.quartermaster;
+    if (config?.enabled !== true) return null;
+
+    if (!this.agents.quartermaster) {
+      this.agents.quartermaster = new Quartermaster(this.provider, {
+        model: config?.model,
+      });
+      this.agents.quartermaster.start(this.explorer.playwrightHelper, this.explorer.getStateManager());
+    }
+    return this.agents.quartermaster;
   }
 
   getCurrentPlan(): Plan | undefined {
