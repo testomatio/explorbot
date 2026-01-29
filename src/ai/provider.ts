@@ -1,5 +1,4 @@
 import { LangfuseSpanProcessor } from '@langfuse/otel';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { generateObject, generateText } from 'ai';
 import type { ModelMessage } from 'ai';
@@ -69,7 +68,7 @@ export class Provider {
     });
     this.otelSdk = new NodeSDK({
       spanProcessors: [processor],
-      instrumentations: [getNodeAutoInstrumentations()],
+      instrumentations: [],
     });
     void this.otelSdk.start();
     this.telemetryEnabled = true;

@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import figureSet from 'figures';
 import { Agent } from './ai/agent.ts';
@@ -191,7 +191,61 @@ export class ExplorBot {
       planner.setPreviousPlan(this.currentPlan);
     }
     this.currentPlan = await planner.plan(feature);
+
+    const savedPath = this.savePlan();
+    if (savedPath) {
+      const relativePath = path.relative(process.cwd(), savedPath);
+      tag('info').log(`Plan saved to: ${relativePath}`);
+      tag('info').log(`Edit the plan file and run /plan:load ${relativePath} to reload it`);
+    }
+
     return this.currentPlan;
+  }
+
+  getPlansDir(): string {
+    const outputDir = this.configParser.getOutputDir();
+    return path.join(outputDir, 'plans');
+  }
+
+  savePlan(filename?: string): string | null {
+    if (!this.currentPlan) return null;
+
+    const plansDir = this.getPlansDir();
+    if (!existsSync(plansDir)) {
+      mkdirSync(plansDir, { recursive: true });
+    }
+
+    const planFilename = filename || this.sanitizeFilename(this.currentPlan.title) + '.md';
+    const planPath = path.join(plansDir, planFilename);
+    this.currentPlan.saveToMarkdown(planPath);
+    return planPath;
+  }
+
+  loadPlan(filename: string): Plan {
+    const plansDir = this.getPlansDir();
+    let planPath = filename;
+
+    if (!path.isAbsolute(filename)) {
+      planPath = path.join(plansDir, filename);
+      if (!existsSync(planPath) && !filename.endsWith('.md')) {
+        planPath = path.join(plansDir, filename + '.md');
+      }
+    }
+
+    if (!existsSync(planPath)) {
+      throw new Error(`Plan file not found: ${planPath}`);
+    }
+
+    this.currentPlan = Plan.fromMarkdown(planPath);
+    return this.currentPlan;
+  }
+
+  private sanitizeFilename(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 50);
   }
 
   async explore(feature?: string) {

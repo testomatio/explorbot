@@ -485,10 +485,10 @@ export class StateManager {
 
   /**
    * Clear state history (useful for testing or reset)
+   * Note: This preserves the current state, only clears navigation history
    */
   clearHistory(): void {
     this.stateHistory = [];
-    this.currentState = null;
     debugLog('State history cleared');
   }
 

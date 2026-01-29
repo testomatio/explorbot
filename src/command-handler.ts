@@ -1,6 +1,5 @@
+import { createCommands, type BaseCommand } from './commands/index.js';
 import type { ExplorBot } from './explorbot.js';
-import { ActionResult } from './action-result.js';
-import { htmlTextSnapshot } from './utils/html.js';
 import { tag } from './utils/logger.js';
 
 export type InputSubmitCallback = (input: string) => Promise<void>;
@@ -10,12 +9,6 @@ export interface InputManager {
   getAvailableCommands(): string[];
   getFilteredCommands(input: string): string[];
   setExitOnEmptyInput(enabled: boolean): void;
-}
-
-export interface Command {
-  name: string;
-  description: string;
-  execute: (args: string, explorBot: ExplorBot) => Promise<void>;
 }
 
 export interface ParsedCommand {
@@ -39,7 +32,7 @@ function parseCommand(input: string): ParsedCommand | null {
 
 export class CommandHandler implements InputManager {
   private explorBot: ExplorBot;
-  private commands: Command[];
+  private commands: BaseCommand[];
   private registeredInputPanes: Set<{
     addLog: (entry: string) => void;
     onSubmit: InputSubmitCallback;
@@ -48,219 +41,31 @@ export class CommandHandler implements InputManager {
 
   constructor(explorBot: ExplorBot) {
     this.explorBot = explorBot;
-    this.commands = this.initializeCommands();
+    this.commands = createCommands(explorBot);
   }
 
-  private initializeCommands(): Command[] {
-    return [
-      {
-        name: 'research',
-        description: 'Research current page or navigate to URI and research',
-        execute: async (args: string) => {
-          const includeData = args.includes('--data');
-          const target = args.replace('--data', '').trim();
-          if (target) {
-            await this.explorBot.getExplorer().visit(target);
-          }
-          await this.explorBot.agentResearcher().research(this.explorBot.getExplorer().getStateManager().getCurrentState()!, {
-            screenshot: true,
-            force: true,
-            data: includeData,
-          });
-        },
-      },
-      {
-        name: 'plan',
-        description: 'Plan testing for a feature',
-        execute: async (feature: string) => {
-          const focus = feature.trim();
-          if (focus) {
-            tag('info').log(`Planning focus: ${focus}`);
-          }
-          await this.explorBot.plan();
-          const plan = this.explorBot.getCurrentPlan();
-          if (!plan?.tests.length) {
-            throw new Error('No test scenarios in the current plan. Please run /plan first to create test scenarios.');
-          }
-          tag('success').log(`Plan ready with ${plan.tests.length} tests`);
-        },
-      },
-      {
-        name: 'navigate',
-        description: 'Navigate to URI or state using AI',
-        execute: async (target: string) => {
-          const destination = target.trim();
-          if (!destination) {
-            throw new Error('Navigate command requires a target URI or state');
-          }
-
-          await this.explorBot.agentNavigator().visit(destination);
-          tag('success').log(`Navigation requested: ${destination}`);
-        },
-      },
-      {
-        name: 'know',
-        description: 'Store knowledge for current page',
-        execute: async (payload: string) => {
-          const note = payload.trim();
-          if (!note) return;
-
-          const explorer = this.explorBot.getExplorer();
-          const state = explorer.getStateManager().getCurrentState();
-          if (!state) {
-            throw new Error('No active page to attach knowledge');
-          }
-
-          const targetUrl = state.url || state.fullUrl || '/';
-          explorer.getKnowledgeTracker().addKnowledge(targetUrl, note);
-          tag('success').log('Knowledge saved for current page');
-        },
-      },
-      {
-        name: 'explore',
-        description: 'Make everything from research to test',
-        execute: async (args: string) => {
-          await this.explorBot.explore(args);
-          tag('info').log('Navigate to other page with /navigate or /explore again to continue exploration');
-        },
-      },
-      {
-        name: 'aria',
-        description: 'Print ARIA snapshot for current page',
-        execute: async (args: string) => {
-          const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
-          if (!state) {
-            throw new Error('No active page to snapshot');
-          }
-          const ariaSnapshot = state.ariaSnapshot;
-          if (!ariaSnapshot) {
-            throw new Error('No ARIA snapshot available for current page');
-          }
-          const wantsShort = args.split(/\s+/).includes('short') || args.includes('--short');
-          if (wantsShort) {
-            tag('multiline').log(`ARIA Snapshot:\n\n${ariaSnapshot}`);
-            return;
-          }
-          tag('snapshot').log(`ARIA Snapshot:\n\n${ariaSnapshot}`);
-        },
-      },
-      {
-        name: 'html',
-        description: 'Print HTML snapshot for current page',
-        execute: async (args: string) => {
-          const explorer = this.explorBot.getExplorer();
-          const manager = explorer.getStateManager();
-          const state = manager.getCurrentState();
-          if (!state) {
-            throw new Error('No active page to snapshot');
-          }
-
-          let html = state.html;
-          if (!html && state.htmlFile) {
-            html = manager.loadHtmlFromFile(state.htmlFile) || '';
-          }
-
-          if (!html || html.trim().length < 100) {
-            tag('info').log('Capturing fresh page content...');
-            const actionResult = await explorer.createAction().capturePageState();
-            html = actionResult.html;
-          }
-
-          if (!html) {
-            throw new Error('No HTML snapshot available for current page');
-          }
-
-          const wantsFull = args.split(/\s+/).includes('full') || args.includes('--full');
-          if (!wantsFull) {
-            tag('html').log(html);
-            return;
-          }
-          const markdown = htmlTextSnapshot(html);
-          tag('snapshot').log(`HTML Content:\n\n${markdown}`);
-        },
-      },
-      {
-        name: 'data',
-        description: 'Extract structured data from current page',
-        execute: async (args: string) => {
-          const explorer = this.explorBot.getExplorer();
-          const state = explorer.getStateManager().getCurrentState();
-          if (!state) {
-            throw new Error('No active page to extract data from');
-          }
-
-          const actionResult = ActionResult.fromState(state);
-
-          if (!actionResult.html || actionResult.html.trim().length < 100) {
-            tag('info').log('Capturing fresh page content...');
-            const freshResult = await explorer.createAction().capturePageState();
-            const table = await this.explorBot.agentResearcher().extractData(freshResult);
-            tag('multiline').log(table);
-            return;
-          }
-
-          const table = await this.explorBot.agentResearcher().extractData(state);
-          tag('multiline').log(table);
-        },
-      },
-      {
-        name: 'test',
-        description: 'Launch tester agent to execute test scenarios',
-        execute: async (args: string) => {
-          if (!this.explorBot.getCurrentPlan()) {
-            throw new Error('No plan found. Please run /plan first to create test scenarios.');
-          }
-          const plan = this.explorBot.getCurrentPlan()!;
-          if (plan.isComplete) {
-            throw new Error('All tests are already complete. Please run /plan to create test scenarios.');
-          }
-          const toExecute = [];
-          if (!args) {
-            toExecute.push(plan.getPendingTests()[0]);
-          } else if (args === '*') {
-            toExecute.push(...plan.getPendingTests());
-          } else if (args.match(/^\d+$/)) {
-            toExecute.push(plan.getPendingTests()[Number.parseInt(args) - 1]);
-          } else {
-            toExecute.push(...plan.getPendingTests().filter((test) => test.scenario.toLowerCase().includes(args.toLowerCase())));
-          }
-          tag('info').log(`Launching ${toExecute.length} test scenarios. Run /test * to execute all tests.`);
-          const tester = this.explorBot.agentTester();
-          for (const test of toExecute) {
-            await tester.test(test);
-          }
-          tag('success').log('Test execution finished');
-        },
-      },
-      {
-        name: 'exit',
-        description: 'Exit the application',
-        execute: async () => {
-          console.log('\n👋 Goodbye!');
-          await this.explorBot.getExplorer().stop();
-          process.exit(0);
-        },
-      },
-    ];
+  private findCommand(name: string): BaseCommand | undefined {
+    return this.commands.find((cmd) => cmd.matches(name));
   }
 
   getAvailableCommands(): string[] {
     const slashCommands = this.commands.map((cmd) => `/${cmd.name}`);
-    if (!slashCommands.includes('/quit')) {
-      slashCommands.push('/quit');
+    for (const cmd of this.commands) {
+      for (const alias of cmd.aliases) {
+        if (!slashCommands.includes(`/${alias}`)) {
+          slashCommands.push(`/${alias}`);
+        }
+      }
     }
     return [...slashCommands, 'I.amOnPage', 'I.click', 'I.see', 'I.fillField', 'I.selectOption', 'I.checkOption', 'I.pressKey', 'I.wait', 'I.waitForElement', 'I.waitForVisible', 'I.waitForInvisible', 'I.scrollTo'];
   }
 
   getCommandDescriptions(): { name: string; description: string }[] {
-    const descriptions = [
-      ...this.commands.map((cmd) => ({
-        name: `/${cmd.name}`,
-        description: cmd.description,
-      })),
-      { name: 'I.*', description: 'CodeceptJS commands for web interaction' },
-    ];
-    descriptions.push({ name: '/quit', description: 'Exit the application' });
+    const descriptions = this.commands.map((cmd) => ({
+      name: `/${cmd.name}`,
+      description: cmd.description,
+    }));
+    descriptions.push({ name: 'I.*', description: 'CodeceptJS commands for web interaction' });
     return descriptions;
   }
 
@@ -278,10 +83,10 @@ export class CommandHandler implements InputManager {
     }
 
     if (lowered === 'exit' || lowered === '/exit' || lowered === 'quit' || lowered === '/quit') {
-      const exitCommand = this.commands.find((cmd) => cmd.name === 'exit');
+      const exitCommand = this.findCommand('exit');
       if (exitCommand) {
         try {
-          await exitCommand.execute('', this.explorBot);
+          await exitCommand.execute('');
         } catch (error) {
           tag('error').log(`Exit command failed: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -289,18 +94,17 @@ export class CommandHandler implements InputManager {
       return;
     }
 
-    // Don't treat lone '/' as a URL
     if (trimmedInput === '/') {
       return;
     }
 
     const parsed = parseCommand(trimmedInput);
     if (parsed) {
-      const command = this.commands.find((cmd) => cmd.name === parsed.name);
+      const command = this.findCommand(parsed.name);
       if (command) {
         const argsString = parsed.args.join(' ');
         try {
-          await command.execute(argsString, this.explorBot);
+          await command.execute(argsString);
         } catch (error) {
           tag('error').log(`/${command.name} failed: ${error instanceof Error ? error.message : String(error)}`);
         }
@@ -337,18 +141,16 @@ export class CommandHandler implements InputManager {
 
     const parsed = parseCommand(trimmedInput);
     if (parsed) {
-      return this.commands.some((cmd) => cmd.name === parsed.name);
+      return !!this.findCommand(parsed.name);
     }
 
     return false;
   }
 
-  // InputManager implementation
   registerInputPane(addLog: (entry: string) => void, onSubmit: InputSubmitCallback): () => void {
     const pane = { addLog, onSubmit };
     this.registeredInputPanes.add(pane);
 
-    // Return unregister function
     return () => {
       this.registeredInputPanes.delete(pane);
     };
@@ -358,7 +160,8 @@ export class CommandHandler implements InputManager {
     const trimmedInput = input.trim();
     const normalizedInput = trimmedInput === '/' ? '' : trimmedInput;
     const slashCommands = this.getAvailableCommands().filter((cmd) => cmd.startsWith('/'));
-    const defaultCommands = ['/explore', '/navigate', '/plan', '/research', '/refresh', '/aria', '/html', '/data', 'exit'];
+    const defaultCommands = ['/explore', '/navigate', '/plan', '/plan:save', '/plan:load', '/research', '/aria', '/html', '/data', 'exit'];
+
     if (!normalizedInput) {
       const prioritized = defaultCommands.filter((cmd) => cmd === 'exit' || slashCommands.includes(cmd));
       const extras = slashCommands.filter((cmd) => !prioritized.includes(cmd) && cmd !== 'exit');
@@ -386,15 +189,12 @@ export class CommandHandler implements InputManager {
       return;
     }
 
-    // Check if this is a command (starts with / or I.)
     const isCommand = trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
 
     if (isCommand) {
-      // Otherwise, execute as command
       try {
         await this.executeCommand(trimmedInput);
       } catch (error) {
-        // Use the first registered pane's addLog if available
         const firstPane = this.registeredInputPanes.values().next().value;
         firstPane?.addLog(`Command failed: ${error}`);
       }

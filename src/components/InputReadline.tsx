@@ -5,13 +5,17 @@ import type { CommandHandler } from '../command-handler.js';
 import { setAutocompleteState } from './autocomplete-store.js';
 
 interface InputReadlineProps {
-  commandHandler: CommandHandler;
+  commandHandler?: CommandHandler;
   exitOnEmptyInput?: boolean;
-  onSubmit?: (value: string) => Promise<void>;
+  onSubmit?: (value: string) => void | Promise<void>;
+  onChange?: (value: string) => void;
   onCommandStart?: () => void;
   onCommandComplete?: () => void;
   isActive?: boolean;
   visible?: boolean;
+  value?: string;
+  placeholder?: string;
+  showPrompt?: boolean;
 }
 
 interface InputState {
@@ -21,17 +25,19 @@ interface InputState {
   selectedIndex: number;
 }
 
-const initialInputState: InputState = {
-  value: '',
-  cursor: 0,
-  showAutocomplete: false,
-  selectedIndex: 0,
-};
+const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler, exitOnEmptyInput = false, onSubmit, onChange, onCommandStart, onCommandComplete, isActive = true, visible = true, value: controlledValue, placeholder = '', showPrompt = true }) => {
+  const isControlled = controlledValue !== undefined;
+  const [inputState, setInputState] = useState<InputState>({
+    value: controlledValue || '',
+    cursor: controlledValue?.length || 0,
+    showAutocomplete: false,
+    selectedIndex: 0,
+  });
 
-const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler, exitOnEmptyInput = false, onSubmit, onCommandStart, onCommandComplete, isActive = true, visible = true }) => {
-  const [inputState, setInputState] = useState<InputState>(initialInputState);
   const { value: inputValue, cursor: cursorPosition, showAutocomplete, selectedIndex } = inputState;
-  const inputRef = useRef(inputValue);
+  const displayValue = isControlled ? controlledValue : inputValue;
+
+  const inputRef = useRef(displayValue);
   const cursorRef = useRef(cursorPosition);
   const showAutocompleteRef = useRef(showAutocomplete);
   const selectedIndexRef = useRef(selectedIndex);
@@ -42,36 +48,69 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
   const autocompleteStateRef = useRef({ commands: [] as string[], selectedIndex: 0, visible: false });
 
   const onSubmitRef = useRef(onSubmit);
+  const onChangeRef = useRef(onChange);
   const onCommandStartRef = useRef(onCommandStart);
   const onCommandCompleteRef = useRef(onCommandComplete);
   const exitOnEmptyInputRef = useRef(exitOnEmptyInput);
 
   useEffect(() => {
     onSubmitRef.current = onSubmit;
+    onChangeRef.current = onChange;
     onCommandStartRef.current = onCommandStart;
     onCommandCompleteRef.current = onCommandComplete;
     exitOnEmptyInputRef.current = exitOnEmptyInput;
-  }, [onSubmit, onCommandStart, onCommandComplete, exitOnEmptyInput]);
+  }, [onSubmit, onChange, onCommandStart, onCommandComplete, exitOnEmptyInput]);
+
+  useEffect(() => {
+    if (isControlled) {
+      inputRef.current = controlledValue;
+      if (cursorRef.current > controlledValue.length) {
+        cursorRef.current = controlledValue.length;
+        setInputState((prev) => ({ ...prev, value: controlledValue, cursor: controlledValue.length }));
+      } else {
+        setInputState((prev) => ({ ...prev, value: controlledValue }));
+      }
+    }
+  }, [controlledValue, isControlled]);
 
   useEffect(() => {
     const wasInactive = !wasActiveRef.current;
     const isNowActive = isActive;
     wasActiveRef.current = isActive;
 
-    if (wasInactive && isNowActive) {
+    if (wasInactive && isNowActive && !isControlled) {
       inputRef.current = '';
       cursorRef.current = 0;
       showAutocompleteRef.current = false;
       selectedIndexRef.current = 0;
       historyIndexRef.current = -1;
       historyDraftRef.current = '';
-      setInputState(initialInputState);
+      setInputState({ value: '', cursor: 0, showAutocomplete: false, selectedIndex: 0 });
     }
-  }, [isActive]);
+  }, [isActive, isControlled]);
 
   const addLog = useCallback((entry: string) => {
     console.log(entry);
   }, []);
+
+  const updateValue = useCallback(
+    (newValue: string, newCursor: number, newShowAutocomplete = false) => {
+      inputRef.current = newValue;
+      cursorRef.current = newCursor;
+      showAutocompleteRef.current = newShowAutocomplete;
+      selectedIndexRef.current = 0;
+      historyIndexRef.current = -1;
+      historyDraftRef.current = '';
+
+      if (isControlled) {
+        onChangeRef.current?.(newValue);
+        setInputState((prev) => ({ ...prev, cursor: newCursor, showAutocomplete: newShowAutocomplete, selectedIndex: 0 }));
+      } else {
+        setInputState({ value: newValue, cursor: newCursor, showAutocomplete: newShowAutocomplete, selectedIndex: 0 });
+      }
+    },
+    [isControlled]
+  );
 
   const handleSubmit = useCallback(
     async (value: string) => {
@@ -85,41 +124,45 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
-      const history = historyRef.current;
-      if (history[history.length - 1] !== trimmedValue) {
-        history.push(trimmedValue);
-      }
-      historyIndexRef.current = -1;
-      historyDraftRef.current = '';
+      if (commandHandler) {
+        const history = historyRef.current;
+        if (history[history.length - 1] !== trimmedValue) {
+          history.push(trimmedValue);
+        }
+        historyIndexRef.current = -1;
+        historyDraftRef.current = '';
 
-      onCommandStartRef.current?.();
+        onCommandStartRef.current?.();
 
-      if (onSubmitRef.current) {
-        await onSubmitRef.current(trimmedValue);
-      }
-      try {
-        await commandHandler.executeCommand(trimmedValue);
-      } catch (error) {
-        addLog(`Command failed: ${error}`);
-      } finally {
-        onCommandCompleteRef.current?.();
-      }
+        if (onSubmitRef.current) {
+          await onSubmitRef.current(trimmedValue);
+        }
+        try {
+          await commandHandler.executeCommand(trimmedValue);
+        } catch (error) {
+          addLog(`Command failed: ${error}`);
+        } finally {
+          onCommandCompleteRef.current?.();
+        }
 
-      inputRef.current = '';
-      cursorRef.current = 0;
-      showAutocompleteRef.current = false;
-      selectedIndexRef.current = 0;
-      setInputState(initialInputState);
+        updateValue('', 0, false);
+      } else {
+        onSubmitRef.current?.(trimmedValue);
+      }
     },
-    [commandHandler, addLog]
+    [commandHandler, addLog, updateValue]
   );
 
-  const shouldShowAutocomplete = useCallback((value: string) => {
-    if (!value) return false;
-    if (value.startsWith('/')) return true;
-    if (value.startsWith('I.')) return true;
-    return false;
-  }, []);
+  const shouldShowAutocomplete = useCallback(
+    (value: string) => {
+      if (!commandHandler) return false;
+      if (!value) return false;
+      if (value.startsWith('/')) return true;
+      if (value.startsWith('I.')) return true;
+      return false;
+    },
+    [commandHandler]
+  );
 
   const insertText = useCallback(
     (text: string) => {
@@ -130,20 +173,9 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
       const newValue = currentValue.slice(0, currentCursor) + normalized + currentValue.slice(currentCursor);
       const nextCursor = currentCursor + normalized.length;
       const nextShowAutocomplete = shouldShowAutocomplete(newValue);
-      inputRef.current = newValue;
-      cursorRef.current = nextCursor;
-      selectedIndexRef.current = 0;
-      showAutocompleteRef.current = nextShowAutocomplete;
-      historyIndexRef.current = -1;
-      historyDraftRef.current = '';
-      setInputState({
-        value: newValue,
-        cursor: nextCursor,
-        selectedIndex: 0,
-        showAutocomplete: nextShowAutocomplete,
-      });
+      updateValue(newValue, nextCursor, nextShowAutocomplete);
     },
-    [shouldShowAutocomplete]
+    [shouldShowAutocomplete, updateValue]
   );
 
   const handleInput = useCallback(
@@ -163,13 +195,11 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
           insertText('\n');
           return;
         }
-        if (showAutocompleteRef.current) {
+        if (commandHandler && showAutocompleteRef.current) {
           const filteredCommands = commandHandler.getFilteredCommands(inputRef.current);
           const chosen = filteredCommands[selectedIndexRef.current] || filteredCommands[0];
           if (chosen) {
-            inputRef.current = chosen;
-            cursorRef.current = chosen.length;
-            setInputState((prev) => ({ ...prev, value: chosen, cursor: chosen.length }));
+            updateValue(chosen, chosen.length, false);
             handleSubmit(chosen);
             return;
           }
@@ -178,19 +208,15 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
-      const isWordChar = (value: string) => /[A-Za-z0-9_]/.test(value);
+      const isWordChar = (char: string) => /[A-Za-z0-9_]/.test(char);
 
       if (key.ctrl && key.leftArrow) {
         const value = inputRef.current;
         let nextCursor = cursorRef.current;
         if (nextCursor === 0) return;
         nextCursor -= 1;
-        while (nextCursor > 0 && !isWordChar(value[nextCursor])) {
-          nextCursor -= 1;
-        }
-        while (nextCursor > 0 && isWordChar(value[nextCursor - 1])) {
-          nextCursor -= 1;
-        }
+        while (nextCursor > 0 && !isWordChar(value[nextCursor])) nextCursor -= 1;
+        while (nextCursor > 0 && isWordChar(value[nextCursor - 1])) nextCursor -= 1;
         cursorRef.current = nextCursor;
         setInputState((prev) => ({ ...prev, cursor: nextCursor }));
         return;
@@ -200,12 +226,8 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         const value = inputRef.current;
         let nextCursor = cursorRef.current;
         if (nextCursor >= value.length) return;
-        while (nextCursor < value.length && !isWordChar(value[nextCursor])) {
-          nextCursor += 1;
-        }
-        while (nextCursor < value.length && isWordChar(value[nextCursor])) {
-          nextCursor += 1;
-        }
+        while (nextCursor < value.length && !isWordChar(value[nextCursor])) nextCursor += 1;
+        while (nextCursor < value.length && isWordChar(value[nextCursor])) nextCursor += 1;
         cursorRef.current = nextCursor;
         setInputState((prev) => ({ ...prev, cursor: nextCursor }));
         return;
@@ -216,12 +238,8 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         let nextCursor = cursorRef.current;
         if (nextCursor === 0) return;
         nextCursor -= 1;
-        while (nextCursor > 0 && !isWordChar(value[nextCursor])) {
-          nextCursor -= 1;
-        }
-        while (nextCursor > 0 && isWordChar(value[nextCursor - 1])) {
-          nextCursor -= 1;
-        }
+        while (nextCursor > 0 && !isWordChar(value[nextCursor])) nextCursor -= 1;
+        while (nextCursor > 0 && isWordChar(value[nextCursor - 1])) nextCursor -= 1;
         cursorRef.current = nextCursor;
         setInputState((prev) => ({ ...prev, cursor: nextCursor }));
         return;
@@ -231,24 +249,15 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         const value = inputRef.current;
         let nextCursor = cursorRef.current;
         if (nextCursor >= value.length) return;
-        while (nextCursor < value.length && !isWordChar(value[nextCursor])) {
-          nextCursor += 1;
-        }
-        while (nextCursor < value.length && isWordChar(value[nextCursor])) {
-          nextCursor += 1;
-        }
+        while (nextCursor < value.length && !isWordChar(value[nextCursor])) nextCursor += 1;
+        while (nextCursor < value.length && isWordChar(value[nextCursor])) nextCursor += 1;
         cursorRef.current = nextCursor;
         setInputState((prev) => ({ ...prev, cursor: nextCursor }));
         return;
       }
 
-      if (key.ctrl && (input === 'b' || input === 'f')) {
-        return;
-      }
-
-      if (key.meta && (input === 'b' || input === 'f')) {
-        return;
-      }
+      if (key.ctrl && (input === 'b' || input === 'f')) return;
+      if (key.meta && (input === 'b' || input === 'f')) return;
 
       if (key.leftArrow) {
         const nextCursor = Math.max(0, cursorRef.current - 1);
@@ -264,7 +273,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
-      if (showAutocompleteRef.current && (key.upArrow || (key.shift && key.leftArrow))) {
+      if (commandHandler && showAutocompleteRef.current && (key.upArrow || (key.shift && key.leftArrow))) {
         const filteredCommands = commandHandler.getFilteredCommands(inputRef.current);
         const nextIndex = selectedIndexRef.current > 0 ? selectedIndexRef.current - 1 : filteredCommands.length - 1;
         selectedIndexRef.current = nextIndex;
@@ -272,7 +281,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
-      if (showAutocompleteRef.current && (key.downArrow || (key.shift && key.rightArrow))) {
+      if (commandHandler && showAutocompleteRef.current && (key.downArrow || (key.shift && key.rightArrow))) {
         const filteredCommands = commandHandler.getFilteredCommands(inputRef.current);
         const nextIndex = selectedIndexRef.current < filteredCommands.length - 1 ? selectedIndexRef.current + 1 : 0;
         selectedIndexRef.current = nextIndex;
@@ -316,7 +325,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
-      if (!showAutocompleteRef.current && key.upArrow) {
+      if (commandHandler && !showAutocompleteRef.current && key.upArrow) {
         const history = historyRef.current;
         if (history.length === 0) return;
         if (historyIndexRef.current === -1) {
@@ -331,16 +340,11 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         cursorRef.current = nextValue.length;
         selectedIndexRef.current = 0;
         showAutocompleteRef.current = nextShowAutocomplete;
-        setInputState({
-          value: nextValue,
-          cursor: nextValue.length,
-          selectedIndex: 0,
-          showAutocomplete: nextShowAutocomplete,
-        });
+        setInputState({ value: nextValue, cursor: nextValue.length, selectedIndex: 0, showAutocomplete: nextShowAutocomplete });
         return;
       }
 
-      if (!showAutocompleteRef.current && key.downArrow) {
+      if (commandHandler && !showAutocompleteRef.current && key.downArrow) {
         const history = historyRef.current;
         if (history.length === 0) return;
         if (historyIndexRef.current === -1) return;
@@ -352,12 +356,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
           cursorRef.current = nextValue.length;
           selectedIndexRef.current = 0;
           showAutocompleteRef.current = nextShowAutocomplete;
-          setInputState({
-            value: nextValue,
-            cursor: nextValue.length,
-            selectedIndex: 0,
-            showAutocomplete: nextShowAutocomplete,
-          });
+          setInputState({ value: nextValue, cursor: nextValue.length, selectedIndex: 0, showAutocomplete: nextShowAutocomplete });
           return;
         }
         historyIndexRef.current += 1;
@@ -367,50 +366,22 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         cursorRef.current = nextValue.length;
         selectedIndexRef.current = 0;
         showAutocompleteRef.current = nextShowAutocomplete;
-        setInputState({
-          value: nextValue,
-          cursor: nextValue.length,
-          selectedIndex: 0,
-          showAutocomplete: nextShowAutocomplete,
-        });
+        setInputState({ value: nextValue, cursor: nextValue.length, selectedIndex: 0, showAutocomplete: nextShowAutocomplete });
         return;
       }
 
-      if (key.tab) {
+      if (commandHandler && key.tab) {
         const filteredCommands = commandHandler.getFilteredCommands(inputRef.current);
         if (selectedIndexRef.current < filteredCommands.length) {
           const selectedCommand = filteredCommands[selectedIndexRef.current];
-          inputRef.current = selectedCommand;
-          cursorRef.current = selectedCommand.length;
-          showAutocompleteRef.current = false;
-          selectedIndexRef.current = 0;
-          setInputState({
-            value: selectedCommand,
-            cursor: selectedCommand.length,
-            showAutocomplete: false,
-            selectedIndex: 0,
-          });
+          updateValue(selectedCommand, selectedCommand.length, false);
         }
         return;
       }
 
       if (input === ' ' && showAutocompleteRef.current) {
-        const currentValue = inputRef.current;
-        const currentCursor = cursorRef.current;
-        const newValue = currentValue.slice(0, currentCursor) + ' ' + currentValue.slice(currentCursor);
-        const nextCursor = currentCursor + 1;
-        inputRef.current = newValue;
-        cursorRef.current = nextCursor;
-        selectedIndexRef.current = 0;
-        showAutocompleteRef.current = false;
-        historyIndexRef.current = -1;
-        historyDraftRef.current = '';
-        setInputState({
-          value: newValue,
-          cursor: nextCursor,
-          selectedIndex: 0,
-          showAutocomplete: false,
-        });
+        const newValue = inputRef.current.slice(0, cursorRef.current) + ' ' + inputRef.current.slice(cursorRef.current);
+        updateValue(newValue, cursorRef.current + 1, false);
         return;
       }
 
@@ -421,18 +392,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
           const newValue = currentValue.slice(0, currentCursor - 1) + currentValue.slice(currentCursor);
           const nextCursor = Math.max(0, currentCursor - 1);
           const nextShowAutocomplete = shouldShowAutocomplete(newValue);
-          inputRef.current = newValue;
-          cursorRef.current = nextCursor;
-          selectedIndexRef.current = 0;
-          showAutocompleteRef.current = nextShowAutocomplete;
-          historyIndexRef.current = -1;
-          historyDraftRef.current = '';
-          setInputState({
-            value: newValue,
-            cursor: nextCursor,
-            selectedIndex: 0,
-            showAutocomplete: nextShowAutocomplete,
-          });
+          updateValue(newValue, nextCursor, nextShowAutocomplete);
         }
         return;
       }
@@ -441,21 +401,24 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         insertText(input);
       }
     },
-    [commandHandler, handleSubmit, insertText, shouldShowAutocomplete]
+    [commandHandler, handleSubmit, insertText, shouldShowAutocomplete, updateValue]
   );
 
   useInput(handleInput, { isActive });
 
   useEffect(() => {
-    const unregister = commandHandler.registerInputPane(addLog, handleSubmit);
-    return unregister;
+    if (commandHandler) {
+      const unregister = commandHandler.registerInputPane(addLog, handleSubmit);
+      return unregister;
+    }
   }, [commandHandler, addLog, handleSubmit]);
 
   useEffect(() => {
-    commandHandler.setExitOnEmptyInput(exitOnEmptyInput);
+    if (commandHandler) {
+      commandHandler.setExitOnEmptyInput(exitOnEmptyInput);
+    }
   }, [commandHandler, exitOnEmptyInput]);
 
-  const displayValue = inputValue || '';
   const beforeCursor = displayValue.slice(0, cursorPosition);
   const afterCursor = displayValue.slice(cursorPosition);
   const beforeLines = beforeCursor.split('\n');
@@ -467,22 +430,42 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
   const cursorChar = cursorLineAfter.length > 0 ? cursorLineAfter[0] : ' ';
   const cursorLineAfterRemainder = cursorLineAfter.slice(1);
 
-  const filteredCommands = showAutocomplete ? commandHandler.getFilteredCommands(inputValue) : [];
+  const filteredCommands = commandHandler && showAutocomplete ? commandHandler.getFilteredCommands(displayValue) : [];
 
   useEffect(() => {
+    if (!commandHandler) return;
     const nextVisible = visible && showAutocomplete && filteredCommands.length > 0;
     const nextCommands = nextVisible ? filteredCommands : [];
     const nextIndex = nextVisible ? selectedIndex : 0;
     const prev = autocompleteStateRef.current;
-    if (prev.visible === nextVisible && prev.selectedIndex === nextIndex && prev.commands.length === nextCommands.length && prev.commands.every((cmd, index) => cmd === nextCommands[index])) {
+    if (prev.visible === nextVisible && prev.selectedIndex === nextIndex && prev.commands.length === nextCommands.length && prev.commands.every((cmd, i) => cmd === nextCommands[i])) {
       return;
     }
     autocompleteStateRef.current = { commands: nextCommands, selectedIndex: nextIndex, visible: nextVisible };
     setAutocompleteState(autocompleteStateRef.current);
-  }, [filteredCommands, selectedIndex, showAutocomplete, visible]);
+  }, [commandHandler, filteredCommands, selectedIndex, showAutocomplete, visible]);
 
   if (!visible) {
     return null;
+  }
+
+  const showPlaceholder = !displayValue && placeholder && isActive;
+
+  if (!showPrompt) {
+    return (
+      <Box>
+        <Text>{cursorLineBefore}</Text>
+        {isActive ? (
+          <Text backgroundColor="white" color="black">
+            {showPlaceholder ? placeholder[0] || ' ' : cursorChar}
+          </Text>
+        ) : (
+          <Text>{cursorChar}</Text>
+        )}
+        <Text>{showPlaceholder ? placeholder.slice(1) : cursorLineAfterRemainder}</Text>
+        {!displayValue && placeholder && !isActive && <Text color="gray">{placeholder}</Text>}
+      </Box>
+    );
   }
 
   return (

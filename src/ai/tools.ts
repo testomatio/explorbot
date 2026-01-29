@@ -4,14 +4,16 @@ import { z } from 'zod';
 import { ActionResult, type ToolResultMetadata } from '../action-result.ts';
 import type Explorer from '../explorer.ts';
 import { TestResult, type Task } from '../test-plan.js';
+import { pause } from '../utils/loop.js';
 import { createDebug } from '../utils/logger.js';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule, sectionUiMapRule } from './rules.ts';
+import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
-export const CODECEPT_TOOLS = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form'] as const;
+export const CODECEPT_TOOLS = ['click', 'type', 'select', 'pressKey', 'form'] as const;
 
 export function createCodeceptJSTools(explorer: Explorer, task: Task) {
   const stateManager = explorer.getStateManager();
@@ -19,150 +21,76 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
   return {
     click: tool({
       description: dedent`
-        Perform a click on an element by its locator. Prefer ARIA locators as the main argument.
-        Use CSS or XPath locators only when ARIA is not available.
-        Follow semantic attributes when interacting with clickable elements like buttons, links, role=button etc, or elements have aria-label or aria-roledescription attributes.
-        To click by text, use clickByText() tool instead.
+        Click an element by trying multiple CodeceptJS commands in order until one succeeds.
 
-        Follow <locator_priority> rules from system prompt for locator selection.
+        Follow <locator_priority> from system prompt for locator selection.
 
-        AVOID :contains CSS pseudo-selector - it is not supported! Use clickByText() instead.
+        I.click(locator) - click element matching locator
+        I.click(locator, container) - click element inside a parent element (CSS selector)
+          Container narrows search area. Use when page has multiple matching elements.
+          Example: Page has 3 "Delete" buttons in different rows:
+          I.click("Delete", ".row-1") - clicks Delete inside element with class row-1
+
+        IMPORTANT: This tool ONLY accepts click commands. For typing text, use type() tool separately.
+        For multiple actions (type + click), use form() tool or call type() and click() separately.
       `,
       inputSchema: z.object({
-        locator: z.string().describe('ARIA, CSS or XPath locator for the element to click.'),
-        container: z.string().optional().describe('CSS selector that shows where we need to perform action'),
-        explanation: z.string().describe('Reason for selecting this click action.'),
+        commands: z.array(z.string()).describe(dedent`
+          Order by reliability:
+          1. I.click(ARIA, container) - e.g. I.click({"role":"button","text":"Save"}, ".modal")
+          2. I.click(text, container) - e.g. I.click("Save", ".modal")
+          3. I.click(ARIA) - e.g. I.click({"role":"button","text":"Save"})
+          4. I.click(CSS) or I.click(XPath) - e.g. I.click("#btn"), I.click("//button")
+          5. I.clickXY(x, y) - coordinates fallback
+        `),
+        explanation: z.string().describe('Why you are clicking this element'),
       }),
-      execute: async ({ locator, container, explanation }) => {
+      execute: async ({ commands, explanation }) => {
         const activeNote = task.startNote(explanation);
-        try {
-          debugLog('Click locator:', locator);
 
-          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-          const action = explorer.createAction();
-          const clickCommand = container ? `I.click(${formatLocator(locator)}, ${formatLocator(container)})` : `I.click(${formatLocator(locator)})`;
-          const clickSuccess = await action.attempt(clickCommand, explanation);
-
-          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, locator);
-
-          if (clickSuccess) {
-            activeNote.commit(TestResult.PASSED);
-            return successToolResult('click', { ...toolResult, code: clickCommand });
-          }
-
-          const page = !toolResult?.pageDiff && ActionResult.fromState(stateManager.getCurrentState()!).toAiContext();
-          const errorMsg = action.lastError?.toString() || 'Click did not succeed';
-
+        if (commands.length === 0) {
           activeNote.commit(TestResult.FAILED);
-          return failedToolResult('click', errorMsg, {
-            ...toolResult,
-            page,
-            code: clickCommand,
-            suggestion: 'Try a different locator or use visualClick() tool for visual fallback.',
-          });
-        } catch (error) {
-          activeNote.commit(TestResult.FAILED);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
-          return failedToolResult('click', `Click tool failed: ${errorMessage}`);
+          return failedToolResult('click', 'No commands provided');
         }
-      },
-    }),
 
-    clickByText: tool({
-      description: dedent`
-        Click on a button or link by its text or ARIA locator within a specific container element.
-        Use this instead of click() when you need container parameter to narrow the search area.
+        const invalidCommands = commands.filter((cmd) => !cmd.trim().startsWith('I.click'));
 
-        Main difference from click():
-        - click(locator) - clicks by locator directly, no container parameter
-        - clickByText(text, container) - clicks by text within a container
-
-        Example: clickByText('Submit', '.modal-footer') - clicks Submit button inside modal footer
-        Example: clickByText('Delete', '//div[@class="user-row"][1]') - clicks Delete in first user row
-        Example: clickByText({ role: 'button', text: 'Delete' }, '.item-1') - clicks Delete in item 1
-
-        Follow <locator_priority> rules from system prompt for locator selection.
-        DO NOT PICK body, html as container. Be specific about the container element in HTML.
-        Request HTML context if needed to provide valid CSS locator
-      `,
-      inputSchema: z.object({
-        text: z.string().describe('Text of the button or link to click'),
-        container: z.string().describe('CSS locator for the container element to search within'),
-        explanation: z.string().describe('Reason for selecting this click action.'),
-      }),
-      execute: async ({ text, container, explanation }) => {
-        const activeNote = task.startNote(explanation);
-        try {
-          debugLog('ClickByText:', text, 'in container:', container);
-
-          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-          const action = explorer.createAction();
-          const clickCommand = `I.click(${JSON.stringify(text)}, ${formatLocator(container)})`;
-          const clickSuccess = await action.attempt(clickCommand, explanation);
-
-          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, text);
-
-          if (clickSuccess) {
-            activeNote.commit(TestResult.PASSED);
-            return successToolResult('clickByText', { ...toolResult, code: clickCommand });
-          }
-
-          const errorMsg = action.lastError ? action.lastError.toString() : 'Click by text did not succeed';
+        if (invalidCommands.length > 0) {
           activeNote.commit(TestResult.FAILED);
-          return failedToolResult('clickByText', errorMsg, {
-            ...toolResult,
-            error: errorMsg,
-            code: clickCommand,
-            suggestion: 'Verify text and container. If still failing, use visualClick() for visual fallback.',
+          return failedToolResult('click', `Invalid commands: ${invalidCommands.join(', ')}. Click tool only accepts I.click() or I.clickXY() commands.`, {
+            suggestion: 'Use type() tool for typing text, or form() tool for multiple actions (type + click).',
           });
-        } catch (error) {
-          activeNote.commit(TestResult.FAILED);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
-          return failedToolResult('clickByText', `ClickByText tool failed: ${errorMessage}`);
         }
-      },
-    }),
 
-    clickXY: tool({
-      description: dedent`
-        Click on the page at the provided x and y coordinates instead of HTML locators.
-        Use it when native click() tool didn't work
-        Pick correct coordinates from <visual_ui_map> to access it.
-      `,
-      inputSchema: z.object({
-        x: z.number().describe('X coordinate in pixels'),
-        y: z.number().describe('Y coordinate in pixels'),
-        explanation: z.string().optional().describe('Reason for clicking by coordinates.'),
-      }),
-      execute: async ({ x, y, explanation }) => {
-        const activeNote = explanation ? task.startNote(explanation) : task.startNote(`Click at coordinates (${x}, ${y})`);
-        try {
-          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-          const coordLocator = `(${x}, ${y})`;
-          const action = explorer.createAction();
-          const clickCommand = `I.clickXY(${x}, ${y})`;
-          const success = await action.attempt(clickCommand, explanation);
+        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+        const action = explorer.createAction();
+        const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
 
-          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, coordLocator);
+        for (let i = 0; i < commands.length; i++) {
+          const command = commands[i];
+          const isLast = i === commands.length - 1;
+          const success = await action.attempt(command, explanation, isLast);
+
+          attempts.push({
+            command,
+            success,
+            ...(action.lastError && { error: action.lastError.toString() }),
+          });
 
           if (success) {
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
             activeNote.commit(TestResult.PASSED);
-            return successToolResult('clickXY', { ...toolResult, code: clickCommand });
+            return successToolResult('click', { ...toolResult, attempts, code: command });
           }
-
-          const errorMsg = action.lastError?.toString() || 'Click by coordinates failed';
-          activeNote.commit(TestResult.FAILED);
-          return failedToolResult('clickXY', errorMsg, {
-            ...toolResult,
-            ...(action.lastError && { error: action.lastError.toString() }),
-            code: clickCommand,
-            suggestion: 'Use see() to verify correct coordinates from the screenshot.',
-          });
-        } catch (error) {
-          activeNote.commit(TestResult.FAILED);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
-          return failedToolResult('clickXY', `ClickXY tool failed: ${errorMessage}`);
         }
+
+        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
+        activeNote.commit(TestResult.FAILED);
+        return failedToolResult('click', 'All click commands failed', {
+          ...toolResult,
+          attempts,
+          suggestion: 'Use see() to verify element exists, or visualClick() for visual fallback.',
+        });
       },
     }),
 
@@ -171,11 +99,15 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         Send keyboard input to a field. After typing, the page state will be automatically captured and returned.
         Omit locator if input is already focused.
 
-        Follow <locator_priority> rules from system prompt for locator selection.
+        Prefer ARIA locators: {"role":"textbox","text":"Email"}
+        Fall back to CSS/XPath if ARIA fails.
+
+        IMPORTANT: This tool is ONLY for typing text. To click buttons after typing, call click() tool separately.
+        For multiple actions (type + click), use form() tool or call type() and click() separately.
       `,
       inputSchema: z.object({
         text: z.string().describe('The text to type'),
-        locator: z.string().optional().describe('ARIA, CSS or XPath locator for the field. If omitted, types into currently focused element.'),
+        locator: z.string().optional().describe('ARIA locator (starts with { role: ) or CSS/XPath. Omit to type into focused element.'),
         explanation: z.string().describe('Reason for providing this input.'),
       }),
       execute: async ({ text, locator, explanation }) => {
@@ -261,17 +193,17 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         Works with: <select>, listbox, combobox, dropdown buttons, and custom select components.
         Value can be option text, value attribute, or label.
 
-        Follow <locator_priority> rules from system prompt for locator selection.
+        Prefer ARIA locators: {"role":"combobox","text":"Select country"}
+        Fall back to CSS/XPath if ARIA fails.
 
         <example>
-          I.selectOption('Country', 'United States');
           I.selectOption({ role: 'combobox', text: 'Select country' }, 'USA');
+          I.selectOption('Country', 'United States');
           I.selectOption('#country-select', 'US');
-          I.selectOption('[name="country"]', 'United States');
         </example>
       `,
       inputSchema: z.object({
-        locator: z.string().describe('ARIA, CSS, XPath locator, or label text for the select/combobox element'),
+        locator: z.string().describe('ARIA locator (starts with { role: ), label text, or CSS/XPath locator.'),
         option: z.string().describe('The option to select - can be visible text, value attribute, or label'),
         explanation: z.string().describe('Reason for selecting this option.'),
       }),
@@ -314,9 +246,113 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
       },
     }),
 
+    pressKey: tool({
+      description: dedent`
+        Press a keyboard key or key combination. Use this for special keys like Enter, Escape, Tab, Arrow keys, or key combinations with modifiers.
+
+        IMPORTANT: This tool is ONLY for single key presses or key combinations with modifiers.
+        For typing text (multiple characters), use type() tool instead.
+
+        Standard keys: Enter, Escape, Esc, Tab, Backspace, Delete, Del, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Home, End, PageUp, PageDown, Space, F1-F12, or any single character.
+        Modifiers: Control, Shift, Alt, Meta, CommandOrControl
+
+        Examples:
+        - pressKey({ key: 'Enter' }) - press Enter key
+        - pressKey({ key: 'a', modifier: 'Control' }) - press Ctrl+A
+        - pressKey({ key: 'Delete', modifier: 'Shift' }) - press Shift+Delete
+        - pressKey({ key: 'a', modifier: ['Control', 'Shift'] }) - press Ctrl+Shift+A
+
+        If you need to type multiple characters or words, use type() tool instead.
+      `,
+      inputSchema: z.object({
+        key: z.string().describe('The key to press. Can be a single character or standard key name (Enter, Escape, Tab, Delete, ArrowUp, etc.)'),
+        modifier: z
+          .union([z.string(), z.array(z.string())])
+          .optional()
+          .describe('Optional modifier key(s): Control, Shift, Alt, Meta, or CommandOrControl. Can be a single modifier or array for multiple modifiers.'),
+        explanation: z.string().describe('Reason for pressing this key.'),
+      }),
+      execute: async ({ key, modifier, explanation }) => {
+        const activeNote = task.startNote(explanation);
+        try {
+          const standardKeys = new Set(['Enter', 'Escape', 'Esc', 'Tab', 'Backspace', 'Delete', 'Del', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown', 'Space', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']);
+
+          const isSingleChar = key.length === 1;
+          const normalizedKey = key.toLowerCase();
+          const matchingStandardKey = Array.from(standardKeys).find((sk) => sk.toLowerCase() === normalizedKey);
+          const isStandardKey = !!matchingStandardKey;
+          const keyToUse = matchingStandardKey || key;
+
+          if (!isSingleChar && !isStandardKey) {
+            const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+            const action = explorer.createAction();
+            const typeCommand = `I.type(${JSON.stringify(key)})`;
+            await action.attempt(typeCommand, explanation);
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, key);
+
+            if (!action.lastError) {
+              activeNote.commit(TestResult.PASSED);
+              return successToolResult('pressKey', {
+                ...toolResult,
+                message: `Automatically used type() for "${key}" (not a standard key press)`,
+                code: typeCommand,
+                fallback: true,
+              });
+            }
+
+            const errorMsg = `pressKey fallback to type() failed: ${action.lastError?.toString()}`;
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('pressKey', errorMsg, {
+              ...toolResult,
+              code: typeCommand,
+              suggestion: 'The key was not recognized as a standard key press and type() fallback failed.',
+            });
+          }
+
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+          const action = explorer.createAction();
+
+          let pressKeyCommand: string;
+          if (modifier) {
+            const modifiers = Array.isArray(modifier) ? modifier : [modifier];
+            pressKeyCommand = `I.pressKey([${modifiers.map((m) => JSON.stringify(m)).join(', ')}, ${JSON.stringify(keyToUse)}])`;
+          } else {
+            pressKeyCommand = `I.pressKey(${JSON.stringify(keyToUse)})`;
+          }
+
+          await action.attempt(pressKeyCommand, explanation);
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, key);
+
+          if (!action.lastError) {
+            activeNote.commit(TestResult.PASSED);
+            return successToolResult('pressKey', {
+              ...toolResult,
+              message: `Pressed key: ${key}${modifier ? ` with modifier(s): ${Array.isArray(modifier) ? modifier.join('+') : modifier}` : ''}`,
+              code: pressKeyCommand,
+            });
+          }
+
+          const errorMsg = `pressKey() failed: ${action.lastError?.toString()}`;
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('pressKey', errorMsg, {
+            ...toolResult,
+            code: pressKeyCommand,
+            suggestion: 'Verify the key name is correct. For typing text, use type() tool instead.',
+          });
+        } catch (error) {
+          activeNote.commit(TestResult.FAILED);
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('pressKey', `PressKey tool failed: ${errorMessage}`);
+        }
+      },
+    }),
+
     form: tool({
       description: dedent`
         Execute raw CodeceptJS code block with multiple commands.
+
+        Follow <actions> from system prompt for available commands.
+        Follow <locator_priority> from system prompt for locator selection.
 
         Use cases:
         - Working with iframes (switch context with I.switchTo)
@@ -324,16 +360,14 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         - Complex interactions requiring sequential commands
 
         Example - filling a form:
-        I.fillField('title', 'My Article')
-        I.selectOption('category', 'Technology')
+        I.fillField({"role":"textbox","text":"Title"}, 'My Article')
+        I.selectOption({"role":"combobox","text":"Category"}, 'Technology')
 
         Example - working with iframe:
         I.switchTo('#payment-iframe')
-        I.fillField('card', '4242424242424242')
-        I.fillField('cvv', '123')
+        I.fillField({"role":"textbox","text":"Card"}, '4242424242424242')
+        I.fillField({"role":"textbox","text":"CVV"}, '123')
         I.switchTo()
-
-        Follow <locator_priority> rules from system prompt for locator selection.
 
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
         Do not use: wait functions, amOnPage, reloadPage, saveScreenshot
@@ -632,7 +666,7 @@ export function createAgentTools({
         Click an element by visual identification when locator-based click() fails.
 
         Use this as fallback when:
-        - click() or clickByText() failed multiple times
+        - click() failed with all provided commands
         - Element is visually present but not accessible via locators
         - Custom/canvas elements that don't have proper DOM structure
 
@@ -697,6 +731,46 @@ export function createAgentTools({
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('visualClick', `visualClick tool failed: ${errorMessage}`);
         }
+      },
+    }),
+
+    askUser: tool({
+      description: dedent`
+        Ask the user for help when you're stuck or unsure how to proceed.
+        Only available in interactive mode (TUI).
+
+        Use when:
+        - Locator-based clicks keep failing
+        - You can't find an element that should exist
+        - Form interaction isn't working as expected
+        - You need clarification on what action to take
+      `,
+      inputSchema: z.object({
+        question: z.string().describe('What you need help with - be specific about what failed'),
+        context: z.string().optional().describe('Relevant context like locators tried, errors received'),
+      }),
+      execute: async ({ question, context }) => {
+        if (!isInteractive()) {
+          return {
+            success: false,
+            message: 'User input not available in non-interactive mode',
+            suggestion: 'Continue with automated recovery',
+          };
+        }
+
+        const prompt = context ? `${question}\n\nContext: ${context}\n\nYour suggestion ("skip" to continue):` : `${question}\n\nYour suggestion ("skip" to continue):`;
+
+        const userInput = await pause(prompt);
+
+        if (!userInput || userInput.toLowerCase() === 'skip') {
+          return { success: false, message: 'User skipped' };
+        }
+
+        return {
+          success: true,
+          userSuggestion: userInput,
+          instruction: 'Follow the user suggestion. Use interact() tool to execute.',
+        };
       },
     }),
   };

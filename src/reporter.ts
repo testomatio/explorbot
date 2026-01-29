@@ -1,7 +1,7 @@
 import { Client } from '@testomatio/reporter';
 import type { Step } from '@testomatio/reporter/types/types.js';
 import { Test } from './test-plan.js';
-import { createDebug, log } from './utils/logger.js';
+import { createDebug } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:reporter');
 

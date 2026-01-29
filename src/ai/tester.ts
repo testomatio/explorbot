@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
+import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
@@ -13,24 +14,23 @@ import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
+import { Navigator } from './navigator.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { Navigator } from './navigator.ts';
-import { locatorRule, protectionRule, sectionContextRule } from './rules.ts';
+import { actionRule, locatorRule, protectionRule, sectionContextRule } from './rules.ts';
+import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools } from './tools.ts';
-import { Historian } from './historian.ts';
-import { Quartermaster } from './quartermaster.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
-export class Tester implements Agent {
+export class Tester extends TaskAgent implements Agent {
+  protected readonly ACTION_TOOLS = ['click', 'type', 'select', 'pressKey', 'form'];
   emoji = '🧪';
   private explorer: Explorer;
   private provider: Provider;
   private currentConversation: Conversation | null = null;
 
   MAX_ITERATIONS = 30;
-  ACTION_TOOLS = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form'];
   ASSERTION_TOOLS = ['verify'];
   researcher: Researcher;
   navigator: Navigator;
@@ -38,21 +38,26 @@ export class Tester implements Agent {
   executionLogFile: string | null = null;
   private previousUrl: string | null = null;
   private previousStateHash: string | null = null;
-  private historian: Historian;
-  private quartermaster: Quartermaster;
 
   constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
+    super();
     this.explorer = explorer;
     this.provider = provider;
     this.researcher = researcher;
     this.navigator = navigator;
     this.agentTools = agentTools;
-    this.historian = new Historian(provider, explorer.getStateManager().getExperienceTracker());
-    const quartermasterConfig = ConfigParser.getInstance().getConfig().ai?.agents?.quartermaster;
-    this.quartermaster = new Quartermaster(provider, {
-      disabled: quartermasterConfig?.enabled === false,
-      model: quartermasterConfig?.model,
-    });
+  }
+
+  protected getNavigator(): Navigator {
+    return this.navigator;
+  }
+
+  protected getExperienceTracker(): ExperienceTracker {
+    return this.explorer.getStateManager().getExperienceTracker();
+  }
+
+  protected getProvider(): Provider {
+    return this.provider;
   }
 
   getConversation(): Conversation | null {
@@ -68,6 +73,8 @@ export class Tester implements Agent {
 
     this.previousUrl = null;
     this.previousStateHash = null;
+    this.explorer.getStateManager().clearHistory();
+    this.resetFailureCount();
 
     const initialState = ActionResult.fromState(state);
 
@@ -98,24 +105,17 @@ export class Tester implements Agent {
     });
 
     const codeceptjsTools = createCodeceptJSTools(this.explorer, task);
-    let actionPerformed = true;
     let assertionPerformed = false;
-    const toolCallsLog: any[] = [];
     await loop(
       async ({ stop, pause, iteration, userInput }) => {
         debugLog('iteration', iteration);
         const currentState = ActionResult.fromState(this.explorer.getStateManager().getCurrentState()!);
 
-        const tools = Object.fromEntries(
-          Object.entries({
-            ...codeceptjsTools,
-            ...this.createTestFlowTools(task, currentState, conversation),
-            ...this.agentTools,
-          }).filter(([tool]) => {
-            if (!this.provider.hasVision() && tool === 'clickXY') return false;
-            return true;
-          })
-        );
+        const tools = {
+          ...codeceptjsTools,
+          ...this.createTestFlowTools(task, currentState, conversation),
+          ...this.agentTools,
+        };
 
         debugLog(`Test ${task.scenario} iteration ${iteration}`);
 
@@ -148,12 +148,10 @@ export class Tester implements Agent {
         if (iteration > 1) {
           let nextStep = '';
           nextStep += await this.reinjectContextIfNeeded(iteration, currentState);
+          nextStep += await this.prepareInstructionsForNextStep(task);
 
-          if (actionPerformed) {
-            nextStep += await this.prepareInstructionsForNextStep(task);
-            if (iteration % 5 === 0) {
-              nextStep += await this.analyzeProgress(task, currentState, toolCallsLog);
-            }
+          if (this.shouldAnalyzeProgress(iteration)) {
+            nextStep += await this.analyzeProgress(task, currentState);
           }
           conversation.addUserText(nextStep);
         }
@@ -169,13 +167,13 @@ export class Tester implements Agent {
 
         const allToolNames = result?.toolExecutions?.map((execution: any) => execution.toolName) || [];
         const successfulToolNames = result?.toolExecutions?.filter((execution: any) => execution.wasSuccessful)?.map((execution: any) => execution.toolName) || [];
-        actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
+        const actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
         assertionPerformed = !!successfulToolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
         const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
 
-        if (actionPerformed) {
-          toolCallsLog.push(...(result?.toolExecutions || []));
-        }
+        this.trackToolExecutions(result?.toolExecutions || []);
+
+        await this.handleUserHelp(task.scenario, currentState, conversation);
 
         if (actionPerformed && !wasSuccessful) {
           result?.toolExecutions
@@ -227,9 +225,8 @@ export class Tester implements Agent {
     );
 
     await this.finalReview(task);
-    await this.historian.saveSession(task, initialState, conversation);
-
-    await this.quartermaster.analyzeSession(task, initialState, conversation);
+    await this.getHistorian().saveSession(task, initialState, conversation);
+    await this.getQuartermaster().analyzeSession(task, initialState, conversation);
 
     offStateChange();
     await this.finishTest(task);
@@ -434,9 +431,10 @@ export class Tester implements Agent {
     <rules>
     - Refer to UI Map from <page_ui_map> to understand the page structure and its main elements
     - Use only elements that exist in the provided ARIA tree or HTML, <page_aria> and <page_html>
-    - Use click() for buttons, links, and clickable elements
-    - Use type() for text input (with optional locator parameter)
-    - Use form() for forms with multiple inputs
+    - Use click() for buttons, links, and clickable elements ONLY - do NOT include I.type() commands in click() tool
+    - Use type() for text input (with optional locator parameter) - call separately if you need to click after typing
+    - Use pressKey() for pressing special keys (Enter, Escape, Tab, Arrow keys) or key combinations with modifiers (Ctrl+A, Shift+Delete, etc.)
+    - Use form() for forms with multiple inputs or when you need to combine type + click in one operation
     - Use container CSS locators from <page_ui_map> to interact with elements inside sections
     - Systematically use record({ notes: ["..."] }) to write your findings, planned actions, observations, etc.
     - Call record({ notes: ["..."], status: "success" }) when you see success/info message on a page or when expected outcome is achieved
@@ -472,15 +470,18 @@ export class Tester implements Agent {
 
     ${locatorRule}
 
+    ${actionRule}
+
     ${sectionContextRule}
 
     `;
   }
 
-  private async analyzeProgress(task: Test, actionResult: ActionResult, toolCallsLog: any[]): Promise<string> {
+  private async analyzeProgress(task: Test, actionResult: ActionResult): Promise<string> {
     const notes = task.getPrintableNotes() || 'No notes recorded yet.';
+    const isStuck = this.isStuckWithoutActions();
 
-    const recentToolCalls = toolCallsLog.slice(-10);
+    const recentToolCalls = this.recentToolCalls.slice(-10);
     const failedToolCalls = recentToolCalls.filter((tool: any) => !tool.wasSuccessful);
     const actionToolFailures = failedToolCalls.filter((tool: any) => this.ACTION_TOOLS.includes(tool.toolName));
 
@@ -504,22 +505,33 @@ export class Tester implements Agent {
       recommendStop: z.boolean().optional().describe('Recommend stop() if test is fundamentally incompatible or cannot proceed'),
     });
 
-    const failureContext =
-      hasPersistentFailures || hasRepeatedSameFailure
-        ? dedent`
-      <critical_failures>
-      WARNING: Persistent tool failures detected!
-      - Recent failed action tool calls: ${actionToolFailures.length}
-      - Same tool/locator failed repeatedly: ${hasRepeatedSameFailure ? 'YES' : 'NO'}
-      
-      Failed tools in recent calls:
-      ${actionToolFailures.map((tool: any) => `- ${tool.toolName}${tool.input?.locator ? ` (${tool.input.locator})` : ''}${tool.input?.explanation ? `: ${tool.input.explanation}` : ''}`).join('\n')}
-      
-      This indicates the test may be stuck or the scenario is incompatible with the current page state.
-      You MUST recommend either reset() to return to initial page, or stop() if the scenario is fundamentally incompatible.
-      </critical_failures>
-    `
-        : '';
+    let problemContext = '';
+
+    if (isStuck) {
+      problemContext = dedent`
+        <critical_no_actions>
+        WARNING: No action tools used in recent iterations!
+        The test is not making progress. You are only using research/see/context tools.
+
+        You MUST start using ACTION tools: ${this.ACTION_TOOLS.join(', ')}
+        Click buttons, fill forms, navigate - do something that changes the page state.
+        </critical_no_actions>
+      `;
+    } else if (hasPersistentFailures || hasRepeatedSameFailure) {
+      problemContext = dedent`
+        <critical_failures>
+        WARNING: Persistent tool failures detected!
+        - Recent failed action tool calls: ${actionToolFailures.length}
+        - Same tool/locator failed repeatedly: ${hasRepeatedSameFailure ? 'YES' : 'NO'}
+
+        Failed tools in recent calls:
+        ${actionToolFailures.map((tool: any) => `- ${tool.toolName}${tool.input?.locator ? ` (${tool.input.locator})` : ''}${tool.input?.explanation ? `: ${tool.input.explanation}` : ''}`).join('\n')}
+
+        This indicates the test may be stuck or the scenario is incompatible with the current page state.
+        You MUST recommend either reset() to return to initial page, or stop() if the scenario is fundamentally incompatible.
+        </critical_failures>
+      `;
+    }
 
     const model = this.provider.getModelForAgent('tester');
     const response = await this.provider.generateObject(
@@ -550,13 +562,14 @@ export class Tester implements Agent {
             - If goal was already achieved and verified suggest finishing the test with finish() tool.
             - Look for failed tool calls and identify which actions were not accomplished.
             - If tool didn't succeed even after several attempts, you must mention it in the assessment.
+            - CRITICAL: If no action tools are being used, you MUST recommend starting to use action tools immediately.
             - CRITICAL: If persistent failures are detected (3+ recent failures or same tool/locator failing repeatedly), you MUST recommend either:
               * reset() - if navigation issues suggest returning to initial page might help
               * stop() - if the scenario is fundamentally incompatible with the page and cannot proceed
             - Do not recommend continuing with the same failing approach when persistent failures are detected.
             </rules>
 
-            ${failureContext}
+            ${problemContext}
 
             <current_state>
             ${await actionResult.toAiContext()}
@@ -567,7 +580,7 @@ export class Tester implements Agent {
             </notes>
 
             <called_tools>
-            ${recentToolCalls.map((tool) => `- ${tool.toolName}${tool.wasSuccessful ? ' [SUCCESS]' : ' [FAILED]'}${tool.input?.explanation ? `: ${tool.input.explanation}` : ''}${tool.input?.locator ? ` (locator: ${tool.input.locator})` : ''}`).join('\n')}
+            ${recentToolCalls.length > 0 ? recentToolCalls.map((tool) => `- ${tool.toolName}${tool.wasSuccessful ? ' [SUCCESS]' : ' [FAILED]'}${tool.input?.explanation ? `: ${tool.input.explanation}` : ''}${tool.input?.locator ? ` (locator: ${tool.input.locator})` : ''}`).join('\n') : 'No action tools called yet'}
             </called_tools>
 
             Provide a short assessment, suggest the next best action, and indicate if reset() or stop() is recommended.
@@ -582,14 +595,16 @@ export class Tester implements Agent {
     if (!result) return '';
 
     let recommendation = '';
-    if (result.recommendStop) {
+    if (isStuck) {
+      recommendation = `WARNING: No action tools used! Use: ${this.ACTION_TOOLS.join(', ')}`;
+    } else if (result.recommendStop) {
       recommendation = 'CRITICAL: AI strongly recommends using stop() - test appears fundamentally incompatible.';
     } else if (result.recommendReset) {
       recommendation = 'AI suggests using reset() to return to initial page and try different approach.';
     }
 
     const report = dedent`
-      Progress checkpoint after ${toolCallsLog.length} tool calls:
+      Progress checkpoint after ${this.recentToolCalls.length} tool calls:
       ${result.assessment}
       Next suggestion: ${result.suggestion}
       ${recommendation ? `\n${recommendation}` : ''}

@@ -7,15 +7,15 @@ export const locatorRule = dedent`
   1. ARIA locators (first choice) - target browser's accessibility tree, most reliable
      Use JSON format: { "role": "button", "text": "Login" }
      Best for: buttons, links, inputs, form controls, dropdowns, checkboxes, radio buttons
-  
+
   2. Text locators (second choice) - use only when text is unique on the page
      Example: 'Login', 'Submit', 'Username'
      Skip if the same text appears multiple times on the page
-  
+
   3. CSS selectors (third choice) - when ARIA/text don't work
      Prefer semantic attributes: id, name, data-testid, aria-label, placeholder
      Example: '#login-btn', '[data-testid="submit"]', 'form#login input[name="email"]'
-  
+
   4. XPath (last resort) - for complex hierarchy or when CSS can't express the path
      Always start with //, never use positional indices like [1], [2]
      Example: '//form[@id="login"]//input[@name="email"]'
@@ -166,14 +166,14 @@ export const sectionContextRule = dedent`
   1. Identify which section contains the target element
   2. Get the Context Locator from that section in the UI map
 
-  For ARIA/Text locators - use context as second parameter:
-  - clickByText('Submit', '.modal-content')  // element in Focus Section
-  - clickByText({ role: 'button', text: 'Save' }, '.main')  // element in Main Section
-  - clickByText('Home', 'nav')  // element in Navigation
+  Use context as second parameter in I.click():
+  - I.click('Submit', '.modal-content')  // element in Focus Section
+  - I.click({"role":"button","text":"Save"}, '.main')  // element in Main Section
+  - I.click('Home', 'nav')  // element in Navigation
 
   For CSS locators - prepend section context:
-  - click('.main button.submit')  // instead of click('button.submit')
-  - click('[role="dialog"] .close-btn')  // for modal elements
+  - I.click('.main button.submit')  // instead of I.click('button.submit')
+  - I.click('[role="dialog"] .close-btn')  // for modal elements
 
   This prevents clicking wrong elements when same text/locator appears in multiple sections.
   </section_context_rule>
@@ -214,12 +214,14 @@ export const actionRule = dedent`
 
   Prefer text/ARIA locators with context over complex CSS/XPath selectors.
   If locator doesn't work, try CSS or XPath locators.
-  If nothing works, use clickXY as last resort.
+  If nothing works, use I.clickXY(x, y) as last resort.
 
 
   ### I.fillField
 
   fills the field with the given value
+
+  I.fillField(<locator>, <text>)
 
   <example>
     I.fillField('Username', 'John'); // fills the field located by name or placeholder or label "Username" with the text "John"
@@ -231,18 +233,27 @@ export const actionRule = dedent`
   type sends keyboard keys to the browser window, use it if fillField doesn't work.
   for instance, for highy customized input fields.
 
+  I.type(<text>)
+
   <example>
     I.type('John'); // types the text "John" into the active element
   </example>
 
-  Check example output:
+  Should be used ONLY on active input field (click it first).
+  DOES NOT receive any locator, just text to type
 
-  Assuming the follwing code if executed will change the state of the page:
+  ### I.switchTo
 
-  <example output>
-    I.fillField('Name', 'Value');
-    I.click('Submit');
-  </example output>
+  Switches to the iframe by its locator.
+  Use it to switch to the iframe that contains the input field you want to type in.
+
+  I.switchTo(<locator>)
+
+  <example>
+    I.switchTo('#payment-iframe');
+    I.type('John');
+    I.switchTo();
+  </example>
 
   ### I.selectOption
 

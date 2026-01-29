@@ -42,6 +42,7 @@ interface AgentsConfig {
   'experience-compactor'?: AgentConfig;
   captain?: AgentConfig;
   quartermaster?: AgentConfig;
+  historian?: AgentConfig;
 }
 
 interface AIConfig {
@@ -197,6 +198,10 @@ export class ConfigParser {
     const configPath = this.getConfigPath();
     if (!configPath) throw new Error('Config path not found');
     return path.join(path.dirname(configPath), config.dirs?.output || 'output');
+  }
+
+  public getPlansDir(): string {
+    return path.join(this.getOutputDir(), 'plans');
   }
 
   // For testing purposes only

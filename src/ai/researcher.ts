@@ -836,8 +836,7 @@ export class Researcher implements Agent {
     await action.expect(`I.seeInCurrentUrl('${url}')`);
   }
 
-  private async cancelInUi()
-  {
+  private async cancelInUi() {
     const action = this.explorer.createAction();
     await action.execute(`I.click('//body')`);
   }

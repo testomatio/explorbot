@@ -191,36 +191,61 @@ export class Planner implements Agent {
 
     if (this.previousPlan) {
       tag('step').log('Looking at previous plan to expand testing');
+
+      const passed = this.previousPlan.tests.filter((t) => t.result === 'passed');
+      const failed = this.previousPlan.tests.filter((t) => t.result === 'failed');
+      const pending = this.previousPlan.tests.filter((t) => !t.result);
+
+      const summaryParts: string[] = [];
+      if (passed.length > 0) summaryParts.push(`${passed.length} passed`);
+      if (failed.length > 0) summaryParts.push(`${failed.length} failed`);
+      if (pending.length > 0) summaryParts.push(`${pending.length} pending`);
+      const summary = summaryParts.join(', ');
+
       conversation.addUserText(dedent`
-        We already launched following tests.
-        Focus on new scenarios, not on already tested ones.
-        Think how can you expand testing and check more scenario based on knowledge from previous tests.
-        What else can be potentially tested based on HTML context and from previous tests?
-        If you created item, check if you can interact with it.
-        If you created item check if you can edit it.
-        It is ALLOWED TO DELETE item you previously created.
+        We already executed tests for this URL (${summary}).
 
-        <tests>
+        <previous_test_results>
         ${this.previousPlan.toAiContext()}
-        </tests>
+        </previous_test_results>
 
-        Plan your next tests analyzing the pages we visited during previous testing session:
+        <planning_strategy>
+        Based on previous test execution:
 
-        <pages>
+        1. FOR PASSED TESTS - Add negative/edge case scenarios:
+           - Boundary value testing (min/max values, empty inputs)
+           - Invalid input testing (wrong formats, special characters)
+           - Error condition testing (network errors, validation failures)
+           - Extend to deeper levels of the same feature
+
+        2. FOR FAILED TESTS - Skip those paths entirely:
+           - Do NOT repeat failed scenarios
+           - Find NEW alternative paths to test similar functionality
+           - Look for unexplored areas of the page
+
+        3. EXPAND COVERAGE:
+           - If items were created, test editing/deleting them
+           - Explore pages that were visited but not deeply tested
+           - Look at elements discovered during testing that weren't interacted with
+        </planning_strategy>
+
+        <context_from_previous_tests>
+        Pages visited during testing (with discovered elements):
         ${this.previousPlan
           .getVisitedPages()
           .map(
-            (s) => `
-          <page>${ActionResult.fromState(s).toAiContext()}
-          <page_content>
-          ${Researcher.getCachedResearch(s) || this.researcher.textContent(s)}
-          </page_content>
-          </page>`
+            (s) => dedent`
+            <page url="${s.url}">
+            ${ActionResult.fromState(s).toAiContext()}
+            <research>
+            ${Researcher.getCachedResearch(s) || this.researcher.textContent(s)}
+            </research>
+            </page>`
           )
           .join('\n')}
-        </pages>
+        </context_from_previous_tests>
 
-        Consider purpose of visited pages when planning new tests.
+        Use the context above to understand what was achieved and what new scenarios can be tested.
         `);
     }
 

@@ -192,7 +192,11 @@ export function planToAiContext(plan: Plan): string {
     const test = plan.tests[i];
     content += `## Test ${i + 1}: ${test.scenario}\n\n`;
     content += `**Priority:** ${test.priority}\n`;
-    content += `**Status:** ${test.status}\n\n`;
+    content += `**Status:** ${test.status}\n`;
+    if (test.result) {
+      content += `**Result:** ${test.result}\n`;
+    }
+    content += '\n';
 
     if (test.startUrl) {
       content += `**Start URL:** ${test.startUrl}\n\n`;

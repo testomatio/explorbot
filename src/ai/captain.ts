@@ -2,7 +2,6 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
-import { ConfigParser } from '../config.ts';
 import { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
@@ -11,35 +10,41 @@ import { createDebug, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
-import { locatorRule, sectionContextRule } from './rules.ts';
+import type { Navigator } from './navigator.ts';
+import type { Provider } from './provider.ts';
+import { actionRule, locatorRule, sectionContextRule } from './rules.ts';
+import { TaskAgent } from './task-agent.ts';
 import { createAgentTools, createCodeceptJSTools } from './tools.ts';
-import { Historian } from './historian.ts';
-import { Quartermaster } from './quartermaster.ts';
 
 const debugLog = createDebug('explorbot:captain');
 
 const MAX_STEPS = 10;
-const ACTION_TOOLS = ['click', 'clickByText', 'clickXY', 'type', 'select', 'form', 'navigate', 'record'];
 
-export class Captain implements Agent {
+export class Captain extends TaskAgent implements Agent {
+  protected readonly ACTION_TOOLS = ['click', 'type', 'select', 'pressKey', 'form', 'navigate', 'record'];
   emoji = '🧑‍✈️';
   private explorBot: ExplorBot;
   private conversation: Conversation | null = null;
   private experienceTracker: ExperienceTracker;
-  private historian: Historian;
-  private quartermaster: Quartermaster;
   private awaitingSave = false;
   private pendingExperience: { state: ActionResult; intent: string; summary: string; code: string } | null = null;
 
   constructor(explorBot: ExplorBot) {
+    super();
     this.explorBot = explorBot;
     this.experienceTracker = new ExperienceTracker();
-    this.historian = new Historian(explorBot.getProvider(), this.experienceTracker);
-    const quartermasterConfig = ConfigParser.getInstance().getConfig().ai?.agents?.quartermaster;
-    this.quartermaster = new Quartermaster(explorBot.getProvider(), {
-      disabled: quartermasterConfig?.enabled === false,
-      model: quartermasterConfig?.model,
-    });
+  }
+
+  protected getNavigator(): Navigator {
+    return this.explorBot.agentNavigator();
+  }
+
+  protected getExperienceTracker(): ExperienceTracker {
+    return this.experienceTracker;
+  }
+
+  protected getProvider(): Provider {
+    return this.explorBot.getProvider();
   }
 
   private systemPrompt(): string {
@@ -58,11 +63,13 @@ export class Captain implements Agent {
     - Do NOT add extra steps beyond what was asked
     - Always validate page HTML/ARIA and ask for see() to verify that the page is in the expected state
     - Follow <locator_priority> rules when selecting locators for all tools
-    - If click() or clickByText() fails 2+ times with different locators, use visualClick() tool
-    - visualClick() uses screenshot analysis to find element coordinates and click automatically
+    - click() accepts array of commands to try in order - include ARIA, CSS, XPath variants
+    - If click() fails with all provided commands, use visualClick() tool as fallback
     </rules>
 
     ${locatorRule}
+
+    ${actionRule}
     `;
   }
 
@@ -82,14 +89,19 @@ export class Captain implements Agent {
     return this.conversation;
   }
 
-  private async getPageContext(): Promise<string> {
+  cleanConversation(): void {
+    this.conversation = null;
+    tag('info').log(this.emoji, 'Conversation cleaned');
+  }
+
+  private async getPageContext(options: { includeResearch?: boolean } = {}): Promise<string> {
     const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
     if (!state) {
       return 'No page loaded';
     }
 
     const actionResult = ActionResult.fromState(state);
-    const researcher = this.explorBot.agentResearcher();
+    const researchResult = options.includeResearch ? await this.explorBot.agentResearcher().research(state, { data: true }) : '';
 
     return dedent`
     <page>
@@ -104,7 +116,7 @@ export class Captain implements Agent {
     ${await actionResult.simplifiedHtml()}
     </page_html>
 
-    ${await researcher.research(state, { data: true })}
+    ${researchResult}
     </page>
     `;
   }
@@ -314,6 +326,7 @@ export class Captain implements Agent {
       return null;
     }
 
+    const isNewConversation = !this.conversation || options.reset;
     const conversation = options.reset ? this.resetConversation() : this.ensureConversation();
     let isDone = false;
     let finalSummary: string | null = null;
@@ -329,7 +342,7 @@ export class Captain implements Agent {
     };
 
     const tools = this.tools(task, onDone);
-    const pageContext = await this.getPageContext();
+    const pageContext = await this.getPageContext({ includeResearch: isNewConversation });
     const planContext = this.planSummary();
 
     // Clean up old page context from previous inputs when continuing conversation
@@ -390,6 +403,21 @@ export class Captain implements Agent {
         const toolNames = result?.toolExecutions?.map((e: any) => e.toolName) || [];
         debugLog('Tools called:', toolNames.join(', '));
 
+        this.trackToolExecutions(result?.toolExecutions || []);
+
+        if (this.shouldAskUser()) {
+          const userHelp = await this.askUserForHelp('Unable to complete action');
+
+          if (userHelp) {
+            const actionResult = ActionResult.fromState(stateManager.getCurrentState()!);
+            const success = await this.executeUserSuggestion(actionResult, input, userHelp);
+
+            if (!success) {
+              this.injectUserHelpToConversation(conversation, userHelp);
+            }
+          }
+        }
+
         if (isDone) {
           stop();
           return;
@@ -414,8 +442,8 @@ export class Captain implements Agent {
       tag('warning').log(this.emoji, 'Request may not be fully completed');
     }
 
-    await this.historian.saveSession(task, initialActionResult, conversation);
-    await this.quartermaster.analyzeSession(task, initialActionResult, conversation);
+    await this.getHistorian().saveSession(task, initialActionResult, conversation);
+    await this.getQuartermaster().analyzeSession(task, initialActionResult, conversation);
 
     const notes = task.getPrintableNotes();
     if (notes.length > 0) {
