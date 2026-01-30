@@ -199,22 +199,28 @@ Thus, when tuned, Explorbot **can run autonomously for hours** navigating web ap
 - [docs/providers.md](docs/providers.md) — AI provider configuration
 - [docs/agents.md](docs/agents.md) — Agent descriptions and capabilities
 - [docs/scripting.md](docs/scripting.md) — Building custom autonomous scripts
+- [docs/observability.md](docs/observability.md) — Langfuse tracing and debugging
+- [docs/page-interaction.md](docs/page-interaction.md) — How agents interact with pages
 
 ## FAQ
 
-* Can I run it in Cursor? or Claude Code?
-  No, Explorbot have a separate application designed for constant testing. Cursor, Codex, or Claude code are irrelevant as they are coding agents.
-* Why do you hate Opus?
-  Opus is great for coding. Here we need a simplest model which can consume a lot of HTML tokens to find relevant ones. Leave more interesting tasks to Opus.
-* Is that expensive?
-  No, it's not. It would cost you ~1$ for hour of running if you use Groq Cloud with gpt-oss-20b.
-* Does Explorbot have MCP?
-  Not yet
-* Can I build my own agents with it?
-  Yes, your programmatic API for it.
-* Ok, but I can do same in Cursor and Playwright MCP!
-  Good luck running it on CI! I also assume you will need to jump to it every 10 seconds to see how it runs browser
-* 
+**Can I run it in Cursor? or Claude Code?**
+No, Explorbot is a separate application designed for constant testing. Cursor, Codex, or Claude Code are coding agents — not relevant here.
+
+**Why do you hate Opus?**
+Opus is great for coding. Here we need a simple model that can consume lots of HTML tokens to find the relevant ones. Leave more interesting tasks to Opus.
+
+**Is that expensive?**
+No. It costs ~$1 per hour of running if you use Groq Cloud with gpt-oss-20b.
+
+**Does Explorbot have MCP?**
+Not yet.
+
+**Can I build my own agents with it?**
+Yes, use the programmatic API. See [docs/scripting.md](docs/scripting.md).
+
+**Ok, but I can do the same in Cursor with Playwright MCP!**
+Good luck running it on CI! Also, you'll need to check on it every 10 seconds to see how it's running the browser.
 
 ---
 
