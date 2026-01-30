@@ -2,21 +2,30 @@
 
 **The vibe-testing agent for web applications.**
 
+![Explorbot Terminal UI](assets/screenshot.png)
+
 Explorbot explores your web app like a curious human would — clicking around, filling forms, finding bugs, and learning as it goes. No test scripts required. Just point it at your app and let it work.
 
 ```bash
 explorbot explore --from https://your-app.com
 ```
 
-## Why Explorbot?
+Explorbot is your first assitant in testing.
+It will do its best to use your application with no babysitting. It will use application and provide you valuable feedback.
 
-Traditional test automation is a grind: write scripts, update selectors, fix flaky tests, repeat forever. Explorbot flips that:
+## Use Cases
 
-- **No scripts to maintain** — AI figures out how to interact with your UI
-- **Self-healing** — When elements change, it adapts instead of failing
-- **Learns your app** — Gets smarter about your specific application over time
-- **Generates real tests** — Outputs CodeceptJS code you can run independently
-- **Finds the weird stuff** — Explores paths a human might miss
+* Autonomously test web application or its parts
+* Discover test scenarios and get automated tests for them
+* Write manual test cases from exploring website
+* 24h/7d of monkey-testing for web application that can reveal hidden errors
+* Quick-test for MVPs and prototypes
+
+Explorbot can start testing features which were not covered by unit tests or browser tests.
+
+## Demo
+
+![Explorbot in action](assets/demo.gif)
 
 ## Requirements
 
@@ -30,6 +39,7 @@ Traditional test automation is a grind: write scripts, update selectors, fix fla
 
 ```bash
 bun install
+bunx playwright install
 ```
 
 **2. Initialize config**
@@ -83,10 +93,18 @@ explorbot know "/login" "Use credentials: admin@example.com / secret123"
 **5. Run**
 
 ```bash
-explorbot explore --from /sub-page
+explorbot explore --from /admin/users
 ```
 
-This launches the Terminal UI. Requires a modern terminal (iTerm2, WARP, Kitty, Ghostty, Windows Terminal). On Windows, use WSL.
+Start from a small functional area of your app (admin panel, settings, any CRUD section) so Explorbot can quickly understand its business purpose and context.
+
+Browser runs headless by default — use `--show` to see it:
+
+```bash
+explorbot explore --from /settings --show
+```
+
+Requires a modern terminal (iTerm2, WARP, Kitty, Ghostty, Windows Terminal). On Windows, use WSL.
 
 ## How It Works
 
@@ -161,7 +179,13 @@ explorbot run --from https://your-app.com --plan login-flow
 
 **Tactical decisions are AI-driven** — How to click that button, what to do when a modal appears, how to recover from errors.
 
-This gives you reliability where it matters and flexibility where you need it. Each agent runs lean with minimal context overhead to keep costs down.
+**ExplorBot learns from its failures** - it uses previous experience interacting with a web page for faster and better decision on next runs
+
+**Explorbots needs your knowledge** - you adjust Explorbot prompts by passing suggestions, UI explanatins, domain knowledge, in format of text filesm which are loaded when corresponding page loaded.
+
+Thus, when tuned, Explorbot **can run autonomously for hours** navigating web application and trying different scenarios over UI. You don't need to watch it. Explorbot execution is fully autonomous. The more Explorbot runs the more it learns and can test more complex scenarios. 
+
+
 
 ## Teaching Explorbot
 
@@ -174,6 +198,23 @@ This gives you reliability where it matters and flexibility where you need it. E
 - [docs/knowledge.md](docs/knowledge.md) — Knowledge system and URL patterns
 - [docs/providers.md](docs/providers.md) — AI provider configuration
 - [docs/agents.md](docs/agents.md) — Agent descriptions and capabilities
+- [docs/scripting.md](docs/scripting.md) — Building custom autonomous scripts
+
+## FAQ
+
+* Can I run it in Cursor? or Claude Code?
+  No, Explorbot have a separate application designed for constant testing. Cursor, Codex, or Claude code are irrelevant as they are coding agents.
+* Why do you hate Opus?
+  Opus is great for coding. Here we need a simplest model which can consume a lot of HTML tokens to find relevant ones. Leave more interesting tasks to Opus.
+* Is that expensive?
+  No, it's not. It would cost you ~1$ for hour of running if you use Groq Cloud with gpt-oss-20b.
+* Does Explorbot have MCP?
+  Not yet
+* Can I build my own agents with it?
+  Yes, your programmatic API for it.
+* Ok, but I can do same in Cursor and Playwright MCP!
+  Good luck running it on CI! I also assume you will need to jump to it every 10 seconds to see how it runs browser
+* 
 
 ---
 
