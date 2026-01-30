@@ -1,6 +1,8 @@
+import dedent from 'dedent';
 import type { ActionResult } from '../action-result.js';
 import { ConfigParser } from '../config.js';
 import type { ExperienceTracker } from '../experience-tracker.js';
+import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import { pause } from '../utils/loop.js';
 import { tag } from '../utils/logger.js';
 import { Historian } from './historian.js';
@@ -33,7 +35,49 @@ export abstract class TaskAgent {
 
   protected abstract getNavigator(): Navigator;
   protected abstract getExperienceTracker(): ExperienceTracker;
+  protected abstract getKnowledgeTracker(): KnowledgeTracker;
   protected abstract getProvider(): Provider;
+
+  protected getKnowledge(actionResult: ActionResult): string {
+    const knowledgeFiles = this.getKnowledgeTracker().getRelevantKnowledge(actionResult);
+
+    if (knowledgeFiles.length === 0) return '';
+
+    const knowledgeContent = knowledgeFiles
+      .map((k) => k.content)
+      .filter((k) => !!k)
+      .join('\n\n');
+
+    tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge file(s)`);
+    return dedent`
+      <knowledge>
+      Here is relevant knowledge for this page:
+
+      ${knowledgeContent}
+      </knowledge>
+    `;
+  }
+
+  protected getExperience(actionResult: ActionResult): string {
+    const relevantExperience = this.getExperienceTracker().getRelevantExperience(actionResult);
+
+    if (relevantExperience.length === 0) return '';
+
+    const experienceContent = relevantExperience
+      .map((e) => e.content)
+      .filter((e) => !!e)
+      .join('\n\n---\n\n');
+
+    tag('substep').log(`Found ${relevantExperience.length} experience file(s)`);
+    return dedent`
+      <experience>
+      Here is past experience of interacting with this page.
+      Use successful solutions first. Avoid repeating failed actions.
+
+      ${experienceContent}
+      </experience>
+    `;
+  }
 
   protected getHistorian(): Historian {
     if (this._historian) return this._historian;

@@ -57,6 +57,10 @@ export class Tester extends TaskAgent implements Agent {
     return this.explorer.getStateManager().getExperienceTracker();
   }
 
+  protected getKnowledgeTracker() {
+    return this.explorer.getKnowledgeTracker();
+  }
+
   protected getProvider(): Provider {
     return this.provider;
   }
@@ -705,28 +709,6 @@ export class Tester extends TaskAgent implements Agent {
     if (result.recommendation) {
       task.addNote(result.recommendation);
     }
-  }
-
-  private getKnowledge(actionResult: ActionResult): string {
-    const knowledgeFiles = this.explorer.getKnowledgeTracker().getRelevantKnowledge(actionResult);
-
-    if (knowledgeFiles.length > 0) {
-      const knowledgeContent = knowledgeFiles
-        .map((k) => k.content)
-        .filter((k) => !!k)
-        .join('\n\n');
-
-      tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge file(s)`);
-      return dedent`
-        <hint>
-        Here is relevant knowledge for this page:
-
-        ${knowledgeContent}
-        </hint>
-      `;
-    }
-
-    return '';
   }
 
   private async buildTestPrompt(task: Test, actionResult: ActionResult): Promise<string> {

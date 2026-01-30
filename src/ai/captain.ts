@@ -43,6 +43,10 @@ export class Captain extends TaskAgent implements Agent {
     return this.experienceTracker;
   }
 
+  protected getKnowledgeTracker() {
+    return this.explorBot.getExplorer().getKnowledgeTracker();
+  }
+
   protected getProvider(): Provider {
     return this.explorBot.getProvider();
   }
@@ -94,14 +98,15 @@ export class Captain extends TaskAgent implements Agent {
     tag('info').log(this.emoji, 'Conversation cleaned');
   }
 
-  private async getPageContext(options: { includeResearch?: boolean } = {}): Promise<string> {
+  private async getPageContext(): Promise<string> {
     const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
     if (!state) {
       return 'No page loaded';
     }
 
     const actionResult = ActionResult.fromState(state);
-    const researchResult = options.includeResearch ? await this.explorBot.agentResearcher().research(state, { data: true }) : '';
+    const knowledge = this.getKnowledge(actionResult);
+    const experience = this.getExperience(actionResult);
 
     return dedent`
     <page>
@@ -111,13 +116,13 @@ export class Captain extends TaskAgent implements Agent {
     <page_aria>
     ${actionResult.ariaSnapshot}
     </page_aria>
-
-    <page_html>
-    ${await actionResult.simplifiedHtml()}
-    </page_html>
-
-    ${researchResult}
     </page>
+
+    ${knowledge}
+
+    ${experience}
+
+    Use research() tool if you need deeper page understanding or UI element mapping.
     `;
   }
 
@@ -326,7 +331,6 @@ export class Captain extends TaskAgent implements Agent {
       return null;
     }
 
-    const isNewConversation = !this.conversation || options.reset;
     const conversation = options.reset ? this.resetConversation() : this.ensureConversation();
     let isDone = false;
     let finalSummary: string | null = null;
@@ -342,7 +346,7 @@ export class Captain extends TaskAgent implements Agent {
     };
 
     const tools = this.tools(task, onDone);
-    const pageContext = await this.getPageContext({ includeResearch: isNewConversation });
+    const pageContext = await this.getPageContext();
     const planContext = this.planSummary();
 
     // Clean up old page context from previous inputs when continuing conversation
@@ -406,16 +410,8 @@ export class Captain extends TaskAgent implements Agent {
         this.trackToolExecutions(result?.toolExecutions || []);
 
         if (this.shouldAskUser()) {
-          const userHelp = await this.askUserForHelp('Unable to complete action');
-
-          if (userHelp) {
-            const actionResult = ActionResult.fromState(stateManager.getCurrentState()!);
-            const success = await this.executeUserSuggestion(actionResult, input, userHelp);
-
-            if (!success) {
-              this.injectUserHelpToConversation(conversation, userHelp);
-            }
-          }
+          const actionResult = ActionResult.fromState(stateManager.getCurrentState()!);
+          await this.handleUserHelp(input, actionResult, conversation);
         }
 
         if (isDone) {
