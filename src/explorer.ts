@@ -336,6 +336,9 @@ class Explorer {
   }
 
   async startTest(test: Test) {
+    await this.closeOtherTabs();
+    this.otherTabs = [];
+
     const codeceptjsTest = toCodeceptjsTest(test);
 
     const stepHandler = (step: any, status?: string, error?: string, log?: string) => {

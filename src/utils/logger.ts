@@ -390,3 +390,7 @@ export const setStepSpanParent = (span: Span | null) => {
 
 // Legacy alias for backward compatibility
 export const setLogCallback = registerLogPane;
+
+export const pluralize = (count: number, singular: string, plural?: string): string => {
+  return count === 1 ? singular : plural || `${singular}s`;
+};

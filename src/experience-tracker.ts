@@ -4,6 +4,7 @@ import matter from 'gray-matter';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
+import { Observability } from './observability.js';
 import type { WebPageState } from './state-manager.js';
 import { createDebug, log, tag } from './utils/logger.js';
 

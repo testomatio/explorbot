@@ -12,7 +12,7 @@ import { WebPageState } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.ts';
 import { type HtmlDiffResult, htmlDiff } from '../utils/html-diff.ts';
 import { codeToMarkdown, isBodyEmpty } from '../utils/html.ts';
-import { createDebug, tag } from '../utils/logger.js';
+import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
@@ -369,7 +369,7 @@ export class Researcher implements Agent {
         .filter((k) => !!k)
         .join('\n\n');
 
-      tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge file(s) for: ${this.actionResult.url}`);
+      tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')} for: ${this.actionResult.url}`);
       knowledge = `
         <hint>
         Here is relevant knowledge for this page:

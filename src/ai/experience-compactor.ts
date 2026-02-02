@@ -3,6 +3,7 @@ import dedent from 'dedent';
 import matter from 'gray-matter';
 import { z } from 'zod';
 import type { ExperienceTracker } from '../experience-tracker.js';
+import { Observability } from '../observability.js';
 import { createDebug, log } from '../utils/logger.js';
 import type { Agent } from './agent.js';
 import type { Provider } from './provider.js';

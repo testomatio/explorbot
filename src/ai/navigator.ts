@@ -5,7 +5,7 @@ import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
 import type { WebPageState } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
-import { createDebug, tag } from '../utils/logger.js';
+import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
@@ -108,7 +108,7 @@ class Navigator implements Agent {
     if (relevantExperience.length > 0) {
       const experienceContent = relevantExperience.join('\n\n---\n\n');
       experience = await this.experienceCompactor.compactExperience(experienceContent);
-      tag('substep').log(`Found ${relevantExperience.length} experience file(s) for: ${actionResult.url}`);
+      tag('substep').log(`Found ${relevantExperience.length} experience ${pluralize(relevantExperience.length, 'file')} for: ${actionResult.url}`);
 
       experience = dedent`
       <experience>
@@ -193,6 +193,16 @@ class Navigator implements Agent {
 
         tag('step').log(`Attempting resolution: ${codeBlock}`);
         resolved = await this.currentAction.attempt(codeBlock, message);
+
+        if (resolved && this.currentUrl) {
+          await this.currentAction.getActor().wait(1);
+          try {
+            await this.currentAction.expect(`I.seeInCurrentUrl('${this.currentUrl}')`);
+          } catch {
+            tag('warning').log(`URL verification failed after resolution (expected ${this.currentUrl})`);
+            resolved = false;
+          }
+        }
 
         if (resolved) {
           tag('success').log('Navigation resolved successfully');
@@ -344,7 +354,7 @@ class Navigator implements Agent {
     if (relevantExperience.length > 0) {
       const experienceContent = relevantExperience.join('\n\n---\n\n');
       experience = await this.experienceCompactor.compactExperience(experienceContent);
-      tag('substep').log(`Found ${relevantExperience.length} experience file(s) for: ${actionResult.url}`);
+      tag('substep').log(`Found ${relevantExperience.length} experience ${pluralize(relevantExperience.length, 'file')} for: ${actionResult.url}`);
 
       experience = dedent`
       <experience>

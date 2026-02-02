@@ -3,7 +3,7 @@ import type { ActionResult } from '../action-result.js';
 import { ConfigParser } from '../config.js';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
-import { tag } from '../utils/logger.js';
+import { pluralize, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
 import { Historian } from './historian.js';
 import type { Navigator } from './navigator.js';
@@ -48,7 +48,7 @@ export abstract class TaskAgent {
       .filter((k) => !!k)
       .join('\n\n');
 
-    tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge file(s)`);
+    tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
     return dedent`
       <knowledge>
       Here is relevant knowledge for this page:
@@ -68,7 +68,7 @@ export abstract class TaskAgent {
       .filter((e) => !!e)
       .join('\n\n---\n\n');
 
-    tag('substep').log(`Found ${relevantExperience.length} experience file(s)`);
+    tag('substep').log(`Found ${relevantExperience.length} experience ${pluralize(relevantExperience.length, 'file')}`);
     return dedent`
       <experience>
       Here is past experience of interacting with this page.

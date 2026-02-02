@@ -15,10 +15,11 @@ When Explorbot runs autonomously, you need visibility into:
 - **Errors and retries** that occurred
 
 This data helps you:
-- Debug unexpected behavior
+- **Debug failed tests** — see exactly what AI saw and decided
+- **Create Knowledge fixes** — understand what context was missing
 - Optimize prompts and agent performance
 - Understand why a test passed or failed
-- Export sessions for analysis with coding agents
+- Export sessions for analysis with `/explorbot-debug` skill
 
 ## Setting Up Langfuse
 
@@ -92,15 +93,97 @@ Explorbot uses the [Vercel AI SDK integration](https://langfuse.com/docs/integra
 
 ### Export for AI Analysis
 
-Export a session as JSON from Langfuse, then ask a coding agent to analyze it:
+Export a session as JSON from Langfuse for detailed debugging:
+
+1. Open your Langfuse project
+2. Find the failed `tester.loop` trace
+3. Click the **Export** button (or use the API)
+4. Save as JSON file (e.g., `failed-session.json`)
+
+The trace contains the full context: prompts, tool calls, page states, and AI decisions.
+
+## Debugging with Claude Code
+
+Explorbot includes a Claude Code skill for analyzing failed sessions.
+
+### Using the Debug Skill
+
+In Claude Code, run:
 
 ```
-I have a Langfuse trace export from my Explorbot session.
-The test "Verify login with valid credentials" failed.
-Please analyze the trace and suggest what went wrong.
+/explorbot-debug
 ```
 
-The trace contains the full context of what the agent saw and decided, making it easy to diagnose issues.
+The skill will ask for:
+1. **Langfuse JSON export** — path to your exported trace file
+2. **Or nothing** — it will analyze `output/explorbot.log` instead
+
+### What the Skill Analyzes
+
+The debug skill looks for three failure patterns:
+
+| Pattern | Symptoms | Solution |
+|---------|----------|----------|
+| **Missing Context** | Wrong element clicked, didn't understand UI | Add Knowledge file with disambiguation rules |
+| **Wrong Prompts** | Incorrect assumptions, wrong flow | Add Knowledge with business context |
+| **Wrong Tool Choice** | Used click when form needed, typing issues | Add Knowledge with CodeceptJS code examples |
+
+### How It Helps
+
+1. **Extracts key data** from trace using jq:
+   - Failed tool calls
+   - URLs visited
+   - Prompts sent to AI
+
+2. **Identifies root cause** of failures
+
+3. **Suggests Knowledge files** to fix the issue:
+   ```markdown
+   ---
+   url: /admin/users/*
+   ---
+
+   ## User Table
+   Each row has same buttons. Use container:
+   I.click('Delete', '[data-user-id="123"]')
+   ```
+
+4. **Can try interactions** using browser tools (if available) and document working CodeceptJS code
+
+### Why Langfuse Matters for Debugging
+
+Without Langfuse, you only see:
+- Final test result (pass/fail)
+- Basic logs
+
+With Langfuse traces, you can see:
+- Exact prompts AI received at each step
+- What page state AI was analyzing
+- Which tool calls succeeded/failed and why
+- Token usage and timing
+- Full decision chain
+
+This makes debugging AI behavior possible — you can trace exactly where and why it went wrong.
+
+### Example Workflow
+
+```bash
+# 1. Test fails
+explorbot explore --from /admin/users
+
+# 2. Open Langfuse, find tester.loop trace, export JSON
+# Save to: ./traces/failed-users-test.json
+
+# 3. In Claude Code:
+/explorbot-debug
+# Provide path: ./traces/failed-users-test.json
+
+# 4. Skill analyzes and suggests Knowledge fix
+# 5. Create knowledge file
+explorbot know "/admin/users/*" "Use container context for table actions"
+
+# 6. Re-run test
+```
 
 ## Debugging Tips
 

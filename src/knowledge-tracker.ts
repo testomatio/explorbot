@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
-import { createDebug } from './utils/logger.js';
+import { createDebug, pluralize, tag } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
 
@@ -76,9 +76,9 @@ export class KnowledgeTracker {
       return state.isMatchedBy(knowledge);
     });
 
-    const totalChars = relevant.reduce((sum, knowledge) => sum + (knowledge.content?.length || 0), 0);
-
-    debugLog(`Found ${relevant.length} knowledge references (${totalChars} chars) for ${state.url}`);
+    if (relevant.length > 0) {
+      tag('substep').log(`Found ${relevant.length} knowledge ${pluralize(relevant.length, 'file')} for: ${state.url}`);
+    }
 
     return relevant;
   }
