@@ -546,8 +546,8 @@ export class Tester extends TaskAgent implements Agent {
     const schema = z.object({
       assessment: z.string().describe('Short review of current progress toward the main scenario goal'),
       suggestion: z.string().describe('Specific next action recommendation'),
-      recommendReset: z.boolean().optional().describe('Recommend reset() if persistent failures suggest navigation issues'),
-      recommendStop: z.boolean().optional().describe('Recommend stop() if test is fundamentally incompatible or cannot proceed'),
+      recommendReset: z.boolean().describe('Recommend reset() if persistent failures suggest navigation issues'),
+      recommendStop: z.boolean().describe('Recommend stop() if test is fundamentally incompatible or cannot proceed'),
     });
 
     let problemContext = '';
@@ -664,7 +664,7 @@ export class Tester extends TaskAgent implements Agent {
     const schema = z.object({
       summary: z.string().describe('Concise overview of the test findings'),
       scenarioAchieved: z.boolean().describe('Indicates if the scenario goal appears satisfied'),
-      recommendation: z.string().optional().describe('Follow-up suggestion if needed'),
+      recommendation: z.string().describe('Follow-up suggestion if needed'),
     });
 
     const model = this.provider.getModelForAgent('tester');
