@@ -30,7 +30,7 @@ const TasksSchema = z.object({
       })
     )
     .describe('List of testing scenarios'),
-  reasoning: z.string().optional().describe('Brief explanation of the scenario selection'),
+  reasoning: z.string().describe('Brief explanation of the scenario selection'),
 });
 
 let planId = 0;
