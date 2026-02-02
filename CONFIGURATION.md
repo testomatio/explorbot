@@ -35,6 +35,7 @@ interface ExplorbotConfig {
   test: TestConfig;
   html?: HtmlConfig;
   action?: ActionConfig;
+  research?: ResearchConfig;
   dirs?: DirsConfig;
 }
 ```
@@ -139,6 +140,47 @@ interface TestConfig {
   workers: number;
 }
 ```
+
+### Research Configuration
+
+Controls the Researcher agent's interactive exploration during `/research --deep`.
+
+```typescript
+interface ResearchConfig {
+  skipElements?: string[];
+  includeElements?: string[];
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `skipElements` | `string[]` | Patterns or selectors for elements to skip during exploration. |
+| `includeElements` | `string[]` | Patterns or selectors for elements to always explore (overrides skipElements). |
+
+**Pattern types (both arrays support):**
+- **Name patterns** - plain text, partial match, case-insensitive (e.g., `'more'`, `'cookie'`)
+- **CSS selectors** - starts with `[`, `.`, or `#` (e.g., `'[aria-haspopup="true"]'`, `'.menu-btn'`)
+- **XPath selectors** - starts with `//` (e.g., `'//button[@data-action]'`)
+
+**Recommended starting values:**
+- `skipElements`: `['close', 'cancel', 'dismiss', 'x', 'back', 'previous', 'escape', 'exit']`
+- `includeElements`: `['more', 'options', 'actions', 'kebab', 'ellipsis', 'dots', 'overflow', '[aria-haspopup="true"]']`
+
+**Filtering priority:**
+1. `includeElements` patterns/selectors always get explored (highest priority)
+2. `skipElements` patterns/selectors are never explored
+
+Example:
+```typescript
+research: {
+  skipElements: ['cookie', 'consent', 'newsletter', '.chat-widget'],
+  includeElements: ['edit', 'delete', 'settings', '[aria-haspopup="true"]', '[data-testid="menu-btn"]'],
+}
+```
+
+**Workflow:** Run `/research --deep`, inspect output, then update config to skip unwanted elements or include missed ones.
+
+**Implementation:** `src/ai/researcher.ts` (`performInteractiveExploration` method)
 
 ## Example Configuration
 

@@ -273,9 +273,13 @@ export class Researcher implements Agent {
 
     const interactiveNodes = collectInteractiveNodes(currentState.ariaSnapshot);
     const clickableRoles = new Set(['button', 'link', 'tab', 'menuitem', 'switch', 'checkbox']);
-    const defaultExcluded = ['close', 'cancel', 'dismiss', 'x', 'back', 'previous', 'escape', 'exit'];
-    const configExcluded = ConfigParser.getInstance().getConfig().research?.skipElements || [];
-    const excludedNames = new Set([...defaultExcluded, ...configExcluded.map((s) => s.toLowerCase())]);
+    const researchConfig = ConfigParser.getInstance().getConfig().research!;
+
+    const isSelector = (s: string) => /^[\[.#]|^\/\//.test(s);
+    const skipPatterns = researchConfig.skipElements!.filter((s) => !isSelector(s)).map((s) => s.toLowerCase());
+    const skipSelectors = researchConfig.skipElements!.filter(isSelector);
+    const includePatterns = researchConfig.includeElements!.filter((s) => !isSelector(s)).map((s) => s.toLowerCase());
+    const includeSelectors = researchConfig.includeElements!.filter(isSelector);
 
     const targets = interactiveNodes.filter((node) => {
       const role = String(node.role || '').toLowerCase();
@@ -284,10 +288,17 @@ export class Researcher implements Agent {
       const name = String(node.name || '')
         .toLowerCase()
         .trim();
+      const hasPopup = node.haspopup === true || node.haspopup === 'true' || node.haspopup === 'menu';
+
+      const matchesIncludePattern = name && includePatterns.some((pattern) => name.includes(pattern));
+      const matchesIncludeSelector = includeSelectors.length > 0 && hasPopup && role === 'button';
+      if (matchesIncludePattern || matchesIncludeSelector) return true;
+
+      const matchesSkipPattern = name && skipPatterns.some((pattern) => name.includes(pattern));
+      const matchesSkipSelector = skipSelectors.length > 0 && hasPopup && role === 'button';
+      if (matchesSkipPattern || matchesSkipSelector) return false;
+
       if (!name) return false;
-      if (excludedNames.has(name)) return false;
-      const matchesExcluded = [...excludedNames].some((pattern) => name.includes(pattern));
-      if (matchesExcluded) return false;
       if (name.length > 50) return false;
 
       return true;
@@ -309,9 +320,22 @@ export class Researcher implements Agent {
       const target = targets[i];
       const role = String(target.role || '');
       const name = String(target.name || '');
-      const locator = JSON.stringify({ role, text: name });
+      const hasPopup = target.haspopup === true || target.haspopup === 'true' || target.haspopup === 'menu';
 
-      tag('substep').log(`Exploring: ${role} "${name}"`);
+      let locator: string;
+      let displayName: string;
+
+      if (name) {
+        locator = JSON.stringify({ role, text: name });
+        displayName = name;
+      } else if (hasPopup && includeSelectors.length > 0) {
+        locator = `'${includeSelectors[0]}'`;
+        displayName = '[menu trigger]';
+      } else {
+        continue;
+      }
+
+      tag('substep').log(`Exploring: ${role} "${displayName}"`);
 
       const action = this.explorer.createAction();
       const beforeState = await action.capturePageState({});
@@ -337,10 +361,10 @@ export class Researcher implements Agent {
           }
         }
 
-        results.push({ element: name, role, result: resultDescription });
+        results.push({ element: displayName, role, result: resultDescription });
       } catch (error) {
-        debugLog(`Failed to click ${name}:`, error);
-        results.push({ element: name, role, result: 'element not clickable' });
+        debugLog(`Failed to click ${displayName}:`, error);
+        results.push({ element: displayName, role, result: 'element not clickable' });
       }
 
       const postState = this.stateManager.getCurrentState();
