@@ -3,9 +3,9 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult, type ToolResultMetadata } from '../action-result.ts';
 import type Explorer from '../explorer.ts';
-import { TestResult, type Task } from '../test-plan.js';
-import { pause } from '../utils/loop.js';
+import { type Task, TestResult } from '../test-plan.js';
 import { createDebug } from '../utils/logger.js';
+import { pause } from '../utils/loop.js';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule, sectionUiMapRule } from './rules.ts';
@@ -14,6 +14,7 @@ import { isInteractive } from './task-agent.ts';
 const debugLog = createDebug('explorbot:tools');
 
 export const CODECEPT_TOOLS = ['click', 'type', 'select', 'pressKey', 'form'] as const;
+export const ASSERTION_TOOLS = ['verify'] as const;
 
 export function createCodeceptJSTools(explorer: Explorer, task: Task) {
   const stateManager = explorer.getStateManager();
@@ -558,11 +559,12 @@ export function createAgentTools({
         try {
           const action = explorer.createAction();
           const actionResult = await action.capturePageState();
-          const verified = await navigator.verifyState(assertion, actionResult);
+          const result = await navigator.verifyState(assertion, actionResult);
 
-          if (verified) {
+          if (result.verified) {
             return successToolResult('verify', {
               message: `Verification passed: ${assertion}`,
+              code: result.successfulCodes.join('\n'),
             });
           }
 
@@ -814,5 +816,48 @@ function failedToolResult(action: string, message: string, data?: Record<string,
   if (data?.pageDiff) {
     result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
   }
+
+  const multipleElementsSuggestion = getMultipleElementsSuggestion(message);
+  if (multipleElementsSuggestion) {
+    result.suggestion = multipleElementsSuggestion;
+    result.multipleElementsDetected = true;
+    return result;
+  }
+
+  const notFoundSuggestion = getNotFoundSuggestion(message);
+  if (notFoundSuggestion) {
+    result.suggestion = notFoundSuggestion;
+    result.elementNotFound = true;
+  }
+
   return result;
+}
+
+function getMultipleElementsSuggestion(errorMessage: string): string | null {
+  if (!errorMessage.includes('Multiple elements') && !errorMessage.includes('multiple elements')) {
+    return null;
+  }
+
+  return dedent`
+    Multiple elements matched your locator. To fix this:
+    1. Use container context: I.click({ "role": "button", "text": "Submit" }, '.form-container')
+    2. Use more specific CSS: target the actual element (input, button, a) not wrapper divs
+    3. Add distinguishing attributes: input[type="submit"], button[type="submit"], [value="..."]
+    4. If buttons have similar text like "Create" and "Create Demo", use the FULL unique text
+    5. Use see() tool to analyze the page and identify the correct locator
+  `;
+}
+
+function getNotFoundSuggestion(errorMessage: string): string | null {
+  if (!errorMessage.includes('was not found') && !errorMessage.includes('not found by text|CSS|XPath')) {
+    return null;
+  }
+
+  return dedent`
+    Element was not found. The locator does not exist on this page.
+    1. Use see() to visually analyze what elements are actually on the page
+    2. Use context() to get fresh HTML and ARIA snapshot
+    3. Use ONLY locators from <page_aria> or <page_html>
+    4. Prefer ARIA locators: { "role": "button", "text": "visible text" }
+  `;
 }

@@ -6,6 +6,7 @@ import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { Plan, Test } from '../test-plan.ts';
+import { collectInteractiveNodes } from '../utils/aria.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
@@ -43,6 +44,7 @@ export class Planner implements Agent {
   MAX_TASKS = 7;
   previousPlan: Plan | null = null;
   researcher: Researcher;
+  private analyzedUrls: Set<string> = new Set();
 
   constructor(explorer: Explorer, provider: Provider) {
     this.explorer = explorer;
@@ -77,6 +79,104 @@ export class Planner implements Agent {
     this.previousPlan = plan;
   }
 
+  async discoverTestsFromVisitedStates(plan: Plan): Promise<Test[]> {
+    const visitedStates = plan.getVisitedPages();
+    const unanalyzedStates = visitedStates.filter((state) => !this.analyzedUrls.has(state.url));
+    if (unanalyzedStates.length === 0) return [];
+
+    for (const state of unanalyzedStates) {
+      this.analyzedUrls.add(state.url);
+    }
+
+    const statesContext = unanalyzedStates
+      .map((state) => {
+        const ariaSnapshot = state.ariaSnapshot || '';
+        const interactiveNodes = collectInteractiveNodes(ariaSnapshot);
+
+        const interactiveRoles = new Set(['button', 'link', 'combobox', 'listbox', 'menuitem', 'tab']);
+        const elements = interactiveNodes
+          .filter((node) => interactiveRoles.has(node.role as string))
+          .filter((node) => node.name && (node.name as string).length > 2)
+          .map((node) => `${node.role}: "${node.name}"`)
+          .slice(0, 20);
+
+        const uiContext = this.detectUIContext(ariaSnapshot);
+
+        return { url: state.url, uiContext, elements };
+      })
+      .filter((s) => s.elements.length > 0);
+
+    if (statesContext.length === 0) return [];
+
+    const currentTests = plan.tests.map((t) => t.scenario).join('\n');
+
+    const schema = z.object({
+      tests: z
+        .array(
+          z.object({
+            scenario: z.string().describe('Short test scenario name'),
+            firstStep: z.string().describe('First step: which element on which page, e.g. "Click Resend Invite button on /users page"'),
+            triggerUrl: z.string().describe('URL where the trigger element was found'),
+          })
+        )
+        .max(5)
+        .describe('Up to 5 new happy-path test scenarios'),
+    });
+
+    const result = await this.provider.generateObject(
+      [
+        {
+          role: 'user',
+          content: dedent`
+            Plan: ${plan.title}
+            Current tests:
+            ${currentTests}
+
+            Pages visited during testing:
+            ${statesContext
+              .map(
+                (s) => dedent`
+              URL: ${s.url}${s.uiContext ? ` (${s.uiContext})` : ''}
+              Elements: ${s.elements.join(', ')}
+            `
+              )
+              .join('\n\n')}
+
+            Identify NEW happy-path test scenarios from these elements.
+            Only suggest tests NOT covered by current tests.
+            Each test must include a first step stating which element on which page.
+            Return empty array if no new scenarios needed.
+            Maximum 5 tests. Only positive scenarios.
+          `,
+        },
+      ],
+      schema,
+      this.provider.getModelForAgent('planner')
+    );
+
+    const suggestions = result?.object?.tests || [];
+    const newTests: Test[] = [];
+
+    for (const suggestion of suggestions) {
+      const test = new Test(suggestion.scenario, 'low', [], suggestion.triggerUrl, [suggestion.firstStep]);
+      newTests.push(test);
+    }
+
+    if (newTests.length > 0) {
+      debugLog(`Discovered ${newTests.length} new test paths from visited states`);
+    }
+
+    return newTests;
+  }
+
+  private detectUIContext(ariaSnapshot: string): string | null {
+    if (!ariaSnapshot) return null;
+    if (ariaSnapshot.includes('dialog') || ariaSnapshot.includes('modal')) return 'modal open';
+    if (ariaSnapshot.includes('tabpanel')) return 'tab panel active';
+    if (ariaSnapshot.includes('menu[expanded=true]')) return 'menu expanded';
+    return null;
+  }
+
   async plan(feature?: string): Promise<Plan> {
     return Observability.run(
       'planner.plan',
@@ -87,6 +187,14 @@ export class Planner implements Agent {
         const state = this.stateManager.getCurrentState();
         debugLog('Planning:', state?.url);
         if (!state) throw new Error('No state found');
+
+        let discoveredTests: Test[] = [];
+        if (this.previousPlan) {
+          const executedTests = this.previousPlan.tests.filter((t) => t.result !== null);
+          if (executedTests.length > 0) {
+            discoveredTests = await this.discoverTestsFromVisitedStates(this.previousPlan);
+          }
+        }
 
         const actionResult = ActionResult.fromState(state);
         const conversation = await this.buildConversation(actionResult);
@@ -123,6 +231,17 @@ export class Planner implements Agent {
           t.startUrl = state.url;
           plan.addTest(t);
         });
+
+        for (const test of discoveredTests) {
+          test.startUrl = test.startUrl || state.url;
+          test.plan = plan;
+          plan.addTest(test);
+        }
+
+        if (discoveredTests.length > 0) {
+          tag('step').log(`Added ${discoveredTests.length} discovered test scenarios`);
+        }
+
         return plan;
       }
     );
@@ -186,7 +305,7 @@ export class Planner implements Agent {
     `;
 
     conversation.addUserText(planningPrompt);
-    const research = await this.researcher.research(state, { force: true, deep: true });
+    const research = await this.researcher.research(state, { deep: true });
     conversation.addUserText(`Identified page elements: ${research}`);
 
     if (this.previousPlan) {

@@ -1,11 +1,9 @@
 import dedent from 'dedent';
-import { marked } from 'marked';
-import { markedTerminal } from 'marked-terminal';
 import React from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import stripAnsi from 'strip-ansi';
 import { htmlTextSnapshot } from '../utils/html.js';
-marked.use(markedTerminal());
+import { parseMarkdownToTerminal } from '../utils/markdown-terminal.js';
 
 import { Box, Text } from 'ink';
 import type { LogType, TaggedLogEntry } from '../utils/logger.js';
@@ -91,6 +89,8 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
         return { color: 'gray' as const, dimColor: true };
       case 'html':
         return { color: 'gray' as const };
+      case 'input':
+        return { bold: true, color: '#FFA500' };
       default:
         return {};
     }
@@ -109,15 +109,15 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
     const styles = getLogStyles(log.type);
 
     if (log.type === 'multiline') {
-      const parsed = marked.parse(String(log.content)).toString();
-      const cleaned = stripAnsi(dedent(parsed));
-      const lines = cleaned.split('\n');
+      const cleaned = stripAnsi(dedent(log.content));
+      const parsed = parseMarkdownToTerminal(cleaned);
+      const lines = parsed.split('\n');
       const maxLines = 30;
       const truncated = lines.length > maxLines ? lines.slice(0, maxLines).join('\n') + `\n... (${lines.length - maxLines} more lines)` : cleaned;
       return (
-        <Box key={index} borderStyle="classic" marginY={1} padding={1} borderColor="dim" overflow="hidden">
+        <Box key={index} borderStyle="classic" borderLeft={false} borderRight={false} marginY={1} padding={1} borderColor="dim" overflow="hidden">
           <Text color="gray" dimColor>
-            {truncated}
+            {parsed}
           </Text>
         </Box>
       );
@@ -132,7 +132,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
         timestamp: log.timestamp,
       };
 
-      return renderLogEntry(multilineLog, `html-${index}`);
+      return renderLogEntry(multilineLog, index);
     }
 
     const lines = processLogContent(String(log.content));

@@ -1,4 +1,4 @@
-import { createCommands, type BaseCommand } from './commands/index.js';
+import { type BaseCommand, createCommands } from './commands/index.js';
 import type { ExplorBot } from './explorbot.js';
 import { tag } from './utils/logger.js';
 
@@ -159,8 +159,10 @@ export class CommandHandler implements InputManager {
   getFilteredCommands(input: string): string[] {
     const trimmedInput = input.trim();
     const normalizedInput = trimmedInput === '/' ? '' : trimmedInput;
-    const slashCommands = this.getAvailableCommands().filter((cmd) => cmd.startsWith('/'));
-    const defaultCommands = ['/explore', '/navigate', '/plan', '/plan:save', '/plan:load', '/research', '/aria', '/html', '/data', 'exit'];
+    const allCommands = this.getAvailableCommands().filter((cmd) => cmd.startsWith('/'));
+    const hasColon = normalizedInput.includes(':');
+    const slashCommands = hasColon ? allCommands : allCommands.filter((cmd) => !cmd.includes(':'));
+    const defaultCommands = ['/help', '/explore', '/navigate', '/plan', '/knows', '/research', '/test', 'exit'];
 
     if (!normalizedInput) {
       const prioritized = defaultCommands.filter((cmd) => cmd === 'exit' || slashCommands.includes(cmd));

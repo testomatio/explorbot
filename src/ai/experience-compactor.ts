@@ -1,6 +1,6 @@
 import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import matter from 'gray-matter';
 import dedent from 'dedent';
+import matter from 'gray-matter';
 import { z } from 'zod';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import { createDebug, log } from '../utils/logger.js';

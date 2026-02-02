@@ -4,7 +4,8 @@ import { tag } from '../utils/logger.js';
 import { BaseCommand } from './base-command.js';
 
 export class KnowCommand extends BaseCommand {
-  name = 'know';
+  name = 'knows:add';
+  aliases = ['add-knowledge'];
   description = 'Store knowledge for current page';
 
   async execute(args: string): Promise<void> {

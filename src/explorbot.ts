@@ -14,6 +14,7 @@ import { createAgentTools } from './ai/tools.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
+import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
 import { Plan } from './test-plan.ts';
 import { log, setVerboseMode, tag } from './utils/logger.ts';
@@ -29,7 +30,7 @@ export interface ExplorBotOptions {
   incognito?: boolean;
 }
 
-export type UserResolveFunction = (error?: Error) => Promise<string | null>;
+export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
 
 export class ExplorBot {
   private configParser: ConfigParser;
@@ -94,9 +95,9 @@ export class ExplorBot {
   async visitInitialState(): Promise<void> {
     const url = this.options.from || '/';
     await this.visit(url);
+
     if (this.userResolveFn) {
-      log('What should we do next? Consider /explore /plan /navigate commands');
-      this.userResolveFn();
+      this.userResolveFn(undefined, true);
     } else {
       log('No user resolve function provided, exiting...');
     }
@@ -112,6 +113,13 @@ export class ExplorBot {
 
   getExplorer(): Explorer {
     return this.explorer;
+  }
+
+  getKnowledgeTracker(): KnowledgeTracker {
+    if (this.explorer) {
+      return this.explorer.getKnowledgeTracker();
+    }
+    return new KnowledgeTracker();
   }
 
   getConfig(): ExplorbotConfig {

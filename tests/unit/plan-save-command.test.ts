@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { PlanSaveCommand } from '../../src/commands/plan-save-command.js';
 import type { ExplorBot } from '../../src/explorbot.js';
 import { Plan } from '../../src/test-plan.js';
-import { PlanSaveCommand } from '../../src/commands/plan-save-command.js';
 
 function createMockExplorBot(overrides: Partial<ExplorBot> = {}): ExplorBot {
   return {

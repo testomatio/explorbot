@@ -9,6 +9,7 @@ import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
+import { extractFocusedElement } from '../utils/aria.ts';
 import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
@@ -17,8 +18,7 @@ import type { Conversation } from './conversation.ts';
 import { Navigator } from './navigator.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, focusedElementRule, locatorRule, protectionRule, sectionContextRule } from './rules.ts';
-import { extractFocusedElement } from '../utils/aria.ts';
+import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools } from './tools.ts';
 
@@ -305,7 +305,7 @@ export class Tester extends TaskAgent implements Agent {
       `;
     }
 
-    if (this.explorer.isInsideIframe()) {
+    if (await this.explorer.isInsideIframe()) {
       const iframeInfo = this.explorer.getCurrentIframeInfo();
       context += dedent`
         <iframe_context>
@@ -313,6 +313,12 @@ export class Tester extends TaskAgent implements Agent {
         You are currently inside an iframe. Call I.switchTo() (without arguments) to exit before interacting with elements outside the iframe.
         </iframe_context>
       `;
+    }
+
+    if (this.explorer.hasOtherTabs()) {
+      const otherTabs = this.explorer.getOtherTabsInfo();
+      context += multipleTabsRule(otherTabs);
+      this.explorer.clearOtherTabsInfo();
     }
 
     if (isNewUrl) {
@@ -852,9 +858,9 @@ export class Tester extends TaskAgent implements Agent {
           }
 
           const actionResult = ActionResult.fromState(state);
-          const verified = await this.navigator.verifyState(verify, actionResult);
+          const result = await this.navigator.verifyState(verify, actionResult);
 
-          if (!verified) {
+          if (!result.verified) {
             task.addNote(`Verification failed: ${verify}`, TestResult.FAILED);
             return {
               success: false,

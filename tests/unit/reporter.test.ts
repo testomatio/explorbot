@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { ActiveNote, Plan, Task, Test, TestResult } from '../../src/test-plan.ts';
 import { Reporter } from '../../src/reporter.ts';
+import { ActiveNote, Plan, Task, Test, TestResult } from '../../src/test-plan.ts';
 
 class TestableReporter extends Reporter {
   public combineStepsAndNotes(test: Test) {

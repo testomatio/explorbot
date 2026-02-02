@@ -322,7 +322,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(message: string, actionResult: ActionResult): Promise<boolean> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; successfulCodes: string[] }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -393,7 +393,7 @@ class Navigator implements Agent {
     conversation.addUserText(prompt);
 
     let codeBlocks: string[] = [];
-    let verified = false;
+    const successfulCodes: string[] = [];
 
     const action = this.explorer.createAction();
 
@@ -420,12 +420,11 @@ class Navigator implements Agent {
         }
 
         tag('step').log(`Attempting verification: ${codeBlock}`);
-        verified = await action.attempt(codeBlock, message, false);
+        const verified = await action.attempt(codeBlock, message, false);
 
         if (verified) {
           tag('success').log('Verification passed');
-          stop();
-          return;
+          successfulCodes.push(codeBlock);
         }
       },
       {
@@ -435,12 +434,11 @@ class Navigator implements Agent {
         },
         catch: async (error) => {
           debugLog(error);
-          verified = false;
         },
       }
     );
 
-    return verified;
+    return { verified: successfulCodes.length > 0, successfulCodes };
   }
 }
 

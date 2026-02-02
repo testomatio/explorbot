@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import type { ExplorBot } from '../../src/explorbot.js';
 import { BaseCommand } from '../../src/commands/base-command.js';
+import type { ExplorBot } from '../../src/explorbot.js';
 
 const mockExplorBot = {} as ExplorBot;
 

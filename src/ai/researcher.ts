@@ -345,6 +345,14 @@ export class Researcher implements Agent {
       | 'Cancel' | { role: 'button', text: 'Cancel' } | '[role="dialog"] button.cancel-btn' | '//div[@role="dialog"]//button[contains(@class,"cancel-btn")]' | (500, 400) |
       | 'Close' | { role: 'button', text: 'Close' } | '[role="dialog"] .close-btn' | '//div[@role="dialog"]//button[@aria-label="Close"]' | (750, 150) |
       </section_example>
+
+      <css_selector_rules>
+      CSS/XPath selectors MUST point to the actual interactive element (input, button, a, select), NOT to container divs.
+      - If a submit button is inside a wrapper div, target the input/button directly
+      - Bad: '#submit-wrapper' (div container)
+      - Good: '#submit-wrapper input[type="submit"]' or 'input[type="submit"][value="Submit"]'
+      - For buttons with similar text, include distinguishing attributes like type, value, or form context
+      </css_selector_rules>
     `;
   }
 

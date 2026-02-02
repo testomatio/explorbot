@@ -58,13 +58,15 @@ class Action {
 
     let screenshotFile: string | undefined = undefined;
 
-    const makeScreenshot = async () => {
-      await (this.actor as any).saveScreenshot(`${stateHash}_${timestamp}.png`);
-      screenshotFile = `${stateHash}_${timestamp}.png`;
-    };
-
     if (includeScreenshot) {
-      await makeScreenshot();
+      const filename = `${stateHash}_${timestamp}.png`;
+      screenshotFile = await (this.actor as any)
+        .saveScreenshot(filename)
+        .then(() => filename)
+        .catch((err: Error) => {
+          debugLog('Screenshot failed, continuing without it:', err);
+          return undefined;
+        });
     }
 
     // Save HTML to file

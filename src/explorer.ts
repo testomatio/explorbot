@@ -29,6 +29,12 @@ declare namespace CodeceptJS {
 }
 
 const debugLog = createDebug('explorbot:explorer');
+
+interface TabInfo {
+  url: string;
+  title: string;
+}
+
 class Explorer {
   private aiProvider: AIProvider;
   playwrightHelper: any;
@@ -40,6 +46,7 @@ class Explorer {
   private userResolveFn: UserResolveFunction | null = null;
   private options?: { show?: boolean; headless?: boolean; incognito?: boolean };
   private reporter!: Reporter;
+  private otherTabs: TabInfo[] = [];
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean }) {
     this.config = config;
@@ -227,13 +234,33 @@ class Explorer {
     }
   }
 
-  isInsideIframe(): boolean {
-    return !!this.playwrightHelper.frame;
+  async isInsideIframe(): Promise<boolean> {
+    if (this.playwrightHelper.frame) return true;
+
+    try {
+      const page = this.playwrightHelper.page;
+      if (!page) return false;
+      return await page.evaluate(() => window.top !== window.self);
+    } catch {
+      return false;
+    }
   }
 
   getCurrentIframeInfo(): string | null {
-    if (!this.playwrightHelper.frame) return null;
-    return this.playwrightHelper.frame.url() || 'unknown iframe';
+    if (!this.playwrightHelper?.frame) return null;
+    return 'iframe context active';
+  }
+
+  hasOtherTabs(): boolean {
+    return this.otherTabs.length > 0;
+  }
+
+  getOtherTabsInfo(): TabInfo[] {
+    return [...this.otherTabs];
+  }
+
+  clearOtherTabsInfo(): void {
+    this.otherTabs = [];
   }
 
   setUserResolve(userResolveFn: UserResolveFunction): void {
@@ -260,16 +287,18 @@ class Explorer {
           return;
         }
 
-        tag('info').log('New browser tab detected. Switching to it');
+        try {
+          await newPage.waitForLoadState('domcontentloaded', { timeout: 5000 });
+          const url = await newPage.url();
+          const title = await newPage.title().catch(() => 'Unknown');
 
-        await newPage.waitForLoadState();
-        await newPage.bringToFront();
-
-        this.playwrightHelper.page = newPage;
-
-        this.stateManager.updateStateFromBasic(await newPage.url(), await newPage.title(), 'navigation');
-
-        debugLog('Successfully switched to new tab');
+          this.otherTabs.push({ url, title });
+          tag('info').log(`New browser tab opened: ${url}`);
+          debugLog(`New tab detected: ${url} - ${title}`);
+        } catch (error) {
+          debugLog('Failed to get new tab info:', error);
+          this.otherTabs.push({ url: 'unknown', title: 'unknown' });
+        }
       });
 
       page.on('framenavigated', async (frame: any) => {

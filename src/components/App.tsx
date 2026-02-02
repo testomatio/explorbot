@@ -1,10 +1,13 @@
 import { Box, Text, useInput } from 'ink';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CommandHandler } from '../command-handler.js';
+import type { ExplorbotConfig } from '../config.js';
 import { executionController } from '../execution-controller.ts';
 import type { ExplorBot, ExplorBotOptions } from '../explorbot.ts';
+import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import type { StateTransition, WebPageState } from '../state-manager.js';
 import { Test } from '../test-plan.ts';
+import { tag } from '../utils/logger.js';
 import ActivityPane from './ActivityPane.js';
 import Autocomplete from './Autocomplete.js';
 import InputPane from './InputPane.js';
@@ -13,6 +16,8 @@ import LogPane from './LogPane.js';
 import SessionTimer from './SessionTimer.js';
 import StateTransitionPane from './StateTransitionPane.js';
 import TaskPane from './TaskPane.js';
+import WelcomeChecklist from './WelcomeChecklist.js';
+import WelcomeCommands from './WelcomeCommands.js';
 
 interface AppProps {
   explorBot: ExplorBot;
@@ -30,6 +35,8 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
   const [tasks, setTasks] = useState<Test[]>([]);
   const [commandHandler] = useState(() => new CommandHandler(explorBot));
+  const [checklistData, setChecklistData] = useState<{ config: ExplorbotConfig; knowledgeTracker: KnowledgeTracker } | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
   const userInputPromiseRef = useRef<{
     resolve: (value: string | null) => void;
     reject: (reason?: any) => void;
@@ -44,9 +51,12 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       process.env.INK_RUNNING = 'true';
       try {
         setShowInput(false);
-        explorBot.setUserResolve(async (error?: Error) => {
+        explorBot.setUserResolve(async (error?: Error, showWelcomeFlag?: boolean) => {
           if (error) {
             console.error('Error occurred:', error.message);
+          }
+          if (showWelcomeFlag) {
+            setShowWelcome(true);
           }
           setShowInput(true);
 
@@ -56,6 +66,13 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         });
 
         await explorBot.start();
+
+        if (mounted) {
+          setChecklistData({
+            config: explorBot.getConfig(),
+            knowledgeTracker: explorBot.getKnowledgeTracker(),
+          });
+        }
 
         const manager = explorBot.getExplorer().getStateManager();
 
@@ -167,21 +184,45 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     }
   });
 
-  const handleInputSubmit = useCallback(async (input: string) => {
-    if (interruptResolveRef.current) {
-      interruptResolveRef.current(input);
-      interruptResolveRef.current = null;
-      setInterruptPrompt(null);
-      setShowInput(false);
-      return;
-    }
+  const handleInputSubmit = useCallback(
+    async (input: string) => {
+      const trimmed = input.trim();
+      if (!trimmed) return;
 
-    if (userInputPromiseRef.current) {
-      userInputPromiseRef.current.resolve(input);
-      userInputPromiseRef.current = null;
-    }
-    setShowInput(false);
-  }, []);
+      if (trimmed.toLowerCase() === '/help') {
+        setShowWelcome(true);
+      } else {
+        setShowWelcome(false);
+      }
+      tag('input').log(`> ${trimmed}`);
+
+      const isCommand = trimmed.startsWith('/') || trimmed.startsWith('I.');
+
+      if (isCommand) {
+        setInterruptPrompt(null);
+        setShowInput(false);
+        interruptResolveRef.current = null;
+        await commandHandler.executeCommand(trimmed);
+        setShowInput(true);
+        return;
+      }
+
+      if (interruptResolveRef.current) {
+        interruptResolveRef.current(input);
+        interruptResolveRef.current = null;
+        setInterruptPrompt(null);
+        setShowInput(false);
+        return;
+      }
+
+      if (userInputPromiseRef.current) {
+        userInputPromiseRef.current.resolve(input);
+        userInputPromiseRef.current = null;
+      }
+      setShowInput(false);
+    },
+    [commandHandler]
+  );
 
   const handleCommandStart = useCallback(() => {
     setShowInput(false);
@@ -193,6 +234,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
 
   return (
     <Box flexDirection="column">
+      {checklistData && <WelcomeChecklist config={checklistData.config} knowledgeTracker={checklistData.knowledgeTracker} />}
       <Box flexDirection="column" flexGrow={1}>
         <LogPane verboseMode={explorBot.getOptions()?.verbose || false} />
       </Box>
@@ -202,6 +244,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         {showSessionTimer && <SessionTimer startedAt={sessionStartedAtRef.current} />}
       </Box>
 
+      {showWelcome && <WelcomeCommands hasKnowledge={explorBot.getKnowledgeTracker().listAllKnowledge().length > 0} />}
       {showInput && <Box height={1} />}
       {interruptPrompt && showInput && (
         <Box paddingX={1}>

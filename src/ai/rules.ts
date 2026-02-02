@@ -199,6 +199,35 @@ export const sectionContextRule = dedent`
   </section_context_rule>
 `;
 
+export function multipleTabsRule(tabs: Array<{ url: string; title: string }>): string {
+  const tabsList = tabs.map((tab, i) => `  ${i + 1}. ${tab.title} - ${tab.url}`).join('\n');
+
+  return dedent`
+    <multiple_tabs_warning>
+    ⚠️ MULTIPLE BROWSER TABS DETECTED!
+
+    Other open tabs:
+    ${tabsList}
+
+    You MUST handle these tabs before continuing:
+
+    Option 1 - If the other tab(s) are NOT needed (external docs, popups, etc.):
+    \`\`\`js
+    I.closeOtherTabs();
+    \`\`\`
+
+    Option 2 - If you need content from another tab:
+    \`\`\`js
+    I.switchToNextTab();      // switch to the next tab
+    // ... interact with that tab ...
+    I.closeOtherTabs();       // then close other tabs
+    \`\`\`
+
+    IMPORTANT: Always close extra tabs to avoid confusion. Multiple tabs can cause test failures.
+    </multiple_tabs_warning>
+  `;
+}
+
 export const generalWordsRule = dedent`
   Avoid using general words like "the page", "the element", "the button", "the input", "the link", "the form", "the table", "the list", "the item", "the page", "the element", "the button", "the input", "the link", "the form", "the table", "the list", "the item", "the page", "the element", "the button", "the input", "the link", "the form", "the table", "the list", "the item".
   "comprehensive",

@@ -8,7 +8,7 @@ import { type Plan, type Task, type Test } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
-import { CODECEPT_TOOLS } from './tools.ts';
+import { ASSERTION_TOOLS, CODECEPT_TOOLS } from './tools.ts';
 
 const debugLog = createDebug('explorbot:historian');
 
@@ -69,18 +69,19 @@ export class Historian {
 
   private extractSteps(toolExecutions: ToolExecution[]): SessionStep[] {
     const steps: SessionStep[] = [];
+    const TRACKABLE_TOOLS = [...CODECEPT_TOOLS, ...ASSERTION_TOOLS];
 
     for (const exec of toolExecutions) {
-      if (!CODECEPT_TOOLS.includes(exec.toolName as any)) continue;
+      if (!TRACKABLE_TOOLS.includes(exec.toolName as any)) continue;
       if (!exec.output?.code) continue;
 
-      const message = exec.input?.explanation || exec.input?.note || `Executed ${exec.toolName}`;
+      const message = exec.input?.explanation || exec.input?.assertion || exec.input?.note || `Executed ${exec.toolName}`;
 
       steps.push({
         message,
         status: exec.wasSuccessful ? 'passed' : 'failed',
         tool: exec.toolName,
-        code: exec.output.code,
+        code: this.stripComments(exec.output.code),
         pageChange: this.formatPageDiff(exec.output.pageDiff),
       });
     }
@@ -144,7 +145,8 @@ export class Historian {
 
   toCode(conversation: Conversation, scenario: string): string {
     const toolExecutions = conversation.getToolExecutions();
-    const successfulSteps = toolExecutions.filter((exec) => exec.wasSuccessful && CODECEPT_TOOLS.includes(exec.toolName as any) && exec.output?.code);
+    const TRACKABLE_TOOLS = [...CODECEPT_TOOLS, ...ASSERTION_TOOLS];
+    const successfulSteps = toolExecutions.filter((exec) => exec.wasSuccessful && TRACKABLE_TOOLS.includes(exec.toolName as any) && exec.output?.code);
 
     if (successfulSteps.length === 0) {
       return '';
@@ -154,12 +156,12 @@ export class Historian {
     lines.push(`Scenario('${this.escapeString(scenario)}', ({ I }) => {`);
 
     for (const exec of successfulSteps) {
-      const explanation = exec.input?.explanation || exec.input?.note;
+      const explanation = exec.input?.explanation || exec.input?.assertion || exec.input?.note;
       if (explanation) {
         lines.push('');
         lines.push(`  Section('${this.escapeString(explanation)}');`);
       }
-      const code = exec.output.code;
+      const code = this.stripComments(exec.output.code);
       const codeLines = code.includes('\n') ? code.split('\n') : code.split('; ');
       for (const codeLine of codeLines) {
         const trimmed = codeLine.trim();
@@ -227,5 +229,15 @@ export class Historian {
 
   private escapeString(str: string): string {
     return str.replace(/'/g, "\\'").replace(/\n/g, ' ');
+  }
+
+  private stripComments(code: string): string {
+    return code
+      .split('\n')
+      .filter((line) => {
+        const trimmed = line.trim();
+        return trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('/*') && !trimmed.startsWith('*');
+      })
+      .join('\n');
   }
 }

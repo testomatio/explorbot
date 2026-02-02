@@ -137,13 +137,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         if (onSubmitRef.current) {
           await onSubmitRef.current(trimmedValue);
         }
-        try {
-          await commandHandler.executeCommand(trimmedValue);
-        } catch (error) {
-          addLog(`Command failed: ${error}`);
-        } finally {
-          onCommandCompleteRef.current?.();
-        }
+        onCommandCompleteRef.current?.();
 
         updateValue('', 0, false);
       } else {

@@ -19,5 +19,6 @@ export class PlanCommand extends BaseCommand {
     }
 
     tag('success').log(`Plan ready with ${plan.tests.length} tests`);
+    tag('info').log('Use /plan:save to save plan, /plan:load <file> to load a saved plan');
   }
 }

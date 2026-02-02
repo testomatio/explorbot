@@ -8,7 +8,7 @@ import { marked } from 'marked';
 import { ConfigParser } from '../config.js';
 import { Observability } from '../observability.ts';
 
-export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'step' | 'multiline' | 'html';
+export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'step' | 'multiline' | 'html' | 'input';
 
 export interface TaggedLogEntry {
   type: LogType;

@@ -1,8 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import matter from 'gray-matter';
-import type { ActionResult } from './action-result.js';
+import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
+import { createDebug } from './utils/logger.js';
+
+const debugLog = createDebug('explorbot:knowledge-tracker');
 
 interface Knowledge {
   filePath: string;
@@ -69,9 +72,15 @@ export class KnowledgeTracker {
   getRelevantKnowledge(state: ActionResult): Knowledge[] {
     this.loadKnowledgeFiles();
 
-    return this.knowledgeFiles.filter((knowledge) => {
+    const relevant = this.knowledgeFiles.filter((knowledge) => {
       return state.isMatchedBy(knowledge);
     });
+
+    const totalChars = relevant.reduce((sum, knowledge) => sum + (knowledge.content?.length || 0), 0);
+
+    debugLog(`Found ${relevant.length} knowledge references (${totalChars} chars) for ${state.url}`);
+
+    return relevant;
   }
 
   addKnowledge(urlPattern: string, description: string): { filename: string; filePath: string; isNewFile: boolean } {
@@ -156,6 +165,26 @@ export class KnowledgeTracker {
     const normalizedUrl = this.normalizeUrl(urlPattern);
 
     return this.knowledgeFiles.filter((knowledge) => knowledge.url === normalizedUrl).map((knowledge) => knowledge.content.trim());
+  }
+
+  listAllKnowledge(): Array<{ url: string; firstLine: string; filePath: string }> {
+    this.loadKnowledgeFiles();
+
+    return this.knowledgeFiles.map((knowledge) => {
+      const content = knowledge.content.trim();
+      const firstLine = content.split('\n')[0]?.trim() || '';
+      return {
+        url: knowledge.url,
+        firstLine,
+        filePath: knowledge.filePath,
+      };
+    });
+  }
+
+  getMatchingKnowledge(url: string): Knowledge[] {
+    this.loadKnowledgeFiles();
+    const state = new ActionResult({ url });
+    return this.getRelevantKnowledge(state);
   }
 
   normalizeUrl(url: string): string {

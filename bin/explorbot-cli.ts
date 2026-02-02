@@ -236,8 +236,8 @@ program
   });
 
 program
-  .command('know [url] [description]')
-  .alias('knows')
+  .command('knows:add [url] [description]')
+  .alias('add-knowledge')
   .description('Add knowledge for URLs')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (url, description, options) => {
@@ -258,6 +258,23 @@ program
         exitOnCtrlC: false,
         patchConsole: false,
       });
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('knows [url]')
+  .description('List all knowledge URLs or show matching knowledge for a URL')
+  .option('-p, --path <path>', 'Working directory path')
+  .action(async (url, options) => {
+    try {
+      await ConfigParser.getInstance().loadConfig({ path: options.path || process.cwd() });
+      const { KnowsCommand } = await import('../src/commands/knows-command.js');
+      const explorBot = new ExplorBot({ path: options.path });
+      const command = new KnowsCommand(explorBot);
+      await command.execute(url || '');
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
