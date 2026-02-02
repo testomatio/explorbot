@@ -23,6 +23,9 @@ out/
 # Example folder
 example/
 
+# Knowledge (may contain credentials)
+knowledge/
+
 # Output directories
 output/
 output/logs/

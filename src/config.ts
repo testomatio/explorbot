@@ -324,14 +324,15 @@ export class ConfigParser {
     const defaults = {
       playwright: {
         browser: 'chromium',
+        show: false, // we need headless
       },
       action: {
         delay: 1000,
         retries: 3,
       },
       research: {
-        skipElements: ['close', 'cancel', 'dismiss', 'x', 'back', 'previous', 'escape', 'exit'],
-        includeElements: ['more', 'options', 'actions', 'kebab', 'ellipsis', 'dots', 'overflow', '[aria-haspopup="true"]'],
+        skipElements: [],
+        includeElements: [],
       },
       dirs: {
         knowledge: 'knowledge',
