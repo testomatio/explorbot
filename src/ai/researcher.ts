@@ -18,6 +18,7 @@ import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
 import { locatorRule as generalLocatorRuleText, multipleLocatorRule, sectionUiMapRule } from './rules.js';
+import { collectInteractiveNodes, detectFocusArea } from '../utils/aria.ts';
 
 const debugLog = createDebug('explorbot:researcher');
 
@@ -252,7 +253,144 @@ export class Researcher implements Agent {
       }
     );
 
+    const explorationResults = await this.performInteractiveExploration(state);
+    if (explorationResults) {
+      additionalResearch += explorationResults;
+    }
+
     return additionalResearch;
+  }
+
+  private async performInteractiveExploration(state: WebPageState): Promise<string> {
+    debugLog('Starting interactive exploration of page elements');
+    tag('step').log('Exploring interactive elements...');
+
+    const currentState = this.stateManager.getCurrentState();
+    if (!currentState?.ariaSnapshot) {
+      debugLog('No ARIA snapshot available for exploration');
+      return '';
+    }
+
+    const interactiveNodes = collectInteractiveNodes(currentState.ariaSnapshot);
+    const clickableRoles = new Set(['button', 'link', 'tab', 'menuitem', 'switch', 'checkbox']);
+    const defaultExcluded = ['close', 'cancel', 'dismiss', 'x', 'back', 'previous', 'escape', 'exit'];
+    const configExcluded = ConfigParser.getInstance().getConfig().research?.skipElements || [];
+    const excludedNames = new Set([...defaultExcluded, ...configExcluded.map((s) => s.toLowerCase())]);
+
+    const targets = interactiveNodes.filter((node) => {
+      const role = String(node.role || '').toLowerCase();
+      if (!clickableRoles.has(role)) return false;
+
+      const name = String(node.name || '')
+        .toLowerCase()
+        .trim();
+      if (!name) return false;
+      if (excludedNames.has(name)) return false;
+      const matchesExcluded = [...excludedNames].some((pattern) => name.includes(pattern));
+      if (matchesExcluded) return false;
+      if (name.length > 50) return false;
+
+      return true;
+    });
+
+    if (targets.length === 0) {
+      debugLog('No clickable elements found for exploration');
+      return '';
+    }
+
+    debugLog(`Found ${targets.length} elements to explore`);
+    tag('substep').log(`Found ${targets.length} elements to explore`);
+
+    const results: Array<{ element: string; role: string; result: string }> = [];
+    const originalUrl = state.url;
+    const maxElements = Math.min(targets.length, 10);
+
+    for (let i = 0; i < maxElements; i++) {
+      const target = targets[i];
+      const role = String(target.role || '');
+      const name = String(target.name || '');
+      const locator = JSON.stringify({ role, text: name });
+
+      tag('substep').log(`Exploring: ${role} "${name}"`);
+
+      const action = this.explorer.createAction();
+      const beforeState = await action.capturePageState({});
+
+      try {
+        await action.execute(`I.click(${locator})`);
+        const afterState = await action.capturePageState({});
+
+        let resultDescription = 'no visible effect';
+
+        const urlChanged = afterState.url !== beforeState.url;
+        if (urlChanged) {
+          resultDescription = `navigates to ${afterState.url}`;
+          await this.navigateTo(originalUrl);
+        } else {
+          const focusArea = detectFocusArea(afterState.ariaSnapshot);
+          if (focusArea.detected) {
+            const modalName = focusArea.name ? ` "${focusArea.name}"` : '';
+            resultDescription = `opens ${focusArea.type}${modalName}`;
+            await action.execute("I.pressKey('Escape')");
+          } else if (afterState.ariaSnapshot !== beforeState.ariaSnapshot) {
+            resultDescription = 'reveals/changes content';
+          }
+        }
+
+        results.push({ element: name, role, result: resultDescription });
+      } catch (error) {
+        debugLog(`Failed to click ${name}:`, error);
+        results.push({ element: name, role, result: 'element not clickable' });
+      }
+
+      const postState = this.stateManager.getCurrentState();
+      if (postState?.url !== originalUrl) {
+        await this.navigateTo(originalUrl);
+      }
+    }
+
+    if (results.length === 0) {
+      return '';
+    }
+
+    const buttonResults = results.filter((r) => r.role === 'button');
+    const linkResults = results.filter((r) => r.role === 'link');
+    const otherResults = results.filter((r) => r.role !== 'button' && r.role !== 'link');
+
+    let output = '\n\n## Interactive Exploration\n\n';
+
+    if (buttonResults.length > 0) {
+      output += '### Buttons\n\n';
+      output += '| Element | Result |\n';
+      output += '|---------|--------|\n';
+      for (const r of buttonResults) {
+        output += `| "${r.element}" | ${r.result} |\n`;
+      }
+      output += '\n';
+    }
+
+    if (linkResults.length > 0) {
+      output += '### Links\n\n';
+      output += '| Element | Result |\n';
+      output += '|---------|--------|\n';
+      for (const r of linkResults) {
+        output += `| "${r.element}" | ${r.result} |\n`;
+      }
+      output += '\n';
+    }
+
+    if (otherResults.length > 0) {
+      output += '### Other Elements\n\n';
+      output += '| Element | Type | Result |\n';
+      output += '|---------|------|--------|\n';
+      for (const r of otherResults) {
+        output += `| "${r.element}" | ${r.role} | ${r.result} |\n`;
+      }
+      output += '\n';
+    }
+
+    tag('success').log(`Explored ${results.length} elements`);
+    return output;
   }
 
   private async ensureNavigated(url: string, screenshot?: boolean): Promise<void> {

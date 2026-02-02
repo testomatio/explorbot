@@ -88,11 +88,16 @@ interface ActionConfig {
   retries?: number;
 }
 
+interface ResearchConfig {
+  skipElements?: string[];
+}
+
 interface ExplorbotConfig {
   playwright: PlaywrightConfig;
   ai: AIConfig;
   html?: HtmlConfig;
   action?: ActionConfig;
+  research?: ResearchConfig;
   dirs?: {
     knowledge: string;
     experience: string;
@@ -112,7 +117,7 @@ const config: ExplorbotConfig = {
   },
 };
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig };
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearchConfig };
 
 export class ConfigParser {
   private static instance: ConfigParser;

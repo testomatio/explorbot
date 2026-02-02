@@ -6,7 +6,8 @@ export class ResearchCommand extends BaseCommand {
 
   async execute(args: string): Promise<void> {
     const includeData = args.includes('--data');
-    const target = args.replace('--data', '').trim();
+    const includeDeep = args.includes('--deep');
+    const target = args.replace('--data', '').replace('--deep', '').trim();
 
     if (target) {
       await this.explorBot.getExplorer().visit(target);
@@ -21,6 +22,7 @@ export class ResearchCommand extends BaseCommand {
       screenshot: true,
       force: true,
       data: includeData,
+      deep: includeDeep,
     });
   }
 }
