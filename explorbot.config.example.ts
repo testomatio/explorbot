@@ -19,6 +19,7 @@ interface PlaywrightConfig {
     height: number;
   };
   args: string[];
+  setupScripts?: string[];
 }
 
 interface AppConfig {
@@ -116,6 +117,10 @@ const config: ExplorbotConfig = {
       height: 900,
     },
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--disable-gpu'],
+
+    setupScripts: [
+      './browser-scripts/auto-accept-cookies.setup.js',
+    ],
   },
 
   app: {

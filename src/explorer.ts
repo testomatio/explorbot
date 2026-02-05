@@ -9,6 +9,7 @@ import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
+import { PageSetupManager } from './page-setup-manager.js';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
 import { Test } from './test-plan.ts';
@@ -47,6 +48,8 @@ class Explorer {
   private options?: { show?: boolean; headless?: boolean; incognito?: boolean };
   private reporter!: Reporter;
   private otherTabs: TabInfo[] = [];
+  private pageSetupManager!: PageSetupManager;
+  private pendingSetupScripts: Promise<void> | null = null;
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean }) {
     this.config = config;
@@ -56,6 +59,7 @@ class Explorer {
     this.stateManager = new StateManager({ incognito: this.options?.incognito });
     this.knowledgeTracker = new KnowledgeTracker();
     this.reporter = new Reporter();
+    this.pageSetupManager = new PageSetupManager(this, config);
   }
 
   private initializeContainer() {
@@ -180,6 +184,9 @@ class Explorer {
     }
     await this.playwrightHelper._startBrowser();
     await this.playwrightHelper._createContextPage();
+
+    await this.pageSetupManager.loadSetupScripts();
+
     const I = codeceptjs.container.support('I');
 
     this.actor = I;
@@ -195,7 +202,13 @@ class Explorer {
   }
 
   createAction() {
-    return new Action(this.actor, this.stateManager);
+    return new Action(this.actor, this.stateManager, this);
+  }
+
+  async waitForPendingSetupScripts(): Promise<void> {
+    if (this.pendingSetupScripts) {
+      await this.pendingSetupScripts;
+    }
   }
 
   async visit(url: string) {
@@ -223,6 +236,8 @@ class Explorer {
     if (waitForElement) {
       await action.execute(`I.waitForElement(${JSON.stringify(waitForElement)})`);
     }
+
+    await this.pageSetupManager.executeAfterNavigation(this.playwrightHelper.page, url);
 
     return action;
   }
@@ -313,10 +328,13 @@ class Explorer {
           debugLog('Failed to get page title:', error);
         }
 
-        // // Update state from navigation
         this.stateManager.updateStateFromBasic(newUrl, newTitle, 'navigation');
 
         await new Promise((resolve) => setTimeout(resolve, 500));
+
+        this.pendingSetupScripts = this.pageSetupManager.executeAfterNavigation(page, newUrl);
+        await this.pendingSetupScripts;
+        this.pendingSetupScripts = null;
       });
 
       debugLog('Listening for automatic state changes');

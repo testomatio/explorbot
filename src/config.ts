@@ -27,6 +27,7 @@ interface PlaywrightConfig {
     height: number;
   };
   args?: string[];
+  setupScripts?: string[];
 }
 
 interface AgentConfig {

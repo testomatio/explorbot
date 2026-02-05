@@ -36,13 +36,15 @@ class Action {
   private expectation: string | null = null;
   public lastError: Error | null = null;
   public playwrightHelper: any;
+  private explorer: any;
 
-  constructor(actor: CodeceptJS.I, stateManager: StateManager) {
+  constructor(actor: CodeceptJS.I, stateManager: StateManager, explorer?: any) {
     this.actor = actor;
     this.stateManager = stateManager;
     this.experienceTracker = stateManager.getExperienceTracker();
     this.config = ConfigParser.getInstance().getConfig();
     this.playwrightHelper = container.helpers('Playwright');
+    this.explorer = explorer;
   }
 
   async caputrePageWithScreenshot(): Promise<ActionResult> {
@@ -193,6 +195,10 @@ class Action {
 
       await recorder.add(() => sleep(this.config.action?.delay || 500)); // wait for the action to be executed
       await recorder.promise();
+
+      if (this.explorer?.waitForPendingSetupScripts) {
+        await this.explorer.waitForPendingSetupScripts();
+      }
 
       const pageState = await this.capturePageState();
       if (executedSteps.length > 0) {

@@ -20,8 +20,10 @@ dist/
 build/
 out/
 
-# Example folder
+# App specific folders
 example/
+browser-scripts/
+knowledge/
 
 # Output directories
 output/
