@@ -1,17 +1,15 @@
 # Researcher Agent
 
-The Researcher agent analyzes web pages to understand their structure, identify interactive elements, and create UI maps. It's the foundation for intelligent test planning and navigation.
+The Researcher agent analyzes web pages to understand their structure, identify UI elements, and create detailed UI maps with locators.
 
-## Why Research Matters
+## Overview
 
-Research is the essential first step in Explorbot's workflow. Before the system can plan tests or navigate intelligently, it needs to understand what's on the page.
+Research provides context for test planning and execution:
 
-**The Researcher is used by other agents:**
-- **Planner** - launches research automatically before generating test scenarios
-- **Tester** - uses research to understand page context during test execution
-- **Navigator** - relies on research to find elements and navigate
+- **Planner** — calls Researcher before generating test scenarios
+- **Tester** — uses research results to understand page context during execution
 
-You can also run research manually to inspect a page or debug issues.
+You can also run research manually to inspect pages or debug locator issues.
 
 ## Usage
 
@@ -73,20 +71,17 @@ When researching a page, the Researcher:
 
 ```mermaid
 flowchart TD
-    A[Start Research] --> B[Capture Page State]
-    B --> C{Vision Enabled?}
-    C -->|Yes| D[Capture Screenshot]
-    C -->|No| E[Parse HTML + ARIA]
-    D --> E
-    E --> F[Identify Page Sections]
-    F --> G[Map Interactive Elements]
-    G --> H{Deep Mode?}
-    H -->|Yes| I[Expand Hidden Elements]
-    I --> J[Document Changes]
-    J --> G
-    H -->|No| K[Generate UI Map Report]
-    K --> L[Cache Results]
-    L --> M[Return Research]
+    A[/"RESEARCH"/] --> B[Capture Page State<br/>HTML + ARIA tree]
+    B --> C{Vision?}
+    C -->|Yes| D[Analyze Screenshot]
+    C -->|No| E
+    D --> E[Identify Page Sections<br/>focus, list, content, menu]
+    E --> F[Map UI Elements<br/>with ARIA, CSS, XPath locators]
+    F --> G{Deep Mode?}
+    G -->|Yes| H[Expand Hidden Elements<br/>dropdowns, tabs, accordions]
+    H --> F
+    G -->|No| I[Generate UI Map Report]
+    I --> J[/"Cache to output/research/"/]
 ```
 
 ### Research Modes
@@ -157,9 +152,9 @@ Vision is particularly useful for:
 - When HTML doesn't reflect visual layout
 - Debugging element location issues
 
-## Interactive Exploration
+## Deep Exploration
 
-Interactive exploration discovers hidden UI by clicking through elements to find **modals, dropdowns, tabs, and menus**:
+Deep exploration (`--deep` flag) discovers hidden UI by clicking through elements to find **modals, dropdowns, tabs, and menus**:
 
 ```
 [1/10] Exploring: "Settings" (button) → opened modal
@@ -170,7 +165,7 @@ Interactive exploration discovers hidden UI by clicking through elements to find
 
 ```mermaid
 flowchart TD
-    A[/"INTERACTIVE EXPLORATION<br/>(modals, dropdowns, tabs, menus)"/] --> B
+    A[/"DEEP EXPLORATION --deep<br/>(modals, dropdowns, tabs, menus)"/] --> B
     B[Collect Elements from ARIA Tree<br/>buttons, links, tabs, menuitems] --> C
     C[Filter Elements<br/>stop words, excluded selectors<br/>limit to max 10] --> D
 
