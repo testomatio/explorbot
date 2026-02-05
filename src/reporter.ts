@@ -79,6 +79,8 @@ export class Reporter {
   }
 
   async reportTest(test: Test): Promise<void> {
+    await this.startRun();
+
     if (!this.isRunStarted) {
       return;
     }

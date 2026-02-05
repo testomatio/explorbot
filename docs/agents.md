@@ -40,18 +40,22 @@ flowchart LR
 - Discovers all interactive UI elements
 - Expands hidden content (accordions, dropdowns, modals)
 - Maps navigation paths and form structures
-- Identifies accessibility issues
 - Extracts structured data from tables and lists
+- Filters out irrelevant elements (cookie banners, ads)
 
 **Why you'll love it:**
 - Discovers UI elements you forgot existed
 - Gives you a complete picture of what's testable
 - Documents forms with all their validation rules
+- Configurable filtering to focus on what matters
 
 **Commands that use Researcher:**
-- `/research [url]`
-- `/data`
-- `/aria`
+- `explorbot research /path` (CLI)
+- `/research [path]` (TUI)
+- `/research --deep` — expand hidden elements
+- `/research --screenshot` — use vision model
+
+See [Researcher Agent](./researcher.md) for detailed configuration and usage.
 
 ## Planner Agent
 
@@ -115,7 +119,10 @@ export default {
     visionModel: 'llama-scout-4',
     agents: {
       navigator: { model: 'gpt-oss-20b' },
-      researcher: { model: 'gpt-oss-20b', visionModel: 'llama-scout-4' },
+      researcher: {
+        model: 'gpt-oss-20b',
+        excludeSelectors: ['.cookie-banner'],
+      },
       planner: { model: 'gpt-oss-20b' },
       tester: { model: 'gpt-oss-20b' },
     },

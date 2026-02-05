@@ -223,7 +223,7 @@ export class ExplorBot {
   async plan(feature?: string) {
     const planner = this.agentPlanner();
     if (this.currentPlan) {
-      planner.setPreviousPlan(this.currentPlan);
+      planner.setPlan(this.currentPlan);
     }
     this.currentPlan = await planner.plan(feature);
 

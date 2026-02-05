@@ -281,4 +281,45 @@ program
     }
   });
 
+program
+  .command('research <url>')
+  .description('Research a page and print UI analysis')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('-s, --show', 'Show browser window')
+  .option('--headless', 'Run browser in headless mode')
+  .option('--data', 'Include data extraction in research')
+  .action(async (url, options) => {
+    try {
+      const mainOptions: ExplorBotOptions = {
+        path: options.path,
+        config: options.config,
+        show: options.show,
+        headless: options.headless,
+      };
+
+      const explorBot = new ExplorBot(mainOptions);
+      await explorBot.start();
+
+      await explorBot.visit(url);
+
+      const state = explorBot.getExplorer().getStateManager().getCurrentState();
+      if (!state) {
+        throw new Error('No active page to research');
+      }
+
+      await explorBot.agentResearcher().research(state, {
+        screenshot: true,
+        force: true,
+        data: options.data || false,
+      });
+
+      await explorBot.stop();
+      process.exit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
 program.parse();

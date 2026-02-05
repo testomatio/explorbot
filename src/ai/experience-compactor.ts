@@ -51,46 +51,50 @@ export class ExperienceCompactor implements Agent {
   }
 
   async compactAllExperiences(): Promise<number> {
-    await this.mergeSimilarExperiences();
+    return Observability.run('experience-compactor.compactAll', { tags: ['experience-compactor'] }, async () => {
+      await this.mergeSimilarExperiences();
 
-    const experienceFiles = this.experienceTracker.getAllExperience();
-    let compactedCount = 0;
+      const experienceFiles = this.experienceTracker.getAllExperience();
+      let compactedCount = 0;
 
-    for (const experience of experienceFiles) {
-      const prevContent = experience.content;
-      const frontmatter = experience.data;
-      const compactedContent = await this.compactExperienceFile(experience.filePath);
+      for (const experience of experienceFiles) {
+        const prevContent = experience.content;
+        const frontmatter = experience.data;
+        const compactedContent = await this.compactExperienceFile(experience.filePath);
 
-      if (prevContent !== compactedContent) {
-        const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
-        this.experienceTracker.writeExperienceFile(stateHash, compactedContent, frontmatter);
-        debugLog('Experience file compacted:', experience.filePath);
-        compactedCount++;
+        if (prevContent !== compactedContent) {
+          const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
+          this.experienceTracker.writeExperienceFile(stateHash, compactedContent, frontmatter);
+          debugLog('Experience file compacted:', experience.filePath);
+          compactedCount++;
+        }
       }
-    }
 
-    return compactedCount;
+      return compactedCount;
+    });
   }
 
   async mergeSimilarExperiences(): Promise<number> {
-    const experienceFiles = this.experienceTracker.getAllExperience();
-    if (experienceFiles.length < 2) {
-      return 0;
-    }
-
-    const mergeGroups = await this.identifyMergeGroups(experienceFiles);
-    let mergedCount = 0;
-
-    for (const group of mergeGroups) {
-      if (group.files.length < 2) {
-        continue;
+    return Observability.run('experience-compactor.merge', { tags: ['experience-compactor'] }, async () => {
+      const experienceFiles = this.experienceTracker.getAllExperience();
+      if (experienceFiles.length < 2) {
+        return 0;
       }
 
-      await this.mergeExperienceGroup(group);
-      mergedCount += group.files.length - 1;
-    }
+      const mergeGroups = await this.identifyMergeGroups(experienceFiles);
+      let mergedCount = 0;
 
-    return mergedCount;
+      for (const group of mergeGroups) {
+        if (group.files.length < 2) {
+          continue;
+        }
+
+        await this.mergeExperienceGroup(group);
+        mergedCount += group.files.length - 1;
+      }
+
+      return mergedCount;
+    });
   }
 
   private async identifyMergeGroups(files: ExperienceFile[]): Promise<MergeGroup[]> {
@@ -136,7 +140,9 @@ export class ExperienceCompactor implements Agent {
     });
 
     try {
-      const response = await this.provider.generateObject([{ role: 'user', content: prompt }], schema, model);
+      const response = await this.provider.generateObject([{ role: 'user', content: prompt }], schema, model, {
+        telemetryFunctionId: 'experience.mergeDecisions',
+      });
       debugLog('AI merge decisions:', response.object);
       return response.object.mergeGroups || [];
     } catch (error) {
@@ -217,9 +223,12 @@ export class ExperienceCompactor implements Agent {
   }
 
   private getSystemPrompt(): string {
+    const customPrompt = this.provider.getSystemPromptForAgent('experience-compactor');
     return dedent`
       You are an expert test automation engineer specializing in CodeceptJS.
       Your task is to compact experience data from test automation attempts into clean markdown format.
+
+      ${customPrompt || ''}
     `;
   }
 

@@ -188,7 +188,6 @@ class Explorer {
     this.listenToStateChanged();
 
     codeceptjs.event.dispatcher.emit('global.before');
-    this.reporter.startRun();
     tag('success').log('Browser started, ready to explore');
 
     return I;

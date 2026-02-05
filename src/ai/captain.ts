@@ -52,6 +52,7 @@ export class Captain extends TaskAgent implements Agent {
   }
 
   private systemPrompt(): string {
+    const customPrompt = this.explorBot.getProvider().getSystemPromptForAgent('captain');
     return dedent`
     <role>
     You execute exactly what the user asks - nothing more.
@@ -74,6 +75,8 @@ export class Captain extends TaskAgent implements Agent {
     ${locatorRule}
 
     ${actionRule}
+
+    ${customPrompt || ''}
     `;
   }
 

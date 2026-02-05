@@ -43,6 +43,11 @@ export class Provider {
     return agentConfig?.model || this.config.model;
   }
 
+  getSystemPromptForAgent(agentName: string): string | undefined {
+    const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
+    return agentConfig?.systemPrompt;
+  }
+
   private getRetryOptions(options: any = {}): RetryOptions {
     return {
       ...this.defaultRetryOptions,

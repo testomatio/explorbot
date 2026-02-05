@@ -32,12 +32,20 @@ interface PlaywrightConfig {
 interface AgentConfig {
   model?: string;
   enabled?: boolean;
+  systemPrompt?: string;
+}
+
+interface ResearcherAgentConfig extends AgentConfig {
+  excludeSelectors?: string[];
+  includeSelectors?: string[];
+  stopWords?: string[];
+  maxElementsToExplore?: number;
 }
 
 interface AgentsConfig {
   tester?: AgentConfig;
   navigator?: AgentConfig;
-  researcher?: AgentConfig;
+  researcher?: ResearcherAgentConfig;
   planner?: AgentConfig;
   'experience-compactor'?: AgentConfig;
   captain?: AgentConfig;
@@ -112,7 +120,7 @@ const config: ExplorbotConfig = {
   },
 };
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig };
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig };
 
 export class ConfigParser {
   private static instance: ConfigParser;

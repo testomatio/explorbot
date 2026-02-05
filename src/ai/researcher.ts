@@ -7,12 +7,14 @@ import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
+import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.ts';
 import { type HtmlDiffResult, htmlDiff } from '../utils/html-diff.ts';
 import { codeToMarkdown, isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
+import { collectInteractiveNodes, diffAriaSnapshots } from '../utils/aria.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
@@ -29,6 +31,10 @@ const POSSIBLE_SECTIONS = {
   content: 'main area of page',
   menu: 'navigation area',
 };
+
+const DEFAULT_STOP_WORDS = ['close', 'cancel', 'dismiss', 'exit', 'back', 'cookie', 'consent', 'gdpr', 'privacy', 'accept all', 'decline all', 'reject all', 'share', 'print', 'download'];
+
+const CLICKABLE_ROLES = new Set(['button', 'link', 'menuitem', 'tab', 'option', 'combobox', 'switch']);
 
 export class Researcher implements Agent {
   emoji = '🔍';
@@ -68,10 +74,13 @@ export class Researcher implements Agent {
   }
 
   getSystemMessage(): string {
+    const customPrompt = this.provider.getSystemPromptForAgent('researcher');
     return dedent`
     <role>
     You are senior QA focused on exploritary testig of web application.
     </role>
+
+    ${customPrompt || ''}
     `;
   }
 
@@ -79,8 +88,6 @@ export class Researcher implements Agent {
     const { screenshot = false, force = false, deep = false, data = false } = opts;
     this.actionResult = ActionResult.fromState(state);
     const stateHash = state.hash || this.actionResult.getStateHash();
-    const ttl = 60 * 60 * 1000;
-    const now = Date.now();
     const outputDir = stateHash ? ConfigParser.getInstance().getOutputDir() : null;
     const researchDir = stateHash && outputDir ? join(outputDir, 'research') : null;
     const researchFile = stateHash && researchDir ? join(researchDir, `${stateHash}.md`) : null;
@@ -93,61 +100,64 @@ export class Researcher implements Agent {
       }
     }
 
-    tag('info').log(`Researching ${state.url} to understand the context...`);
-    setActivity(`${this.emoji} Researching...`, 'action');
+    const sessionName = `researcher: ${state.url}`;
+    return Observability.run(sessionName, { tags: ['researcher'], sessionId: stateHash }, async () => {
+      tag('info').log(`Researching ${state.url} to understand the context...`);
+      setActivity(`${this.emoji} Researching...`, 'action');
 
-    const isOnCurrentState = this.actionResult.getStateHash() === this.stateManager.getCurrentState()?.hash;
-    await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
+      const isOnCurrentState = this.actionResult!.getStateHash() === this.stateManager.getCurrentState()?.hash;
+      await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
 
-    debugLog('Researching web page:', this.actionResult.url);
+      debugLog('Researching web page:', this.actionResult!.url);
 
-    this.hasScreenshotToAnalyze = screenshot && this.provider.hasVision() && isOnCurrentState;
+      this.hasScreenshotToAnalyze = screenshot && this.provider.hasVision() && isOnCurrentState;
 
-    const prompt = await this.buildResearchPrompt();
+      const prompt = await this.buildResearchPrompt();
 
-    const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
-    conversation.addUserText(prompt);
+      const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
+      conversation.addUserText(prompt);
 
-    if (this.hasScreenshotToAnalyze) {
-      this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
-      const screenshotAnalysis = await this.analyzeScreenshotForUIElements();
-      if (screenshotAnalysis) {
-        this.addScreenshotPrompt(conversation, screenshotAnalysis);
+      if (this.hasScreenshotToAnalyze) {
+        this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
+        const screenshotAnalysis = await this.analyzeScreenshotForUIElements();
+        if (screenshotAnalysis) {
+          this.addScreenshotPrompt(conversation, screenshotAnalysis);
+        }
       }
-    }
 
-    const result = await this.provider.invokeConversation(conversation);
-    if (!result) throw new Error('Failed to get response from provider');
+      const result = await this.provider.invokeConversation(conversation);
+      if (!result) throw new Error('Failed to get response from provider');
 
-    const { response } = result;
+      const { response } = result;
 
-    let researchText = response.text;
+      let researchText = response.text;
 
-    if (deep) {
-      researchText += await this.performDeepAnalysis(conversation, state, state.html ?? '');
-    }
+      if (deep) {
+        researchText += await this.performDeepAnalysis(conversation, state, state.html ?? '');
+      }
 
-    if (data) {
-      const extractedData = await this.extractData(state);
-      researchText += `\n\n## Data\n\n${extractedData}`;
-    }
+      if (data) {
+        const extractedData = await this.extractData(state);
+        researchText += `\n\n## Data\n\n${extractedData}`;
+      }
 
-    if (stateHash && researchDir && researchFile) {
-      if (!existsSync(researchDir)) mkdirSync(researchDir, { recursive: true });
-      writeFileSync(researchFile, researchText);
-      Researcher.researchCache[stateHash] = researchText;
-      Researcher.researchCacheTimestamps[stateHash] = Date.now();
-    }
+      if (stateHash && researchDir && researchFile) {
+        if (!existsSync(researchDir)) mkdirSync(researchDir, { recursive: true });
+        writeFileSync(researchFile, researchText);
+        Researcher.researchCache[stateHash] = researchText;
+        Researcher.researchCacheTimestamps[stateHash] = Date.now();
+      }
 
-    const summary = this.extractSummary(researchText);
-    if (summary) {
-      this.experienceTracker.updateSummary(this.actionResult!, summary);
-    }
+      const summary = this.extractSummary(researchText);
+      if (summary) {
+        this.experienceTracker.updateSummary(this.actionResult!, summary);
+      }
 
-    tag('multiline').log(researchText);
-    tag('success').log(`Research complete! ${researchText.length} characters`);
+      tag('multiline').log(researchText);
+      tag('success').log(`Research complete! ${researchText.length} characters`);
 
-    return researchText;
+      return researchText;
+    });
   }
 
   private async performDeepAnalysis(conversation: Conversation, state: WebPageState, initialHtml: string): Promise<string> {
@@ -378,6 +388,8 @@ export class Researcher implements Agent {
         </hint>`;
     }
 
+    const ariaSnapshot = this.actionResult.ariaSnapshot || '';
+
     return dedent`
       Analyze this web page and provide a comprehensive research report in markdown format.
 
@@ -389,6 +401,8 @@ export class Researcher implements Agent {
       <context>
       HTML Content:
       ${html}
+
+      ${ariaSnapshot ? `ARIA Tree:\n${ariaSnapshot}` : ''}
       </context>
 
       ${knowledge}
@@ -858,5 +872,200 @@ export class Researcher implements Agent {
       Review the screenshot analysis above and incorporate any additional UI elements or insights into your report.
       Pay attention to visual elements that may not be captured in HTML (icons, images, visual indicators).
     `);
+  }
+
+  private getResearcherConfig() {
+    return ConfigParser.getInstance().getConfig().ai?.agents?.researcher;
+  }
+
+  private matchesStopWord(name: string, stopWords: string[]): boolean {
+    const normalized = name.toLowerCase().trim();
+    return stopWords.some((word) => {
+      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\b${escaped}\\b`, 'i').test(normalized);
+    });
+  }
+
+  private async getExcludingSelector(role: string, name: string, excludeSelectors: string[]): Promise<string | null> {
+    if (excludeSelectors.length === 0) return null;
+
+    try {
+      const locator = { role, text: name };
+      const webElement = await this.explorer.actor.grabWebElement(locator);
+
+      for (const selector of excludeSelectors) {
+        const isInside = await webElement.element.evaluate((el: Element, sel: string) => el.closest(sel) !== null, selector);
+        if (isInside) return selector;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async performInteractiveExploration(state: WebPageState): Promise<string> {
+    const config = this.getResearcherConfig();
+    const stopWords = config?.stopWords ?? DEFAULT_STOP_WORDS;
+    const excludeSelectors = config?.excludeSelectors || [];
+    const includeSelectors = config?.includeSelectors || [];
+    const maxElements = config?.maxElementsToExplore ?? 10;
+
+    const interactiveNodes = collectInteractiveNodes(state.ariaSnapshot || '');
+    const originalUrl = state.url;
+
+    const candidates = interactiveNodes.filter((node) => {
+      const role = String(node.role || '').toLowerCase();
+      const name = String(node.name || '').trim();
+
+      if (!CLICKABLE_ROLES.has(role)) {
+        debugLog(`Skipping "${name}" - role "${role}" not clickable`);
+        return false;
+      }
+
+      if (!name) {
+        debugLog(`Skipping unnamed ${role} element`);
+        return false;
+      }
+
+      if (name.length > 50) {
+        debugLog(`Skipping "${name.slice(0, 30)}..." - name too long`);
+        return false;
+      }
+
+      if (this.matchesStopWord(name, stopWords)) {
+        debugLog(`Skipping "${name}" - matches stop word`);
+        return false;
+      }
+
+      return true;
+    });
+
+    const targets: Array<Record<string, unknown>> = [];
+    for (const node of candidates) {
+      const role = String(node.role || '');
+      const name = String(node.name || '').trim();
+
+      const excludedBy = await this.getExcludingSelector(role, name, excludeSelectors);
+      if (excludedBy) {
+        debugLog(`Skipping "${name}" - inside excluded container "${excludedBy}"`);
+        continue;
+      }
+
+      targets.push(node);
+      if (targets.length >= maxElements) break;
+    }
+
+    debugLog(`${candidates.length} candidates → ${targets.length} targets after filtering`);
+
+    const results: Array<{ element: string; role: string; result: string }> = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      const node = targets[i];
+      const role = String(node.role || '');
+      const name = String(node.name || '').trim();
+
+      tag('substep').log(`[${i + 1}/${targets.length}] Exploring: "${name}" (${role})`);
+
+      const action = this.explorer.createAction();
+      const beforeState = await action.capturePageState({});
+
+      try {
+        await action.execute(`I.click({ role: '${role}', text: '${name.replace(/'/g, "\\'")}' })`);
+        const afterState = await action.capturePageState({});
+
+        const resultDescription = this.detectChangeResult(beforeState, afterState, originalUrl);
+        results.push({ element: name, role, result: resultDescription });
+
+        await this.restoreState(afterState, originalUrl);
+      } catch (error) {
+        debugLog(`Failed to explore ${name}:`, error);
+        results.push({ element: name, role, result: 'click failed' });
+      }
+    }
+
+    if (includeSelectors.length > 0) {
+      await this.exploreIncludeSelectors(includeSelectors, results, originalUrl);
+    }
+
+    return this.formatResultsTable(results);
+  }
+
+  private detectChangeResult(before: ActionResult, after: ActionResult, originalUrl: string): string {
+    if (after.url !== before.url) {
+      if (!after.url.startsWith(originalUrl.split('?')[0])) {
+        return `navigated to ${after.url}`;
+      }
+      return `URL changed to ${after.url}`;
+    }
+
+    const ariaDiff = diffAriaSnapshots(before.ariaSnapshot || '', after.ariaSnapshot || '');
+    if (ariaDiff) {
+      if (ariaDiff.includes('dialog') || ariaDiff.includes('modal')) {
+        return 'opened dialog/modal';
+      }
+      if (ariaDiff.includes('menu')) {
+        return 'opened menu';
+      }
+      return 'UI changed';
+    }
+
+    return 'no visible change';
+  }
+
+  private async restoreState(afterState: ActionResult, originalUrl: string): Promise<void> {
+    if (afterState.url !== originalUrl) {
+      await this.navigateTo(originalUrl);
+      return;
+    }
+
+    const action = this.explorer.createAction();
+    await action.execute('I.pressKey("Escape")');
+    const stateAfterEscape = await action.capturePageState({});
+    const ariaDiff = diffAriaSnapshots(afterState.ariaSnapshot || '', stateAfterEscape.ariaSnapshot || '');
+    if (!ariaDiff) {
+      await this.cancelInUi();
+    }
+  }
+
+  private async exploreIncludeSelectors(includeSelectors: string[], results: Array<{ element: string; role: string; result: string }>, originalUrl: string): Promise<void> {
+    for (const containerSelector of includeSelectors) {
+      const buttonsSelector = `${containerSelector} button, ${containerSelector} [role="button"], ${containerSelector} a`;
+
+      const elements = await this.explorer.actor.grabWebElements(buttonsSelector);
+
+      for (const webElement of elements) {
+        const name = await webElement.getText();
+        if (!name?.trim()) continue;
+
+        tag('substep').log(`Exploring (include): "${name.trim()}" in ${containerSelector}`);
+
+        const action = this.explorer.createAction();
+        const beforeState = await action.capturePageState({});
+
+        try {
+          await action.execute(`I.click("${name.trim()}", "${containerSelector}")`);
+          const afterState = await action.capturePageState({});
+
+          const resultDescription = this.detectChangeResult(beforeState, afterState, originalUrl);
+          results.push({ element: name.trim(), role: 'button', result: resultDescription });
+
+          await this.restoreState(afterState, originalUrl);
+        } catch (error) {
+          debugLog(`Failed to explore ${name}:`, error);
+        }
+      }
+    }
+  }
+
+  private formatResultsTable(results: Array<{ element: string; role: string; result: string }>): string {
+    if (results.length === 0) {
+      return 'No interactive elements were explored.';
+    }
+
+    const lines = ['| Element | Role | Result |', '|---------|------|--------|'];
+    for (const r of results) {
+      lines.push(`| ${r.element} | ${r.role} | ${r.result} |`);
+    }
+    return lines.join('\n');
   }
 }

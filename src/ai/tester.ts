@@ -519,6 +519,7 @@ export class Tester extends TaskAgent implements Agent {
 
     ${sectionContextRule}
 
+    ${this.provider.getSystemPromptForAgent('tester') || ''}
     `;
   }
 

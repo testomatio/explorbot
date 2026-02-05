@@ -32,6 +32,7 @@ Explorbot can start testing features which were not covered by unit tests or bro
 - **Bun** (not Node.js)
 - **AI provider API key** — Groq, Cerebras, OpenAI, or Anthropic
 - **Modern terminal** — iTerm2, WARP, Kitty, Ghostty. WSL if running on Windows
+- **Compatible web app** — Check [docs/prerequisites.md](docs/prerequisites.md) to verify your app works with Explorbot
 
 ## Quick Start
 
@@ -51,7 +52,7 @@ explorbot init
 **3. Edit `explorbot.config.js`** — set your app URL and AI provider:
 
 > [!IMPORTANT]
-> **Use fast, lightweight models.** Explorbot agents make many rapid API calls. Expensive SOTA models (GPT-5, Claude Opus) are overkill — slow and costly. Stick with `gpt-oss-20b` or similar. Recommended providers (500-1000 TPS): Groq, Cerebras. 
+> **Use fast, lightweight models.** Explorbot agents make many rapid API calls. Expensive SOTA models (GPT-5, Claude Opus) are overkill — slow and costly. Stick with `gpt-oss-20b` or similar. Recommended providers (100+ TPS): Groq, Cerebras. See complete list for fastest models on [OpenRouter](https://openrouter.ai/rankings#performance)
 
 Groq is used in this example but you can use any provider supported by Vercel AI SDK. See [docs/providers.md](docs/providers.md) for other providers.
 
@@ -194,6 +195,7 @@ Thus, when tuned, Explorbot **can run autonomously for hours** navigating web ap
 
 ## Further Reading
 
+- [docs/prerequisites.md](docs/prerequisites.md) — Application compatibility checklist
 - [docs/commands.md](docs/commands.md) — Terminal command reference
 - [docs/knowledge.md](docs/knowledge.md) — Knowledge system and URL patterns
 - [docs/providers.md](docs/providers.md) — AI provider configuration
