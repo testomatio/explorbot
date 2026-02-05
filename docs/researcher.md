@@ -159,34 +159,31 @@ Vision is particularly useful for:
 
 ## Interactive Exploration
 
-When exploring a page, the researcher clicks through elements to discover their behavior:
+Interactive exploration discovers hidden UI by clicking through elements to find **modals, dropdowns, tabs, and menus**:
 
 ```
-[1/10] Exploring: "Settings" (button)
-[2/10] Exploring: "Help" (link)
+[1/10] Exploring: "Settings" (button) → opened modal
+[2/10] Exploring: "Help" (link) → navigated to /help
+[3/10] Exploring: "More" (menuitem) → opened menu
 ...
 ```
 
 ```mermaid
 flowchart TD
-    A[Collect Interactive Elements] --> B[Filter by Role]
-    B --> C[Filter by Stop Words]
-    C --> D[Filter by CSS Selectors]
-    D --> E{More Elements?}
-    E -->|Yes| F[Click Element]
-    F --> G[Detect Change]
-    G --> H{URL Changed?}
-    H -->|Yes| I[Navigate Back]
-    H -->|No| J{UI Changed?}
-    J -->|Yes| K[Press Escape]
-    K --> L{Still Changed?}
-    L -->|Yes| M[Click Body]
-    L -->|No| E
-    J -->|No| E
-    I --> E
-    M --> E
-    E -->|No| N[Explore Include Selectors]
-    N --> O[Format Results Table]
+    A[/"INTERACTIVE EXPLORATION<br/>(modals, dropdowns, tabs, menus)"/] --> B
+    B[Collect Elements from ARIA Tree<br/>buttons, links, tabs, menuitems] --> C
+    C[Filter Elements<br/>stop words, excluded selectors<br/>limit to max 10] --> D
+
+    subgraph LOOP ["Exploration Loop (up to 10 elements)"]
+        D{More elements?} -->|Yes| E[Click Element]
+        E --> F[Detect Change<br/>navigation / modal / menu / tab]
+        F --> G[Record Result]
+        G --> H[Restore State<br/>Escape or Navigate Back]
+        H --> D
+    end
+
+    D -->|No| I[Explore Include Selectors<br/>second pass for .action-menu, #toolbar]
+    I --> J[/"RESULTS TABLE<br/>Element | Role | Result"/]
 ```
 
 For each element, the researcher:
