@@ -81,6 +81,70 @@ Notes:
 | `title` | Human-readable title (optional) |
 | Custom fields | Any additional metadata for agents |
 
+## Page Automation
+
+Knowledge files can include automation commands that execute when navigating to matching pages. This is useful for handling loading states, cookie banners, or page-specific setup.
+
+### Available Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `wait` | `number` | Wait for specified seconds after page load |
+| `waitForElement` | `string` | Wait for element to appear (CSS selector) |
+| `code` | `string` | Execute CodeceptJS code after navigation |
+| `statePush` | `boolean` | Use `history.pushState` instead of full navigation |
+
+### Wait for Page Load
+
+```markdown
+---
+url: /dashboard
+wait: 2
+waitForElement: '.dashboard-loaded'
+---
+
+Dashboard requires data to load before interaction.
+```
+
+### Execute Custom Code
+
+```markdown
+---
+url: /app/*
+code: |
+  I.waitForElement('.app-ready');
+  I.click('.cookie-accept');
+  I.wait(1);
+---
+
+App pages need cookie consent dismissed and loading complete.
+```
+
+### SPA Navigation
+
+For single-page apps where full page reload breaks state:
+
+```markdown
+---
+url: /settings/*
+statePush: true
+---
+
+Settings uses client-side routing. Use pushState to preserve app state.
+```
+
+> [!TIP]
+> Use knowledge automation for page-specific behaviors. For agent-specific logic (like running code only during testing), use [Agent Hooks](./hooks.md) instead.
+
+### Execution Order
+
+When navigating to a page, automation executes in this order:
+
+1. Navigation (`I.amOnPage()` or `history.pushState`)
+2. `wait` (if specified)
+3. `waitForElement` (if specified)
+4. `code` (if specified)
+
 ## What to Document
 
 ### Authentication
@@ -161,3 +225,9 @@ When an agent operates on a page, it receives relevant knowledge based on URL ma
 ```
 
 Files are named based on URL pattern. Multiple entries for the same URL are appended to the same file.
+
+## See Also
+
+- [Agent Hooks](./hooks.md) - Per-agent custom code execution
+- [Configuration](./configuration.md) - Full configuration reference
+- [Page Interaction](./page-interaction.md) - How agents interact with pages

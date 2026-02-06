@@ -163,6 +163,8 @@ agents: {
     model: 'gpt-oss-20b',          // Override default model
     enabled: true,                  // Enable/disable agent
     systemPrompt: '...',           // Append to system prompt
+    beforeHook: { /* ... */ },     // Run before agent executes
+    afterHook: { /* ... */ },      // Run after agent completes
   },
 }
 ```
@@ -172,6 +174,10 @@ agents: {
 | `model` | `string` | Model to use for this agent (overrides default) |
 | `enabled` | `boolean` | Enable or disable the agent |
 | `systemPrompt` | `string` | Additional instructions appended to the agent's system prompt |
+| `beforeHook` | `Hook \| HookPatternMap` | Code to run before agent execution |
+| `afterHook` | `Hook \| HookPatternMap` | Code to run after agent execution |
+
+See [Agent Hooks](./hooks.md) for detailed hook configuration.
 
 ### Researcher Agent Options
 
@@ -396,6 +402,7 @@ export default {
 
 - [AI Providers](./providers.md) - Provider setup examples
 - [Agents](./agents.md) - Agent descriptions and workflows
+- [Agent Hooks](./hooks.md) - Custom code before/after agent execution
 - [Researcher Agent](./researcher.md) - Researcher configuration and usage
 - [Knowledge Files](./knowledge.md) - Domain knowledge format
 - [Observability](./observability.md) - Langfuse integration

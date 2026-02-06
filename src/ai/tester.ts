@@ -10,6 +10,7 @@ import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { extractFocusedElement } from '../utils/aria.ts';
+import { HooksRunner } from '../utils/hooks-runner.ts';
 import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
@@ -39,6 +40,7 @@ export class Tester extends TaskAgent implements Agent {
   executionLogFile: string | null = null;
   private previousUrl: string | null = null;
   private previousStateHash: string | null = null;
+  private hooksRunner: HooksRunner;
 
   constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
     super();
@@ -47,6 +49,7 @@ export class Tester extends TaskAgent implements Agent {
     this.researcher = researcher;
     this.navigator = navigator;
     this.agentTools = agentTools;
+    this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 
   protected getNavigator(): Navigator {
@@ -102,6 +105,9 @@ export class Tester extends TaskAgent implements Agent {
       debugLog(`Navigating to ${task.startUrl}`);
       await this.explorer.visit(task.startUrl!);
     }
+
+    const currentUrl = this.explorer.getStateManager().getCurrentState()?.url || task.startUrl || '';
+    await this.hooksRunner.runBeforeHook('tester', currentUrl);
 
     const offStateChange = this.explorer.getStateManager().onStateChange((event: StateTransition) => {
       if (event.toState?.url === event.fromState?.url) return;
@@ -226,6 +232,9 @@ export class Tester extends TaskAgent implements Agent {
         },
       }
     );
+
+    const finalUrl = this.explorer.getStateManager().getCurrentState()?.url || currentUrl;
+    await this.hooksRunner.runAfterHook('tester', finalUrl);
 
     await this.finalReview(task);
     await this.getHistorian().saveSession(task, initialState, conversation);

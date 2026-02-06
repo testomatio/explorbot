@@ -40,6 +40,45 @@ Processed HTML provides detailed attributes:
 
 Used for: Precise locator construction, form field identification, state verification.
 
+#### HTML Filtering
+
+Agents primarily use the `combined` HTML snapshot, which can be configured to exclude noisy elements:
+
+```javascript
+// explorbot.config.js
+html: {
+  combined: {
+    include: ['*'],
+    exclude: ['script', 'style', 'svg', '.cookie-banner', '.analytics-tracker']
+  }
+}
+```
+
+| Snapshot Type | Purpose | Config Key |
+|---------------|---------|------------|
+| `combined` | Main HTML for agents (interactive + semantic elements) | `html.combined` |
+| `minimal` | Focused on interactive elements only | `html.minimal` |
+| `text` | Text content extraction | `html.text` |
+
+> [!TIP]
+> Filter out noisy elements like cookie banners, analytics widgets, and ads to reduce token usage and improve agent focus.
+
+**Common exclusions:**
+
+```javascript
+html: {
+  combined: {
+    exclude: [
+      'script', 'style', 'svg', 'noscript',
+      '.cookie-consent', '.cookie-banner',
+      '.chat-widget', '.intercom-*',
+      '.analytics-*', '.tracking-*',
+      '[data-testid="ads"]'
+    ]
+  }
+}
+```
+
 ### Screenshots (Vision Model)
 
 Visual analysis adds spatial awareness:
@@ -295,4 +334,8 @@ On subsequent runs, agents load relevant experience to:
 - Anticipate state changes
 - Apply learned recovery strategies
 
-See [docs/knowledge.md](knowledge.md) for more on teaching Explorbot.
+## See Also
+
+- [Knowledge Files](knowledge.md) - Teach Explorbot about your app
+- [Agent Hooks](hooks.md) - Custom code before/after agent execution
+- [Configuration](configuration.md) - Full configuration reference
