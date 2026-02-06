@@ -138,10 +138,13 @@ Knowledge code has access to CodeceptJS effects for error handling and retries:
 url: /dashboard
 code: |
   await tryTo(() => I.click('.cookie-dismiss'));
-  await retryTo(() => I.waitForElement('.data-loaded'), 5, 500);
+  await retryTo(() => {
+    I.click('Reload Data');
+    I.waitForElement('.data-loaded');
+  }, 5, 500);
 ---
 
-Dashboard may show cookie banner. Data loads asynchronously.
+Dashboard may show cookie banner. Data loads asynchronously - retry reload if needed.
 ```
 
 > [!NOTE]
