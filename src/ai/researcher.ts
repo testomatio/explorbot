@@ -109,13 +109,11 @@ export class Researcher implements Agent {
       const isOnCurrentState = this.actionResult!.getStateHash() === this.stateManager.getCurrentState()?.hash;
       await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
 
-      const errorCheck = isErrorPage(this.actionResult!);
-      if (errorCheck.isError) {
-        tag('warn').log(`Detected ${errorCheck.type} page at ${state.url}`);
+      if (isErrorPage(this.actionResult!)) {
+        tag('warn').log(`Detected error page at ${state.url}`);
         return dedent`
           ## Error Page Detected
 
-          This appears to be a **${errorCheck.type}** page.
           URL: ${state.url}
           Title: ${this.actionResult!.title || 'N/A'}
 
