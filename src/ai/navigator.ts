@@ -64,9 +64,22 @@ class Navigator implements Agent {
       const action = this.explorer.createAction();
 
       await action.execute(`I.amOnPage('${url}')`);
-      await action.expect(`I.seeInCurrentUrl('${url}')`);
 
-      if (action.lastError) {
+      const currentUrl = action.stateManager.getCurrentState()?.url || '';
+      const expectedPath = new URL(url, 'http://localhost').pathname;
+      const actualPath = new URL(currentUrl, 'http://localhost').pathname;
+
+      if (actualPath !== expectedPath) {
+        const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
+        const originalMessage = `Navigate to: ${url}. Current page: ${actualPath}`;
+
+        this.currentAction = action;
+        this.currentUrl = url;
+        const resolved = await this.resolveState(originalMessage, actionResult);
+        if (!resolved) {
+          throw new Error(`Navigation to ${url} failed: redirected to ${actualPath} and could not resolve`);
+        }
+      } else if (action.lastError) {
         const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
         const originalMessage = `
           I tried to navigate to: ${url}
@@ -74,14 +87,21 @@ class Navigator implements Agent {
           But I got error: ${action.lastError?.message || 'Navigation failed'}.
         `.trim();
 
-        // Store action and url for execution in resolveState
         this.currentAction = action;
         this.currentUrl = url;
-        await this.resolveState(originalMessage, actionResult);
+        const resolved = await this.resolveState(originalMessage, actionResult);
+        if (!resolved) {
+          throw new Error(`Navigation to ${url} failed: ${action.lastError?.message}`);
+        }
       }
       await action.caputrePageWithScreenshot();
     } catch (error) {
-      console.error(`Failed to visit page ${url}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('ERR_CONNECTION_REFUSED')) {
+        const urlMatch = errorMessage.match(/at (https?:\/\/[^\s/]+)/);
+        const baseUrl = urlMatch ? urlMatch[1] : url;
+        throw new Error(`Connection refused: ${baseUrl} is not accessible. Is the server running?`);
+      }
       throw error;
     }
   }
@@ -196,10 +216,11 @@ class Navigator implements Agent {
 
         if (resolved && this.currentUrl) {
           await this.currentAction.getActor().wait(1);
-          try {
-            await this.currentAction.expect(`I.seeInCurrentUrl('${this.currentUrl}')`);
-          } catch {
-            tag('warning').log(`URL verification failed after resolution (expected ${this.currentUrl})`);
+          const currentState = this.currentAction.stateManager.getCurrentState();
+          const actualPath = currentState?.url || '';
+          const expectedPath = this.currentUrl;
+          if (actualPath !== expectedPath) {
+            tag('warning').log(`URL verification failed: expected ${expectedPath}, got ${actualPath}`);
             resolved = false;
           }
         }

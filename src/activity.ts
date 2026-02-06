@@ -36,11 +36,21 @@ class Activity {
     this.notifyListeners();
   }
 
-  clearActivity(): void {
-    // Don't clear immediately - wait a minimum time to ensure the activity was visible
-    if (!this.clearTimeoutId && this.currentActivity) {
+  clearActivity(force = false): void {
+    if (this.clearTimeoutId) {
+      clearTimeout(this.clearTimeoutId);
+      this.clearTimeoutId = null;
+    }
+
+    if (force) {
+      this.currentActivity = null;
+      this.notifyListeners();
+      return;
+    }
+
+    if (this.currentActivity) {
       const timeSinceActivity = Date.now() - this.currentActivity.timestamp.getTime();
-      const minDisplayTime = 1000; // Minimum 1 second display time
+      const minDisplayTime = 1000;
 
       if (timeSinceActivity < minDisplayTime) {
         this.clearTimeoutId = setTimeout(() => {
@@ -82,8 +92,8 @@ export const setActivity = (message: string, type: ActivityEntry['type'] = 'gene
   activity.setActivity(message, type);
 };
 
-export const clearActivity = () => {
-  activity?.clearActivity();
+export const clearActivity = (force = false) => {
+  activity?.clearActivity(force);
 };
 
 export const getCurrentActivity = () => {

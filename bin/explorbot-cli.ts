@@ -42,6 +42,15 @@ program
     const explorBot = new ExplorBot(mainOptions);
     await explorBot.start();
 
+    try {
+      await explorBot.visitInitialState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('\nFailed to start:', message);
+      await explorBot.stop();
+      process.exit(1);
+    }
+
     if (options.freeride) {
       await explorBot.freeride();
       return;
