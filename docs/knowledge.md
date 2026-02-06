@@ -129,7 +129,6 @@ Knowledge code has access to CodeceptJS effects for error handling and retries:
 | `tryTo(fn)` | Execute without failing - returns `true`/`false` |
 | `retryTo(fn, maxTries, interval)` | Retry on failure with polling |
 | `within(context, fn)` | Execute within a specific element context |
-| `hopeThat(fn)` | Soft assertion - logs failure but continues |
 
 **Example with effects:**
 
