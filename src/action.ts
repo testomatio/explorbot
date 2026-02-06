@@ -4,6 +4,7 @@ import { context, trace } from '@opentelemetry/api';
 import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
+import { tryTo, retryTo, within, hopeThat } from 'codeceptjs/lib/effects.js';
 import dedent from 'dedent';
 import { ActionResult } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
@@ -188,8 +189,8 @@ class Action {
     try {
       debugLog('Executing action:', codeString);
 
-      const codeFunction = new Function('I', codeString);
-      codeFunction(this.actor);
+      const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', codeString);
+      codeFunction(this.actor, tryTo, retryTo, within, hopeThat);
 
       await recorder.add(() => sleep(this.config.action?.delay || 500)); // wait for the action to be executed
       await recorder.promise();
@@ -231,9 +232,9 @@ class Action {
       if (typeof codeOrFunction === 'function') {
         codeFunction = codeOrFunction;
       } else {
-        codeFunction = new Function('I', codeString);
+        codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', codeString);
       }
-      codeFunction(this.actor);
+      codeFunction(this.actor, tryTo, retryTo, within, hopeThat);
       await recorder.promise();
       debugLog('Expectation executed successfully');
 

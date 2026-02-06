@@ -120,6 +120,33 @@ code: |
 App pages need cookie consent dismissed and loading complete.
 ```
 
+### CodeceptJS Effects
+
+Knowledge code has access to CodeceptJS effects for error handling and retries:
+
+| Effect | Purpose |
+|--------|---------|
+| `tryTo(fn)` | Execute without failing - returns `true`/`false` |
+| `retryTo(fn, maxTries, interval)` | Retry on failure with polling |
+| `within(context, fn)` | Execute within a specific element context |
+| `hopeThat(fn)` | Soft assertion - logs failure but continues |
+
+**Example with effects:**
+
+```markdown
+---
+url: /dashboard
+code: |
+  await tryTo(() => I.click('.cookie-dismiss'));
+  await retryTo(() => I.waitForElement('.data-loaded'), 5, 500);
+---
+
+Dashboard may show cookie banner. Data loads asynchronously.
+```
+
+> [!NOTE]
+> Effects are async - use `await` when calling them in knowledge code.
+
 ### SPA Navigation
 
 For single-page apps where full page reload breaks state:
