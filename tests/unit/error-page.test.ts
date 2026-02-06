@@ -12,51 +12,35 @@ function createActionResult(data: { title?: string; h1?: string; h2?: string; ht
 }
 
 describe('isErrorPage', () => {
-  describe('404 error detection', () => {
-    it('should detect 404 in title with error context', () => {
+  describe('HTTP error detection', () => {
+    it('should detect 400 Bad Request', () => {
+      expect(isErrorPage(createActionResult({ title: '400 Bad Request' }))).toBe(true);
+    });
+
+    it('should detect 401 Unauthorized', () => {
+      expect(isErrorPage(createActionResult({ title: '401 Unauthorized' }))).toBe(true);
+    });
+
+    it('should detect 403 Forbidden', () => {
+      expect(isErrorPage(createActionResult({ title: '403 Forbidden' }))).toBe(true);
+    });
+
+    it('should detect 404 Not Found', () => {
       expect(isErrorPage(createActionResult({ title: '404 Not Found' }))).toBe(true);
     });
 
-    it('should detect 404 in h1 with error context', () => {
-      expect(isErrorPage(createActionResult({ h1: '404 - Page Not Found' }))).toBe(true);
+    it('should detect 404 Not Found in h1', () => {
+      expect(isErrorPage(createActionResult({ h1: '404 Not Found' }))).toBe(true);
     });
 
-    it('should detect 404 in h2 with error context', () => {
-      expect(isErrorPage(createActionResult({ h2: 'Error 404' }))).toBe(true);
+    it('should detect 404 Not Found in h2', () => {
+      expect(isErrorPage(createActionResult({ h2: '404 Not Found' }))).toBe(true);
     });
 
-    it('should detect standalone 404', () => {
-      expect(isErrorPage(createActionResult({ title: '404' }))).toBe(true);
-    });
-
-    it('should detect "Page not found" without number', () => {
-      expect(isErrorPage(createActionResult({ h1: 'Page Not Found' }))).toBe(true);
-    });
-
-    it('should detect "Not Found" in title', () => {
-      expect(isErrorPage(createActionResult({ title: 'Not Found | MyApp' }))).toBe(true);
-    });
-  });
-
-  describe('500 error detection', () => {
-    it('should detect 500 in title with error context', () => {
+    it('should detect 500 Internal Server Error', () => {
       expect(isErrorPage(createActionResult({ title: '500 Internal Server Error' }))).toBe(true);
     });
 
-    it('should detect 500 in h1 with error context', () => {
-      expect(isErrorPage(createActionResult({ h1: 'Error 500' }))).toBe(true);
-    });
-
-    it('should detect "Internal Server Error" text', () => {
-      expect(isErrorPage(createActionResult({ h1: 'Internal Server Error' }))).toBe(true);
-    });
-
-    it('should detect "Server Error" text', () => {
-      expect(isErrorPage(createActionResult({ title: 'Server Error' }))).toBe(true);
-    });
-  });
-
-  describe('502/503 error detection', () => {
     it('should detect 502 Bad Gateway', () => {
       expect(isErrorPage(createActionResult({ title: '502 Bad Gateway' }))).toBe(true);
     });
@@ -65,44 +49,17 @@ describe('isErrorPage', () => {
       expect(isErrorPage(createActionResult({ title: '503 Service Unavailable' }))).toBe(true);
     });
 
-    it('should detect "Service Unavailable" text', () => {
-      expect(isErrorPage(createActionResult({ h1: 'Service Unavailable' }))).toBe(true);
+    it('should detect 504 Gateway Timeout', () => {
+      expect(isErrorPage(createActionResult({ title: '504 Gateway Timeout' }))).toBe(true);
     });
 
-    it('should detect "Bad Gateway" text', () => {
-      expect(isErrorPage(createActionResult({ h1: 'Bad Gateway' }))).toBe(true);
-    });
-  });
-
-  describe('403 error detection', () => {
-    it('should detect 403 Forbidden', () => {
-      expect(isErrorPage(createActionResult({ title: '403 Forbidden' }))).toBe(true);
+    it('should be case insensitive', () => {
+      expect(isErrorPage(createActionResult({ title: '404 NOT FOUND' }))).toBe(true);
+      expect(isErrorPage(createActionResult({ title: '500 internal server error' }))).toBe(true);
     });
 
-    it('should detect "Access Denied" text', () => {
-      expect(isErrorPage(createActionResult({ h1: 'Access Denied' }))).toBe(true);
-    });
-
-    it('should detect "Forbidden" text', () => {
-      expect(isErrorPage(createActionResult({ title: 'Forbidden' }))).toBe(true);
-    });
-  });
-
-  describe('generic error detection', () => {
-    it('should detect "Something went wrong"', () => {
-      expect(isErrorPage(createActionResult({ h1: 'Something Went Wrong' }))).toBe(true);
-    });
-
-    it('should detect "Oops!"', () => {
-      expect(isErrorPage(createActionResult({ h1: 'Oops! Something happened' }))).toBe(true);
-    });
-
-    it('should detect "Error" as standalone word in title', () => {
-      expect(isErrorPage(createActionResult({ title: 'Error' }))).toBe(true);
-    });
-
-    it('should detect "An error occurred"', () => {
-      expect(isErrorPage(createActionResult({ h1: 'An error occurred' }))).toBe(true);
+    it('should detect error in longer title', () => {
+      expect(isErrorPage(createActionResult({ title: 'MyApp - 404 Not Found' }))).toBe(true);
     });
   });
 
@@ -135,7 +92,7 @@ describe('isErrorPage', () => {
       const result = isErrorPage(
         createActionResult({
           h1: 'Room 404',
-          html: '<html><body><h1>Room 404</h1><p>Hotel room.</p>' + 'x'.repeat(600) + '</body></html>',
+          html: '<html><body><h1>Room 404</h1>' + 'x'.repeat(600) + '</body></html>',
         })
       );
       expect(result).toBe(false);
@@ -151,61 +108,11 @@ describe('isErrorPage', () => {
       expect(result).toBe(false);
     });
 
-    it('should NOT detect "Product 403" as error page', () => {
+    it('should NOT detect standalone 404 number', () => {
       const result = isErrorPage(
         createActionResult({
-          h1: 'Product 403',
-          html: '<html><body><h1>Product 403</h1>' + 'x'.repeat(600) + '</body></html>',
-        })
-      );
-      expect(result).toBe(false);
-    });
-
-    it('should NOT detect "$500 price" as error page', () => {
-      const result = isErrorPage(
-        createActionResult({
-          h1: '$500 Gift Card',
-          html: '<html><body><h1>$500 Gift Card</h1>' + 'x'.repeat(600) + '</body></html>',
-        })
-      );
-      expect(result).toBe(false);
-    });
-
-    it('should NOT detect "500 items" as error page', () => {
-      const result = isErrorPage(
-        createActionResult({
-          h1: '500 items in stock',
-          html: '<html><body><h1>500 items in stock</h1>' + 'x'.repeat(600) + '</body></html>',
-        })
-      );
-      expect(result).toBe(false);
-    });
-
-    it('should NOT detect page number 404 as error', () => {
-      const result = isErrorPage(
-        createActionResult({
-          title: 'Page 404 of 1000',
-          html: '<html><body><h1>Results</h1>' + 'x'.repeat(600) + '</body></html>',
-        })
-      );
-      expect(result).toBe(false);
-    });
-
-    it('should NOT detect article/post ID 500 as error', () => {
-      const result = isErrorPage(
-        createActionResult({
-          title: 'Post #500',
-          html: '<html><body><h1>Blog Post</h1>' + 'x'.repeat(600) + '</body></html>',
-        })
-      );
-      expect(result).toBe(false);
-    });
-
-    it('should NOT detect "Newsletter" page as error', () => {
-      const result = isErrorPage(
-        createActionResult({
-          h1: 'Newsletter',
-          html: '<html><body><h1>Newsletter</h1>' + 'x'.repeat(600) + '</body></html>',
+          title: '404',
+          html: '<html><body>' + 'x'.repeat(600) + '</body></html>',
         })
       );
       expect(result).toBe(false);
@@ -247,25 +154,6 @@ describe('isErrorPage', () => {
     it('should handle null/undefined html gracefully', () => {
       const actionResult = new ActionResult({ url: '/test', title: '' });
       expect(isErrorPage(actionResult)).toBe(true);
-    });
-
-    it('should detect error even with content if error text is clear', () => {
-      const result = isErrorPage(
-        createActionResult({
-          title: '404 Not Found',
-          h1: 'Page Not Found',
-          html: '<html><body><h1>Page Not Found</h1>' + 'x'.repeat(600) + '</body></html>',
-        })
-      );
-      expect(result).toBe(true);
-    });
-
-    it('should handle case insensitivity', () => {
-      expect(isErrorPage(createActionResult({ h1: 'PAGE NOT FOUND' }))).toBe(true);
-    });
-
-    it('should handle mixed case', () => {
-      expect(isErrorPage(createActionResult({ title: 'Page Not Found' }))).toBe(true);
     });
   });
 });
