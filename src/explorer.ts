@@ -202,9 +202,9 @@ class Explorer {
 
     const serializedUrl = JSON.stringify(url);
     const currentState = this.stateManager.getCurrentState();
-    const actionResult = currentState ? ActionResult.fromState(currentState) : null;
+    const actionResult = currentState ? ActionResult.fromState(currentState) : new ActionResult({ url });
 
-    const { statePush = false, wait, waitForElement, code } = this.knowledgeTracker.getStateParameters(actionResult!, ['statePush', 'wait', 'waitForElement', 'code']);
+    const { statePush = false, wait, waitForElement, code } = this.knowledgeTracker.getStateParameters(actionResult, ['statePush', 'wait', 'waitForElement', 'code']);
 
     const action = this.createAction();
 

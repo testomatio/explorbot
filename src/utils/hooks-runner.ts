@@ -37,10 +37,17 @@ export class HooksRunner {
     if (this.isSingleHook(config)) return config as Hook;
 
     const urlPath = this.extractPath(url);
-    for (const [pattern, hook] of Object.entries(config)) {
+    const entries = Object.entries(config).sort(([a], [b]) => this.patternSpecificity(b) - this.patternSpecificity(a));
+    for (const [pattern, hook] of entries) {
       if (this.matchesPattern(pattern, urlPath)) return hook as Hook;
     }
     return null;
+  }
+
+  private patternSpecificity(pattern: string): number {
+    if (pattern === '*') return 0;
+    if (pattern.includes('*')) return pattern.length;
+    return pattern.length + 1000;
   }
 
   private async executeHook(hook: Hook, url: string): Promise<void> {

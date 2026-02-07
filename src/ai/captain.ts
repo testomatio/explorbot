@@ -359,10 +359,11 @@ export class Captain extends TaskAgent implements Agent {
     };
 
     const tools = this.tools(task, onDone);
-    const pageContext = await this.getPageContext();
-    const planContext = this.planSummary();
 
     await this.getHooksRunner().runBeforeHook('captain', startUrl);
+
+    const pageContext = await this.getPageContext();
+    const planContext = this.planSummary();
 
     if (!options.reset && this.conversation) {
       conversation.cleanupTag('page_aria', '...cleaned...', 1);
