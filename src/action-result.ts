@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import micromatch from 'micromatch';
 import { ConfigParser, type HtmlConfig } from './config.ts';
-import type { WebPageState } from './state-manager.ts';
+import type { Link, WebPageState } from './state-manager.ts';
 import { diffAriaSnapshots, summarizeInteractiveNodes } from './utils/aria.ts';
 import { type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
-import { extractHeadings, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
+import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
 
 const debugLog = createDebug('explorbot:state');
@@ -28,6 +28,7 @@ interface ActionResultData extends WebPageState {
   iframeSnapshots?: Array<{ src: string; html: string; id?: string }>;
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
+  links?: Link[];
 }
 
 export interface PageDiff {
@@ -68,6 +69,7 @@ export class ActionResult implements ActionResultData {
   private _ariaSnapshot: string | null | undefined = undefined;
   private _lastExtractedHtml: string | undefined = undefined;
   notes: any;
+  public links: Link[] = [];
 
   constructor(data: ActionResultData) {
     this.id = data.id;
@@ -114,6 +116,12 @@ export class ActionResult implements ActionResultData {
     }
 
     this.extractHeadings(this.html);
+
+    if (data.links) {
+      this.links = data.links;
+    } else if (this._html) {
+      this.links = extractLinks(this._html);
+    }
 
     if (this.url && this.url !== '') {
       this.url = this.extractStatePath(this.url);
@@ -409,6 +417,13 @@ export class ActionResult implements ActionResultData {
     const ariaSummary = summarizeInteractiveNodes(this.ariaSnapshot);
     if (ariaSummary.length > 0) {
       parts.push(`<aria>\n${ariaSummary.map((item) => `- ${item}`).join('\n')}</aria>`);
+    }
+
+    if (this.links.length > 0) {
+      const linksToShow = this.links.slice(0, 20);
+      const linksList = linksToShow.map((link) => `- [${link.title}](${link.url})`).join('\n');
+      const suffix = this.links.length > 20 ? `\n... and ${this.links.length - 20} more` : '';
+      parts.push(`<links>\n${linksList}${suffix}</links>`);
     }
 
     debugLog(`AI context: \n${parts.join('\n')}`);
