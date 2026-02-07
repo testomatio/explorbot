@@ -535,6 +535,6 @@ export class StateManager {
   }
 }
 
-function normalizeUrl(url: string): string {
+export function normalizeUrl(url: string): string {
   return url.replace(/^\/+|\/+$/g, '');
 }
