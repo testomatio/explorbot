@@ -6,6 +6,7 @@ import { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
+import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
@@ -28,11 +29,20 @@ export class Captain extends TaskAgent implements Agent {
   private experienceTracker: ExperienceTracker;
   private awaitingSave = false;
   private pendingExperience: { state: ActionResult; intent: string; summary: string; code: string } | null = null;
+  private hooksRunner: HooksRunner | null = null;
 
   constructor(explorBot: ExplorBot) {
     super();
     this.explorBot = explorBot;
     this.experienceTracker = new ExperienceTracker();
+  }
+
+  private getHooksRunner(): HooksRunner {
+    if (!this.hooksRunner) {
+      const explorer = this.explorBot.getExplorer();
+      this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
+    }
+    return this.hooksRunner;
   }
 
   protected getNavigator(): Navigator {
@@ -349,10 +359,12 @@ export class Captain extends TaskAgent implements Agent {
     };
 
     const tools = this.tools(task, onDone);
+
+    await this.getHooksRunner().runBeforeHook('captain', startUrl);
+
     const pageContext = await this.getPageContext();
     const planContext = this.planSummary();
 
-    // Clean up old page context from previous inputs when continuing conversation
     if (!options.reset && this.conversation) {
       conversation.cleanupTag('page_aria', '...cleaned...', 1);
       conversation.cleanupTag('page_html', '...cleaned...', 1);
@@ -434,6 +446,9 @@ export class Captain extends TaskAgent implements Agent {
         },
       }
     );
+
+    const finalUrl = stateManager.getCurrentState()?.url || startUrl;
+    await this.getHooksRunner().runAfterHook('captain', finalUrl);
 
     if (finalSummary) {
       tag('success').log(this.emoji, finalSummary);

@@ -29,7 +29,29 @@ interface PlaywrightConfig {
   args?: string[];
 }
 
-interface AgentConfig {
+type PlaywrightHookFn = (ctx: { page: any; url: string }) => Promise<void> | void;
+type CodeceptJSHookFn = (ctx: { I: any; url: string }) => Promise<void> | void;
+
+interface PlaywrightHook {
+  type: 'playwright';
+  hook: PlaywrightHookFn;
+}
+
+interface CodeceptJSHook {
+  type: 'codeceptjs';
+  hook: CodeceptJSHookFn;
+}
+
+type Hook = PlaywrightHook | CodeceptJSHook;
+type HookPatternMap = Record<string, Hook>;
+type HookConfig = Hook | HookPatternMap;
+
+interface HooksConfig {
+  beforeHook?: HookConfig;
+  afterHook?: HookConfig;
+}
+
+interface AgentConfig extends HooksConfig {
   model?: string;
   enabled?: boolean;
   systemPrompt?: string;
@@ -120,7 +142,7 @@ const config: ExplorbotConfig = {
   },
 };
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig };
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig, Hook, HookConfig, HooksConfig, PlaywrightHook, CodeceptJSHook, HookPatternMap };
 
 export class ConfigParser {
   private static instance: ConfigParser;

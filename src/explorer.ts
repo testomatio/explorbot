@@ -202,9 +202,9 @@ class Explorer {
 
     const serializedUrl = JSON.stringify(url);
     const currentState = this.stateManager.getCurrentState();
-    const actionResult = currentState ? ActionResult.fromState(currentState) : null;
+    const actionResult = currentState ? ActionResult.fromState(currentState) : new ActionResult({ url });
 
-    const { statePush = false, wait, waitForElement } = this.knowledgeTracker.getStateParameters(actionResult!, ['statePush', 'wait', 'waitForElement']);
+    const { statePush = false, wait, waitForElement, code } = this.knowledgeTracker.getStateParameters(actionResult, ['statePush', 'wait', 'waitForElement', 'code']);
 
     const action = this.createAction();
 
@@ -215,12 +215,17 @@ class Explorer {
     }
 
     if (wait !== undefined) {
-      console.log('Waiting for', wait);
+      debugLog('Waiting for', wait);
       await action.execute(`I.wait(${wait})`);
     }
 
     if (waitForElement) {
       await action.execute(`I.waitForElement(${JSON.stringify(waitForElement)})`);
+    }
+
+    if (code) {
+      debugLog('Executing knowledge code:', code);
+      await action.execute(code);
     }
 
     return action;

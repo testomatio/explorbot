@@ -4,6 +4,7 @@ import { context, trace } from '@opentelemetry/api';
 import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
+import { tryTo, retryTo, within, hopeThat } from 'codeceptjs/lib/effects.js';
 import dedent from 'dedent';
 import { ActionResult } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
@@ -192,8 +193,8 @@ class Action {
       if (!sanitizedCode) {
         throw new Error('No valid I.* commands found in code block');
       }
-      const codeFunction = new Function('I', sanitizedCode);
-      codeFunction(this.actor);
+      const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', sanitizedCode);
+      codeFunction(this.actor, tryTo, retryTo, within, hopeThat);
 
       await recorder.add(() => sleep(this.config.action?.delay || 500)); // wait for the action to be executed
       await recorder.promise();
@@ -239,9 +240,9 @@ class Action {
         if (!sanitizedCode) {
           throw new Error('No valid I.* commands found in code block');
         }
-        codeFunction = new Function('I', sanitizedCode);
+        codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', sanitizedCode);
       }
-      codeFunction(this.actor);
+      codeFunction(this.actor, tryTo, retryTo, within, hopeThat);
       await recorder.promise();
       debugLog('Expectation executed successfully');
 

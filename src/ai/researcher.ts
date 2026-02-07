@@ -10,11 +10,12 @@ import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
+import { collectInteractiveNodes, diffAriaSnapshots } from '../utils/aria.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.ts';
+import { HooksRunner } from '../utils/hooks-runner.ts';
 import { type HtmlDiffResult, htmlDiff } from '../utils/html-diff.ts';
 import { codeToMarkdown, isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
-import { collectInteractiveNodes, diffAriaSnapshots } from '../utils/aria.ts';
 import { isErrorPage } from '../utils/error-page.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.js';
@@ -47,12 +48,14 @@ export class Researcher implements Agent {
   private experienceTracker: ExperienceTracker;
   private hasScreenshotToAnalyze = false;
   private actionResult?: ActionResult;
+  private hooksRunner: HooksRunner;
 
   constructor(explorer: Explorer, provider: Provider) {
     this.explorer = explorer;
     this.provider = provider;
     this.stateManager = explorer.getStateManager();
     this.experienceTracker = this.stateManager.getExperienceTracker();
+    this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 
   static getCachedResearch(state: WebPageState): string {
@@ -108,6 +111,7 @@ export class Researcher implements Agent {
 
       const isOnCurrentState = this.actionResult!.getStateHash() === this.stateManager.getCurrentState()?.hash;
       await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
+      await this.hooksRunner.runBeforeHook('researcher', state.url);
 
       if (isErrorPage(this.actionResult!)) {
         tag('warn').log(`Detected error page at ${state.url}`);
@@ -169,6 +173,7 @@ export class Researcher implements Agent {
       tag('multiline').log(researchText);
       tag('success').log(`Research complete! ${researchText.length} characters`);
 
+      await this.hooksRunner.runAfterHook('researcher', state.url);
       return researchText;
     });
   }

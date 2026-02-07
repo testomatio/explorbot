@@ -5,6 +5,7 @@ import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
 import { normalizeUrl, type WebPageState } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
+import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import type { Agent } from './agent.js';
@@ -25,6 +26,7 @@ class Navigator implements Agent {
   private experienceTracker: ExperienceTracker;
   private currentAction: any = null;
   private currentUrl: string | null = null;
+  private hooksRunner: HooksRunner;
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
 
@@ -58,6 +60,7 @@ class Navigator implements Agent {
     this.experienceCompactor = experienceCompactor;
     this.knowledgeTracker = new KnowledgeTracker();
     this.experienceTracker = experienceTracker || new ExperienceTracker();
+    this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 
   private isOnExpectedPage(expectedUrl: string, stateManager: any): boolean {
@@ -70,6 +73,7 @@ class Navigator implements Agent {
       const action = this.explorer.createAction();
 
       await action.execute(`I.amOnPage('${url}')`);
+      await this.hooksRunner.runBeforeHook('navigator', url);
 
       if (!this.isOnExpectedPage(url, action.stateManager)) {
         const actualPath = action.stateManager.getCurrentState()?.url || '';
@@ -98,6 +102,7 @@ class Navigator implements Agent {
         }
       }
       await action.caputrePageWithScreenshot();
+      await this.hooksRunner.runAfterHook('navigator', url);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('ERR_CONNECTION_REFUSED')) {
