@@ -3,11 +3,12 @@ import { ActionResult } from '../action-result.js';
 import { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
-import type { WebPageState } from '../state-manager.js';
+import { normalizeUrl, type WebPageState } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
-import { loop } from '../utils/loop.js';
+import { loop, pause } from '../utils/loop.js';
 import type { Agent } from './agent.js';
+import { isInteractive } from './task-agent.js';
 import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
@@ -61,7 +62,7 @@ class Navigator implements Agent {
 
   private isOnExpectedPage(expectedUrl: string, stateManager: any): boolean {
     const currentUrl = stateManager.getCurrentState()?.url || '';
-    return currentUrl === expectedUrl;
+    return normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
   }
 
   async visit(url: string): Promise<void> {
@@ -242,6 +243,20 @@ class Navigator implements Agent {
         },
       }
     );
+
+    if (!resolved && isInteractive()) {
+      const userInput = await pause(`Navigator failed to resolve. Current: ${this.currentAction.stateManager.getCurrentState()?.url}\n` + `Target: ${this.currentUrl}\nEnter CodeceptJS commands (or press Enter to skip):`);
+
+      if (userInput?.trim()) {
+        resolved = await this.currentAction.attempt(userInput, message);
+        if (resolved && this.currentUrl) {
+          await this.currentAction.getActor().wait(1);
+          if (!this.isOnExpectedPage(this.currentUrl, this.currentAction.stateManager)) {
+            resolved = false;
+          }
+        }
+      }
+    }
 
     return resolved;
   }
