@@ -1113,6 +1113,10 @@ export interface ExtractedLink {
   url: string;
 }
 
+function sanitizeLinkTitle(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 export function extractLinks(html: string): ExtractedLink[] {
   const document = parseFragment(html);
   const links: ExtractedLink[] = [];
@@ -1130,7 +1134,8 @@ export function extractLinks(html: string): ExtractedLink[] {
         if (href) {
           const shouldSkip = skipPrefixes.some((prefix) => href.startsWith(prefix));
           if (!shouldSkip) {
-            const title = getAttribute(element, 'aria-label') || getTextContent(element).trim();
+            const rawTitle = getAttribute(element, 'aria-label') || getTextContent(element);
+            const title = sanitizeLinkTitle(rawTitle);
             if (title && title.length <= 100) {
               const key = `${href}|${title}`;
               if (!seen.has(key)) {
