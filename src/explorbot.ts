@@ -68,6 +68,7 @@ export class ExplorBot {
     try {
       this.config = await this.configParser.loadConfig(this.options);
       this.provider = new AIProvider(this.config.ai);
+      await this.provider.validateConnection();
       this.explorer = new Explorer(this.config, this.provider, this.options);
       await this.explorer.start();
       if (!this.options.incognito) {
@@ -75,14 +76,8 @@ export class ExplorBot {
       }
       if (this.userResolveFn) this.explorer.setUserResolve(this.userResolveFn);
     } catch (error) {
-      console.log('\n❌ Failed to start:');
-      if (error instanceof AiError) {
-        console.log('  ', error.message);
-      } else if (error instanceof Error) {
-        console.log('  ', error.stack);
-      } else {
-        console.log('  ', error);
-      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('\nFailed to start:', message);
       process.exit(1);
     }
   }
@@ -95,12 +90,6 @@ export class ExplorBot {
   async visitInitialState(): Promise<void> {
     const url = this.options.from || '/';
     await this.visit(url);
-
-    if (this.userResolveFn) {
-      this.userResolveFn(undefined, true);
-    } else {
-      log('No user resolve function provided, exiting...');
-    }
   }
 
   async visit(url: string): Promise<void> {

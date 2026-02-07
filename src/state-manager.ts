@@ -9,6 +9,12 @@ import { createDebug, tag } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:state');
 
+export interface Link {
+  title: string;
+  url: string;
+  visible?: boolean;
+}
+
 export interface WebPageState {
   /** Unique incremental state identifier */
   id?: number;
@@ -39,6 +45,7 @@ export interface WebPageState {
   h4?: string;
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
+  links?: Link[];
 }
 
 export interface StateTransition {
@@ -528,6 +535,6 @@ export class StateManager {
   }
 }
 
-function normalizeUrl(url: string): string {
+export function normalizeUrl(url: string): string {
   return url.replace(/^\/+|\/+$/g, '');
 }

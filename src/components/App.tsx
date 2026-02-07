@@ -47,63 +47,43 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     let unsubscribe: (() => void) | undefined;
     let mounted = true;
 
-    const startMain = async () => {
-      process.env.INK_RUNNING = 'true';
-      try {
-        setShowInput(false);
-        explorBot.setUserResolve(async (error?: Error, showWelcomeFlag?: boolean) => {
-          if (error) {
-            console.error('Error occurred:', error.message);
-          }
-          if (showWelcomeFlag) {
-            setShowWelcome(true);
-          }
-          setShowInput(true);
+    process.env.INK_RUNNING = 'true';
 
-          return new Promise<string | null>((resolve, reject) => {
-            userInputPromiseRef.current = { resolve, reject };
-          });
-        });
-
-        await explorBot.start();
-
-        if (mounted) {
-          setChecklistData({
-            config: explorBot.getConfig(),
-            knowledgeTracker: explorBot.getKnowledgeTracker(),
-          });
-        }
-
-        const manager = explorBot.getExplorer().getStateManager();
-
-        const initialState = manager.getCurrentState();
-        if (initialState && mounted) {
-          setCurrentState(initialState);
-        }
-
-        unsubscribe = manager.onStateChange((transition: StateTransition) => {
-          if (mounted) {
-            setLastTransition(transition);
-            setCurrentState(transition.toState);
-          }
-        });
-
-        if (mounted) {
-          setShowInput(false);
-        }
-
-        await explorBot.visitInitialState();
-      } catch (error) {
-        console.error('Failed to start ExplorBot:', error);
-        console.error('Exiting gracefully...');
-        process.exit(1);
+    explorBot.setUserResolve(async (error?: Error, showWelcomeFlag?: boolean) => {
+      if (error) {
+        console.error('Error occurred:', error.message);
       }
-    };
+      if (showWelcomeFlag) {
+        setShowWelcome(true);
+      }
+      setShowInput(true);
 
-    startMain().catch((error) => {
-      console.error('Failed to start ExplorBot:', error);
-      process.exit(1);
+      return new Promise<string | null>((resolve, reject) => {
+        userInputPromiseRef.current = { resolve, reject };
+      });
     });
+
+    const manager = explorBot.getExplorer().getStateManager();
+
+    unsubscribe = manager.onStateChange((transition: StateTransition) => {
+      if (mounted) {
+        setLastTransition(transition);
+        setCurrentState(transition.toState);
+      }
+    });
+
+    if (mounted) {
+      setChecklistData({
+        config: explorBot.getConfig(),
+        knowledgeTracker: explorBot.getKnowledgeTracker(),
+      });
+      setShowWelcome(true);
+    }
+
+    const initialState = manager.getCurrentState();
+    if (initialState && mounted) {
+      setCurrentState(initialState);
+    }
 
     return () => {
       mounted = false;
@@ -123,14 +103,14 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       });
     });
 
-    const handleIdleInterrupt = () => {
+    const handleIdle = () => {
       setShowInput(true);
     };
 
-    executionController.on('idle-interrupt', handleIdleInterrupt);
+    executionController.on('idle', handleIdle);
 
     return () => {
-      executionController.off('idle-interrupt', handleIdleInterrupt);
+      executionController.off('idle', handleIdle);
       executionController.reset();
     };
   }, []);

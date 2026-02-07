@@ -3,12 +3,13 @@ import { ActionResult } from '../action-result.js';
 import { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
-import type { WebPageState } from '../state-manager.js';
+import { normalizeUrl, type WebPageState } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
-import { loop } from '../utils/loop.js';
+import { loop, pause } from '../utils/loop.js';
 import type { Agent } from './agent.js';
+import { isInteractive } from './task-agent.js';
 import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
@@ -62,15 +63,30 @@ class Navigator implements Agent {
     this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 
+  private isOnExpectedPage(expectedUrl: string, stateManager: any): boolean {
+    const currentUrl = stateManager.getCurrentState()?.url || '';
+    return normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
+  }
+
   async visit(url: string): Promise<void> {
     try {
       const action = this.explorer.createAction();
 
       await action.execute(`I.amOnPage('${url}')`);
       await this.hooksRunner.runBeforeHook('navigator', url);
-      await action.expect(`I.seeInCurrentUrl('${url}')`);
 
-      if (action.lastError) {
+      if (!this.isOnExpectedPage(url, action.stateManager)) {
+        const actualPath = action.stateManager.getCurrentState()?.url || '';
+        const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
+        const originalMessage = `Navigate to: ${url}. Current page: ${actualPath}`;
+
+        this.currentAction = action;
+        this.currentUrl = url;
+        const resolved = await this.resolveState(originalMessage, actionResult);
+        if (!resolved) {
+          throw new Error(`Navigation to ${url} failed: redirected to ${actualPath} and could not resolve`);
+        }
+      } else if (action.lastError) {
         const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
         const originalMessage = `
           I tried to navigate to: ${url}
@@ -80,12 +96,20 @@ class Navigator implements Agent {
 
         this.currentAction = action;
         this.currentUrl = url;
-        await this.resolveState(originalMessage, actionResult);
+        const resolved = await this.resolveState(originalMessage, actionResult);
+        if (!resolved) {
+          throw new Error(`Navigation to ${url} failed: ${action.lastError?.message}`);
+        }
       }
       await action.caputrePageWithScreenshot();
       await this.hooksRunner.runAfterHook('navigator', url);
     } catch (error) {
-      console.error(`Failed to visit page ${url}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('ERR_CONNECTION_REFUSED')) {
+        const urlMatch = errorMessage.match(/at (https?:\/\/[^\s/]+)/);
+        const baseUrl = urlMatch ? urlMatch[1] : url;
+        throw new Error(`Connection refused: ${baseUrl} is not accessible. Is the server running?`);
+      }
       throw error;
     }
   }
@@ -200,10 +224,9 @@ class Navigator implements Agent {
 
         if (resolved && this.currentUrl) {
           await this.currentAction.getActor().wait(1);
-          try {
-            await this.currentAction.expect(`I.seeInCurrentUrl('${this.currentUrl}')`);
-          } catch {
-            tag('warning').log(`URL verification failed after resolution (expected ${this.currentUrl})`);
+          if (!this.isOnExpectedPage(this.currentUrl, this.currentAction.stateManager)) {
+            const actualPath = this.currentAction.stateManager.getCurrentState()?.url || '';
+            tag('warning').log(`URL verification failed: expected ${this.currentUrl}, got ${actualPath}`);
             resolved = false;
           }
         }
@@ -225,6 +248,20 @@ class Navigator implements Agent {
         },
       }
     );
+
+    if (!resolved && isInteractive()) {
+      const userInput = await pause(`Navigator failed to resolve. Current: ${this.currentAction.stateManager.getCurrentState()?.url}\n` + `Target: ${this.currentUrl}\nEnter CodeceptJS commands (or press Enter to skip):`);
+
+      if (userInput?.trim()) {
+        resolved = await this.currentAction.attempt(userInput, message);
+        if (resolved && this.currentUrl) {
+          await this.currentAction.getActor().wait(1);
+          if (!this.isOnExpectedPage(this.currentUrl, this.currentAction.stateManager)) {
+            resolved = false;
+          }
+        }
+      }
+    }
 
     return resolved;
   }

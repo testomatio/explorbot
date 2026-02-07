@@ -1084,7 +1084,7 @@ function hasHiddenClass(element: parse5TreeAdapter.Element): boolean {
  * Check if element has any data-explorbot-* attributes
  */
 function hasExplorbotAttributes(element: parse5TreeAdapter.Element): boolean {
-  return element.attrs && element.attrs.some((attr) => attr.name.startsWith('data-explorbot-'));
+  return element.attrs?.some((attr) => attr.name.startsWith('data-explorbot-'));
 }
 
 /**
@@ -1106,6 +1106,58 @@ function convertExplorbotAttributes(element: parse5TreeAdapter.Element): void {
 
   // Add converted attributes
   element.attrs.push(...explorbotAttrs);
+}
+
+export interface ExtractedLink {
+  title: string;
+  url: string;
+}
+
+function sanitizeLinkTitle(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+export function extractLinks(html: string): ExtractedLink[] {
+  const document = parseFragment(html);
+  const links: ExtractedLink[] = [];
+  const seen = new Set<string>();
+
+  const skipPrefixes = ['javascript:', 'mailto:', 'tel:', '#'];
+
+  function traverseNodes(node: parse5TreeAdapter.Node): void {
+    if ('tagName' in node) {
+      const element = node as parse5TreeAdapter.Element;
+      const tagName = element.tagName.toLowerCase();
+
+      if (tagName === 'a') {
+        const href = getAttribute(element, 'href');
+        if (href) {
+          const shouldSkip = skipPrefixes.some((prefix) => href.startsWith(prefix));
+          if (!shouldSkip) {
+            const rawTitle = getAttribute(element, 'aria-label') || getTextContent(element);
+            const title = sanitizeLinkTitle(rawTitle);
+            if (title && title.length <= 100) {
+              const key = `${href}|${title}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                links.push({ title, url: href });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if ('childNodes' in node) {
+      for (const child of node.childNodes) {
+        traverseNodes(child);
+      }
+    }
+  }
+
+  traverseNodes(document);
+
+  return links;
 }
 
 export function extractHeadings(html: string): {

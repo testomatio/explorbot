@@ -16,6 +16,7 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { type HtmlDiffResult, htmlDiff } from '../utils/html-diff.ts';
 import { codeToMarkdown, isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
+import { isErrorPage } from '../utils/error-page.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
@@ -111,6 +112,18 @@ export class Researcher implements Agent {
       const isOnCurrentState = this.actionResult!.getStateHash() === this.stateManager.getCurrentState()?.hash;
       await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
+
+      if (isErrorPage(this.actionResult!)) {
+        tag('warn').log(`Detected error page at ${state.url}`);
+        return dedent`
+          ## Error Page Detected
+
+          URL: ${state.url}
+          Title: ${this.actionResult!.title || 'N/A'}
+
+          Research skipped. Navigate to a valid page to continue.
+        `;
+      }
 
       debugLog('Researching web page:', this.actionResult!.url);
 
@@ -397,6 +410,17 @@ export class Researcher implements Agent {
 
     return dedent`
       Analyze this web page and provide a comprehensive research report in markdown format.
+
+      <error_detection>
+      IMPORTANT: First check if this looks like an error page (404, 500, access denied,
+      not found, server error, forbidden, or similar). If so, respond ONLY with:
+
+      ## Error Page Detected
+      Type: [error type]
+      Reason: [what indicates this is an error page]
+
+      Then stop - do not provide normal research output for error pages.
+      </error_detection>
 
       ${this.buildResearchTaskPrompt()}
 

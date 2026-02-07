@@ -13,6 +13,8 @@ const debugLog = createDebug('explorbot:provider');
 const promptLog = createDebug('explorbot:provider:out');
 const responseLog = createDebug('explorbot:provider:in');
 
+class AiError extends Error {}
+
 export class Provider {
   private config: AIConfig;
   private provider: any = null;
@@ -29,9 +31,30 @@ export class Provider {
   lastConversation: Conversation | null = null;
 
   constructor(config: AIConfig) {
+    if (!config?.provider) {
+      throw new AiError('AI provider is not configured. Set ai.provider in your config file.');
+    }
+    if (typeof config.provider !== 'function') {
+      throw new AiError('AI provider must be a function (e.g., from @ai-sdk/openai, @ai-sdk/anthropic).');
+    }
+    if (!config?.model) {
+      throw new AiError('AI model is not configured. Set ai.model in your config file.');
+    }
     this.config = config;
     this.provider = this.config.provider;
     this.initLangfuse();
+  }
+
+  async validateConnection(): Promise<void> {
+    try {
+      await generateText({
+        model: this.provider(this.config.model),
+        prompt: 'hi',
+        maxTokens: 1,
+      });
+    } catch (error: any) {
+      throw new AiError(`AI connection failed: ${error.message}`);
+    }
   }
 
   getModelForAgent(agentName?: string): string {
@@ -327,7 +350,5 @@ export class Provider {
     return this.config.visionModel !== undefined;
   }
 }
-
-class AiError extends Error {}
 
 export { AiError, Provider as AIProvider };

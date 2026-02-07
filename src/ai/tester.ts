@@ -182,6 +182,11 @@ export class Tester extends TaskAgent implements Agent {
 
         this.trackToolExecutions(result?.toolExecutions || []);
 
+        if (task.hasFinished) {
+          stop();
+          return;
+        }
+
         await this.handleUserHelp(task.scenario, currentState, conversation);
 
         if (actionPerformed && !wasSuccessful) {

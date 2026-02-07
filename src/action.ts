@@ -189,7 +189,11 @@ class Action {
     try {
       debugLog('Executing action:', codeString);
 
-      const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', codeString);
+      const sanitizedCode = sanitizeCodeBlock(codeString);
+      if (!sanitizedCode) {
+        throw new Error('No valid I.* commands found in code block');
+      }
+      const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', sanitizedCode);
       codeFunction(this.actor, tryTo, retryTo, within, hopeThat);
 
       await recorder.add(() => sleep(this.config.action?.delay || 500)); // wait for the action to be executed
@@ -232,7 +236,11 @@ class Action {
       if (typeof codeOrFunction === 'function') {
         codeFunction = codeOrFunction;
       } else {
-        codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', codeString);
+        const sanitizedCode = sanitizeCodeBlock(codeString);
+        if (!sanitizedCode) {
+          throw new Error('No valid I.* commands found in code block');
+        }
+        codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', sanitizedCode);
       }
       codeFunction(this.actor, tryTo, retryTo, within, hopeThat);
       await recorder.promise();
@@ -341,6 +349,14 @@ function errorToString(error: any): string {
     return error.cliMessage();
   }
   return error.message || error.toString();
+}
+
+function sanitizeCodeBlock(code: string): string {
+  return code
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('I.'))
+    .join('\n');
 }
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
