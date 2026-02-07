@@ -10,6 +10,7 @@ import { HtmlCommand } from './html-command.js';
 import { KnowCommand } from './know-command.js';
 import { KnowsCommand } from './knows-command.js';
 import { NavigateCommand } from './navigate-command.js';
+import { PathCommand } from './path-command.js';
 import { PlanCommand } from './plan-command.js';
 import { PlanLoadCommand } from './plan-load-command.js';
 import { PlanSaveCommand } from './plan-save-command.js';
@@ -20,7 +21,7 @@ export { BaseCommand } from './base-command.js';
 
 type CommandClass = new (explorBot: ExplorBot) => BaseCommand;
 
-const commandClasses: CommandClass[] = [HelpCommand, ExploreCommand, CleanCommand, ResearchCommand, PlanCommand, PlanSaveCommand, PlanLoadCommand, NavigateCommand, KnowCommand, KnowsCommand, AriaCommand, HtmlCommand, DataCommand, TestCommand, ExitCommand];
+const commandClasses: CommandClass[] = [HelpCommand, ExploreCommand, CleanCommand, ResearchCommand, PlanCommand, PlanSaveCommand, PlanLoadCommand, NavigateCommand, PathCommand, KnowCommand, KnowsCommand, AriaCommand, HtmlCommand, DataCommand, TestCommand, ExitCommand];
 
 export function createCommands(explorBot: ExplorBot): BaseCommand[] {
   return commandClasses.map((Cmd) => new Cmd(explorBot));

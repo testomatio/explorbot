@@ -50,6 +50,48 @@ Visual analysis adds spatial awareness:
 
 Used for: Fallback interactions, visual verification, understanding custom components.
 
+## Custom Element Marking
+
+For custom components that lack standard ARIA roles or semantic HTML, you can mark elements with `data-explorbot-*` attributes to ensure they're recognized as interactive.
+
+### Usage
+
+Add any attribute starting with `data-explorbot-` to your HTML elements:
+
+```html
+<div data-explorbot-role="button" data-explorbot-label="Save Draft">
+  <svg>...</svg>
+  Save
+</div>
+```
+
+Elements with these attributes will:
+- Always be preserved in HTML snapshots (not filtered out)
+- Be treated as interactive elements
+- Appear in UI Maps for agent analysis
+
+### Attribute Conversion
+
+During HTML processing, `data-explorbot-*` attributes are converted to regular attributes:
+
+| Original | Becomes |
+|----------|---------|
+| `data-explorbot-role="button"` | `role="button"` |
+| `data-explorbot-label="Save"` | `label="Save"` |
+| `data-explorbot-important="true"` | `important="true"` |
+
+This allows you to add semantic hints without modifying your component's actual behavior.
+
+### When to Use
+
+Use `data-explorbot-*` attributes when:
+- Custom components don't have proper ARIA roles
+- Elements are interactive but not detected as such
+- You need to ensure specific elements appear in snapshots
+- Standard locators fail to find your elements
+
+This approach follows Explorbot's core principle: solutions should be universal, not hardcoded in the tool's source code.
+
 ## Research & UI Maps
 
 Before testing, the **Researcher agent** analyzes pages and produces UI Maps — structured reports of all interactive elements organized by sections.
