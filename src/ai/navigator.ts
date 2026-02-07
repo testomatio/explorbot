@@ -59,17 +59,19 @@ class Navigator implements Agent {
     this.experienceTracker = experienceTracker || new ExperienceTracker();
   }
 
+  private isOnExpectedPage(expectedUrl: string, stateManager: any): boolean {
+    const currentUrl = stateManager.getCurrentState()?.url || '';
+    return currentUrl === expectedUrl;
+  }
+
   async visit(url: string): Promise<void> {
     try {
       const action = this.explorer.createAction();
 
       await action.execute(`I.amOnPage('${url}')`);
 
-      const currentUrl = action.stateManager.getCurrentState()?.url || '';
-      const expectedPath = new URL(url, 'http://localhost').pathname;
-      const actualPath = new URL(currentUrl, 'http://localhost').pathname;
-
-      if (actualPath !== expectedPath) {
+      if (!this.isOnExpectedPage(url, action.stateManager)) {
+        const actualPath = action.stateManager.getCurrentState()?.url || '';
         const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
         const originalMessage = `Navigate to: ${url}. Current page: ${actualPath}`;
 
@@ -216,11 +218,9 @@ class Navigator implements Agent {
 
         if (resolved && this.currentUrl) {
           await this.currentAction.getActor().wait(1);
-          const currentState = this.currentAction.stateManager.getCurrentState();
-          const actualPath = currentState?.url || '';
-          const expectedPath = this.currentUrl;
-          if (actualPath !== expectedPath) {
-            tag('warning').log(`URL verification failed: expected ${expectedPath}, got ${actualPath}`);
+          if (!this.isOnExpectedPage(this.currentUrl, this.currentAction.stateManager)) {
+            const actualPath = this.currentAction.stateManager.getCurrentState()?.url || '';
+            tag('warning').log(`URL verification failed: expected ${this.currentUrl}, got ${actualPath}`);
             resolved = false;
           }
         }

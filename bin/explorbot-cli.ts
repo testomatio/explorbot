@@ -26,7 +26,7 @@ program
   .option('--freeride', 'Continuously explore and navigate to new pages')
   .option('--incognito', 'Run without recording experiences')
   .action(async (options) => {
-    const initialShowInput = !options.from;
+    let initialShowInput = !options.from;
     setPreserveConsoleLogs(false);
 
     const mainOptions: ExplorBotOptions = {
@@ -44,6 +44,7 @@ program
 
     try {
       await explorBot.visitInitialState();
+      initialShowInput = true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('\nFailed to start:', message);

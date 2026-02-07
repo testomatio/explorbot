@@ -30,14 +30,11 @@ export class ExecutionController extends EventEmitter {
     if (this.interrupted) return;
     this.interrupted = true;
     this.emit('interrupt');
-    const hasWaiters = this.interruptResolvers.length > 0;
     for (const resolve of this.interruptResolvers) {
       resolve();
     }
     this.interruptResolvers = [];
-    if (!hasWaiters) {
-      this.emit('idle-interrupt');
-    }
+    this.emit('idle');
   }
 
   isInterrupted(): boolean {

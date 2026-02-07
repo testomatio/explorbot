@@ -103,14 +103,14 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       });
     });
 
-    const handleIdleInterrupt = () => {
+    const handleIdle = () => {
       setShowInput(true);
     };
 
-    executionController.on('idle-interrupt', handleIdleInterrupt);
+    executionController.on('idle', handleIdle);
 
     return () => {
-      executionController.off('idle-interrupt', handleIdleInterrupt);
+      executionController.off('idle', handleIdle);
       executionController.reset();
     };
   }, []);
