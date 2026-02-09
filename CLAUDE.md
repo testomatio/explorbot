@@ -85,7 +85,8 @@ ExplorBot (DI Container)
             ├── Researcher
             ├── Navigator
             ├── Planner
-            ├── Tester
+            ├── Pilot ←──────────┐
+            ├── Tester ──────────┘ (Pilot supervises Tester)
             ├── Captain
             ├── Historian
             ├── ExperienceCompactor
@@ -231,13 +232,35 @@ All agents implement the `Agent` interface. Task-executing agents (Tester, Capta
 - Researcher — analyze pages, identify UI elements
 - Navigator → ExperienceCompactor — execute navigation, resolve errors
 - Planner — generate test scenarios
-- Tester → Researcher, Navigator, Historian*, Quartermaster* — execute tests with AI tools
+- Pilot — supervise test execution, detect stuck patterns, request user help
+- Tester → Researcher, Navigator, Pilot, Historian*, Quartermaster* — execute tests with AI tools
 - Captain → Historian*, Quartermaster* — handle user commands in TUI
 - Historian — save test sessions, generate code, report to Testomatio
 - ExperienceCompactor — compress experience files
 - Quartermaster — a11y testing (optional)
 
 \* injected via setter
+
+### Pilot
+
+Pilot supervises test execution. It maintains a separate conversation from Tester to analyze progress from a higher level.
+
+**Why separate conversations:**
+- Tester conversation is heavy — full HTML/ARIA context every iteration
+- Pilot conversation is light — only tool execution summaries
+- Pilot can use expensive models (Claude, GPT-4) without token cost explosion
+- Separation allows Pilot to see patterns without drowning in page details
+
+**What Pilot does:**
+- Detects stuck patterns (loops, repeated failures, no ariaDiff changes)
+- Decides what context Tester needs next (requests ATTACH_HTML, ATTACH_ARIA, ATTACH_UI_MAP)
+- Asks user for help when automated recovery fails (interactive mode)
+- Suggests alternative approaches, reset, or stop
+
+**Information flow:**
+- Tester calls Pilot every N iterations
+- Pilot receives: current URL, goal, recent tool executions (success/fail + ariaDiff)
+- Pilot returns: guidance text + attached context (HTML/ARIA/UI map if requested)
 
 ## Tester Loop & Tools
 
@@ -427,6 +450,8 @@ export default {
     agents: {
       tester: { model: 'gpt-oss-20b' },
       navigator: { model: 'gpt-oss-20b' },
+      // Pilot can use smarter model - it only processes tool summaries, not HTML
+      pilot: { stepsToReview: 5 },
     },
   },
   playwright: {

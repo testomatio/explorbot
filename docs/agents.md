@@ -11,6 +11,7 @@ flowchart LR
     B -- "analyzes UI" --> C
     C -- "suggests tests" --> D
     D -- "runs tests" --> A
+    E[Pilot] -.->|supervises| D
 ```
 
 ## Navigator Agent
@@ -97,6 +98,27 @@ See [Researcher Agent](./researcher.md) for detailed configuration and usage.
 - `/test [scenario]`
 - `/explore`
 
+## Pilot Agent
+
+**Purpose:** Supervises Tester and intervenes when tests get stuck.
+
+**What it does:**
+- Maintains separate conversation to track test progress over time
+- Detects stuck patterns (loops, repeated failures, no page changes)
+- Decides what context Tester needs (HTML, ARIA, UI map)
+- Asks user for help when automated recovery fails
+
+**Why you'll love it:**
+- Catches when Tester is spinning wheels on the same failure
+- Requests user input before giving up on a test
+- Can use smarter models without token cost explosion (only sees tool summaries, not raw HTML)
+
+**When Pilot intervenes:**
+- Actions succeed but page doesn't change (wrong element)
+- Same action repeated multiple times (loop)
+- Same locator keeps failing (need alternative approach)
+- Only research/context calls, no action tools (not progressing)
+
 ## Captain Agent *(coming soon)*
 
 **Purpose:** Orchestrates the whole testing session.
@@ -124,7 +146,8 @@ export default {
         excludeSelectors: ['.cookie-banner'],
       },
       planner: { model: 'gpt-oss-20b' },
-      tester: { model: 'gpt-oss-20b' },
+      tester: { model: 'gpt-oss-20b', progressCheckInterval: 5 },
+      pilot: { stepsToReview: 5 },
     },
   },
 };
@@ -135,6 +158,7 @@ export default {
 - Researcher benefits from vision capabilities
 - Planner can use a slightly larger model for better test design
 - Tester needs tool use for execution
+- Pilot can use smarter models — it only processes tool summaries, not HTML/ARIA
 
 ## How Agents Communicate
 
@@ -146,3 +170,6 @@ Agents share context through:
 4. **Knowledge Files** — Domain knowledge you provide
 
 Each agent maintains minimal context to keep costs down. They request specific information when needed rather than carrying full conversation history.
+
+**Pilot-Tester relationship:**
+Pilot maintains a separate conversation from Tester. Tester's conversation contains heavy HTML/ARIA context. Pilot only sees tool execution summaries (what succeeded, what failed, what changed). This allows Pilot to use expensive models without token cost explosion.

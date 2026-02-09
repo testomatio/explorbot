@@ -114,6 +114,7 @@ Explorbot explores websites, analyzes their UI, and proposes tests — which it 
 ```mermaid
 flowchart LR
     N[🧭 Navigator] --> R[🔍 Researcher] --> P[📋 Planner] --> T[🧪 Tester]
+    Pi[🎯 Pilot] -.->|supervises| T
 ```
 
 | 🧭 Navigator | 🔍 Researcher | 📋 Planner | 🧪 Tester |
@@ -126,6 +127,7 @@ Run `/explore` and watch the cycle: research → plan → test → repeat.
 
 **Supporting components:**
 
+* **Pilot** — supervises Tester, detects stuck patterns, asks user for help when needed
 * **Historian** — saves sessions as CodeceptJS code, learns from experience
 * **Quartermaster** — analyzes pages for A11y issues (axe-core + semantic)
 * **Reporter** — sends test results to Testomat.io
