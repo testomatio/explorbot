@@ -46,7 +46,7 @@
     "@opentelemetry/sdk-node": "^0.208.0",
     "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@opentelemetry/semantic-conventions": "^1.38.0",
-    "@testomatio/reporter": "^2.3.9",
+    "@testomatio/reporter": "^2.6.2",
     "ai": "^6.0.6",
     "axe-core": "^4.11.1",
     "cli-highlight": "^2.1.11",

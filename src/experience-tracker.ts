@@ -277,8 +277,13 @@ ${filteredCode}
     }
     return this.getAllExperience().filter((experience) => {
       const experienceState = experience.data as WebPageState;
-      return state.url === experienceState.url || (experienceState.url && state.url && (state.url.includes(experienceState.url) || experienceState.url.includes(state.url)));
+      if (!experienceState.url || !state.url) return false;
+      return this.normalizeUrl(state.url) === this.normalizeUrl(experienceState.url);
     });
+  }
+
+  private normalizeUrl(url: string): string {
+    return url.replace(/\/+$/, '');
   }
 
   private extractStatePath(url: string): string {
@@ -312,6 +317,13 @@ ${filteredCode}
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
 
+    if (entry.relatedUrls?.length) {
+      const currentPath = this.extractStatePath(state.url || '');
+      const existingRelated = Array.isArray(data.related) ? data.related : [];
+      const allRelated = [...new Set([...existingRelated, ...entry.relatedUrls])];
+      data.related = allRelated.filter((url) => url !== currentPath);
+    }
+
     const sessionContent = this.generateSessionContent(entry);
     const updatedContent = `${sessionContent}\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
@@ -320,32 +332,50 @@ ${filteredCode}
   }
 
   private generateSessionContent(entry: SessionExperienceEntry): string {
-    const resultLabel = entry.result.toUpperCase();
+    let content = `## Flow: ${entry.scenario}\n\n`;
 
-    let content = `## SESSION: ${entry.scenario}\n`;
-    content += `**Agent**: ${entry.agent} | **Result**: ${resultLabel} | **Date**: ${entry.timestamp}\n\n`;
-
-    content += '### Steps\n\n';
-    let stepNum = 1;
     for (const step of entry.steps) {
-      const icon = step.status === 'passed' ? '[PASS]' : step.status === 'failed' ? '[FAIL]' : '[-]';
+      content += `* ${step.message}\n\n`;
       if (step.code) {
-        content += `${stepNum}. ${icon} ${step.message}\n\n`;
         content += '```js\n';
         content += `${step.code}\n`;
         content += '```\n\n';
-        if (step.pageChange) {
-          content += `${step.pageChange}\n\n`;
+      }
+      if (step.discovery) {
+        const discoveries = step.discovery.split('\n').filter((d) => d.trim());
+        for (const discovery of discoveries) {
+          content += `> ${discovery.trim()}\n\n`;
         }
-        stepNum++;
       }
     }
 
-    if (entry.nextStep) {
-      content += `### Next Step\n${entry.nextStep}\n\n`;
-    }
-
     content += '---\n';
+    return content;
+  }
+
+  saveFlowExperience(state: ActionResult, scenario: string, flowSteps: string[]): void {
+    if (this.disabled) return;
+    if (flowSteps.length === 0) return;
+
+    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(state);
+    const writingDisabled = relevantKnowledge.some((knowledge) => knowledge.noExperienceWriting === true || knowledge.noExperienceWriting === 'true');
+    if (writingDisabled) return;
+
+    this.ensureExperienceFile(state);
+    const stateHash = state.getStateHash();
+    const { content, data } = this.readExperienceFile(stateHash);
+
+    const flowContent = this.generateFlowContent(scenario, flowSteps);
+    const updatedContent = `${flowContent}\n${content}`;
+    this.writeExperienceFile(stateHash, updatedContent, data);
+
+    tag('substep').log(`Added flow experience to: ${stateHash}.md`);
+  }
+
+  private generateFlowContent(scenario: string, flowSteps: string[]): string {
+    let content = `## Flow: ${scenario}\n\n`;
+    content += flowSteps.join(' -> ');
+    content += '\n\n---\n';
     return content;
   }
 }
@@ -355,21 +385,12 @@ export interface SessionStep {
   status: 'passed' | 'failed' | 'neutral';
   tool?: string;
   code?: string;
-  pageChange?: string;
-}
-
-export interface PageChange {
-  url: string;
-  summary: string;
-  actions: string[];
+  discovery?: string;
 }
 
 export interface SessionExperienceEntry {
-  timestamp: string;
-  agent: 'tester' | 'captain';
   scenario: string;
   result: 'success' | 'partial' | 'failed';
   steps: SessionStep[];
-  pageChanges: PageChange[];
-  nextStep?: string;
+  relatedUrls?: string[];
 }

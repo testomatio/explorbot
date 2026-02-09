@@ -15,6 +15,7 @@ export interface TaggedLogEntry {
   content: string;
   timestamp?: Date;
   originalArgs?: any[];
+  namespace?: string;
 }
 
 type LogEntry = TaggedLogEntry;
@@ -23,6 +24,53 @@ interface LogDestination {
   isEnabled(): boolean;
   write(entry: TaggedLogEntry): void;
 }
+
+class DebugFilter {
+  private patterns: { regex: RegExp; exclude: boolean }[] = [];
+  private parsed = false;
+
+  private parse(): void {
+    if (this.parsed) return;
+    this.parsed = true;
+
+    const debugEnv = process.env.DEBUG || '';
+    if (!debugEnv) return;
+
+    const parts = debugEnv.split(/[\s,]+/).filter(Boolean);
+    for (const part of parts) {
+      const exclude = part.startsWith('-');
+      const pattern = exclude ? part.slice(1) : part;
+      const regex = this.patternToRegex(pattern);
+      this.patterns.push({ regex, exclude });
+    }
+  }
+
+  private patternToRegex(pattern: string): RegExp {
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+    return new RegExp(`^${escaped}$`);
+  }
+
+  isEnabled(namespace: string): boolean {
+    this.parse();
+
+    if (this.patterns.length === 0) return false;
+
+    let enabled = false;
+    for (const { regex, exclude } of this.patterns) {
+      if (regex.test(namespace)) {
+        enabled = !exclude;
+      }
+    }
+    return enabled;
+  }
+
+  hasAnyPatterns(): boolean {
+    this.parse();
+    return this.patterns.length > 0;
+  }
+}
+
+const debugFilter = new DebugFilter();
 
 class ConsoleDestination implements LogDestination {
   private verboseMode = false;
@@ -41,11 +89,15 @@ class ConsoleDestination implements LogDestination {
   }
 
   write(entry: TaggedLogEntry): void {
-    if (entry.type === 'debug') return; // we use debug for that
+    if (entry.type === 'debug') return;
     if (entry.type === 'html') return;
     let content = entry.content;
     if (entry.type === 'multiline') {
       content = chalk.gray(content);
+    } else if (entry.type === 'step') {
+      content = chalk.gray(`   ${content}`);
+    } else if (entry.type === 'substep') {
+      content = chalk.gray(`   > ${content}`);
     }
     console.log(content);
   }
@@ -56,21 +108,20 @@ class DebugDestination implements LogDestination {
 
   isEnabled(): boolean {
     if (process.env.INK_RUNNING) return false;
-    return this.verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:'));
+    return this.verboseMode || debugFilter.hasAnyPatterns();
+  }
+
+  isNamespaceEnabled(namespace: string): boolean {
+    if (this.verboseMode) return true;
+    return debugFilter.isEnabled(namespace);
   }
 
   setVerboseMode(enabled: boolean): void {
     this.verboseMode = enabled;
   }
 
-  write(...args: any[]): void {
-    if (!this.isEnabled()) return;
-
-    let namespace = 'explorbot';
-    if (args.length > 1) {
-      namespace = args[0];
-      args = args.slice(1);
-    }
+  write(namespace: string, ...args: any[]): void {
+    if (!this.isNamespaceEnabled(namespace)) return;
     debug(namespace).apply(null, args);
   }
 }
@@ -175,7 +226,15 @@ class ReactDestination implements LogDestination {
     return this.logPane !== null;
   }
 
+  private shouldWrite(entry: TaggedLogEntry): boolean {
+    if (entry.type !== 'debug') return true;
+    if (!entry.namespace) return true;
+    return debugFilter.isEnabled(entry.namespace);
+  }
+
   write(entry: TaggedLogEntry): void {
+    if (!this.shouldWrite(entry)) return;
+
     if (!this.isEnabled()) {
       if (process.env.INK_RUNNING) {
         this.pendingLogs.push(entry);
@@ -184,7 +243,9 @@ class ReactDestination implements LogDestination {
     }
     if (this.pendingLogs.length > 0) {
       for (const pending of this.pendingLogs) {
-        this.logPane!(pending);
+        if (this.shouldWrite(pending)) {
+          this.logPane!(pending);
+        }
       }
       this.pendingLogs = [];
     }
@@ -195,7 +256,9 @@ class ReactDestination implements LogDestination {
     this.logPane = addLog;
     if (this.pendingLogs.length > 0) {
       for (const pending of this.pendingLogs) {
-        this.logPane(pending);
+        if (this.shouldWrite(pending)) {
+          this.logPane(pending);
+        }
       }
       this.pendingLogs = [];
     }
@@ -288,7 +351,7 @@ class Logger {
   }
 
   log(type: LogType, ...args: any[]): void {
-    if (type === 'debug' && this.debugDestination.isEnabled()) {
+    if (type === 'debug') {
       let namespace = 'explorbot';
       let contentArgs = args;
       if (args.length > 1) {
@@ -296,9 +359,24 @@ class Logger {
         contentArgs = args.slice(1);
       }
       const processedContent = this.processArgs(contentArgs);
-      this.debugDestination.write(namespace, processedContent);
+
+      if (!process.env.INK_RUNNING && this.debugDestination.isEnabled()) {
+        this.debugDestination.write(namespace, processedContent);
+      }
+
+      if (process.env.INK_RUNNING) {
+        const entry: TaggedLogEntry = {
+          type: 'debug',
+          content: `${namespace}: ${processedContent}`,
+          timestamp: new Date(),
+          namespace,
+          originalArgs: contentArgs,
+        };
+        this.react.write(entry);
+      }
       return;
     }
+
     let content = this.processArgs(args);
     if (type === 'step' && args[0]?.toCode) {
       content = args[0].toCode();

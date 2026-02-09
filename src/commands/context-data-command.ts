@@ -2,8 +2,8 @@ import { ActionResult } from '../action-result.js';
 import { tag } from '../utils/logger.js';
 import { BaseCommand } from './base-command.js';
 
-export class DataCommand extends BaseCommand {
-  name = 'data';
+export class ContextDataCommand extends BaseCommand {
+  name = 'context:data';
   description = 'Extract structured data from current page';
 
   async execute(_args: string): Promise<void> {

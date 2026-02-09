@@ -87,6 +87,7 @@ ExplorBot (DI Container)
             ├── Planner
             ├── Tester
             ├── Captain
+            ├── Historian
             ├── ExperienceCompactor
             └── Quartermaster (optional)
 ```
@@ -103,6 +104,8 @@ ExplorBot (DI Container)
 | **Agents** | AI-driven task execution |
 
 ## Dependency Injection
+
+**IMPORTANT: ExplorBot is the DI container. All agents MUST be created through ExplorBot factory methods (`agentXxx()`). Never instantiate agents directly.**
 
 `ExplorBot` (`src/explorbot.ts`) acts as service locator with factory-based DI:
 
@@ -223,17 +226,18 @@ Both use markdown files with YAML frontmatter and respect `noExperienceReading`/
 
 ## Agents
 
-| Agent | File | Dependencies | Purpose |
-|-------|------|--------------|---------|
-| Researcher | `src/ai/researcher.ts` | Explorer, Provider | Analyze pages, identify UI elements |
-| Navigator | `src/ai/navigator.ts` | Explorer, Provider, ExperienceCompactor | Execute navigation, resolve errors |
-| Planner | `src/ai/planner.ts` | Explorer, Provider | Generate test scenarios |
-| Tester | `src/ai/tester.ts` | Explorer, Provider, Researcher, Navigator, Tools | Execute tests with AI tools |
-| Captain | `src/ai/captain.ts` | ExplorBot | Handle user commands in TUI |
-| ExperienceCompactor | `src/ai/experience-compactor.ts` | Provider, ExperienceTracker | Compress experience files |
-| Quartermaster | `src/ai/quartermaster.ts` | Provider, StateManager | A11y testing (optional, config-enabled) |
-
 All agents implement the `Agent` interface. Task-executing agents (Tester, Captain) extend `TaskAgent` base class.
+
+- Researcher — analyze pages, identify UI elements
+- Navigator → ExperienceCompactor — execute navigation, resolve errors
+- Planner — generate test scenarios
+- Tester → Researcher, Navigator, Historian*, Quartermaster* — execute tests with AI tools
+- Captain → Historian*, Quartermaster* — handle user commands in TUI
+- Historian — save test sessions, generate code, report to Testomatio
+- ExperienceCompactor — compress experience files
+- Quartermaster — a11y testing (optional)
+
+\* injected via setter
 
 ## Tester Loop & Tools
 

@@ -42,6 +42,12 @@ program
     const explorBot = new ExplorBot(mainOptions);
     await explorBot.start();
 
+    if (!process.stdin.isTTY) {
+      console.error('Warning: Input not available. Running in non-interactive mode.');
+    }
+
+    process.env.INK_RUNNING = 'true';
+
     try {
       await explorBot.visitInitialState();
       initialShowInput = true;
@@ -56,12 +62,6 @@ program
       await explorBot.freeride();
       return;
     }
-
-    if (!process.stdin.isTTY) {
-      console.error('Warning: Input not available. Running in non-interactive mode.');
-    }
-
-    process.env.INK_RUNNING = 'true';
 
     render(React.createElement(App, { explorBot, initialShowInput }), {
       exitOnCtrlC: false,
@@ -323,6 +323,74 @@ program
         force: true,
         data: options.data || false,
       });
+
+      await explorBot.stop();
+      process.exit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('context <url>')
+  .description('Print page context (URL, headings, knowledge, experience, interactive elements)')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('--full', 'Include HTML and all data')
+  .option('--compact', 'Compact view with summaries')
+  .option('--attached', 'Only auto-attached sections (default)')
+  .action(async (url, options) => {
+    try {
+      const mainOptions: ExplorBotOptions = {
+        path: options.path,
+        config: options.config,
+        headless: true,
+      };
+
+      const explorBot = new ExplorBot(mainOptions);
+      await explorBot.start();
+
+      await explorBot.agentNavigator().visit(url);
+
+      const { ActionResult } = await import('../src/action-result.js');
+      const { Researcher } = await import('../src/ai/researcher.js');
+      const { formatContextSummary } = await import('../src/utils/context-formatter.js');
+
+      const state = explorBot.getExplorer().getStateManager().getCurrentState();
+      if (!state) {
+        throw new Error('No active page');
+      }
+
+      let mode: 'attached' | 'compact' | 'full' = 'attached';
+      if (options.full) {
+        mode = 'full';
+      } else if (options.compact) {
+        mode = 'compact';
+      }
+
+      const actionResult = ActionResult.fromState(state);
+      const experienceTracker = explorBot.getExplorer().getStateManager().getExperienceTracker();
+      const knowledgeTracker = explorBot.getKnowledgeTracker();
+
+      const contextData = {
+        url: actionResult.url,
+        title: actionResult.title,
+        headings: {
+          h1: actionResult.h1,
+          h2: actionResult.h2,
+          h3: actionResult.h3,
+          h4: actionResult.h4,
+        },
+        experience: experienceTracker.getRelevantExperience(actionResult),
+        knowledge: knowledgeTracker.getRelevantKnowledge(actionResult),
+        ariaSnapshot: actionResult.ariaSnapshot,
+        combinedHtml: mode === 'full' ? await actionResult.combinedHtml() : undefined,
+        research: Researcher.getCachedResearch(state),
+      };
+
+      const output = formatContextSummary(contextData, mode);
+      console.log(output);
 
       await explorBot.stop();
       process.exit(0);

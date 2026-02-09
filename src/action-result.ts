@@ -576,7 +576,9 @@ export class ActionResult implements ActionResultData {
     }
 
     if (diff.htmlDiff && diff.htmlSubtree) {
-      pageDiff.htmlChanges = await minifyHtml(diff.htmlSubtree);
+      const htmlConfig = this.normalizeHtmlConfig();
+      const filteredHtml = htmlCombinedSnapshot(diff.htmlSubtree, htmlConfig?.combined);
+      pageDiff.htmlChanges = await minifyHtml(filteredHtml);
     }
 
     result.pageDiff = pageDiff;

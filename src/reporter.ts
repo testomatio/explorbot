@@ -5,6 +5,13 @@ import { createDebug } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:reporter');
 
+export interface ReporterStep {
+  title: string;
+  status: 'passed' | 'failed';
+  code: string[];
+  discovery?: string;
+}
+
 export class Reporter {
   private client: Client;
   private isRunStarted = false;
@@ -25,15 +32,51 @@ export class Reporter {
 
     try {
       const timeoutMs = Number(process.env.TESTOMATIO_TIMEOUT_MS || '15000');
-      await Promise.race([this.client.createRun(), new Promise((resolve) => setTimeout(resolve, timeoutMs))]);
+      const timeoutPromise = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), timeoutMs));
+
+      const result = await Promise.race([this.client.createRun().then(() => 'success' as const), timeoutPromise]);
+
+      if (result === 'timeout') {
+        debugLog('Testomat.io run creation timed out');
+        return;
+      }
+
+      if (!this.client.runId) {
+        debugLog('Testomat.io run creation failed - no runId received');
+        return;
+      }
+
       this.isRunStarted = true;
-      debugLog('Testomat.io run started');
+      debugLog('Testomat.io run started with ID:', this.client.runId);
     } catch (error) {
       debugLog('Failed to start Testomat.io reporter:', error);
+      return;
     }
 
     process.env.TESTOMATIO_STACK_PASSED = 'true';
     process.env.TESTOMATIO_STEPS_PASSED = 'true';
+  }
+
+  async reportTestStart(test: Test): Promise<void> {
+    await this.startRun();
+
+    if (!this.isRunStarted) {
+      return;
+    }
+
+    try {
+      const testData = {
+        rid: test.id,
+        title: test.scenario,
+        suite_title: test.plan?.title || 'Auto-Exploratory Testing',
+      };
+
+      debugLog('Test started:', testData);
+      await this.client.addTestRun(null, testData);
+      debugLog(`Test reported as pending: ${test.scenario}`);
+    } catch (error) {
+      debugLog('Failed to report test start:', error);
+    }
   }
 
   protected combineStepsAndNotes(test: Test): Step[] {
@@ -132,5 +175,40 @@ export class Reporter {
 
   isEnabled(): boolean {
     return this.isRunStarted;
+  }
+
+  async reportSteps(test: Test, steps: ReporterStep[]): Promise<void> {
+    if (!this.isRunStarted) return;
+
+    const formattedSteps: Step[] = steps.map((step) => ({
+      category: 'user',
+      title: step.title,
+      duration: 0,
+      steps: step.code.map((code) => ({
+        category: 'framework',
+        title: code,
+        duration: 0,
+      })),
+    }));
+
+    const discoveries = steps
+      .filter((s) => s.discovery)
+      .map((s) => s.discovery)
+      .join('\n');
+
+    try {
+      const testData = {
+        rid: test.id,
+        title: test.scenario,
+        suite_title: test.plan?.title || 'Auto-Exploratory Testing',
+        steps: formattedSteps,
+        message: discoveries || test.summary || '',
+      };
+
+      debugLog('Reporting steps:', testData);
+      await this.client.addTestRun(null, testData);
+    } catch (error) {
+      debugLog('Failed to report steps:', error);
+    }
   }
 }

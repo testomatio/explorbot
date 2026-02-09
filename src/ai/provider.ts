@@ -5,6 +5,7 @@ import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
 import { Observability } from '../observability.ts';
+import { Stats } from '../stats.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { Conversation } from './conversation.js';
@@ -191,6 +192,15 @@ export class Provider {
 
       clearActivity();
       responseLog(response.text);
+
+      if (response.usage) {
+        Stats.recordTokens(options.agentName || 'unknown', model, {
+          input: response.usage.promptTokens || 0,
+          output: response.usage.completionTokens || 0,
+          total: response.usage.totalTokens || 0,
+        });
+      }
+
       return response;
     } catch (error: any) {
       tag('error').log(error.message || error.toString());
@@ -244,6 +254,14 @@ export class Provider {
 
       responseLog(response.text);
 
+      if (response.usage) {
+        Stats.recordTokens(options.agentName || 'unknown', model, {
+          input: response.usage.promptTokens || 0,
+          output: response.usage.completionTokens || 0,
+          total: response.usage.totalTokens || 0,
+        });
+      }
+
       return response;
     } catch (error: any) {
       clearActivity();
@@ -284,6 +302,14 @@ export class Provider {
 
       clearActivity();
       responseLog(response.object);
+
+      if (response.usage) {
+        Stats.recordTokens(options.agentName || 'unknown', modelToUse, {
+          input: response.usage.promptTokens || 0,
+          output: response.usage.completionTokens || 0,
+          total: response.usage.totalTokens || 0,
+        });
+      }
 
       return response;
     } catch (error: any) {
@@ -339,6 +365,15 @@ export class Provider {
 
       clearActivity();
       responseLog(response.text);
+
+      if (response.usage) {
+        Stats.recordTokens('vision', this.config.visionModel!, {
+          input: response.usage.promptTokens || 0,
+          output: response.usage.completionTokens || 0,
+          total: response.usage.totalTokens || 0,
+        });
+      }
+
       return response;
     } catch (error: any) {
       clearActivity();

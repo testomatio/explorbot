@@ -187,10 +187,6 @@ class Navigator implements Agent {
       ${outputRule(this.MAX_ATTEMPTS)}
     `;
 
-    debugLog('Sending prompt to AI provider');
-
-    tag('debug').log('Prompt:', prompt);
-
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
     conversation.addUserText(prompt);
 

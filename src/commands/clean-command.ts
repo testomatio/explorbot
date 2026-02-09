@@ -4,6 +4,7 @@ import { BaseCommand } from './base-command.js';
 export class CleanCommand extends BaseCommand {
   name = 'clean';
   description = 'Clean captain conversation';
+  suggestions = ['/explore - to start exploration'];
 
   async execute(_args: string): Promise<void> {
     this.explorBot.agentCaptain().cleanConversation();

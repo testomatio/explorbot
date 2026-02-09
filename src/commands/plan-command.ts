@@ -4,6 +4,7 @@ import { BaseCommand } from './base-command.js';
 export class PlanCommand extends BaseCommand {
   name = 'plan';
   description = 'Plan testing for a feature';
+  suggestions = ['/test - to launch first test', '/test * - to launch all tests', 'Edit the plan in file and call /plan:reload to update it'];
 
   async execute(args: string): Promise<void> {
     const focus = args.trim();

@@ -8,6 +8,7 @@ import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
+import { Stats } from '../stats.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { extractFocusedElement } from '../utils/aria.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
@@ -17,6 +18,7 @@ import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import { Navigator } from './navigator.ts';
+import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
@@ -31,6 +33,7 @@ export class Tester extends TaskAgent implements Agent {
   private explorer: Explorer;
   private provider: Provider;
   private currentConversation: Conversation | null = null;
+  private pilot: Pilot | null = null;
 
   MAX_ITERATIONS = 30;
   ASSERTION_TOOLS = ['verify'];
@@ -68,11 +71,20 @@ export class Tester extends TaskAgent implements Agent {
     return this.provider;
   }
 
+  setPilot(pilot: Pilot): void {
+    this.pilot = pilot;
+  }
+
+  private get progressCheckInterval(): number {
+    return (this.explorer.getConfig().ai?.agents?.tester as any)?.progressCheckInterval ?? 5;
+  }
+
   getConversation(): Conversation | null {
     return this.currentConversation;
   }
 
   async test(task: Test): Promise<{ success: boolean }> {
+    Stats.tests++;
     const state = this.explorer.getStateManager().getCurrentState();
     if (!state) throw new Error('No state found');
 
@@ -83,6 +95,7 @@ export class Tester extends TaskAgent implements Agent {
     this.previousStateHash = null;
     this.explorer.getStateManager().clearHistory();
     this.resetFailureCount();
+    this.pilot?.reset();
 
     const initialState = ActionResult.fromState(state);
 
@@ -159,8 +172,9 @@ export class Tester extends TaskAgent implements Agent {
           nextStep += await this.reinjectContextIfNeeded(iteration, currentState);
           nextStep += await this.prepareInstructionsForNextStep(task);
 
-          if (this.shouldAnalyzeProgress(iteration)) {
-            nextStep += await this.analyzeProgress(task, currentState);
+          if (iteration % this.progressCheckInterval === 0 && this.pilot) {
+            const guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
+            if (guidance) nextStep += `\n\n${guidance}`;
           }
           conversation.addUserText(nextStep);
         }
@@ -181,13 +195,6 @@ export class Tester extends TaskAgent implements Agent {
         const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
 
         this.trackToolExecutions(result?.toolExecutions || []);
-
-        if (task.hasFinished) {
-          stop();
-          return;
-        }
-
-        await this.handleUserHelp(task.scenario, currentState, conversation);
 
         if (actionPerformed && !wasSuccessful) {
           result?.toolExecutions
@@ -250,7 +257,7 @@ export class Tester extends TaskAgent implements Agent {
 
     offStateChange();
     await this.finishTest(task);
-    this.explorer.stopTest(task);
+    await this.explorer.stopTest(task);
 
     return {
       success: task.isSuccessful,
@@ -312,9 +319,7 @@ export class Tester extends TaskAgent implements Agent {
     } else {
       context += dedent`
         <no_focus>
-        ⚠️ NO INPUT ELEMENT IS FOCUSED
-        For keyboard interactions use form() tool which handles clicking and typing together.
-        Do NOT use type() or pressKey() tools directly - they require a focused input element.
+        No element is focused
         </no_focus>
       `;
     }
@@ -323,7 +328,7 @@ export class Tester extends TaskAgent implements Agent {
       const iframeInfo = this.explorer.getCurrentIframeInfo();
       context += dedent`
         <iframe_context>
-        ⚠️ INSIDE IFRAME: ${iframeInfo}
+        INSIDE IFRAME: ${iframeInfo}
         You are currently inside an iframe. Call I.switchTo() (without arguments) to exit before interacting with elements outside the iframe.
         </iframe_context>
       `;
@@ -370,26 +375,26 @@ export class Tester extends TaskAgent implements Agent {
       return context;
     }
 
-    if (isStateChanged) {
-      const combinedHtml = await currentState.combinedHtml();
-      context += dedent`
-        Context (state changed):
+    // if (isStateChanged) {
+    //   const combinedHtml = await currentState.combinedHtml();
+    //   context += dedent`
+    //     Context (state changed):
 
-        <page>
-        CURRENT URL: ${currentState.url}
-        CURRENT TITLE: ${currentState.title}
-        </page>
+    //     <page>
+    //     CURRENT URL: ${currentState.url}
+    //     CURRENT TITLE: ${currentState.title}
+    //     </page>
 
-        <page_html>
-        ${combinedHtml}
-        </page_html>
+    //     <page_html>
+    //     ${combinedHtml}
+    //     </page_html>
 
-        <page_aria>
-        ${currentState.ariaSnapshot}
-        </page_aria>
-      `;
-      return context;
-    }
+    //     <page_aria>
+    //     ${currentState.ariaSnapshot}
+    //     </page_aria>
+    //   `;
+    //   return context;
+    // }
 
     if (context) return context;
 
@@ -537,143 +542,6 @@ export class Tester extends TaskAgent implements Agent {
     `;
   }
 
-  private async analyzeProgress(task: Test, actionResult: ActionResult): Promise<string> {
-    const notes = task.getPrintableNotes() || 'No notes recorded yet.';
-    const isStuck = this.isStuckWithoutActions();
-
-    const recentToolCalls = this.recentToolCalls.slice(-10);
-    const failedToolCalls = recentToolCalls.filter((tool: any) => !tool.wasSuccessful);
-    const actionToolFailures = failedToolCalls.filter((tool: any) => this.ACTION_TOOLS.includes(tool.toolName));
-
-    const persistentFailureThreshold = 3;
-    const hasPersistentFailures = actionToolFailures.length >= persistentFailureThreshold;
-
-    const sameToolFailedRepeatedly = recentToolCalls
-      .filter((tool: any) => !tool.wasSuccessful && this.ACTION_TOOLS.includes(tool.toolName))
-      .reduce((acc: Record<string, number>, tool: any) => {
-        const key = `${tool.toolName}:${tool.input?.locator || tool.input?.text || 'unknown'}`;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {});
-
-    const hasRepeatedSameFailure = Object.values(sameToolFailedRepeatedly).some((count: number) => count >= persistentFailureThreshold);
-
-    const schema = z.object({
-      assessment: z.string().describe('Short review of current progress toward the main scenario goal'),
-      suggestion: z.string().describe('Specific next action recommendation'),
-      recommendReset: z.boolean().optional().describe('Recommend reset() if persistent failures suggest navigation issues'),
-      recommendStop: z.boolean().optional().describe('Recommend stop() if test is fundamentally incompatible or cannot proceed'),
-    });
-
-    let problemContext = '';
-
-    if (isStuck) {
-      problemContext = dedent`
-        <critical_no_actions>
-        WARNING: No action tools used in recent iterations!
-        The test is not making progress. You are only using research/see/context tools.
-
-        You MUST start using ACTION tools: ${this.ACTION_TOOLS.join(', ')}
-        Click buttons, fill forms, navigate - do something that changes the page state.
-        </critical_no_actions>
-      `;
-    } else if (hasPersistentFailures || hasRepeatedSameFailure) {
-      problemContext = dedent`
-        <critical_failures>
-        WARNING: Persistent tool failures detected!
-        - Recent failed action tool calls: ${actionToolFailures.length}
-        - Same tool/locator failed repeatedly: ${hasRepeatedSameFailure ? 'YES' : 'NO'}
-
-        Failed tools in recent calls:
-        ${actionToolFailures.map((tool: any) => `- ${tool.toolName}${tool.input?.locator ? ` (${tool.input.locator})` : ''}${tool.input?.explanation ? `: ${tool.input.explanation}` : ''}`).join('\n')}
-
-        This indicates the test may be stuck or the scenario is incompatible with the current page state.
-        You MUST recommend either reset() to return to initial page, or stop() if the scenario is fundamentally incompatible.
-        </critical_failures>
-      `;
-    }
-
-    const model = this.provider.getModelForAgent('tester');
-    const response = await this.provider.generateObject(
-      [
-        {
-          role: 'system',
-          content: dedent`
-            You are senior QA Tester analyst which analyzes ongoing testing session
-          `,
-        },
-        {
-          role: 'user',
-          content: dedent`
-            SCENARIO GOAL: ${task.scenario}
-            CURRENT URL: ${actionResult.url}
-
-            <task>
-            Analyze if the current actions align with the main scenario goal and propose next steps.
-            Check if the current actions are aligned with the main scenario goal.
-            If there are unsuccessful steps, suggest a different approach to achieve the main scenario goal.
-            Provide a short comprehensive assessment of the current progress.
-            Provide suggestions for next steps.
-            </task>
-
-            <rules>
-            - Check if the current actions are aligned with the main scenario goal.
-            - If there are failures accessing elements, suggest to use see() tool to analyze the page.
-            - If goal was already achieved and verified suggest finishing the test with finish() tool.
-            - Look for failed tool calls and identify which actions were not accomplished.
-            - If tool didn't succeed even after several attempts, you must mention it in the assessment.
-            - CRITICAL: If no action tools are being used, you MUST recommend starting to use action tools immediately.
-            - CRITICAL: If persistent failures are detected (3+ recent failures or same tool/locator failing repeatedly), you MUST recommend either:
-              * reset() - if navigation issues suggest returning to initial page might help
-              * stop() - if the scenario is fundamentally incompatible with the page and cannot proceed
-            - Do not recommend continuing with the same failing approach when persistent failures are detected.
-            </rules>
-
-            ${problemContext}
-
-            <current_state>
-            ${await actionResult.toAiContext()}
-            </current_state>
-
-            <notes>
-            ${notes}
-            </notes>
-
-            <called_tools>
-            ${recentToolCalls.length > 0 ? recentToolCalls.map((tool) => `- ${tool.toolName}${tool.wasSuccessful ? ' [SUCCESS]' : ' [FAILED]'}${tool.input?.explanation ? `: ${tool.input.explanation}` : ''}${tool.input?.locator ? ` (locator: ${tool.input.locator})` : ''}`).join('\n') : 'No action tools called yet'}
-            </called_tools>
-
-            Provide a short assessment, suggest the next best action, and indicate if reset() or stop() is recommended.
-          `,
-        },
-      ],
-      schema,
-      model
-    );
-
-    const result = response?.object;
-    if (!result) return '';
-
-    let recommendation = '';
-    if (isStuck) {
-      recommendation = `WARNING: No action tools used! Use: ${this.ACTION_TOOLS.join(', ')}`;
-    } else if (result.recommendStop) {
-      recommendation = 'CRITICAL: AI strongly recommends using stop() - test appears fundamentally incompatible.';
-    } else if (result.recommendReset) {
-      recommendation = 'AI suggests using reset() to return to initial page and try different approach.';
-    }
-
-    const report = dedent`
-      Progress checkpoint after ${this.recentToolCalls.length} tool calls:
-      ${result.assessment}
-      Next suggestion: ${result.suggestion}
-      ${recommendation ? `\n${recommendation}` : ''}
-    `;
-
-    task.addNote(result.assessment);
-    return report;
-  }
-
   private async finalReview(task: Test): Promise<void> {
     const notes = task.notesToString() || 'No notes recorded.';
     const schema = z.object({
@@ -764,9 +632,9 @@ export class Tester extends TaskAgent implements Agent {
     return {
       reset: tool({
         description: dedent`
-          Reset the testing flow by navigating back to the original page. 
-          Use this when navigated too far from the desired state and 
-          there's no clear path to achieve the expected result. This restarts the 
+          Reset the testing flow by navigating back to the original page.
+          Use this when navigated too far from the desired state and
+          there's no clear path to achieve the expected result. This restarts the
           testing flow from a known good state.
         `,
         inputSchema: z.object({
@@ -781,6 +649,7 @@ export class Tester extends TaskAgent implements Agent {
               action: 'reset',
             };
           }
+
           const explanation = reason ? `${reason} (RESET)` : 'Resetting to initial page';
           const targetUrl = resetUrl!;
           task.addNote(explanation);

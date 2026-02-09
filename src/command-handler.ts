@@ -105,6 +105,7 @@ export class CommandHandler implements InputManager {
         const argsString = parsed.args.join(' ');
         try {
           await command.execute(argsString);
+          command.suggestions.forEach((s) => tag('step').log(s));
         } catch (error) {
           tag('error').log(`/${command.name} failed: ${error instanceof Error ? error.message : String(error)}`);
         }

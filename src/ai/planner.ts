@@ -2,9 +2,11 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
+import { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
+import { Stats } from '../stats.ts';
 import { Plan, Test } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
 import { createDebug, tag } from '../utils/logger.js';
@@ -43,6 +45,7 @@ export class Planner implements Agent {
   private explorer: Explorer;
   private provider: Provider;
   private stateManager: StateManager;
+  private experienceTracker: ExperienceTracker;
 
   MIN_TASKS = 3;
   MAX_TASKS = 7;
@@ -55,6 +58,7 @@ export class Planner implements Agent {
     this.provider = provider;
     this.researcher = new Researcher(explorer, provider);
     this.stateManager = explorer.getStateManager();
+    this.experienceTracker = new ExperienceTracker();
   }
 
   getSystemMessage(): string {
@@ -97,6 +101,7 @@ export class Planner implements Agent {
   }
 
   async plan(feature?: string): Promise<Plan> {
+    Stats.plans++;
     const state = this.stateManager.getCurrentState();
     debugLog('Planning:', state?.url);
     if (!state) throw new Error('No state found');
@@ -160,12 +165,14 @@ export class Planner implements Agent {
     if (!this.currentPlan) {
       const planName = `Plan ${planId++}`;
       this.currentPlan = new Plan(planName);
+      this.currentPlan.url = state.url;
       for (const t of tests) {
         t.startUrl = state.url;
         this.currentPlan.addTest(t);
       }
     } else {
       tag('step').log(`Expanding plan: "${this.currentPlan.title}"`);
+      this.currentPlan.nextIteration();
       const addedCount = this.addNewTests(tests, state.url);
       if (addedCount > 0) {
         tag('step').log(`Added ${addedCount} new scenarios`);
@@ -312,6 +319,20 @@ export class Planner implements Agent {
     return null;
   }
 
+  private extractFlowsFromExperience(state: ActionResult): string[] {
+    const relevantExperience = this.experienceTracker.getRelevantExperience(state);
+    const flows: string[] = [];
+
+    for (const experience of relevantExperience) {
+      const flowMatches = experience.content.matchAll(/^## Flow[^\n]*\n([\s\S]*?)(?=^## |\z)/gm);
+      for (const match of flowMatches) {
+        flows.push(match[0].trim());
+      }
+    }
+
+    return flows;
+  }
+
   private addNewTests(tests: Test[], defaultStartUrl: string): number {
     if (!this.currentPlan) return 0;
 
@@ -392,6 +413,22 @@ export class Planner implements Agent {
     conversation.addUserText(planningPrompt);
     const research = await this.researcher.research(state, { deep: true });
     conversation.addUserText(`Identified page elements: ${research}`);
+
+    const flows = this.extractFlowsFromExperience(state);
+    if (flows.length > 0) {
+      conversation.addUserText(dedent`
+        <previously_tested_flows>
+        These flows have been tested before on this page:
+
+        ${flows.join('\n\n')}
+
+        Consider:
+        1. Re-testing these flows if not in current plan
+        2. Proposing variations of these flows (different inputs, edge cases, negative scenarios)
+        3. Avoiding exact duplicates
+        </previously_tested_flows>
+      `);
+    }
 
     if (this.currentPlan) {
       tag('step').log('Analyzing current plan to expand testing');

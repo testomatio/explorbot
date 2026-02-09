@@ -169,6 +169,7 @@ export class Test extends Task {
   summary: string;
   artifacts: Record<string, string>;
   generatedCode?: string;
+  planIteration = 0;
 
   constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);
@@ -238,7 +239,7 @@ export class Test extends Task {
 
   start(): void {
     this.status = TestStatus.IN_PROGRESS;
-    this.addNote('Test started');
+    this.addNote('Test started. Session name: ' + this.sessionName);
     this.plan?.notifyChange();
   }
 
@@ -283,6 +284,7 @@ export class Plan {
   title: string;
   tests: Test[] = [];
   url?: string;
+  iteration = 0;
   private changeListeners: PlanChangeListener[] = [];
 
   constructor(title: string) {
@@ -290,8 +292,13 @@ export class Plan {
     if (title.startsWith('/')) this.url = title;
   }
 
+  nextIteration(): void {
+    this.iteration++;
+  }
+
   addTest(test: Test): void {
     test.plan = this;
+    test.planIteration = this.iteration;
     this.tests.push(test);
     this.notifyChange();
   }

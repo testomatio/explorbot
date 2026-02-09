@@ -38,15 +38,21 @@ const TaskPane: React.FC<TaskPaneProps> = React.memo(({ tasks }) => {
     };
   }, [tasks]);
 
+  const completedCount = tasks.filter((t) => t.hasFinished).length;
+  const currentIteration = Math.max(0, ...tasks.map((t) => t.planIteration));
+  const visibleTasks = tasks.filter((t) => !t.hasFinished || t.planIteration === currentIteration);
+
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box borderStyle="round" borderColor="dim" padding={1} flexDirection="column">
         <Box justifyContent="space-between" marginBottom={1}>
-          <Text color="dim">📋 Testing Tasks</Text>
-          <Text color="dim">[{tasks.length} total]</Text>
+          <Text color="dim">📋 Tests</Text>
+          <Text color="dim">
+            [{completedCount}/{tasks.length}]
+          </Text>
         </Box>
 
-        {tasks.map((task: Test, taskIndex) => {
+        {visibleTasks.map((task: Test, taskIndex) => {
           const inProgress = task.status === 'in_progress';
           let taskColor = 'dim';
           let strikethrough = false;

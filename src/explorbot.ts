@@ -4,7 +4,9 @@ import figureSet from 'figures';
 import { Agent } from './ai/agent.ts';
 import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
+import { Historian } from './ai/historian.ts';
 import { Navigator } from './ai/navigator.ts';
+import { Pilot } from './ai/pilot.ts';
 import { Planner } from './ai/planner.ts';
 import { AIProvider, AiError } from './ai/provider.ts';
 import { Quartermaster } from './ai/quartermaster.ts';
@@ -18,6 +20,7 @@ import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
 import { Plan } from './test-plan.ts';
 import { log, setVerboseMode, tag } from './utils/logger.ts';
+import { sanitizeFilename } from './utils/strings.ts';
 
 const planId = 0;
 export interface ExplorBotOptions {
@@ -41,6 +44,7 @@ export class ExplorBot {
   private userResolveFn: UserResolveFunction | null = null;
   public needsInput = false;
   private currentPlan?: Plan;
+  private planFeature?: string;
   private agents: Record<string, any> = {};
 
   constructor(options: ExplorBotOptions = {}) {
@@ -160,6 +164,15 @@ export class ExplorBot {
     return (this.agents.planner ||= this.createAgent(({ ai, explorer }) => new Planner(explorer, ai)));
   }
 
+  agentPilot(): Pilot {
+    return (this.agents.pilot ||= this.createAgent(({ ai, explorer }) => {
+      const researcher = this.agentResearcher();
+      const navigator = this.agentNavigator();
+      const tools = createAgentTools({ explorer, researcher, navigator });
+      return new Pilot(ai, tools, researcher);
+    }));
+  }
+
   agentTester(): Tester {
     if (!this.agents.tester) {
       this.agents.tester = this.createAgent(({ ai, explorer }) => {
@@ -171,6 +184,8 @@ export class ExplorBot {
 
       const qm = this.agentQuartermaster();
       if (qm) this.agents.tester.setQuartermaster(qm);
+      this.agents.tester.setHistorian(this.agentHistorian());
+      this.agents.tester.setPilot(this.agentPilot());
     }
     return this.agents.tester;
   }
@@ -181,6 +196,7 @@ export class ExplorBot {
 
       const qm = this.agentQuartermaster();
       if (qm) this.agents.captain.setQuartermaster(qm);
+      this.agents.captain.setHistorian(this.agentHistorian());
     }
     return this.agents.captain;
   }
@@ -205,11 +221,38 @@ export class ExplorBot {
     return this.agents.quartermaster;
   }
 
+  agentHistorian(): Historian {
+    return (this.agents.historian ||= this.createAgent(({ ai, explorer }) => {
+      const experienceTracker = explorer.getStateManager().getExperienceTracker();
+      const reporter = explorer.getReporter();
+      return new Historian(ai, experienceTracker, reporter);
+    }));
+  }
+
   getCurrentPlan(): Plan | undefined {
     return this.currentPlan;
   }
 
+  getPlanFeature(): string | undefined {
+    return this.planFeature;
+  }
+
+  clearPlan(): void {
+    this.currentPlan = undefined;
+    delete this.agents.planner;
+  }
+
   async plan(feature?: string) {
+    this.planFeature = feature;
+
+    if (this.currentPlan?.url) {
+      const currentUrl = this.explorer?.getStateManager().getCurrentState()?.url;
+      if (currentUrl && currentUrl !== this.currentPlan.url) {
+        tag('info').log(`Different page detected, clearing previous plan`);
+        this.clearPlan();
+      }
+    }
+
     const planner = this.agentPlanner();
     if (this.currentPlan) {
       planner.setPlan(this.currentPlan);
@@ -239,10 +282,18 @@ export class ExplorBot {
       mkdirSync(plansDir, { recursive: true });
     }
 
-    const planFilename = filename || this.sanitizeFilename(this.currentPlan.title) + '.md';
+    const planFilename = filename || this.generatePlanFilename();
     const planPath = path.join(plansDir, planFilename);
     this.currentPlan.saveToMarkdown(planPath);
     return planPath;
+  }
+
+  private generatePlanFilename(): string {
+    const state = this.explorer?.getStateManager().getCurrentState();
+    const urlPath = state?.url || '/';
+    const urlPart = sanitizeFilename(urlPath) || 'root';
+    const featurePart = this.planFeature ? '_' + sanitizeFilename(this.planFeature) : '';
+    return urlPart + featurePart + '.md';
   }
 
   loadPlan(filename: string): Plan {
@@ -262,14 +313,6 @@ export class ExplorBot {
 
     this.currentPlan = Plan.fromMarkdown(planPath);
     return this.currentPlan;
-  }
-
-  private sanitizeFilename(name: string): string {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 50);
   }
 
   async explore(feature?: string) {

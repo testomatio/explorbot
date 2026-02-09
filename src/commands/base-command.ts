@@ -11,6 +11,7 @@ export abstract class BaseCommand {
   aliases: string[] = [];
   options: CommandOption[] = [];
   tuiEnabled = true;
+  suggestions: string[] = [];
 
   protected explorBot: ExplorBot;
 

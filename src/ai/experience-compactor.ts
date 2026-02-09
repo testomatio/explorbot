@@ -4,7 +4,7 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import { Observability } from '../observability.js';
-import { createDebug, log } from '../utils/logger.js';
+import { createDebug, log, tag } from '../utils/logger.js';
 import type { Agent } from './agent.js';
 import type { Provider } from './provider.js';
 
@@ -212,7 +212,7 @@ export class ExperienceCompactor implements Agent {
 
       const text = await this.compactExperience(parsed.content);
 
-      log('Experience file compacted:', filePath);
+      tag('substep').log('Experience file compacted:', filePath);
       debugLog('Experience file compacted:', text);
 
       return text;
@@ -236,8 +236,9 @@ export class ExperienceCompactor implements Agent {
     return dedent`
       <rules>
       - Use markdown headers only (##, ###) - NO XML tags or wrappers in output
-      - Merge successful sessions if they overlap or are similar
-      - Keep maximum 5 unsuccessful sessions/attempts (most recent or most informative)
+      - Prioritize content in this order: Flows > Successful Attempts > Failed Attempts
+      - Merge similar flows and successful sessions to remove duplicates
+      - Keep maximum 5 unsuccessful attempts (most recent or most informative)
       - Remove all I.amOnPage, I.grab, and I.see calls from compacted experiences
       - Keep output under ${this.MAX_LENGTH} characters
       - Be explicit and short - no proposals or explanations
@@ -246,18 +247,25 @@ export class ExperienceCompactor implements Agent {
       <output_format>
       Use this markdown structure:
 
-      ## Successful Sessions
+      ## Flows
 
-      For each successful session or merged group:
+      For each unique flow (merge duplicates):
       - Purpose: what was accomplished
       \`\`\`js
       // working code
       \`\`\`
 
-      ## Unsuccessful Attempts
+      ## Successful Attempts
 
-      Keep only the 5 most recent or informative failed attempts:
+      For each successful attempt not covered by flows:
+      - Purpose: what was accomplished
+      \`\`\`js
+      // working code
+      \`\`\`
 
+      ## Failed Attempts
+
+      Keep only the 5 most informative failed attempts:
       - Purpose: what was attempted
       \`\`\`js
       // failed code

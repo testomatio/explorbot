@@ -64,11 +64,20 @@ interface ResearcherAgentConfig extends AgentConfig {
   maxElementsToExplore?: number;
 }
 
+interface TesterAgentConfig extends AgentConfig {
+  progressCheckInterval?: number;
+}
+
+interface PilotAgentConfig extends AgentConfig {
+  stepsToReview?: number;
+}
+
 interface AgentsConfig {
-  tester?: AgentConfig;
+  tester?: TesterAgentConfig;
   navigator?: AgentConfig;
   researcher?: ResearcherAgentConfig;
   planner?: AgentConfig;
+  pilot?: PilotAgentConfig;
   'experience-compactor'?: AgentConfig;
   captain?: AgentConfig;
   quartermaster?: AgentConfig;

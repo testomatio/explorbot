@@ -10,6 +10,7 @@ import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
+import { Stats } from '../stats.ts';
 import { collectInteractiveNodes, diffAriaSnapshots } from '../utils/aria.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
@@ -21,7 +22,7 @@ import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
-import { locatorRule as generalLocatorRuleText, multipleLocatorRule, sectionUiMapRule } from './rules.js';
+import { locatorRule as generalLocatorRuleText, multipleLocatorRule, screenshotUiMapRule, sectionUiMapRule, uiMapTableFormat } from './rules.js';
 
 const debugLog = createDebug('explorbot:researcher');
 
@@ -89,6 +90,7 @@ export class Researcher implements Agent {
   }
 
   async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean } = {}): Promise<string> {
+    Stats.researches++;
     const { screenshot = false, force = false, deep = false, data = false } = opts;
     this.actionResult = ActionResult.fromState(state);
     const stateHash = state.hash || this.actionResult.getStateHash();
@@ -330,9 +332,13 @@ export class Researcher implements Agent {
       - Ignore purely decorative sidebars, footer-only links, and external links.
       - Detect layout patterns: list/detail split, 2-pane, or 3-pane layouts.
       - If multiple elements match, pick the element inside the most relevant section and closest to recent UI context.
-      - UI map table must include ARIA, CSS, XPath, and Coordinates for every element.
-      - ARIA locator must be JSON with role and text keys.
+      - UI map table must include Container, ARIA, CSS, and XPath for every element.
+      - ARIA locator must be JSON with role and text keys (NOT "name").
       </rules>
+
+      ${generalLocatorRuleText}
+
+      ${uiMapTableFormat}
 
       <section_identification>
       Identify page sections in this priority order:
@@ -343,7 +349,7 @@ export class Researcher implements Agent {
       - Sections can overlap, prefer more detailed sections over broader ones.
       - If a proposed section is not relevant or not detected, do not include it.
       - Each section must have a container CSS locator.
-      - UI map CSS and XPath locators must include the section container as the scope.
+      - UI map CSS and XPath locators must be relative to the section container.
       </section_identification>
 
       <section_format>
@@ -355,7 +361,7 @@ export class Researcher implements Agent {
 
       Elements:
 
-      Use a table with columns: Element | ARIA | CSS | XPath | Coordinates
+      | Element | ARIA | CSS | XPath |
       </section_format>
       <section_example>
       ## Focus Section
@@ -366,12 +372,12 @@ export class Researcher implements Agent {
 
       Elements:
 
-      | Element | ARIA | CSS | XPath | Coordinates |
-      | 'Email' | { role: 'textbox', text: 'Email' } | '[role="dialog"] input[name="email"]' | '//div[@role="dialog"]//input[@name="email"]' | (400, 280) |
-      | 'Password' | { role: 'textbox', text: 'Password' } | '[role="dialog"] input[name="password"]' | '//div[@role="dialog"]//input[@name="password"]' | (400, 340) |
-      | 'Sign In' | { role: 'button', text: 'Sign In' } | '[role="dialog"] button[type="submit"]' | '//div[@role="dialog"]//button[@type="submit"]' | (400, 400) |
-      | 'Cancel' | { role: 'button', text: 'Cancel' } | '[role="dialog"] button.cancel-btn' | '//div[@role="dialog"]//button[contains(@class,"cancel-btn")]' | (500, 400) |
-      | 'Close' | { role: 'button', text: 'Close' } | '[role="dialog"] .close-btn' | '//div[@role="dialog"]//button[@aria-label="Close"]' | (750, 150) |
+      | Element | ARIA | CSS | XPath |
+      | 'Email' | { role: 'textbox', text: 'Email' } | 'input[name="email"]' | '//input[@name="email"]' |
+      | 'Password' | { role: 'textbox', text: 'Password' } | 'input[name="password"]' | '//input[@name="password"]' |
+      | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button[type="submit"]' | '//button[@type="submit"]' |
+      | 'Cancel' | { role: 'button', text: 'Cancel' } | 'button.cancel-btn' | '//button[contains(@class,"cancel-btn")]' |
+      | 'Close' | { role: 'button', text: 'Close' } | '.close-btn' | '//button[@aria-label="Close"]' |
       </section_example>
 
       <css_selector_rules>
@@ -535,19 +541,25 @@ export class Researcher implements Agent {
     Explain the action ${action} was performed, and what appeared on the page.
     </task>
 
+    ${generalLocatorRuleText}
+
+    ${uiMapTableFormat}
+
     <output_format>
       <action description>
-      <UI elements>
+      <UI elements table>
     </output_format>
 
     <example_output>
-    When openinig dropdown at .dropdown by clicking it a submenu appeared:
-    This submenue is for interacting with {item name}.
+    When opening dropdown at .dropdown by clicking it, a submenu appeared.
+    This submenu is for interacting with {item name}.
 
-    This submenu contains following items:
+    Section Container CSS Locator: '.dropdown-menu'
 
-    - [item name]: [CSS/XPath locator]
-    - [item name]: [CSS/XPath locator]
+    | Element | ARIA | CSS | XPath |
+    |---------|------|-----|-------|
+    | 'Folder' | { role: 'menuitem', text: 'Folder' } | 'li:nth-child(1) button' | '//li[1]//button' |
+    | 'Suite' | { role: 'menuitem', text: 'Suite' } | 'li:nth-child(2) button' | '//li[2]//button' |
     </example_output>
       `;
   }
@@ -625,7 +637,7 @@ export class Researcher implements Agent {
         - Analyze the web page and provide a comprehensive UI map report.
         - Explain the main purpose of the page and what user can achieve from this page.
         - Focus on primary user actions of this page
-        - Provide ARIA, CSS, and XPath locators. Shortest locator is preferred.
+        - Provide Container, ARIA, CSS, XPath, and Coordinates locators.
         - Research all menus and navigational areas;
         - Focus on interactive elements: forms, buttons, links, clickable elements, etc.
         - Pay especial attention for clickable icons (hamburgers, ellipsis, toggles, arrows, etc.) and images that are clickable.
@@ -636,6 +648,7 @@ export class Researcher implements Agent {
         - Ignore purely decorative sidebars and footer-only links.
         </rules>
 
+        ${generalLocatorRuleText}
 
         URL: ${actionResult.url || 'Unknown'}
         Title: ${actionResult.title || 'Unknown'}
@@ -653,20 +666,17 @@ export class Researcher implements Agent {
         </output_rules>
 
         <element_format>
-        ${sectionUiMapRule}
-        ARIA locator format: { role: 'role', text: 'visible text' }
-        CSS selector: shortest unique selector based on visual appearance
-        XPath: shortest unique selector based on visual appearance
-        Coordinates: (X, Y) - center point of the element
+        ${screenshotUiMapRule}
 
         Example:
         | Element | ARIA | CSS | XPath | Coordinates |
         | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button.btn-signin' | '//button[@class="btn-signin"]' | (450, 320) |
         | 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' | '//input[@id="email"]' | (300, 200) |
         | 'Settings' | { role: 'link', text: 'Settings' } | 'a.settings-link' | '//a[@class="settings-link"]' | (850, 50) |
-        | 'Menu Toggle' | { role: 'button', text: 'Menu' } | '.hamburger-btn' | '//button[contains(@class,"hamburger-btn")]' | (30, 25) |
+        | 'Menu Toggle' | - | '.hamburger-btn' | '//button[contains(@class,"hamburger-btn")]' | (30, 25) |
 
         Group elements by type (Buttons, Links, Inputs, etc.) within each section.
+        CRITICAL: Include Coordinates for EVERY element in the table. Do NOT create a separate Coordinates section.
         </element_format>
 
         <output_format>
@@ -679,7 +689,7 @@ export class Researcher implements Agent {
 
         Explanation
 
-        Section CSS Locator: '...'
+        Section Container CSS Locator: '...'
 
         #### Section UI Map:
         | Element | ARIA | CSS | XPath | Coordinates |
@@ -898,8 +908,16 @@ export class Researcher implements Agent {
       ${screenshotAnalysis}
       </screenshot_analysis>
 
-      Review the screenshot analysis above and incorporate any additional UI elements or insights into your report.
-      Pay attention to visual elements that may not be captured in HTML (icons, images, visual indicators).
+      IMPORTANT: Merge screenshot analysis INTO your UI map tables:
+      1. ADD a Coordinates column to ALL UI map tables
+      2. For each element, include coordinates (X, Y) from screenshot analysis
+      3. Use "-" for elements not visible in screenshot
+      4. DO NOT create a separate Coordinates section - coordinates must be IN the tables
+
+      Final table format must be:
+      | Element | ARIA | CSS | XPath | Coordinates |
+
+      Also incorporate any visual elements not captured in HTML (icons, images, visual indicators).
     `);
   }
 

@@ -5,6 +5,7 @@ import { BaseCommand } from './base-command.js';
 export class TestCommand extends BaseCommand {
   name = 'test';
   description = 'Launch tester agent to execute test scenarios';
+  suggestions = ['/test - to run next test', '/plan - to create new plan'];
 
   async execute(args: string): Promise<void> {
     const plan = this.explorBot.getCurrentPlan();

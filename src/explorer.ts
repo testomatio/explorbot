@@ -151,6 +151,10 @@ class Explorer {
     return this.knowledgeTracker;
   }
 
+  public getReporter(): Reporter {
+    return this.reporter;
+  }
+
   async start() {
     if (this.isStarted) {
       return;
@@ -340,6 +344,7 @@ class Explorer {
   }
 
   async startTest(test: Test) {
+    await this.reporter.reportTestStart(test);
     await this.closeOtherTabs();
     this.otherTabs = [];
 

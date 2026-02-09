@@ -34,6 +34,12 @@ export const locatorRule = dedent`
 
   ARIA locators must specify role. Specify locator type as JSON string with role and text keys.
 
+  For icon-only buttons/links with no visible text:
+  - Use aria-label value if present: { "role": "button", "text": "Close" } (from aria-label="Close")
+  - Use title attribute if present: { "role": "button", "text": "Settings" } (from title="Settings")
+  - If no accessible name exists, mark ARIA as "-" and rely on CSS/XPath locators
+  - NEVER use empty text: { "role": "button", "text": "" } is INVALID and useless
+
   <good_aria_locator_example>
   { "role": "button", "text": "Login" },
   { "role": "input", "text": "Name" },
@@ -41,8 +47,14 @@ export const locatorRule = dedent`
   { "role": "link", "text": "Sign Up" },
   { "role": "button", "text": "Sign In" },
   { "role": "button", "text": "Submit" },
-  { "role": "button", "text": "Cancel" }
+  { "role": "button", "text": "Cancel" },
+  { "role": "button", "text": "Close" }  // from aria-label
   </good_aria_locator_example>
+
+  <bad_aria_locator_example>
+  { "role": "button", "text": "" }  // INVALID - empty text is useless, use "-" instead
+  { "role": "button", "name": "Save" }  // WRONG key - use "text", not "name"
+  </bad_aria_locator_example>
 
   If <aria> section is not present or element is not found there, fall back to CSS/XPath locators from <html> section.
 
@@ -50,8 +62,10 @@ export const locatorRule = dedent`
   XPath locator should always start with //
   Do not include element order like /div[2] or /div[2]/div[2] etc in locators.
   Avoid listing unnecessary elements inside locators
-  Avoid locators that with names of frontend frameworks (vue, react, angular, etc) and numbers in them
+  Avoid locators with names of frontend frameworks (vue, react, angular, ember, etc) and numbers in them
   Avoid locators that seem to have generated ids or class names (long random numbers, uuids, etc)
+  Avoid CSS framework utility classes as containers (Tailwind: flex, grid, space-x-*, justify-*, items-*, w-*, h-*, p-*, m-*, etc; Bootstrap: col-*, row, d-flex, etc)
+  Prefer semantic class names, roles, data attributes, or element hierarchy for containers
   CSS pseudo classes ARE NOT SUPPORTED. DO NOT use :contains, :first, :last, :nth-child, :nth-last-child, :nth-of-type, :nth-last-of-type, :only-child, :only-of-type, :empty, :not, etc
 
   <good locator example>
@@ -76,22 +90,65 @@ export const locatorRule = dedent`
   HTML locators must be valid JS strings
 `;
 
+export const uiMapTableFormat = dedent`
+  <ui_map_table_format>
+  ALWAYS use this exact table format for UI elements:
+
+  | Element | ARIA | CSS | XPath |
+  |---------|------|-----|-------|
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' |
+
+  Column definitions:
+  - Element: Human-readable name of the element
+  - ARIA: JSON format { role: '...', text: '...' } - use "text" key, NOT "name"
+  - CSS: Unique CSS selector (relative to section container)
+  - XPath: Unique XPath selector (relative to section container)
+
+  IMPORTANT: Each section must have a "Section Container CSS Locator" before the table.
+  This container is used for disambiguation when clicking elements.
+
+  NEVER use different column layouts. This format is required for all UI maps.
+  </ui_map_table_format>
+`;
+
 export const sectionUiMapRule = dedent`
   <ui_map_rule>
   List UI elements as a markdown table:
-  | Element | ARIA | CSS | XPath | Coordinates |
-  | 'Save' | { role: 'button', text: 'Save' } | '.save-btn' | '//button[@type="submit"]' | (X, Y) |
+  | Element | ARIA | CSS | XPath |
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' |
+  | 'Close icon' | { role: 'button', text: 'Close' } | 'button.close-btn' | '//button[@aria-label="Close"]' |
+  | 'Menu toggle' | - | 'button.hamburger' | '//button[contains(@class,"hamburger")]' |
 
   Always include ARIA + CSS + XPath for each element.
 
-  - ARIA locator must be valid JSON with bother role and text keys: { role: ..., text: ...}
-  - CSS locator must be valid CSS selector starting from container element
-  - XPath locator must be valid XPath selector starting from container element
+  - ARIA: Valid JSON with role and text keys (NOT "name"): { role: 'button', text: 'Save' }
+    * For icon buttons: use aria-label or title attribute value as text
+    * If no accessible name exists: use "-" and rely on CSS/XPath
+    * NEVER use empty text like { role: 'button', text: '' }
+  - CSS/XPath: Relative to section container, must be unique within section
 
+  IMPORTANT: Each section must have "Section Container CSS Locator: '...'" before the table.
+  This container is critical for disambiguation when interacting with elements.
+  </ui_map_rule>
+`;
 
-  IMPORTANT: Do not include section container CSS locator into listed elements CSS/XPath locators.  
-  Include Coordinates only when available from screenshot analysis, otherwise use "-" in the Coordinates column.
-  Coordinates are the center point in pixels: (X, Y).
+export const screenshotUiMapRule = dedent`
+  <ui_map_rule>
+  List UI elements as a markdown table WITH Coordinates column:
+  | Element | ARIA | CSS | XPath | Coordinates |
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' | (400, 300) |
+  | 'Close icon' | { role: 'button', text: 'Close' } | 'button.close-btn' | '//button[@aria-label="Close"]' | (500, 100) |
+  | 'Menu toggle' | - | 'button.hamburger' | '//button[contains(@class,"hamburger")]' | (30, 25) |
+
+  - ARIA: Valid JSON with role and text keys (NOT "name"): { role: 'button', text: 'Save' }
+    * For icon buttons: use aria-label or title attribute value as text
+    * If no accessible name exists: use "-" and rely on CSS/XPath
+    * NEVER use empty text like { role: 'button', text: '' }
+  - CSS/XPath: Relative to section container, must be unique within section
+  - Coordinates: (X, Y) center point when visible on screenshot, "-" when not found
+
+  IMPORTANT: Each section must have "Section Container CSS Locator: '...'" before the table.
+  CRITICAL: Coordinates column must be IN the table, NOT in a separate section.
   </ui_map_rule>
 `;
 

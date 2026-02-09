@@ -7,6 +7,7 @@ export class KnowCommand extends BaseCommand {
   name = 'knows:add';
   aliases = ['add-knowledge'];
   description = 'Store knowledge for current page';
+  suggestions = ['/knows - to view all knowledge'];
 
   async execute(args: string): Promise<void> {
     const note = args.trim();

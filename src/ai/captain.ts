@@ -424,11 +424,6 @@ export class Captain extends TaskAgent implements Agent {
 
         this.trackToolExecutions(result?.toolExecutions || []);
 
-        if (this.shouldAskUser()) {
-          const actionResult = ActionResult.fromState(stateManager.getCurrentState()!);
-          await this.handleUserHelp(input, actionResult, conversation);
-        }
-
         if (isDone) {
           stop();
           return;
