@@ -72,14 +72,6 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       }
     });
 
-    if (mounted) {
-      setChecklistData({
-        config: explorBot.getConfig(),
-        knowledgeTracker: explorBot.getKnowledgeTracker(),
-      });
-      setShowWelcome(true);
-    }
-
     const initialState = manager.getCurrentState();
     if (initialState && mounted) {
       setCurrentState(initialState);
@@ -92,6 +84,8 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       }
     };
   }, [explorBot]);
+
+  const [inputCallbackReady, setInputCallbackReady] = useState(false);
 
   useEffect(() => {
     executionController.setInputCallback(async (prompt: string) => {
@@ -108,12 +102,41 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     };
 
     executionController.on('idle', handleIdle);
+    setInputCallbackReady(true);
 
     return () => {
       executionController.off('idle', handleIdle);
       executionController.reset();
     };
   }, []);
+
+  useEffect(() => {
+    if (!inputCallbackReady) return;
+
+    let mounted = true;
+
+    const visitInitial = async () => {
+      try {
+        await explorBot.visitInitialState();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        tag('error').log('Failed to start:', message);
+      }
+      if (!mounted) return;
+      setChecklistData({
+        config: explorBot.getConfig(),
+        knowledgeTracker: explorBot.getKnowledgeTracker(),
+      });
+      setShowWelcome(true);
+      setShowInput(true);
+    };
+
+    visitInitial();
+
+    return () => {
+      mounted = false;
+    };
+  }, [explorBot, inputCallbackReady]);
 
   const planRef = useRef<ReturnType<typeof explorBot.getCurrentPlan>>(undefined);
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import figureSet from 'figures';
 import { Agent } from './ai/agent.ts';
+import { Bosun } from './ai/bosun.ts';
 import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
 import { Historian } from './ai/historian.ts';
@@ -226,6 +227,15 @@ export class ExplorBot {
       const experienceTracker = explorer.getStateManager().getExperienceTracker();
       const reporter = explorer.getReporter();
       return new Historian(ai, experienceTracker, reporter);
+    }));
+  }
+
+  agentBosun(): Bosun {
+    return (this.agents.bosun ||= this.createAgent(({ ai, explorer }) => {
+      const researcher = this.agentResearcher();
+      const navigator = this.agentNavigator();
+      const tools = createAgentTools({ explorer, researcher, navigator });
+      return new Bosun(explorer, ai, researcher, navigator, tools);
     }));
   }
 

@@ -114,10 +114,8 @@ export class Tester extends TaskAgent implements Agent {
     task.start();
     await this.explorer.startTest(task);
 
-    if (task.startUrl !== initialState.url) {
-      debugLog(`Navigating to ${task.startUrl}`);
-      await this.explorer.visit(task.startUrl!);
-    }
+    debugLog(`Navigating to ${task.startUrl}`);
+    await this.explorer.visit(task.startUrl!);
 
     const currentUrl = this.explorer.getStateManager().getCurrentState()?.url || task.startUrl || '';
     await this.hooksRunner.runBeforeHook('tester', currentUrl);

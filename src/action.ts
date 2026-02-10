@@ -4,7 +4,7 @@ import { context, trace } from '@opentelemetry/api';
 import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
-import { tryTo, retryTo, within, hopeThat } from 'codeceptjs/lib/effects.js';
+import { hopeThat, retryTo, tryTo, within } from 'codeceptjs/lib/effects.js';
 import dedent from 'dedent';
 import { ActionResult } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
@@ -298,7 +298,7 @@ class Action {
         return true;
       }
 
-      tag('success').log('Resolved', this.expectation);
+      debugLog('Resolved Expectation:', this.expectation);
       if (originalMessage && experience) {
         await this.experienceTracker.saveSuccessfulResolution(prevActionResult!, originalMessage, codeBlock);
       }
@@ -315,7 +315,7 @@ class Action {
       }
 
       const executionError = errorToString(error);
-      tag('error').log(`Attempt failed with error: ${codeBlock}: ${executionError || this.lastError?.toString()}`);
+      debugLog(`Attempt failed: ${codeBlock}: ${executionError || this.lastError?.toString()}`);
 
       if (experience) {
         await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage ?? '', codeBlock, executionError);

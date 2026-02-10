@@ -1,5 +1,7 @@
-import chalk from 'chalk';
-import { Stats } from '../stats.ts';
+import { render } from 'ink';
+import React from 'react';
+import { StatusPane } from '../components/StatusPane.js';
+import { Stats } from '../stats.js';
 import { BaseCommand } from './base-command.js';
 
 export class ExitCommand extends BaseCommand {
@@ -8,16 +10,23 @@ export class ExitCommand extends BaseCommand {
   aliases = ['quit'];
 
   async execute(_args: string): Promise<void> {
-    const parts: string[] = [];
-    parts.push(Stats.getElapsedTime());
-    parts.push(`Tests: ${Stats.tests}`);
-    for (const [model, tokens] of Object.entries(Stats.models)) {
-      parts.push(`${model}: ${Stats.humanizeTokens(tokens.total)} tokens`);
+    await this.explorBot.getExplorer().stop();
+
+    if (Stats.hasActivity()) {
+      await new Promise<void>((resolve) => {
+        const { unmount } = render(
+          React.createElement(StatusPane, {
+            onComplete: () => {
+              unmount();
+              resolve();
+            },
+          }),
+          { exitOnCtrlC: false, patchConsole: false }
+        );
+      });
     }
 
-    console.log(chalk.dim(parts.join(' | ')));
     console.log('\nGoodbye!');
-    await this.explorBot.getExplorer().stop();
     process.exit(0);
   }
 }

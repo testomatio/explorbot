@@ -116,11 +116,20 @@ class Explorer {
       fullPageScreenshots: true,
     };
     tag('debug').log(JSON.stringify(PlaywrightConfig, null, 2));
-    return {
+
+    const codeceptConfig: any = {
       helpers: {
         Playwright: PlaywrightConfig,
       },
     };
+
+    if (this.config.stepsFile) {
+      const configPath = ConfigParser.getInstance().getConfigPath();
+      const projectRoot = configPath ? path.dirname(configPath) : process.cwd();
+      codeceptConfig.include = { I: path.resolve(projectRoot, this.config.stepsFile) };
+    }
+
+    return codeceptConfig;
   }
 
   public getConfig(): ExplorbotConfig {
@@ -233,6 +242,11 @@ class Explorer {
     }
 
     return action;
+  }
+
+  async reload() {
+    await this.closeOtherTabs();
+    await this.playwrightHelper.page.reload();
   }
 
   async switchToMainFrame() {

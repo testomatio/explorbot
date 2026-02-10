@@ -5,84 +5,152 @@ import { Command } from 'commander';
 import { render } from 'ink';
 import React from 'react';
 import { App } from '../src/components/App.js';
+import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
+import { Stats } from '../src/stats.js';
 import { log, setPreserveConsoleLogs } from '../src/utils/logger.js';
 
 const program = new Command();
 
 program.name('explorbot').description('AI-powered web exploration tool');
 
-program
-  .command('explore')
-  .description('Start web exploration')
-  .option('-f, --from <url>', 'Start exploration from a specific URL')
-  .option('-v, --verbose', 'Enable verbose logging')
-  .option('--debug', 'Enable debug logging (same as --verbose)')
-  .option('-c, --config <path>', 'Path to configuration file')
-  .option('-p, --path <path>', 'Working directory path')
-  .option('-s, --show', 'Show browser window')
-  .option('--headless', 'Run browser in headless mode (opposite of --show)')
-  .option('--freeride', 'Continuously explore and navigate to new pages')
-  .option('--incognito', 'Run without recording experiences')
-  .action(async (options) => {
-    let initialShowInput = !options.from;
-    setPreserveConsoleLogs(false);
+interface CLIOptions {
+  verbose?: boolean;
+  debug?: boolean;
+  config?: string;
+  path?: string;
+  show?: boolean;
+  headless?: boolean;
+  incognito?: boolean;
+}
 
-    const mainOptions: ExplorBotOptions = {
-      from: options.from,
-      verbose: options.verbose || options.debug,
-      config: options.config,
-      path: options.path,
-      show: options.show,
-      headless: options.headless,
-      incognito: options.incognito,
-    };
+function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
+  return {
+    from,
+    verbose: options.verbose || options.debug,
+    config: options.config,
+    path: options.path,
+    show: options.show,
+    headless: options.headless,
+    incognito: options.incognito,
+  };
+}
 
-    const explorBot = new ExplorBot(mainOptions);
+function addCommonOptions(cmd: Command): Command {
+  return cmd
+    .option('-v, --verbose', 'Enable verbose logging')
+    .option('--debug', 'Enable debug logging (same as --verbose)')
+    .option('-c, --config <path>', 'Path to configuration file')
+    .option('-p, --path <path>', 'Working directory path')
+    .option('-s, --show', 'Show browser window')
+    .option('--headless', 'Run browser in headless mode')
+    .option('--incognito', 'Run without recording experiences');
+}
+
+async function startTUI(explorBot: ExplorBot): Promise<void> {
+  if (!process.stdin.isTTY) {
+    console.error('Warning: Input not available. Running in non-interactive mode.');
+  }
+
+  process.env.INK_RUNNING = 'true';
+
+  render(React.createElement(App, { explorBot, initialShowInput: false }), {
+    exitOnCtrlC: false,
+    patchConsole: true,
+  });
+
+  const cleanup = async () => {
+    await explorBot.stop();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', async () => {
+    console.log('\nReceived SIGINT, cleaning up...');
+    await cleanup();
+  });
+
+  process.on('SIGTERM', async () => {
+    console.log('\nReceived SIGTERM, cleaning up...');
+    await cleanup();
+  });
+}
+
+async function showStatsAndExit(code: number): Promise<never> {
+  if (Stats.hasActivity()) {
+    await new Promise<void>((resolve) => {
+      const { unmount } = render(
+        React.createElement(StatusPane, {
+          onComplete: () => {
+            unmount();
+            resolve();
+          },
+        }),
+        {
+          exitOnCtrlC: false,
+          patchConsole: false,
+        }
+      );
+    });
+  }
+  process.exit(code);
+}
+
+addCommonOptions(program.command('start [path]').alias('sail').description('Start web exploration')).action(async (startPath, options) => {
+  setPreserveConsoleLogs(false);
+  const explorBot = new ExplorBot(buildExplorBotOptions(startPath, options));
+  await explorBot.start();
+  await startTUI(explorBot);
+});
+
+addCommonOptions(program.command('explore [path]').description('Start web exploration (legacy command)')).action(async (explorePath, options) => {
+  setPreserveConsoleLogs(false);
+  const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
+  await explorBot.start();
+
+  const { ExploreCommand } = await import('../src/commands/explore-command.js');
+  const exploreCommand = new ExploreCommand(explorBot);
+
+  await startTUI(explorBot);
+
+  if (explorePath) {
+    await exploreCommand.execute(explorePath);
+  }
+});
+
+addCommonOptions(program.command('plan <path> [feature]').description('Generate test plan for a page and exit')).action(async (planPath, feature, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(planPath, options));
     await explorBot.start();
 
-    if (!process.stdin.isTTY) {
-      console.error('Warning: Input not available. Running in non-interactive mode.');
-    }
+    await explorBot.visit(planPath);
+    await explorBot.plan(feature || undefined);
 
-    process.env.INK_RUNNING = 'true';
-
-    try {
-      await explorBot.visitInitialState();
-      initialShowInput = true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('\nFailed to start:', message);
+    const plan = explorBot.getCurrentPlan();
+    if (!plan?.tests.length) {
+      console.error('No test scenarios generated.');
       await explorBot.stop();
-      process.exit(1);
+      await showStatsAndExit(1);
     }
 
-    if (options.freeride) {
-      await explorBot.freeride();
-      return;
+    console.log(`Plan ready with ${plan.tests.length} tests:`);
+    for (const test of plan.tests) {
+      console.log(`  - ${test.name}`);
     }
 
-    render(React.createElement(App, { explorBot, initialShowInput }), {
-      exitOnCtrlC: false,
-      patchConsole: true,
-    });
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
 
-    const cleanup = async () => {
-      await explorBot.stop();
-      process.exit(0);
-    };
-
-    process.on('SIGINT', async () => {
-      console.log('\nReceived SIGINT, cleaning up...');
-      await cleanup();
-    });
-
-    process.on('SIGTERM', async () => {
-      console.log('\nReceived SIGTERM, cleaning up...');
-      await cleanup();
-    });
-  });
+addCommonOptions(program.command('freesail [startUrl]').description('Continuously explore and navigate to new pages autonomously')).action(async (startUrl, options) => {
+  const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
+  await explorBot.start();
+  await explorBot.freeride();
+});
 
 program
   .command('init')
@@ -151,7 +219,7 @@ export default config;
       log('Next steps:');
       log('1. Set your API key in the config file or as environment variable');
       log('2. Customize the configuration as needed');
-      log('3. Run: explorbot explore');
+      log('3. Run: explorbot start');
 
       if (!fs.existsSync('./output')) {
         fs.mkdirSync('./output', { recursive: true });
@@ -325,12 +393,39 @@ program
       });
 
       await explorBot.stop();
-      process.exit(0);
+      await showStatsAndExit(0);
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-      process.exit(1);
+      await showStatsAndExit(1);
     }
   });
+
+addCommonOptions(
+  program.command('drill <url>').alias('bosun').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max <count>', 'Maximum number of components to drill', '20')
+).action(async (url, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+    await explorBot.start();
+
+    await explorBot.visit(url);
+
+    const plan = await explorBot.agentBosun().drill({
+      knowledgePath: options.knowledge,
+      maxComponents: Number.parseInt(options.max, 10),
+      interactive: false,
+    });
+
+    console.log(`\nDrill completed: ${plan.tests.length} components`);
+    console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
+    console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
+
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
 
 program
   .command('context <url>')
@@ -393,10 +488,10 @@ program
       console.log(output);
 
       await explorBot.stop();
-      process.exit(0);
+      await showStatsAndExit(0);
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-      process.exit(1);
+      await showStatsAndExit(1);
     }
   });
 

@@ -64,6 +64,7 @@ export const locatorRule = dedent`
   Avoid listing unnecessary elements inside locators
   Avoid locators with names of frontend frameworks (vue, react, angular, ember, etc) and numbers in them
   Avoid locators that seem to have generated ids or class names (long random numbers, uuids, etc)
+  Avoid href-based locators like a[href="..."] or //a[@href="..."] - URLs change frequently, use text or ARIA instead
   Avoid CSS framework utility classes as containers (Tailwind: flex, grid, space-x-*, justify-*, items-*, w-*, h-*, p-*, m-*, etc; Bootstrap: col-*, row, d-flex, etc)
   Prefer semantic class names, roles, data attributes, or element hierarchy for containers
   CSS pseudo classes ARE NOT SUPPORTED. DO NOT use :contains, :first, :last, :nth-child, :nth-last-child, :nth-of-type, :nth-last-of-type, :only-child, :only-of-type, :empty, :not, etc
@@ -85,6 +86,8 @@ export const locatorRule = dedent`
     '//html/body/div[2]/div[2]/div/form/input[@name="name"]' // position mentioned
     '//html/body/vue-button-123 // vue-framework specific locator
     'link "New Template"'  // WRONG: malformed string, use {"role":"link","text":"New Template"}
+    'a[href="/login"]' // WRONG: href changes, use {"role":"link","text":"Login"} instead
+    '//a[@href="/settings"]' // WRONG: href-based, use text or ARIA locator
   </bad locator example>
 
   HTML locators must be valid JS strings

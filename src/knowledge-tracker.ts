@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
-import { createDebug, pluralize, tag } from './utils/logger.js';
+import { createDebug } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
 
@@ -72,15 +72,9 @@ export class KnowledgeTracker {
   getRelevantKnowledge(state: ActionResult): Knowledge[] {
     this.loadKnowledgeFiles();
 
-    const relevant = this.knowledgeFiles.filter((knowledge) => {
+    return this.knowledgeFiles.filter((knowledge) => {
       return state.isMatchedBy(knowledge);
     });
-
-    if (relevant.length > 0) {
-      tag('substep').log(`Found ${relevant.length} knowledge ${pluralize(relevant.length, 'file')} for: ${state.url}`);
-    }
-
-    return relevant;
   }
 
   addKnowledge(urlPattern: string, description: string): { filename: string; filePath: string; isNewFile: boolean } {

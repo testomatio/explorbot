@@ -1,5 +1,5 @@
-import chalk from 'chalk';
 import { basename } from 'node:path';
+import chalk from 'chalk';
 import { ActionResult } from '../action-result.js';
 import { tag } from '../utils/logger.js';
 import { BaseCommand } from './base-command.js';

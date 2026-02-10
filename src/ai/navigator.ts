@@ -191,31 +191,52 @@ class Navigator implements Agent {
     conversation.addUserText(prompt);
 
     let codeBlocks: string[] = [];
+    let htmlContextAdded = false;
+    let codeBlockIndex = 0;
+    let totalAttempts = 0;
 
     let resolved = false;
     await loop(
-      async ({ stop, iteration }) => {
+      async ({ stop }) => {
         if (codeBlocks.length === 0) {
           const result = await this.provider.invokeConversation(conversation);
           if (!result) return;
           const aiResponse = result?.response?.text;
-          tag('info').log(aiResponse?.split('\n')[0]);
+          debugLog('AI:', aiResponse?.split('\n')[0]);
           debugLog('Received AI response:', aiResponse.length, 'characters');
-          tag('step').log('Resolving navigation issue...');
           codeBlocks = extractCodeBlocks(aiResponse ?? '');
+          codeBlockIndex = 0;
         }
 
         if (codeBlocks.length === 0) {
-          return;
-        }
-
-        const codeBlock = codeBlocks[iteration - 1];
-        if (!codeBlock) {
           stop();
           return;
         }
 
-        tag('step').log(`Attempting resolution: ${codeBlock}`);
+        const codeBlock = codeBlocks[codeBlockIndex];
+        if (!codeBlock) {
+          if (!htmlContextAdded) {
+            htmlContextAdded = true;
+            tag('substep').log('Adding HTML context for better resolution...');
+            conversation.addUserText(dedent`
+              Previous solutions did not work. Here is the full HTML context:
+
+              <page_html>
+              ${await actionResult.simplifiedHtml()}
+              </page_html>
+
+              Please suggest new solutions based on this additional context.
+            `);
+            codeBlocks = [];
+            return;
+          }
+          stop();
+          return;
+        }
+        codeBlockIndex++;
+        totalAttempts++;
+
+        debugLog(`Attempting resolution: ${codeBlock}`);
         resolved = await this.currentAction.attempt(codeBlock, message);
 
         if (resolved && this.currentUrl) {
@@ -234,7 +255,7 @@ class Navigator implements Agent {
         }
       },
       {
-        maxAttempts: this.MAX_ATTEMPTS,
+        maxAttempts: this.MAX_ATTEMPTS * 2,
         observability: {
           agent: 'navigator',
         },
@@ -244,6 +265,10 @@ class Navigator implements Agent {
         },
       }
     );
+
+    if (!resolved && totalAttempts > 0) {
+      tag('error').log(`Navigation failed after ${totalAttempts} attempts`);
+    }
 
     if (!resolved && isInteractive()) {
       const userInput = await pause(`Navigator failed to resolve. Current: ${this.currentAction.stateManager.getCurrentState()?.url}\n` + `Target: ${this.currentUrl}\nEnter CodeceptJS commands (or press Enter to skip):`);

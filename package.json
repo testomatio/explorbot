@@ -50,7 +50,7 @@
     "ai": "^6.0.6",
     "axe-core": "^4.11.1",
     "cli-highlight": "^2.1.11",
-    "codeceptjs": "4.0.1-beta.25",
+    "codeceptjs": "4.0.0-rc.2",
     "commander": "^14.0.1",
     "debug": "^4.4.3",
     "dedent": "^1.6.0",

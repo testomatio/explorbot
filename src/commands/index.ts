@@ -7,8 +7,10 @@ import { ContextDataCommand } from './context-data-command.js';
 import { ContextExperienceCommand } from './context-experience-command.js';
 import { ContextHtmlCommand } from './context-html-command.js';
 import { ContextKnowledgeCommand } from './context-knowledge-command.js';
+import { DrillCommand } from './drill-command.js';
 import { ExitCommand } from './exit-command.js';
 import { ExploreCommand } from './explore-command.js';
+import { StartCommand } from './start-command.js';
 import { HelpCommand } from './help-command.js';
 import { KnowCommand } from './know-command.js';
 import { KnowsCommand } from './knows-command.js';
@@ -29,7 +31,9 @@ type CommandClass = new (explorBot: ExplorBot) => BaseCommand;
 
 const commandClasses: CommandClass[] = [
   HelpCommand,
+  StartCommand,
   ExploreCommand,
+  DrillCommand,
   CleanCommand,
   ResearchCommand,
   PlanCommand,

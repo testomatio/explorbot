@@ -1,7 +1,8 @@
 import { BaseCommand } from './base-command.js';
 
-export class ExploreCommand extends BaseCommand {
-  name = 'explore';
+export class StartCommand extends BaseCommand {
+  name = 'start';
+  aliases = ['sail'];
   description = 'Start web exploration';
   suggestions = ['/navigate <page> - to go to another page', '/research - to analyze', '/plan <feature> - to plan testing'];
 

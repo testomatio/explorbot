@@ -98,6 +98,19 @@ interface ExplorbotConfig {
   dirs?: DirsConfig;
 }
 
+// Path to custom CodeceptJS steps file (relative to config file)
+// Example steps_file.js:
+//   export default function() {
+//     return actor({
+//       login(email, password) {
+//         this.fillField('Email', email);
+//         this.fillField('Password', password);
+//         this.click('Sign In');
+//       }
+//     });
+//   }
+// stepsFile: './steps_file.js',
+
 const config: ExplorbotConfig = {
   playwright: {
     browser: 'chromium',
@@ -184,6 +197,8 @@ const config: ExplorbotConfig = {
       },
       navigator: {
         // model: 'gpt-5',  // Override for navigator agent
+        addHtmlOnTry: 2, // Add HTML context on 2nd attempt (default: 2)
+        maxAttempts: 5, // Max resolution attempts (default: 5)
       },
       researcher: {
         // model: 'gpt-5',  // Override for researcher agent

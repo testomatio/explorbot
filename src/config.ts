@@ -72,9 +72,14 @@ interface PilotAgentConfig extends AgentConfig {
   stepsToReview?: number;
 }
 
+interface NavigatorAgentConfig extends AgentConfig {
+  addHtmlOnTry?: number;
+  maxAttempts?: number;
+}
+
 interface AgentsConfig {
   tester?: TesterAgentConfig;
-  navigator?: AgentConfig;
+  navigator?: NavigatorAgentConfig;
   researcher?: ResearcherAgentConfig;
   planner?: AgentConfig;
   pilot?: PilotAgentConfig;
@@ -137,6 +142,7 @@ interface ExplorbotConfig {
     experience: string;
     output: string;
   };
+  stepsFile?: string;
 }
 
 const config: ExplorbotConfig = {
@@ -151,7 +157,7 @@ const config: ExplorbotConfig = {
   },
 };
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig, Hook, HookConfig, HooksConfig, PlaywrightHook, CodeceptJSHook, HookPatternMap };
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig, NavigatorAgentConfig, Hook, HookConfig, HooksConfig, PlaywrightHook, CodeceptJSHook, HookPatternMap };
 
 export class ConfigParser {
   private static instance: ConfigParser;

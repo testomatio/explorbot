@@ -44,4 +44,10 @@ export class Stats {
     }
     return String(num);
   }
+
+  static hasActivity(): boolean {
+    if (this.tests > 0 || this.plans > 0 || this.researches > 0) return true;
+    const totalTokens = Object.values(this.models).reduce((sum, m) => sum + m.total, 0);
+    return totalTokens > 0;
+  }
 }
