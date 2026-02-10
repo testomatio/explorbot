@@ -367,6 +367,7 @@ program
   .option('-s, --show', 'Show browser window')
   .option('--headless', 'Run browser in headless mode')
   .option('--data', 'Include data extraction in research')
+  .option('--verify', 'Audit research coverage against ARIA tree')
   .action(async (url, options) => {
     try {
       const mainOptions: ExplorBotOptions = {
@@ -386,11 +387,16 @@ program
         throw new Error('No active page to research');
       }
 
-      await explorBot.agentResearcher().research(state, {
+      const researchResult = await explorBot.agentResearcher().research(state, {
         screenshot: true,
         force: true,
         data: options.data || false,
       });
+
+      if (options.verify) {
+        const report = explorBot.agentResearcher().auditResearch(state, researchResult);
+        console.log(report);
+      }
 
       await explorBot.stop();
       await showStatsAndExit(0);

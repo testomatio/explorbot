@@ -1115,4 +1115,101 @@ export class Researcher implements Agent {
     }
     return lines.join('\n');
   }
+
+  auditResearch(state: WebPageState, researchOutput: string): string {
+    const ariaNodes = collectInteractiveNodes(state.ariaSnapshot || '');
+    const researchLower = researchOutput.toLowerCase();
+
+    const codeFilterIssues: Array<{ element: string; role: string; reason: string; file: string }> = [];
+    const promptIssues: Array<{ element: string; role: string }> = [];
+    const found: Array<{ element: string; role: string }> = [];
+
+    for (const node of ariaNodes) {
+      const role = String(node.role || '');
+      const name = String(node.name || '').trim();
+      const isUnnamed = !!node.unnamed;
+
+      const inResearch = name ? researchLower.includes(name.toLowerCase()) : false;
+
+      if (inResearch) {
+        found.push({ element: name || `unnamed ${role}`, role });
+        continue;
+      }
+
+      if (isUnnamed) {
+        codeFilterIssues.push({
+          element: `unnamed ${role}`,
+          role,
+          reason: 'Unnamed button/link (icon-only element without aria-label)',
+          file: 'src/utils/aria.ts:81',
+        });
+        continue;
+      }
+
+      if (!CLICKABLE_ROLES.has(role.toLowerCase())) {
+        codeFilterIssues.push({
+          element: name,
+          role,
+          reason: `Role "${role}" not in CLICKABLE_ROLES`,
+          file: 'src/ai/researcher.ts:40',
+        });
+        continue;
+      }
+
+      if (this.matchesStopWord(name, DEFAULT_STOP_WORDS)) {
+        codeFilterIssues.push({
+          element: name,
+          role,
+          reason: `Name "${name}" matches DEFAULT_STOP_WORDS`,
+          file: 'src/ai/researcher.ts:38',
+        });
+        continue;
+      }
+
+      promptIssues.push({ element: name || `unnamed ${role}`, role });
+    }
+
+    const lines: string[] = [];
+    lines.push('# Research Audit Report');
+    lines.push('');
+    lines.push(`URL: ${state.url}`);
+    lines.push(`Total ARIA interactive elements: ${ariaNodes.length}`);
+    lines.push(`Found in research output: ${found.length}`);
+    lines.push(`Missing: ${codeFilterIssues.length + promptIssues.length}`);
+    lines.push('');
+
+    if (codeFilterIssues.length > 0) {
+      lines.push('## CODE FILTER ISSUES (PR material)');
+      lines.push('');
+      const byReason = new Map<string, typeof codeFilterIssues>();
+      for (const issue of codeFilterIssues) {
+        const group = byReason.get(issue.reason) || [];
+        group.push(issue);
+        byReason.set(issue.reason, group);
+      }
+      for (const [reason, issues] of byReason) {
+        lines.push(`### [${issues[0].file}] ${issues.length}x ${reason}`);
+        for (const issue of issues) {
+          lines.push(`  - ${issue.role} "${issue.element}"`);
+        }
+        lines.push('');
+      }
+    }
+
+    if (promptIssues.length > 0) {
+      lines.push('## PROMPT ISSUES (PR material)');
+      lines.push('');
+      lines.push('Elements passed all code filters but AI did not include them:');
+      for (const issue of promptIssues) {
+        lines.push(`  - ${issue.role} "${issue.element}"`);
+      }
+      lines.push('');
+    }
+
+    if (codeFilterIssues.length === 0 && promptIssues.length === 0) {
+      lines.push('All interactive elements found in research output.');
+    }
+
+    return lines.join('\n');
+  }
 }
