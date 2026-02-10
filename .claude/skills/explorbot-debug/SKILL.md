@@ -1,47 +1,97 @@
 ---
 name: explorbot-debug
-description: Debug failed Explorbot interactions. Analyzes Langfuse exports or log files to find why tests failed and suggests Knowledge fixes.
+description: Debug failed Explorbot interactions. Analyzes Langfuse traces or log files to find why tests failed and suggests Knowledge fixes.
 ---
 
 # Explorbot Debug
 
 Debug failed Explorbot test sessions by analyzing execution traces.
 
-## Step 1: Get Session Data
+## Step 1: Acquire Session Data
 
-Ask the user:
+**Goal:** Get the `explorbot.log` and the corresponding Langfuse trace JSON.
 
-> Please provide ONE of:
-> 1. **Langfuse JSON export** — Path to exported `tester.loop` trace from Langfuse
-> 2. **Nothing** — I'll analyze `output/explorbot.log` for the latest session
+### 1. Analyze Log Timeline
 
-### If JSON file provided:
-
-Use jq to extract key information:
+First, read the end of `output/explorbot.log` to determine the time range of the last session.
 
 ```bash
-# Get all tool calls and their results
-jq '[.spans[] | select(.name | startswith("ai.toolCall")) | {tool: .name, input: .input, output: .output}]' <file>
-
-# Get prompts sent to AI
-jq '[.spans[] | select(.name == "ai.generateText") | .input.messages[-1].content]' <file>
-
-# Find failed tool calls
-jq '[.spans[] | select(.output.success == false)]' <file>
-
-# Get page URLs visited
-jq '[.spans[] | select(.input.url) | .input.url] | unique' <file>
+tail -n 1000 output/explorbot.log
 ```
 
-### If no file provided:
+Identify:
+- The last `=== ExplorBot Session Started` timestamp.
+- The final log entry timestamp.
+- Calculate the duration/range (e.g., "30m", "1h").
 
-Read `output/explorbot.log` and find the latest session by looking for:
-- `Testing scenario:` — session start
-- `Test finished` or `Test stopped` — session end
-- Tool calls and their results
-- Error messages
+Key log patterns to look for:
+- `=== ExplorBot Session Started` -- session start
+- `[STEP] I.amOnPage(...)` -- navigation
+- `AI Navigator resolving state` -- navigator AI triggered
+- `[ERROR] Attempt failed` -- failed browser actions
+- `Testing scenario:` -- test start
+
+### 2. Locate or Export Langfuse Traces
+
+Check if a recent Langfuse export already exists and covers the session time:
+
+```bash
+ls -lt output/langfuse-export-*.json | head -n 1
+```
+
+**If a recent JSON file exists** (created after the session start):
+- Use this file for analysis.
+
+**If NO recent JSON file exists**:
+
+1. Try to run the export script using the duration calculated from the logs:
+   ```bash
+   # <range> can be 30m, 1h, etc.
+   bun .claude/skills/explorbot-debug/langfuse-export.ts <range>
+   ```
+   *Note: If the script fails (e.g., due to missing credentials or network issues), proceed with **Log Analysis Only**.*
+
+### 3. Load and Correlate
+
+You should now have:
+1. `output/explorbot.log` (Browser/System events)
+2. `output/langfuse-export-....json` (AI reasoning/Prompts) - *Optional but recommended*
+
+**Crucial Step:** Correlate the logs with the JSON.
+
+| Source | Contains |
+|--------|----------|
+| **Langfuse JSON** | AI prompts, AI responses, tool call inputs/outputs, token usage |
+| **`output/explorbot.log`** | Browser startup, navigation steps, errors, state transitions |
+
+Match events by timestamp:
+1. Find `=== ExplorBot Session Started` in log.
+2. Match `navigator.loop` traces in JSON with log `AI Navigator resolving state`.
+3. Match `tester.loop` traces in JSON with log `Testing scenario:`.
+
+#### Analyzing the JSON (Optional)
+
+Useful `jq` commands:
+```bash
+jq '.[].name' <file>                                      # list trace names
+jq '[.[] | select(.tags | index("researcher"))]' <file>    # filter by tag
+jq '.[0].observations[] | {name, startTime, level}' <file> # observation summary
+jq '[.[].observations[] | select(.type == "GENERATION") | {name, model, input: (.input | length), output: (.output | length)}]' <file>
+```
+
+### Log file only (fallback)
+
+If Langfuse is not configured or no JSON available, read `output/explorbot.log` only.
+This gives browser-level detail but no AI prompts/responses.
 
 ## Step 2: Identify Issues
+
+Analyze using **both sources** when available:
+- **From JSON**: What did the AI see? What prompt did it receive? What did it respond? Did it pick the right tool?
+- **From logs**: What actually happened in the browser? Did navigation fail? Were there errors? Did setup scripts run?
+
+Look for **mismatches** between what the AI decided (JSON) and what actually happened (logs).
+For example: AI says "click succeeded" in its response, but log shows an error after the click.
 
 Analyze the session for these failure patterns:
 
