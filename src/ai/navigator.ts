@@ -3,18 +3,18 @@ import { ActionResult } from '../action-result.js';
 import { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
-import { normalizeUrl, type WebPageState } from '../state-manager.js';
+import { type WebPageState, normalizeUrl } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import type { Agent } from './agent.js';
-import { isInteractive } from './task-agent.js';
 import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, outputRule, verificationActionRule } from './rules.js';
+import { isInteractive } from './task-agent.js';
 
 const debugLog = createDebug('explorbot:navigator');
 

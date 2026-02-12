@@ -367,6 +367,7 @@ program
   .option('-s, --show', 'Show browser window')
   .option('--headless', 'Run browser in headless mode')
   .option('--data', 'Include data extraction in research')
+  .option('--deep', 'Enable deep analysis of interactive elements')
   .action(async (url, options) => {
     try {
       const mainOptions: ExplorBotOptions = {
@@ -386,11 +387,9 @@ program
         throw new Error('No active page to research');
       }
 
-      await explorBot.agentResearcher().research(state, {
-        screenshot: true,
-        force: true,
-        data: options.data || false,
-      });
+      const researcher = explorBot.agentResearcher();
+      const researchOpts = { screenshot: true, force: true, deep: options.deep || false, data: options.data || false };
+      await researcher.research(state, researchOpts);
 
       await explorBot.stop();
       await showStatsAndExit(0);

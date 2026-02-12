@@ -58,16 +58,25 @@ export const locatorRule = dedent`
 
   If <aria> section is not present or element is not found there, fall back to CSS/XPath locators from <html> section.
 
-  Stick to semantic attributes like role, aria-*, id, class, name, data-id, etc.  
-  XPath locator should always start with //
-  Do not include element order like /div[2] or /div[2]/div[2] etc in locators.
-  Avoid listing unnecessary elements inside locators
+  Stick to semantic attributes like role, aria-*, id, class, name, data-id, etc.
   Avoid locators with names of frontend frameworks (vue, react, angular, ember, etc) and numbers in them
   Avoid locators that seem to have generated ids or class names (long random numbers, uuids, etc)
   Avoid href-based locators like a[href="..."] or //a[@href="..."] - URLs change frequently, use text or ARIA instead
   Avoid CSS framework utility classes as containers (Tailwind: flex, grid, space-x-*, justify-*, items-*, w-*, h-*, p-*, m-*, etc; Bootstrap: col-*, row, d-flex, etc)
   Prefer semantic class names, roles, data attributes, or element hierarchy for containers
-  CSS pseudo classes ARE NOT SUPPORTED. DO NOT use :contains, :first, :last, :nth-child, :nth-last-child, :nth-of-type, :nth-last-of-type, :only-child, :only-of-type, :empty, :not, etc
+
+  <css_rules>
+  CSS selectors must use semantic attributes and :contains("text") for disambiguation.
+  ALLOWED: :contains("text") pseudo class for matching elements by visible text.
+  DO NOT use positional pseudo classes in CSS: :nth-of-type, :nth-child, :first, :last, :nth-last-child, :only-child, :only-of-type, :empty, :not, etc.
+  </css_rules>
+
+  <xpath_rules>
+  XPath locators must start with //.
+  XPath should use positional indices [1], [2], [3] and contains(., "text") for disambiguation.
+  XPath should rely less on class names — prefer element hierarchy, position, and text content.
+  XPath and CSS MUST provide different strategies for finding the same element.
+  </xpath_rules>
 
   <good locator example>
     'div[role=input][placeholder="Name"]'
@@ -81,10 +90,10 @@ export const locatorRule = dedent`
   </good locator example>
 
   <bad locator example>
-    'button:contains("Login")' // contains not supported, use { "role":"button", "text":"Login" }
-    '//table//tbody/tr[1]//button[contains(@onclick='fn()')]") // onclick is not semantic attribute
-    '//html/body/div[2]/div[2]/div/form/input[@name="name"]' // position mentioned
-    '//html/body/vue-button-123 // vue-framework specific locator
+    'a.filter-tab:nth-of-type(1)' // WRONG: positional in CSS, use :contains("Manual") instead
+    '//a[contains(@class,"filter-tab") and contains(@class,"active")]' // WRONG: XPath repeats CSS approach, use positional //a[contains(@class,"filter-tab")][1]
+    '//table//tbody/tr[1]//button[contains(@onclick,'fn()')]' // onclick is not semantic attribute
+    '//html/body/vue-button-123' // vue-framework specific locator
     'link "New Template"'  // WRONG: malformed string, use {"role":"link","text":"New Template"}
     'a[href="/login"]' // WRONG: href changes, use {"role":"link","text":"Login"} instead
     '//a[@href="/settings"]' // WRONG: href-based, use text or ARIA locator
@@ -137,11 +146,12 @@ export const sectionUiMapRule = dedent`
 
 export const screenshotUiMapRule = dedent`
   <ui_map_rule>
-  List UI elements as a markdown table WITH Coordinates column:
-  | Element | ARIA | CSS | XPath | Coordinates |
-  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' | (400, 300) |
-  | 'Close icon' | { role: 'button', text: 'Close' } | 'button.close-btn' | '//button[@aria-label="Close"]' | (500, 100) |
-  | 'Menu toggle' | - | 'button.hamburger' | '//button[contains(@class,"hamburger")]' | (30, 25) |
+  List UI elements as a markdown table WITH Coordinates and Color columns:
+  | Element | ARIA | CSS | XPath | Coordinates | Color |
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' | (400, 300) | green |
+  | 'Delete' | { role: 'button', text: 'Delete' } | 'button.delete' | '//button[@class="delete"]' | (500, 300) | red |
+  | 'Close icon' | { role: 'button', text: 'Close' } | 'button.close-btn' | '//button[@aria-label="Close"]' | (500, 100) | - |
+  | 'Menu toggle' | - | 'button.hamburger' | '//button[contains(@class,"hamburger")]' | (30, 25) | - |
 
   - ARIA: Valid JSON with role and text keys (NOT "name"): { role: 'button', text: 'Save' }
     * For icon buttons: use aria-label or title attribute value as text
@@ -149,9 +159,15 @@ export const screenshotUiMapRule = dedent`
     * NEVER use empty text like { role: 'button', text: '' }
   - CSS/XPath: Relative to section container, must be unique within section
   - Coordinates: (X, Y) center point when visible on screenshot, "-" when not found
+  - Color: accent color ONLY if the element has a distinctive color that differs from the default/majority
+    * Use ONLY simple color words: red, green, blue, orange, yellow, purple, gray, white, black
+    * NEVER use hex codes (#ff0000), RGB values, or CSS color functions
+    * red = danger/delete, green = success/confirm, blue = primary, orange = warning
+    * Use "-" when element has no distinctive accent color (same color as other elements)
+    * Most elements should be "-" — only highlight elements that stand out visually
 
   IMPORTANT: Each section must have "Section Container CSS Locator: '...'" before the table.
-  CRITICAL: Coordinates column must be IN the table, NOT in a separate section.
+  CRITICAL: Coordinates and Color columns must be IN the table, NOT in a separate section.
   </ui_map_rule>
 `;
 
@@ -257,6 +273,25 @@ export const sectionContextRule = dedent`
 
   This prevents clicking wrong elements when same text/locator appears in multiple sections.
   </section_context_rule>
+`;
+
+export const listElementRule = dedent`
+  <list_element_indexing>
+  When multiple elements share the same structure (e.g., list items, tabs, table rows, menu links):
+  Each element MUST have a UNIQUE CSS and XPath selector. CSS and XPath must use DIFFERENT disambiguation strategies:
+
+  CSS — use :contains("text") to disambiguate by visible text content:
+    a.filter-tab:contains("Manual"), a.filter-tab:contains("Automated")
+    a.node-link:contains("IMR_API_Tests"), a.node-link:contains("IMR_UI_Tests")
+
+  XPath — use positional indices [1], [2], [3] to disambiguate by position:
+    //nav//a[contains(@class,"filter-tab")][1], //nav//a[contains(@class,"filter-tab")][2]
+    //div[contains(@class,"suites-list")]//a[1], //div[contains(@class,"suites-list")]//a[2]
+
+  This gives two independent strategies: CSS finds by text, XPath finds by position.
+  NEVER leave multiple elements with identical CSS or XPath selectors in the same section.
+  Every row in the UI map table must have selectors that match exactly ONE element.
+  </list_element_indexing>
 `;
 
 export function multipleTabsRule(tabs: Array<{ url: string; title: string }>): string {

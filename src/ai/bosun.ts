@@ -18,7 +18,7 @@ import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { locatorRule } from './rules.ts';
-import { isInteractive, TaskAgent } from './task-agent.ts';
+import { TaskAgent, isInteractive } from './task-agent.ts';
 import { createAgentTools, createCodeceptJSTools } from './tools.ts';
 
 const debugLog = createDebug('explorbot:bosun');
