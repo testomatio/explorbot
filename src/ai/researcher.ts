@@ -38,7 +38,7 @@ const POSSIBLE_SECTIONS = {
 
 const DEFAULT_STOP_WORDS = ['close', 'cancel', 'dismiss', 'exit', 'back', 'cookie', 'consent', 'gdpr', 'privacy', 'accept all', 'decline all', 'reject all', 'share', 'print', 'download'];
 
-const CLICKABLE_ROLES = new Set(['button', 'link', 'menuitem', 'tab', 'option', 'combobox', 'switch']);
+const CLICKABLE_ROLES = new Set(['button', 'link', 'menuitem', 'tab', 'option', 'combobox', 'switch', 'checkbox', 'radio', 'slider', 'textbox', 'treeitem']);
 
 export class Researcher implements Agent {
   emoji = '🔍';
@@ -132,13 +132,16 @@ export class Researcher implements Agent {
 
       this.hasScreenshotToAnalyze = screenshot && this.provider.hasVision() && isOnCurrentState;
 
-      const prompt = await this.buildResearchPrompt();
-
       const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
-      conversation.addUserText(prompt);
 
       if (this.hasScreenshotToAnalyze) {
         this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
+      }
+
+      const prompt = await this.buildResearchPrompt();
+      conversation.addUserText(prompt);
+
+      if (this.hasScreenshotToAnalyze) {
         const screenshotAnalysis = await this.analyzeScreenshotForUIElements();
         if (screenshotAnalysis) {
           this.addScreenshotPrompt(conversation, screenshotAnalysis);
@@ -156,6 +159,8 @@ export class Researcher implements Agent {
 
       if (deep) {
         researchText += await this.performDeepAnalysis(conversation, state, state.html ?? '');
+        researchText += '\n\n## Interactive Elements Exploration\n\n';
+        researchText += await this.performInteractiveExploration(state, { maxElements: 50 });
       }
 
       if (data) {
@@ -1142,12 +1147,12 @@ export class Researcher implements Agent {
     }
   }
 
-  async performInteractiveExploration(state: WebPageState): Promise<string> {
+  async performInteractiveExploration(state: WebPageState, opts: { maxElements?: number } = {}): Promise<string> {
     const config = this.getResearcherConfig();
     const stopWords = config?.stopWords ?? DEFAULT_STOP_WORDS;
     const excludeSelectors = config?.excludeSelectors || [];
     const includeSelectors = config?.includeSelectors || [];
-    const maxElements = config?.maxElementsToExplore ?? 10;
+    const maxElements = opts.maxElements ?? config?.maxElementsToExplore ?? 10;
 
     const interactiveNodes = collectInteractiveNodes(state.ariaSnapshot || '');
     const originalUrl = state.url;
@@ -1161,12 +1166,7 @@ export class Researcher implements Agent {
         return false;
       }
 
-      if (!name) {
-        debugLog(`Skipping unnamed ${role} element`);
-        return false;
-      }
-
-      if (name.length > 50) {
+      if (name.length > 80) {
         debugLog(`Skipping "${name.slice(0, 30)}..." - name too long`);
         return false;
       }
@@ -1203,22 +1203,24 @@ export class Researcher implements Agent {
       const role = String(node.role || '');
       const name = String(node.name || '').trim();
 
-      tag('substep').log(`[${i + 1}/${targets.length}] Exploring: "${name}" (${role})`);
+      const label = name || `unnamed ${role}`;
+      tag('substep').log(`[${i + 1}/${targets.length}] Exploring: "${label}" (${role})`);
 
       const action = this.explorer.createAction();
       const beforeState = await action.capturePageState({});
 
       try {
-        await action.execute(`I.click({ role: '${role}', text: '${name.replace(/'/g, "\\'")}' })`);
+        const clickCommand = name ? `I.click({ role: '${role}', text: '${name.replace(/'/g, "\\'")}' })` : `I.click({ role: '${role}' })`;
+        await action.execute(clickCommand);
         const afterState = await action.capturePageState({});
 
         const resultDescription = this.detectChangeResult(beforeState, afterState, originalUrl);
-        results.push({ element: name, role, result: resultDescription });
+        results.push({ element: label, role, result: resultDescription });
 
         await this.restoreState(afterState, originalUrl);
       } catch (error) {
-        debugLog(`Failed to explore ${name}:`, error);
-        results.push({ element: name, role, result: 'click failed' });
+        debugLog(`Failed to explore ${label}:`, error);
+        results.push({ element: label, role, result: 'click failed' });
       }
     }
 
