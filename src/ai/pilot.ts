@@ -49,7 +49,11 @@ export class Pilot implements Agent {
       ${actionsContext || 'None'}
     `);
 
-    const result = await this.provider.generateWithTools(this.conversation.messages, this.provider.getModelForAgent('pilot'), this.agentTools, { maxToolRoundtrips: 3 });
+    const result = await this.provider.generateWithTools(this.conversation.messages, this.provider.getModelForAgent('pilot'), this.agentTools, {
+      maxToolRoundtrips: 3,
+      agentName: 'pilot',
+      experimental_telemetry: { functionId: 'pilot.analyze' },
+    });
 
     const text = result?.text || '';
     this.conversation.addAssistantText(text);
@@ -130,7 +134,14 @@ export class Pilot implements Agent {
       Tools available:
       - context() - get fresh ARIA snapshot
       - see() - get screenshot analysis
+      - xpathCheck(xpath) - propose XPath to search for elements Tester can't find
       - askUser() - get help from human
+
+      When Tester is stuck finding an element (same locator failing repeatedly):
+      1. Use xpathCheck() with a broad XPath to locate the element
+      2. Narrow down with more specific XPath until unique match found
+      3. If found and visible, include the XPath or discovered attributes in NEXT instruction
+      4. If found but NOT visible, suggest scrolling, clicking to expand, or waiting
 
       ${
         interactive

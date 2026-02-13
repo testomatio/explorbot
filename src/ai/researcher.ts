@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { join } from 'node:path';
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
-import Action from '../action.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
@@ -16,13 +15,15 @@ import { extractCodeBlocks } from '../utils/code-extractor.ts';
 import { isErrorPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { type HtmlDiffResult, htmlDiff } from '../utils/html-diff.ts';
-import { codeToMarkdown, isBodyEmpty } from '../utils/html.ts';
+import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.ts';
+import { findTableRaw } from '../utils/markdown-parser.ts';
+import { type ResearchSection, parseResearchSections, rebuildSectionMarkdown } from '../utils/research-parser.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
-import { locatorRule as generalLocatorRuleText, multipleLocatorRule, screenshotUiMapRule, sectionUiMapRule, uiMapTableFormat } from './rules.js';
+import { listElementRule, locatorRule as generalLocatorRuleText, multipleLocatorRule, screenshotUiMapRule, sectionUiMapRule, uiMapTableFormat } from './rules.js';
 
 const debugLog = createDebug('explorbot:researcher');
 
@@ -37,7 +38,7 @@ const POSSIBLE_SECTIONS = {
 
 const DEFAULT_STOP_WORDS = ['close', 'cancel', 'dismiss', 'exit', 'back', 'cookie', 'consent', 'gdpr', 'privacy', 'accept all', 'decline all', 'reject all', 'share', 'print', 'download'];
 
-const CLICKABLE_ROLES = new Set(['button', 'link', 'menuitem', 'tab', 'option', 'combobox', 'switch']);
+const CLICKABLE_ROLES = new Set(['button', 'link', 'menuitem', 'tab', 'option', 'combobox', 'switch', 'checkbox', 'radio', 'slider', 'textbox', 'treeitem']);
 
 export class Researcher implements Agent {
   emoji = '🔍';
@@ -131,13 +132,16 @@ export class Researcher implements Agent {
 
       this.hasScreenshotToAnalyze = screenshot && this.provider.hasVision() && isOnCurrentState;
 
-      const prompt = await this.buildResearchPrompt();
-
       const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
-      conversation.addUserText(prompt);
 
       if (this.hasScreenshotToAnalyze) {
         this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
+      }
+
+      const prompt = await this.buildResearchPrompt();
+      conversation.addUserText(prompt);
+
+      if (this.hasScreenshotToAnalyze) {
         const screenshotAnalysis = await this.analyzeScreenshotForUIElements();
         if (screenshotAnalysis) {
           this.addScreenshotPrompt(conversation, screenshotAnalysis);
@@ -151,8 +155,12 @@ export class Researcher implements Agent {
 
       let researchText = response.text;
 
+      researchText = await this.validateAndCorrectResearch(researchText);
+
       if (deep) {
         researchText += await this.performDeepAnalysis(conversation, state, state.html ?? '');
+        researchText += '\n\n## Interactive Elements Exploration\n\n';
+        researchText += await this.performInteractiveExploration(state, { maxElements: 50 });
       }
 
       if (data) {
@@ -178,6 +186,188 @@ export class Researcher implements Agent {
       await this.hooksRunner.runAfterHook('researcher', state.url);
       return researchText;
     });
+  }
+
+  async validateAndCorrectResearch(researchText: string): Promise<string> {
+    const sections = parseResearchSections(researchText);
+    if (sections.length === 0) return researchText;
+
+    const page = this.explorer.playwrightHelper.page;
+    const { invalidSections, totalLocators, validLocators } = await this.validateSections(sections, page);
+
+    const invalidCount = totalLocators - validLocators;
+    tag('substep').log(`Validated ${totalLocators} locators: ${validLocators} valid, ${invalidCount} invalid across ${sections.length} sections`);
+
+    if (invalidSections.length === 0) return researchText;
+
+    let correctedText = researchText;
+
+    for (const { section, invalidElements } of invalidSections) {
+      tag('substep').log(`Correcting ${invalidElements.length} elements in "${section.name}"...`);
+
+      let sectionHtml = '';
+      try {
+        sectionHtml = await page.locator(section.containerCss!).innerHTML();
+      } catch {
+        debugLog(`Failed to get innerHTML for section "${section.name}"`);
+        continue;
+      }
+
+      const invalidList = invalidElements.map((inv) => `- ${inv.element}: ${inv.issues.join('; ')}`).join('\n');
+
+      const model = this.provider.getModelForAgent('researcher');
+      const prompt = dedent`
+        You are fixing broken CSS/XPath locators in a UI map.
+
+        Section: "${section.name}" (Container: \`${section.containerCss}\`)
+
+        These elements have invalid locators:
+        ${invalidList}
+
+        Here is the section's HTML context:
+        <section_html>
+        ${sectionHtml}
+        </section_html>
+
+        Fix ONLY the broken locators. Return a corrected markdown table with the same columns.
+        Keep all valid locators and elements unchanged.
+        CSS selectors must be relative to the section container.
+        XPath selectors must be absolute (start with //).
+
+        ${generalLocatorRuleText}
+
+        ${listElementRule}
+      `;
+
+      try {
+        const result = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.validateAndCorrect' });
+
+        const correctedSections = parseResearchSections(`## ${section.name}\n\n${result.text}`);
+        if (correctedSections.length === 0 || correctedSections[0].elements.length === 0) continue;
+
+        const correctedElements = correctedSections[0].elements;
+        const correctedByName = new Map(correctedElements.map((el) => [el.name, el]));
+
+        for (const el of section.elements) {
+          const fix = correctedByName.get(el.name);
+          if (!fix) continue;
+          if (fix.css) el.css = fix.css;
+          if (fix.xpath) el.xpath = fix.xpath;
+          if (fix.aria) el.aria = fix.aria;
+        }
+
+        correctedText = this.rebuildSectionInText(correctedText, section);
+      } catch (err) {
+        tag('substep').log(`AI correction failed for "${section.name}": ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    const revalidated = await this.validateSections(parseResearchSections(correctedText), page);
+    let nullified = 0;
+    for (const { section, invalidElements } of revalidated.invalidSections) {
+      const invalidNames = new Set(invalidElements.map((inv) => inv.element));
+      for (const el of section.elements) {
+        if (!invalidNames.has(el.name)) continue;
+        const elIssues = invalidElements.find((inv) => inv.element === el.name)!.issues;
+        for (const issue of elIssues) {
+          if (issue.startsWith('css')) {
+            el.css = null;
+            nullified++;
+          }
+          if (issue.startsWith('xpath')) {
+            el.xpath = null;
+            nullified++;
+          }
+          if (issue.startsWith('aria')) {
+            el.aria = null;
+            nullified++;
+          }
+        }
+      }
+      correctedText = this.rebuildSectionInText(correctedText, section);
+    }
+
+    if (nullified > 0) {
+      tag('substep').log(`Removed ${nullified} still-broken locators from output`);
+    }
+
+    return correctedText;
+  }
+
+  private async validateSections(sections: ResearchSection[], page: any) {
+    interface InvalidElement {
+      element: string;
+      issues: string[];
+    }
+    interface InvalidSection {
+      section: ResearchSection;
+      invalidElements: InvalidElement[];
+    }
+
+    const invalidSections: InvalidSection[] = [];
+    let totalLocators = 0;
+    let validLocators = 0;
+
+    for (const section of sections) {
+      if (!section.containerCss || section.elements.length === 0) continue;
+
+      let containerCount = 0;
+      try {
+        containerCount = await page.locator(section.containerCss).count();
+      } catch {
+        debugLog(`Invalid container selector '${section.containerCss}' for "${section.name}"`);
+      }
+
+      if (containerCount !== 1) {
+        tag('substep').log(`Skipping section "${section.name}" — container '${section.containerCss}' matched ${containerCount} elements`);
+        continue;
+      }
+
+      const sectionInvalid: InvalidElement[] = [];
+
+      for (const el of section.elements) {
+        const issues: string[] = [];
+
+        const locatorsToCheck: Array<{ label: string; locator: () => any }> = [];
+        if (el.css) locatorsToCheck.push({ label: `css '${el.css}'`, locator: () => buildCssLocator(page, section.containerCss!, el.css!) });
+        if (el.xpath) locatorsToCheck.push({ label: `xpath '${el.xpath}'`, locator: () => page.locator(el.xpath!) });
+        if (el.aria) locatorsToCheck.push({ label: `aria {role:'${el.aria.role}', text:'${el.aria.text}'}`, locator: () => page.locator(section.containerCss!).getByRole(el.aria!.role as any, { name: el.aria!.text }) });
+
+        for (const { label, locator } of locatorsToCheck) {
+          totalLocators++;
+          try {
+            const count = await locator().count();
+            if (count === 1) {
+              validLocators++;
+            } else {
+              issues.push(`${label}: ${count} matches`);
+            }
+          } catch {
+            issues.push(`${label}: invalid selector`);
+          }
+        }
+
+        if (issues.length > 0) {
+          sectionInvalid.push({ element: el.name, issues });
+        }
+      }
+
+      if (sectionInvalid.length > 0) {
+        invalidSections.push({ section, invalidElements: sectionInvalid });
+      }
+    }
+
+    return { invalidSections, totalLocators, validLocators };
+  }
+
+  private rebuildSectionInText(text: string, section: ResearchSection): string {
+    const newTable = rebuildSectionMarkdown(section);
+    const oldTable = findTableRaw(section.rawMarkdown);
+    if (!oldTable) return text;
+    const updatedSection = section.rawMarkdown.replace(oldTable, newTable);
+    const result = text.replace(section.rawMarkdown, updatedSection);
+    section.rawMarkdown = updatedSection;
+    return result;
   }
 
   private async performDeepAnalysis(conversation: Conversation, state: WebPageState, initialHtml: string): Promise<string> {
@@ -339,6 +529,8 @@ export class Researcher implements Agent {
       ${generalLocatorRuleText}
 
       ${uiMapTableFormat}
+
+      ${listElementRule}
 
       <section_identification>
       Identify page sections in this priority order:
@@ -545,6 +737,8 @@ export class Researcher implements Agent {
 
     ${uiMapTableFormat}
 
+    ${listElementRule}
+
     <output_format>
       <action description>
       <UI elements table>
@@ -669,11 +863,12 @@ export class Researcher implements Agent {
         ${screenshotUiMapRule}
 
         Example:
-        | Element | ARIA | CSS | XPath | Coordinates |
-        | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button.btn-signin' | '//button[@class="btn-signin"]' | (450, 320) |
-        | 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' | '//input[@id="email"]' | (300, 200) |
-        | 'Settings' | { role: 'link', text: 'Settings' } | 'a.settings-link' | '//a[@class="settings-link"]' | (850, 50) |
-        | 'Menu Toggle' | - | '.hamburger-btn' | '//button[contains(@class,"hamburger-btn")]' | (30, 25) |
+        | Element | ARIA | CSS | XPath | Coordinates | Color |
+        | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button.btn-signin' | '//button[@class="btn-signin"]' | (450, 320) | blue |
+        | 'Delete' | { role: 'button', text: 'Delete' } | 'button.btn-delete' | '//button[@class="btn-delete"]' | (500, 320) | red |
+        | 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' | '//input[@id="email"]' | (300, 200) | - |
+        | 'Settings' | { role: 'link', text: 'Settings' } | 'a.settings-link' | '//a[@class="settings-link"]' | (850, 50) | - |
+        | 'Menu Toggle' | - | '.hamburger-btn' | '//button[contains(@class,"hamburger-btn")]' | (30, 25) | - |
 
         Group elements by type (Buttons, Links, Inputs, etc.) within each section.
         CRITICAL: Include Coordinates for EVERY element in the table. Do NOT create a separate Coordinates section.
@@ -692,8 +887,9 @@ export class Researcher implements Agent {
         Section Container CSS Locator: '...'
 
         #### Section UI Map:
-        | Element | ARIA | CSS | XPath | Coordinates |
-        | 'Element Name' | { role: 'button', text: '...' } | 'css' | '//button[@type="button"]' | (X, Y) |
+        | Element | ARIA | CSS | XPath | Coordinates | Color |
+        | 'Element Name' | { role: 'button', text: '...' } | 'css' | '//button[@type="button"]' | (X, Y) | blue |
+        | 'Another Element' | { role: 'link', text: '...' } | 'a.link' | '//a[@class="link"]' | (X, Y) | - |
 
         </output_format>
 
@@ -909,13 +1105,14 @@ export class Researcher implements Agent {
       </screenshot_analysis>
 
       IMPORTANT: Merge screenshot analysis INTO your UI map tables:
-      1. ADD a Coordinates column to ALL UI map tables
+      1. ADD Coordinates and Color columns to ALL UI map tables
       2. For each element, include coordinates (X, Y) from screenshot analysis
-      3. Use "-" for elements not visible in screenshot
-      4. DO NOT create a separate Coordinates section - coordinates must be IN the tables
+      3. For each element, include accent color if it has a distinctive color (red, green, blue, etc.)
+      4. Use "-" for elements not visible in screenshot or without distinctive color
+      5. DO NOT create separate Coordinates or Color sections - they must be IN the tables
 
       Final table format must be:
-      | Element | ARIA | CSS | XPath | Coordinates |
+      | Element | ARIA | CSS | XPath | Coordinates | Color |
 
       Also incorporate any visual elements not captured in HTML (icons, images, visual indicators).
     `);
@@ -950,12 +1147,12 @@ export class Researcher implements Agent {
     }
   }
 
-  async performInteractiveExploration(state: WebPageState): Promise<string> {
+  async performInteractiveExploration(state: WebPageState, opts: { maxElements?: number } = {}): Promise<string> {
     const config = this.getResearcherConfig();
     const stopWords = config?.stopWords ?? DEFAULT_STOP_WORDS;
     const excludeSelectors = config?.excludeSelectors || [];
     const includeSelectors = config?.includeSelectors || [];
-    const maxElements = config?.maxElementsToExplore ?? 10;
+    const maxElements = opts.maxElements ?? config?.maxElementsToExplore ?? 10;
 
     const interactiveNodes = collectInteractiveNodes(state.ariaSnapshot || '');
     const originalUrl = state.url;
@@ -969,12 +1166,7 @@ export class Researcher implements Agent {
         return false;
       }
 
-      if (!name) {
-        debugLog(`Skipping unnamed ${role} element`);
-        return false;
-      }
-
-      if (name.length > 50) {
+      if (name.length > 80) {
         debugLog(`Skipping "${name.slice(0, 30)}..." - name too long`);
         return false;
       }
@@ -1011,22 +1203,24 @@ export class Researcher implements Agent {
       const role = String(node.role || '');
       const name = String(node.name || '').trim();
 
-      tag('substep').log(`[${i + 1}/${targets.length}] Exploring: "${name}" (${role})`);
+      const label = name || `unnamed ${role}`;
+      tag('substep').log(`[${i + 1}/${targets.length}] Exploring: "${label}" (${role})`);
 
       const action = this.explorer.createAction();
       const beforeState = await action.capturePageState({});
 
       try {
-        await action.execute(`I.click({ role: '${role}', text: '${name.replace(/'/g, "\\'")}' })`);
+        const clickCommand = name ? `I.click({ role: '${role}', text: '${name.replace(/'/g, "\\'")}' })` : `I.click({ role: '${role}' })`;
+        await action.execute(clickCommand);
         const afterState = await action.capturePageState({});
 
         const resultDescription = this.detectChangeResult(beforeState, afterState, originalUrl);
-        results.push({ element: name, role, result: resultDescription });
+        results.push({ element: label, role, result: resultDescription });
 
         await this.restoreState(afterState, originalUrl);
       } catch (error) {
-        debugLog(`Failed to explore ${name}:`, error);
-        results.push({ element: name, role, result: 'click failed' });
+        debugLog(`Failed to explore ${label}:`, error);
+        results.push({ element: label, role, result: 'click failed' });
       }
     }
 
@@ -1212,4 +1406,16 @@ export class Researcher implements Agent {
 
     return lines.join('\n');
   }
+}
+
+function parseContainsCss(css: string): { baseSelector: string; text: string } | null {
+  const match = css.match(/^(.*?):contains\(["']([^"']+)["']\)(.*)$/);
+  if (!match) return null;
+  return { baseSelector: (match[1] + match[3]).trim(), text: match[2] };
+}
+
+function buildCssLocator(page: any, containerCss: string, css: string) {
+  const parsed = parseContainsCss(css);
+  if (!parsed) return page.locator(`${containerCss} ${css}`);
+  return page.locator(`${containerCss} ${parsed.baseSelector}`).filter({ hasText: parsed.text });
 }

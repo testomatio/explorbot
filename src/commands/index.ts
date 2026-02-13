@@ -10,7 +10,6 @@ import { ContextKnowledgeCommand } from './context-knowledge-command.js';
 import { DrillCommand } from './drill-command.js';
 import { ExitCommand } from './exit-command.js';
 import { ExploreCommand } from './explore-command.js';
-import { StartCommand } from './start-command.js';
 import { HelpCommand } from './help-command.js';
 import { KnowCommand } from './know-command.js';
 import { KnowsCommand } from './knows-command.js';
@@ -22,6 +21,7 @@ import { PlanLoadCommand } from './plan-load-command.js';
 import { PlanReloadCommand } from './plan-reload-command.js';
 import { PlanSaveCommand } from './plan-save-command.js';
 import { ResearchCommand } from './research-command.js';
+import { StartCommand } from './start-command.js';
 import { StatusCommand } from './status-command.tsx';
 import { TestCommand } from './test-command.js';
 

@@ -6,6 +6,7 @@ import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { createDebug } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
+import { evaluateXPath } from '../utils/xpath.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule, sectionUiMapRule } from './rules.ts';
@@ -68,7 +69,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
 
         for (let i = 0; i < commands.length; i++) {
-          const command = commands[i];
+          const command = transformContainsCommand(commands[i]);
           const isLast = i === commands.length - 1;
           const success = await action.attempt(command, explanation, isLast);
 
@@ -786,10 +787,96 @@ export function createAgentTools({
         };
       },
     }),
+
+    xpathCheck: tool({
+      description: dedent`
+        It seems the desired element could not be reached by Tester.
+        Full HTML context is too large to provide, but you can propose XPath locators to search for the needed element.
+
+        Think carefully about the XPath — if it's too narrow you may miss the element.
+        Use broad enough locators combining: ids, classes, aria-* attributes, semantic elements, data attributes, text content.
+
+        Start broad (e.g. //button, //*[contains(text(), 'Save')]) then narrow down.
+        Multiple calls are encouraged — refine until you find a unique match.
+
+        After finding matches, visibility is automatically verified in the live browser.
+        If element exists in DOM but is not visible, consider what action could reveal it (scroll, click to expand, wait).
+      `,
+      inputSchema: z.object({
+        xpath: z.string().describe('XPath expression — use broad patterns to avoid missing the element'),
+        reason: z.string().describe('What element you are looking for and why'),
+      }),
+      execute: async ({ xpath, reason }) => {
+        const stateManager = explorer.getStateManager();
+        const currentState = stateManager.getCurrentState();
+
+        if (!currentState) {
+          return failedToolResult('xpathCheck', 'No current page state available.');
+        }
+
+        const html = ActionResult.fromState(currentState).html;
+        if (!html) {
+          return failedToolResult('xpathCheck', 'No HTML available for current page state.');
+        }
+
+        const result = await evaluateXPath(html, xpath);
+
+        if (result.error) {
+          return failedToolResult('xpathCheck', `XPath error: ${result.error}`, {
+            suggestion: 'Check XPath syntax. Common issues: unescaped quotes, missing brackets, invalid axis names.',
+          });
+        }
+
+        if (result.totalFound === 0) {
+          return failedToolResult('xpathCheck', `No elements matched XPath: ${xpath}`, {
+            suggestion: 'Try a broader expression. Examples: //*[contains(@class, "btn")], //button, //*[contains(text(), "keyword")]',
+          });
+        }
+
+        const action = explorer.createAction();
+        const visible = await action.attempt(`I.seeElement(${JSON.stringify(xpath)})`, 'xpathCheck visibility', false);
+
+        const matchesSummary = result.matches.map((m, i) => `${i + 1}. <${m.tag} ${m.attrs}> text="${m.text}" html: ${m.outerHTML}`).join('\n');
+
+        const visibilityNote = visible ? 'Element IS visible in browser — Tester can use this XPath as locator.' : 'Element exists in DOM but is NOT visible. May need scrolling, a click to reveal, or is hidden.';
+
+        return successToolResult('xpathCheck', {
+          totalFound: result.totalFound,
+          matches: matchesSummary,
+          visibilityNote,
+          xpath,
+        });
+      },
+    }),
   };
 }
 
 const PAGE_DIFF_SUGGESTION = 'Analyze page diff and plan next steps.';
+
+function transformContainsCommand(command: string): string {
+  if (!command.includes(':contains(')) return command;
+
+  const containsMatch = command.match(/:contains\(["']([^"']+)["']\)/);
+  if (!containsMatch) return command;
+
+  const text = containsMatch[1];
+  const cleaned = command.replace(containsMatch[0], '');
+
+  const twoArgMatch = cleaned.match(/I\.click\(\s*(['"`])(.+?)\1\s*,\s*(['"`])(.+?)\3\s*\)/);
+  if (twoArgMatch) {
+    const baseSelector = twoArgMatch[2].trim();
+    const context = twoArgMatch[4].trim();
+    return `I.click(${JSON.stringify(text)}, ${JSON.stringify(`${context} ${baseSelector}`)})`;
+  }
+
+  const oneArgMatch = cleaned.match(/I\.click\(\s*(['"`])(.+?)\1\s*\)/);
+  if (oneArgMatch) {
+    const baseSelector = oneArgMatch[2].trim();
+    return `I.click(${JSON.stringify(text)}, ${JSON.stringify(baseSelector)})`;
+  }
+
+  return command;
+}
 
 function formatLocator(locator: string): string {
   try {

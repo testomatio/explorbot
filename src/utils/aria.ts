@@ -79,10 +79,8 @@ const buildInteractiveEntry = (node: AriaNode): Record<string, unknown> | null =
     shouldInclude = true;
   }
   if (isButtonOrLink && !entryName && !hasValue) {
-    shouldInclude = false;
-  }
-  if (node.role === 'link' && entryName && entryName.length > 30) {
-    shouldInclude = false;
+    entry.unnamed = true;
+    shouldInclude = true;
   }
   if (!shouldInclude) {
     return null;

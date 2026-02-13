@@ -367,6 +367,7 @@ program
   .option('-s, --show', 'Show browser window')
   .option('--headless', 'Run browser in headless mode')
   .option('--data', 'Include data extraction in research')
+  .option('--deep', 'Enable deep analysis (expand hidden elements)')
   .option('--verify', 'Audit research coverage against ARIA tree')
   .action(async (url, options) => {
     try {
@@ -391,6 +392,7 @@ program
         screenshot: true,
         force: true,
         data: options.data || false,
+        deep: options.deep || false,
       });
 
       if (options.verify) {

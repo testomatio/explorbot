@@ -1,6 +1,23 @@
 # Terminal Commands Reference
 
-All commands are available in the TUI when running `explorbot explore`.
+## TUI and CLI Commands
+
+Explorbot has two types of commands:
+
+- **TUI commands** — slash commands available inside the terminal UI launched by `explorbot start`
+- **CLI commands** — run directly from your shell without launching TUI
+
+Some commands work in both modes. Where a CLI equivalent exists, it is noted below.
+
+| TUI Command | CLI Equivalent |
+|-------------|---------------|
+| `/explore [url]` | `explorbot explore [path]` |
+| `/research [url]` | `explorbot research <url>` |
+| `/plan [feature]` | `explorbot plan <path> [feature]` |
+| `/drill` | `explorbot drill <url>` |
+| `/know [note]` | `explorbot knows:add [url] [description]` |
+
+CLI commands run headless by default, execute the task, and exit. TUI commands run inside an interactive session where you can chain multiple actions.
 
 ## Exploration Commands
 
@@ -15,6 +32,8 @@ Start full exploration cycle: research → plan → test.
 
 If a URL is provided, navigates there first. After completion, use `/navigate` or `/explore` again to continue.
 
+**CLI equivalent:** `explorbot explore [path]` — runs the full cycle and exits.
+
 ### `/research [url] [--data]`
 
 Analyze the current page using the Researcher agent.
@@ -28,6 +47,8 @@ Analyze the current page using the Researcher agent.
 - If URL provided, navigates there first
 - `--data` flag extracts structured data from the page
 
+**CLI equivalent:** `explorbot research <url>` — researches the page and exits.
+
 ### `/plan [feature]`
 
 Generate test scenarios for the current page using the Planner agent.
@@ -39,6 +60,8 @@ Generate test scenarios for the current page using the Planner agent.
 ```
 
 Optional feature focus narrows the scope of generated tests.
+
+**CLI equivalent:** `explorbot plan <path> [feature]` — generates a plan and exits.
 
 ### `/test [scenario|number|*]`
 

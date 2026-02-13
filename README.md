@@ -7,7 +7,7 @@
 Explorbot explores your web app like a curious human would — clicking around, filling forms, finding bugs, and learning as it goes. No test scripts required. Just point it at your app and let it work.
 
 ```bash
-explorbot explore --from https://your-app.com
+explorbot start https://your-app.com
 ```
 
 Explorbot is your first assitant in testing.
@@ -94,7 +94,7 @@ explorbot know "/login" "Use credentials: admin@example.com / secret123"
 **5. Run**
 
 ```bash
-explorbot explore --from /admin/users
+explorbot start /admin/users
 ```
 
 Start from a small functional area of your app (admin panel, settings, any CRUD section) so Explorbot can quickly understand its business purpose and context.
@@ -102,7 +102,7 @@ Start from a small functional area of your app (admin panel, settings, any CRUD 
 Browser runs headless by default — use `--show` to see it:
 
 ```bash
-explorbot explore --from /settings --show
+explorbot start /settings --show
 ```
 
 Requires a modern terminal (iTerm2, WARP, Kitty, Ghostty, Windows Terminal). On Windows, use WSL.
@@ -123,7 +123,7 @@ flowchart LR
 | Clicks buttons, fills forms | Discovers all interactive elements | Assigns priorities (HIGH/MED/LOW) | Adapts when things fail |
 | Self-heals broken selectors | Expands hidden content | Balances positive & negative cases | Documents results |
 
-Run `/explore` and watch the cycle: research → plan → test → repeat.
+Run `/explore` in TUI or use `explorbot explore` from CLI to watch the cycle: research → plan → test → repeat.
 
 **Supporting components:**
 
@@ -154,6 +154,9 @@ I.see('Welcome')
 
 See [docs/commands.md](docs/commands.md) for all commands.
 
+> [!NOTE]
+> Most TUI commands also have CLI equivalents that run headless and exit. For example, `explorbot research <url>` and `explorbot plan <path>` work without launching TUI. See [docs/commands.md](docs/commands.md) for the full mapping.
+
 ## What You Get
 
 | Output | Location | Description |
@@ -167,13 +170,13 @@ See [docs/commands.md](docs/commands.md) for all commands.
 **Interactive mode** — Launch TUI, guide exploration, get real-time feedback:
 
 ```bash
-explorbot explore --from https://your-app.com
+explorbot start https://your-app.com
 ```
 
-**Non-interactive mode** — CI/CD pipelines, automated runs:
+**Autonomous mode** — Non-interactive testing and planning:
 
 ```bash
-explorbot run --from https://your-app.com --plan login-flow
+explorbot explore /admin/users
 ```
 
 ## Core Philosophy
