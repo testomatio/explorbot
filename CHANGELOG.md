@@ -42,7 +42,6 @@
 - [Researcher] Now validates all locators against the live page after research, retrying automatically when most locators are broken
 - [Researcher] Validates section container CSS selectors and removes broken ones
 - [Researcher] Re-prompts AI when response cannot be parsed into the expected table format
-- [Researcher] Added `closeModal` tool — dismisses overlays (dropdowns, modals, popups) using progressive escalation: body click, Escape key, page reload
 - [Planner] Plans now auto-load from existing plan files instead of always starting fresh
 - [Planner] Improved duplicate detection: groups existing tests by feature keywords to prevent re-proposing similar scenarios
 - [Planner] Extended Research sections (modals, dropdowns, panels) are now treated as separate feature areas for planning
