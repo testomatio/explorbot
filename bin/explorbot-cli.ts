@@ -106,11 +106,12 @@ addCommonOptions(program.command('start [path]').alias('sail').description('Star
   await startTUI(explorBot);
 });
 
-addCommonOptions(program.command('explore [path]').description('Start web exploration (legacy command)')).action(async (explorePath, options) => {
+addCommonOptions(program.command('explore <path>').description('Start web exploration (legacy command)')).action(async (explorePath, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
     await explorBot.start();
-    await explorBot.explore(explorePath || undefined);
+    await explorBot.visit(explorePath);
+    await explorBot.explore();
     await explorBot.stop();
     await showStatsAndExit(0);
   } catch (error) {
