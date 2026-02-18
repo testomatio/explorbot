@@ -344,8 +344,14 @@ export class ExplorBot {
   }
 
   async explore(feature?: string) {
+    const currentState = this.getCurrentState();
+    const currentPath = currentState?.url ? new URL(currentState.url).pathname : null;
+    if (!currentState || (feature?.startsWith('/') && currentPath !== feature)) {
+      await this.visit(feature || '/');
+    }
+
     const planner = this.agentPlanner();
-    this.currentPlan = await planner.plan(feature);
+    this.currentPlan = await planner.plan(feature?.startsWith('/') ? undefined : feature);
     const tester = this.agentTester();
     for (const test of this.currentPlan.tests) {
       await tester.test(test);

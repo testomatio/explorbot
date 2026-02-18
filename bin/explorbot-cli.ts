@@ -107,17 +107,15 @@ addCommonOptions(program.command('start [path]').alias('sail').description('Star
 });
 
 addCommonOptions(program.command('explore [path]').description('Start web exploration (legacy command)')).action(async (explorePath, options) => {
-  setPreserveConsoleLogs(false);
-  const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
-  await explorBot.start();
-
-  const { ExploreCommand } = await import('../src/commands/explore-command.js');
-  const exploreCommand = new ExploreCommand(explorBot);
-
-  await startTUI(explorBot);
-
-  if (explorePath) {
-    await exploreCommand.execute(explorePath);
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
+    await explorBot.start();
+    await explorBot.explore(explorePath || undefined);
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
   }
 });
 
