@@ -8,7 +8,8 @@ export class ResearchCommand extends BaseCommand {
   async execute(args: string): Promise<void> {
     const includeData = args.includes('--data');
     const enableDeep = args.includes('--deep');
-    const target = args.replace('--data', '').replace('--deep', '').trim();
+    const noFix = args.includes('--no-fix');
+    const target = args.replace('--data', '').replace('--deep', '').replace('--no-fix', '').trim();
 
     if (target) {
       await this.explorBot.agentNavigator().visit(target);
@@ -24,6 +25,7 @@ export class ResearchCommand extends BaseCommand {
       force: true,
       data: includeData,
       deep: enableDeep,
+      fix: !noFix,
     });
   }
 }

@@ -73,7 +73,7 @@ export class Planner implements Agent {
       - Steps: specific actions to perform (e.g., "Click Login button", "Enter email address")
       - Expected outcomes: observable results to verify (e.g., "Success message appears", "URL changes to /dashboard")
 
-      Focus on main content of the page, not in the menu, sidebar or footer
+      Focus on interactive elements of the page. Skip navigation links that lead away from current page.
       Start with positive scenarios and then move to negative scenarios
       Tests must be atomic and independent of each other
       Tests must be relevant to the page
@@ -333,6 +333,21 @@ export class Planner implements Agent {
     return flows;
   }
 
+  private groupTestsByFeature(tests: Test[]): string {
+    const keywords = new Map<string, string[]>();
+    for (const t of tests) {
+      const words = t.scenario.toLowerCase().split(/\s+/);
+      const key = words
+        .filter((w) => w.length > 3 && !['with', 'that', 'from', 'this', 'verify', 'test', 'should', 'when', 'existing', 'new'].includes(w))
+        .slice(0, 3)
+        .join(' ');
+      const group = key || 'other';
+      if (!keywords.has(group)) keywords.set(group, []);
+      keywords.get(group)!.push(`- "${t.scenario}" [${t.priority}]${t.result ? ` [${t.result}]` : ''}`);
+    }
+    return [...keywords.entries()].map(([group, items]) => `${group}:\n${items.join('\n')}`).join('\n\n');
+  }
+
   private addNewTests(tests: Test[], defaultStartUrl: string): number {
     if (!this.currentPlan) return 0;
 
@@ -379,7 +394,8 @@ export class Planner implements Agent {
       <rules>
       Scenarios must involve interaction with the web page (clicking, scrolling or typing).
       Scenarios must focus on business logic and functionality of the page.
-      Focus on main content of the page, not in the menu, sidebar or footer
+      Focus on interactive elements of the page. Skip navigation links that lead away from current page.
+      Each dropdown menu, modal, or panel discovered in Extended Research is a separate feature.
       Propose business scenarios first, then technical scenarios.
       You can suggest scenarios that can be tested only through web interface.
       You can't test emails, database, SMS, or any external services.
@@ -388,18 +404,38 @@ export class Planner implements Agent {
       Focus on URL page change or data persistency after page reload.
       If there are subpages (pages with same URL path) plan testing of those subpages as well
       If you plan to test CRUD operations, plan them in correct order: create, read, update.
-      Use equivalency classes when planning test scenarios.
       ${protectionRule}
       </rules>
 
-      <approach>
-      Plan happy path scenarios first to accomplish business goals page allows to achieve.
-      If page has form => provide scenarios to test form input (empty/digits/html chars/html/special characters/injections/etc)
-      If page has filters => check all filters combinations
-      If page has sorting => check all sorting combinations
-      If page has pagination => try navigating to different pages
-      If page has search => try searching for different values and see that only relevant results are shown
-      </approach>
+      ${
+        !this.currentPlan
+          ? dedent`<approach>
+      Study the page and figure out its business purpose. What is this page FOR? What would a user come here to do?
+
+      Based on the page type, propose tests for core workflows:
+      - If this is a data page (lists, tables): test CRUD operations, then filtering, then search
+      - If this is a form page: test submission, validation, required fields
+      - If this is a dashboard: test key actions and data display
+      - If this has filters and search: test filtering, searching, and their combination
+
+      Look at ALL research sections including Extended Research (modals, dropdowns, panels).
+      Each dropdown or modal is a separate feature area worth testing.
+      Skip the Menu/Navigation section — we are testing THIS page.
+      </approach>`
+          : dedent`<approach>
+      Look at the research sections and find a feature area that has NO existing tests yet.
+      Pick that ONE feature and test it thoroughly — happy paths, edge cases, error handling.
+
+      Think like a user of this product:
+      - What is the purpose of this feature?
+      - What would I expect to happen when I use it?
+      - What could go wrong?
+      - What workflows does this feature enable?
+
+      Look carefully at Extended Research sections — modals, dropdowns, and panels are often untested.
+      Each is a separate feature area. Pick one and go deep.
+      </approach>`
+      }
 
       <context>
       URL: ${state.url || 'Unknown'}
@@ -411,8 +447,17 @@ export class Planner implements Agent {
     `;
 
     conversation.addUserText(planningPrompt);
-    const research = await this.researcher.research(state, { deep: true });
-    conversation.addUserText(`Identified page elements: ${research}`);
+    const currentState = this.stateManager.getCurrentState();
+    const research = await this.researcher.research(currentState || state, { deep: true });
+    conversation.addUserText(dedent`
+      <page_research>
+      The following research describes ALL interactive elements on the page, organized by sections.
+      Each numbered section and each Extended Research subsection represents a testable feature area.
+      Skip the Menu/Navigation section — we test THIS page, not navigation away from it.
+
+      ${research}
+      </page_research>
+    `);
 
     const flows = this.extractFlowsFromExperience(state);
     if (flows.length > 0) {
@@ -445,19 +490,21 @@ export class Planner implements Agent {
 
       const existingScenarios = this.currentPlan.tests.map((t) => `- "${t.scenario}" [${t.priority}] ${t.result ? `[${t.result}]` : '[pending]'}`).join('\n');
 
+      const groupedTests = this.groupTestsByFeature(this.currentPlan.tests);
+
       conversation.addUserText(dedent`
         CRITICAL: This plan already has tests (${summary}).
 
-        <existing_tests_do_not_repeat>
-        ${existingScenarios}
-        </existing_tests_do_not_repeat>
+        <existing_tests_grouped_by_feature>
+        ${groupedTests}
+        </existing_tests_grouped_by_feature>
 
         <absolute_rules>
-        1. DO NOT propose any test that matches or is similar to tests listed above
-        2. DO NOT rephrase existing tests - they are already in the plan
-        3. ONLY propose completely NEW scenarios not covered above
-        4. If a test failed, do NOT retry the same scenario - find alternative approaches
-        5. If no new tests are needed, return empty scenarios array
+        1. DO NOT re-propose tests with the same scenario name or identical steps
+        2. You CAN propose tests for the same feature if they test a genuinely different operation (create vs edit vs delete)
+        3. A group of identical elements counts as ONE feature — one tab test covers tabs, one suite link covers suite navigation
+        4. Do NOT propose tests that only differ by input data (e.g., "Search X" and "Search Y")
+        5. If no genuinely new operations or features remain, return EMPTY scenarios array
         </absolute_rules>
 
         <previous_test_results>
@@ -465,9 +512,16 @@ export class Planner implements Agent {
         </previous_test_results>
 
         <planning_strategy>
-        Prioritize discovering NEW testing paths over edge cases for existing scenarios.
-        Look for unexplored features, buttons, or flows not yet covered.
-        Edge case and negative testing should only be proposed when no new paths remain.
+        Find a feature area in the research that has NO or minimal test coverage.
+        Pick that ONE feature and propose ${this.MIN_TASKS}-${this.MAX_TASKS} tests for it.
+
+        Think like a real user of this product:
+        - What is this feature for? What business problem does it solve?
+        - What would I expect to see and be able to do?
+        - What are the important workflows around this feature?
+        - What could go wrong when using it?
+
+        If ALL features across ALL research sections are covered, return empty scenarios array.
         </planning_strategy>
 
         <context_from_previous_tests>
@@ -500,7 +554,7 @@ export class Planner implements Agent {
          - MEDIUM: Happy path scenarios, standard user features
          - LOW: Edge cases, input validation, boundary testing, negative scenarios
       3. Start with positive scenarios and then move to negative scenarios
-      4. Focus on main content of the page, not in the menu, sidebar or footer
+      4. Focus on interactive elements of the page. Skip navigation links that lead away from current page.
       5. Focus on tests you are 100% sure relevant to this page and can be achived from UI.
       6. For each task, provide BOTH steps and expected outcomes as separate arrays:
 

@@ -8,6 +8,7 @@ import type { WebPageState } from './state-manager.js';
 import { createDebug, log, tag } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:experience');
+const DEFAULT_MAX_EXPERIENCE_LINES = 50;
 
 interface ExperienceEntry {
   timestamp: string;
@@ -275,11 +276,20 @@ ${filteredCode}
     if (readingDisabled) {
       return [];
     }
-    return this.getAllExperience().filter((experience) => {
-      const experienceState = experience.data as WebPageState;
-      if (!experienceState.url || !state.url) return false;
-      return this.normalizeUrl(state.url) === this.normalizeUrl(experienceState.url);
-    });
+    const config = ConfigParser.getInstance().getConfig();
+    const maxLines = config.experience?.maxReadLines ?? DEFAULT_MAX_EXPERIENCE_LINES;
+
+    return this.getAllExperience()
+      .filter((experience) => {
+        const experienceState = experience.data as WebPageState;
+        if (!experienceState.url || !state.url) return false;
+        return this.normalizeUrl(state.url) === this.normalizeUrl(experienceState.url);
+      })
+      .map((experience) => {
+        const lines = experience.content.split('\n');
+        if (lines.length <= maxLines) return experience;
+        return { ...experience, content: lines.slice(0, maxLines).join('\n') };
+      });
   }
 
   private normalizeUrl(url: string): string {
@@ -332,7 +342,7 @@ ${filteredCode}
   }
 
   private generateSessionContent(entry: SessionExperienceEntry): string {
-    let content = `## Flow: ${entry.scenario}\n\n`;
+    let content = `## Successful Flow: ${entry.scenario}\n\n`;
 
     for (const step of entry.steps) {
       content += `* ${step.message}\n\n`;
@@ -373,7 +383,7 @@ ${filteredCode}
   }
 
   private generateFlowContent(scenario: string, flowSteps: string[]): string {
-    let content = `## Flow: ${scenario}\n\n`;
+    let content = `## Successful Flow: ${scenario}\n\n`;
     content += flowSteps.join(' -> ');
     content += '\n\n---\n';
     return content;

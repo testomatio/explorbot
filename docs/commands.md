@@ -19,6 +19,32 @@ Some commands work in both modes. Where a CLI equivalent exists, it is noted bel
 
 CLI commands run headless by default, execute the task, and exit. TUI commands run inside an interactive session where you can chain multiple actions.
 
+## Common Options
+
+These options are available on all CLI commands (`start`, `explore`, `plan`, `drill`, `research`, `context`):
+
+| Option | Description |
+|--------|-------------|
+| `-v, --verbose` | Enable verbose logging |
+| `--debug` | Enable debug logging (same as `--verbose`) |
+| `-c, --config <path>` | Path to configuration file |
+| `-p, --path <path>` | Working directory path |
+| `-s, --show` | Show browser window |
+| `--headless` | Run browser in headless mode |
+| `--incognito` | Run without recording experiences |
+| `--session [file]` | Save/restore browser session (cookies, localStorage) from file |
+
+### `--session`
+
+Persists browser state (cookies, localStorage, sessionStorage) to a JSON file. On next run, the session is restored automatically, skipping login or setup steps.
+
+```bash
+explorbot start /login --session                # uses default output/session.json
+explorbot start /dashboard --session auth.json  # custom session file
+```
+
+When the flag is provided without a file path, defaults to `output/session.json`.
+
 ## Exploration Commands
 
 ### `/explore [url]`

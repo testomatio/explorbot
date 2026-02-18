@@ -474,6 +474,11 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
       }
     }
 
+    if (node.nodeName === 'svg') {
+      cleanElement(node as parse5TreeAdapter.Element);
+      return false;
+    }
+
     if (node.attrs) {
       // Filter and keep allowed attributes, accessibility attributes
       node.attrs = node.attrs.filter((attr) => {
@@ -533,7 +538,7 @@ export async function minifyHtml(html: string): Promise<string> {
  * Creates a combined snapshot with interactive elements and meaningful text
  * Preserves original HTML structure
  */
-export function htmlCombinedSnapshot(html: string, htmlConfig?: HtmlConfig['combined']): string {
+export function htmlCombinedSnapshot(html: string, htmlConfig?: HtmlConfig['combined'], opts?: { keepPositions?: boolean }): string {
   const shouldKeepWithConfig = (element: parse5TreeAdapter.Element) => {
     return shouldKeepCombined(element, htmlConfig);
   };
@@ -542,7 +547,7 @@ export function htmlCombinedSnapshot(html: string, htmlConfig?: HtmlConfig['comb
   const body = findBody(document);
   if (!body) return html;
 
-  filterTree(body, shouldKeepWithConfig);
+  filterTree(body, shouldKeepWithConfig, opts?.keepPositions);
   cleanAllElements(body);
 
   return serialize(document);
@@ -845,6 +850,8 @@ function shouldKeepCombined(element: parse5TreeAdapter.Element, htmlConfig?: Htm
   if (shouldKeepInteractive(element, htmlConfig)) return true;
 
   const tagName = element.tagName.toLowerCase();
+  if (tagName === 'svg' && getAttribute(element, 'class')) return true;
+
   if (TEXT_ELEMENT_TAGS.has(tagName)) {
     if (tagName.startsWith('h')) return true;
     const text = getTextContent(element).trim();
@@ -918,7 +925,7 @@ function isInteractiveContainer(element: parse5TreeAdapter.Element): boolean {
   return false;
 }
 
-function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5TreeAdapter.Element) => boolean): boolean {
+function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5TreeAdapter.Element) => boolean, keepPositions?: boolean): boolean {
   if (!element.childNodes) return false;
 
   const isInteractive = isInteractiveContainer(element);
@@ -931,7 +938,7 @@ function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5T
 
     if ('tagName' in child) {
       const childElement = child as parse5TreeAdapter.Element;
-      const childHasContent = filterTree(childElement, shouldKeep);
+      const childHasContent = filterTree(childElement, shouldKeep, keepPositions);
 
       if (isInteractive) {
         hasKeepableElementChildren = true;
@@ -943,7 +950,11 @@ function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5T
         if (hasHiddenClass(childElement) || !childHasContent) {
           const index = element.childNodes.indexOf(child);
           if (index > -1) {
-            element.childNodes.splice(index, 1);
+            if (keepPositions) {
+              emptyElement(childElement);
+            } else {
+              element.childNodes.splice(index, 1);
+            }
           }
         } else {
           hasKeepableElementChildren = true;
@@ -984,6 +995,11 @@ function filterTree(element: parse5TreeAdapter.Element, shouldKeep: (el: parse5T
   return hasTextContent;
 }
 
+function emptyElement(element: parse5TreeAdapter.Element): void {
+  element.childNodes = [];
+  element.attrs = [];
+}
+
 function cleanAllElements(element: parse5TreeAdapter.Element): void {
   cleanElement(element);
 
@@ -997,6 +1013,12 @@ function cleanAllElements(element: parse5TreeAdapter.Element): void {
 }
 
 function cleanElement(element: parse5TreeAdapter.Element): void {
+  if (element.tagName.toLowerCase() === 'svg') {
+    element.attrs = element.attrs.filter((attr) => attr.name === 'class');
+    element.childNodes = [];
+    return;
+  }
+
   const keepAttrs = [
     'id',
     'class',

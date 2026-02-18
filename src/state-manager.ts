@@ -4,6 +4,7 @@ import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { ExperienceTracker } from './experience-tracker.js';
+import { detectFocusArea } from './utils/aria.js';
 import { htmlTextSnapshot } from './utils/html.js';
 import { createDebug, tag } from './utils/logger.js';
 
@@ -165,7 +166,10 @@ export class StateManager {
     this.currentState = newState;
     this.currentState.id = this.nextStateId++;
 
-    if (actionResult.hash !== previousHash) {
+    const hashChanged = actionResult.hash !== previousHash;
+    const dialogOpened = !hashChanged && this.hasDialogAppeared(previousState, newState);
+
+    if (hashChanged || dialogOpened) {
       const transition: StateTransition = {
         fromState: previousState,
         toState: newState,
@@ -175,6 +179,10 @@ export class StateManager {
       };
       this.stateHistory.push(transition);
       this.emitStateChange(transition);
+
+      if (dialogOpened) {
+        debugLog('State change detected: modal dialog appeared');
+      }
     }
 
     debugLog(`State updated: ${this.currentState.url} (${this.currentState.hash})`);
@@ -219,6 +227,12 @@ export class StateManager {
     debugLog(`State updated from navigation: ${this.currentState.url} (${this.currentState.hash})`);
 
     return newState;
+  }
+
+  private hasDialogAppeared(previousState: WebPageState | null, newState: WebPageState): boolean {
+    const prevFocus = detectFocusArea(previousState?.ariaSnapshot ?? null);
+    const newFocus = detectFocusArea(newState.ariaSnapshot ?? null);
+    return !prevFocus.detected && newFocus.detected;
   }
 
   /**

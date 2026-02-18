@@ -32,6 +32,7 @@ export interface ExplorBotOptions {
   show?: boolean;
   headless?: boolean;
   incognito?: boolean;
+  session?: string;
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -252,14 +253,27 @@ export class ExplorBot {
     delete this.agents.planner;
   }
 
-  async plan(feature?: string) {
+  async plan(feature?: string, opts: { fresh?: boolean } = {}) {
     this.planFeature = feature;
+
+    if (opts.fresh) {
+      this.clearPlan();
+    }
 
     if (this.currentPlan?.url) {
       const currentUrl = this.explorer?.getStateManager().getCurrentState()?.url;
       if (currentUrl && currentUrl !== this.currentPlan.url) {
         tag('info').log(`Different page detected, clearing previous plan`);
         this.clearPlan();
+      }
+    }
+
+    if (!this.currentPlan && !opts.fresh) {
+      const planFilename = this.generatePlanFilename();
+      const planPath = path.join(this.getPlansDir(), planFilename);
+      if (existsSync(planPath)) {
+        tag('info').log(`Loading existing plan from ${planFilename}`);
+        this.currentPlan = Plan.fromMarkdown(planPath);
       }
     }
 
@@ -302,8 +316,12 @@ export class ExplorBot {
     const state = this.explorer?.getStateManager().getCurrentState();
     const urlPath = state?.url || '/';
     const urlPart = sanitizeFilename(urlPath) || 'root';
-    const featurePart = this.planFeature ? '_' + sanitizeFilename(this.planFeature) : '';
-    return urlPart + featurePart + '.md';
+    const suffix = '.md';
+    if (!this.planFeature) return urlPart.slice(0, 256 - suffix.length) + suffix;
+    const featurePart = '_' + sanitizeFilename(this.planFeature);
+    const maxFeatureLen = 256 - suffix.length - urlPart.length;
+    if (maxFeatureLen <= 1) return urlPart.slice(0, 256 - suffix.length) + suffix;
+    return urlPart + featurePart.slice(0, maxFeatureLen) + suffix;
   }
 
   loadPlan(filename: string): Plan {

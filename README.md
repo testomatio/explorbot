@@ -88,6 +88,14 @@ explorbot know
 explorbot know "/login" "Use credentials: admin@example.com / secret123"
 ```
 
+> [!TIP]
+> Use `--session` to persist browser cookies and localStorage between runs. Log in once, and Explorbot will restore the session on next start:
+> ```bash
+> explorbot start /login --session          # saves to output/session.json
+> explorbot start /dashboard --session      # restores session, skips login
+> explorbot start /app --session auth.json  # custom session file
+> ```
+
 > [!NOTE]
 > Use `*` as URL pattern to add general knowledge that applies to all pages. See [docs/knowledge.md](docs/knowledge.md) for more.
 

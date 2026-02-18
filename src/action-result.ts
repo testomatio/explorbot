@@ -243,9 +243,9 @@ export class ActionResult implements ActionResultData {
     return await minifyHtml(htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal));
   }
 
-  async combinedHtml(htmlConfig?: HtmlConfig): Promise<string> {
+  async combinedHtml(htmlConfig?: HtmlConfig & { keepPositions?: boolean }): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    const combinedHtml = await minifyHtml(htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined));
+    const combinedHtml = await minifyHtml(htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined, { keepPositions: htmlConfig?.keepPositions }));
     debugLog(`----${this.url}----`);
     debugLog(`Combined HTML: \n${combinedHtml}`);
     debugLog('----');

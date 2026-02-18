@@ -385,6 +385,23 @@ export const collectInteractiveNodes = (snapshot: string | null): Array<Record<s
   return result;
 };
 
+export const collectExpandableNodes = (snapshot: string | null): Array<{ role: string; name: string }> => {
+  const nodes = parseAriaSnapshot(snapshot);
+  const result: Array<{ role: string; name: string }> = [];
+  const visit = (node: AriaNode) => {
+    const name = node.name?.trim() || '';
+    if (name && node.attributes.expanded !== undefined) {
+      result.push({ role: node.role, name });
+    }
+    if (name && node.attributes.haspopup !== undefined) {
+      result.push({ role: node.role, name });
+    }
+    node.children.forEach(visit);
+  };
+  nodes.forEach(visit);
+  return result;
+};
+
 const formatSummary = (node: Record<string, unknown>): string => {
   const role = typeof node.role === 'string' ? node.role : '';
   if (!role) {
@@ -512,6 +529,16 @@ export function extractFocusedElement(ariaSnapshot: string | null): FocusedEleme
     ...(value && { value: value.trim() }),
     ...(attributes.length > 0 && { attributes }),
   };
+}
+
+export function parseAriaLocator(ariaStr: string): { role: string; text: string } | null {
+  const trimmed = ariaStr.trim();
+  if (trimmed === '-' || trimmed === '' || trimmed === '"-"') return null;
+
+  const match = trimmed.match(/\{\s*["']?role["']?\s*:\s*['"]([^'"]+)['"]\s*,\s*["']?text["']?\s*:\s*['"]([^'"]*)['"]\s*\}/);
+  if (!match) return null;
+
+  return { role: match[1], text: match[2] };
 }
 
 export const diffAriaSnapshots = (previous: string | null, current: string | null): string | null => {

@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync } from 'node:fs';
 import path, { join } from 'node:path';
 // @ts-ignore
 import * as codeceptjs from 'codeceptjs';
@@ -44,11 +45,11 @@ class Explorer {
   private knowledgeTracker!: KnowledgeTracker;
   config: ExplorbotConfig;
   private userResolveFn: UserResolveFunction | null = null;
-  private options?: { show?: boolean; headless?: boolean; incognito?: boolean };
+  private options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string };
   private reporter!: Reporter;
   private otherTabs: TabInfo[] = [];
 
-  constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean }) {
+  constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string }) {
     this.config = config;
     this.aiProvider = aiProvider;
     this.options = options;
@@ -192,7 +193,12 @@ class Explorer {
       throw new Error('Playwright helper not available');
     }
     await this.playwrightHelper._startBrowser();
-    await this.playwrightHelper._createContextPage();
+    const hasSession = this.options?.session && existsSync(this.options.session);
+    const contextOptions = hasSession ? { storageState: this.options!.session } : undefined;
+    await this.playwrightHelper._createContextPage(contextOptions);
+    if (hasSession) {
+      tag('info').log(`Session restored from ${path.relative(process.cwd(), this.options!.session!)}`);
+    }
     const I = codeceptjs.container.support('I');
 
     this.actor = I;
@@ -352,6 +358,13 @@ class Explorer {
       return;
     }
 
+    if (this.options?.session && this.playwrightHelper?.browserContext) {
+      const dir = path.dirname(this.options.session);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      await this.playwrightHelper.browserContext.storageState({ path: this.options.session });
+      tag('info').log(`Session saved to ${path.relative(process.cwd(), this.options.session)}`);
+    }
+
     codeceptjs.event.dispatcher.emit('global.after');
     codeceptjs.event.dispatcher.emit('global.result');
     await Promise.all([this.reporter.finishRun(), this.playwrightHelper._stopBrowser(), codeceptjs.recorder.stop()]);
@@ -416,6 +429,22 @@ class Explorer {
 
     codeceptjs.event.dispatcher.emit('test.finish', codeceptjsTest);
     codeceptjs.event.dispatcher.emit('test.after', codeceptjsTest);
+  }
+
+  async hasPlaywrightLocator(locatorFn: (page: any) => any, opts: { multiple?: boolean; contents?: boolean; success?: (locator: any) => Promise<void> | void } = {}): Promise<boolean> {
+    try {
+      const pwLocator = locatorFn(this.playwrightHelper.page);
+      const count = await pwLocator.count();
+      if (opts.multiple ? count === 0 : count !== 1) return false;
+      if (opts.contents) {
+        const html = await pwLocator.first().innerHTML();
+        if (!html?.trim()) return false;
+      }
+      if (opts.success) await opts.success(pwLocator);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async closeOtherTabs(): Promise<void> {

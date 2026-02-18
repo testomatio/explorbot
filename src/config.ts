@@ -62,6 +62,7 @@ interface ResearcherAgentConfig extends AgentConfig {
   includeSelectors?: string[];
   stopWords?: string[];
   maxElementsToExplore?: number;
+  retries?: number;
 }
 
 interface TesterAgentConfig extends AgentConfig {
@@ -141,6 +142,9 @@ interface ExplorbotConfig {
     knowledge: string;
     experience: string;
     output: string;
+  };
+  experience?: {
+    maxReadLines?: number;
   };
   stepsFile?: string;
 }

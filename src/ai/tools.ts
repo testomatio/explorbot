@@ -47,13 +47,19 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         `),
         explanation: z.string().describe('Why you are clicking this element'),
       }),
-      execute: async ({ commands, explanation }) => {
+      execute: async ({ commands: rawCommands, explanation }) => {
         const activeNote = task.startNote(explanation);
 
-        if (commands.length === 0) {
+        if (rawCommands.length === 0) {
           activeNote.commit(TestResult.FAILED);
           return failedToolResult('click', 'No commands provided');
         }
+
+        const commands = rawCommands.map((cmd) => {
+          const trimmed = cmd.trim();
+          if (trimmed.startsWith('I.click')) return trimmed;
+          return `I.click(${JSON.stringify(trimmed)})`;
+        });
 
         const invalidCommands = commands.filter((cmd) => !cmd.trim().startsWith('I.click'));
 

@@ -37,7 +37,9 @@ export const locatorRule = dedent`
   For icon-only buttons/links with no visible text:
   - Use aria-label value if present: { "role": "button", "text": "Close" } (from aria-label="Close")
   - Use title attribute if present: { "role": "button", "text": "Settings" } (from title="Settings")
-  - If no accessible name exists, mark ARIA as "-" and rely on CSS/XPath locators
+  - If no accessible name exists, mark ARIA as "-" and use CSS/XPath:
+    * CSS: use partial href a[href*="settings"] or SVG icon class a:has(svg.md-icon-cog)
+    * XPath: use contains(@href,"settings") or SVG class //a[.//svg[contains(@class,"md-icon-cog")]]
   - NEVER use empty text: { "role": "button", "text": "" } is INVALID and useless
 
   <good_aria_locator_example>
@@ -59,15 +61,22 @@ export const locatorRule = dedent`
   If <aria> section is not present or element is not found there, fall back to CSS/XPath locators from <html> section.
 
   Stick to semantic attributes like role, aria-*, id, class, name, data-id, etc.
-  Avoid locators with names of frontend frameworks (vue, react, angular, ember, etc) and numbers in them
-  Avoid locators that seem to have generated ids or class names (long random numbers, uuids, etc)
-  Avoid href-based locators like a[href="..."] or //a[@href="..."] - URLs change frequently, use text or ARIA instead
+  Avoid IDs that follow framework auto-generation patterns (these change on every page load):
+  - Ember: #ember123, #ember-basic-dropdown-content-ember456
+  - React: #react-select-*, #rc-*
+  - Angular: #ng-*, #cdk-*, #mat-*
+  - Vue: data-v-* attributes
+  Avoid locators that seem to have generated ids or class names (long random numbers, uuids, hashes, etc)
+  Prefer text or ARIA locators over href-based ones. But for icon-only links with no accessible name, use:
+  - Partial href match: a[href*="settings"], a[href*="requirements"] (use path segments, not full URLs)
+  - SVG icon class: a:has(svg.md-icon-cog), button:has(svg.md-icon-plus) (target the SVG class inside the link/button)
+  Avoid full absolute href like a[href="/projects/imr_manual12/settings"] — use generic path segments instead
   Avoid CSS framework utility classes as containers (Tailwind: flex, grid, space-x-*, justify-*, items-*, w-*, h-*, p-*, m-*, etc; Bootstrap: col-*, row, d-flex, etc)
   Prefer semantic class names, roles, data attributes, or element hierarchy for containers
 
   <css_rules>
-  CSS selectors must use semantic attributes and :contains("text") for disambiguation.
-  ALLOWED: :contains("text") pseudo class for matching elements by visible text.
+  CSS selectors must use semantic attributes and :has-text("text") for disambiguation.
+  ALLOWED: :has-text("text") pseudo class for matching elements by visible text.
   DO NOT use positional pseudo classes in CSS: :nth-of-type, :nth-child, :first, :last, :nth-last-child, :only-child, :only-of-type, :empty, :not, etc.
   </css_rules>
 
@@ -83,20 +92,19 @@ export const locatorRule = dedent`
     '[aria-label="Name"]'
     'form#user_form input[name="name"]'
     '#content-top #user_name'
-    '#content-bottom #user_name'
     '#content-top form input[name="name"]'
-    '//html/body//[@id="content-top"]//form//input[@name="name"]'
-    '//html/body//[@id="content-bottom"]//form//input[@name="name"]'
+    'a.nav-item[href*="settings"]' // icon-only link matched by partial href
+    'a.nav-item:has(svg.md-icon-cog)' // icon-only link matched by SVG icon class
+    '//nav//a[contains(@href,"settings")]' // XPath for icon-only nav link
   </good locator example>
 
   <bad locator example>
-    'a.filter-tab:nth-of-type(1)' // WRONG: positional in CSS, use :contains("Manual") instead
+    'a.filter-tab:nth-of-type(1)' // WRONG: positional in CSS, use :has-text("Manual") instead
     '//a[contains(@class,"filter-tab") and contains(@class,"active")]' // WRONG: XPath repeats CSS approach, use positional //a[contains(@class,"filter-tab")][1]
     '//table//tbody/tr[1]//button[contains(@onclick,'fn()')]' // onclick is not semantic attribute
     '//html/body/vue-button-123' // vue-framework specific locator
     'link "New Template"'  // WRONG: malformed string, use {"role":"link","text":"New Template"}
-    'a[href="/login"]' // WRONG: href changes, use {"role":"link","text":"Login"} instead
-    '//a[@href="/settings"]' // WRONG: href-based, use text or ARIA locator
+    'a[href="/projects/imr_manual12/settings"]' // WRONG: full absolute href, use a[href*="settings"] instead
   </bad locator example>
 
   HTML locators must be valid JS strings
@@ -116,7 +124,7 @@ export const uiMapTableFormat = dedent`
   - CSS: Unique CSS selector (relative to section container)
   - XPath: Unique XPath selector (relative to section container)
 
-  IMPORTANT: Each section must have a "Section Container CSS Locator" before the table.
+  IMPORTANT: Each section must have a blockquote container before the table: > Container: '.css-selector'
   This container is used for disambiguation when clicking elements.
 
   NEVER use different column layouts. This format is required for all UI maps.
@@ -139,19 +147,21 @@ export const sectionUiMapRule = dedent`
     * NEVER use empty text like { role: 'button', text: '' }
   - CSS/XPath: Relative to section container, must be unique within section
 
-  IMPORTANT: Each section must have "Section Container CSS Locator: '...'" before the table.
+  IMPORTANT: Each section must have a blockquote container before the table: > Container: '.css-selector'
   This container is critical for disambiguation when interacting with elements.
   </ui_map_rule>
 `;
 
 export const screenshotUiMapRule = dedent`
   <ui_map_rule>
-  List UI elements as a markdown table WITH Coordinates and Color columns:
-  | Element | ARIA | CSS | XPath | Coordinates | Color |
-  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' | (400, 300) | green |
-  | 'Delete' | { role: 'button', text: 'Delete' } | 'button.delete' | '//button[@class="delete"]' | (500, 300) | red |
-  | 'Close icon' | { role: 'button', text: 'Close' } | 'button.close-btn' | '//button[@aria-label="Close"]' | (500, 100) | - |
-  | 'Menu toggle' | - | 'button.hamburger' | '//button[contains(@class,"hamburger")]' | (30, 25) | - |
+  List UI elements as a markdown table WITH Coordinates, Color, and Icon columns:
+  | Element | ARIA | CSS | XPath | Coordinates | Color | Icon |
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' | (400, 300) | green | - |
+  | 'Delete' | { role: 'button', text: 'Delete' } | 'button.delete' | '//button[@class="delete"]' | (500, 300) | red | trash |
+  | 'Settings dropdown' | { role: 'button', text: 'Settings' } | 'button.settings' | '//button[@class="settings"]' | (500, 100) | - | down-chevron |
+  | 'Menu toggle' | - | 'button.hamburger' | '//button[contains(@class,"hamburger")]' | (30, 25) | - | hamburger |
+  | 'Add item' | { role: 'button', text: 'Add' } | 'button.add' | '//button[@class="add"]' | (200, 50) | blue | plus |
+  | 'Close' | { role: 'button', text: 'Close' } | 'button.close' | '//button[@class="close"]' | (600, 10) | - | x |
 
   - ARIA: Valid JSON with role and text keys (NOT "name"): { role: 'button', text: 'Save' }
     * For icon buttons: use aria-label or title attribute value as text
@@ -165,9 +175,13 @@ export const screenshotUiMapRule = dedent`
     * red = danger/delete, green = success/confirm, blue = primary, orange = warning
     * Use "-" when element has no distinctive accent color (same color as other elements)
     * Most elements should be "-" — only highlight elements that stand out visually
+  - Icon: one-word description of the visual icon on the element, "-" if no icon
+    * For directional icons use direction + shape: down-chevron, down-arrow, right-caret, up-arrow
+    * Common icons: plus, x, trash, pencil, gear, search, hamburger, ellipsis, star, check, filter
+    * Use "-" for text-only elements with no icon
 
-  IMPORTANT: Each section must have "Section Container CSS Locator: '...'" before the table.
-  CRITICAL: Coordinates and Color columns must be IN the table, NOT in a separate section.
+  IMPORTANT: Each section must have a blockquote container before the table: > Container: '.css-selector'
+  CRITICAL: Coordinates, Color, and Icon columns must be IN the table, NOT in a separate section.
   </ui_map_rule>
 `;
 
@@ -280,9 +294,9 @@ export const listElementRule = dedent`
   When multiple elements share the same structure (e.g., list items, tabs, table rows, menu links):
   Each element MUST have a UNIQUE CSS and XPath selector. CSS and XPath must use DIFFERENT disambiguation strategies:
 
-  CSS — use :contains("text") to disambiguate by visible text content:
-    a.filter-tab:contains("Manual"), a.filter-tab:contains("Automated")
-    a.node-link:contains("IMR_API_Tests"), a.node-link:contains("IMR_UI_Tests")
+  CSS — use :has-text("text") to disambiguate by visible text content:
+    a.filter-tab:has-text("Manual"), a.filter-tab:has-text("Automated")
+    a.node-link:has-text("IMR_API_Tests"), a.node-link:has-text("IMR_UI_Tests")
 
   XPath — use positional indices [1], [2], [3] to disambiguate by position:
     //nav//a[contains(@class,"filter-tab")][1], //nav//a[contains(@class,"filter-tab")][2]

@@ -87,6 +87,17 @@ export class Pilot implements Agent {
       `);
     }
 
+    if (text.includes('ATTACH_SUMMARY')) {
+      const summary = await this.researcher.summary(currentState);
+      if (summary) {
+        parts.push(dedent`
+          <page_summary>
+          ${summary}
+          </page_summary>
+        `);
+      }
+    }
+
     if (text.includes('ATTACH_UI_MAP')) {
       const uiMap = await this.researcher.research(currentState);
       if (uiMap) {
@@ -156,7 +167,7 @@ export class Pilot implements Agent {
       Response format:
       PROGRESS: <1 sentence assessment>
       ACTION: continue|alternative|visual|skip|reset|stop
-      CONTEXT: <list if needed: ATTACH_HTML, ATTACH_ARIA, ATTACH_UI_MAP>
+      CONTEXT: <list if needed: ATTACH_SUMMARY, ATTACH_HTML, ATTACH_ARIA, ATTACH_UI_MAP>
       NEXT: <specific instruction, 3-10 words>
 
       Only request context that would actually help. Don't request all context every time.

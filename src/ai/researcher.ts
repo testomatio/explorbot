@@ -6,24 +6,26 @@ import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
+import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
-import { collectInteractiveNodes, diffAriaSnapshots } from '../utils/aria.ts';
-import { extractCodeBlocks } from '../utils/code-extractor.ts';
+import { diffAriaSnapshots, parseAriaLocator } from '../utils/aria.ts';
 import { isErrorPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
-import { type HtmlDiffResult, htmlDiff } from '../utils/html-diff.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
-import { loop } from '../utils/loop.ts';
-import { findTableRaw } from '../utils/markdown-parser.ts';
-import { type ResearchSection, parseResearchSections, rebuildSectionMarkdown } from '../utils/research-parser.ts';
+import { findTableLineRange, parseSections } from '../utils/markdown-parser.ts';
+import { mdq } from '../utils/markdown-query.ts';
+import { type ResearchSection, extractContainerFromBlockquote, parseResearchSections, rebuildSectionMarkdown } from '../utils/research-parser.ts';
+import { EXPANDABLE_ICON_DESCRIPTIONS, EXPANDABLE_XPATHS, buildClickableXPath, cssToAncestorXPath, evaluateXPath } from '../utils/xpath.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
+import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.js';
-import { listElementRule, locatorRule as generalLocatorRuleText, multipleLocatorRule, screenshotUiMapRule, sectionUiMapRule, uiMapTableFormat } from './rules.js';
+import { locatorRule as generalLocatorRuleText, listElementRule, screenshotUiMapRule, uiMapTableFormat } from './rules.js';
+import { TaskAgent } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:researcher');
 
@@ -36,11 +38,17 @@ const POSSIBLE_SECTIONS = {
   menu: 'navigation area',
 };
 
-const DEFAULT_STOP_WORDS = ['close', 'cancel', 'dismiss', 'exit', 'back', 'cookie', 'consent', 'gdpr', 'privacy', 'accept all', 'decline all', 'reject all', 'share', 'print', 'download'];
+export interface Locator {
+  section: string;
+  container: string | null;
+  element: string;
+  type: 'css' | 'xpath' | 'aria';
+  locator: string;
+  valid: boolean | null;
+}
 
-const CLICKABLE_ROLES = new Set(['button', 'link', 'menuitem', 'tab', 'option', 'combobox', 'switch', 'checkbox', 'radio', 'slider', 'textbox', 'treeitem']);
-
-export class Researcher implements Agent {
+export class Researcher extends TaskAgent implements Agent {
+  protected readonly ACTION_TOOLS = ['click'];
   emoji = '🔍';
   private static researchCache: Record<string, string> = {};
   private static researchCacheTimestamps: Record<string, number> = {};
@@ -53,11 +61,28 @@ export class Researcher implements Agent {
   private hooksRunner: HooksRunner;
 
   constructor(explorer: Explorer, provider: Provider) {
+    super();
     this.explorer = explorer;
     this.provider = provider;
     this.stateManager = explorer.getStateManager();
     this.experienceTracker = this.stateManager.getExperienceTracker();
     this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
+  }
+
+  protected getNavigator(): Navigator {
+    throw new Error('not implemented');
+  }
+
+  protected getExperienceTracker(): ExperienceTracker {
+    return this.experienceTracker;
+  }
+
+  protected getKnowledgeTracker(): KnowledgeTracker {
+    return this.explorer.getKnowledgeTracker();
+  }
+
+  protected getProvider(): Provider {
+    return this.provider;
   }
 
   static getCachedResearch(state: WebPageState): string {
@@ -90,9 +115,10 @@ export class Researcher implements Agent {
     `;
   }
 
-  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean } = {}): Promise<string> {
-    Stats.researches++;
-    const { screenshot = false, force = false, deep = false, data = false } = opts;
+  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; _retriesLeft?: number } = {}): Promise<string> {
+    const { screenshot = false, force = false, deep = false, data = false, fix = true } = opts;
+    const maxRetries = (this.explorer.getConfig().ai?.agents?.researcher as any)?.retries ?? 2;
+    const retriesLeft = opts._retriesLeft ?? maxRetries;
     this.actionResult = ActionResult.fromState(state);
     const stateHash = state.hash || this.actionResult.getStateHash();
     const outputDir = stateHash ? ConfigParser.getInstance().getOutputDir() : null;
@@ -100,12 +126,14 @@ export class Researcher implements Agent {
     const researchFile = stateHash && researchDir ? join(researchDir, `${stateHash}.md`) : null;
 
     if (!force && stateHash) {
-      const cached = this.getCachedResearchResult(stateHash);
+      const cached = Researcher.getCachedResearch({ hash: stateHash } as WebPageState);
       if (cached) {
         debugLog('Previous research result found');
         return cached;
       }
     }
+
+    Stats.researches++;
 
     const sessionName = `researcher: ${state.url}`;
     return Observability.run(sessionName, { tags: ['researcher'], sessionId: stateHash }, async () => {
@@ -134,33 +162,87 @@ export class Researcher implements Agent {
 
       const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
 
-      if (this.hasScreenshotToAnalyze) {
-        this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
-      }
-
       const prompt = await this.buildResearchPrompt();
       conversation.addUserText(prompt);
-
-      if (this.hasScreenshotToAnalyze) {
-        const screenshotAnalysis = await this.analyzeScreenshotForUIElements();
-        if (screenshotAnalysis) {
-          this.addScreenshotPrompt(conversation, screenshotAnalysis);
-        }
-      }
 
       const result = await this.provider.invokeConversation(conversation);
       if (!result) throw new Error('Failed to get response from provider');
 
-      const { response } = result;
+      let researchText = result.response.text;
 
-      let researchText = response.text;
+      debugLog(`Original research response length: ${researchText.length} chars`);
 
-      researchText = await this.validateAndCorrectResearch(researchText);
+      let locators = this.getLocators(researchText);
+      debugLog(`Extracted ${locators.length} locators from research`);
+
+      if (locators.length === 0) {
+        tag('substep').log('No locators parsed from response, re-prompting for correct format...');
+        conversation.addUserText(dedent`
+          Your response could not be parsed. Each section MUST be a separate ## heading with its own table:
+
+          ## Section Name
+
+          Description.
+
+          > Container: '.css-selector'
+
+          | Element | ARIA | CSS | XPath |
+          |---------|------|-----|-------|
+          | 'Element Name' | { role: 'button', text: 'Click' } | '.btn' | '//button' |
+
+          Please restructure your response following this format.
+        `);
+        const retryResult = await this.provider.invokeConversation(conversation);
+        if (retryResult?.response?.text) {
+          researchText = retryResult.response.text;
+          locators = this.getLocators(researchText);
+          debugLog(`Re-prompt extracted ${locators.length} locators`);
+        }
+      }
+
+      const brokenContainers = await this.testContainers(locators);
+      if (brokenContainers.length > 0) {
+        for (const loc of locators) {
+          if (loc.container && brokenContainers.includes(loc.container)) {
+            loc.container = null;
+          }
+        }
+      }
+
+      if (this.hasScreenshotToAnalyze) {
+        this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
+        const screenshotAnalysis = await this.analyzeScreenshotForUIElements();
+        if (screenshotAnalysis) {
+          this.addScreenshotPrompt(conversation, screenshotAnalysis);
+          const screenshotResult = await this.provider.invokeConversation(conversation);
+          if (screenshotResult?.response?.text) {
+            researchText = screenshotResult.response.text;
+            locators = this.getLocators(researchText);
+          }
+        }
+      }
+
+      await this.testLocators(locators);
+
+      const brokenRatio = locators.length > 0 ? locators.filter((l) => l.valid === false).length / locators.length : 0;
+      if (brokenRatio > 0.8 && retriesLeft > 0) {
+        tag('warn').log(`${Math.round(brokenRatio * 100)}% locators broken, waiting 3s and retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
+        await new Promise((r) => setTimeout(r, 3000));
+        return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
+      }
+
+      researchText = this.cleanBrokenLocators(researchText, locators);
+
+      const needsFix = locators.some((l) => l.valid === false);
+      if (fix && needsFix) {
+        researchText = await this.fixBrokenLocators(researchText, locators, { brokenContainers });
+        const reLocators = this.getLocators(researchText);
+        await this.testLocators(reLocators);
+        researchText = this.cleanBrokenLocators(researchText, reLocators);
+      }
 
       if (deep) {
-        researchText += await this.performDeepAnalysis(conversation, state, state.html ?? '');
-        researchText += '\n\n## Interactive Elements Exploration\n\n';
-        researchText += await this.performInteractiveExploration(state, { maxElements: 50 });
+        researchText += await this.performDeepAnalysis(state, researchText);
       }
 
       if (data) {
@@ -182,56 +264,168 @@ export class Researcher implements Agent {
 
       tag('multiline').log(researchText);
       tag('success').log(`Research complete! ${researchText.length} characters`);
+      tag('substep').log(`Research file saved to: ${researchFile}`);
 
       await this.hooksRunner.runAfterHook('researcher', state.url);
       return researchText;
     });
   }
 
-  async validateAndCorrectResearch(researchText: string): Promise<string> {
+  getLocators(researchText: string): Locator[] {
     const sections = parseResearchSections(researchText);
-    if (sections.length === 0) return researchText;
+    const locators: Locator[] = [];
+    for (const section of sections) {
+      for (const el of section.elements) {
+        if (el.css) locators.push({ section: section.name, container: section.containerCss, element: el.name, type: 'css', locator: el.css, valid: null });
+        if (el.xpath) locators.push({ section: section.name, container: section.containerCss, element: el.name, type: 'xpath', locator: el.xpath, valid: null });
+        if (el.aria && /\w/.test(el.aria.text)) locators.push({ section: section.name, container: section.containerCss, element: el.name, type: 'aria', locator: `{ role: '${el.aria.role}', text: '${el.aria.text}' }`, valid: null });
+      }
+    }
+    return locators;
+  }
 
-    const page = this.explorer.playwrightHelper.page;
-    const { invalidSections, totalLocators, validLocators } = await this.validateSections(sections, page);
+  async testContainers(locators: Locator[]): Promise<string[]> {
+    const containers = [...new Set(locators.map((l) => l.container).filter(Boolean))] as string[];
+    if (containers.length === 0) return [];
 
-    const invalidCount = totalLocators - validLocators;
-    tag('substep').log(`Validated ${totalLocators} locators: ${validLocators} valid, ${invalidCount} invalid across ${sections.length} sections`);
+    const broken: string[] = [];
+    for (const container of containers) {
+      const valid = await this.explorer.hasPlaywrightLocator((page) => page.locator(container), { contents: true });
+      if (!valid) {
+        debugLog(`BROKEN container: "${container}"`);
+        broken.push(container);
+      }
+    }
 
-    if (invalidSections.length === 0) return researchText;
+    if (broken.length > 0) {
+      tag('substep').log(`Containers: ${containers.length - broken.length} valid, ${broken.length} broken`);
+    }
+    return broken;
+  }
 
-    let correctedText = researchText;
+  async testLocators(locators: Locator[]): Promise<Locator[]> {
+    const broken: Locator[] = [];
 
-    for (const { section, invalidElements } of invalidSections) {
-      tag('substep').log(`Correcting ${invalidElements.length} elements in "${section.name}"...`);
+    for (const loc of locators) {
+      loc.valid = await this.explorer.hasPlaywrightLocator((page) => {
+        const base = loc.container ? page.locator(loc.container) : page;
+        if (loc.type === 'aria') {
+          const parsed = parseAriaLocator(loc.locator);
+          if (!parsed) return page.locator('__invalid__');
+          return base.getByRole(parsed.role as any, { name: parsed.text });
+        }
+        const converted = loc.locator.replace(/:contains\(/g, ':has-text(');
+        if (converted !== loc.locator) {
+          loc.locator = converted;
+        }
+        return base.locator(loc.locator);
+      });
+      if (!loc.valid) {
+        debugLog(`BROKEN [${loc.section}] ${loc.type} "${loc.element}": ${loc.locator}`);
+        broken.push(loc);
+      }
+    }
+
+    tag('substep').log(`Validated ${locators.length} locators: ${locators.length - broken.length} valid, ${broken.length} broken`);
+    return broken;
+  }
+
+  private cleanBrokenLocators(researchText: string, locators: Locator[]): string {
+    const byElement = new Map<string, Locator[]>();
+    for (const loc of locators) {
+      const key = `${loc.section}::${loc.element}`;
+      const group = byElement.get(key) || [];
+      group.push(loc);
+      byElement.set(key, group);
+    }
+
+    const sectionsToUpdate = new Set<string>();
+    for (const group of byElement.values()) {
+      if (!group.some((l) => l.valid === false)) continue;
+      if (!group.some((l) => l.valid === true)) continue;
+      sectionsToUpdate.add(group[0].section);
+      for (const loc of group) {
+        if (loc.valid === false) loc.valid = null;
+      }
+    }
+
+    let result = researchText;
+    for (const section of sectionsToUpdate) {
+      result = this.updateSection(
+        result,
+        section,
+        locators.filter((l) => l.section === section)
+      );
+    }
+    return result;
+  }
+
+  async fixBrokenLocators(researchText: string, locators: Locator[], opts: { brokenContainers?: string[] } = {}): Promise<string> {
+    const { brokenContainers = [] } = opts;
+    const broken = locators.filter((l) => l.valid === false);
+    if (broken.length === 0) return researchText;
+
+    const bySection = new Map<string, Locator[]>();
+    for (const loc of broken) {
+      const list = bySection.get(loc.section) || [];
+      list.push(loc);
+      bySection.set(loc.section, list);
+    }
+
+    let result = researchText;
+
+    for (const [name, sectionBroken] of bySection) {
+      const section = parseResearchSections(result).find((s) => s.name === name);
+      const originalContainer = section?.containerCss;
+      const containerBroken = !originalContainer || brokenContainers.includes(originalContainer);
 
       let sectionHtml = '';
-      try {
-        sectionHtml = await page.locator(section.containerCss!).innerHTML();
-      } catch {
-        debugLog(`Failed to get innerHTML for section "${section.name}"`);
-        continue;
+
+      if (!containerBroken) {
+        const hasContent = await this.explorer.hasPlaywrightLocator((page) => page.locator(originalContainer), {
+          contents: true,
+          success: async (loc) => {
+            sectionHtml = await loc.innerHTML();
+          },
+        });
+        if (!hasContent) {
+          debugLog(`Container "${originalContainer}" for "${name}" has no content, treating as broken`);
+        }
       }
 
-      const invalidList = invalidElements.map((inv) => `- ${inv.element}: ${inv.issues.join('; ')}`).join('\n');
+      tag('substep').log(`Correcting ${containerBroken ? 'container + ' : ''}${sectionBroken.length} locators in "${name}"...`);
 
+      const invalidList = sectionBroken.map((b) => `- ${b.element}: ${b.type} '${b.locator}'`).join('\n');
       const model = this.provider.getModelForAgent('researcher');
+
+      const needsContainerFix = containerBroken || !sectionHtml;
+      let containerInstruction: string;
+      if (needsContainerFix) {
+        sectionHtml = await this.actionResult!.combinedHtml();
+        containerInstruction = dedent`
+          Section: "${name}"
+          IMPORTANT: The container CSS '${originalContainer || 'none'}' is INCORRECT — it does not match any element on the page.
+          You MUST provide the correct container CSS that wraps this section.
+          Include it as: > Container: '<correct_css>'
+        `;
+      } else {
+        containerInstruction = `Section: "${name}" (Container: \`${originalContainer}\`)`;
+      }
+
       const prompt = dedent`
         You are fixing broken CSS/XPath locators in a UI map.
 
-        Section: "${section.name}" (Container: \`${section.containerCss}\`)
+        ${containerInstruction}
 
         These elements have invalid locators:
         ${invalidList}
 
-        Here is the section's HTML context:
         <section_html>
         ${sectionHtml}
         </section_html>
 
-        Fix ONLY the broken locators. Return a corrected markdown table with the same columns.
-        Keep all valid locators and elements unchanged.
-        CSS selectors must be relative to the section container.
+        Fix ONLY the broken locators. Return a corrected markdown section with table.
+        ${needsContainerFix ? '' : 'CSS selectors must be relative to the section container.'}
         XPath selectors must be absolute (start with //).
 
         ${generalLocatorRuleText}
@@ -240,245 +434,441 @@ export class Researcher implements Agent {
       `;
 
       try {
-        const result = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.validateAndCorrect' });
+        const aiResult = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.fixBrokenLocators' });
 
-        const correctedSections = parseResearchSections(`## ${section.name}\n\n${result.text}`);
+        const correctedSections = parseResearchSections(`## ${name}\n\n${aiResult.text}`);
         if (correctedSections.length === 0 || correctedSections[0].elements.length === 0) continue;
 
-        const correctedElements = correctedSections[0].elements;
-        const correctedByName = new Map(correctedElements.map((el) => [el.name, el]));
+        if (needsContainerFix && correctedSections[0].containerCss) {
+          const newContainer = correctedSections[0].containerCss;
+          debugLog(`Fixed container for "${name}": '${originalContainer}' → '${newContainer}'`);
+          if (originalContainer) {
+            const escaped = originalContainer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            result = result.replace(new RegExp(`^>\\s*Container:\\s*['"\`]?${escaped}['"\`]?`, 'm'), `> Container: '${newContainer}'`);
+          }
+        }
 
-        for (const el of section.elements) {
-          const fix = correctedByName.get(el.name);
+        const correctedByName = new Map(correctedSections[0].elements.map((el) => [el.name, el]));
+
+        for (const loc of sectionBroken) {
+          const fix = correctedByName.get(loc.element);
           if (!fix) continue;
-          if (fix.css) el.css = fix.css;
-          if (fix.xpath) el.xpath = fix.xpath;
-          if (fix.aria) el.aria = fix.aria;
+          if (loc.type === 'css' && fix.css) {
+            loc.locator = fix.css;
+            loc.valid = null;
+          }
+          if (loc.type === 'xpath' && fix.xpath) {
+            loc.locator = fix.xpath;
+            loc.valid = null;
+          }
+          if (loc.type === 'aria' && fix.aria) {
+            loc.locator = `{ role: '${fix.aria.role}', text: '${fix.aria.text}' }`;
+            loc.valid = null;
+          }
         }
 
-        correctedText = this.rebuildSectionInText(correctedText, section);
+        const allSectionLocators = locators.filter((l) => l.section === name);
+        result = this.updateSection(result, name, allSectionLocators);
       } catch (err) {
-        tag('substep').log(`AI correction failed for "${section.name}": ${err instanceof Error ? err.message : err}`);
+        tag('substep').log(`AI correction failed for "${name}": ${err instanceof Error ? err.message : err}`);
       }
     }
 
-    const revalidated = await this.validateSections(parseResearchSections(correctedText), page);
-    let nullified = 0;
-    for (const { section, invalidElements } of revalidated.invalidSections) {
-      const invalidNames = new Set(invalidElements.map((inv) => inv.element));
-      for (const el of section.elements) {
-        if (!invalidNames.has(el.name)) continue;
-        const elIssues = invalidElements.find((inv) => inv.element === el.name)!.issues;
-        for (const issue of elIssues) {
-          if (issue.startsWith('css')) {
-            el.css = null;
-            nullified++;
-          }
-          if (issue.startsWith('xpath')) {
-            el.xpath = null;
-            nullified++;
-          }
-          if (issue.startsWith('aria')) {
-            el.aria = null;
-            nullified++;
-          }
-        }
-      }
-      correctedText = this.rebuildSectionInText(correctedText, section);
-    }
-
-    if (nullified > 0) {
-      tag('substep').log(`Removed ${nullified} still-broken locators from output`);
-    }
-
-    return correctedText;
+    return result;
   }
 
-  private async validateSections(sections: ResearchSection[], page: any) {
-    interface InvalidElement {
-      element: string;
-      issues: string[];
-    }
-    interface InvalidSection {
-      section: ResearchSection;
-      invalidElements: InvalidElement[];
-    }
+  private updateSection(researchText: string, sectionName: string, locators: Locator[]): string {
+    const sections = parseResearchSections(researchText);
+    const section = sections.find((s) => s.name === sectionName);
+    if (!section) return researchText;
 
-    const invalidSections: InvalidSection[] = [];
-    let totalLocators = 0;
-    let validLocators = 0;
-
-    for (const section of sections) {
-      if (!section.containerCss || section.elements.length === 0) continue;
-
-      let containerCount = 0;
-      try {
-        containerCount = await page.locator(section.containerCss).count();
-      } catch {
-        debugLog(`Invalid container selector '${section.containerCss}' for "${section.name}"`);
-      }
-
-      if (containerCount !== 1) {
-        tag('substep').log(`Skipping section "${section.name}" — container '${section.containerCss}' matched ${containerCount} elements`);
-        continue;
-      }
-
-      const sectionInvalid: InvalidElement[] = [];
-
-      for (const el of section.elements) {
-        const issues: string[] = [];
-
-        const locatorsToCheck: Array<{ label: string; locator: () => any }> = [];
-        if (el.css) locatorsToCheck.push({ label: `css '${el.css}'`, locator: () => buildCssLocator(page, section.containerCss!, el.css!) });
-        if (el.xpath) locatorsToCheck.push({ label: `xpath '${el.xpath}'`, locator: () => page.locator(el.xpath!) });
-        if (el.aria) locatorsToCheck.push({ label: `aria {role:'${el.aria.role}', text:'${el.aria.text}'}`, locator: () => page.locator(section.containerCss!).getByRole(el.aria!.role as any, { name: el.aria!.text }) });
-
-        for (const { label, locator } of locatorsToCheck) {
-          totalLocators++;
-          try {
-            const count = await locator().count();
-            if (count === 1) {
-              validLocators++;
-            } else {
-              issues.push(`${label}: ${count} matches`);
-            }
-          } catch {
-            issues.push(`${label}: invalid selector`);
-          }
-        }
-
-        if (issues.length > 0) {
-          sectionInvalid.push({ element: el.name, issues });
-        }
-      }
-
-      if (sectionInvalid.length > 0) {
-        invalidSections.push({ section, invalidElements: sectionInvalid });
+    for (const el of section.elements) {
+      const elLocators = locators.filter((l) => l.element === el.name);
+      for (const loc of elLocators) {
+        const value = loc.valid === false ? null : loc.locator || null;
+        if (loc.type === 'css') el.css = value;
+        if (loc.type === 'xpath') el.xpath = value;
+        if (loc.type === 'aria') el.aria = value ? parseAriaLocator(value) : null;
       }
     }
 
-    return { invalidSections, totalLocators, validLocators };
+    return this.rebuildSectionInText(researchText, section);
   }
 
   private rebuildSectionInText(text: string, section: ResearchSection): string {
     const newTable = rebuildSectionMarkdown(section);
-    const oldTable = findTableRaw(section.rawMarkdown);
-    if (!oldTable) return text;
-    const updatedSection = section.rawMarkdown.replace(oldTable, newTable);
-    const result = text.replace(section.rawMarkdown, updatedSection);
-    section.rawMarkdown = updatedSection;
+    const tableRange = findTableLineRange(section.rawMarkdown);
+    if (!tableRange) return text;
+
+    const sectionStart = text.indexOf(section.rawMarkdown);
+    if (sectionStart === -1) return text;
+
+    const linesBeforeSection = text.slice(0, sectionStart).split('\n').length - 1;
+    const tableStartLine = linesBeforeSection + tableRange.start;
+    const tableEndLine = linesBeforeSection + tableRange.end;
+
+    const lines = text.split('\n');
+    const result = [...lines.slice(0, tableStartLine), ...newTable.trimEnd().split('\n'), ...lines.slice(tableEndLine)].join('\n');
+
+    const sectionLines = section.rawMarkdown.split('\n');
+    section.rawMarkdown = [...sectionLines.slice(0, tableRange.start), ...newTable.trimEnd().split('\n'), ...sectionLines.slice(tableRange.end)].join('\n');
+
     return result;
   }
 
-  private async performDeepAnalysis(conversation: Conversation, state: WebPageState, initialHtml: string): Promise<string> {
-    debugLog('Starting DOM expansion loop to find hidden elements');
+  private async discoverExpandableElements(dataContainers: string[] = []): Promise<ExpandableElement[]> {
+    const freshState = await this.explorer.createAction().capturePageState();
+    const html = freshState.html;
+    if (!html) return [];
 
-    const htmlConfig = ConfigParser.getInstance().getConfig().html;
-    let additionalResearch = '';
-    let previousHtml = initialHtml;
+    const exclusions = dataContainers.map((css) => cssToAncestorXPath(css)).filter(Boolean) as string[];
+    const exclusionPredicate = exclusions.length > 0 ? `[not(ancestor::*[${exclusions.join(' or ')}])]` : '';
 
-    await loop(
-      async ({ stop }) => {
-        conversation.addUserText(this.buildHiddenElementsPrompt());
+    const combined = EXPANDABLE_XPATHS.map((x) => `(${x}${exclusionPredicate})`).join(' | ');
+    const result = await evaluateXPath(html, combined);
+    if (result.error || result.matches.length === 0) return [];
 
-        const hiddenElementsResult = await this.provider.invokeConversation(conversation);
+    const elements: ExpandableElement[] = result.matches
+      .filter((m) => m.tag !== 'a')
+      .map((m) => ({
+        xpath: m.absoluteXPath,
+        clickXPath: buildClickableXPath(m),
+        description: `<${m.tag} ${['role', 'id', 'class', 'aria-label']
+          .map((k) => (m.allAttrs[k] ? `${k}="${m.allAttrs[k].slice(0, 40)}"` : ''))
+          .filter(Boolean)
+          .join(' ')}> text="${m.text.slice(0, 40)}"`,
+      }));
 
-        const codeBlocks = extractCodeBlocks(hiddenElementsResult?.response?.text || '');
-
-        if (codeBlocks.length === 0) {
-          debugLog('No hidden elements found to expand, stopping loop');
-          stop();
-          return;
-        }
-
-        debugLog(`Found ${codeBlocks.length} hidden elements to expand`);
-
-        previousHtml = state.html ?? '';
-
-        await loop(
-          async ({ stop }) => {
-            const codeBlock = codeBlocks.shift()!;
-            if (!codeBlock) {
-              stop();
-              return;
-            }
-
-            const action = this.explorer.createAction();
-            tag('step').log(codeBlock || 'No code block');
-            await action.attempt(codeBlock, 'expand hidden elements');
-
-            const currentState = action.getActionResult();
-            if (!currentState) {
-              debugLog('No current state found, continuing to next action');
-              return;
-            }
-
-            if (!currentState.isMatchedBy({ url: `${state.url}*` })) {
-              additionalResearch += `\n\nWhen ${codeBlock} original page changed to ${currentState.url}`;
-              tag('step').log(`We moved away from the original page, returning to ${state.url}`);
-              await this.navigateTo(state.url);
-              return;
-            }
-
-            const htmlChanges = await htmlDiff(previousHtml, currentState.html ?? '', htmlConfig);
-            if (htmlChanges.added.length === 0) {
-              debugLog('No new HTML nodes added');
-              additionalResearch += `\n\nWhen ${codeBlock} page did not change`;
-              return;
-            }
-
-            tag('step').log('DOM changed, analyzing new HTML nodes...');
-
-            conversation.addUserText(this.buildSubtreePrompt(codeBlock, htmlChanges));
-            const htmlFragmentResult = await this.provider.invokeConversation(conversation);
-
-            additionalResearch += dedent`\n\n---
-            <expanded_ui_map>
-
-              When executed <code>${codeBlock}</code>:
-              ${htmlFragmentResult?.response?.text}
-            </expanded_ui_map>`;
-
-            await this.cancelInUi();
-
-            if (state.ariaSnapshot && currentState.ariaSnapshot && state.ariaSnapshot === currentState.ariaSnapshot) {
-              debugLog('Aria snapshots match, staying on current page');
-              return;
-            }
-
-            await this.navigateTo(state.url);
-            stop();
-          },
-          {
-            maxAttempts: codeBlocks.length,
-            observability: {
-              agent: 'researcher',
-            },
-            catch: async (error) => {
-              debugLog(error);
-            },
-          }
-        );
-      },
-      {
-        maxAttempts: ConfigParser.getInstance().getConfig().action?.retries || 3,
-        observability: {
-          agent: 'researcher',
-        },
-        catch: async ({ error, stop }) => {
-          debugLog(error);
-          stop();
-        },
+    const clickXPathIndex = new Map<string, number>();
+    for (const el of elements) {
+      const idx = (clickXPathIndex.get(el.clickXPath) || 0) + 1;
+      clickXPathIndex.set(el.clickXPath, idx);
+      if (idx > 1) el.clickXPath = `(${el.clickXPath})[${idx}]`;
+    }
+    for (const [xpath, count] of clickXPathIndex) {
+      if (count > 1) {
+        const first = elements.find((el) => el.clickXPath === xpath);
+        if (first) first.clickXPath = `(${xpath})[1]`;
       }
+    }
+
+    debugLog(`Discovered ${elements.length} expandable elements`);
+    for (const el of elements) debugLog(`  -> ${el.description.slice(0, 80)}  click: ${el.clickXPath}`);
+
+    return elements;
+  }
+
+  private async discoverExpandableByScreenshot(state: WebPageState, alreadyFound: string[]): Promise<string[]> {
+    const actionResult = ActionResult.fromState(state);
+    const screenshot = actionResult.screenshot;
+    if (!screenshot) return [];
+
+    const alreadyList = alreadyFound.length > 0 ? `\nIgnore these elements already found:\n${alreadyFound.map((e, i) => `${i + 1}. ${e}`).join('\n')}` : '';
+
+    const iconList = EXPANDABLE_ICON_DESCRIPTIONS.map((d) => `- ${d}`).join('\n');
+
+    const prompt = dedent`
+      Find ALL small clickable icons on this page that could reveal hidden UI (dropdowns, menus, popups, expandable sections).
+
+      Look specifically for these icon types:
+      ${iconList}
+
+      Focus on icon-only buttons and small icons next to text labels.
+      Ignore regular text buttons, links, and navigation items.
+      ${alreadyList}
+
+      For each icon found, report on a separate line:
+      <description> at <x>X, <y>Y
+      where X and Y are integer pixel coordinates of the icon center.
+
+      If no expandable icons found, respond with "none".
+    `;
+
+    try {
+      const result = await this.provider.processImage(prompt, screenshot.toString('base64'));
+      const text = result.text || '';
+      if (text.toLowerCase().includes('none')) return [];
+
+      const elements: string[] = [];
+      const coordRegex = /(.+?)\s+at\s+(\d+)X,\s*(\d+)Y/gi;
+      let match: RegExpExecArray | null;
+      while ((match = coordRegex.exec(text)) !== null) {
+        const desc = match[1].trim();
+        const x = match[2];
+        const y = match[3];
+        elements.push(`[VISUAL] ${desc} at (${x}, ${y})  clickXY: I.clickXY(${x}, ${y})`);
+      }
+      return elements;
+    } catch (err) {
+      debugLog(`Screenshot expandable discovery failed: ${err instanceof Error ? err.message : err}`);
+      return [];
+    }
+  }
+
+  private async performDeepAnalysis(state: WebPageState, researchText: string): Promise<string> {
+    debugLog('Starting deep analysis (3-stage)');
+    const expandedSections: string[] = [];
+    const navigationLinks: Array<{ code: string; url: string }> = [];
+
+    const allSections = parseSections(researchText);
+    const dataContainerCandidates: string[] = [];
+    for (const s of allSections) {
+      const container = extractContainerFromBlockquote(s.rawMarkdown);
+      if (!container) continue;
+      const isDataSection = s.name.toLowerCase().includes('data') || !findTableLineRange(s.rawMarkdown);
+      if (isDataSection) dataContainerCandidates.push(container);
+    }
+    const dataContainers: string[] = [];
+    for (const css of dataContainerCandidates) {
+      const valid = await this.explorer.hasPlaywrightLocator((page) => page.locator(css), { contents: true });
+      if (valid) {
+        dataContainers.push(css);
+      } else {
+        debugLog(`Data container "${css}" not found on page, skipping exclusion`);
+      }
+    }
+    if (dataContainers.length > 0) debugLog(`Data containers to exclude: ${dataContainers.join(', ')}`);
+
+    const discoveredElements = await this.discoverExpandableElements(dataContainers);
+    debugLog(`Stage 1: clicking ${discoveredElements.length} XPath-discovered elements`);
+    await this.clickExpandableElements(
+      discoveredElements.map((el) => ({ locator: el.clickXPath, fallbackLocator: el.xpath, description: el.description })),
+      state,
+      expandedSections,
+      navigationLinks
     );
 
-    return additionalResearch;
+    debugLog(`Stage 2: asking AI for missed elements (sections so far: ${expandedSections.length})`);
+    const aiElements = await this.discoverMissedElements(state, expandedSections);
+    if (aiElements.length > 0) {
+      debugLog(`Stage 2: clicking ${aiElements.length} AI-discovered elements`);
+      await this.clickExpandableElements(aiElements, state, expandedSections, navigationLinks);
+    }
+
+    if (this.provider.hasVision()) {
+      debugLog(`Stage 3: asking screenshot for missed icons (sections so far: ${expandedSections.length})`);
+      const visualElements = await this.discoverExpandableByScreenshot(
+        state,
+        expandedSections.map((s) => s.slice(0, 100))
+      );
+      if (visualElements.length > 0) {
+        debugLog(`Stage 3: clicking ${visualElements.length} visual elements`);
+        await this.clickExpandableElements(
+          visualElements.map((v) => {
+            const coordMatch = v.match(/I\.clickXY\((\d+),\s*(\d+)\)/);
+            return { locator: coordMatch ? `I.clickXY(${coordMatch[1]}, ${coordMatch[2]})` : v, description: v };
+          }),
+          state,
+          expandedSections,
+          navigationLinks
+        );
+      }
+    }
+
+    debugLog(`Deep analysis complete. Sections: ${expandedSections.length}, navigation links: ${navigationLinks.length}`);
+
+    let result = '';
+    if (expandedSections.length > 0) {
+      result += `\n\n# Extended Research\n\n${expandedSections.join('\n\n---\n\n')}`;
+    }
+    if (navigationLinks.length > 0) {
+      const links = navigationLinks.map((l) => `- \`${l.code}\` opens ${l.url}`).join('\n');
+      result += `\n\n## Navigation Links\n\n${links}`;
+    }
+    return result;
+  }
+
+  private async clickExpandableElements(elements: Array<{ locator: string; fallbackLocator?: string; description: string }>, state: WebPageState, expandedSections: string[], navigationLinks: Array<{ code: string; url: string }>): Promise<void> {
+    for (const el of elements) {
+      debugLog(`Clicking: ${el.description.slice(0, 100)}`);
+      const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);
+
+      const escaped = el.locator.replace(/'/g, "\\'");
+      const isCodeceptCmd = el.locator.startsWith('I.');
+      const clickSucceeded = await this.tryClickStrategies(isCodeceptCmd ? el.locator : escaped, el.fallbackLocator, isCodeceptCmd);
+      if (!clickSucceeded) {
+        debugLog(`Click failed: ${el.description.slice(0, 80)}`);
+        continue;
+      }
+
+      await new Promise((r) => setTimeout(r, 500));
+      await this.explorer.createAction().capturePageState();
+      const currentState = this.stateManager.getCurrentState()!;
+      const currAR = ActionResult.fromState(currentState);
+      const toolResult = await currAR.toToolResult(previousState, el.description);
+      const pageDiff = toolResult.pageDiff;
+
+      const clickCode = isCodeceptCmd ? el.locator : `I.click('${escaped}')`;
+
+      if (pageDiff?.urlChanged) {
+        debugLog(`Click navigated to ${pageDiff.currentUrl}`);
+        navigationLinks.push({ code: clickCode, url: pageDiff.currentUrl });
+        await this.navigateTo(state.url);
+        continue;
+      }
+
+      if (!pageDiff?.ariaChanges && !pageDiff?.htmlChanges) {
+        debugLog(`No changes from: ${el.description.slice(0, 80)}`);
+        try {
+          await this.explorer.createAction().execute("I.pressKey('Escape')");
+          await this.explorer.createAction().execute("I.click('//body')");
+        } catch {
+          /* dismiss attempt */
+        }
+        continue;
+      }
+
+      const sectionMarkdown = await this.analyzeExpandedClick({
+        code: clickCode,
+        explanation: el.description,
+        ariaChanges: pageDiff.ariaChanges || '',
+        htmlChanges: pageDiff.htmlChanges || '',
+      });
+      if (sectionMarkdown) {
+        expandedSections.push(sectionMarkdown);
+        debugLog(`Captured section from: ${el.description.slice(0, 80)}`);
+      }
+
+      await this.cancelInUi();
+    }
+  }
+
+  private async tryClickStrategies(locator: string, fallbackLocator?: string, isCodeceptCmd?: boolean): Promise<boolean> {
+    const tryClick = async (code: string): Promise<{ ok: boolean; error?: string }> => {
+      const action = this.explorer.createAction();
+      try {
+        await action.execute(code);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    };
+
+    if (isCodeceptCmd) return (await tryClick(locator)).ok;
+
+    const locators = [locator, ...(fallbackLocator ? [fallbackLocator.replace(/'/g, "\\'")] : [])];
+    for (const loc of locators) {
+      const result = await tryClick(`I.click('${loc}')`);
+      if (result.ok) return true;
+      if (!result.error?.includes('interactable')) continue;
+      debugLog(`Element not interactable, using forceClick: ${loc.slice(0, 60)}`);
+      const force = await tryClick(`I.forceClick('${loc}')`);
+      if (!force.ok) continue;
+      await new Promise((r) => setTimeout(r, 100));
+      return true;
+    }
+    return false;
+  }
+
+  private async discoverMissedElements(state: WebPageState, alreadySections: string[]): Promise<Array<{ locator: string; description: string }>> {
+    const ariaSnapshot = state.ariaSnapshot || '';
+    const alreadyList = alreadySections.length > 0 ? alreadySections.map((s) => s.split('\n')[0]).join('\n') : 'none';
+
+    const prompt = dedent`
+      Analyze this ARIA tree and find expandable elements we may have missed.
+      We already expanded these sections:
+      ${alreadyList}
+
+      <page_aria>
+      ${ariaSnapshot}
+      </page_aria>
+
+      Find elements that could reveal hidden UI (dropdowns, modals, popups, accordions, tabs).
+      Look for:
+      - Buttons with aria-haspopup or aria-expanded="false"
+      - Icon-only buttons (no text label)
+      - Ellipsis/more/dots buttons
+      - Chevron/arrow elements indicating expandable sections
+      - Tab elements that load different content
+
+      For each element, respond with ONE line:
+      <ARIA locator as JSON> | <short description>
+
+      Example:
+      {"role":"button","text":"More options"} | ellipsis menu in toolbar
+      {"role":"button","text":""} | unnamed button near search
+
+      If nothing missed, respond with "none".
+    `;
+
+    const model = this.provider.getModelForAgent('researcher');
+    const result = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.discoverMissed' });
+    const text = result.text || '';
+    if (text.toLowerCase().includes('none')) return [];
+
+    const elements: Array<{ locator: string; description: string }> = [];
+    for (const line of text.split('\n')) {
+      const match = line.match(/(\{[^}]+\})\s*\|\s*(.+)/);
+      if (!match) continue;
+      const ariaLocator = match[1].trim();
+      const textMatch = ariaLocator.match(/"text"\s*:\s*"([^"]*)"/);
+      if (textMatch && !/\w/.test(textMatch[1])) continue;
+      const description = match[2].trim();
+      elements.push({ locator: `I.click('${ariaLocator}')`, description });
+    }
+    return elements;
+  }
+
+  private async analyzeExpandedClick(diff: { code: string; explanation: string; ariaChanges: string; htmlChanges: string }): Promise<string | null> {
+    const prompt = dedent`
+      A click on "${diff.explanation}" (\`${diff.code}\`) revealed new UI content.
+      Analyze the changes and produce a UI map section.
+
+      ARIA changes:
+      ${diff.ariaChanges || 'none'}
+
+      HTML changes:
+      ${diff.htmlChanges || 'none'}
+
+      Respond with a SINGLE section in this format:
+
+      ### <Short descriptive name>
+
+      Action:
+
+      \`\`\`js
+      ${diff.code}
+      \`\`\`
+
+      > Container: \`<css-selector>\`
+
+      <One sentence about what appeared>
+
+      | Element | ARIA | CSS | XPath |
+      |---------|------|-----|-------|
+      | 'Name' | { role: 'x', text: 'y' } | - | - |
+
+      Rules:
+      - Container CSS must NOT use dynamic IDs (ember*, react*, data-id)
+      - Use ARIA locators for elements inside the container
+      - Set CSS and XPath to \`-\` for elements inside expandable containers
+      - If changes are minor (no new interactive elements), respond with "No meaningful expansion."
+      - If the revealed content is purely data items (list of records, entries, rows) with no new UI controls, respond with "No meaningful expansion."
+    `;
+
+    const model = this.provider.getModelForAgent('researcher');
+    const result = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.analyzeExpandedClick' });
+    const text = result.text || '';
+
+    if (text.toLowerCase().includes('no meaningful expansion')) return null;
+
+    const sections = parseResearchSections(text);
+    if (sections.length === 0) return null;
+
+    const section = sections[0];
+    if (!section.containerCss) return null;
+    if (/(?:#ember|#react|#__next)\d+/.test(section.containerCss)) {
+      debugLog(`Expanded section "${section.name}" has dynamic ID container, skipping`);
+      return null;
+    }
+
+    return section.rawMarkdown;
   }
 
   private async ensureNavigated(url: string, screenshot?: boolean): Promise<void> {
     if (!this.actionResult) {
       debugLog('No action result, navigating to URL');
-      await this.navigateTo(url);
+      await this.explorer.visit(url);
       this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot });
       return;
     }
@@ -502,7 +892,7 @@ export class Researcher implements Agent {
       tag('step').log('Navigating to URL...');
     }
 
-    await this.navigateTo(url);
+    await this.explorer.visit(url);
     this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot ?? false });
   }
 
@@ -522,7 +912,7 @@ export class Researcher implements Agent {
       - Ignore purely decorative sidebars, footer-only links, and external links.
       - Detect layout patterns: list/detail split, 2-pane, or 3-pane layouts.
       - If multiple elements match, pick the element inside the most relevant section and closest to recent UI context.
-      - UI map table must include Container, ARIA, CSS, and XPath for every element.
+      - UI map table must include ARIA, CSS, and XPath for every element.
       - ARIA locator must be JSON with role and text keys (NOT "name").
       </rules>
 
@@ -549,20 +939,16 @@ export class Researcher implements Agent {
 
       Explanation of this section and its purpose.
 
-      Section Container CSS Locator: '...'
-
-      Elements:
+      > Container: '.container-css-selector'
 
       | Element | ARIA | CSS | XPath |
       </section_format>
       <section_example>
       ## Focus Section
 
-      Login modal dialog that appears as an overlay when user clicks the login button. This modal contains a form for user authentication with email and password fields, along with submit and cancel actions.
+      Login modal dialog that appears as an overlay when user clicks the login button.
 
-      Section Container CSS Locator: '[role="dialog"]'
-
-      Elements:
+      > Container: '[role="dialog"]'
 
       | Element | ARIA | CSS | XPath |
       | 'Email' | { role: 'textbox', text: 'Email' } | 'input[name="email"]' | '//input[@name="email"]' |
@@ -649,113 +1035,21 @@ export class Researcher implements Agent {
       - At minimum include Main section if no other sections are clear.
       - For pane sections, explain the relationship between panes.
       - Each section must include only its relevant UI elements.   
-      - Follow <section_format> and provided <section_example> when describing sections:   
+      - Follow <section_format> and provided <section_example> when describing sections.
+      - When a section contains a list of similar data items (records, entities, rows — content that varies by data, not by app UI), output it as a Data section with NO table.
+      - Data section heading MUST be a level-2 heading (##) that starts exactly with "Data:" — for example: "## Data: Suites List". Do NOT use ### or add section numbers.
+      - Data sections must NOT include a UI map table. Only include the container and a brief summary line.
+      - Example data section:
+
+      ## Data: Suites List
+
+      > Container: \`.suites-list-content\`
+
+      Suite items, 13 items. List of test suites with expand/collapse buttons.
       </output_rules>
 
 
     `;
-  }
-
-  private buildHiddenElementsPrompt(): string {
-    return dedent`
-    <task>
-    Analyze the current page state and identify hidden or collapsible elements that should be expanded to discover more UI elements.
-    Review previous conversation to find which hidden elements were already expanded.
-    Do not repeat already expanded elements.
-    If all hidden elements were already processed, return empty string.
-    Pick exactly one UI element that must be expanded and provide codeblocks to expand it.
-    </task>
-
-    <rules>
-    Look for hidden content or collapsible elements that should be expanded:
-    - Dropdowns, tabs, accordions, hamburger menus
-    - Look for links that open subpages (pages that have same path but different hash/query params/subpath)
-    - "More/show" toggles, expandable sections
-    - Hidden navigation menus, sidebar toggles
-    - Modal triggers, popup buttons
-    - Collapsed content areas
-    
-    Provide multiple code blocks using different locator strategies.
-    Use only I.click() from CodeceptJS to expand elements.
-    Each code block should be wrapped in \`\`\`js blocks.
-    If there are no hidden elements that can be expanded, return empty string.
-    </rules>
-
-    <locators>
-    ${multipleLocatorRule}
-    ${generalLocatorRuleText}
-    </locators>
-
-    If you find a navbar toggle button, provide multiple approaches:
-    <example_output>
-
-    Expand navbar menu (simple locator):
-    \`\`\`js
-    I.click('.navbar-toggler');
-    \`\`\`
-
-    Expand navbar menu (more specific):
-    \`\`\`js
-    I.click('//nav[@class="navbar"]//button[@class="navbar-toggler"]');
-    \`\`\`
-
-    Expand navbar menu (by aria-label):
-    \`\`\`js
-    I.click('[aria-label="Toggle navigation"]');
-    \`\`\`
-
-    </example_output>
-    </task>
-  `;
-  }
-
-  private buildSubtreePrompt(action: string, htmlChanges: HtmlDiffResult): string {
-    return dedent`
-      To better understand the page, I performed the following action:
-      ${action}
-
-      The page changed and here is new HTML nodes:
-
-    <context>
-      The page changed and here is new HTML nodes:
-
-    <subtree>
-      ${htmlChanges.subtree}
-    </subtree>
-    </context>
-
-    <task>
-    Now analyze this page fragment and provide a UI map report in markdown format.
-    Include only new findings you see in the new HTML nodes.
-    List all interactive elements in the new HTML nodes.
-    Do not repeat any sections from the previous report.
-    If you see similar elements, group them into one item.
-    Explain the action ${action} was performed, and what appeared on the page.
-    </task>
-
-    ${generalLocatorRuleText}
-
-    ${uiMapTableFormat}
-
-    ${listElementRule}
-
-    <output_format>
-      <action description>
-      <UI elements table>
-    </output_format>
-
-    <example_output>
-    When opening dropdown at .dropdown by clicking it, a submenu appeared.
-    This submenu is for interacting with {item name}.
-
-    Section Container CSS Locator: '.dropdown-menu'
-
-    | Element | ARIA | CSS | XPath |
-    |---------|------|-----|-------|
-    | 'Folder' | { role: 'menuitem', text: 'Folder' } | 'li:nth-child(1) button' | '//li[1]//button' |
-    | 'Suite' | { role: 'menuitem', text: 'Suite' } | 'li:nth-child(2) button' | '//li[2]//button' |
-    </example_output>
-      `;
   }
 
   async textContent(state: WebPageState): Promise<string> {
@@ -863,15 +1157,15 @@ export class Researcher implements Agent {
         ${screenshotUiMapRule}
 
         Example:
-        | Element | ARIA | CSS | XPath | Coordinates | Color |
-        | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button.btn-signin' | '//button[@class="btn-signin"]' | (450, 320) | blue |
-        | 'Delete' | { role: 'button', text: 'Delete' } | 'button.btn-delete' | '//button[@class="btn-delete"]' | (500, 320) | red |
-        | 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' | '//input[@id="email"]' | (300, 200) | - |
-        | 'Settings' | { role: 'link', text: 'Settings' } | 'a.settings-link' | '//a[@class="settings-link"]' | (850, 50) | - |
-        | 'Menu Toggle' | - | '.hamburger-btn' | '//button[contains(@class,"hamburger-btn")]' | (30, 25) | - |
+        | Element | ARIA | CSS | XPath | Coordinates | Color | Icon |
+        | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button.btn-signin' | '//button[@class="btn-signin"]' | (450, 320) | blue | - |
+        | 'Delete' | { role: 'button', text: 'Delete' } | 'button.btn-delete' | '//button[@class="btn-delete"]' | (500, 320) | red | trash |
+        | 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' | '//input[@id="email"]' | (300, 200) | - | - |
+        | 'Settings' | { role: 'link', text: 'Settings' } | 'a.settings-link' | '//a[@class="settings-link"]' | (850, 50) | - | gear |
+        | 'Menu Toggle' | - | '.hamburger-btn' | '//button[contains(@class,"hamburger-btn")]' | (30, 25) | - | hamburger |
 
         Group elements by type (Buttons, Links, Inputs, etc.) within each section.
-        CRITICAL: Include Coordinates for EVERY element in the table. Do NOT create a separate Coordinates section.
+        CRITICAL: Include Coordinates and Icon for EVERY element in the table. Do NOT create separate sections for them.
         </element_format>
 
         <output_format>
@@ -884,12 +1178,11 @@ export class Researcher implements Agent {
 
         Explanation
 
-        Section Container CSS Locator: '...'
+        > Container: '.container-css-selector'
 
-        #### Section UI Map:
-        | Element | ARIA | CSS | XPath | Coordinates | Color |
-        | 'Element Name' | { role: 'button', text: '...' } | 'css' | '//button[@type="button"]' | (X, Y) | blue |
-        | 'Another Element' | { role: 'link', text: '...' } | 'a.link' | '//a[@class="link"]' | (X, Y) | - |
+        | Element | ARIA | CSS | XPath | Coordinates | Color | Icon |
+        | 'Element Name' | { role: 'button', text: '...' } | 'css' | '//button[@type="button"]' | (X, Y) | blue | - |
+        | 'Dropdown' | { role: 'button', text: '...' } | 'button.dropdown' | '//button[@class="dropdown"]' | (X, Y) | - | down-chevron |
 
         </output_format>
 
@@ -1052,33 +1345,6 @@ export class Researcher implements Agent {
     return result.text;
   }
 
-  private getCachedResearchResult(stateHash: string): string {
-    const ttl = 60 * 60 * 1000;
-    const now = Date.now();
-    const timestamp = Researcher.researchCacheTimestamps[stateHash];
-
-    if (timestamp && now - timestamp <= ttl) {
-      const cached = Researcher.researchCache[stateHash];
-      if (cached) return cached;
-    }
-
-    const outputDir = ConfigParser.getInstance().getOutputDir();
-    const researchDir = join(outputDir, 'research');
-    const researchFile = join(researchDir, `${stateHash}.md`);
-
-    if (!existsSync(researchFile)) return '';
-
-    const stats = statSync(researchFile);
-    if (now - stats.mtimeMs > ttl) return '';
-
-    const cached = readFileSync(researchFile, 'utf8');
-    if (!cached) return '';
-
-    Researcher.researchCache[stateHash] = cached;
-    Researcher.researchCacheTimestamps[stateHash] = now;
-    return cached;
-  }
-
   private extractSummary(researchText: string): string {
     const summaryMatch = researchText.match(/## Summary\s*\n+([\s\S]*?)(?=\n##|$)/i);
     if (!summaryMatch) return '';
@@ -1087,15 +1353,49 @@ export class Researcher implements Agent {
     return firstLine.slice(0, 200);
   }
 
+  async summary(state: WebPageState, opts: { allowNewResearch?: boolean } = {}): Promise<string> {
+    const { allowNewResearch = false } = opts;
+    let researchText = Researcher.getCachedResearch(state);
+    if (!researchText && allowNewResearch) {
+      researchText = await this.research(state);
+    }
+    if (!researchText) return '';
+    return this.extractBrief(researchText);
+  }
+
+  private extractBrief(researchText: string): string {
+    return mdq(researchText)
+      .query('section2')
+      .each()
+      .map((s) => {
+        const heading = s.query('h2').text().trim();
+        const paragraph = s.query('paragraph[0]').text().trim();
+        if (!paragraph) return heading;
+        return `${heading}\n${paragraph}`;
+      })
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
   private async navigateTo(url: string): Promise<void> {
     const action = this.explorer.createAction();
     await action.execute(`I.amOnPage("${url}")`);
-    await action.expect(`I.seeInCurrentUrl('${url}')`);
   }
 
   private async cancelInUi() {
+    const beforeAria = this.stateManager.getCurrentState()?.ariaSnapshot || null;
     const action = this.explorer.createAction();
+
     await action.execute(`I.click('//body')`);
+    if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null)) return;
+
+    await action.execute(`I.pressKey('Escape')`);
+    if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null)) return;
+
+    const url = this.stateManager.getCurrentState()?.url;
+    if (url) {
+      await action.execute(`I.amOnPage("${url.split('?')[0]}")`);
+    }
   }
 
   private addScreenshotPrompt(conversation: Conversation, screenshotAnalysis: string): void {
@@ -1105,220 +1405,23 @@ export class Researcher implements Agent {
       </screenshot_analysis>
 
       IMPORTANT: Merge screenshot analysis INTO your UI map tables:
-      1. ADD Coordinates and Color columns to ALL UI map tables
+      1. ADD Coordinates, Color, and Icon columns to ALL UI map tables
       2. For each element, include coordinates (X, Y) from screenshot analysis
       3. For each element, include accent color if it has a distinctive color (red, green, blue, etc.)
-      4. Use "-" for elements not visible in screenshot or without distinctive color
-      5. DO NOT create separate Coordinates or Color sections - they must be IN the tables
+      4. For each element, include one-word icon description if the element has a visual icon (down-chevron, plus, hamburger, ellipsis, gear, trash, etc.)
+      5. Use "-" for elements not visible in screenshot, without distinctive color, or without icon
+      6. DO NOT create separate Coordinates, Color, or Icon sections - they must be IN the tables
 
       Final table format must be:
-      | Element | ARIA | CSS | XPath | Coordinates | Color |
+      | Element | ARIA | CSS | XPath | Coordinates | Color | Icon |
 
       Also incorporate any visual elements not captured in HTML (icons, images, visual indicators).
     `);
   }
-
-  private getResearcherConfig() {
-    return ConfigParser.getInstance().getConfig().ai?.agents?.researcher;
-  }
-
-  private matchesStopWord(name: string, stopWords: string[]): boolean {
-    const normalized = name.toLowerCase().trim();
-    return stopWords.some((word) => {
-      const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`\\b${escaped}\\b`, 'i').test(normalized);
-    });
-  }
-
-  private async getExcludingSelector(role: string, name: string, excludeSelectors: string[]): Promise<string | null> {
-    if (excludeSelectors.length === 0) return null;
-
-    try {
-      const locator = { role, text: name };
-      const webElement = await this.explorer.actor.grabWebElement(locator);
-
-      for (const selector of excludeSelectors) {
-        const isInside = await webElement.element.evaluate((el: Element, sel: string) => el.closest(sel) !== null, selector);
-        if (isInside) return selector;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  async performInteractiveExploration(state: WebPageState, opts: { maxElements?: number } = {}): Promise<string> {
-    const config = this.getResearcherConfig();
-    const stopWords = config?.stopWords ?? DEFAULT_STOP_WORDS;
-    const excludeSelectors = config?.excludeSelectors || [];
-    const includeSelectors = config?.includeSelectors || [];
-    const maxElements = opts.maxElements ?? config?.maxElementsToExplore ?? 10;
-
-    const interactiveNodes = collectInteractiveNodes(state.ariaSnapshot || '');
-    const originalUrl = state.url;
-
-    const candidates = interactiveNodes.filter((node) => {
-      const role = String(node.role || '').toLowerCase();
-      const name = String(node.name || '').trim();
-
-      if (!CLICKABLE_ROLES.has(role)) {
-        debugLog(`Skipping "${name}" - role "${role}" not clickable`);
-        return false;
-      }
-
-      if (name.length > 80) {
-        debugLog(`Skipping "${name.slice(0, 30)}..." - name too long`);
-        return false;
-      }
-
-      if (this.matchesStopWord(name, stopWords)) {
-        debugLog(`Skipping "${name}" - matches stop word`);
-        return false;
-      }
-
-      return true;
-    });
-
-    const targets: Array<Record<string, unknown>> = [];
-    for (const node of candidates) {
-      const role = String(node.role || '');
-      const name = String(node.name || '').trim();
-
-      const excludedBy = await this.getExcludingSelector(role, name, excludeSelectors);
-      if (excludedBy) {
-        debugLog(`Skipping "${name}" - inside excluded container "${excludedBy}"`);
-        continue;
-      }
-
-      targets.push(node);
-      if (targets.length >= maxElements) break;
-    }
-
-    debugLog(`${candidates.length} candidates → ${targets.length} targets after filtering`);
-
-    const results: Array<{ element: string; role: string; result: string }> = [];
-
-    for (let i = 0; i < targets.length; i++) {
-      const node = targets[i];
-      const role = String(node.role || '');
-      const name = String(node.name || '').trim();
-
-      const label = name || `unnamed ${role}`;
-      tag('substep').log(`[${i + 1}/${targets.length}] Exploring: "${label}" (${role})`);
-
-      const action = this.explorer.createAction();
-      const beforeState = await action.capturePageState({});
-
-      try {
-        const clickCommand = name ? `I.click({ role: '${role}', text: '${name.replace(/'/g, "\\'")}' })` : `I.click({ role: '${role}' })`;
-        await action.execute(clickCommand);
-        const afterState = await action.capturePageState({});
-
-        const resultDescription = this.detectChangeResult(beforeState, afterState, originalUrl);
-        results.push({ element: label, role, result: resultDescription });
-
-        await this.restoreState(afterState, originalUrl);
-      } catch (error) {
-        debugLog(`Failed to explore ${label}:`, error);
-        results.push({ element: label, role, result: 'click failed' });
-      }
-    }
-
-    if (includeSelectors.length > 0) {
-      await this.exploreIncludeSelectors(includeSelectors, results, originalUrl);
-    }
-
-    return this.formatResultsTable(results);
-  }
-
-  private detectChangeResult(before: ActionResult, after: ActionResult, originalUrl: string): string {
-    if (after.url !== before.url) {
-      if (!after.url.startsWith(originalUrl.split('?')[0])) {
-        return `navigated to ${after.url}`;
-      }
-      return `URL changed to ${after.url}`;
-    }
-
-    const ariaDiff = diffAriaSnapshots(before.ariaSnapshot || '', after.ariaSnapshot || '');
-    if (ariaDiff) {
-      if (ariaDiff.includes('dialog') || ariaDiff.includes('modal')) {
-        return 'opened dialog/modal';
-      }
-      if (ariaDiff.includes('menu')) {
-        return 'opened menu';
-      }
-      return 'UI changed';
-    }
-
-    return 'no visible change';
-  }
-
-  private async restoreState(afterState: ActionResult, originalUrl: string): Promise<void> {
-    if (afterState.url !== originalUrl) {
-      await this.navigateTo(originalUrl);
-      return;
-    }
-
-    const action = this.explorer.createAction();
-    await action.execute('I.pressKey("Escape")');
-    const stateAfterEscape = await action.capturePageState({});
-    const ariaDiff = diffAriaSnapshots(afterState.ariaSnapshot || '', stateAfterEscape.ariaSnapshot || '');
-    if (!ariaDiff) {
-      await this.cancelInUi();
-    }
-  }
-
-  private async exploreIncludeSelectors(includeSelectors: string[], results: Array<{ element: string; role: string; result: string }>, originalUrl: string): Promise<void> {
-    for (const containerSelector of includeSelectors) {
-      const buttonsSelector = `${containerSelector} button, ${containerSelector} [role="button"], ${containerSelector} a`;
-
-      const elements = await this.explorer.actor.grabWebElements(buttonsSelector);
-
-      for (const webElement of elements) {
-        const name = await webElement.getText();
-        if (!name?.trim()) continue;
-
-        tag('substep').log(`Exploring (include): "${name.trim()}" in ${containerSelector}`);
-
-        const action = this.explorer.createAction();
-        const beforeState = await action.capturePageState({});
-
-        try {
-          await action.execute(`I.click("${name.trim()}", "${containerSelector}")`);
-          const afterState = await action.capturePageState({});
-
-          const resultDescription = this.detectChangeResult(beforeState, afterState, originalUrl);
-          results.push({ element: name.trim(), role: 'button', result: resultDescription });
-
-          await this.restoreState(afterState, originalUrl);
-        } catch (error) {
-          debugLog(`Failed to explore ${name}:`, error);
-        }
-      }
-    }
-  }
-
-  private formatResultsTable(results: Array<{ element: string; role: string; result: string }>): string {
-    if (results.length === 0) {
-      return 'No interactive elements were explored.';
-    }
-
-    const lines = ['| Element | Role | Result |', '|---------|------|--------|'];
-    for (const r of results) {
-      lines.push(`| ${r.element} | ${r.role} | ${r.result} |`);
-    }
-    return lines.join('\n');
-  }
 }
 
-function parseContainsCss(css: string): { baseSelector: string; text: string } | null {
-  const match = css.match(/^(.*?):contains\(["']([^"']+)["']\)(.*)$/);
-  if (!match) return null;
-  return { baseSelector: (match[1] + match[3]).trim(), text: match[2] };
-}
-
-function buildCssLocator(page: any, containerCss: string, css: string) {
-  const parsed = parseContainsCss(css);
-  if (!parsed) return page.locator(`${containerCss} ${css}`);
-  return page.locator(`${containerCss} ${parsed.baseSelector}`).filter({ hasText: parsed.text });
+interface ExpandableElement {
+  xpath: string;
+  clickXPath: string;
+  description: string;
 }

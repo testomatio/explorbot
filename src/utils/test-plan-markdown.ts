@@ -25,6 +25,7 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
     }
 
     if (line.startsWith('<!-- test')) {
+      currentTest = null;
       const priorityMatch = line.match(/priority:\s*(\w+)/);
       priority = (priorityMatch?.[1] as 'high' | 'medium' | 'low' | 'unknown') || 'unknown';
       continue;

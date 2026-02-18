@@ -57,8 +57,11 @@ Avoid repetetive code patterns
 Avoid ternary operators!
 Avoid creating extra functions that were not explicitly set
 Use dedent when formatting prompts
+Put types into the end of file
+Introduce new types and interfaces only for module-to-module collaboration, do not add types when dealing inside one module
 
 DUPLICATING CODE IS A SIN YOU WILL BURN IN ROBOT HELL FOR THAT! Always look if this code was already wirtten and doesn't need to be reintroduced again
+RUN code deduplicaiton agent after each major change
 
 ## Separation of Concerns
 
@@ -68,6 +71,7 @@ Follow separation of concerns principle when implementing new features:
 - shared logic for html/aria should be added to corresponding files in util/ dir
 - TUI and tsx should contain only logic of TUI interaction, all business logic must be moved to corresponding agents
 - tools only contain tool definitions, result parsing, etc
+- avoid using `And` in a function name, if you use it probably you need 2 functions 
 
 ## Architecture Overview
 
@@ -410,6 +414,8 @@ explorbot start /login           # start at /login path
 explorbot sail /dashboard        # alias for start
 explorbot start --config ./custom-config.js
 explorbot start --verbose        # or --debug
+explorbot start --session        # persist session to output/session.json
+explorbot start --session auth.json  # custom session file
 ```
 
 ### Generate test plan:
@@ -486,6 +492,7 @@ export default {
 
 Run `bun run format` after each code change
 After big changes run linter: `bun run lint:fix`
+Before each commit run `/changelog` skill to update CHANGELOG.md
 **Never use NodeJS**
 This application is only Bun
 

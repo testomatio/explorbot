@@ -108,3 +108,20 @@ export function findTableRaw(markdown: string): string | null {
   }
   return null;
 }
+
+export function findTableLineRange(markdown: string): { start: number; end: number } | null {
+  const lines = markdown.split('\n');
+  let start = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      if (start === -1) start = i;
+    } else if (start !== -1) {
+      return { start, end: i };
+    }
+  }
+
+  if (start !== -1) return { start, end: lines.length };
+  return null;
+}

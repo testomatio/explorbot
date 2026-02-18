@@ -23,6 +23,7 @@ interface CLIOptions {
   show?: boolean;
   headless?: boolean;
   incognito?: boolean;
+  session?: string | boolean;
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
@@ -34,7 +35,8 @@ function buildExplorBotOptions(from: string | undefined, options: CLIOptions): E
     show: options.show,
     headless: options.headless,
     incognito: options.incognito,
-  };
+    session: options.session === true ? 'output/session.json' : options.session,
+  } as ExplorBotOptions;
 }
 
 function addCommonOptions(cmd: Command): Command {
@@ -45,7 +47,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('-p, --path <path>', 'Working directory path')
     .option('-s, --show', 'Show browser window')
     .option('--headless', 'Run browser in headless mode')
-    .option('--incognito', 'Run without recording experiences');
+    .option('--incognito', 'Run without recording experiences')
+    .option('--session [file]', 'Save/restore browser session from file', 'output/session.json');
 }
 
 async function startTUI(explorBot: ExplorBot): Promise<void> {
@@ -118,33 +121,35 @@ addCommonOptions(program.command('explore [path]').description('Start web explor
   }
 });
 
-addCommonOptions(program.command('plan <path> [feature]').description('Generate test plan for a page and exit')).action(async (planPath, feature, options) => {
-  try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(planPath, options));
-    await explorBot.start();
+addCommonOptions(program.command('plan <path> [feature]').description('Generate test plan for a page and exit'))
+  .option('--fresh', 'Start planning from scratch, ignoring existing plan')
+  .action(async (planPath, feature, options) => {
+    try {
+      const explorBot = new ExplorBot(buildExplorBotOptions(planPath, options));
+      await explorBot.start();
 
-    await explorBot.visit(planPath);
-    await explorBot.plan(feature || undefined);
+      await explorBot.visit(planPath);
+      await explorBot.plan(feature || undefined, { fresh: options.fresh });
 
-    const plan = explorBot.getCurrentPlan();
-    if (!plan?.tests.length) {
-      console.error('No test scenarios generated.');
+      const plan = explorBot.getCurrentPlan();
+      if (!plan?.tests.length) {
+        console.error('No test scenarios generated.');
+        await explorBot.stop();
+        await showStatsAndExit(1);
+      }
+
+      console.log(`Plan ready with ${plan.tests.length} tests:`);
+      for (const test of plan.tests) {
+        console.log(`  - ${test.scenario}`);
+      }
+
       await explorBot.stop();
+      await showStatsAndExit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       await showStatsAndExit(1);
     }
-
-    console.log(`Plan ready with ${plan.tests.length} tests:`);
-    for (const test of plan.tests) {
-      console.log(`  - ${test.name}`);
-    }
-
-    await explorBot.stop();
-    await showStatsAndExit(0);
-  } catch (error) {
-    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await showStatsAndExit(1);
-  }
-});
+  });
 
 addCommonOptions(program.command('freesail [startUrl]').description('Continuously explore and navigate to new pages autonomously')).action(async (startUrl, options) => {
   const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
@@ -366,8 +371,10 @@ program
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-s, --show', 'Show browser window')
   .option('--headless', 'Run browser in headless mode')
+  .option('--session [file]', 'Save/restore browser session from file', 'output/session.json')
   .option('--data', 'Include data extraction in research')
   .option('--deep', 'Enable deep analysis (expand hidden elements)')
+  .option('--no-fix', 'Skip locator fix cycle (for debugging)')
   .action(async (url, options) => {
     try {
       const mainOptions: ExplorBotOptions = {
@@ -375,6 +382,7 @@ program
         config: options.config,
         show: options.show,
         headless: options.headless,
+        session: options.session === true ? 'output/session.json' : options.session,
       };
 
       const explorBot = new ExplorBot(mainOptions);
@@ -392,6 +400,7 @@ program
         force: true,
         data: options.data || false,
         deep: options.deep || false,
+        fix: options.fix !== false,
       });
 
       await explorBot.stop();
@@ -434,6 +443,7 @@ program
   .description('Print page context (URL, headings, knowledge, experience, interactive elements)')
   .option('-p, --path <path>', 'Working directory path')
   .option('-c, --config <path>', 'Path to configuration file')
+  .option('--session [file]', 'Save/restore browser session from file', 'output/session.json')
   .option('--full', 'Include HTML and all data')
   .option('--compact', 'Compact view with summaries')
   .option('--attached', 'Only auto-attached sections (default)')
@@ -443,6 +453,7 @@ program
         path: options.path,
         config: options.config,
         headless: true,
+        session: options.session === true ? 'output/session.json' : options.session,
       };
 
       const explorBot = new ExplorBot(mainOptions);
