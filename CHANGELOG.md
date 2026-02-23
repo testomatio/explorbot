@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-02-24
+
+### Changes
+- [Researcher] Page sections are now visually marked with dashed colored borders on screenshots, with a Legend box in the bottom-right corner mapping colors to section names
+- [Researcher] Missing elements are now detected and filled in before screenshot analysis, resulting in more complete visual data
+- [Researcher] Broken section containers are fixed by AI before taking the annotated screenshot, so more sections appear in the visual output
+- [Researcher] Screenshot file path is now printed after research completes for easy review
+- [Context] `context --visual` now shows section container borders and legend when cached research is available
+
 ## 2026-02-23
 
 ### New CLI Options

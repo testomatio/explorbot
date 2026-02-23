@@ -1,33 +1,7 @@
-import { type XPathMatch, buildClickableXPath, isDynamicId, isGenericClass } from './xpath.ts';
+import { type XPathMatch, buildClickableXPath, evaluateXPath, isDynamicId, isGenericClass } from './xpath.ts';
 
 const KEY_DISPLAY_ATTRS = ['role', 'id', 'class', 'aria-label'];
-
-function extractElementData(el: Element) {
-  const rect = el.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return null;
-
-  const allAttrs: Record<string, string> = {};
-  for (let i = 0; i < el.attributes.length; i++) {
-    const attr = el.attributes[i];
-    allAttrs[attr.name] = attr.value;
-  }
-
-  const iconEl = el.querySelector('svg[class], i[class]');
-  let iconClass: string | null = null;
-  if (iconEl) {
-    const cn = iconEl.className && typeof iconEl.className === 'object' ? (iconEl as SVGElement).className.baseVal : (iconEl.className as string);
-    iconClass = cn.split(/\s+/).find((c: string) => c.length > 2) || null;
-  }
-
-  return {
-    tag: el.tagName.toLowerCase(),
-    text: (el.textContent || '').trim().slice(0, 80),
-    allAttrs,
-    x: Math.round(rect.x + rect.width / 2),
-    y: Math.round(rect.y + rect.height / 2),
-    childIconClass: iconClass,
-  };
-}
+const KEY_ATTRS = ['role', 'aria-label', 'id', 'name', 'type', 'href'];
 
 type RawElementData = NonNullable<ReturnType<typeof extractElementData>>;
 
@@ -37,16 +11,18 @@ export class WebElement {
   clickXPath: string;
   attrs: Record<string, string>;
   text: string;
+  outerHTML: string;
   x: number;
   y: number;
   childIconClass: string | null;
 
-  constructor(data: { tag: string; xpath: string; clickXPath: string; attrs: Record<string, string>; text: string; x: number; y: number; childIconClass?: string | null }) {
+  constructor(data: { tag: string; xpath: string; clickXPath: string; attrs: Record<string, string>; text: string; outerHTML?: string; x: number; y: number; childIconClass?: string | null }) {
     this.tag = data.tag;
     this.xpath = data.xpath;
     this.clickXPath = data.clickXPath;
     this.attrs = data.attrs;
     this.text = data.text;
+    this.outerHTML = data.outerHTML || '';
     this.x = data.x;
     this.y = data.y;
     this.childIconClass = data.childIconClass || null;
@@ -57,12 +33,18 @@ export class WebElement {
     return `<${this.tag} ${attrParts.join(' ')}> text="${this.text.slice(0, 40)}"`;
   }
 
+  get keyAttrs(): string {
+    return KEY_ATTRS.map((k) => (this.attrs[k] ? `${k}="${this.attrs[k]}"` : ''))
+      .filter(Boolean)
+      .join(' ');
+  }
+
   get coordinates(): string {
     return `(${this.x}, ${this.y})`;
   }
 
   get eidx(): number | null {
-    const val = this.attrs['data-explorbot-eidx'];
+    const val = this.attrs['data-explorbot-eidx'] || this.attrs.eidx;
     return val ? Number.parseInt(val, 10) : null;
   }
 
@@ -97,6 +79,7 @@ export class WebElement {
       clickXPath: buildClickableXPath(m),
       attrs: m.allAttrs,
       text: m.text,
+      outerHTML: m.outerHTML,
       x: 0,
       y: 0,
     });
@@ -138,4 +121,37 @@ export class WebElement {
 
     return rawList.map((d) => WebElement.fromRawData(d));
   }
+
+  static async findByXPath(html: string, xpath: string): Promise<{ totalFound: number; elements: WebElement[]; error?: string }> {
+    const result = await evaluateXPath(html, xpath);
+    if (result.error) return { totalFound: 0, elements: [], error: result.error };
+    return { totalFound: result.totalFound, elements: result.matches.map((m) => WebElement.fromXPathMatch(m)) };
+  }
+}
+
+function extractElementData(el: Element) {
+  const rect = el.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return null;
+
+  const allAttrs: Record<string, string> = {};
+  for (let i = 0; i < el.attributes.length; i++) {
+    const attr = el.attributes[i];
+    allAttrs[attr.name] = attr.value;
+  }
+
+  const iconEl = el.querySelector('svg[class], i[class]');
+  let iconClass: string | null = null;
+  if (iconEl) {
+    const cn = iconEl.className && typeof iconEl.className === 'object' ? (iconEl as SVGElement).className.baseVal : (iconEl.className as string);
+    iconClass = cn.split(/\s+/).find((c: string) => c.length > 2) || null;
+  }
+
+  return {
+    tag: el.tagName.toLowerCase(),
+    text: (el.textContent || '').trim().slice(0, 80),
+    allAttrs,
+    x: Math.round(rect.x + rect.width / 2),
+    y: Math.round(rect.y + rect.height / 2),
+    childIconClass: iconClass,
+  };
 }

@@ -6,7 +6,7 @@ import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { createDebug } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
-import { evaluateXPath } from '../utils/xpath.ts';
+import { WebElement } from '../utils/web-element.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule, sectionUiMapRule } from './rules.ts';
@@ -825,7 +825,7 @@ export function createAgentTools({
           return failedToolResult('xpathCheck', 'No HTML available for current page state.');
         }
 
-        const result = await evaluateXPath(html, xpath);
+        const result = await WebElement.findByXPath(html, xpath);
 
         if (result.error) {
           return failedToolResult('xpathCheck', `XPath error: ${result.error}`, {
@@ -842,7 +842,7 @@ export function createAgentTools({
         const action = explorer.createAction();
         const visible = await action.attempt(`I.seeElement(${JSON.stringify(xpath)})`, 'xpathCheck visibility', false);
 
-        const matchesSummary = result.matches.map((m, i) => `${i + 1}. <${m.tag} ${m.attrs}> text="${m.text}" html: ${m.outerHTML}`).join('\n');
+        const matchesSummary = result.elements.map((el, i) => `${i + 1}. <${el.tag} ${el.keyAttrs}> text="${el.text}" html: ${el.outerHTML}`).join('\n');
 
         const visibilityNote = visible ? 'Element IS visible in browser — Tester can use this XPath as locator.' : 'Element exists in DOM but is NOT visible. May need scrolling, a click to reveal, or is hidden.';
 

@@ -107,6 +107,13 @@ export function parseResearchSections(markdown: string): ResearchSection[] {
     });
 }
 
+export function extractValidContainers(researchText: string, opts?: { exclude?: string[] }): Array<{ css: string; label: string }> {
+  const exclude = opts?.exclude || [];
+  return parseResearchSections(researchText)
+    .filter((s) => s.containerCss && !exclude.includes(s.containerCss))
+    .map((s) => ({ css: s.containerCss!, label: s.name }));
+}
+
 export function rebuildSectionMarkdown(section: ResearchSection): string {
   const hasCoordinates = section.elements.some((e) => e.coordinates);
   const hasColor = section.elements.some((e) => e.color);

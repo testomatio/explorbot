@@ -4,6 +4,7 @@ import { Researcher } from '../ai/researcher.js';
 import { ConfigParser } from '../config.js';
 import { type ContextData, type ContextMode, formatContextSummary } from '../utils/context-formatter.js';
 import { tag } from '../utils/logger.js';
+import { extractValidContainers } from '../utils/research-parser.js';
 import { BaseCommand } from './base-command.js';
 
 export class ContextCommand extends BaseCommand {
@@ -24,7 +25,9 @@ export class ContextCommand extends BaseCommand {
     await explorer.annotateElements();
 
     if (isVisual) {
-      await explorer.visuallyAnnotateElements();
+      const cachedResearch = Researcher.getCachedResearch(state);
+      const containers = cachedResearch ? extractValidContainers(cachedResearch) : [];
+      await explorer.visuallyAnnotateElements({ containers });
     }
 
     const actionResult = await explorer.createAction().capturePageState({ includeScreenshot: isVisual });

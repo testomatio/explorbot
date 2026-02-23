@@ -1,6 +1,5 @@
 export interface XPathMatch {
   tag: string;
-  attrs: string;
   outerHTML: string;
   text: string;
   absoluteXPath: string;
@@ -13,7 +12,6 @@ export interface XPathResult {
   error?: string;
 }
 
-const KEY_ATTRS = ['role', 'aria-label', 'id', 'name', 'type', 'href'];
 const MAX_MATCHES = 30;
 const MAX_OUTER_HTML = 200;
 const MAX_TEXT = 80;
@@ -47,16 +45,6 @@ function getAbsoluteXPath(el: Element): string {
     current = current.parentElement;
   }
   return `//${parts.join('/')}`;
-}
-
-function extractAttrs(el: Element): string {
-  return KEY_ATTRS.map((attr) => {
-    const val = el.getAttribute(attr);
-    if (!val) return null;
-    return `${attr}="${val}"`;
-  })
-    .filter(Boolean)
-    .join(' ');
 }
 
 export const isDynamicId = (id: string) => /^(ember|react|__next)\d|^\d+$/.test(id);
@@ -125,7 +113,6 @@ export async function evaluateXPath(html: string, xpath: string): Promise<XPathR
       }
       matches.push({
         tag: el.tagName.toLowerCase(),
-        attrs: extractAttrs(el),
         outerHTML: truncate(el.outerHTML, MAX_OUTER_HTML),
         text: truncate(el.textContent?.trim() || '', MAX_TEXT),
         absoluteXPath: getAbsoluteXPath(el),

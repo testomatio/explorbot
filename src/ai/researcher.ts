@@ -18,10 +18,9 @@ import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { findTableLineRange, parseSections } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.ts';
-import { type ResearchElement, type ResearchSection, extractContainerFromBlockquote, mapRowToElement, parseResearchSections, rebuildSectionMarkdown } from '../utils/research-parser.ts';
+import { type ResearchElement, type ResearchSection, extractContainerFromBlockquote, extractValidContainers, mapRowToElement, parseResearchSections, rebuildSectionMarkdown } from '../utils/research-parser.ts';
 import { EXPANDABLE_ICON_DESCRIPTIONS, buildExpandableXPath } from '../utils/expandable.ts';
 import { WebElement } from '../utils/web-element.ts';
-import { evaluateXPath } from '../utils/xpath.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Navigator } from './navigator.ts';
@@ -205,17 +204,7 @@ export class Researcher extends TaskAgent implements Agent {
         }
       }
 
-      if (this.hasScreenshotToAnalyze) {
-        await this.explorer.visuallyAnnotateElements();
-        this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
-        const visualData = await this.analyzeScreenshotForVisualProps();
-        if (visualData.size > 0) {
-          researchText = await this.mergeVisualData(researchText, visualData);
-          locators = this.getLocators(researchText);
-        }
-      }
-
-      researchText = await this.backfillCoordinates(researchText);
+      researchText = (await this.fillMissingElements(researchText)) || researchText;
 
       await this.testLocators(locators);
 
@@ -236,7 +225,20 @@ export class Researcher extends TaskAgent implements Agent {
         researchText = this.cleanBrokenLocators(researchText, reLocators);
       }
 
-      researchText = (await this.fillMissingElements(researchText)) || researchText;
+      if (this.hasScreenshotToAnalyze) {
+        const validContainers = extractValidContainers(researchText);
+        const freshBroken = await this.testContainers(this.getLocators(researchText));
+        const containers = validContainers.filter((c) => !freshBroken.includes(c.css));
+        await this.explorer.visuallyAnnotateElements({ containers });
+        this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
+        const visualData = await this.analyzeScreenshotForVisualProps();
+        if (visualData.size > 0) {
+          researchText = await this.mergeVisualData(researchText, visualData);
+          locators = this.getLocators(researchText);
+        }
+      }
+
+      researchText = await this.backfillCoordinates(researchText);
 
       if (deep) {
         researchText += await this.performDeepAnalysis(state, researchText);
@@ -263,6 +265,10 @@ export class Researcher extends TaskAgent implements Agent {
       tag('multiline').log(researchText);
       tag('success').log(`Research complete! ${researchText.length} characters`);
       tag('substep').log(`Research file saved to: ${researchFile}`);
+      if (this.actionResult?.screenshotFile) {
+        const screenshotPath = join(ConfigParser.getInstance().getOutputDir(), this.actionResult.screenshotFile);
+        tag('substep').log(`UI screenshot: file://${screenshotPath}`);
+      }
 
       await this.hooksRunner.runAfterHook('researcher', state.url);
       return researchText;
@@ -513,10 +519,10 @@ export class Researcher extends TaskAgent implements Agent {
     const html = freshState.html;
     if (!html) return [];
 
-    const result = await evaluateXPath(html, buildExpandableXPath(dataContainers));
-    if (result.error || result.matches.length === 0) return [];
+    const result = await WebElement.findByXPath(html, buildExpandableXPath(dataContainers));
+    if (result.error || result.elements.length === 0) return [];
 
-    const elements = result.matches.map((m) => WebElement.fromXPathMatch(m)).filter((el) => !el.isNavigationLink);
+    const elements = result.elements.filter((el) => !el.isNavigationLink);
 
     const clickXPathIndex = new Map<string, number>();
     for (const el of elements) {
@@ -1050,17 +1056,20 @@ export class Researcher extends TaskAgent implements Agent {
     tag('step').log('Analyzing annotated screenshot for visual properties');
 
     const prompt = dedent`
-      Elements on this screenshot are labeled with colored bordered boxes and eidx numbers in the top-right corner above the box. Adjacent elements use different colors.
+      This screenshot has two types of annotations:
+      - **Section containers**: dashed bordered boxes (no labels on them). A legend at the bottom-left maps dashed line colors to section names. Ignore containers for this task.
+      - **Interactive elements**: solid bordered boxes with eidx numbers in the top-right corner above the box. Adjacent elements use different colors.
 
-      For each labeled element, report:
+      For each interactive element (solid border, eidx number), report:
       | eidx | Coordinates | Color | Icon |
 
       Column definitions:
-      - eidx: the number shown in the colored label above the top-right corner of each box
+      - eidx: the number shown in the colored label above the top-right corner of each solid-bordered box
       - Coordinates: (X, Y) center point of the element
       - Color: accent color if distinctive (red, green, blue, orange, yellow, purple, gray), otherwise -
       - Icon: one-word icon description (plus, x, trash, pencil, gear, search, hamburger, ellipsis, chevron, star, check, filter), otherwise -
 
+      Ignore the legend block and dashed container borders.
       Return ONLY the markdown table. No explanations.
     `;
 
@@ -1123,8 +1132,8 @@ export class Researcher extends TaskAgent implements Agent {
     const html = await this.actionResult.combinedHtml();
     if (!html) return null;
 
-    const allResult = await evaluateXPath(html, '//*[@data-explorbot-eidx]');
-    if (allResult.matches.length === 0) return null;
+    const allResult = await WebElement.findByXPath(html, '//*[@eidx]');
+    if (allResult.elements.length === 0) return null;
 
     const knownEidx = new Set(
       mdq(researchText)
@@ -1134,16 +1143,15 @@ export class Researcher extends TaskAgent implements Agent {
         .filter((e) => !Number.isNaN(e))
     );
 
-    const missingEidx = allResult.matches.map((m) => Number.parseInt(m.allAttrs['data-explorbot-eidx'], 10)).filter((e) => !Number.isNaN(e) && !knownEidx.has(e));
+    const missingEidx = allResult.elements.map((el) => el.eidx).filter((e): e is number => e !== null && !knownEidx.has(e));
     if (missingEidx.length === 0) return null;
 
-    const xpath = missingEidx.map((e) => `//*[@data-explorbot-eidx="${e}"]`).join(' | ');
-    const result = await evaluateXPath(html, xpath);
-    if (result.matches.length === 0) return null;
+    const xpath = missingEidx.map((e) => `//*[@eidx="${e}"]`).join(' | ');
+    const result = await WebElement.findByXPath(html, xpath);
+    if (result.elements.length === 0) return null;
 
-    const htmlParts = result.matches.map((m) => {
-      const eidx = m.allAttrs['data-explorbot-eidx'];
-      return `eidx ${eidx}: ${m.attrs}\n${m.outerHTML}`;
+    const htmlParts = result.elements.map((el) => {
+      return `eidx ${el.eidx}: ${el.keyAttrs}\n${el.outerHTML}`;
     });
 
     tag('substep').log(`Filling ${missingEidx.length} missing elements via AI...`);
