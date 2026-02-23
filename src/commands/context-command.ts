@@ -1,5 +1,7 @@
+import { join } from 'node:path';
 import { ActionResult } from '../action-result.js';
 import { Researcher } from '../ai/researcher.js';
+import { ConfigParser } from '../config.js';
 import { type ContextData, type ContextMode, formatContextSummary } from '../utils/context-formatter.js';
 import { tag } from '../utils/logger.js';
 import { BaseCommand } from './base-command.js';
@@ -17,7 +19,15 @@ export class ContextCommand extends BaseCommand {
       throw new Error('No active page to show context for');
     }
 
-    const actionResult = ActionResult.fromState(state);
+    const isVisual = args.includes('--visual') || args.includes('--screenshot');
+
+    await explorer.annotateElements();
+
+    if (isVisual) {
+      await explorer.visuallyAnnotateElements();
+    }
+
+    const actionResult = await explorer.createAction().capturePageState({ includeScreenshot: isVisual });
     const experienceTracker = explorer.getStateManager().getExperienceTracker();
     const knowledgeTracker = this.explorBot.getKnowledgeTracker();
 
@@ -46,5 +56,10 @@ export class ContextCommand extends BaseCommand {
 
     const output = formatContextSummary(contextData, mode);
     tag('multiline').log(output);
+
+    if (isVisual && actionResult.screenshotFile) {
+      const fullPath = join(ConfigParser.getInstance().getOutputDir(), actionResult.screenshotFile);
+      tag('info').log(`Screenshot saved: file://${fullPath}`);
+    }
   }
 }

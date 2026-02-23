@@ -10,6 +10,7 @@ export interface ResearchElement {
   coordinates: string | null;
   color: string | null;
   icon: string | null;
+  eidx: number | null;
 }
 
 export interface ResearchSection {
@@ -46,7 +47,7 @@ function normalizeLocatorValue(val: string): string | null {
   return s;
 }
 
-function mapRowToElement(row: Record<string, string>): ResearchElement | null {
+export function mapRowToElement(row: Record<string, string>): ResearchElement | null {
   const colMap: Record<string, string> = {};
   for (const [key, value] of Object.entries(row)) {
     colMap[key.toLowerCase()] = value;
@@ -54,6 +55,9 @@ function mapRowToElement(row: Record<string, string>): ResearchElement | null {
 
   const name = stripQuotes(colMap.element || '');
   if (!name) return null;
+
+  const eidxRaw = (colMap.eidx || '').trim();
+  const eidxNum = eidxRaw ? Number.parseInt(eidxRaw, 10) : Number.NaN;
 
   return {
     name,
@@ -63,6 +67,7 @@ function mapRowToElement(row: Record<string, string>): ResearchElement | null {
     coordinates: (colMap.coordinates || '-').trim() === '-' ? null : colMap.coordinates.trim(),
     color: (colMap.color || '-').trim() === '-' || (colMap.color || '').trim() === '' ? null : colMap.color.trim(),
     icon: (colMap.icon || '-').trim() === '-' || (colMap.icon || '').trim() === '' ? null : colMap.icon.trim(),
+    eidx: Number.isNaN(eidxNum) ? null : eidxNum,
   };
 }
 

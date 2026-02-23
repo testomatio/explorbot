@@ -1,28 +1,3 @@
-const EXPANDABLE_ICON_CLASSES = ['dots', 'chevron', 'ellipsis', 'caret', 'arrow', 'expand', 'collapse', 'hamburger', 'more'];
-
-export const EXPANDABLE_ICON_DESCRIPTIONS = [
-  'three horizontal dots (ellipsis/more options)',
-  'three vertical dots (kebab menu)',
-  'chevron pointing down or right',
-  'caret / small triangle arrow',
-  'down arrow or right arrow',
-  'hamburger icon (three horizontal lines)',
-  'plus or minus icon next to a section',
-  'filter / funnel icon',
-  'gear / settings icon that might open a menu',
-  'expand / collapse toggle icon',
-];
-
-const EXPANDABLE_TRIGGER_CLASSES = ['toggle', 'trigger', 'split', 'popup', 'filter', 'tune'];
-
-const EXPANDABLE_CONTAINER_CLASSES = ['dropdown-trigger', 'dropdown-toggle', 'popover-trigger', 'menu-trigger'];
-
-const CLICKABLE = `@role='button' or self::button or self::a or @tabindex`;
-
-const classContains = (classes: string[]) => classes.map((c) => `contains(@class,'${c}')`).join(' or ');
-
-export const EXPANDABLE_XPATHS = [`//*[@aria-haspopup or @aria-expanded]`, `//*[(${CLICKABLE}) and .//*[${classContains(EXPANDABLE_ICON_CLASSES)}]]`, `//*[${classContains(EXPANDABLE_CONTAINER_CLASSES)}]`, `//*[(${CLICKABLE}) and (${classContains(EXPANDABLE_TRIGGER_CLASSES)})]`];
-
 export interface XPathMatch {
   tag: string;
   attrs: string;
@@ -84,9 +59,10 @@ function extractAttrs(el: Element): string {
     .join(' ');
 }
 
+export const isDynamicId = (id: string) => /^(ember|react|__next)\d|^\d+$/.test(id);
+export const isGenericClass = (cls: string) => /^ember-view$|^ember\d|^react-|^__next/.test(cls);
+
 export function buildClickableXPath(el: XPathMatch): string {
-  const isDynamicId = (id: string) => /^(ember|react|__next)\d|^\d+$/.test(id);
-  const isGenericClass = (cls: string) => /^ember-view$|^ember\d|^react-|^__next/.test(cls);
   const a = el.allAttrs;
 
   if (a.id && !isDynamicId(a.id)) return `//*[@id="${a.id}"]`;

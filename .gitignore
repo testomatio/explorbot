@@ -102,6 +102,7 @@ temp/
 *.swp
 *.swo
 *~
+.dmux-hooks
 
 # OS generated files
 .DS_Store
@@ -139,3 +140,4 @@ Thumbs.db
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.* 
+.dmux/

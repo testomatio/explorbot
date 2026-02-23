@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import dedent from 'dedent';
-import { ActionResult } from '../action-result.js';
+import { ActionResult, type Diff } from '../action-result.js';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
@@ -18,16 +18,20 @@ import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { findTableLineRange, parseSections } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.ts';
-import { type ResearchSection, extractContainerFromBlockquote, parseResearchSections, rebuildSectionMarkdown } from '../utils/research-parser.ts';
-import { EXPANDABLE_ICON_DESCRIPTIONS, EXPANDABLE_XPATHS, buildClickableXPath, cssToAncestorXPath, evaluateXPath } from '../utils/xpath.ts';
+import { type ResearchElement, type ResearchSection, extractContainerFromBlockquote, mapRowToElement, parseResearchSections, rebuildSectionMarkdown } from '../utils/research-parser.ts';
+import { EXPANDABLE_ICON_DESCRIPTIONS, buildExpandableXPath } from '../utils/expandable.ts';
+import { WebElement } from '../utils/web-element.ts';
+import { evaluateXPath } from '../utils/xpath.ts';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.js';
-import { locatorRule as generalLocatorRuleText, listElementRule, screenshotUiMapRule, uiMapTableFormat } from './rules.js';
+import { locatorRule as generalLocatorRuleText, listElementRule, uiMapTableFormat } from './rules.js';
 import { TaskAgent } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:researcher');
+const DYNAMIC_ID_PATTERN = /^#ember\d|^\/\/[^[]*\[@id="ember\d|#react-select-|#rc-|#ng-|#cdk-|#mat-|data-ebd-id/;
+const isForbiddenLocator = (s: string) => DYNAMIC_ID_PATTERN.test(s) || s.includes('data-explorbot-eidx') || /\[eidx=/.test(s);
 
 const POSSIBLE_SECTIONS = {
   focus: 'focused overlay (modal, drawer, popup, active form)',
@@ -144,8 +148,12 @@ export class Researcher extends TaskAgent implements Agent {
       await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
+      const annotatedCount = await this.explorer.annotateElements();
+      debugLog(`Annotated ${annotatedCount} interactive elements with eidx`);
+      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot && this.provider.hasVision() });
+
       if (isErrorPage(this.actionResult!)) {
-        tag('warn').log(`Detected error page at ${state.url}`);
+        tag('warning').log(`Detected error page at ${state.url}`);
         return dedent`
           ## Error Page Detected
 
@@ -176,31 +184,19 @@ export class Researcher extends TaskAgent implements Agent {
       debugLog(`Extracted ${locators.length} locators from research`);
 
       if (locators.length === 0) {
-        tag('substep').log('No locators parsed from response, re-prompting for correct format...');
-        conversation.addUserText(dedent`
-          Your response could not be parsed. Each section MUST be a separate ## heading with its own table:
-
-          ## Section Name
-
-          Description.
-
-          > Container: '.css-selector'
-
-          | Element | ARIA | CSS | XPath |
-          |---------|------|-----|-------|
-          | 'Element Name' | { role: 'button', text: 'Click' } | '.btn' | '//button' |
-
-          Please restructure your response following this format.
-        `);
-        const retryResult = await this.provider.invokeConversation(conversation);
-        if (retryResult?.response?.text) {
-          researchText = retryResult.response.text;
-          locators = this.getLocators(researchText);
-          debugLog(`Re-prompt extracted ${locators.length} locators`);
-        }
+        tag('warning').log(`No locators parsed from response, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
+        await new Promise((r) => setTimeout(r, 1000));
+        return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
       }
 
       const brokenContainers = await this.testContainers(locators);
+      const totalContainers = new Set(locators.map((l) => l.container).filter(Boolean)).size;
+      if (totalContainers > 0 && brokenContainers.length === totalContainers && retriesLeft > 0) {
+        tag('warning').log(`All ${totalContainers} containers broken, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
+        await new Promise((r) => setTimeout(r, 2000));
+        return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
+      }
+
       if (brokenContainers.length > 0) {
         for (const loc of locators) {
           if (loc.container && brokenContainers.includes(loc.container)) {
@@ -210,17 +206,16 @@ export class Researcher extends TaskAgent implements Agent {
       }
 
       if (this.hasScreenshotToAnalyze) {
+        await this.explorer.visuallyAnnotateElements();
         this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
-        const screenshotAnalysis = await this.analyzeScreenshotForUIElements();
-        if (screenshotAnalysis) {
-          this.addScreenshotPrompt(conversation, screenshotAnalysis);
-          const screenshotResult = await this.provider.invokeConversation(conversation);
-          if (screenshotResult?.response?.text) {
-            researchText = screenshotResult.response.text;
-            locators = this.getLocators(researchText);
-          }
+        const visualData = await this.analyzeScreenshotForVisualProps();
+        if (visualData.size > 0) {
+          researchText = await this.mergeVisualData(researchText, visualData);
+          locators = this.getLocators(researchText);
         }
       }
+
+      researchText = await this.backfillCoordinates(researchText);
 
       await this.testLocators(locators);
 
@@ -241,6 +236,8 @@ export class Researcher extends TaskAgent implements Agent {
         researchText = this.cleanBrokenLocators(researchText, reLocators);
       }
 
+      researchText = (await this.fillMissingElements(researchText)) || researchText;
+
       if (deep) {
         researchText += await this.performDeepAnalysis(state, researchText);
       }
@@ -257,9 +254,10 @@ export class Researcher extends TaskAgent implements Agent {
         Researcher.researchCacheTimestamps[stateHash] = Date.now();
       }
 
-      const summary = this.extractSummary(researchText);
-      if (summary) {
-        this.experienceTracker.updateSummary(this.actionResult!, summary);
+      const summaryMatch = researchText.match(/## Summary\s*\n+([\s\S]*?)(?=\n##|$)/i);
+      if (summaryMatch) {
+        const summaryLine = summaryMatch[1].trim().split('\n')[0].trim().slice(0, 200);
+        if (summaryLine) this.experienceTracker.updateSummary(this.actionResult!, summaryLine);
       }
 
       tag('multiline').log(researchText);
@@ -307,6 +305,12 @@ export class Researcher extends TaskAgent implements Agent {
     const broken: Locator[] = [];
 
     for (const loc of locators) {
+      if (loc.type !== 'aria' && isForbiddenLocator(loc.locator)) {
+        loc.valid = false;
+        debugLog(`DYNAMIC ID [${loc.section}] ${loc.type} "${loc.element}": ${loc.locator}`);
+        broken.push(loc);
+        continue;
+      }
       loc.valid = await this.explorer.hasPlaywrightLocator((page) => {
         const base = loc.container ? page.locator(loc.container) : page;
         if (loc.type === 'aria') {
@@ -497,47 +501,22 @@ export class Researcher extends TaskAgent implements Agent {
 
   private rebuildSectionInText(text: string, section: ResearchSection): string {
     const newTable = rebuildSectionMarkdown(section);
-    const tableRange = findTableLineRange(section.rawMarkdown);
-    if (!tableRange) return text;
-
-    const sectionStart = text.indexOf(section.rawMarkdown);
-    if (sectionStart === -1) return text;
-
-    const linesBeforeSection = text.slice(0, sectionStart).split('\n').length - 1;
-    const tableStartLine = linesBeforeSection + tableRange.start;
-    const tableEndLine = linesBeforeSection + tableRange.end;
-
-    const lines = text.split('\n');
-    const result = [...lines.slice(0, tableStartLine), ...newTable.trimEnd().split('\n'), ...lines.slice(tableEndLine)].join('\n');
-
-    const sectionLines = section.rawMarkdown.split('\n');
-    section.rawMarkdown = [...sectionLines.slice(0, tableRange.start), ...newTable.trimEnd().split('\n'), ...sectionLines.slice(tableRange.end)].join('\n');
-
+    const sectionQuery = mdq(text).query(`section2(~"${section.name.replace(/"/g, '\\"')}")`);
+    const result = sectionQuery.query('table').replace(`${newTable.trimEnd()}\n`);
+    if (result === text) return text;
+    section.rawMarkdown = mdq(section.rawMarkdown).query('table').replace(`${newTable.trimEnd()}\n`);
     return result;
   }
 
-  private async discoverExpandableElements(dataContainers: string[] = []): Promise<ExpandableElement[]> {
+  private async discoverExpandableElements(dataContainers: string[] = []): Promise<WebElement[]> {
     const freshState = await this.explorer.createAction().capturePageState();
     const html = freshState.html;
     if (!html) return [];
 
-    const exclusions = dataContainers.map((css) => cssToAncestorXPath(css)).filter(Boolean) as string[];
-    const exclusionPredicate = exclusions.length > 0 ? `[not(ancestor::*[${exclusions.join(' or ')}])]` : '';
-
-    const combined = EXPANDABLE_XPATHS.map((x) => `(${x}${exclusionPredicate})`).join(' | ');
-    const result = await evaluateXPath(html, combined);
+    const result = await evaluateXPath(html, buildExpandableXPath(dataContainers));
     if (result.error || result.matches.length === 0) return [];
 
-    const elements: ExpandableElement[] = result.matches
-      .filter((m) => m.tag !== 'a')
-      .map((m) => ({
-        xpath: m.absoluteXPath,
-        clickXPath: buildClickableXPath(m),
-        description: `<${m.tag} ${['role', 'id', 'class', 'aria-label']
-          .map((k) => (m.allAttrs[k] ? `${k}="${m.allAttrs[k].slice(0, 40)}"` : ''))
-          .filter(Boolean)
-          .join(' ')}> text="${m.text.slice(0, 40)}"`,
-      }));
+    const elements = result.matches.map((m) => WebElement.fromXPathMatch(m)).filter((el) => !el.isNavigationLink);
 
     const clickXPathIndex = new Map<string, number>();
     for (const el of elements) {
@@ -558,7 +537,7 @@ export class Researcher extends TaskAgent implements Agent {
     return elements;
   }
 
-  private async discoverExpandableByScreenshot(state: WebPageState, alreadyFound: string[]): Promise<string[]> {
+  private async discoverExpandableByScreenshot(state: WebPageState, alreadyFound: string[]): Promise<Array<{ locator: string; description: string }>> {
     const actionResult = ActionResult.fromState(state);
     const screenshot = actionResult.screenshot;
     if (!screenshot) return [];
@@ -577,28 +556,24 @@ export class Researcher extends TaskAgent implements Agent {
       Ignore regular text buttons, links, and navigation items.
       ${alreadyList}
 
-      For each icon found, report on a separate line:
-      <description> at <x>X, <y>Y
+      Return a markdown table with columns: Description | X | Y
       where X and Y are integer pixel coordinates of the icon center.
 
-      If no expandable icons found, respond with "none".
+      If no expandable icons found, respond with <none>.
     `;
 
     try {
       const result = await this.provider.processImage(prompt, screenshot.toString('base64'));
       const text = result.text || '';
-      if (text.toLowerCase().includes('none')) return [];
+      if (text.toLowerCase().includes('<none>')) return [];
 
-      const elements: string[] = [];
-      const coordRegex = /(.+?)\s+at\s+(\d+)X,\s*(\d+)Y/gi;
-      let match: RegExpExecArray | null;
-      while ((match = coordRegex.exec(text)) !== null) {
-        const desc = match[1].trim();
-        const x = match[2];
-        const y = match[3];
-        elements.push(`[VISUAL] ${desc} at (${x}, ${y})  clickXY: I.clickXY(${x}, ${y})`);
-      }
-      return elements;
+      const rows = mdq(text).query('table').toJson();
+      return rows
+        .filter((r) => r.X && r.Y && /^\d+$/.test(r.X) && /^\d+$/.test(r.Y))
+        .map((r) => ({
+          locator: `I.clickXY(${r.X}, ${r.Y})`,
+          description: `[VISUAL] ${r.Description || 'icon'} at (${r.X}, ${r.Y})`,
+        }));
     } catch (err) {
       debugLog(`Screenshot expandable discovery failed: ${err instanceof Error ? err.message : err}`);
       return [];
@@ -606,7 +581,7 @@ export class Researcher extends TaskAgent implements Agent {
   }
 
   private async performDeepAnalysis(state: WebPageState, researchText: string): Promise<string> {
-    debugLog('Starting deep analysis (3-stage)');
+    tag('info').log('Starting deep analysis to find all expandable elements');
     const expandedSections: string[] = [];
     const navigationLinks: Array<{ code: string; url: string }> = [];
 
@@ -630,23 +605,21 @@ export class Researcher extends TaskAgent implements Agent {
     if (dataContainers.length > 0) debugLog(`Data containers to exclude: ${dataContainers.join(', ')}`);
 
     const discoveredElements = await this.discoverExpandableElements(dataContainers);
-    debugLog(`Stage 1: clicking ${discoveredElements.length} XPath-discovered elements`);
+    tag('substep').log(`Stage 1: clicking ${discoveredElements.length} XPath-discovered expandable elements`);
     await this.clickExpandableElements(
-      discoveredElements.map((el) => ({ locator: el.clickXPath, fallbackLocator: el.xpath, description: el.description })),
+      discoveredElements.map((el) => {
+        const escape = (s: string) => s.replace(/'/g, "\\'");
+        const commands = [`I.click('${escape(el.clickXPath)}')`];
+        if (el.xpath) commands.push(`I.click('${escape(el.xpath)}')`);
+        return { commands, description: el.description };
+      }),
       state,
       expandedSections,
       navigationLinks
     );
 
-    debugLog(`Stage 2: asking AI for missed elements (sections so far: ${expandedSections.length})`);
-    const aiElements = await this.discoverMissedElements(state, expandedSections);
-    if (aiElements.length > 0) {
-      debugLog(`Stage 2: clicking ${aiElements.length} AI-discovered elements`);
-      await this.clickExpandableElements(aiElements, state, expandedSections, navigationLinks);
-    }
-
     if (this.provider.hasVision()) {
-      debugLog(`Stage 3: asking screenshot for missed icons (sections so far: ${expandedSections.length})`);
+      tag('substep').log(`Stage 2: asking screenshot for missed icons (sections so far: ${expandedSections.length})`);
       const visualElements = await this.discoverExpandableByScreenshot(
         state,
         expandedSections.map((s) => s.slice(0, 100))
@@ -654,10 +627,7 @@ export class Researcher extends TaskAgent implements Agent {
       if (visualElements.length > 0) {
         debugLog(`Stage 3: clicking ${visualElements.length} visual elements`);
         await this.clickExpandableElements(
-          visualElements.map((v) => {
-            const coordMatch = v.match(/I\.clickXY\((\d+),\s*(\d+)\)/);
-            return { locator: coordMatch ? `I.clickXY(${coordMatch[1]}, ${coordMatch[2]})` : v, description: v };
-          }),
+          visualElements.map((el) => ({ commands: [el.locator], description: el.description })),
           state,
           expandedSections,
           navigationLinks
@@ -665,7 +635,7 @@ export class Researcher extends TaskAgent implements Agent {
       }
     }
 
-    debugLog(`Deep analysis complete. Sections: ${expandedSections.length}, navigation links: ${navigationLinks.length}`);
+    tag('info').log(`Deep analysis complete. Sections: ${expandedSections.length}, navigation links: ${navigationLinks.length}`);
 
     let result = '';
     if (expandedSections.length > 0) {
@@ -678,147 +648,86 @@ export class Researcher extends TaskAgent implements Agent {
     return result;
   }
 
-  private async clickExpandableElements(elements: Array<{ locator: string; fallbackLocator?: string; description: string }>, state: WebPageState, expandedSections: string[], navigationLinks: Array<{ code: string; url: string }>): Promise<void> {
+  private async clickExpandableElements(elements: Array<{ commands: string[]; description: string }>, state: WebPageState, expandedSections: string[], navigationLinks: Array<{ code: string; url: string }>): Promise<void> {
+    const originalAria = state.ariaSnapshot || '';
+
     for (const el of elements) {
       debugLog(`Clicking: ${el.description.slice(0, 100)}`);
       const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);
 
-      const escaped = el.locator.replace(/'/g, "\\'");
-      const isCodeceptCmd = el.locator.startsWith('I.');
-      const clickSucceeded = await this.tryClickStrategies(isCodeceptCmd ? el.locator : escaped, el.fallbackLocator, isCodeceptCmd);
-      if (!clickSucceeded) {
+      let clickCode: string | null = null;
+      const action = this.explorer.createAction();
+      for (const cmd of el.commands) {
+        if (await action.attempt(cmd, undefined, false)) {
+          clickCode = cmd;
+          break;
+        }
+      }
+      if (!clickCode) {
         debugLog(`Click failed: ${el.description.slice(0, 80)}`);
         continue;
       }
 
       await new Promise((r) => setTimeout(r, 500));
-      await this.explorer.createAction().capturePageState();
-      const currentState = this.stateManager.getCurrentState()!;
-      const currAR = ActionResult.fromState(currentState);
-      const toolResult = await currAR.toToolResult(previousState, el.description);
-      const pageDiff = toolResult.pageDiff;
 
-      const clickCode = isCodeceptCmd ? el.locator : `I.click('${escaped}')`;
+      let diff: Diff;
+      try {
+        await this.explorer.createAction().capturePageState();
+        const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
+        diff = await currAR.diff(previousState);
+        await diff.calculate();
+      } catch (err) {
+        debugLog(`State capture failed after click: ${err instanceof Error ? err.message : err}`);
+        await this.restorePageState(state.url, originalAria);
+        continue;
+      }
 
-      if (pageDiff?.urlChanged) {
-        debugLog(`Click navigated to ${pageDiff.currentUrl}`);
-        navigationLinks.push({ code: clickCode, url: pageDiff.currentUrl });
+      if (diff.urlHasChanged()) {
+        debugLog(`Click navigated to ${this.stateManager.getCurrentState()?.url}`);
+        navigationLinks.push({ code: clickCode, url: this.stateManager.getCurrentState()?.url || '' });
         await this.navigateTo(state.url);
         continue;
       }
 
-      if (!pageDiff?.ariaChanges && !pageDiff?.htmlChanges) {
+      if (!diff.ariaChanged && !diff.htmlSubtree) {
         debugLog(`No changes from: ${el.description.slice(0, 80)}`);
-        try {
-          await this.explorer.createAction().execute("I.pressKey('Escape')");
-          await this.explorer.createAction().execute("I.click('//body')");
-        } catch {
-          /* dismiss attempt */
-        }
+        await this.restorePageState(state.url, originalAria);
         continue;
       }
 
-      const sectionMarkdown = await this.analyzeExpandedClick({
-        code: clickCode,
-        explanation: el.description,
-        ariaChanges: pageDiff.ariaChanges || '',
-        htmlChanges: pageDiff.htmlChanges || '',
-      });
+      const sectionMarkdown = await this.analyzeExpandedClick(clickCode, el.description, diff);
       if (sectionMarkdown) {
         expandedSections.push(sectionMarkdown);
         debugLog(`Captured section from: ${el.description.slice(0, 80)}`);
       }
 
+      await this.restorePageState(state.url, originalAria);
+    }
+  }
+
+  private async restorePageState(url: string, originalAria: string): Promise<void> {
+    try {
       await this.cancelInUi();
+      await this.explorer.createAction().capturePageState();
+      const currentAria = this.stateManager.getCurrentState()?.ariaSnapshot || '';
+      if (!diffAriaSnapshots(originalAria, currentAria)) return;
+    } catch (err) {
+      debugLog(`State capture failed after cancelInUi: ${err instanceof Error ? err.message : err}`);
     }
+    debugLog('ARIA not restored after cancelInUi, reloading page');
+    await this.navigateTo(url);
   }
 
-  private async tryClickStrategies(locator: string, fallbackLocator?: string, isCodeceptCmd?: boolean): Promise<boolean> {
-    const tryClick = async (code: string): Promise<{ ok: boolean; error?: string }> => {
-      const action = this.explorer.createAction();
-      try {
-        await action.execute(code);
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
-      }
-    };
-
-    if (isCodeceptCmd) return (await tryClick(locator)).ok;
-
-    const locators = [locator, ...(fallbackLocator ? [fallbackLocator.replace(/'/g, "\\'")] : [])];
-    for (const loc of locators) {
-      const result = await tryClick(`I.click('${loc}')`);
-      if (result.ok) return true;
-      if (!result.error?.includes('interactable')) continue;
-      debugLog(`Element not interactable, using forceClick: ${loc.slice(0, 60)}`);
-      const force = await tryClick(`I.forceClick('${loc}')`);
-      if (!force.ok) continue;
-      await new Promise((r) => setTimeout(r, 100));
-      return true;
-    }
-    return false;
-  }
-
-  private async discoverMissedElements(state: WebPageState, alreadySections: string[]): Promise<Array<{ locator: string; description: string }>> {
-    const ariaSnapshot = state.ariaSnapshot || '';
-    const alreadyList = alreadySections.length > 0 ? alreadySections.map((s) => s.split('\n')[0]).join('\n') : 'none';
-
+  private async analyzeExpandedClick(code: string, description: string, diff: Diff): Promise<string | null> {
     const prompt = dedent`
-      Analyze this ARIA tree and find expandable elements we may have missed.
-      We already expanded these sections:
-      ${alreadyList}
-
-      <page_aria>
-      ${ariaSnapshot}
-      </page_aria>
-
-      Find elements that could reveal hidden UI (dropdowns, modals, popups, accordions, tabs).
-      Look for:
-      - Buttons with aria-haspopup or aria-expanded="false"
-      - Icon-only buttons (no text label)
-      - Ellipsis/more/dots buttons
-      - Chevron/arrow elements indicating expandable sections
-      - Tab elements that load different content
-
-      For each element, respond with ONE line:
-      <ARIA locator as JSON> | <short description>
-
-      Example:
-      {"role":"button","text":"More options"} | ellipsis menu in toolbar
-      {"role":"button","text":""} | unnamed button near search
-
-      If nothing missed, respond with "none".
-    `;
-
-    const model = this.provider.getModelForAgent('researcher');
-    const result = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.discoverMissed' });
-    const text = result.text || '';
-    if (text.toLowerCase().includes('none')) return [];
-
-    const elements: Array<{ locator: string; description: string }> = [];
-    for (const line of text.split('\n')) {
-      const match = line.match(/(\{[^}]+\})\s*\|\s*(.+)/);
-      if (!match) continue;
-      const ariaLocator = match[1].trim();
-      const textMatch = ariaLocator.match(/"text"\s*:\s*"([^"]*)"/);
-      if (textMatch && !/\w/.test(textMatch[1])) continue;
-      const description = match[2].trim();
-      elements.push({ locator: `I.click('${ariaLocator}')`, description });
-    }
-    return elements;
-  }
-
-  private async analyzeExpandedClick(diff: { code: string; explanation: string; ariaChanges: string; htmlChanges: string }): Promise<string | null> {
-    const prompt = dedent`
-      A click on "${diff.explanation}" (\`${diff.code}\`) revealed new UI content.
+      A click on "${description}" (\`${code}\`) revealed new UI content.
       Analyze the changes and produce a UI map section.
 
       ARIA changes:
-      ${diff.ariaChanges || 'none'}
+      ${diff.ariaChanged || 'none'}
 
       HTML changes:
-      ${diff.htmlChanges || 'none'}
+      ${diff.htmlSubtree || 'none'}
 
       Respond with a SINGLE section in this format:
 
@@ -827,7 +736,7 @@ export class Researcher extends TaskAgent implements Agent {
       Action:
 
       \`\`\`js
-      ${diff.code}
+      ${code}
       \`\`\`
 
       > Container: \`<css-selector>\`
@@ -913,6 +822,8 @@ export class Researcher extends TaskAgent implements Agent {
       - Detect layout patterns: list/detail split, 2-pane, or 3-pane layouts.
       - If multiple elements match, pick the element inside the most relevant section and closest to recent UI context.
       - UI map table must include ARIA, CSS, and XPath for every element.
+      - Every element MUST have at least a CSS or XPath selector. NEVER leave both CSS and XPath as "-".
+      - For icon-only buttons with empty aria-label, set ARIA to "-" but ALWAYS provide CSS and XPath.
       - ARIA locator must be JSON with role and text keys (NOT "name").
       </rules>
 
@@ -1011,6 +922,11 @@ export class Researcher extends TaskAgent implements Agent {
       URL: ${this.actionResult.url || 'Unknown'}
       Title: ${this.actionResult.title || 'Unknown'}
 
+      <eidx_mapping>
+      Elements have \`eidx\` attribute (e.g. \`eidx="5"\`) — include its value in the eidx column.
+      Never include \`eidx\` attribute in CSS or XPath selectors.
+      </eidx_mapping>
+
       <context>
       HTML Content:
       ${html}
@@ -1095,104 +1011,210 @@ export class Researcher extends TaskAgent implements Agent {
     return { actionResult, image };
   }
 
-  async analyzeScreenshotForUIElements(): Promise<string | null> {
-    if (!this.actionResult) return null;
-    const screenshotData = this.getScreenshotFromState(this.actionResult);
-    if (!screenshotData) return null;
+  private async mergeVisualData(researchText: string, visualData: Map<number, { coordinates: string | null; color: string | null; icon: string | null }>): Promise<string> {
+    const sections = parseResearchSections(researchText);
+    let merged = 0;
+    const allMatchedEidx = new Set<number>();
 
-    const { actionResult, image } = screenshotData;
-    tag('step').log('Analyzing page screenshot for UI elements');
+    for (const section of sections) {
+      let sectionMerged = false;
+      for (const el of section.elements) {
+        let eidx = el.eidx || null;
+        if (!eidx) {
+          const locator = el.css || el.xpath || (el.aria ? `role=${el.aria.role}[name="${el.aria.text}"]` : null);
+          if (locator) eidx = await this.explorer.getEidxByLocator(locator, section.containerCss);
+        }
+        if (!eidx) continue;
+
+        allMatchedEidx.add(eidx);
+        const vis = visualData.get(eidx);
+        if (!vis) continue;
+        Object.assign(el, Object.fromEntries(Object.entries(vis).filter(([, v]) => v)));
+        sectionMerged = true;
+        merged++;
+      }
+      if (sectionMerged) researchText = this.rebuildSectionInText(researchText, section);
+    }
+    debugLog(`Merged visual props for ${merged} elements`);
+    return researchText;
+  }
+
+  private async analyzeScreenshotForVisualProps(): Promise<Map<number, { coordinates: string | null; color: string | null; icon: string | null }>> {
+    const result = new Map<number, { coordinates: string | null; color: string | null; icon: string | null }>();
+    if (!this.actionResult) return result;
+
+    const screenshotData = this.getScreenshotFromState(this.actionResult);
+    if (!screenshotData) return result;
+
+    const { image } = screenshotData;
+    tag('step').log('Analyzing annotated screenshot for visual properties');
 
     const prompt = dedent`
-        <role>
-        You are UI/UX designer analyzing all UI elements on the webpage
-        </role>
-        Analyze this web page and provide a comprehensive research report in markdown format.
+      Elements on this screenshot are labeled with colored bordered boxes and eidx numbers in the top-right corner above the box. Adjacent elements use different colors.
 
-        <task>
-        Examine the provided page and understand its main purpose from the user perspective.
+      For each labeled element, report:
+      | eidx | Coordinates | Color | Icon |
 
-        Then proceed with:
-        - Identify the main user actions of this page.
-        - Identify the main content of the page.
-        - Identify the main navigation of the page.
-        - Provide a comprehensive UI map report in markdown format.
-        - List all buttons, forms, inputs, accordions, dropdowns, tabs, etc.
-        - Write coordinates of all listed elements
-        </task>
+      Column definitions:
+      - eidx: the number shown in the colored label above the top-right corner of each box
+      - Coordinates: (X, Y) center point of the element
+      - Color: accent color if distinctive (red, green, blue, orange, yellow, purple, gray), otherwise -
+      - Icon: one-word icon description (plus, x, trash, pencil, gear, search, hamburger, ellipsis, chevron, star, check, filter), otherwise -
 
-        <rules>
-        - Analyze the web page and provide a comprehensive UI map report.
-        - Explain the main purpose of the page and what user can achieve from this page.
-        - Focus on primary user actions of this page
-        - Provide Container, ARIA, CSS, XPath, and Coordinates locators.
-        - Research all menus and navigational areas;
-        - Focus on interactive elements: forms, buttons, links, clickable elements, etc.
-        - Pay especial attention for clickable icons (hamburgers, ellipsis, toggles, arrows, etc.) and images that are clickable.
-        - Describe clickable icons in text format for easy recognition. Explain in short what that symbol might do in web UI context.
-        - There is no such thing as 'hamburger menu' or 'ellipsis menu' explain what kind of menu it is (main nav, items context menu).
-        - Structure the report by sections.
-        - Focus on UI elements, not on static content.
-        - Ignore purely decorative sidebars and footer-only links.
-        </rules>
+      Return ONLY the markdown table. No explanations.
+    `;
 
-        ${generalLocatorRuleText}
+    try {
+      const aiResult = await this.provider.processImage(prompt, image.toString('base64'));
+      const text = aiResult.text || '';
+      const rows = mdq(text).query('table').toJson();
+      for (const row of rows) {
+        const eidx = Number.parseInt(row.eidx, 10);
+        if (Number.isNaN(eidx)) continue;
+        const val = (v: string) => (v && v !== '-' ? v : null);
+        result.set(eidx, {
+          coordinates: val(row.Coordinates),
+          color: val(row.Color),
+          icon: val(row.Icon),
+        });
+      }
+    } catch (err) {
+      debugLog(`Screenshot visual analysis failed: ${err instanceof Error ? err.message : err}`);
+    }
 
-        URL: ${actionResult.url || 'Unknown'}
-        Title: ${actionResult.title || 'Unknown'}
+    debugLog(`Parsed visual props for ${result.size} elements`);
+    return result;
+  }
 
-        <output>
+  private async backfillCoordinates(researchText: string): Promise<string> {
+    const page = this.explorer.playwrightHelper.page;
+    const sections = parseResearchSections(researchText);
+    const eidxWithoutCoords: number[] = [];
+    for (const section of sections) {
+      for (const el of section.elements) {
+        if (el.eidx && !el.coordinates) eidxWithoutCoords.push(el.eidx);
+      }
+    }
+    if (eidxWithoutCoords.length === 0) return researchText;
 
-        <output_rules>
-        Please provide a structured analysis in markdown format.
-        Use tables for section UI maps only.
-        If a section is not present, do not include it in the output.
+    const webElements = await WebElement.fromEidxList(page, eidxWithoutCoords);
+    if (webElements.length === 0) return researchText;
 
-        Section order: Summary -> list/detail/panes/content/menu in priority order
-        List all interactive elements on page and put them into appropriate sections.
-        Group similar interactive elements (like dynamic lists or content) into one item.
-        </output_rules>
+    const rectMap = new Map(webElements.map((w) => [w.eidx!, w]));
+    let updated = researchText;
+    for (const section of sections) {
+      let changed = false;
+      for (const el of section.elements) {
+        if (el.eidx && !el.coordinates) {
+          const w = rectMap.get(el.eidx);
+          if (w) {
+            el.coordinates = w.coordinates;
+            changed = true;
+          }
+        }
+      }
+      if (changed) updated = this.rebuildSectionInText(updated, section);
+    }
+    return updated;
+  }
 
-        <element_format>
-        ${screenshotUiMapRule}
+  private async fillMissingElements(researchText: string): Promise<string | null> {
+    if (!this.actionResult) return null;
+    const html = await this.actionResult.combinedHtml();
+    if (!html) return null;
 
-        Example:
-        | Element | ARIA | CSS | XPath | Coordinates | Color | Icon |
-        | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button.btn-signin' | '//button[@class="btn-signin"]' | (450, 320) | blue | - |
-        | 'Delete' | { role: 'button', text: 'Delete' } | 'button.btn-delete' | '//button[@class="btn-delete"]' | (500, 320) | red | trash |
-        | 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' | '//input[@id="email"]' | (300, 200) | - | - |
-        | 'Settings' | { role: 'link', text: 'Settings' } | 'a.settings-link' | '//a[@class="settings-link"]' | (850, 50) | - | gear |
-        | 'Menu Toggle' | - | '.hamburger-btn' | '//button[contains(@class,"hamburger-btn")]' | (30, 25) | - | hamburger |
+    const allResult = await evaluateXPath(html, '//*[@data-explorbot-eidx]');
+    if (allResult.matches.length === 0) return null;
 
-        Group elements by type (Buttons, Links, Inputs, etc.) within each section.
-        CRITICAL: Include Coordinates and Icon for EVERY element in the table. Do NOT create separate sections for them.
-        </element_format>
+    const knownEidx = new Set(
+      mdq(researchText)
+        .query('table')
+        .toJson()
+        .map((r) => Number.parseInt(r.eidx, 10))
+        .filter((e) => !Number.isNaN(e))
+    );
 
-        <output_format>
+    const missingEidx = allResult.matches.map((m) => Number.parseInt(m.allAttrs['data-explorbot-eidx'], 10)).filter((e) => !Number.isNaN(e) && !knownEidx.has(e));
+    if (missingEidx.length === 0) return null;
 
-        ## Summary
+    const xpath = missingEidx.map((e) => `//*[@data-explorbot-eidx="${e}"]`).join(' | ');
+    const result = await evaluateXPath(html, xpath);
+    if (result.matches.length === 0) return null;
 
-        Brief overview of the page purpose and main content.
+    const htmlParts = result.matches.map((m) => {
+      const eidx = m.allAttrs['data-explorbot-eidx'];
+      return `eidx ${eidx}: ${m.attrs}\n${m.outerHTML}`;
+    });
 
-        ## Section Name
+    tag('substep').log(`Filling ${missingEidx.length} missing elements via AI...`);
 
-        Explanation
+    const prompt = dedent`
+      These interactive elements (by eidx number) are missing from the research.
 
-        > Container: '.container-css-selector'
+      ${htmlParts.join('\n\n')}
 
-        | Element | ARIA | CSS | XPath | Coordinates | Color | Icon |
-        | 'Element Name' | { role: 'button', text: '...' } | 'css' | '//button[@type="button"]' | (X, Y) | blue | - |
-        | 'Dropdown' | { role: 'button', text: '...' } | 'button.dropdown' | '//button[@class="dropdown"]' | (X, Y) | - | down-chevron |
+      For each eidx, output ONE row:
+      | eidx | Element | ARIA | CSS | XPath |
 
-        </output_format>
+      Rules:
+      - Element name MUST be a human-readable description (e.g. "More actions dropdown", "Project breadcrumb"). NEVER use raw tag names like "<button>" or "<div>" as names.
+      - CSS and XPath must work from page root
+      - ARIA as JSON: { role: 'x', text: 'y' }
+      - Do NOT use auto-generated IDs (IDs with numbers that change on reload)
+      - Do NOT use eidx or data-explorbot-eidx in selectors
+      - Every row MUST have CSS and XPath. If you can't find selectors, skip the element.
+      ${generalLocatorRuleText}
 
-        </output>
+      Return ONLY the table. No explanations.
+    `;
 
-        The screenshot is provided below
-        `;
+    try {
+      const model = this.provider.getModelForAgent('researcher');
+      const aiResult = await this.provider.chat([{ role: 'user', content: prompt }], model, { telemetryFunctionId: 'researcher.fillMissingElements' });
+      const text = aiResult.text || '';
 
-    const result = await this.provider.processImage(prompt, image.toString('base64'));
-    return result.text;
+      const gapElements = mdq(text)
+        .query('table')
+        .toJson()
+        .map((r) => mapRowToElement(r))
+        .filter((el) => el !== null);
+      if (gapElements.length === 0) return null;
+
+      const sections = parseResearchSections(researchText);
+      const eidxToSection = new Map<number, ResearchSection>();
+      for (const section of sections) {
+        if (!section.containerCss) continue;
+        const containerEidx = await this.explorer.getEidxInContainer(section.containerCss);
+        for (const e of containerEidx) eidxToSection.set(e, section);
+      }
+
+      let updated = researchText;
+      const otherElements: ResearchElement[] = [];
+      for (const el of gapElements) {
+        const targetSection = (el.eidx && eidxToSection.get(el.eidx)) || null;
+        if (targetSection) {
+          targetSection.elements.push(el);
+          updated = this.rebuildSectionInText(updated, targetSection);
+        } else {
+          otherElements.push(el);
+        }
+      }
+
+      if (otherElements.length > 0) {
+        const otherSection: ResearchSection = { name: 'Other Elements', containerCss: null, elements: otherElements, rawMarkdown: '' };
+        updated += `\n\n## Other Elements\n\n${rebuildSectionMarkdown(otherSection)}`;
+      }
+
+      const locators = this.getLocators(updated);
+      await this.testLocators(locators);
+      updated = this.cleanBrokenLocators(updated, locators);
+      debugLog(`Gap-filled ${gapElements.length} elements via AI`);
+      return updated;
+    } catch (err) {
+      debugLog(`Gap-filling AI call failed: ${err instanceof Error ? err.message : err}`);
+    }
+
+    return null;
   }
 
   async checkElementLocation(state: WebPageState, elementDescription: string): Promise<string | null> {
@@ -1237,30 +1259,30 @@ export class Researcher extends TaskAgent implements Agent {
     const { actionResult, image } = screenshotData;
     tag('step').log('Answering question about screenshot');
     const prompt = dedent`
-        <role>
-        You are a UI analyst examining a webpage screenshot to answer specific questions about its state or content.
-        </role>
+      <role>
+      You are a UI analyst examining a webpage screenshot to answer specific questions about its state or content.
+      </role>
 
-        <task>
-        Answer the following question about the webpage screenshot: "${question}"
+      <task>
+      Answer the following question about the webpage screenshot: "${question}"
 
-        Examine the screenshot carefully and provide a clear, concise answer based on what you observe.
-        Be specific and factual in your response.
-        If the question cannot be answered from the screenshot alone, explain what information is missing.
-        </task>
+      Examine the screenshot carefully and provide a clear, concise answer based on what you observe.
+      Be specific and factual in your response.
+      If the question cannot be answered from the screenshot alone, explain what information is missing.
+      </task>
 
-        <rules>
-        - Provide a direct answer to the question.
-        - Be specific and reference visual elements when relevant.
-        - If the answer requires checking form fields, buttons, or other UI elements, describe their state clearly.
-        - Keep the response focused and under 5 sentences unless more detail is needed.
-        </rules>
+      <rules>
+      - Provide a direct answer to the question.
+      - Be specific and reference visual elements when relevant.
+      - If the answer requires checking form fields, buttons, or other UI elements, describe their state clearly.
+      - Keep the response focused and under 5 sentences unless more detail is needed.
+      </rules>
 
-        URL: ${actionResult.url || 'Unknown'}
-        Title: ${actionResult.title || 'Unknown'}
+      URL: ${actionResult.url || 'Unknown'}
+      Title: ${actionResult.title || 'Unknown'}
 
-        The screenshot is provided below.
-        `;
+      The screenshot is provided below.
+      `;
 
     const result = await this.provider.processImage(prompt, image.toString('base64'));
     return result.text;
@@ -1345,14 +1367,6 @@ export class Researcher extends TaskAgent implements Agent {
     return result.text;
   }
 
-  private extractSummary(researchText: string): string {
-    const summaryMatch = researchText.match(/## Summary\s*\n+([\s\S]*?)(?=\n##|$)/i);
-    if (!summaryMatch) return '';
-    const summaryContent = summaryMatch[1].trim();
-    const firstLine = summaryContent.split('\n')[0].trim();
-    return firstLine.slice(0, 200);
-  }
-
   async summary(state: WebPageState, opts: { allowNewResearch?: boolean } = {}): Promise<string> {
     const { allowNewResearch = false } = opts;
     let researchText = Researcher.getCachedResearch(state);
@@ -1397,31 +1411,4 @@ export class Researcher extends TaskAgent implements Agent {
       await action.execute(`I.amOnPage("${url.split('?')[0]}")`);
     }
   }
-
-  private addScreenshotPrompt(conversation: Conversation, screenshotAnalysis: string): void {
-    conversation.addUserText(dedent`
-      <screenshot_analysis>
-      ${screenshotAnalysis}
-      </screenshot_analysis>
-
-      IMPORTANT: Merge screenshot analysis INTO your UI map tables:
-      1. ADD Coordinates, Color, and Icon columns to ALL UI map tables
-      2. For each element, include coordinates (X, Y) from screenshot analysis
-      3. For each element, include accent color if it has a distinctive color (red, green, blue, etc.)
-      4. For each element, include one-word icon description if the element has a visual icon (down-chevron, plus, hamburger, ellipsis, gear, trash, etc.)
-      5. Use "-" for elements not visible in screenshot, without distinctive color, or without icon
-      6. DO NOT create separate Coordinates, Color, or Icon sections - they must be IN the tables
-
-      Final table format must be:
-      | Element | ARIA | CSS | XPath | Coordinates | Color | Icon |
-
-      Also incorporate any visual elements not captured in HTML (icons, images, visual indicators).
-    `);
-  }
-}
-
-interface ExpandableElement {
-  xpath: string;
-  clickXPath: string;
-  description: string;
 }

@@ -99,10 +99,14 @@ Use today's date as the heading. Follow this format exactly:
 **Rules:**
 - Only include sections that have entries (omit empty sections)
 - Every CLI/TUI option must have a usage example in a code block
+- Every CLI/TUI option must explain what it does from the user's perspective — not just mention the flag name
+- If a command gains new flags (e.g. via shared options helper), list each new flag separately with its description
 - Configuration entries list the key path, description, and default value — no code blocks
 - For agent-related changes, prefix with `[AgentName]` in square brackets
 - For non-agent components (State Manager, Experience Tracker), use plain name prefix
 - Only list changes with user-visible behavior impact
+- NEVER use internal developer terminology — describe what the user sees or experiences, not implementation details
+- Do not invent jargon like "gap-fill" or "annotation pipeline" — use plain language ("elements that AI missed are now detected")
 
 ## Step 5: Write to CHANGELOG.md
 

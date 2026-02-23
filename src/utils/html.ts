@@ -1049,6 +1049,7 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
     'key',
     'label',
     'important',
+    'eidx',
   ];
 
   convertExplorbotAttributes(element);
@@ -1116,17 +1117,15 @@ function hasExplorbotAttributes(element: parse5TreeAdapter.Element): boolean {
 function convertExplorbotAttributes(element: parse5TreeAdapter.Element): void {
   const explorbotAttrs: Array<{ name: string; value: string }> = [];
 
-  // Find all data-explorbot-* attributes
   element.attrs = element.attrs.filter((attr) => {
     if (attr.name.startsWith('data-explorbot-')) {
       const regularName = attr.name.replace('data-explorbot-', '');
       explorbotAttrs.push({ name: regularName, value: attr.value });
-      return false; // Remove the data-explorbot-* attribute
+      return false;
     }
-    return true; // Keep other attributes
+    return true;
   });
 
-  // Add converted attributes
   element.attrs.push(...explorbotAttrs);
 }
 

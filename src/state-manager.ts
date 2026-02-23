@@ -550,5 +550,10 @@ export class StateManager {
 }
 
 export function normalizeUrl(url: string): string {
-  return url.replace(/^\/+|\/+$/g, '');
+  try {
+    const parsed = new URL(url, 'http://localhost');
+    return parsed.pathname.replace(/^\/+|\/+$/g, '');
+  } catch {
+    return url.replace(/^\/+|\/+$/g, '');
+  }
 }

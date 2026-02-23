@@ -48,7 +48,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-s, --show', 'Show browser window')
     .option('--headless', 'Run browser in headless mode')
     .option('--incognito', 'Run without recording experiences')
-    .option('--session [file]', 'Save/restore browser session from file', 'output/session.json');
+    .option('--session [file]', 'Save/restore browser session from file');
 }
 
 async function startTUI(explorBot: ExplorBot): Promise<void> {
@@ -363,24 +363,15 @@ program
     }
   });
 
-program
-  .command('research <url>')
-  .description('Research a page and print UI analysis')
-  .option('-p, --path <path>', 'Working directory path')
-  .option('-c, --config <path>', 'Path to configuration file')
-  .option('-s, --show', 'Show browser window')
-  .option('--headless', 'Run browser in headless mode')
-  .option('--session [file]', 'Save/restore browser session from file', 'output/session.json')
-  .option('--data', 'Include data extraction in research')
-  .option('--deep', 'Enable deep analysis (expand hidden elements)')
-  .option('--no-fix', 'Skip locator fix cycle (for debugging)')
-  .action(async (url, options) => {
+addCommonOptions(program.command('research <url>').description('Research a page and print UI analysis').option('--data', 'Include data extraction in research').option('--deep', 'Enable deep analysis (expand hidden elements)').option('--no-fix', 'Skip locator fix cycle (for debugging)')).action(
+  async (url, options) => {
     try {
       const mainOptions: ExplorBotOptions = {
         path: options.path,
         config: options.config,
         show: options.show,
         headless: options.headless,
+        verbose: options.verbose || options.debug,
         session: options.session === true ? 'output/session.json' : options.session,
       };
 
@@ -408,7 +399,8 @@ program
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       await showStatsAndExit(1);
     }
-  });
+  }
+);
 
 addCommonOptions(
   program.command('drill <url>').alias('bosun').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max <count>', 'Maximum number of components to drill', '20')
@@ -442,10 +434,12 @@ program
   .description('Print page context (URL, headings, knowledge, experience, interactive elements)')
   .option('-p, --path <path>', 'Working directory path')
   .option('-c, --config <path>', 'Path to configuration file')
-  .option('--session [file]', 'Save/restore browser session from file', 'output/session.json')
+  .option('--session [file]', 'Save/restore browser session from file')
   .option('--full', 'Include HTML and all data')
   .option('--compact', 'Compact view with summaries')
   .option('--attached', 'Only auto-attached sections (default)')
+  .option('--visual', 'Annotate elements on screenshot and print screenshot path')
+  .option('--screenshot', 'Alias for --visual')
   .action(async (url, options) => {
     try {
       const mainOptions: ExplorBotOptions = {
@@ -460,44 +454,13 @@ program
 
       await explorBot.agentNavigator().visit(url);
 
-      const { ActionResult } = await import('../src/action-result.js');
-      const { Researcher } = await import('../src/ai/researcher.js');
-      const { formatContextSummary } = await import('../src/utils/context-formatter.js');
-
-      const state = explorBot.getExplorer().getStateManager().getCurrentState();
-      if (!state) {
-        throw new Error('No active page');
-      }
-
-      let mode: 'attached' | 'compact' | 'full' = 'attached';
-      if (options.full) {
-        mode = 'full';
-      } else if (options.compact) {
-        mode = 'compact';
-      }
-
-      const actionResult = ActionResult.fromState(state);
-      const experienceTracker = explorBot.getExplorer().getStateManager().getExperienceTracker();
-      const knowledgeTracker = explorBot.getKnowledgeTracker();
-
-      const contextData = {
-        url: actionResult.url,
-        title: actionResult.title,
-        headings: {
-          h1: actionResult.h1,
-          h2: actionResult.h2,
-          h3: actionResult.h3,
-          h4: actionResult.h4,
-        },
-        experience: experienceTracker.getRelevantExperience(actionResult),
-        knowledge: knowledgeTracker.getRelevantKnowledge(actionResult),
-        ariaSnapshot: actionResult.ariaSnapshot,
-        combinedHtml: mode === 'full' ? await actionResult.combinedHtml() : undefined,
-        research: Researcher.getCachedResearch(state),
-      };
-
-      const output = formatContextSummary(contextData, mode);
-      console.log(output);
+      const { ContextCommand } = await import('../src/commands/context-command.js');
+      const argParts: string[] = [];
+      if (options.full) argParts.push('--full');
+      else if (options.compact) argParts.push('--compact');
+      else argParts.push('--attached');
+      if (options.visual || options.screenshot) argParts.push('--visual');
+      await new ContextCommand(explorBot).execute(argParts.join(' '));
 
       await explorBot.stop();
       await showStatsAndExit(0);

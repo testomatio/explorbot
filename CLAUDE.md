@@ -57,6 +57,7 @@ Avoid repetetive code patterns
 Avoid ternary operators!
 Avoid creating extra functions that were not explicitly set
 Use dedent when formatting prompts
+Use `mdq()` from `src/utils/markdown-query.ts` for all markdown manipulation (find sections, replace tables, extract text). Never do manual line-splitting/counting on markdown.
 Put types into the end of file
 Introduce new types and interfaces only for module-to-module collaboration, do not add types when dealing inside one module
 

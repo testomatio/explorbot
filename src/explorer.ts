@@ -250,6 +250,80 @@ class Explorer {
     return action;
   }
 
+  async annotateElements(): Promise<number> {
+    const page = this.playwrightHelper.page;
+    const roles = ['button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio', 'switch', 'combobox', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'treeitem'];
+    let idx = 1;
+    for (const role of roles) {
+      const elements = await page.getByRole(role).all();
+      for (const el of elements) {
+        await el.evaluate((node: Element, i: number) => {
+          node.setAttribute('data-explorbot-eidx', String(i));
+        }, idx);
+        idx++;
+      }
+    }
+    return idx - 1;
+  }
+
+  async visuallyAnnotateElements(): Promise<number> {
+    const page = this.playwrightHelper.page;
+    return page.evaluate(() => {
+      const colors = ['#e63946', '#2a9d8f', '#e9c46a', '#264653', '#f4a261', '#7b2cbf', '#0077b6', '#d62828'];
+      const elements = document.querySelectorAll('[data-explorbot-eidx]');
+      let count = 0;
+      for (const el of elements) {
+        const eidx = el.getAttribute('data-explorbot-eidx');
+        if (!eidx) continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) continue;
+
+        const color = colors[count % colors.length];
+
+        const box = document.createElement('div');
+        box.setAttribute('data-explorbot-annotation', 'true');
+        box.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${rect.top + window.scrollY}px;width:${rect.width}px;height:${rect.height}px;border:2px solid ${color};z-index:99999;pointer-events:none;`;
+
+        const label = document.createElement('div');
+        label.textContent = eidx;
+        label.style.cssText = `position:absolute;top:-14px;right:-2px;background:${color};color:white;font-size:10px;padding:0 3px;line-height:14px;font-family:monospace;z-index:100000;pointer-events:none;`;
+        box.appendChild(label);
+
+        document.body.appendChild(box);
+        count++;
+      }
+      return count;
+    });
+  }
+
+  async getEidxInContainer(containerCss: string | null): Promise<number[]> {
+    const page = this.playwrightHelper.page;
+    try {
+      const selector = containerCss ? `${containerCss} [data-explorbot-eidx]` : '[data-explorbot-eidx]';
+      const elements = await page.locator(selector).all();
+      const result: number[] = [];
+      for (const el of elements) {
+        const attr = await el.getAttribute('data-explorbot-eidx');
+        if (attr) result.push(Number.parseInt(attr, 10));
+      }
+      return result;
+    } catch {
+      return [];
+    }
+  }
+
+  async getEidxByLocator(locator: string, container?: string | null): Promise<number | null> {
+    try {
+      const page = this.playwrightHelper.page;
+      const base = container ? page.locator(container) : page;
+      const el = locator.startsWith('//') ? base.locator(`xpath=${locator}`) : base.locator(locator);
+      const eidx = await el.first().getAttribute('data-explorbot-eidx');
+      return eidx ? Number.parseInt(eidx, 10) : null;
+    } catch {
+      return null;
+    }
+  }
+
   async reload() {
     await this.closeOtherTabs();
     await this.playwrightHelper.page.reload();

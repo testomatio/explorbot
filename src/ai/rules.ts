@@ -58,6 +58,8 @@ export const locatorRule = dedent`
   { "role": "button", "name": "Save" }  // WRONG key - use "text", not "name"
   </bad_aria_locator_example>
 
+  NEVER include \`eidx\` attribute in any locator (ARIA, CSS, XPath). It is an internal annotation.
+
   If <aria> section is not present or element is not found there, fall back to CSS/XPath locators from <html> section.
 
   Stick to semantic attributes like role, aria-*, id, class, name, data-id, etc.
