@@ -10,11 +10,12 @@ import { Stats } from '../stats.ts';
 import { Plan, Test } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
 import { createDebug, tag } from '../utils/logger.js';
+import { mdq } from '../utils/markdown-query.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import { protectionRule } from './rules.ts';
+import { noFileUploadRule, protectionRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -39,7 +40,6 @@ const TasksSchema = z.object({
   reasoning: z.string().describe('Brief explanation of the scenario selection'),
 });
 
-let planId = 0;
 export class Planner implements Agent {
   emoji = '📋';
   private explorer: Explorer;
@@ -116,7 +116,7 @@ export class Planner implements Agent {
     setActivity(`${this.emoji} Planning...`, 'action');
     tag('info').log(`Planning test scenarios for ${state.url}...`);
 
-    const tests = await Observability.run('planner.plan', { tags: ['planner'] }, async () => {
+    const result = await Observability.run('planner.plan', { tags: ['planner'] }, async () => {
       const allTests: Test[] = [];
 
       if (this.currentPlan) {
@@ -142,28 +142,29 @@ export class Planner implements Agent {
 
       debugLog('Sending planning prompt to AI provider with structured output');
 
-      const result = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model);
+      const aiResult = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model);
 
-      if (!result?.object?.scenarios) {
+      if (!aiResult?.object?.scenarios) {
         throw new Error('No tasks were created successfully');
       }
 
-      if (result.object.scenarios.length === 0 && !this.currentPlan && allTests.length === 0) {
+      if (aiResult.object.scenarios.length === 0 && !this.currentPlan && allTests.length === 0) {
         throw new Error('No tasks were created successfully');
       }
 
-      tag('substep').log(result.object.reasoning);
+      tag('substep').log(aiResult.object.reasoning);
 
-      const fromPlanning = result.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, state.url, s.steps || []));
+      const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, state.url, s.steps || []));
       allTests.push(...fromPlanning);
 
-      return allTests;
+      return { tests: allTests, planName: aiResult.object.planName };
     });
 
+    const tests = result.tests;
     debugLog('Created tests:', tests);
 
     if (!this.currentPlan) {
-      const planName = `Plan ${planId++}`;
+      const planName = result.planName || state.url;
       this.currentPlan = new Plan(planName);
       this.currentPlan.url = state.url;
       for (const t of tests) {
@@ -370,6 +371,8 @@ export class Planner implements Agent {
   private async buildConversation(state: ActionResult): Promise<Conversation> {
     const model = this.provider.getModelForAgent('planner');
     const conversation = new Conversation([], model);
+    conversation.autoTrimTag('page_research', 20000);
+    conversation.autoTrimTag('previous_test_results', 10000);
 
     conversation.addUserText(this.getSystemMessage());
 
@@ -405,6 +408,7 @@ export class Planner implements Agent {
       If there are subpages (pages with same URL path) plan testing of those subpages as well
       If you plan to test CRUD operations, plan them in correct order: create, read, update.
       ${protectionRule}
+      ${noFileUploadRule}
       </rules>
 
       ${
@@ -514,6 +518,7 @@ export class Planner implements Agent {
         <planning_strategy>
         Find a feature area in the research that has NO or minimal test coverage.
         Pick that ONE feature and propose ${this.MIN_TASKS}-${this.MAX_TASKS} tests for it.
+        ${mdq(research).query('section("Extended Research")').count() > 0 ? 'IMPORTANT: The research contains "Extended Research" sections with dropdowns, modals, and panels. Prioritize testing features from Extended Research that have no coverage yet.' : ''}
 
         Think like a real user of this product:
         - What is this feature for? What business problem does it solve?
@@ -528,15 +533,7 @@ export class Planner implements Agent {
         Pages visited during testing:
         ${this.currentPlan
           .getVisitedPages()
-          .map(
-            (s) => dedent`
-            <page url="${s.url}">
-            ${ActionResult.fromState(s).toAiContext()}
-            <research>
-            ${Researcher.getCachedResearch(s) || this.researcher.textContent(s)}
-            </research>
-            </page>`
-          )
+          .map((s) => `- ${s.url} (${s.title || 'untitled'})`)
           .join('\n')}
         </context_from_previous_tests>
 
@@ -583,7 +580,6 @@ export class Planner implements Agent {
 
     conversation.addUserText(tasksMessage);
 
-    conversation.autoTrimTag('page_content', 5000);
     return conversation;
   }
 }

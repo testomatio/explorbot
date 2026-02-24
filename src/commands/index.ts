@@ -10,6 +10,7 @@ import { ContextKnowledgeCommand } from './context-knowledge-command.js';
 import { DrillCommand } from './drill-command.js';
 import { ExitCommand } from './exit-command.js';
 import { ExploreCommand } from './explore-command.js';
+import { FreesailCommand } from './freesail-command.js';
 import { HelpCommand } from './help-command.js';
 import { KnowCommand } from './know-command.js';
 import { KnowsCommand } from './knows-command.js';
@@ -33,6 +34,7 @@ const commandClasses: CommandClass[] = [
   HelpCommand,
   StartCommand,
   ExploreCommand,
+  FreesailCommand,
   DrillCommand,
   CleanCommand,
   ResearchCommand,

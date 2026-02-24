@@ -76,6 +76,7 @@ export interface Knowledge extends WebPageState {
 export class StateManager {
   private currentState: WebPageState | null = null;
   private stateHistory: StateTransition[] = [];
+  private allVisitedUrls: Set<string> = new Set();
   private knowledgeCache: Knowledge[] = [];
   private lastKnowledgeScan: Date | null = null;
   private stateChangeListeners: StateChangeListener[] = [];
@@ -165,6 +166,7 @@ export class StateManager {
     const newState = actionResult;
     this.currentState = newState;
     this.currentState.id = this.nextStateId++;
+    if (newState.url) this.allVisitedUrls.add(normalizeUrl(newState.url));
 
     const hashChanged = actionResult.hash !== previousHash;
     const dialogOpened = !hashChanged && this.hasDialogAppeared(previousState, newState);
@@ -221,6 +223,7 @@ export class StateManager {
 
     this.stateHistory.push(transition);
     this.currentState = newState;
+    this.allVisitedUrls.add(normalizeUrl(newState.url));
 
     this.emitStateChange(transition);
 
@@ -438,7 +441,11 @@ export class StateManager {
    * Check if we've been in this state before
    */
   hasVisitedState(path: string): boolean {
-    return this.stateHistory.some((transition) => normalizeUrl(transition.toState.url) === normalizeUrl(path));
+    return this.allVisitedUrls.has(normalizeUrl(path));
+  }
+
+  getAllVisitedUrls(): Set<string> {
+    return this.allVisitedUrls;
   }
 
   /**
@@ -535,6 +542,7 @@ export class StateManager {
   cleanup(): void {
     this.currentState = null;
     this.stateHistory = [];
+    this.allVisitedUrls.clear();
     this.stateChangeListeners = [];
     this.knowledgeCache = [];
     this.lastKnowledgeScan = null;

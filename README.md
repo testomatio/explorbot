@@ -52,15 +52,20 @@ explorbot init
 **3. Edit `explorbot.config.js`** — set your app URL and AI provider:
 
 > [!IMPORTANT]
-> **Use fast, lightweight models.** Explorbot agents make many rapid API calls. Expensive SOTA models (GPT-5, Claude Opus) are overkill — slow and costly. Stick with `gpt-oss-20b` or similar. Recommended providers (100+ TPS): Groq, Cerebras. See complete list for fastest models on [OpenRouter](https://openrouter.ai/rankings#performance)
+> **Explorbot uses two tiers of models.** Most agents (Tester, Navigator, Researcher) are token-hungry — they process full HTML and ARIA snapshots on every iteration. Use a fast, cheap model like `gpt-oss-20b` for these. **Pilot is different** — it only reads compact action logs and makes high-level decisions, so it benefits from a smarter reasoning model. Recommended providers for base model (100+ TPS): Groq, Cerebras. See [OpenRouter](https://openrouter.ai/rankings#performance) for fastest models.
 
 Groq is used in this example but you can use any provider supported by Vercel AI SDK. See [docs/providers.md](docs/providers.md) for other providers.
 
 ```javascript
 import { createGroq } from '@ai-sdk/groq';
+import { createOpenAI } from '@ai-sdk/openai';
 
 const groq = createGroq({
-  apiKey: process.env.GROQ_API_KEY,  // Set in .env file (loaded automatically)
+  apiKey: process.env.GROQ_API_KEY,
+});
+
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export default {
@@ -70,11 +75,17 @@ export default {
   },
   ai: {
     provider: groq,
-    model: 'gpt-oss-20b',            // Fast model with tool use
+    model: 'gpt-oss-20b',            // Fast cheap model for most agents
     visionModel: 'llama-scout-4',    // Fast vision model
+    agents: {
+      pilot: { provider: openai, model: 'gpt-5' },  // Smarter model for Pilot
+    },
   },
 };
 ```
+
+> [!TIP]
+> **Suggested Pilot models:** GPT-5, Claude Sonnet, Kimi K2, Qwen 3. Pilot barely uses tokens (just action summaries), so a smarter model here costs very little while significantly improving test quality.
 
 **4. Add knowledge** (optional but recommended)
 
@@ -135,7 +146,7 @@ Run `/explore` in TUI or use `explorbot explore` from CLI to watch the cycle: re
 
 **Supporting components:**
 
-* **Pilot** — supervises Tester, detects stuck patterns, asks user for help when needed
+* **Pilot** — supervises Tester from a separate conversation: reviews action logs, detects stuck patterns, makes final pass/fail decisions. Uses a smarter model since it only processes compact summaries, not raw HTML
 * **Historian** — saves sessions as CodeceptJS code, learns from experience
 * **Quartermaster** — analyzes pages for A11y issues (axe-core + semantic)
 * **Reporter** — sends test results to Testomat.io
@@ -187,18 +198,30 @@ explorbot start https://your-app.com
 explorbot explore /admin/users
 ```
 
+**Freesail mode** — Fully autonomous, continuous exploration across multiple pages:
+
+```bash
+explorbot freesail /admin              # explore and test pages indefinitely
+explorbot freesail /app --deep         # depth-first: explore nearby pages first
+explorbot freesail /app --shallow      # breadth-first: spread across many pages
+explorbot freesail /app --scope /admin # restrict to URLs under /admin
+```
+
+Freesail navigates to a page, researches it, runs tests, then moves on to the next least-visited page — repeating until stopped. Also available as `/freesail` in TUI.
+
 ## Core Philosophy
 
 **Strategic decisions are deterministic** — The workflow (research → plan → test) is predictable and consistent.
 
 **Tactical decisions are AI-driven** — How to click that button, what to do when a modal appears, how to recover from errors.
 
-**ExplorBot learns from its failures** - it uses previous experience interacting with a web page for faster and better decision on next runs
+**Cheap workers, smart manager** — Tester, Navigator, and Researcher are token-hungry agents that chew through HTML and ARIA on every step. They run on fast, cheap models. Pilot is the manager — it reads only compact action logs, thinks about what went wrong, and guides Tester. Give Pilot a smarter model for better results at negligible extra cost.
 
-**Explorbots needs your knowledge** - you adjust Explorbot prompts by passing suggestions, UI explanatins, domain knowledge, in format of text filesm which are loaded when corresponding page loaded.
+**Explorbot learns from its failures** — It uses previous experience interacting with a web page for faster and better decisions on next runs.
 
-Thus, when tuned, Explorbot **can run autonomously for hours** navigating web application and trying different scenarios over UI. You don't need to watch it. Explorbot execution is fully autonomous. The more Explorbot runs the more it learns and can test more complex scenarios. 
+**Explorbot needs your knowledge** — You adjust Explorbot prompts by passing suggestions, UI explanations, and domain knowledge as text files, which are loaded when the corresponding page is opened.
 
+When tuned, Explorbot **can run autonomously for hours** navigating a web application and trying different scenarios. You don't need to watch it. The more Explorbot runs, the more it learns and the more complex scenarios it can test.
 
 
 ## Teaching Explorbot

@@ -45,8 +45,11 @@ class Navigator implements Agent {
     You help with exploratory web navigation.
   </role>
   <rules>
-    Always propose a single next navigation target that was not visited yet.
+    Always propose a single next navigation target, preferring least-visited pages.
     Base the suggestion only on the provided research notes and HTML snapshot.
+    The target MUST be a URL path starting with "/" (e.g., /requirements, /dashboard/settings).
+    Only use URLs that appear in the HTML (href attributes) or in the visited URLs list. Never guess or invent URLs.
+    Never return page names, link text, or headings as targets.
     Respond with exactly two lines:
     Next: <target>
     Reason: <short justification>
@@ -73,6 +76,12 @@ class Navigator implements Agent {
       const action = this.explorer.createAction();
 
       await action.execute(`I.amOnPage('${url}')`);
+
+      const currentUrl = action.stateManager.getCurrentState()?.url || '';
+      if (currentUrl === 'about:blank' || currentUrl === '') {
+        throw new Error(`Navigation to "${url}" opened an empty page. The target must be a valid URL path starting with "/".`);
+      }
+
       await this.hooksRunner.runBeforeHook('navigator', url);
 
       if (!this.isOnExpectedPage(url, action.stateManager)) {
@@ -287,7 +296,7 @@ class Navigator implements Agent {
     return resolved;
   }
 
-  async freeSail(actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
+  async freeSail(opts?: { strategy?: 'deep' | 'shallow'; scope?: string; visitedUrls?: Set<string> }, actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
     const stateManager = this.explorer.getStateManager();
     const state = stateManager.getCurrentState();
     if (!state) {
@@ -299,30 +308,42 @@ class Navigator implements Agent {
     const combinedHtml = await currentActionResult.combinedHtml();
 
     const history = stateManager.getStateHistory();
-    const visited = new Set<string>();
-    const normalize = (value: string) => {
-      const trimmed = value.trim();
-      if (!trimmed) return '';
-      if (trimmed === '/') return trimmed;
-      const withoutSlash = trimmed.replace(/\/+$/, '');
-      return withoutSlash.toLowerCase();
-    };
+    const visitCounts = new Map<string, number>();
 
-    const pushVisited = (value?: string | null) => {
+    const countVisit = (value?: string | null) => {
       if (!value) return;
-      const normalized = normalize(value);
-      if (normalized) visited.add(normalized);
+      const normalized = normalizeUrl(value);
+      if (normalized) visitCounts.set(normalized, (visitCounts.get(normalized) || 0) + 1);
     };
 
-    history.forEach((transition) => {
-      pushVisited(transition.toState.url);
-      pushVisited(transition.toState.fullUrl);
-    });
-    pushVisited(state.url);
-    pushVisited(state.fullUrl);
+    for (const transition of history) {
+      countVisit(transition.toState.url);
+    }
+    countVisit(state.url);
 
-    const visitedList = [...visited];
-    const visitedBlock = visitedList.length > 0 ? visitedList.join('\n') : 'none';
+    if (opts?.visitedUrls) {
+      for (const url of opts.visitedUrls) {
+        const normalized = normalizeUrl(url);
+        if (normalized && !visitCounts.has(normalized)) {
+          visitCounts.set(normalized, 1);
+        }
+      }
+    }
+
+    const sortedVisits = [...visitCounts.entries()].sort((a, b) => a[1] - b[1]);
+    const visitedBlock = sortedVisits.length > 0 ? sortedVisits.map(([url, count]) => `${url} (${count} ${count === 1 ? 'visit' : 'visits'})`).join('\n') : 'none';
+
+    let strategyInstruction = '';
+    if (opts?.strategy === 'deep') {
+      strategyInstruction = 'Prefer nearby pages with low visit counts. Explore depth-first: prioritize newly discovered pages close to current URL.';
+    } else if (opts?.strategy === 'shallow') {
+      strategyInstruction = 'Pick the globally least-visited page. Spread exploration breadth-first across many different pages.';
+    }
+
+    let scopeInstruction = '';
+    if (opts?.scope) {
+      scopeInstruction = `IMPORTANT: Only suggest URLs that start with "${opts.scope}". Do not suggest URLs outside this scope.`;
+    }
 
     const prompt = dedent`
       <research>
@@ -335,18 +356,21 @@ class Navigator implements Agent {
 
       <context>
       Current URL: ${currentActionResult.url || 'unknown'}
-      Visited URLs:
+      Visited URLs (sorted by visit count):
       ${visitedBlock}
       </context>
 
       <task>
-      Suggest a new navigation target that has not been visited yet and can be reached from the current page.
+      Suggest the next navigation target, preferring least-visited pages.
+      ${strategyInstruction}
+      ${scopeInstruction}
       </task>
     `;
 
     const conversation = this.provider.startConversation(this.freeSailSystemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
+    const minVisits = sortedVisits.length > 0 ? sortedVisits[0][1] : 0;
     let suggestion: { target: string; reason: string } | null = null;
 
     await loop(
@@ -366,20 +390,27 @@ class Navigator implements Agent {
           return;
         }
 
-        const normalizedTarget = normalize(target);
-        if (normalizedTarget && visited.has(normalizedTarget)) {
-          conversation.addUserText(
-            dedent`
-            The suggestion "${target}" was already visited. Choose another destination not in this list:
-            ${visitedBlock}
-            `
-          );
+        const normalizedTarget = normalizeUrl(target);
+
+        if (opts?.scope && !target.startsWith(opts.scope)) {
+          conversation.addUserText(`"${target}" is outside scope "${opts.scope}". Suggest a URL within scope.`);
+          return;
+        }
+
+        if (!target.startsWith('/') && !target.startsWith('http')) {
+          conversation.addUserText(`"${target}" is not a valid URL path. Suggest a URL path starting with "/".`);
+          return;
+        }
+
+        const targetVisits = visitCounts.get(normalizedTarget) || 0;
+        if (targetVisits >= 5 && minVisits < 5) {
+          conversation.addUserText(`"${target}" has been visited ${targetVisits} times. Choose a less-visited page from this list:\n${visitedBlock}`);
           return;
         }
 
         suggestion = {
           target,
-          reason: reasonMatch?.[1]?.trim() || '',
+          reason: `${reasonMatch?.[1]?.trim() || ''} (visited ${targetVisits}x)`,
         };
         stop();
       },

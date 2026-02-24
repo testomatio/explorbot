@@ -235,17 +235,17 @@ export const multipleLocatorRule = dedent`
   Solutions should be different, do not repeat the same locator in different solutions.
 `;
 
+export const noFileUploadRule = dedent`
+  <limitation>
+  Explorbot currently has NO capability to upload files.
+  Do not plan, suggest, or attempt any tests that involve file uploading.
+  Skip any file upload fields, drag-and-drop file areas, or import-from-file features.
+  </limitation>
+`;
+
 // in rage mode we do not protect from irreversible actions
 export const protectionRule = dedent`
   <important>
-  ${
-    process.env.MACLAY_RAGE
-      ? ''
-      : `
-    Do not trigger DELETE operations.
-  `
-  }
-
   Do not sign out current user of the application.
   Do not change current user account settings
   </important>

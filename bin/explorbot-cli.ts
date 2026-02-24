@@ -150,10 +150,20 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
     }
   });
 
-addCommonOptions(program.command('freesail [startUrl]').description('Continuously explore and navigate to new pages autonomously')).action(async (startUrl, options) => {
+addCommonOptions(
+  program
+    .command('freesail [startUrl]')
+    .description('Continuously explore and navigate to new pages autonomously')
+    .option('--deep', 'Depth-first: prioritize newly discovered pages')
+    .option('--shallow', 'Breadth-first: pick globally least-visited page')
+    .option('--scope <prefix>', 'Restrict navigation to URL prefix')
+).action(async (startUrl, options) => {
   const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
   await explorBot.start();
-  await explorBot.freeride();
+  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`].filter(Boolean).join(' ');
+  const { FreesailCommand } = await import('../src/commands/freesail-command.js');
+  const cmd = new FreesailCommand(explorBot);
+  await cmd.execute(args);
 });
 
 program

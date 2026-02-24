@@ -23,7 +23,6 @@ import { Plan } from './test-plan.ts';
 import { log, setVerboseMode, tag } from './utils/logger.ts';
 import { sanitizeFilename } from './utils/strings.ts';
 
-const planId = 0;
 export interface ExplorBotOptions {
   from?: string;
   verbose?: boolean;
@@ -171,7 +170,7 @@ export class ExplorBot {
       const researcher = this.agentResearcher();
       const navigator = this.agentNavigator();
       const tools = createAgentTools({ explorer, researcher, navigator });
-      return new Pilot(ai, tools, researcher);
+      return new Pilot(ai, tools, researcher, explorer);
     }));
   }
 
@@ -347,7 +346,7 @@ export class ExplorBot {
     const planner = this.agentPlanner();
     this.currentPlan = await planner.plan(feature);
     const tester = this.agentTester();
-    for (const test of this.currentPlan.tests) {
+    for (const test of this.currentPlan.getPendingTests()) {
       await tester.test(test);
     }
     tag('info').log(`Completed testing: ${this.currentPlan.title}} ${this.currentPlan.url}`);
@@ -375,25 +374,5 @@ export class ExplorBot {
       throw new Error('No test to test');
     }
     await tester.test(test);
-  }
-
-  async freeride(): Promise<void> {
-    await this.visitInitialState();
-    const { loop } = await import('./utils/loop.js');
-
-    await loop(
-      async () => {
-        await this.explore();
-        const navigator = this.agentNavigator();
-        const suggestion = await navigator.freeSail();
-        if (!suggestion) {
-          tag('info').log('No navigation suggestion available');
-          return;
-        }
-        tag('info').log(`Navigating to: ${suggestion.target} - ${suggestion.reason}`);
-        await this.visit(suggestion.target);
-      },
-      { maxAttempts: Number.POSITIVE_INFINITY }
-    );
   }
 }

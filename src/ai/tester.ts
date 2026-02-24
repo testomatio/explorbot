@@ -21,7 +21,7 @@ import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
+import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools } from './tools.ts';
 
@@ -73,6 +73,10 @@ export class Tester extends TaskAgent implements Agent {
 
   setPilot(pilot: Pilot): void {
     this.pilot = pilot;
+  }
+
+  private getCurrentState(): ActionResult {
+    return ActionResult.fromState(this.explorer.getStateManager().getCurrentState()!);
   }
 
   private get progressCheckInterval(): number {
@@ -131,7 +135,7 @@ export class Tester extends TaskAgent implements Agent {
     await loop(
       async ({ stop, pause, iteration, userInput }) => {
         debugLog('iteration', iteration);
-        const currentState = ActionResult.fromState(this.explorer.getStateManager().getCurrentState()!);
+        const currentState = this.getCurrentState();
 
         const tools = {
           ...codeceptjsTools,
@@ -218,6 +222,11 @@ export class Tester extends TaskAgent implements Agent {
           }
         }
 
+        if (this.pilot?.hasPendingVerdict) {
+          const reviewState = this.getCurrentState();
+          await this.pilot.reviewVerdict(task, reviewState, conversation);
+        }
+
         if (task.hasFinished) {
           stop();
           return;
@@ -246,7 +255,12 @@ export class Tester extends TaskAgent implements Agent {
     const finalUrl = this.explorer.getStateManager().getCurrentState()?.url || currentUrl;
     await this.hooksRunner.runAfterHook('tester', finalUrl);
 
-    await this.finalReview(task);
+    if (this.pilot) {
+      const finalState = this.getCurrentState();
+      await this.pilot.finalReview(task, finalState, conversation);
+    } else {
+      await this.finalReview(task);
+    }
     await this.getHistorian().saveSession(task, initialState, conversation);
     if (task.plan) {
       this.getHistorian().savePlanToFile(task.plan);
@@ -620,8 +634,30 @@ export class Tester extends TaskAgent implements Agent {
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
 
+      ${this.buildDeletionScope(task)}
+
       ${knowledge}
     `;
+  }
+
+  private getDeletableSessionNames(task: Test): string[] {
+    if (!task.plan) return [];
+    return task.plan
+      .listTests()
+      .filter((t) => t.isSuccessful && t.sessionName)
+      .map((t) => t.sessionName!);
+  }
+
+  private buildDeletionScope(task: Test): string {
+    const deletableItems = this.getDeletableSessionNames(task);
+    if (deletableItems.length > 0) {
+      return `When deleting items, ONLY delete items whose title contains one of these session names: ${deletableItems.join(', ')}. These were created by previous tests.`;
+    }
+    const scenarioLower = task.scenario.toLowerCase();
+    if (scenarioLower.includes('delete') || scenarioLower.includes('remove')) {
+      return 'No items from previous tests are available for deletion. You need to create an item first before deleting it.';
+    }
+    return '';
   }
 
   private createTestFlowTools(task: Test, currentState: ActionResult, conversation: Conversation) {
@@ -699,7 +735,12 @@ export class Tester extends TaskAgent implements Agent {
           tag('warning').log(`❌ ${message}`);
 
           task.addNote(message, TestResult.FAILED);
-          task.finish(TestResult.FAILED);
+
+          if (this.pilot) {
+            this.pilot.requestVerdict({ type: 'stop' });
+          } else {
+            task.finish(TestResult.FAILED);
+          }
 
           return {
             success: true,
@@ -754,8 +795,13 @@ export class Tester extends TaskAgent implements Agent {
 
           tag('success').log(`Test finished - verified: ${verify}`);
           task.addNote(`Verified: ${verify}`, TestResult.PASSED);
-          task.addNote('Test finished successfully', TestResult.PASSED);
-          task.finish(TestResult.PASSED);
+
+          if (this.pilot) {
+            this.pilot.requestVerdict({ type: 'finish', verify, verified: true });
+          } else {
+            task.addNote('Test finished successfully', TestResult.PASSED);
+            task.finish(TestResult.PASSED);
+          }
 
           return {
             success: true,
@@ -815,8 +861,13 @@ export class Tester extends TaskAgent implements Agent {
           }
 
           if (input.status !== null && task.isComplete()) {
-            const hasPassed = task.hasAchievedAny();
-            task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);
+            if (this.pilot) {
+              const verdictType = task.hasAchievedAny() ? 'finish' : 'stop';
+              this.pilot.requestVerdict({ type: verdictType });
+            } else {
+              const hasPassed = task.hasAchievedAny();
+              task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);
+            }
           }
 
           const remainingExpectations = task.getRemainingExpectations();

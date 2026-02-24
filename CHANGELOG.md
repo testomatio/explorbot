@@ -2,12 +2,42 @@
 
 ## 2026-02-24
 
+### New CLI Options
+- **`explorbot freesail [startUrl]`** — Continuously explore and test pages autonomously. Explorbot navigates to new pages, researches them, runs tests, then moves on — indefinitely.
+  ```bash
+  explorbot freesail /admin           # start exploring from /admin
+  explorbot freesail /dashboard --deep    # depth-first: explore nearby pages first
+  explorbot freesail /app --shallow       # breadth-first: spread across many pages
+  explorbot freesail /app --scope /admin  # only explore pages under /admin
+  ```
+- **`--deep`** — Depth-first exploration: prioritize newly discovered pages close to the current URL.
+- **`--shallow`** — Breadth-first exploration: pick the globally least-visited page next.
+- **`--scope <prefix>`** — Restrict autonomous navigation to URLs starting with the given prefix.
+
+### New TUI Commands
+- **`/freesail`** (alias: `/freeride`) — Start autonomous exploration from the current page inside TUI.
+  ```
+  /freesail
+  /freesail --deep
+  /freesail --shallow
+  /freesail --scope /admin
+  ```
+
 ### Changes
 - [Researcher] Page sections are now visually marked with dashed colored borders on screenshots, with a Legend box in the bottom-right corner mapping colors to section names
 - [Researcher] Missing elements are now detected and filled in before screenshot analysis, resulting in more complete visual data
 - [Researcher] Broken section containers are fixed by AI before taking the annotated screenshot, so more sections appear in the visual output
 - [Researcher] Screenshot file path is now printed after research completes for easy review
 - [Context] `context --visual` now shows section container borders and legend when cached research is available
+- [Pilot] Now makes the final pass/fail decision for tests — reviews Tester's verdict against actual evidence before accepting it
+- [Pilot] Provides richer state context to diagnose failures: focused element, active form fields, disabled buttons, modal status, and open tabs
+- [Pilot] Only uses tools when Tester has repeated failures, reducing unnecessary API calls
+- [Navigator] Autonomous navigation now tracks visit counts per page and prefers least-visited pages instead of skipping all visited pages
+- [Navigator] Validates that navigation targets are actual URL paths, preventing navigation to invalid destinations
+- [Planner] Prioritizes testing features from Extended Research sections (modals, dropdowns, panels) that have no coverage yet
+- [Tester] Deletion scenarios are now scoped — only items created by previous tests can be deleted, preventing accidental data loss
+- File upload tests are no longer planned or attempted (Explorbot cannot upload files)
+- [Quartermaster] A11y violation reports now include the affected HTML element for easier identification
 
 ## 2026-02-23
 

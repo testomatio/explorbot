@@ -198,7 +198,7 @@ export class Quartermaster {
       issues: z.array(
         z.object({
           type: z.enum(['unclear_intention', 'confusing_naming', 'hard_to_interact']).describe('Type of semantic issue'),
-          element: z.string().describe('Brief element description'),
+          element: z.string().describe('Short element identifier: tag with key attributes, e.g. <button class="nav-toggle"> or <a href="/login" role="link">'),
           issue: z.string().describe('What is confusing or problematic'),
           suggestion: z.string().describe('Actionable improvement suggestion'),
         })
@@ -239,7 +239,8 @@ Focus on what would confuse a real user or caused the agent to make mistakes.`;
   private addNotesToTask(task: Task, report: AnalysisReport): void {
     const criticalViolations = report.axeViolations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
     for (const v of criticalViolations.slice(0, 3)) {
-      task.addNote(`🔴 A11Y [${v.impact}] ${v.id}: ${v.description}`);
+      const nodeHtml = v.nodes[0]?.html.slice(0, 100) || '';
+      task.addNote(`🔴 A11Y [${v.impact}] ${v.id}: ${v.description} — ${nodeHtml}`);
     }
 
     for (const issue of report.semanticIssues.slice(0, 3)) {
@@ -265,7 +266,7 @@ Focus on what would confuse a real user or caused the agent to make mistakes.`;
         content += `- [${v.impact}] **${v.id}**: ${v.description}\n`;
         content += `  [Learn more](${v.helpUrl})\n`;
         for (const node of v.nodes.slice(0, 2)) {
-          content += `  - \`${node.target.join(' > ')}\`\n`;
+          content += `  - \`${node.target.join(' > ')}\` — \`${node.html.slice(0, 100)}\`\n`;
         }
         content += '\n';
       }
