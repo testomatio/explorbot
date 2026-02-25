@@ -137,10 +137,7 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
         await showStatsAndExit(1);
       }
 
-      console.log(`Plan ready with ${plan.tests.length} tests:`);
-      for (const test of plan.tests) {
-        console.log(`  - ${test.scenario}`);
-      }
+      console.log(`Plan ready with ${plan.tests.length} tests`);
 
       await explorBot.stop();
       await showStatsAndExit(0);

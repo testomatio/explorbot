@@ -2,6 +2,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
+import { ConfigParser } from '../config.ts';
 import { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
@@ -14,14 +15,12 @@ import { mdq } from '../utils/markdown-query.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Provider } from './provider.js';
-import { Researcher } from './researcher.ts';
+import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
 import { noFileUploadRule, protectionRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
 const planCache: Map<string, Plan> = new Map();
-
-const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2, unknown: 3 };
 
 const TasksSchema = z.object({
   planName: z.string().describe('Short descriptive name for the test plan (e.g., "User Authentication Testing", "Product Catalog Navigation", "Form Validation Tests")'),
@@ -29,7 +28,7 @@ const TasksSchema = z.object({
     .array(
       z.object({
         scenario: z.string().describe('A single sentence describing what to test'),
-        priority: z.enum(['high', 'medium', 'low', 'unknown']).describe('Priority of the task based on importance and risk'),
+        priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).describe('Priority of the task based on business importance'),
         steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Click on Login button", "Enter username in email field", "Submit the form"). Keep steps atomic and actionable.'),
         expectedOutcomes: z
           .array(z.string())
@@ -37,7 +36,6 @@ const TasksSchema = z.object({
       })
     )
     .describe('List of testing scenarios'),
-  reasoning: z.string().describe('Brief explanation of the scenario selection'),
 });
 
 export class Planner implements Agent {
@@ -48,7 +46,7 @@ export class Planner implements Agent {
   private experienceTracker: ExperienceTracker;
 
   MIN_TASKS = 3;
-  MAX_TASKS = 7;
+  MAX_TASKS = 12;
   currentPlan: Plan | null = null;
   researcher: Researcher;
   private analyzedUrls: Set<string> = new Set();
@@ -61,19 +59,26 @@ export class Planner implements Agent {
     this.experienceTracker = new ExperienceTracker();
   }
 
+  private get sectionOrder(): string[] {
+    return ConfigParser.getInstance().getConfig().ai?.agents?.researcher?.sections || Object.keys(POSSIBLE_SECTIONS);
+  }
+
   getSystemMessage(): string {
     const customPrompt = this.provider.getSystemPromptForAgent('planner');
     return dedent`
     <role>
     You are ISTQB certified senior manual QA planning exploratory testing session of a web application.
+    Each test scenario must complete a meaningful user workflow — not just open a UI element and verify it exists.
+    Bad: "Open the Help panel" — just opens something.
+    Good: "Create a new suite and verify it appears in the list" — completes a business action.
     </role>
     <task>
       List possible testing scenarios for the web page.
       For each scenario provide:
-      - Steps: specific actions to perform (e.g., "Click Login button", "Enter email address")
-      - Expected outcomes: observable results to verify (e.g., "Success message appears", "URL changes to /dashboard")
+      - Steps: specific actions forming a complete workflow
+      - Expected outcomes: observable business results to verify
 
-      Focus on interactive elements of the page. Skip navigation links that lead away from current page.
+      Focus on completing meaningful actions, not just verifying UI elements exist.
       Start with positive scenarios and then move to negative scenarios
       Tests must be atomic and independent of each other
       Tests must be relevant to the page
@@ -152,8 +157,6 @@ export class Planner implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
-      tag('substep').log(aiResult.object.reasoning);
-
       const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, state.url, s.steps || []));
       allTests.push(...fromPlanning);
 
@@ -171,19 +174,19 @@ export class Planner implements Agent {
         t.startUrl = state.url;
         this.currentPlan.addTest(t);
       }
+      const summary = `Scenarios:\n${this.currentPlan.tests.map((t) => `- [${t.priority}] ${t.scenario}`).join('\n')}`;
+      tag('multiline').log(summary);
     } else {
       tag('step').log(`Expanding plan: "${this.currentPlan.title}"`);
       this.currentPlan.nextIteration();
-      const addedCount = this.addNewTests(tests, state.url);
-      if (addedCount > 0) {
-        tag('step').log(`Added ${addedCount} new scenarios`);
+      const newTests = this.addNewTests(tests, state.url);
+      if (newTests.length > 0) {
+        const summary = `New scenarios:\n${newTests.map((t) => `+ [${t.priority}] ${t.scenario}`).join('\n')}`;
+        tag('multiline').log(summary);
       }
     }
 
-    this.currentPlan.tests = this.sortTestsByPriority(this.currentPlan.tests);
-
-    const summary = `Scenarios:\n${this.currentPlan.tests.map((t) => `- [${t.priority}] ${t.scenario} ${t.result ? `[${t.result}]` : ''}`).join('\n')}`;
-    tag('multiline').log(summary);
+    this.moveExecutedTestsToEnd();
     tag('success').log(`Planning complete! ${this.currentPlan.tests.length} tests in plan: ${this.currentPlan.title}`);
 
     Planner.cachePlan(state.url, this.currentPlan);
@@ -292,7 +295,7 @@ export class Planner implements Agent {
     const newTests: Test[] = [];
 
     for (const suggestion of suggestions) {
-      const test = new Test(suggestion.scenario, 'medium', [], suggestion.triggerUrl, [suggestion.firstStep]);
+      const test = new Test(suggestion.scenario, 'normal', [], suggestion.triggerUrl, [suggestion.firstStep]);
       newTests.push(test);
     }
 
@@ -303,13 +306,11 @@ export class Planner implements Agent {
     return newTests;
   }
 
-  private sortTestsByPriority(tests: Test[]): Test[] {
-    return tests.sort((a, b) => {
-      const aHasResult = a.result !== null;
-      const bHasResult = b.result !== null;
-      if (aHasResult !== bHasResult) return aHasResult ? 1 : -1;
-      return (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3);
-    });
+  private moveExecutedTestsToEnd(): void {
+    if (!this.currentPlan) return;
+    const pending = this.currentPlan.tests.filter((t) => t.result === null);
+    const executed = this.currentPlan.tests.filter((t) => t.result !== null);
+    this.currentPlan.tests = [...pending, ...executed];
   }
 
   private detectUIContext(ariaSnapshot: string): string | null {
@@ -353,7 +354,7 @@ export class Planner implements Agent {
     if (!this.currentPlan) return 0;
 
     const existingScenarios = new Set(this.currentPlan.tests.map((t) => t.scenario.toLowerCase()));
-    let addedCount = 0;
+    const added: Test[] = [];
 
     for (const test of tests) {
       if (existingScenarios.has(test.scenario.toLowerCase())) continue;
@@ -362,10 +363,10 @@ export class Planner implements Agent {
       test.plan = this.currentPlan;
       this.currentPlan.addTest(test);
       existingScenarios.add(test.scenario.toLowerCase());
-      addedCount++;
+      added.push(test);
     }
 
-    return addedCount;
+    return added;
   }
 
   private async buildConversation(state: ActionResult): Promise<Conversation> {
@@ -381,12 +382,15 @@ export class Planner implements Agent {
       Based on the previous research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios for this page.
 
       When creating tasks:
-      1. Assign priorities based on:
-         - HIGH: Security-related scenarios (authentication, authorization, XSS, CSRF, injection)
-         - HIGH: Critical business functionality, main user flows
-         - MEDIUM: Happy path scenarios, standard features
-         - LOW: Edge cases, input validation, boundary testing, negative scenarios
-      2. Start with positive scenarios and then move to negative scenarios
+      1. Assign priorities based on business importance:
+         - CRITICAL: Core business functionality that defines the page purpose
+         - IMPORTANT: Key user flows, primary features, CRUD operations
+         - HIGH: Secondary features, edge cases for critical flows
+         - NORMAL: Supporting actions, settings, configuration
+         - LOW: Cosmetic checks, boundary testing, minor interactions
+      2. Propose tests following research section order: ${this.sectionOrder.join(', ')}
+         Cover sections in this order — first propose tests for elements from earlier sections, then later ones.
+         Extended Research sections (modals, dropdowns, panels) come after the main sections.
       3. For each task, provide BOTH steps and expected outcomes:
          - Steps: specific actions to perform (e.g., "Click Login button", "Enter username in email field", "Submit the form")
          - Expected outcomes: observable results to verify (e.g., "Success message is displayed", "URL changes to /dashboard", "Submit button is disabled")
@@ -407,6 +411,10 @@ export class Planner implements Agent {
       Focus on URL page change or data persistency after page reload.
       If there are subpages (pages with same URL path) plan testing of those subpages as well
       If you plan to test CRUD operations, plan them in correct order: create, read, update.
+      DO NOT propose "verification-only" tests that merely open a UI element (modal, dropdown, panel) and check it exists.
+      Every test must complete a meaningful action that changes application state or produces a business outcome.
+      Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
+      Clicking a dropdown is NOT a test — selecting an option and verifying the result IS a test.
       ${protectionRule}
       ${noFileUploadRule}
       </rules>
@@ -416,14 +424,19 @@ export class Planner implements Agent {
           ? dedent`<approach>
       Study the page and figure out its business purpose. What is this page FOR? What would a user come here to do?
 
-      Based on the page type, propose tests for core workflows:
-      - If this is a data page (lists, tables): test CRUD operations, then filtering, then search
-      - If this is a form page: test submission, validation, required fields
-      - If this is a dashboard: test key actions and data display
-      - If this has filters and search: test filtering, searching, and their combination
+      Based on the page type, propose tests for COMPLETE user workflows:
+      - If this is a data page (lists, tables): test CRUD operations end-to-end (create item → verify in list, edit item → verify changes saved, delete item → verify removed)
+      - If this is a form page: test full submission flow, not just "form appears"
+      - If this has filters and search: test filtering AND verify results change, not just "filter tab clicked"
+      - If this has modals/dropdowns: test the ACTION inside them, not just opening/closing them
 
-      Look at ALL research sections including Extended Research (modals, dropdowns, panels).
-      Each dropdown or modal is a separate feature area worth testing.
+      Each test should end with the application in a different state than it started.
+
+      IMPORTANT: Distribute tests across DIFFERENT feature areas from the research.
+      Do not propose more than 2 tests for the same feature area.
+      Every Extended Research section (modal, dropdown, panel) with actionable features deserves at least one test.
+      Prioritize features with business actions (export, import, create, edit, delete) over simple UI interactions.
+
       Skip the Menu/Navigation section — we are testing THIS page.
       </approach>`
           : dedent`<approach>
@@ -546,25 +559,33 @@ export class Planner implements Agent {
     <task>
       Provide testing scenarios as structured data with the following requirements:
       1. Create a short, descriptive plan name that summarizes what will be tested (e.g., "User Authentication Testing", "Product Catalog Navigation", "Form Validation Tests")
-      2. Assign priorities based on:
-         - HIGH: Security-related scenarios, critical business flows
-         - MEDIUM: Happy path scenarios, standard user features
-         - LOW: Edge cases, input validation, boundary testing, negative scenarios
-      3. Start with positive scenarios and then move to negative scenarios
+      2. Assign priorities based on business importance:
+         - CRITICAL: Core business functionality that defines the page purpose
+         - IMPORTANT: Key user flows, primary features, CRUD operations
+         - HIGH: Secondary features, edge cases for critical flows
+         - NORMAL: Supporting actions, settings, configuration
+         - LOW: Cosmetic checks, boundary testing, minor interactions
+      3. Propose tests following research section order: ${this.sectionOrder.join(', ')}
+         Cover sections in this order — first propose tests for elements from earlier sections, then later ones.
+         Extended Research sections come after the main sections.
       4. Focus on interactive elements of the page. Skip navigation links that lead away from current page.
       5. Focus on tests you are 100% sure relevant to this page and can be achived from UI.
       6. For each task, provide BOTH steps and expected outcomes as separate arrays:
 
          STEPS - actionable commands:
          - Each step should be a specific action to perform
-         - Good examples: "Click on Login button", "Enter username in email field", "Submit the form"
-         - Bad example: "Login and verify dashboard" (too vague and combines action with verification)
-         - Steps describe WHAT TO DO
+         - Good: "Click Create Suite button", "Enter 'My New Suite' as suite name", "Click Save button"
+         - Good: "Click Star icon on 'Template API Testing' suite"
+         - Bad: "Open the dropdown menu" (opening is not a goal, it's a means)
+         - Bad: "Verify modal appears" (verification belongs in expected outcomes, not steps)
+         - Steps should form a complete workflow, not stop at opening a UI element
 
          EXPECTED OUTCOMES - verifiable results:
-         - Keep each outcome simple and atomic (one verification per outcome)
-         - Good examples: "Success message is displayed", "URL changes to /dashboard", "Submit button becomes disabled"
-         - Bad example: "Form submits successfully and shows confirmation with updated data" (too many checks in one)
+         - Good: "New suite 'My New Suite' appears in the suite list"
+         - Good: "Suite appears under Starred filter tab"
+         - Good: "Success message 'Suite created' is displayed"
+         - Bad: "Modal is displayed" (just verifying existence, no business value)
+         - Bad: "Dropdown menu is visible" (just verifying existence)
          - Each outcome should be independently verifiable
          - Avoid combining multiple checks into one outcome
          - Expected outcomes describe WHAT TO VERIFY
@@ -574,7 +595,7 @@ export class Planner implements Agent {
          - Do not wrap text in ** or * quotes, ( or ) brackets.
          - Avoid using emojis or special characters.
       7. Only tests that can be tested from web UI should be proposed.
-      ${hasCurrentPlan ? '8. CRITICAL: Return ONLY NEW scenarios not in the existing tests list. Return empty array if no new tests needed.' : `8. At least ${this.MIN_TASKS} tests should be proposed.`}
+      ${hasCurrentPlan ? '8. CRITICAL: Return ONLY NEW scenarios not in the existing tests list. Return empty array if no new tests needed.' : `8. At least ${this.MIN_TASKS} tests should be proposed. Cover as many different feature areas from the research as possible — do not cluster all tests around one feature.`}
     </task>
     `;
 

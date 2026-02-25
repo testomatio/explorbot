@@ -63,6 +63,7 @@ interface ResearcherAgentConfig extends AgentConfig {
   stopWords?: string[];
   maxElementsToExplore?: number;
   retries?: number;
+  sections?: string[];
 }
 
 interface TesterAgentConfig extends AgentConfig {

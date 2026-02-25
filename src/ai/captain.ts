@@ -242,7 +242,7 @@ export class Captain extends TaskAgent implements Agent {
             .array(
               z.object({
                 scenario: z.string(),
-                priority: z.enum(['high', 'medium', 'low', 'unknown']).optional(),
+                priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).optional(),
                 expected: z.array(z.string()).optional(),
               })
             )
@@ -265,7 +265,7 @@ export class Captain extends TaskAgent implements Agent {
             }
             const currentUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url || '';
             for (const testInput of tests) {
-              const priority = testInput.priority || 'unknown';
+              const priority = testInput.priority || 'normal';
               const expected = testInput.expected?.length ? testInput.expected : [];
               const test = new Test(testInput.scenario, priority, expected, currentUrl);
               plan.addTest(test);

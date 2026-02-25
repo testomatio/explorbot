@@ -306,7 +306,7 @@ export class Bosun extends TaskAgent implements Agent {
         }),
         execute: async ({ components }) => {
           for (const comp of components) {
-            const task = new Test(`Learn: ${comp.name} (${comp.role})`, 'medium', [`Discover interactions for ${comp.name}`], originalUrl) as ComponentTest;
+            const task = new Test(`Learn: ${comp.name} (${comp.role})`, 'normal', [`Discover interactions for ${comp.name}`], originalUrl) as ComponentTest;
             task.component = comp;
             task.interactions = [];
             this.currentPlan!.addTest(task);

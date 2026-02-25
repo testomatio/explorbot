@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-02-25
+
+### Configuration
+- **`ai.agents.researcher.sections`** — Pre-defined list of expected page sections. Researcher identifies these sections on each page, and planner proposes tests in this order. Sections: `focus` (modal, drawer, popup), `list` (items, table, cards), `detail` (selected item preview), `panes` (split screen), `content` (main area), `menu` (toolbar, context actions, filters), `navigation` (top bar, sidebar, breadcrumbs). Configurable to reorder or limit sections.
+
+### Changes
+- [Planner] New priority levels: `critical`, `important`, `high`, `normal`, `low` (replaced `high`/`medium`/`low`/`unknown`)
+- [Planner] Tests are now proposed following research section order instead of being re-sorted by priority — content and detail sections are tested before menus and navigation
+- [Planner] Maximum test count increased from 7 to 12, allowing broader coverage on feature-rich pages
+- [Planner] Tests are distributed across different feature areas — no more than 2 tests per area, every Extended Research section with actions gets at least one test
+- [Planner] When expanding a plan, only newly added tests are shown (not the full list repeated)
+- [Planner] Plan files now include `<!-- plan updated on ... -->` timestamp comment when expanded
+- [Researcher] Expandable element clicks are now wrapped in error handling to prevent a single failed click from stopping deep analysis
+- [Researcher] Added `navigation` section type, separated from `menu` — `menu` is now page-local actions (toolbar, filters, dropdowns), `navigation` is site-wide navigation (top bar, sidebar, breadcrumbs)
+
 ## 2026-02-24
 
 ### New CLI Options

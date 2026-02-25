@@ -32,13 +32,14 @@ const debugLog = createDebug('explorbot:researcher');
 const DYNAMIC_ID_PATTERN = /^#ember\d|^\/\/[^[]*\[@id="ember\d|#react-select-|#rc-|#ng-|#cdk-|#mat-|data-ebd-id/;
 const isForbiddenLocator = (s: string) => DYNAMIC_ID_PATTERN.test(s) || s.includes('data-explorbot-eidx') || /\[eidx=/.test(s);
 
-const POSSIBLE_SECTIONS = {
+export const POSSIBLE_SECTIONS = {
   focus: 'focused overlay (modal, drawer, popup, active form)',
   list: 'list area (items collection, table, cards, or list view)',
   detail: 'detail area (selected item preview or full details)',
   panes: 'screen is split into equal panes, describe each pane',
   content: 'main area of page',
-  menu: 'navigation area',
+  menu: 'page menu (toolbar, context actions, filters, dropdowns)',
+  navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
 
 export interface Locator {
@@ -658,56 +659,63 @@ export class Researcher extends TaskAgent implements Agent {
     const originalAria = state.ariaSnapshot || '';
 
     for (const el of elements) {
-      debugLog(`Clicking: ${el.description.slice(0, 100)}`);
-      const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);
-
-      let clickCode: string | null = null;
-      const action = this.explorer.createAction();
-      for (const cmd of el.commands) {
-        if (await action.attempt(cmd, undefined, false)) {
-          clickCode = cmd;
-          break;
-        }
-      }
-      if (!clickCode) {
-        debugLog(`Click failed: ${el.description.slice(0, 80)}`);
-        continue;
-      }
-
-      await new Promise((r) => setTimeout(r, 500));
-
-      let diff: Diff;
       try {
-        await this.explorer.createAction().capturePageState();
-        const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
-        diff = await currAR.diff(previousState);
-        await diff.calculate();
+        debugLog(`Clicking: ${el.description.slice(0, 100)}`);
+        const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);
+
+        let clickCode: string | null = null;
+        const action = this.explorer.createAction();
+        for (const cmd of el.commands) {
+          if (await action.attempt(cmd, undefined, false)) {
+            clickCode = cmd;
+            break;
+          }
+        }
+        if (!clickCode) {
+          debugLog(`Click failed: ${el.description.slice(0, 80)}`);
+          continue;
+        }
+
+        await new Promise((r) => setTimeout(r, 500));
+
+        let diff: Diff;
+        try {
+          await this.explorer.createAction().capturePageState();
+          const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
+          diff = await currAR.diff(previousState);
+          await diff.calculate();
+        } catch (err) {
+          tag('warning').log(`State capture failed after click: ${err instanceof Error ? err.message : err}`);
+          await this.restorePageState(state.url, originalAria);
+          continue;
+        }
+
+        if (diff.urlHasChanged()) {
+          debugLog(`Click navigated to ${this.stateManager.getCurrentState()?.url}`);
+          navigationLinks.push({ code: clickCode, url: this.stateManager.getCurrentState()?.url || '' });
+          await this.navigateTo(state.url);
+          continue;
+        }
+
+        if (!diff.ariaChanged && !diff.htmlSubtree) {
+          debugLog(`No changes from: ${el.description.slice(0, 80)}`);
+          await this.restorePageState(state.url, originalAria);
+          continue;
+        }
+
+        const sectionMarkdown = await this.analyzeExpandedClick(clickCode, el.description, diff);
+        if (sectionMarkdown) {
+          expandedSections.push(sectionMarkdown);
+          debugLog(`Captured section from: ${el.description.slice(0, 80)}`);
+        }
+
+        await this.restorePageState(state.url, originalAria);
       } catch (err) {
-        debugLog(`State capture failed after click: ${err instanceof Error ? err.message : err}`);
-        await this.restorePageState(state.url, originalAria);
-        continue;
+        tag('warning').log(`Expandable click failed for "${el.description.slice(0, 80)}": ${err instanceof Error ? err.message : err}`);
+        try {
+          await this.restorePageState(state.url, originalAria);
+        } catch {}
       }
-
-      if (diff.urlHasChanged()) {
-        debugLog(`Click navigated to ${this.stateManager.getCurrentState()?.url}`);
-        navigationLinks.push({ code: clickCode, url: this.stateManager.getCurrentState()?.url || '' });
-        await this.navigateTo(state.url);
-        continue;
-      }
-
-      if (!diff.ariaChanged && !diff.htmlSubtree) {
-        debugLog(`No changes from: ${el.description.slice(0, 80)}`);
-        await this.restorePageState(state.url, originalAria);
-        continue;
-      }
-
-      const sectionMarkdown = await this.analyzeExpandedClick(clickCode, el.description, diff);
-      if (sectionMarkdown) {
-        expandedSections.push(sectionMarkdown);
-        debugLog(`Captured section from: ${el.description.slice(0, 80)}`);
-      }
-
-      await this.restorePageState(state.url, originalAria);
     }
   }
 
@@ -718,10 +726,14 @@ export class Researcher extends TaskAgent implements Agent {
       const currentAria = this.stateManager.getCurrentState()?.ariaSnapshot || '';
       if (!diffAriaSnapshots(originalAria, currentAria)) return;
     } catch (err) {
-      debugLog(`State capture failed after cancelInUi: ${err instanceof Error ? err.message : err}`);
+      tag('warning').log(`State capture failed after cancelInUi: ${err instanceof Error ? err.message : err}`);
     }
     debugLog('ARIA not restored after cancelInUi, reloading page');
-    await this.navigateTo(url);
+    try {
+      await this.navigateTo(url);
+    } catch (err) {
+      tag('warning').log(`navigateTo failed during restore: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   private async analyzeExpandedClick(code: string, description: string, diff: Diff): Promise<string | null> {

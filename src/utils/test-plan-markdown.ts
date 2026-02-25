@@ -10,7 +10,7 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
   let inRequirements = false;
   let inSteps = false;
   let inExpected = false;
-  let priority: 'high' | 'medium' | 'low' | 'unknown' = 'unknown';
+  let priority: 'critical' | 'important' | 'high' | 'normal' | 'low' = 'normal';
 
   const plan = new Plan('');
 
@@ -27,7 +27,7 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
     if (line.startsWith('<!-- test')) {
       currentTest = null;
       const priorityMatch = line.match(/priority:\s*(\w+)/);
-      priority = (priorityMatch?.[1] as 'high' | 'medium' | 'low' | 'unknown') || 'unknown';
+      priority = (priorityMatch?.[1] as 'critical' | 'important' | 'high' | 'normal' | 'low') || 'normal';
       continue;
     }
 
@@ -133,7 +133,7 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
       currentTest = null;
       inRequirements = false;
       inExpected = false;
-      priority = 'unknown';
+      priority = 'normal';
     }
   }
 
@@ -142,6 +142,10 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
 
 export function savePlanToMarkdown(plan: Plan, filePath: string): void {
   let content = `<!-- suite -->\n# ${plan.title}\n\n`;
+
+  if (plan.iteration > 0) {
+    content += `<!-- plan updated on ${new Date().toISOString()} -->\n\n`;
+  }
 
   for (const test of plan.tests) {
     content += `<!-- test\npriority: ${test.priority}\n-->\n`;

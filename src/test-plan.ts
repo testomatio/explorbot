@@ -162,7 +162,7 @@ export class Test extends Task {
   sessionName?: string;
   status: TestStatusType;
   result: TestResultType;
-  priority: 'high' | 'medium' | 'low' | 'unknown';
+  priority: 'critical' | 'important' | 'high' | 'normal' | 'low';
   expected: string[];
   plannedSteps: string[];
   plan?: Plan;
@@ -171,7 +171,7 @@ export class Test extends Task {
   generatedCode?: string;
   planIteration = 0;
 
-  constructor(scenario: string, priority: 'high' | 'medium' | 'low' | 'unknown', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
+  constructor(scenario: string, priority: 'critical' | 'important' | 'high' | 'normal' | 'low', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);
     this.scenario = scenario;
     this.status = TestStatus.PENDING;
