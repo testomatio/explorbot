@@ -297,7 +297,18 @@ export class Researcher extends ResearcherBase implements Agent {
     this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot ?? false });
   }
 
+  private getConfiguredSections(): Record<string, string> {
+    const configSections = (this.explorer.getConfig().ai?.agents?.researcher as any)?.sections as string[] | undefined;
+    if (!configSections?.length) return POSSIBLE_SECTIONS;
+    const filtered: Record<string, string> = {};
+    for (const key of configSections) {
+      if (key in POSSIBLE_SECTIONS) filtered[key] = POSSIBLE_SECTIONS[key as keyof typeof POSSIBLE_SECTIONS];
+    }
+    return Object.keys(filtered).length > 0 ? filtered : POSSIBLE_SECTIONS;
+  }
+
   private researchRules(): string {
+    const sections = this.getConfiguredSections();
     return dedent`
       <task>
       Examine the provided page and explain its main purpose from the user perspective.
@@ -327,7 +338,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       <section_identification>
       Identify page sections in this priority order:
-      ${Object.entries(POSSIBLE_SECTIONS)
+      ${Object.entries(sections)
         .map(([name, description]) => `* ${name}: ${description}`)
         .join('\n')}
 
@@ -433,7 +444,7 @@ export class Researcher extends ResearcherBase implements Agent {
       <output_rules>
       - Please provide a structured analysis in markdown format divided by sections
       - Use tables for section UI maps only.
-      - List sections by provided priorities: ${Object.keys(POSSIBLE_SECTIONS).join(', ')}
+      - List sections by provided priorities: ${Object.keys(this.getConfiguredSections()).join(', ')}
       - If a section is not present, do not include it in the output.
       - Include coordinates when available from screenshot analysis. Use "-" when not available.
       - If some sections are not present, do not include them in the output.
