@@ -46,6 +46,9 @@ explorbot research /products --screenshot
 
 # Research with screenshot analysis (requires vision model)
 /research --screenshot
+
+# Skip locator validation and fixing
+/research --no-fix
 ```
 
 ### Automatic Research
@@ -54,35 +57,71 @@ Research runs automatically as part of other commands:
 
 ```bash
 # Planner researches page before planning
-explorbot plan --from /dashboard
+explorbot plan /dashboard
 
 # Explorer researches each new page discovered
-explorbot explore --from /admin
+explorbot explore /admin
 ```
 
 ## How It Works
 
-When researching a page, the Researcher:
+Research runs as a 5-stage pipeline:
 
-1. **Captures page state** - HTML, ARIA tree, and optionally a screenshot
-2. **Analyzes structure** - Identifies sections (focus areas, lists, menus, content)
-3. **Maps UI elements** - Creates a table of interactive elements with locators
-4. **Caches results** - Stores research in `output/research/` for 1 hour
+1. **Research** — AI analyzes HTML + ARIA tree and produces a UI map with sections, containers, and locators
+2. **Test** — Validates all containers and locators against the live page using Playwright. Captures exact match counts (0 elements, 3 elements, dynamic ID)
+3. **Fix** — Continues the same AI conversation with broken locator details. AI fixes them with full context from stage 1
+4. **Visual analysis** — Annotates elements on screenshot, extracts coordinates/colors/icons (requires vision model)
+5. **Backfill** — Elements still missing working locators get XPath from the DOM. Broken containers are nullified
 
 ```mermaid
 flowchart TD
     A[/"RESEARCH"/] --> B[Capture Page State<br/>HTML + ARIA tree]
-    B --> C{Vision?}
-    C -->|Yes| D[Analyze Screenshot]
-    C -->|No| E
-    D --> E[Identify Page Sections<br/>focus, list, content, menu]
-    E --> F[Map UI Elements<br/>with ARIA, CSS, XPath locators]
-    F --> G{Deep Mode?}
-    G -->|Yes| H[Expand Hidden Elements<br/>dropdowns, tabs, accordions]
-    H --> F
-    G -->|No| I[Generate UI Map Report]
-    I --> J[/"Cache to output/research/"/]
+    B --> C[Stage 1: AI Research<br/>Identify sections, map elements]
+    C --> D[Stage 2: Test Locators<br/>Validate containers + elements]
+    D --> E{> 80% broken?}
+    E -->|Yes| F[Retry research]
+    F --> C
+    E -->|No| G[Stage 3: AI Fix<br/>Continue conversation with errors]
+    G --> H{Vision?}
+    H -->|Yes| I[Stage 4: Visual Analysis<br/>Screenshot annotations]
+    H -->|No| J
+    I --> J[Stage 5: Backfill<br/>XPath for broken locators]
+    J --> K{Deep Mode?}
+    K -->|Yes| L[Deep Exploration<br/>Click dropdowns, tabs, menus]
+    L --> M
+    K -->|No| M[/"Cache to output/research/"/]
 ```
+
+### Locator Validation
+
+After AI produces research, every locator is tested against the live page:
+
+- **Containers** are tested first. If all containers are broken, research retries entirely
+- **Element locators** scoped to broken containers are marked as broken without testing (container broken → all its children broken)
+- Remaining locators are tested individually, capturing exact element counts
+- Forbidden locators (dynamic IDs like `#ember123`, `#react-select-*`) are rejected automatically
+- If > 80% of locators are broken, research retries with a fresh AI call
+
+### Locator Fixing (Conversation Continuation)
+
+When locators are broken, the Researcher continues the **same AI conversation** from stage 1. The AI already has full context about the page, so it can fix locators more accurately than a separate call would.
+
+The fix prompt includes Playwright-style test results:
+
+```
+## Navigation
+
+> Container: '.nav-bar'
+
+Tested Elements:
+- 'Home': page.locator('.nav-bar').locator('a.home') ← OK
+- 'Settings': page.locator('.nav-bar').locator('a.settings-btn') ← BROKEN (0 elements)
+- 'Profile': page.locator('.nav-bar').getByRole('link', { name: 'Profile' }) ← BROKEN (2 elements)
+```
+
+### XPath Backfill
+
+Elements that still have no working CSS or ARIA locator after AI fixing get an XPath automatically generated from the DOM via `WebElement.fromEidxList()`. This is a last resort — XPaths are positional and fragile, but better than nothing.
 
 ### Research Modes
 
@@ -109,6 +148,41 @@ Expands hidden elements (dropdowns, accordions, tabs) to discover more UI. Click
 ```
 
 Extracts domain-specific content (articles, products, users) as structured data.
+
+## Page Sections
+
+The Researcher breaks pages into sections based on their UI purpose. Sections are identified in priority order:
+
+| Section | Description |
+|---------|-------------|
+| `focus` | Focused overlay (modal, drawer, popup, active form) |
+| `list` | List area (items collection, table, cards, or list view) |
+| `detail` | Detail area (selected item preview or full details) |
+| `panes` | Screen is split into equal panes |
+| `content` | Main area of page |
+| `menu` | Page menu (toolbar, context actions, filters, dropdowns) |
+| `navigation` | Main navigation (top bar, sidebar, breadcrumbs) |
+
+Each section includes:
+- A **container CSS selector** scoping all elements within
+- A **UI map table** listing interactive elements with ARIA and CSS locators
+
+### Configuring Sections
+
+Override the default section list via `ai.agents.researcher.sections`. This controls which sections the Researcher looks for and in what order. The Planner also uses this order when proposing tests.
+
+```javascript
+ai: {
+  agents: {
+    researcher: {
+      // Only look for these sections, in this order
+      sections: ['focus', 'content', 'list'],
+    },
+  },
+}
+```
+
+When not set, all sections are used in the default order.
 
 ## Vision Model Support
 
@@ -238,11 +312,17 @@ ai: {
       model: 'gpt-4o',
       systemPrompt: 'Focus on form validation elements...',
 
+      // Page sections (order matters)
+      sections: ['focus', 'content', 'list', 'menu', 'navigation'],
+
       // Exploration filtering
       excludeSelectors: ['.cookie-banner'],
       includeSelectors: ['.dropdown-menu'],
       stopWords: ['cookie', 'share'],
       maxElementsToExplore: 15,
+
+      // Retry count when >80% locators are broken
+      retries: 2,
     },
   },
 }
@@ -254,10 +334,12 @@ ai: {
 |--------|------|---------|-------------|
 | `model` | `string` | - | Override default model |
 | `systemPrompt` | `string` | - | Additional instructions |
-| `excludeSelectors` | `string[]` | `[]` | CSS selectors to exclude |
+| `sections` | `string[]` | all sections | Page sections to identify (order = priority) |
+| `excludeSelectors` | `string[]` | `[]` | CSS selectors to exclude from deep exploration |
 | `includeSelectors` | `string[]` | `[]` | CSS selectors to always explore |
 | `stopWords` | `string[]` | defaults | Words to filter (replaces defaults) |
-| `maxElementsToExplore` | `number` | `10` | Max elements per page |
+| `maxElementsToExplore` | `number` | `10` | Max elements per deep exploration |
+| `retries` | `number` | `2` | Retries when most locators are broken |
 
 ## Configuration Examples
 
@@ -295,6 +377,19 @@ ai: {
         'footer',
         '.sidebar',
       ],
+    },
+  },
+}
+```
+
+### Limit Sections
+
+```javascript
+ai: {
+  agents: {
+    researcher: {
+      // Only research these sections, skip navigation and menu
+      sections: ['focus', 'content', 'list', 'detail'],
     },
   },
 }
@@ -388,16 +483,30 @@ Brief description of the page purpose.
 
 Modal dialog for user login...
 
-Section Container CSS Locator: '[role="dialog"]'
+> Container: '[role="dialog"]'
 
-| Element | ARIA | CSS | XPath | Coordinates |
-|---------|------|-----|-------|-------------|
-| 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' | '//input[@id="email"]' | (400, 280) |
+| Element | ARIA | CSS |
+|---------|------|-----|
+| 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' |
+| 'Password' | { role: 'textbox', text: 'Password' } | 'input[name="password"]' |
+| 'Sign In' | { role: 'button', text: 'Sign In' } | 'button[type="submit"]' |
 
 ## Content Section
 
 Main content area...
+
+> Container: '.main-content'
+
+| Element | ARIA | CSS | XPath | Coordinates |
+|---------|------|-----|-------|-------------|
+| 'Save' | { role: 'button', text: 'Save' } | 'button.save' | - | (400, 300) |
+| 'Delete' | { role: 'button', text: 'Delete' } | - | '//button[@class="del"]' | (500, 300) |
 ```
+
+Notes:
+- XPath column only appears when CSS is broken and XPath was backfilled from the DOM
+- Coordinates column only appears when vision model analyzed the screenshot
+- Container is shown as a blockquote `> Container: '...'` before the table
 
 ## Caching
 
