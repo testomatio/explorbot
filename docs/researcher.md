@@ -65,50 +65,130 @@ explorbot explore /admin
 
 ## How It Works
 
-Research runs as a 5-stage pipeline:
+### Element Indexing (eidx)
 
-1. **Research** — AI analyzes HTML + ARIA tree and produces a UI map with sections, containers, and locators
-2. **Test** — Validates all containers and locators against the live page using Playwright. Captures exact match counts (0 elements, 3 elements, dynamic ID)
-3. **Fix** — Continues the same AI conversation with broken locator details. AI fixes them with full context from stage 1
-4. **Visual analysis** — Annotates elements on screenshot, extracts coordinates/colors/icons (requires vision model)
-5. **Backfill** — Elements still missing working locators get XPath from the DOM. Broken containers are nullified
+Before research begins, Explorbot injects `data-explorbot-eidx` attributes into every interactive element on the page (buttons, links, inputs, tabs, etc.). Each element gets a unique numeric index — its **eidx**.
+
+This eidx serves as a stable bridge between three different representations of the same element:
+
+| Representation | What it provides | Where eidx appears |
+|----------------|------------------|--------------------|
+| **HTML** | Structure, attributes, CSS selectors | `<button eidx="5">Save</button>` |
+| **ARIA tree** | Accessible roles, names | Mapped back via Playwright `getByRole` |
+| **Screenshot** | Visual position, color, icon | Colored label `5` drawn above the element |
+
+When AI produces a research table with `eidx=5`, that same index is used to:
+- Test the element's CSS locator against the live DOM
+- Look up its coordinates from the annotated screenshot
+- Generate a fallback XPath if CSS is broken
+
+Without eidx, there would be no reliable way to correlate "the third button in the HTML" with "the blue button at (400, 300) on the screenshot."
+
+### The 5-Stage Pipeline
+
+Research processes each page through 5 stages:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Stage 1: RESEARCH (AI)                                        │
+│  AI analyzes HTML + ARIA → produces UI map with sections,      │
+│  containers, ARIA locators, CSS locators, eidx references      │
+├─────────────────────────────────────────────────────────────────┤
+│  Stage 2: TEST                                                 │
+│  Test containers first → test element locators →               │
+│  capture exact counts (0 elements, 3 elements, dynamic ID)     │
+│  If all containers broken → retry Stage 1                      │
+│  If > 80% locators broken → retry Stage 1                      │
+├─────────────────────────────────────────────────────────────────┤
+│  Stage 3: FIX (AI, same conversation)                          │
+│  Continue Stage 1 conversation with Playwright test results →  │
+│  AI fixes broken locators with full page context               │
+├─────────────────────────────────────────────────────────────────┤
+│  Stage 4: VISUAL ANALYSIS (optional, requires vision model)    │
+│  Annotate screenshot with eidx labels → AI extracts            │
+│  coordinates, colors, icons → merge into research by eidx      │
+├─────────────────────────────────────────────────────────────────┤
+│  Stage 5: BACKFILL                                             │
+│  Re-test all locators → for still-broken elements:             │
+│  look up eidx in DOM → generate XPath from attributes          │
+│  Nullify containers that are still broken                      │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ```mermaid
 flowchart TD
-    A[/"RESEARCH"/] --> B[Capture Page State<br/>HTML + ARIA tree]
-    B --> C[Stage 1: AI Research<br/>Identify sections, map elements]
-    C --> D[Stage 2: Test Locators<br/>Validate containers + elements]
-    D --> E{> 80% broken?}
-    E -->|Yes| F[Retry research]
-    F --> C
-    E -->|No| G[Stage 3: AI Fix<br/>Continue conversation with errors]
-    G --> H{Vision?}
-    H -->|Yes| I[Stage 4: Visual Analysis<br/>Screenshot annotations]
-    H -->|No| J
-    I --> J[Stage 5: Backfill<br/>XPath for broken locators]
-    J --> K{Deep Mode?}
-    K -->|Yes| L[Deep Exploration<br/>Click dropdowns, tabs, menus]
-    L --> M
-    K -->|No| M[/"Cache to output/research/"/]
+    A[Annotate elements with eidx] --> B[Capture HTML + ARIA + Screenshot]
+
+    subgraph S1 ["Stage 1: Research"]
+        B --> C[AI analyzes page structure]
+        C --> D[Produces UI map with sections<br/>containers, ARIA, CSS, eidx]
+    end
+
+    subgraph S2 ["Stage 2: Test"]
+        D --> E[Test container locators]
+        E --> F{All containers<br/>broken?}
+        F -->|Yes, retries left| C
+        F -->|No| G[Mark child locators of<br/>broken containers as broken]
+        G --> H[Test remaining locators<br/>capture exact match counts]
+        H --> I{> 80% broken?}
+        I -->|Yes, retries left| C
+    end
+
+    subgraph S3 ["Stage 3: Fix"]
+        I -->|No| J[Continue SAME AI conversation]
+        J --> K[Send broken sections with<br/>Playwright test results]
+        K --> L[AI fixes locators<br/>with full page context]
+        L --> M[Re-test fixed locators]
+    end
+
+    subgraph S4 ["Stage 4: Visual Analysis"]
+        M --> N{Vision model?}
+        N -->|Yes| O[Draw eidx labels on screenshot]
+        O --> P[AI extracts coordinates,<br/>colors, icons per eidx]
+        P --> Q[Merge visual data<br/>into research by eidx]
+    end
+
+    subgraph S5 ["Stage 5: Backfill"]
+        N -->|No| R
+        Q --> R[Re-test all locators]
+        R --> S[Look up broken elements<br/>by eidx in live DOM]
+        S --> T[Generate XPath from<br/>element attributes]
+        T --> U[Nullify still-broken containers]
+    end
+
+    U --> V{Deep mode?}
+    V -->|Yes| W[Deep exploration]
+    V -->|No| X[Cache result]
+    W --> X
 ```
 
-### Locator Validation
+### Stage 1: Research
 
-After AI produces research, every locator is tested against the live page:
+AI receives the page HTML (with eidx attributes) and ARIA tree. It identifies page sections (focus, content, list, menu, etc.), assigns a container CSS selector to each, and produces a UI map table listing every interactive element with ARIA and CSS locators.
 
-- **Containers** are tested first. If all containers are broken, research retries entirely
-- **Element locators** scoped to broken containers are marked as broken without testing (container broken → all its children broken)
-- Remaining locators are tested individually, capturing exact element counts
-- Forbidden locators (dynamic IDs like `#ember123`, `#react-select-*`) are rejected automatically
-- If > 80% of locators are broken, research retries with a fresh AI call
+The AI conversation is kept open — it will be reused in Stage 3.
 
-### Locator Fixing (Conversation Continuation)
+### Stage 2: Test
 
-When locators are broken, the Researcher continues the **same AI conversation** from stage 1. The AI already has full context about the page, so it can fix locators more accurately than a separate call would.
+Every locator from Stage 1 is validated against the live page using Playwright:
 
-The fix prompt includes Playwright-style test results:
+1. **Containers first** — each container CSS is tested via `page.locator(css).count()`. If ALL containers are broken, the entire research retries from Stage 1.
+2. **Child locators of broken containers** — marked as broken immediately without testing (if the container doesn't exist, its scoped locators can't work).
+3. **Remaining locators** — tested individually. Each test captures the exact element count:
+   - `0 elements` — locator matches nothing
+   - `3 elements` — locator is ambiguous (matches multiple)
+   - `dynamic ID` — locator uses a forbidden pattern like `#ember123` or `#react-select-*`
+4. **Broken ratio check** — if > 80% of locators are broken, research retries from Stage 1.
+
+### Stage 3: Fix (Conversation Continuation)
+
+Instead of starting a new AI call, the Researcher continues the **same conversation** from Stage 1. The AI already has full context about the page HTML and sections, so it can fix locators more accurately.
+
+The fix prompt shows only broken sections with Playwright-style test results:
 
 ```
+Some locators in your research are broken. Please fix the broken sections.
+
 ## Navigation
 
 > Container: '.nav-bar'
@@ -117,11 +197,39 @@ Tested Elements:
 - 'Home': page.locator('.nav-bar').locator('a.home') ← OK
 - 'Settings': page.locator('.nav-bar').locator('a.settings-btn') ← BROKEN (0 elements)
 - 'Profile': page.locator('.nav-bar').getByRole('link', { name: 'Profile' }) ← BROKEN (2 elements)
+
+## Sidebar
+
+> Container: '#sidebar'  ← BROKEN (container not found)
+
+Tested Elements:
+- 'Dashboard': locate('#sidebar').locator('a.dashboard') ← BROKEN (container broken)
+- 'Users': locate('#sidebar').getByRole('link', { name: 'Users' }) ← BROKEN (container broken)
 ```
 
-### XPath Backfill
+After AI returns corrected sections, they are merged back into the research and re-tested.
 
-Elements that still have no working CSS or ARIA locator after AI fixing get an XPath automatically generated from the DOM via `WebElement.fromEidxList()`. This is a last resort — XPaths are positional and fragile, but better than nothing.
+### Stage 4: Visual Analysis
+
+When a vision model is configured and `--screenshot` is used:
+
+1. **Annotate** — each eidx element gets a colored border and a numbered label on the screenshot. Section containers get dashed borders with a legend.
+2. **AI vision** — the annotated screenshot is sent to the vision model, which reports coordinates, accent colors, and icon descriptions per eidx number.
+3. **Merge** — visual data is matched back to research elements by eidx and added as Coordinates, Color, and Icon columns.
+
+This is how Explorbot knows that `eidx=5` (a `<button>` in HTML) is visually a red trash icon at position (500, 300) — the eidx bridges HTML and screenshot.
+
+### Stage 5: Backfill
+
+All locators are re-tested one final time (catching any forbidden IDs that survived AI fixing). For elements that still have no working CSS or ARIA locator:
+
+1. **Look up by eidx** — find the element in the live DOM using its `data-explorbot-eidx` attribute
+2. **Generate XPath** — build an attribute-based XPath from the element's tag, classes, text, and other attributes
+3. **Add to research** — the XPath column appears only for elements that needed this fallback
+
+Finally, containers that are still broken after all stages are nullified — their locators are made page-global instead of container-scoped.
+
+XPath backfill is a last resort. XPaths based on attributes are more fragile than CSS selectors but still more reliable than positional XPaths like `//body/div[2]/div[1]/button`.
 
 ### Research Modes
 
