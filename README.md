@@ -261,6 +261,16 @@ Yes, use the programmatic API. See [docs/scripting.md](docs/scripting.md).
 **Ok, but I can do the same in Cursor with Playwright MCP!**
 Good luck running it on CI! Also, you'll need to check on it every 10 seconds to see how it's running the browser.
 
+## License
+
+Explorbot is licensed under the [Elastic License 2.0 (ELv2)](LICENSE).
+
+**Free for commercial use** — you can use Explorbot to test any application, including commercial products, without paying a license fee. You can modify it, self-host it, and integrate it into your workflow.
+
+The only restriction: you may not offer Explorbot itself as a hosted/managed service (i.e., resell it as a product). This license is used by Elastic, Grafana, and other open-source companies.
+
+Explorbot is built by [Testomat.io](https://testomat.io).
+
 ---
 
 Explorbot learns as it explores. The more it tests your app, the better it gets at testing your app. That's vibe-testing.

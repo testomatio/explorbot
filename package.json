@@ -2,6 +2,7 @@
   "name": "explorbot",
   "version": "1.0.0",
   "description": "CLI app built with React Ink, CodeceptJS, and Playwright",
+  "license": "Elastic-2.0",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
