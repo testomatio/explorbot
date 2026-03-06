@@ -83,7 +83,9 @@ const INTERACTIVE_EVENT_ATTRIBUTES = new Set(['onclick', 'onchange', 'onblur', '
 
 const HIDDEN_CLASSES = new Set(['hidden', 'invisible', 'd-none', 'hide', 'dn', 'u-hidden', 'is-hidden', 'visually-hidden', 'sr-only', 'screen-reader-only', 'visuallyhidden', 'opacity-0']);
 
-const TAILWIND_CLASS_PATTERNS: RegExp[] = [
+export const TRASH_HTML_CLASSES = /^(text-|color-|flex-|float-|v-|ember-|d-|border-)/;
+
+export const TAILWIND_CLASS_PATTERNS: RegExp[] = [
   /^m[trblxy]?-/i,
   /^p[trblxy]?-/i,
   /^(min|max)-(w|h)-/i,
@@ -378,7 +380,7 @@ export function sanitizeHtmlString(html: string, htmlConfig?: HtmlConfig): strin
  */
 export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['minimal']) {
   const document = parse(html);
-  const trashHtmlClasses = /^(text-|color-|flex-|float-|v-|ember-|d-|border-)/;
+  const trashHtmlClasses = TRASH_HTML_CLASSES;
   const removeElements = ['path', 'script'];
 
   function isFilteredOut(node) {

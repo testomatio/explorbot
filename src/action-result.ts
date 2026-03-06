@@ -4,7 +4,7 @@ import micromatch from 'micromatch';
 import { ConfigParser, type HtmlConfig } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
 import { diffAriaSnapshots, summarizeInteractiveNodes } from './utils/aria.ts';
-import { type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
+import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
 
@@ -36,7 +36,7 @@ export interface PageDiff {
   previousUrl?: string;
   currentUrl: string;
   ariaChanges?: string | null;
-  htmlChanges?: string | null;
+  htmlParts?: HtmlDiffPart[];
 }
 
 export interface ToolResultMetadata {
@@ -575,10 +575,19 @@ export class ActionResult implements ActionResultData {
       pageDiff.ariaChanges = diff.ariaChanged;
     }
 
-    if (diff.htmlDiff && diff.htmlSubtree) {
+    if (diff.htmlParts.length > 0) {
       const htmlConfig = this.normalizeHtmlConfig();
-      const filteredHtml = htmlCombinedSnapshot(diff.htmlSubtree, htmlConfig?.combined);
-      pageDiff.htmlChanges = await minifyHtml(filteredHtml);
+      const processedParts: HtmlDiffPart[] = [];
+      for (const part of diff.htmlParts) {
+        const filteredHtml = htmlCombinedSnapshot(part.subtree, htmlConfig?.combined);
+        const minified = await minifyHtml(filteredHtml);
+        if (minified) {
+          processedParts.push({ ...part, subtree: minified });
+        }
+      }
+      if (processedParts.length > 0) {
+        pageDiff.htmlParts = processedParts;
+      }
     }
 
     result.pageDiff = pageDiff;
@@ -661,8 +670,7 @@ export class Diff {
     if (!this.previous) return false;
     if (this._urlChanged) return true;
 
-    const hasHtmlChanges = this._htmlDiffResult && (this._htmlDiffResult.added.length > 0 || this._htmlDiffResult.removed.length > 0);
-
+    const hasHtmlChanges = this._htmlDiffResult && (this._htmlDiffResult.parts.length > 0 || this._htmlDiffResult.added.length > 0 || this._htmlDiffResult.removed.length > 0);
     const hasAriaChanges = this._ariaDiffResult !== null;
 
     return hasHtmlChanges || hasAriaChanges;
@@ -676,9 +684,9 @@ export class Diff {
     return this._urlChanged;
   }
 
-  get htmlSubtree(): string {
-    if (!this._htmlDiffResult) return '';
-    return this._htmlDiffResult.subtree;
+  get htmlParts(): HtmlDiffPart[] {
+    if (!this._htmlDiffResult) return [];
+    return this._htmlDiffResult.parts;
   }
 
   get ariaChanged(): string | null {

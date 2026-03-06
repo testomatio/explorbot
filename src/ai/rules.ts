@@ -116,15 +116,14 @@ export const uiMapTableFormat = dedent`
   <ui_map_table_format>
   ALWAYS use this exact table format for UI elements:
 
-  | Element | ARIA | CSS | XPath |
-  |---------|------|-----|-------|
-  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' |
+  | Element | ARIA | CSS |
+  |---------|------|-----|
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' |
 
   Column definitions:
   - Element: Human-readable name of the element
   - ARIA: JSON format { role: '...', text: '...' } - use "text" key, NOT "name"
   - CSS: Unique CSS selector (relative to section container)
-  - XPath: Unique XPath selector (relative to section container)
 
   IMPORTANT: Each section must have a blockquote container before the table: > Container: '.css-selector'
   This container is used for disambiguation when clicking elements.
@@ -136,18 +135,18 @@ export const uiMapTableFormat = dedent`
 export const sectionUiMapRule = dedent`
   <ui_map_rule>
   List UI elements as a markdown table:
-  | Element | ARIA | CSS | XPath |
-  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' |
-  | 'Close icon' | { role: 'button', text: 'Close' } | 'button.close-btn' | '//button[@aria-label="Close"]' |
-  | 'Menu toggle' | - | 'button.hamburger' | '//button[contains(@class,"hamburger")]' |
+  | Element | ARIA | CSS |
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' |
+  | 'Close icon' | { role: 'button', text: 'Close' } | 'button.close-btn' |
+  | 'Menu toggle' | - | 'button.hamburger' |
 
-  Always include ARIA + CSS + XPath for each element.
+  Always include ARIA + CSS for each element.
 
   - ARIA: Valid JSON with role and text keys (NOT "name"): { role: 'button', text: 'Save' }
     * For icon buttons: use aria-label or title attribute value as text
-    * If no accessible name exists: use "-" and rely on CSS/XPath
+    * If no accessible name exists: use "-" and rely on CSS
     * NEVER use empty text like { role: 'button', text: '' }
-  - CSS/XPath: Relative to section container, must be unique within section
+  - CSS: Relative to section container, must be unique within section
 
   IMPORTANT: Each section must have a blockquote container before the table: > Container: '.css-selector'
   This container is critical for disambiguation when interacting with elements.
@@ -157,19 +156,19 @@ export const sectionUiMapRule = dedent`
 export const screenshotUiMapRule = dedent`
   <ui_map_rule>
   List UI elements as a markdown table WITH Coordinates, Color, and Icon columns:
-  | Element | ARIA | CSS | XPath | Coordinates | Color | Icon |
-  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | '//button[@type="submit"]' | (400, 300) | green | - |
-  | 'Delete' | { role: 'button', text: 'Delete' } | 'button.delete' | '//button[@class="delete"]' | (500, 300) | red | trash |
-  | 'Settings dropdown' | { role: 'button', text: 'Settings' } | 'button.settings' | '//button[@class="settings"]' | (500, 100) | - | down-chevron |
-  | 'Menu toggle' | - | 'button.hamburger' | '//button[contains(@class,"hamburger")]' | (30, 25) | - | hamburger |
-  | 'Add item' | { role: 'button', text: 'Add' } | 'button.add' | '//button[@class="add"]' | (200, 50) | blue | plus |
-  | 'Close' | { role: 'button', text: 'Close' } | 'button.close' | '//button[@class="close"]' | (600, 10) | - | x |
+  | Element | ARIA | CSS | Coordinates | Color | Icon |
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | (400, 300) | green | - |
+  | 'Delete' | { role: 'button', text: 'Delete' } | 'button.delete' | (500, 300) | red | trash |
+  | 'Settings dropdown' | { role: 'button', text: 'Settings' } | 'button.settings' | (500, 100) | - | down-chevron |
+  | 'Menu toggle' | - | 'button.hamburger' | (30, 25) | - | hamburger |
+  | 'Add item' | { role: 'button', text: 'Add' } | 'button.add' | (200, 50) | blue | plus |
+  | 'Close' | { role: 'button', text: 'Close' } | 'button.close' | (600, 10) | - | x |
 
   - ARIA: Valid JSON with role and text keys (NOT "name"): { role: 'button', text: 'Save' }
     * For icon buttons: use aria-label or title attribute value as text
-    * If no accessible name exists: use "-" and rely on CSS/XPath
+    * If no accessible name exists: use "-" and rely on CSS
     * NEVER use empty text like { role: 'button', text: '' }
-  - CSS/XPath: Relative to section container, must be unique within section
+  - CSS: Relative to section container, must be unique within section
   - Coordinates: (X, Y) center point when visible on screenshot, "-" when not found
   - Color: accent color ONLY if the element has a distinctive color that differs from the default/majority
     * Use ONLY simple color words: red, green, blue, orange, yellow, purple, gray, white, black
@@ -289,23 +288,30 @@ export const sectionContextRule = dedent`
 
   This prevents clicking wrong elements when same text/locator appears in multiple sections.
   </section_context_rule>
+
+  <unexpected_popup_rule>
+  If a modal/popup appeared that you didn't expect, dismiss it first before continuing with original task.
+  If elements become hidden or unclickable (timeout errors on visible elements), a dialog or overlay may have appeared on top.
+  If buttons are disabled unexpectedly, check if a popup is blocking interaction or if required form fields are empty.
+
+  Dismiss strategy (try in order):
+  1. I.click('//body') — click outside the popup to close it
+  2. I.pressKey('Escape') — press Escape to dismiss
+  3. I.click('Cancel') — click Cancel button if present
+  4. I.click({ role: 'button', text: 'Close' }) — click X/close button if present
+  </unexpected_popup_rule>
 `;
 
 export const listElementRule = dedent`
   <list_element_indexing>
   When multiple elements share the same structure (e.g., list items, tabs, table rows, menu links):
-  Each element MUST have a UNIQUE CSS and XPath selector. CSS and XPath must use DIFFERENT disambiguation strategies:
+  Each element MUST have a UNIQUE CSS selector.
 
   CSS — use :has-text("text") to disambiguate by visible text content:
     a.filter-tab:has-text("Manual"), a.filter-tab:has-text("Automated")
     a.node-link:has-text("IMR_API_Tests"), a.node-link:has-text("IMR_UI_Tests")
 
-  XPath — use positional indices [1], [2], [3] to disambiguate by position:
-    //nav//a[contains(@class,"filter-tab")][1], //nav//a[contains(@class,"filter-tab")][2]
-    //div[contains(@class,"suites-list")]//a[1], //div[contains(@class,"suites-list")]//a[2]
-
-  This gives two independent strategies: CSS finds by text, XPath finds by position.
-  NEVER leave multiple elements with identical CSS or XPath selectors in the same section.
+  NEVER leave multiple elements with identical CSS selectors in the same section.
   Every row in the UI map table must have selectors that match exactly ONE element.
   </list_element_indexing>
 `;

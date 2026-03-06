@@ -1,36 +1,29 @@
-import dotenv from 'dotenv';
-dotenv.config();
+import { createGroq } from '@ai-sdk/groq';
 
-import { groq } from '@ai-sdk/groq';
+const groq = createGroq({
+  apiKey: process.env.GROQ_API_KEY,
+});
 
 const config = {
   playwright: {
     browser: 'chromium',
     url: 'http://localhost:3000',
-    windowSize: '1200x900',
+    windowSize: '1600x1200',
   },
 
   ai: {
     provider: groq,
-    model: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
-    apiKey: process.env.GROQ_API_KEY || '',
+    model: process.env.GROQ_MODEL,
+    visionModel: process.env.GROQ_VISION_MODEL,
     config: {
       maxRetries: 3,
-      timeout: 30000, // 30 seconds timeout
+      timeout: 30000,
     },
     agents: {
-      tester: {
-        // model: 'llama-3.1-70b-versatile',
-      },
-      navigator: {
-        // model: 'llama-3.1-70b-versatile',
-      },
-      researcher: {
-        // model: 'llama-3.1-70b-versatile',
-      },
-      planner: {
-        // model: 'llama-3.1-70b-versatile',
-      },
+      tester: {},
+      navigator: {},
+      researcher: {},
+      planner: {},
     },
   },
 };

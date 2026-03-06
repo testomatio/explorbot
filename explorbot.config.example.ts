@@ -176,7 +176,6 @@ const config: ExplorbotConfig = {
 
     config: {
       temperature: 0.7,
-      maxTokens: 4000,
       baseURL: process.env.OPENAI_BASE_URL,
       organization: process.env.OPENAI_ORG_ID,
     },

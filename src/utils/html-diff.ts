@@ -1,14 +1,22 @@
 import { parse, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
 import type { HtmlConfig } from '../config.ts';
-import { minifyHtml, sanitizeHtmlDocument, sanitizeHtmlString } from './html.ts';
+import { TAILWIND_CLASS_PATTERNS, TRASH_HTML_CLASSES, minifyHtml } from './html.ts';
+import { isDynamicId, isGenericClass } from './xpath.ts';
+
+export interface HtmlDiffPart {
+  container: string;
+  subtree: string;
+  added: string[];
+  removed: string[];
+}
 
 export interface HtmlDiffResult {
+  parts: HtmlDiffPart[];
   added: string[];
   removed: string[];
   similarity: number;
   summary: string;
-  subtree: string;
 }
 
 interface HtmlNode {
@@ -189,19 +197,19 @@ export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlC
   const similarity = calculateSimilarity(originalLines, modifiedLines);
   const { added, removed } = findDifferences(originalLines, modifiedLines);
 
-  const { subtree, structuralTopLevelPaths } = await buildDiffSubtree(originalDocument, modifiedDocument);
+  const parts = await buildDiffParts(originalDocument, modifiedDocument);
 
-  const structuralAdditions = structuralTopLevelPaths.map((path) => `ELEMENT:${path}`);
+  const structuralAdditions = parts.flatMap((p) => p.added.filter((a) => a.startsWith('ELEMENT:')));
   const allAdded = [...added, ...structuralAdditions];
   const totalChanges = allAdded.length + removed.length;
-  const summary = totalChanges === 0 && subtree ? 'Structural additions detected' : generateSummary(allAdded, removed, similarity);
+  const summary = totalChanges === 0 && parts.length > 0 ? 'Structural additions detected' : generateSummary(allAdded, removed, similarity);
 
   return {
+    parts,
     added: allAdded,
     removed,
     similarity,
     summary,
-    subtree,
   };
 }
 
@@ -369,10 +377,72 @@ const directTextDiffer = (current: ElementNode, previous: ElementNode): boolean 
   return false;
 };
 
-/**
- * Build a diff subtree representing new or changed elements in the modified document.
- */
-async function buildDiffSubtree(originalDocument: DocumentNode, modifiedDocument: DocumentNode): Promise<{ subtree: string; structuralTopLevelPaths: string[] }> {
+const trashHtmlClasses = TRASH_HTML_CLASSES;
+
+function filterContainerClasses(classes: string[]): string[] {
+  return classes
+    .filter((cls) => !/\d/.test(cls))
+    .filter((cls) => !isGenericClass(cls))
+    .filter((cls) => !trashHtmlClasses.test(cls))
+    .filter((cls) => !/(:|__)/.test(cls))
+    .filter((cls) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(cls)));
+}
+
+function buildContainerSelector(element: ElementNode, allElements: NodeMap): string | null {
+  const tag = element.tagName?.toLowerCase();
+  if (!tag) return null;
+
+  const attrs = element.attrs ?? [];
+  const id = attrs.find((a) => a.name === 'id')?.value;
+  if (id && !isDynamicId(id)) return `#${id}`;
+
+  const classAttr = attrs.find((a) => a.name === 'class')?.value;
+  if (!classAttr) return null;
+
+  const meaningful = filterContainerClasses(classAttr.split(/\s+/).filter(Boolean));
+  if (meaningful.length === 0) return null;
+
+  const selector = `${tag}.${meaningful.join('.')}`;
+
+  let matchCount = 0;
+  for (const el of allElements.values()) {
+    if (el.tagName?.toLowerCase() !== tag) continue;
+    const elClass = (el.attrs ?? []).find((a) => a.name === 'class')?.value || '';
+    const elClasses = elClass.split(/\s+/);
+    if (meaningful.every((cls) => elClasses.includes(cls))) {
+      matchCount++;
+      if (matchCount > 1) return null;
+    }
+  }
+
+  return matchCount === 1 ? selector : null;
+}
+
+function pathToXPath(treePath: string): string {
+  const parts = treePath.split('/');
+  const bodyIdx = parts.findIndex((p) => p.startsWith('body'));
+  if (bodyIdx === -1) return `//${parts.join('/')}`;
+  return `//body/${parts.slice(bodyIdx + 1).join('/')}`;
+}
+
+function findStableContainer(topLevelPath: string, originalMap: NodeMap, modifiedMap: NodeMap): { path: string; selector: string } {
+  const segments = topLevelPath.split('/');
+
+  for (let i = segments.length - 2; i >= 1; i--) {
+    const candidatePath = segments.slice(0, i + 1).join('/');
+    if (IGNORED_PATHS.has(candidatePath)) continue;
+    if (!originalMap.has(candidatePath) || !modifiedMap.has(candidatePath)) continue;
+
+    const element = modifiedMap.get(candidatePath)!;
+    const css = buildContainerSelector(element, modifiedMap);
+    if (css) return { path: candidatePath, selector: css };
+    return { path: candidatePath, selector: pathToXPath(candidatePath) };
+  }
+
+  return { path: 'html[1]/body[1]', selector: 'body' };
+}
+
+async function buildDiffParts(originalDocument: DocumentNode, modifiedDocument: DocumentNode): Promise<HtmlDiffPart[]> {
   const originalMap = collectElementMap(originalDocument);
   const modifiedMap = collectElementMap(modifiedDocument);
 
@@ -380,9 +450,7 @@ async function buildDiffSubtree(originalDocument: DocumentNode, modifiedDocument
   const changedPaths: string[] = [];
 
   for (const [path, element] of modifiedMap.entries()) {
-    if (IGNORED_PATHS.has(path)) {
-      continue;
-    }
+    if (IGNORED_PATHS.has(path)) continue;
 
     const originalElement = originalMap.get(path);
 
@@ -391,68 +459,75 @@ async function buildDiffSubtree(originalDocument: DocumentNode, modifiedDocument
       continue;
     }
 
-    const attrDiff = attributesDiffer(element, originalElement);
-    const textDiff = directTextDiffer(element, originalElement);
-
-    if (attrDiff) {
+    if (attributesDiffer(element, originalElement)) {
       changedPaths.push(path);
     }
-
-    if (textDiff) {
-      // Text differences are represented in flattened lines; no subtree clone required.
-    }
   }
 
-  if (addedPaths.length === 0 && changedPaths.length === 0) {
-    return { subtree: '', structuralTopLevelPaths: [] };
-  }
+  if (addedPaths.length === 0 && changedPaths.length === 0) return [];
 
   const addedTopLevel = filterTopLevelPaths(addedPaths);
   const changedFiltered = changedPaths.filter((path) => !addedTopLevel.some((ancestor) => isSameOrAncestor(ancestor, path)));
   const changedTopLevel = filterTopLevelPaths(changedFiltered);
 
-  const combinedPaths = [...addedTopLevel, ...changedTopLevel].sort((a, b) => a.length - b.length);
+  const allTopLevel = [...addedTopLevel, ...changedTopLevel];
 
-  const diffDocument = parse('<!DOCTYPE html><html><head></head><body></body></html>');
-  const diffHtml = findHtmlElement(diffDocument);
-  const diffHead = findHeadElement(diffDocument);
-  const diffBody = findBodyElement(diffDocument);
+  const grouped = new Map<string, { selector: string; paths: string[] }>();
 
-  if (!diffHtml || !diffBody) {
-    return { subtree: '', structuralTopLevelPaths: [] };
+  for (const path of allTopLevel) {
+    const { path: containerPath, selector } = findStableContainer(path, originalMap, modifiedMap);
+    const existing = grouped.get(containerPath);
+    if (existing) {
+      existing.paths.push(path);
+    } else {
+      grouped.set(containerPath, { selector, paths: [path] });
+    }
   }
 
-  const diffMap: NodeMap = new Map();
-  diffMap.set('html[1]', diffHtml);
-  if (diffHead) {
-    diffMap.set('html[1]/head[1]', diffHead);
-  }
-  diffMap.set('html[1]/body[1]', diffBody);
+  const parts: HtmlDiffPart[] = [];
 
-  for (const path of combinedPaths) {
-    ensureAncestors(path, diffMap, modifiedMap);
+  for (const [containerPath, { selector, paths }] of grouped) {
+    const containerElement = modifiedMap.get(containerPath);
+    if (!containerElement) continue;
 
-    const sourceElement = modifiedMap.get(path);
-    const parentPath = getParentPath(path);
-    const parentNode = parentPath ? diffMap.get(parentPath) : diffHtml;
+    const rootClone = cloneElementShallow(containerElement);
+    const diffMap: NodeMap = new Map();
+    diffMap.set(containerPath, rootClone);
 
-    if (!sourceElement || !parentNode) {
-      continue;
+    for (const path of paths) {
+      const pathSegments = path.split('/');
+      const containerDepth = containerPath.split('/').length;
+      for (let i = containerDepth + 1; i < pathSegments.length; i++) {
+        const prefix = pathSegments.slice(0, i).join('/');
+        if (diffMap.has(prefix)) continue;
+        const sourceNode = modifiedMap.get(prefix);
+        const parentPath = pathSegments.slice(0, i - 1).join('/');
+        const parentNode = diffMap.get(parentPath);
+        if (!sourceNode || !parentNode) continue;
+        const clone = cloneElementShallow(sourceNode);
+        appendChild(parentNode, clone);
+        diffMap.set(prefix, clone);
+      }
+
+      const sourceElement = modifiedMap.get(path);
+      const parentPath = getParentPath(path);
+      const parentNode = diffMap.get(parentPath);
+      if (!sourceElement || !parentNode) continue;
+
+      appendChild(parentNode, cloneElementDeep(sourceElement));
     }
 
-    const clone = cloneElementDeep(sourceElement);
-    appendChild(parentNode, clone);
-    diffMap.set(path, clone);
+    const serialized = serialize({ childNodes: [rootClone], nodeName: '#document-fragment' } as any).trim();
+    const subtree = serialized ? await minifyHtml(serialized) : '';
+    if (!subtree) continue;
+
+    const addedLines = paths.filter((p) => addedTopLevel.includes(p)).map((p) => `ELEMENT:${p}`);
+    const removedLines: string[] = [];
+
+    parts.push({ container: selector, subtree, added: addedLines, removed: removedLines });
   }
 
-  const serialized = serialize(diffDocument).trim();
-  const cleaned = sanitizeHtmlString(serialized);
-  const compacted = cleaned ? await minifyHtml(cleaned) : '';
-
-  return {
-    subtree: compacted,
-    structuralTopLevelPaths: [...addedTopLevel, ...changedTopLevel],
-  };
+  return parts;
 }
 
 /**
@@ -503,29 +578,6 @@ function filterTopLevelPaths(paths: string[]): string[] {
   }
 
   return result;
-}
-
-function ensureAncestors(path: string, targetMap: NodeMap, sourceMap: NodeMap): void {
-  const segments = path.split('/');
-
-  for (let i = 1; i < segments.length - 1; i++) {
-    const prefix = segments.slice(0, i + 1).join('/');
-    if (targetMap.has(prefix)) {
-      continue;
-    }
-
-    const sourceNode = sourceMap.get(prefix);
-    const parentPath = segments.slice(0, i).join('/');
-    const parentNode = targetMap.get(parentPath);
-
-    if (!sourceNode || !parentNode) {
-      continue;
-    }
-
-    const clone = cloneElementShallow(sourceNode);
-    appendChild(parentNode, clone);
-    targetMap.set(prefix, clone);
-  }
 }
 
 function getParentPath(path: string): string {

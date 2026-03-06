@@ -857,7 +857,7 @@ export function createAgentTools({
   };
 }
 
-const PAGE_DIFF_SUGGESTION = 'Analyze page diff and plan next steps.';
+const PAGE_DIFF_SUGGESTION = 'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff.';
 
 function transformContainsCommand(command: string): string {
   if (!command.includes(':contains(')) return command;

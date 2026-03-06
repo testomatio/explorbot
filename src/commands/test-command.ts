@@ -29,12 +29,12 @@ export class TestCommand extends BaseCommand {
       if (!plan) {
         throw new Error('No plan found. Please run /plan first to create test scenarios.');
       }
+      const visibleTests = plan.tests.filter((t) => !t.hasFinished && t.enabled);
       const index = Number.parseInt(args) - 1;
-      const pending = plan.getPendingTests();
-      if (index < 0 || index >= pending.length) {
-        throw new Error(`Test #${args} not found. Available: 1-${pending.length}`);
+      if (index < 0 || index >= visibleTests.length) {
+        throw new Error(`Test #${args} not found. Available: 1-${visibleTests.length}`);
       }
-      toExecute.push(pending[index]);
+      toExecute.push(visibleTests[index]);
     } else {
       const matching = plan?.getPendingTests().filter((test) => test.scenario.toLowerCase().includes(args.toLowerCase())) || [];
       if (matching.length > 0) {

@@ -55,6 +55,7 @@ interface AgentConfig extends HooksConfig {
   model?: string;
   enabled?: boolean;
   systemPrompt?: string;
+  providerOptions?: Record<string, any>;
 }
 
 interface ResearcherAgentConfig extends AgentConfig {
@@ -109,6 +110,7 @@ interface AIConfig {
   };
   vision?: boolean;
   visionModel?: string;
+  agenticModel?: string;
   maxAttempts?: number;
   retryDelay?: number;
   agents?: AgentsConfig;

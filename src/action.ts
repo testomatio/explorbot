@@ -95,13 +95,17 @@ class Action {
     let ariaSnapshot: string | null = null;
     let ariaSnapshotFile: string | undefined = undefined;
 
-    const page = this.playwrightHelper.page;
-    const serializedSnapshot = await page.locator('body').ariaSnapshot();
-    const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
-    const ariaPath = join('output', ariaFileName);
-    fs.writeFileSync(ariaPath, serializedSnapshot, 'utf8');
-    ariaSnapshot = serializedSnapshot;
-    ariaSnapshotFile = ariaFileName;
+    try {
+      const page = this.playwrightHelper.page;
+      const serializedSnapshot = await page.locator('body').ariaSnapshot();
+      const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
+      const ariaPath = join('output', ariaFileName);
+      fs.writeFileSync(ariaPath, serializedSnapshot, 'utf8');
+      ariaSnapshot = serializedSnapshot;
+      ariaSnapshotFile = ariaFileName;
+    } catch (err) {
+      debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
+    }
 
     const result = new ActionResult({
       html,
@@ -142,15 +146,19 @@ class Action {
         continue;
       }
 
-      const iframeHtml = await frame.evaluate(() => document.documentElement.outerHTML);
-      const compactedIframeHtml = await minifyHtml(htmlCombinedSnapshot(iframeHtml));
+      try {
+        const iframeHtml = await frame.evaluate(() => document.documentElement.outerHTML);
+        const compactedIframeHtml = await minifyHtml(htmlCombinedSnapshot(iframeHtml));
 
-      iframeSnapshots.push({
-        src: url,
-        html: compactedIframeHtml,
-      });
+        iframeSnapshots.push({
+          src: url,
+          html: compactedIframeHtml,
+        });
 
-      debugLog(`Captured iframe ${url}: ${compactedIframeHtml.length} characters (compacted)`);
+        debugLog(`Captured iframe ${url}: ${compactedIframeHtml.length} characters (compacted)`);
+      } catch (error) {
+        debugLog(`Failed to capture iframe ${url}:`, error instanceof Error ? `${error.message}\n${error.stack}` : error);
+      }
     }
 
     return iframeSnapshots;

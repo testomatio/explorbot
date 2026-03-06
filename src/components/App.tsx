@@ -13,6 +13,7 @@ import Autocomplete from './Autocomplete.js';
 import InputPane from './InputPane.js';
 import InputReadline from './InputReadline.js';
 import LogPane from './LogPane.js';
+import PlanEditor from './PlanEditor.js';
 import SessionTimer from './SessionTimer.js';
 import StateTransitionPane from './StateTransitionPane.js';
 import TaskPane from './TaskPane.js';
@@ -34,6 +35,8 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
   const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
   const [tasks, setTasks] = useState<Test[]>([]);
+  const [showPlanEditor, setShowPlanEditor] = useState(false);
+  const [taskScrollOffset, setTaskScrollOffset] = useState(0);
   const [commandHandler] = useState(() => new CommandHandler(explorBot));
   const [checklistData, setChecklistData] = useState<{ config: ExplorbotConfig; knowledgeTracker: KnowledgeTracker } | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -146,6 +149,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       if (unsubscribeRef.current) unsubscribeRef.current();
       planRef.current = plan;
       setTasks([...plan.tests]);
+      setTaskScrollOffset(0);
       unsubscribeRef.current = plan.onTestsChange((updatedTests) => {
         setTasks([...updatedTests]);
       });
@@ -184,6 +188,23 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       explorBot.stop().then(() => {
         process.exit(0);
       });
+      return;
+    }
+
+    if (key.ctrl && input === 'e' && tasks.length > 0) {
+      setShowPlanEditor(true);
+      return;
+    }
+
+    if (!showInput && !showPlanEditor) {
+      if (key.upArrow) {
+        setTaskScrollOffset((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setTaskScrollOffset((prev) => prev + 1);
+        return;
+      }
     }
   });
 
@@ -200,6 +221,11 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       tag('input').log(`> ${trimmed}`);
 
       const isCommand = trimmed.startsWith('/') || trimmed.startsWith('I.');
+
+      if (trimmed.toLowerCase() === '/plan:edit') {
+        if (tasks.length > 0) setShowPlanEditor(true);
+        return;
+      }
 
       if (isCommand) {
         setInterruptPrompt(null);
@@ -221,10 +247,15 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       if (userInputPromiseRef.current) {
         userInputPromiseRef.current.resolve(input);
         userInputPromiseRef.current = null;
+        setShowInput(false);
+        return;
       }
+
       setShowInput(false);
+      await commandHandler.executeCommand(trimmed);
+      setShowInput(true);
     },
-    [commandHandler]
+    [commandHandler, tasks.length]
   );
 
   const handleCommandStart = useCallback(() => {
@@ -254,7 +285,9 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
           <Text color="yellow">{interruptPrompt}</Text>
         </Box>
       )}
-      <InputComponent commandHandler={commandHandler} onSubmit={handleInputSubmit} onCommandStart={handleCommandStart} onCommandComplete={handleCommandComplete} isActive={showInput} visible={showInput} />
+      <Box display={showInput ? 'flex' : 'none'}>
+        <InputComponent commandHandler={commandHandler} onSubmit={handleInputSubmit} onCommandStart={handleCommandStart} onCommandComplete={handleCommandComplete} isActive={showInput && !showPlanEditor} visible={true} />
+      </Box>
 
       <Box flexDirection="row" alignItems="flex-start" columnGap={1} minHeight={5}>
         {currentState && (
@@ -264,11 +297,12 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         )}
         {tasks.length > 0 && (
           <Box width={currentState ? '50%' : '100%'}>
-            <TaskPane tasks={tasks} />
+            <TaskPane tasks={tasks} scrollOffset={taskScrollOffset} />
           </Box>
         )}
         <Autocomplete />
       </Box>
+      {showPlanEditor && <PlanEditor tasks={tasks} onClose={() => setShowPlanEditor(false)} isActive={showPlanEditor} />}
     </Box>
   );
 }

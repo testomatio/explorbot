@@ -1,3 +1,9 @@
+export function truncateJson(input: any): string {
+  if (!input) return '';
+  const str = JSON.stringify(input);
+  return str.length <= 80 ? str : `${str.slice(0, 77)}...`;
+}
+
 export function sanitizeFilename(name: string): string {
   return name
     .toLowerCase()

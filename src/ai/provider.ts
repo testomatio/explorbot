@@ -15,6 +15,7 @@ const promptLog = createDebug('explorbot:provider:out');
 const responseLog = createDebug('explorbot:provider:in');
 
 class AiError extends Error {}
+export class ContextLengthError extends Error {}
 
 export class Provider {
   private config: AIConfig;
@@ -27,17 +28,20 @@ export class Provider {
     maxDelay: 10000,
     retryCondition: (error: Error) => {
       return (
-        error.name === 'AI_APICallError' ||
-        error.message.includes('timeout') ||
-        error.message.includes('network') ||
-        error.message.includes('rate limit') ||
-        error.message.includes('AI request timeout') ||
-        error.message.includes('schema') ||
-        error.message.includes('No object generated') ||
-        error.message.includes('No response text')
+        (error.name === 'AI_APICallError' ||
+          error.message.includes('timeout') ||
+          error.message.includes('network') ||
+          error.message.includes('rate limit') ||
+          error.message.includes('AI request timeout') ||
+          error.message.includes('schema') ||
+          error.message.includes('No object generated') ||
+          error.message.includes('No response text')) &&
+        !error.message.includes('output truncated at maxTokens')
       );
     },
   };
+
+  static readonly CONTEXT_LENGTH_PATTERNS = ['reduce the length', 'context length', 'maximum context', 'token limit', 'too many tokens', 'max_tokens', 'context_length_exceeded', 'output truncated at maxtokens'];
   lastConversation: Conversation | null = null;
 
   constructor(config: AIConfig) {
@@ -76,15 +80,38 @@ export class Provider {
     return agentConfig?.model || this.config.model;
   }
 
+  getAgenticModel(agentName?: string): string {
+    if (agentName) {
+      const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
+      if (agentConfig?.model) return agentConfig.model;
+    }
+    return this.config.agenticModel || this.config.model;
+  }
+
   getSystemPromptForAgent(agentName: string): string | undefined {
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     return agentConfig?.systemPrompt;
+  }
+
+  getProviderOptionsForAgent(agentName: string): Record<string, any> | undefined {
+    const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
+    return agentConfig?.providerOptions;
   }
 
   private getRetryOptions(options: any = {}): RetryOptions {
     return {
       ...this.defaultRetryOptions,
       maxAttempts: options.maxRetries || this.defaultRetryOptions.maxAttempts,
+    };
+  }
+
+  private mergeProviderOptions(config: Record<string, any>, agentName?: string): Record<string, any> {
+    if (!agentName) return config;
+    const agentOptions = this.getProviderOptionsForAgent(agentName);
+    if (!agentOptions) return config;
+    return {
+      ...config,
+      providerOptions: { ...config.providerOptions, ...agentOptions },
     };
   }
 
@@ -137,8 +164,8 @@ export class Provider {
     };
   }
 
-  startConversation(systemMessage: string, agentName?: string) {
-    const model = this.getModelForAgent(agentName);
+  startConversation(systemMessage: string, agentName?: string, model?: string) {
+    const resolvedModel = model || this.getModelForAgent(agentName);
     return new Conversation(
       [
         {
@@ -146,7 +173,7 @@ export class Provider {
           content: systemMessage,
         },
       ],
-      model
+      resolvedModel
     );
   }
 
@@ -181,12 +208,16 @@ export class Provider {
     promptLog(`Using model: ${model}`);
 
     const telemetry = this.getTelemetry(options);
-    const config = {
-      ...(this.config.config || {}),
-      ...options,
-      ...(telemetry ? { experimental_telemetry: telemetry } : {}),
-      model: this.provider(model),
-    };
+    const config = this.mergeProviderOptions(
+      {
+        maxTokens: 16384,
+        ...(this.config.config || {}),
+        ...options,
+        ...(telemetry ? { experimental_telemetry: telemetry } : {}),
+        model: this.provider(model),
+      },
+      options.agentName
+    );
 
     promptLog(messages[messages.length - 1].content);
     try {
@@ -194,7 +225,13 @@ export class Provider {
         const result = await generateText({ messages, ...config });
         if (!result.text) {
           debugLog(result);
+          if (result.finishReason === 'length') {
+            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxTokens in config or use a model with higher output capacity.');
+          }
           throw new Error('No response text from AI');
+        }
+        if (result.finishReason === 'length') {
+          debugLog('finishReason=length, response may be truncated');
         }
         return result;
       }, this.getRetryOptions(options));
@@ -212,8 +249,17 @@ export class Provider {
 
       return response;
     } catch (error: any) {
-      tag('error').log(error.message || error.toString());
       clearActivity();
+      if (error instanceof ContextLengthError) throw error;
+      if (!options._noContextRetry && Provider.isContextLengthError(error)) {
+        const trimmed = Provider.trimMessagesForRetry(messages);
+        if (trimmed) {
+          tag('warning').log('Context length exceeded, retrying chat with trimmed messages...');
+          return this.chat(trimmed, model, { ...options, _noContextRetry: true });
+        }
+        throw new ContextLengthError(error.message || error.toString());
+      }
+      tag('error').log(error.message || error.toString());
       throw new AiError(error.message || error.toString());
     }
   }
@@ -228,16 +274,19 @@ export class Provider {
     promptLog(messages[messages.length - 1].content);
 
     const telemetry = this.getTelemetry(options);
-    const config = {
-      tools,
-      maxToolRoundtrips: options.maxToolRoundtrips || 5,
-      toolChoice: 'auto',
-      ...(this.config.config || {}),
-      ...options,
-      ...(telemetry ? { experimental_telemetry: telemetry } : {}),
-      model: this.provider(model),
-    };
-
+    const config = this.mergeProviderOptions(
+      {
+        tools,
+        maxTokens: 16384,
+        maxToolRoundtrips: options.maxToolRoundtrips || 5,
+        toolChoice: 'auto',
+        ...(this.config.config || {}),
+        ...options,
+        ...(telemetry ? { experimental_telemetry: telemetry } : {}),
+        model: this.provider(model),
+      },
+      options.agentName
+    );
     try {
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
@@ -274,7 +323,16 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
-      if (error.constructor.name === 'AI_APICallError') {
+      if (error instanceof ContextLengthError) throw error;
+      if (!options._noContextRetry && Provider.isContextLengthError(error)) {
+        const trimmed = Provider.trimMessagesForRetry(messages);
+        if (trimmed) {
+          tag('warning').log('Context length exceeded, retrying generateWithTools with trimmed messages...');
+          return this.generateWithTools(trimmed, model, tools, { ...options, _noContextRetry: true });
+        }
+        throw new ContextLengthError(error.message || error.toString());
+      }
+      if (error.constructor?.name === 'AI_APICallError') {
         responseLog(error.message);
         throw new AiError(error.message);
       }
@@ -288,13 +346,16 @@ export class Provider {
     promptLog(`Using model: ${modelToUse}`);
 
     const telemetry = this.getTelemetry(options);
-    const config = {
-      schema,
-      ...(this.config.config || {}),
-      ...options,
-      ...(telemetry ? { experimental_telemetry: telemetry } : {}),
-      model: this.provider(modelToUse),
-    };
+    const config = this.mergeProviderOptions(
+      {
+        schema,
+        ...(this.config.config || {}),
+        ...options,
+        ...(telemetry ? { experimental_telemetry: telemetry } : {}),
+        model: this.provider(modelToUse),
+      },
+      options.agentName
+    );
 
     try {
       promptLog(messages[messages.length - 1].content);
@@ -323,8 +384,58 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
+      if (error instanceof ContextLengthError) throw error;
+      if (!options._noContextRetry && Provider.isContextLengthError(error)) {
+        const trimmed = Provider.trimMessagesForRetry(messages);
+        if (trimmed) {
+          tag('warning').log('Context length exceeded, retrying with trimmed messages...');
+          return this.generateObject(trimmed, schema, model, { ...options, _noContextRetry: true });
+        }
+        throw new ContextLengthError(error.message || error.toString());
+      }
       throw new AiError(error.message || error.toString());
     }
+  }
+
+  static isContextLengthError(error: any): boolean {
+    const msg = (error?.message || error?.toString() || '').toLowerCase();
+    return Provider.CONTEXT_LENGTH_PATTERNS.some((p) => msg.includes(p));
+  }
+
+  static trimMessagesForRetry(messages: ModelMessage[]): ModelMessage[] | null {
+    const tagRegex = /<(\w[\w-]*)>([\s\S]*?)<\/\1>/g;
+    let didTrim = false;
+
+    const trimmed = messages.map((msg, idx) => {
+      if (typeof msg.content === 'string') {
+        const newContent = msg.content.replace(tagRegex, (match, tagName, content) => {
+          if (content.length > 2000) {
+            didTrim = true;
+            return `<${tagName}>${content.substring(0, Math.floor(content.length / 2))}\n[...trimmed...]</${tagName}>`;
+          }
+          return match;
+        });
+        return { ...msg, content: newContent };
+      }
+
+      if (msg.role === 'tool' && Array.isArray(msg.content) && idx < messages.length - 3) {
+        const newContent = (msg.content as any[]).map((part: any) => {
+          if (part.type !== 'tool-result' || !part.output) return part;
+          const output = part.output?.type === 'json' ? part.output.value : part.output;
+          if (!output || typeof output !== 'object') return part;
+          const json = JSON.stringify(output);
+          if (json.length < 2000) return part;
+          didTrim = true;
+          const trimmedOutput = { success: output.success, action: output.action, trimmed: true };
+          return { ...part, output: part.output?.type === 'json' ? { type: 'json', value: trimmedOutput } : trimmedOutput };
+        });
+        return { ...msg, content: newContent };
+      }
+
+      return msg;
+    });
+
+    return didTrim ? trimmed : null;
   }
 
   getProvider(): any {
@@ -358,6 +469,7 @@ export class Provider {
 
     const telemetry = this.getTelemetry({});
     const config = {
+      maxTokens: 16384,
       ...(this.config.config || {}),
       ...(telemetry ? { experimental_telemetry: telemetry } : {}),
       model: this.provider(this.config.visionModel),

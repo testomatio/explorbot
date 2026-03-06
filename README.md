@@ -52,20 +52,23 @@ explorbot init
 **3. Edit `explorbot.config.js`** — set your app URL and AI provider:
 
 > [!IMPORTANT]
-> **Explorbot uses two tiers of models.** Most agents (Tester, Navigator, Researcher) are token-hungry — they process full HTML and ARIA snapshots on every iteration. Use a fast, cheap model like `gpt-oss-20b` for these. **Pilot is different** — it only reads compact action logs and makes high-level decisions, so it benefits from a smarter reasoning model. Recommended providers for base model (100+ TPS): Groq, Cerebras. See [OpenRouter](https://openrouter.ai/rankings#performance) for fastest models.
+> **Explorbot uses three types of models:**
+>
+> | Type | Config key | Purpose | Recommendation |
+> |------|-----------|---------|----------------|
+> | **model** | `ai.model` | Standard model for HTML/ARIA processing. Used by Tester, Navigator, Researcher. Should be fast and cheap — these agents are token-hungry. | `gpt-oss-20b` via Groq/Cerebras (100+ TPS) |
+> | **visionModel** | `ai.visionModel` | Screenshot analysis. Used when agents need to visually inspect the page. | `llama-scout-4` |
+> | **agenticModel** | `ai.agenticModel` | Exceptional decision making. Used by Captain and Pilot — agents that read compact action logs and make high-level decisions. Benefits from a smarter model. | GPT-5, Claude Sonnet, Kimi K2, Qwen 3 |
+>
+> See [OpenRouter](https://openrouter.ai/rankings#performance) for fastest models.
 
 Groq is used in this example but you can use any provider supported by Vercel AI SDK. See [docs/providers.md](docs/providers.md) for other providers.
 
 ```javascript
 import { createGroq } from '@ai-sdk/groq';
-import { createOpenAI } from '@ai-sdk/openai';
 
 const groq = createGroq({
   apiKey: process.env.GROQ_API_KEY,
-});
-
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export default {
@@ -76,16 +79,14 @@ export default {
   ai: {
     provider: groq,
     model: 'gpt-oss-20b',            // Fast cheap model for most agents
-    visionModel: 'llama-scout-4',    // Fast vision model
-    agents: {
-      pilot: { provider: openai, model: 'gpt-5' },  // Smarter model for Pilot
-    },
+    visionModel: 'llama-scout-4',    // Screenshot analysis
+    agenticModel: 'qwen3-32b',       // Smarter model for Captain & Pilot
   },
 };
 ```
 
 > [!TIP]
-> **Suggested Pilot models:** GPT-5, Claude Sonnet, Kimi K2, Qwen 3. Pilot barely uses tokens (just action summaries), so a smarter model here costs very little while significantly improving test quality.
+> Captain and Pilot barely use tokens (just action summaries), so a smarter `agenticModel` costs very little while significantly improving test quality. You can also override any agent's model individually via `ai.agents.<name>.model`.
 
 **4. Add knowledge** (optional but recommended)
 
@@ -146,7 +147,7 @@ Run `/explore` in TUI or use `explorbot explore` from CLI to watch the cycle: re
 
 **Supporting components:**
 
-* **Pilot** — supervises Tester from a separate conversation: reviews action logs, detects stuck patterns, makes final pass/fail decisions. Uses a smarter model since it only processes compact summaries, not raw HTML
+* **Pilot** — supervises Tester from a separate conversation: reviews action logs, detects stuck patterns, makes final pass/fail decisions. Uses `agenticModel` since it only processes compact summaries, not raw HTML
 * **Historian** — saves sessions as CodeceptJS code, learns from experience
 * **Quartermaster** — analyzes pages for A11y issues (axe-core + semantic)
 * **Reporter** — sends test results to Testomat.io
@@ -215,7 +216,7 @@ Freesail navigates to a page, researches it, runs tests, then moves on to the ne
 
 **Tactical decisions are AI-driven** — How to click that button, what to do when a modal appears, how to recover from errors.
 
-**Cheap workers, smart manager** — Tester, Navigator, and Researcher are token-hungry agents that chew through HTML and ARIA on every step. They run on fast, cheap models. Pilot is the manager — it reads only compact action logs, thinks about what went wrong, and guides Tester. Give Pilot a smarter model for better results at negligible extra cost.
+**Cheap workers, smart managers** — Tester, Navigator, and Researcher are token-hungry agents that chew through HTML and ARIA on every step. They run on the fast, cheap `model`. Captain and Pilot are the decision-makers — they read only compact action logs and make high-level choices. Set `agenticModel` to a smarter model for better results at negligible extra cost.
 
 **Explorbot learns from its failures** — It uses previous experience interacting with a web page for faster and better decisions on next runs.
 

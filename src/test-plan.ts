@@ -170,6 +170,7 @@ export class Test extends Task {
   artifacts: Record<string, string>;
   generatedCode?: string;
   planIteration = 0;
+  enabled = true;
 
   constructor(scenario: string, priority: 'critical' | 'important' | 'high' | 'normal' | 'low', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);
@@ -322,7 +323,7 @@ export class Plan {
   }
 
   getPendingTests(): Test[] {
-    return this.tests.filter((test) => test.status === 'pending');
+    return this.tests.filter((test) => test.status === 'pending' && test.enabled);
   }
 
   get isComplete(): boolean {

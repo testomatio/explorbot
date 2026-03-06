@@ -1,8 +1,6 @@
 // Bunosh CLI required to execute tasks from this file
 // Get it here => https://buno.sh
 import fs from 'node:fs';
-import dotenv from 'dotenv';
-dotenv.config();
 const highlight = require('cli-highlight').highlight;
 import yaml from 'js-yaml';
 import { chromium } from 'playwright';

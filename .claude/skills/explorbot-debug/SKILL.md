@@ -11,9 +11,19 @@ Debug failed Explorbot test sessions by analyzing execution traces.
 
 **Goal:** Get the `explorbot.log` and the corresponding Langfuse trace JSON.
 
+### Fast Path: Trace ID Provided
+
+If the user provides a **Langfuse trace ID** (a hex string like `0eaf1adf73deff451cbad7effaaaf8a8`), fetch it directly:
+
+```bash
+bun .claude/skills/explorbot-debug/langfuse-export.ts <trace-id>
+```
+
+This fetches the trace and all its observations in one step. Skip to **Step 1.3 Load and Correlate**.
+
 ### 1. Analyze Log Timeline
 
-First, read the end of `output/explorbot.log` to determine the time range of the last session.
+If no trace ID is provided, read the end of `output/explorbot.log` to determine the time range of the last session.
 
 ```bash
 tail -n 1000 output/explorbot.log
@@ -46,7 +56,7 @@ ls -lt output/langfuse-export-*.json | head -n 1
 
 1. Try to run the export script using the duration calculated from the logs:
    ```bash
-   # <range> can be 30m, 1h, etc.
+   # <range> can be 30m, 1h, or a trace ID
    bun .claude/skills/explorbot-debug/langfuse-export.ts <range>
    ```
    *Note: If the script fails (e.g., due to missing credentials or network issues), proceed with **Log Analysis Only**.*

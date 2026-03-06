@@ -147,6 +147,30 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
     }
   });
 
+addCommonOptions(program.command('test <planfile>').description('Execute tests from a plan file').option('--all', 'Run all pending tests').option('--test <number>', 'Run specific test by number').option('--grep <pattern>', 'Run tests matching pattern')).action(async (planfile, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
+    await explorBot.start();
+
+    explorBot.loadPlan(planfile);
+
+    let args = '';
+    if (options.all) args = '*';
+    else if (options.test) args = options.test;
+    else if (options.grep) args = options.grep;
+
+    const { TestCommand } = await import('../src/commands/test-command.js');
+    const cmd = new TestCommand(explorBot);
+    await cmd.execute(args);
+
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
+
 addCommonOptions(
   program
     .command('freesail [startUrl]')
@@ -474,6 +498,81 @@ program
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       await showStatsAndExit(1);
+    }
+  });
+
+const browserCmd = program.command('browser').description('Manage persistent browser server');
+
+browserCmd
+  .command('start')
+  .description('Launch a persistent browser server')
+  .option('-s, --show', 'Launch browser in headed mode (visible window)')
+  .option('--headless', 'Launch browser in headless mode')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('-p, --path <path>', 'Working directory path')
+  .action(async (options) => {
+    const { launchServer, removeEndpointFile } = await import('../src/browser-server.js');
+    await ConfigParser.getInstance().loadConfig({ config: options.config, path: options.path });
+    const config = ConfigParser.getInstance().getConfig();
+
+    let show = config.playwright.show || false;
+    if (options.show !== undefined) show = true;
+    if (options.headless !== undefined) show = false;
+
+    const server = await launchServer({ browser: config.playwright.browser, show });
+
+    console.log('Browser server is running. Press Ctrl+C to stop.');
+
+    const cleanup = () => {
+      console.log('\nStopping browser server...');
+      server.close();
+      removeEndpointFile();
+      process.exit(0);
+    };
+
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+  });
+
+browserCmd
+  .command('stop')
+  .description('Stop a running browser server')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('-p, --path <path>', 'Working directory path')
+  .action(async (options) => {
+    const { getAliveEndpoint, removeEndpointFile } = await import('../src/browser-server.js');
+    await ConfigParser.getInstance().loadConfig({ config: options.config, path: options.path });
+
+    const endpoint = await getAliveEndpoint();
+    if (!endpoint) {
+      console.log('No running browser server found.');
+      process.exit(0);
+    }
+
+    try {
+      const { chromium } = await import('playwright-core');
+      const browser = await chromium.connect(endpoint, { timeout: 3000 });
+      await browser.close();
+    } catch {}
+
+    removeEndpointFile();
+    console.log('Browser server stopped.');
+  });
+
+browserCmd
+  .command('status')
+  .description('Check if a browser server is running')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('-p, --path <path>', 'Working directory path')
+  .action(async (options) => {
+    const { getAliveEndpoint } = await import('../src/browser-server.js');
+    await ConfigParser.getInstance().loadConfig({ config: options.config, path: options.path });
+
+    const endpoint = await getAliveEndpoint();
+    if (endpoint) {
+      console.log(`Browser server is running at: ${endpoint}`);
+    } else {
+      console.log('No running browser server found.');
     }
   });
 

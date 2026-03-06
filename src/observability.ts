@@ -20,7 +20,24 @@ export const Observability = {
 
     try {
       if (!started) {
-        return await fn();
+        const parentSpan = current?.span;
+        if (!parentSpan || !current) return await fn();
+
+        const tracer = trace.getTracer('ai');
+        const childSpan = tracer.startSpan(name, undefined, trace.setSpan(context.active(), parentSpan));
+        const savedSpan = current.span;
+        const savedName = current.name;
+        current.span = childSpan;
+        current.name = name;
+        return await context.with(trace.setSpan(context.active(), childSpan), async () => {
+          try {
+            return await fn();
+          } finally {
+            childSpan.end();
+            current!.span = savedSpan;
+            current!.name = savedName;
+          }
+        });
       }
 
       const tracer = trace.getTracer('ai');
@@ -30,18 +47,22 @@ export const Observability = {
         traceFlags: 1,
       };
       const rootContext = trace.setSpanContext(context.active(), spanContext);
-      const span = tracer.startSpan(name, undefined, rootContext);
-      span.setAttribute('langfuse.trace.name', name);
-      span.setAttribute('langfuse.trace.id', current?.traceId || '');
+
+      const initSpan = tracer.startSpan(name, undefined, rootContext);
+      initSpan.setAttribute('langfuse.trace.name', name);
+      initSpan.setAttribute('langfuse.trace.id', current?.traceId || '');
       if (current?.metadata?.sessionId) {
-        span.setAttribute('langfuse.trace.session_id', String(current.metadata.sessionId));
+        initSpan.setAttribute('langfuse.trace.session_id', String(current.metadata.sessionId));
       }
       if (current?.metadata?.userId) {
-        span.setAttribute('langfuse.trace.user_id', String(current.metadata.userId));
+        initSpan.setAttribute('langfuse.trace.user_id', String(current.metadata.userId));
       }
       if (current?.metadata?.tags && Array.isArray(current.metadata.tags)) {
-        span.setAttribute('langfuse.trace.tags', current.metadata.tags);
+        initSpan.setAttribute('langfuse.trace.tags', current.metadata.tags);
       }
+      initSpan.end();
+
+      const span = tracer.startSpan(name, undefined, rootContext);
       current.span = span;
 
       return await context.with(trace.setSpan(rootContext, span), async () => {

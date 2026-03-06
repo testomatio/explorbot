@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Plan, Test } from '../test-plan.ts';
+import { mdq } from './markdown-query.ts';
 
 export function parsePlanFromMarkdown(filePath: string): Plan {
   const content = readFileSync(filePath, 'utf-8');
@@ -137,11 +138,24 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
     }
   }
 
+  const prerequisite = mdq(content).query('section("Prerequisite") item').text().trim();
+  const urlMatch = prerequisite.match(/^URL:\s*(.+)/);
+  if (urlMatch) {
+    plan.url = urlMatch[1].trim();
+    for (const test of plan.tests) {
+      if (!test.startUrl) test.startUrl = plan.url;
+    }
+  }
+
   return plan;
 }
 
 export function savePlanToMarkdown(plan: Plan, filePath: string): void {
   let content = `<!-- suite -->\n# ${plan.title}\n\n`;
+
+  if (plan.url) {
+    content += `### Prerequisite\n\n* URL: ${plan.url}\n\n`;
+  }
 
   if (plan.iteration > 0) {
     content += `<!-- plan updated on ${new Date().toISOString()} -->\n\n`;

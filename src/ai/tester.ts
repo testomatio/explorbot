@@ -614,6 +614,7 @@ export class Tester extends TaskAgent implements Agent {
 
   private async buildTestPrompt(task: Test, actionResult: ActionResult): Promise<string> {
     const knowledge = this.getKnowledge(actionResult);
+    const pageContext = await this.reinjectContextIfNeeded(1, actionResult);
 
     return dedent`
       <task>
@@ -637,6 +638,8 @@ export class Tester extends TaskAgent implements Agent {
       ${this.buildDeletionScope(task)}
 
       ${knowledge}
+
+      ${pageContext}
     `;
   }
 

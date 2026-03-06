@@ -30,6 +30,7 @@ declare namespace CodeceptJS {
 }
 
 const debugLog = createDebug('explorbot:explorer');
+const FATAL_BROWSER_ERRORS = /Frame was detached|Target closed|Execution context was destroyed|Protocol error|Session closed/i;
 
 interface TabInfo {
   url: string;
@@ -40,6 +41,7 @@ class Explorer {
   private aiProvider: AIProvider;
   playwrightHelper: any;
   public isStarted = false;
+  private isSharedBrowser = false;
   actor!: CodeceptJS.I;
   private stateManager!: StateManager;
   private knowledgeTracker!: KnowledgeTracker;
@@ -192,7 +194,7 @@ class Explorer {
     if (!this.playwrightHelper) {
       throw new Error('Playwright helper not available');
     }
-    await this.playwrightHelper._startBrowser();
+    await this.connectOrLaunchBrowser();
     const hasSession = this.options?.session && existsSync(this.options.session);
     const contextOptions = hasSession ? { storageState: this.options!.session } : undefined;
     await this.playwrightHelper._createContextPage(contextOptions);
@@ -210,6 +212,24 @@ class Explorer {
     tag('success').log('Browser started, ready to explore');
 
     return I;
+  }
+
+  private async connectOrLaunchBrowser(): Promise<void> {
+    const { getAliveEndpoint } = await import('./browser-server.js');
+    const endpoint = await getAliveEndpoint();
+
+    if (endpoint) {
+      const browserName = this.config.playwright.browser || 'chromium';
+      this.playwrightHelper.options[browserName] ||= {};
+      this.playwrightHelper.options[browserName].browserWSEndpoint = endpoint;
+      this.playwrightHelper._setConfig(this.playwrightHelper.options);
+      await this.playwrightHelper._startBrowser();
+      this.isSharedBrowser = true;
+      tag('success').log('Connected to persistent browser server');
+      return;
+    }
+
+    await this.playwrightHelper._startBrowser();
   }
 
   createAction() {
@@ -334,7 +354,11 @@ class Explorer {
         if (attr) result.push(Number.parseInt(attr, 10));
       }
       return result;
-    } catch {
+    } catch (error) {
+      if (this.isFatalBrowserError(error)) {
+        tag('warning').log(`getEidxInContainer: ${error instanceof Error ? error.message : error}`);
+        await this.recoverFromBrowserError();
+      }
       return [];
     }
   }
@@ -346,7 +370,11 @@ class Explorer {
       const el = locator.startsWith('//') ? base.locator(`xpath=${locator}`) : base.locator(locator);
       const eidx = await el.first().getAttribute('data-explorbot-eidx');
       return eidx ? Number.parseInt(eidx, 10) : null;
-    } catch {
+    } catch (error) {
+      if (this.isFatalBrowserError(error)) {
+        tag('warning').log(`getEidxByLocator: ${error instanceof Error ? error.message : error}`);
+        await this.recoverFromBrowserError();
+      }
       return null;
     }
   }
@@ -354,6 +382,28 @@ class Explorer {
   async reload() {
     await this.closeOtherTabs();
     await this.playwrightHelper.page.reload();
+  }
+
+  isFatalBrowserError(error: unknown): boolean {
+    const msg = error instanceof Error ? error.message : String(error);
+    return FATAL_BROWSER_ERRORS.test(msg);
+  }
+
+  async recoverFromBrowserError(): Promise<boolean> {
+    try {
+      const url = this.stateManager.getCurrentState()?.url;
+      if (url) {
+        tag('warning').log(`Browser error detected, recovering by navigating to ${url}`);
+        await this.playwrightHelper.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        return true;
+      }
+      tag('warning').log('Browser error detected, reloading page');
+      await this.playwrightHelper.page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
+      return true;
+    } catch (err) {
+      tag('error').log(`Browser recovery failed: ${err instanceof Error ? err.message : err}`);
+      return false;
+    }
   }
 
   async switchToMainFrame() {
@@ -370,7 +420,11 @@ class Explorer {
       const page = this.playwrightHelper.page;
       if (!page) return false;
       return await page.evaluate(() => window.top !== window.self);
-    } catch {
+    } catch (error) {
+      if (this.isFatalBrowserError(error)) {
+        tag('warning').log(`isInsideIframe: ${error instanceof Error ? error.message : error}`);
+        await this.recoverFromBrowserError();
+      }
       return false;
     }
   }
@@ -417,12 +471,17 @@ class Explorer {
         }
 
         try {
+          if (newPage.url() === 'about:blank') {
+            await newPage.waitForURL(/^(?!about:blank$)/, { timeout: 5000 }).catch(() => {});
+          }
           await newPage.waitForLoadState('domcontentloaded', { timeout: 5000 });
           const url = await newPage.url();
           const title = await newPage.title().catch(() => 'Unknown');
 
           this.otherTabs.push({ url, title });
-          tag('info').log(`New browser tab opened: ${url}`);
+          if (url !== 'about:blank') {
+            tag('info').log(`New browser tab opened: ${url}`);
+          }
           debugLog(`New tab detected: ${url} - ${title}`);
         } catch (error) {
           debugLog('Failed to get new tab info:', error);
@@ -468,7 +527,23 @@ class Explorer {
 
     codeceptjs.event.dispatcher.emit('global.after');
     codeceptjs.event.dispatcher.emit('global.result');
-    await Promise.all([this.reporter.finishRun(), this.playwrightHelper._stopBrowser(), codeceptjs.recorder.stop()]);
+
+    if (this.isSharedBrowser) {
+      tag('info').log('Closing browser context (persistent browser stays running)');
+      try {
+        if (this.playwrightHelper.browserContext) {
+          await this.playwrightHelper.browserContext.close();
+          this.playwrightHelper.browserContext = null;
+        }
+      } catch (err) {
+        debugLog('Failed to close browser context:', err);
+      }
+      this.playwrightHelper.browser = null;
+      this.playwrightHelper.isRunning = false;
+      await Promise.all([this.reporter.finishRun(), codeceptjs.recorder.stop()]);
+    } else {
+      await Promise.all([this.reporter.finishRun(), this.playwrightHelper._stopBrowser(), codeceptjs.recorder.stop()]);
+    }
   }
 
   async startTest(test: Test) {
@@ -543,8 +618,25 @@ class Explorer {
       }
       if (opts.success) await opts.success(pwLocator);
       return true;
-    } catch {
+    } catch (error) {
+      if (this.isFatalBrowserError(error)) {
+        tag('warning').log(`hasPlaywrightLocator: ${error instanceof Error ? error.message : error}`);
+        await this.recoverFromBrowserError();
+      }
       return false;
+    }
+  }
+
+  async playwrightLocatorCount(locatorFn: (page: any) => any): Promise<number> {
+    try {
+      const pwLocator = locatorFn(this.playwrightHelper.page);
+      return await pwLocator.count();
+    } catch (error) {
+      if (this.isFatalBrowserError(error)) {
+        tag('warning').log(`playwrightLocatorCount: ${error instanceof Error ? error.message : error}`);
+        await this.recoverFromBrowserError();
+      }
+      throw error;
     }
   }
 

@@ -1,9 +1,6 @@
 #!/usr/bin/env bun
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const BASE_URL = process.env.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com';
 const PUBLIC_KEY = process.env.LANGFUSE_PUBLIC_KEY;
@@ -57,40 +54,64 @@ async function fetchTraces(from: string, to: string) {
 }
 
 async function fetchObservations(traceId: string) {
-  const params = new URLSearchParams({
-    traceId,
-    limit: '100',
-  });
-  const data = await api(`/api/public/observations?${params}`);
-  return data.data;
+  let all: any[] = [];
+  let page = 1;
+  while (true) {
+    const params = new URLSearchParams({
+      traceId,
+      limit: '100',
+      page: String(page),
+    });
+    const data = await api(`/api/public/observations?${params}`);
+    all = all.concat(data.data);
+    if (data.data.length < 100) break;
+    page++;
+  }
+  return all;
 }
 
-const range = process.argv[2] || '1h';
+async function fetchSingleTrace(traceId: string) {
+  return api(`/api/public/traces/${traceId}`);
+}
+
+const input = process.argv[2] || '1h';
+const isTraceId = /^[a-f0-9]{16,}$/i.test(input);
 const outPath = process.argv[3] || `output/langfuse-export-${Date.now()}.json`;
 
-console.log(`Fetching traces for range: ${range}`);
-const { from, to } = parseTimeRange(range);
-console.log(`  From: ${from}`);
-console.log(`  To:   ${to}`);
+let result: any[];
 
-const traces = await fetchTraces(from, to);
-console.log(`Found ${traces.length} traces`);
+if (isTraceId) {
+  console.log(`Fetching trace: ${input}`);
+  const trace = await fetchSingleTrace(input);
+  console.log(`  ${trace.timestamp} | ${trace.name || '(unnamed)'} | ${(trace.tags || []).join(', ')}`);
+  const observations = await fetchObservations(input);
+  console.log(`  ${observations.length} observations`);
+  result = [{ ...trace, observations }];
+} else {
+  console.log(`Fetching traces for range: ${input}`);
+  const { from, to } = parseTimeRange(input);
+  console.log(`  From: ${from}`);
+  console.log(`  To:   ${to}`);
 
-if (!traces.length) {
-  console.log('No traces found in this time range.');
-  process.exit(0);
-}
+  const traces = await fetchTraces(from, to);
+  console.log(`Found ${traces.length} traces`);
 
-for (const t of traces) {
-  console.log(`  ${t.timestamp} | ${t.name || '(unnamed)'} | ${(t.tags || []).join(', ')}`);
-}
+  if (!traces.length) {
+    console.log('No traces found in this time range.');
+    process.exit(0);
+  }
 
-console.log('\nFetching observations for each trace...');
-const result = [];
-for (const t of traces) {
-  const observations = await fetchObservations(t.id);
-  result.push({ ...t, observations });
-  console.log(`  ${t.name || t.id}: ${observations.length} observations`);
+  for (const t of traces) {
+    console.log(`  ${t.timestamp} | ${t.name || '(unnamed)'} | ${(t.tags || []).join(', ')}`);
+  }
+
+  console.log('\nFetching observations for each trace...');
+  result = [];
+  for (const t of traces) {
+    const observations = await fetchObservations(t.id);
+    result.push({ ...t, observations });
+    console.log(`  ${t.name || t.id}: ${observations.length} observations`);
+  }
 }
 
 const resolved = resolve(outPath);

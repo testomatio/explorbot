@@ -8,7 +8,18 @@ export class PlanCommand extends BaseCommand {
 
   async execute(args: string): Promise<void> {
     const fresh = args.includes('--fresh');
-    const focus = args.replace('--fresh', '').trim();
+    const append = args.includes('--append');
+    const focus = args.replace('--fresh', '').replace('--append', '').trim();
+
+    if (!fresh && !append) {
+      const existingPlan = this.explorBot.getCurrentPlan();
+      if (existingPlan?.tests.length) {
+        tag('info').log(`Plan already exists: "${existingPlan.title}" with ${existingPlan.tests.length} tests`);
+        tag('info').log('Use /plan --append to add more tests');
+        return;
+      }
+    }
+
     if (focus) {
       tag('info').log(`Planning focus: ${focus}`);
     }

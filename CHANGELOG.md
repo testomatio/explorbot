@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026-03-06
+
+### New CLI Options
+- **`explorbot test <planfile>`** — Execute tests from a saved plan file without launching TUI.
+  ```bash
+  explorbot test plan.md --all              # run all pending tests
+  explorbot test plan.md --test 3           # run test #3 only
+  explorbot test plan.md --grep "login"     # run tests matching pattern
+  ```
+
+- **`explorbot browser start|stop|status`** — Manage a persistent browser server that survives across explorbot sessions. Commands automatically reuse it instead of launching a new browser each time.
+  ```bash
+  explorbot browser start --show     # launch visible browser
+  explorbot browser start            # launch headless
+  explorbot browser stop             # stop the server
+  explorbot browser status           # check if running
+  ```
+
+### New TUI Commands
+- **`/plan --append`** — Add more tests to an existing plan instead of replacing it.
+  ```
+  /plan --append
+  /plan authentication --append
+  ```
+- **`/plan`** now warns if a plan already exists and suggests `--append`, preventing accidental overwriting.
+
+- **`/plan-edit`** — Edit test plan interactively in TUI (enable/disable tests, reorder).
+  ```
+  /plan-edit
+  ```
+
+### Configuration
+- **`ai.agenticModel`** — Model used for agentic tasks (Captain, Pilot verdict review). Falls back to default model. Default: none.
+- **`ai.agents.<name>.providerOptions`** — Pass provider-specific options per agent. Default: `{}`.
+
+### Changes
+- [Researcher] Refactored into a 5-stage pipeline: Research → Test → AI Fix → Visual Analysis → Backfill. Broken locators are now fixed by continuing the same AI conversation (reusing context), instead of spawning new conversations per section
+- [Researcher] Locator testing now captures exact match counts ("0 elements", "3 elements") instead of just pass/fail, giving AI better information for fixing
+- [Researcher] XPath column removed from research prompts — AI no longer generates XPath locators. XPaths are backfilled automatically from the DOM only for elements with broken CSS and no ARIA
+- [Researcher] Code split into mixins: locators, coordinates, deep-analysis, cache, parser, research-result
+- [Captain] Now has diagnostic tools: inspect test sessions (logs, tool calls, ARIA states, pilot analysis), run TUI commands, read/write files, evaluate browser JS, manage tabs
+- [Captain] Uses agentic model when configured, with richer system prompt covering diagnostic workflows
+- [Captain] Max steps increased from 10 to 15
+- [Pilot] Verdict review now weighs final observable state over intermediate failures — a test passes if the end state proves the goal, even when some steps failed
+- [Pilot] "Continue" decisions now explain why the verdict was rejected and suggest untried approaches; feedback is sent back to Tester's conversation
+- [Planner] Simplified page analysis for visited pages — uses URL+title instead of extracting ARIA elements, reducing token usage
+- [Planner] Removed HTML content from planning prompt context, relying on research output instead
+- [Planner] `getPendingTests()` now respects `test.enabled` flag
+- [Test Command] `/test N` now selects from visible (enabled, unfinished) tests instead of all pending tests
+- HTML diff now returns container-scoped parts instead of a single subtree — each changed area includes the CSS selector of its nearest stable container, helping the tester understand WHERE on the page changes occurred
+- [Tester] Page diff suggestion now instructs AI to use container selectors from htmlParts as context when clicking
+- ARIA snapshot capture and iframe HTML extraction now handle browser errors gracefully instead of crashing
+- [Explorer] Browser error recovery (frame detached, target closed, session closed) added to locator count, eidx lookup, and container queries
+- [Observability] Nested spans now work correctly when tracing is not fully initialized — allows sub-operations to appear in Langfuse traces
+- Unexpected popup dismissal rule added to shared rules — agents now try clicking outside, pressing Escape, or clicking Cancel/Close when popups appear unexpectedly
+
 ## 2026-02-25
 
 ### Configuration

@@ -343,8 +343,7 @@ export class ExplorBot {
   }
 
   async explore(feature?: string) {
-    const planner = this.agentPlanner();
-    this.currentPlan = await planner.plan(feature);
+    await this.plan(feature);
     const tester = this.agentTester();
     for (const test of this.currentPlan.getPendingTests()) {
       await tester.test(test);

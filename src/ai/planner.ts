@@ -9,7 +9,6 @@ import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { Plan, Test } from '../test-plan.ts';
-import { collectInteractiveNodes } from '../utils/aria.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.js';
 import type { Agent } from './agent.js';
@@ -121,7 +120,7 @@ export class Planner implements Agent {
     setActivity(`${this.emoji} Planning...`, 'action');
     tag('info').log(`Planning test scenarios for ${state.url}...`);
 
-    const result = await Observability.run('planner.plan', { tags: ['planner'] }, async () => {
+    const result = await Observability.run(`planner: ${state.url}`, { tags: ['planner'], sessionId: state.url }, async () => {
       const allTests: Test[] = [];
 
       if (this.currentPlan) {
@@ -209,42 +208,10 @@ export class Planner implements Agent {
       return [];
     }
 
-    const statesWithAria = unanalyzedStates.filter((state) => state.ariaSnapshot);
-    if (statesWithAria.length === 0) {
-      tag('substep').log(`Found ${unanalyzedStates.length} visited pages but none have ARIA snapshots`);
-      for (const state of unanalyzedStates) {
-        this.analyzedUrls.add(state.url);
-      }
-      return [];
-    }
-
-    tag('step').log(`Analyzing ${statesWithAria.length} visited pages for new test scenarios`);
+    tag('step').log(`Analyzing ${unanalyzedStates.length} visited pages for new test scenarios`);
 
     for (const state of unanalyzedStates) {
       this.analyzedUrls.add(state.url);
-    }
-
-    const statesContext = statesWithAria
-      .map((state) => {
-        const ariaSnapshot = state.ariaSnapshot || '';
-        const interactiveNodes = collectInteractiveNodes(ariaSnapshot);
-
-        const interactiveRoles = new Set(['button', 'link', 'combobox', 'listbox', 'menuitem', 'tab']);
-        const elements = interactiveNodes
-          .filter((node) => interactiveRoles.has(node.role as string))
-          .filter((node) => node.name && (node.name as string).length > 2)
-          .map((node) => `${node.role}: "${node.name}"`)
-          .slice(0, 20);
-
-        const uiContext = this.detectUIContext(ariaSnapshot);
-
-        return { url: state.url, uiContext, elements };
-      })
-      .filter((s) => s.elements.length > 0);
-
-    if (statesContext.length === 0) {
-      tag('substep').log('No interactive elements found in visited pages');
-      return [];
     }
 
     const currentTests = this.currentPlan.tests.map((t) => t.scenario).join('\n');
@@ -271,16 +238,9 @@ export class Planner implements Agent {
           ${currentTests}
 
           Pages visited during testing:
-          ${statesContext
-            .map(
-              (s) => dedent`
-            URL: ${s.url}${s.uiContext ? ` (${s.uiContext})` : ''}
-            Elements: ${s.elements.join(', ')}
-          `
-            )
-            .join('\n\n')}
+          ${unanalyzedStates.map((s) => `- ${s.url} (${s.title || 'untitled'})`).join('\n')}
 
-          Identify NEW happy-path test scenarios from these elements.
+          Identify NEW happy-path test scenarios from these pages.
           Only suggest tests NOT covered by current tests.
           Each test must include a first step stating which element on which page.
           Return empty array if no new scenarios needed.
@@ -313,45 +273,24 @@ export class Planner implements Agent {
     this.currentPlan.tests = [...pending, ...executed];
   }
 
-  private detectUIContext(ariaSnapshot: string): string | null {
-    if (!ariaSnapshot) return null;
-    if (ariaSnapshot.includes('dialog') || ariaSnapshot.includes('modal')) return 'modal open';
-    if (ariaSnapshot.includes('tabpanel')) return 'tab panel active';
-    if (ariaSnapshot.includes('menu[expanded=true]')) return 'menu expanded';
-    return null;
-  }
-
   private extractFlowsFromExperience(state: ActionResult): string[] {
     const relevantExperience = this.experienceTracker.getRelevantExperience(state);
     const flows: string[] = [];
 
     for (const experience of relevantExperience) {
-      const flowMatches = experience.content.matchAll(/^## Flow[^\n]*\n([\s\S]*?)(?=^## |\z)/gm);
-      for (const match of flowMatches) {
-        flows.push(match[0].trim());
+      const sections = mdq(experience.content).query('section(~"Flow")').each();
+      for (const section of sections) {
+        const sectionText = section.text();
+        const cleaned = mdq(sectionText).query('code').replace('');
+        if (cleaned.trim()) flows.push(cleaned.trim());
       }
     }
 
     return flows;
   }
 
-  private groupTestsByFeature(tests: Test[]): string {
-    const keywords = new Map<string, string[]>();
-    for (const t of tests) {
-      const words = t.scenario.toLowerCase().split(/\s+/);
-      const key = words
-        .filter((w) => w.length > 3 && !['with', 'that', 'from', 'this', 'verify', 'test', 'should', 'when', 'existing', 'new'].includes(w))
-        .slice(0, 3)
-        .join(' ');
-      const group = key || 'other';
-      if (!keywords.has(group)) keywords.set(group, []);
-      keywords.get(group)!.push(`- "${t.scenario}" [${t.priority}]${t.result ? ` [${t.result}]` : ''}`);
-    }
-    return [...keywords.entries()].map(([group, items]) => `${group}:\n${items.join('\n')}`).join('\n\n');
-  }
-
-  private addNewTests(tests: Test[], defaultStartUrl: string): number {
-    if (!this.currentPlan) return 0;
+  private addNewTests(tests: Test[], defaultStartUrl: string): Test[] {
+    if (!this.currentPlan) return [];
 
     const existingScenarios = new Set(this.currentPlan.tests.map((t) => t.scenario.toLowerCase()));
     const added: Test[] = [];
@@ -379,23 +318,8 @@ export class Planner implements Agent {
 
     const planningPrompt = dedent`
       <task>
-      Based on the previous research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios for this page.
-
-      When creating tasks:
-      1. Assign priorities based on business importance:
-         - CRITICAL: Core business functionality that defines the page purpose
-         - IMPORTANT: Key user flows, primary features, CRUD operations
-         - HIGH: Secondary features, edge cases for critical flows
-         - NORMAL: Supporting actions, settings, configuration
-         - LOW: Cosmetic checks, boundary testing, minor interactions
-      2. Propose tests following research section order: ${this.sectionOrder.join(', ')}
-         Cover sections in this order — first propose tests for elements from earlier sections, then later ones.
-         Extended Research sections (modals, dropdowns, panels) come after the main sections.
-      3. For each task, provide BOTH steps and expected outcomes:
-         - Steps: specific actions to perform (e.g., "Click Login button", "Enter username in email field", "Submit the form")
-         - Expected outcomes: observable results to verify (e.g., "Success message is displayed", "URL changes to /dashboard", "Submit button is disabled")
-         - Keep each outcome simple and atomic (one check per outcome)
-         - Avoid combining multiple checks: Instead of "Form submits and shows success", use two outcomes: "Form is submitted", "Success message appears"
+      Based on the page research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios.
+      For each scenario provide specific steps and expected outcomes.
       </task>
 
       <rules>
@@ -457,9 +381,6 @@ export class Planner implements Agent {
       <context>
       URL: ${state.url || 'Unknown'}
       Title: ${state.title || 'Unknown'}
-
-      Web Page Content:
-      ${await state.textHtml()}
       </context>
     `;
 
@@ -505,16 +426,14 @@ export class Planner implements Agent {
       if (pending.length > 0) summaryParts.push(`${pending.length} pending`);
       const summary = summaryParts.join(', ');
 
-      const existingScenarios = this.currentPlan.tests.map((t) => `- "${t.scenario}" [${t.priority}] ${t.result ? `[${t.result}]` : '[pending]'}`).join('\n');
-
-      const groupedTests = this.groupTestsByFeature(this.currentPlan.tests);
+      const existingTests = this.currentPlan.tests.map((t) => `- "${t.scenario}" [${t.priority}] [${t.result || 'pending'}]`).join('\n');
 
       conversation.addUserText(dedent`
         CRITICAL: This plan already has tests (${summary}).
 
-        <existing_tests_grouped_by_feature>
-        ${groupedTests}
-        </existing_tests_grouped_by_feature>
+        <existing_tests>
+        ${existingTests}
+        </existing_tests>
 
         <absolute_rules>
         1. DO NOT re-propose tests with the same scenario name or identical steps

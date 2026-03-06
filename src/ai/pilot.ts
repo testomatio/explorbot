@@ -6,6 +6,7 @@ import type Explorer from '../explorer.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
 import { tag } from '../utils/logger.ts';
+import { truncateJson } from '../utils/strings.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Provider } from './provider.ts';
@@ -37,6 +38,11 @@ export class Pilot implements Agent {
     this.pendingVerdict = null;
   }
 
+  getLastAnalysis(): string | null {
+    if (!this.conversation) return null;
+    return this.conversation.getLastMessage() || null;
+  }
+
   get hasPendingVerdict(): boolean {
     return this.pendingVerdict !== null;
   }
@@ -64,7 +70,7 @@ export class Pilot implements Agent {
 
     const schema = z.object({
       decision: z.enum(['pass', 'fail', 'continue']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going'),
-      reason: z.string().describe('Brief explanation for the decision'),
+      reason: z.string().max(250).describe('For pass/fail: brief explanation. For continue: explain why rejected, suggest alternative approaches not yet tried, suggest reset as last resort.'),
     });
 
     try {
@@ -79,10 +85,18 @@ export class Pilot implements Agent {
               SCENARIO: ${task.scenario}
 
               The SCENARIO is the primary goal. The test can only pass if the scenario goal is fully accomplished.
+              PRIORITY ORDER (strict):
+              1) Final observable state proving the scenario goal
+              2) Verification evidence (if provided)
+              3) Intermediate action/step outcomes
+              If final state evidence proves the scenario goal, PASS even when some intermediate actions failed.
+              Do not fail only because a specific click failed, no toast appeared, or navigation was different than expected.
+              Intermediate failures are diagnostic, not decisive, when end state confirms success.
               Expected results are helpful milestones but they DO NOT override the scenario goal.
               If the scenario says "Create X", then X must be created — opening a form or navigating to /new URL is NOT enough. There must be evidence that the item now exists: visible on page, redirected to the item's page, or a success/confirmation message appeared.
               If the scenario says "Delete X", then X must be deleted — clicking delete button is not enough. There must be evidence the item is gone.
               If the scenario says "Edit X", then changes must be saved — opening an edit form is NOT enough.
+              For edit/update/rename scenarios, persisted updated value visible in list/detail view is valid save evidence, even without toast and even if page redirected away from edit view.
               DO NOT trust Tester's self-assessment in notes (like "scenario goal achieved"). Verify against actual actions and state.
 
               NEGATIVE TESTS: Some scenarios test that something CANNOT or SHOULD NOT happen.
@@ -121,11 +135,13 @@ export class Pilot implements Agent {
               - "pass" ONLY if the SCENARIO GOAL is fully accomplished (not just milestones)
               - "fail" if the scenario clearly failed or is incompatible with the page
               - "continue" if tester hasn't completed the scenario goal yet — even if milestones were checked
+              - If evidence is mixed, but final state indicates goal completion, choose "pass"
+              - If evidence is mixed and final state is unclear, prefer "continue" over "fail"
             `,
           },
         ],
         schema,
-        this.provider.getModelForAgent('pilot'),
+        this.provider.getAgenticModel('pilot'),
         { agentName: 'pilot', experimental_telemetry: { functionId: 'pilot.reviewVerdict' } }
       );
 
@@ -150,6 +166,7 @@ export class Pilot implements Agent {
       }
 
       task.addNote(`Pilot: continue — ${result.reason}`);
+      testerConversation.addUserText(`Pilot rejected ${verdict.type}: ${result.reason}`);
     } catch (error: any) {
       tag('warning').log(`🧭 Pilot verdict failed: ${error.message}, falling back to tester judgment`);
       this.applyFallbackVerdict(task, verdict);
@@ -176,7 +193,8 @@ export class Pilot implements Agent {
 
     if (!this.conversation) {
       const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
-      this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState, pageSummary), 'pilot');
+      const agenticModel = this.provider.getAgenticModel('pilot');
+      this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState, pageSummary), 'pilot', agenticModel);
     }
 
     const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
@@ -204,7 +222,7 @@ export class Pilot implements Agent {
 
     const hasFailures = toolCalls.some((t) => !t.wasSuccessful);
 
-    const result = await this.provider.generateWithTools(this.conversation.messages, this.provider.getModelForAgent('pilot'), this.agentTools, {
+    const result = await this.provider.generateWithTools(this.conversation.messages, this.provider.getAgenticModel('pilot'), this.agentTools, {
       maxToolRoundtrips: hasFailures ? 2 : 0,
       agentName: 'pilot',
       experimental_telemetry: { functionId: 'pilot.analyze' },
@@ -410,13 +428,6 @@ export class Pilot implements Agent {
     `;
   }
 }
-
-const truncateJson = (input: any): string => {
-  if (!input) return '';
-  const str = JSON.stringify(input);
-  if (str.length <= 80) return str;
-  return `${str.slice(0, 77)}...`;
-};
 
 type PendingVerdict = {
   type: 'finish' | 'stop';

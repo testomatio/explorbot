@@ -10,6 +10,7 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import type { Agent } from './agent.js';
+import { createCaptainTools } from './captain-tools.ts';
 import type { Conversation } from './conversation.js';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
@@ -19,7 +20,7 @@ import { createAgentTools, createCodeceptJSTools } from './tools.ts';
 
 const debugLog = createDebug('explorbot:captain');
 
-const MAX_STEPS = 10;
+const MAX_STEPS = 15;
 
 export class Captain extends TaskAgent implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'type', 'select', 'pressKey', 'form', 'navigate', 'record'];
@@ -30,11 +31,16 @@ export class Captain extends TaskAgent implements Agent {
   private awaitingSave = false;
   private pendingExperience: { state: ActionResult; intent: string; summary: string; code: string } | null = null;
   private hooksRunner: HooksRunner | null = null;
+  private commandExecutor: ((cmd: string) => Promise<void>) | null = null;
 
   constructor(explorBot: ExplorBot) {
     super();
     this.explorBot = explorBot;
     this.experienceTracker = new ExperienceTracker();
+  }
+
+  setCommandExecutor(fn: (cmd: string) => Promise<void>): void {
+    this.commandExecutor = fn;
   }
 
   private getHooksRunner(): HooksRunner {
@@ -65,20 +71,46 @@ export class Captain extends TaskAgent implements Agent {
     const customPrompt = this.explorBot.getProvider().getSystemPromptForAgent('captain');
     return dedent`
     <role>
-    You execute exactly what the user asks - nothing more.
+    You are Captain — a smart assistant for the testing session.
+    You execute actions, answer questions, diagnose problems, and run commands.
     </role>
 
+    <capabilities>
+    - Page actions: click, type, navigate, form (CodeceptJS tools)
+    - TUI commands: runCommand() — /research, /plan, /test, /navigate, /explore, etc.
+    - Test inspection: test() — flags: --session, --log, --tools, --states, --aria, --code, --pilot
+    - Browser diagnostics: browser() — evaluate JS, close tabs, screenshot, reload
+    - File access: readFile, writeFile, listFiles — knowledge/experience/output
+    - Research: getResearch() — cached UI map (no AI cost)
+    - Session log: getSessionLog() — recent events and errors
+    </capabilities>
+
+    <diagnostic_workflow>
+    When user asks "why did X fail?":
+    1. Check <plan> context — find the test sessionName
+    2. test --session <name> — get notes (passed/failed steps)
+    3. test --session <name> --tools --last 5 — recent tool calls with ariaChanges
+    4. test --session <name> --pilot — Pilot's analysis
+    5. browser screenshot — see current page state visually
+    6. If needed: test --session <name> --aria N — ARIA of a specific visited state
+
+    When user asks about the page:
+    1. getResearch() first (free, cached)
+    2. If no cache: runCommand("/research")
+    3. browser evaluate — for runtime state (localStorage, cookies)
+    </diagnostic_workflow>
+
     <rules>
-    - Do the MINIMUM required to fulfill the request
-    - Call research() tool to get deep understanding of the current page
-    - After each action, call record() to log what you did
+    - Answer questions using diagnostic tools BEFORE taking page actions
+    - Use test() with minimal flags first, drill down only if needed
+    - Prefer getResearch() over research() tool (cached, no AI cost)
+    - Prefer ARIA over HTML — avoid full HTML reads
+    - Use browser() for runtime diagnostics (localStorage, cookies, console, tabs)
+    - After each page action, call record() to log what you did
     - Check if the expected result is achieved
-    - If the goal is achieved (correct page, correct state) - call done() immediately
-    - If the action worked but result is not as expected - try next action
-    - Do NOT add extra steps beyond what was asked
-    - Always validate page HTML/ARIA and ask for see() to verify that the page is in the expected state
+    - If the goal is achieved — call done() immediately
     - Follow <locator_priority> rules when selecting locators for all tools
-    - click() accepts array of commands to try in order - include ARIA, CSS, XPath variants
+    - click() accepts array of commands to try in order — include ARIA, CSS, XPath variants
     - If click() fails with all provided commands, use visualClick() tool as fallback
     </rules>
 
@@ -86,12 +118,15 @@ export class Captain extends TaskAgent implements Agent {
 
     ${actionRule}
 
+    ${sectionContextRule}
+
     ${customPrompt || ''}
     `;
   }
 
   private resetConversation(): Conversation {
-    this.conversation = this.explorBot.getProvider().startConversation(this.systemPrompt(), 'captain');
+    const agenticModel = this.explorBot.getProvider().getAgenticModel('captain');
+    this.conversation = this.explorBot.getProvider().startConversation(this.systemPrompt(), 'captain', agenticModel);
     return this.conversation;
   }
 
@@ -147,11 +182,11 @@ export class Captain extends TaskAgent implements Agent {
     return dedent`
     <plan>
     ${plan.tests
-      .map((test, index) => {
-        const parts = [`${index + 1}. [${test.priority}] ${test.scenario}`];
-        if (test.status !== 'pending') {
-          parts.push(`status=${test.status}`);
-        }
+      .map((test) => {
+        const parts = [`[${test.priority}] ${test.scenario}`];
+        if (test.sessionName) parts.push(`session=${test.sessionName}`);
+        if (test.status !== 'pending') parts.push(`status=${test.status}`);
+        if (test.result) parts.push(`result=${test.result}`);
         return parts.join(' | ');
       })
       .join('\n')}
@@ -290,10 +325,16 @@ export class Captain extends TaskAgent implements Agent {
 
     const ownTools = this.ownTools(task, onDone);
 
+    const captainTools = createCaptainTools({
+      explorBot: this.explorBot,
+      commandExecutor: this.commandExecutor,
+    });
+
     return {
       ...codeceptjsTools,
       ...agentTools,
       ...ownTools,
+      ...captainTools,
     };
   }
 

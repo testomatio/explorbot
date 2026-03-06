@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from 'ink';
 import React from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommandHandler } from '../command-handler.js';
 import { setAutocompleteState } from './autocomplete-store.js';
 
@@ -424,7 +424,10 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
   const cursorChar = cursorLineAfter.length > 0 ? cursorLineAfter[0] : ' ';
   const cursorLineAfterRemainder = cursorLineAfter.slice(1);
 
-  const filteredCommands = commandHandler && showAutocomplete ? commandHandler.getFilteredCommands(displayValue) : [];
+  const filteredCommands = useMemo(() => {
+    if (!commandHandler || !showAutocomplete) return [];
+    return commandHandler.getFilteredCommands(displayValue);
+  }, [commandHandler, showAutocomplete, displayValue]);
 
   useEffect(() => {
     if (!commandHandler) return;
@@ -439,11 +442,11 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
     setAutocompleteState(autocompleteStateRef.current);
   }, [commandHandler, filteredCommands, selectedIndex, showAutocomplete, visible]);
 
+  const showPlaceholder = !displayValue && placeholder && isActive;
+
   if (!visible) {
     return null;
   }
-
-  const showPlaceholder = !displayValue && placeholder && isActive;
 
   if (!showPrompt) {
     return (

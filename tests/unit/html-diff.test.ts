@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { htmlDiff } from '../../src/utils/html-diff.ts';
 
+function allSubtrees(result: { parts: { subtree: string }[] }): string {
+  return result.parts.map((p) => p.subtree).join('\n');
+}
+
 describe('HTML Diff', () => {
   it('should detect no changes in identical HTML', async () => {
     const html1 = `
@@ -27,7 +31,7 @@ describe('HTML Diff', () => {
     expect(result.added).toHaveLength(0);
     expect(result.removed).toHaveLength(0);
     expect(result.summary).toBe('No changes detected');
-    expect(result.subtree).toBe('');
+    expect(result.parts).toHaveLength(0);
   });
 
   it('should detect added text content', async () => {
@@ -51,14 +55,13 @@ describe('HTML Diff', () => {
     `;
 
     const result = await htmlDiff(html1, html2);
+    const subtree = allSubtrees(result);
 
     expect(result.similarity).toBeLessThan(100);
     expect(result.added).toContain('TEXT:This is a test paragraph.');
     expect(result.added).toContain('BUTTON:Click me');
     expect(result.removed).toContain('TEXT:This is a test.');
-    expect(result.subtree).toContain('<html');
-    expect(result.subtree).toContain('<body>');
-    expect(result.subtree).toContain('<button>Click me</button>');
+    expect(subtree).toContain('<button>Click me</button>');
   });
 
   it('should detect removed elements without subtree', async () => {
@@ -86,7 +89,7 @@ describe('HTML Diff', () => {
     expect(result.similarity).toBeLessThan(100);
     expect(result.removed).toContain('A:Login');
     expect(result.added).toHaveLength(0);
-    expect(result.subtree).toBe('');
+    expect(result.parts).toHaveLength(0);
   });
 
   it('should detect form field changes and additions', async () => {
@@ -106,12 +109,13 @@ describe('HTML Diff', () => {
     `;
 
     const result = await htmlDiff(html1, html2);
+    const subtree = allSubtrees(result);
 
     expect(result.similarity).toBeLessThan(100);
     expect(result.added).toContain('INPUT:Enter password');
     expect(result.removed).toContain('INPUT:Enter username');
-    expect(result.subtree).toContain('type="password"');
-    expect(result.subtree).not.toContain('<button>Login</button>');
+    expect(subtree).toContain('type="password"');
+    expect(subtree).not.toContain('<button>Login</button>');
     expect(result.added).toContain('ELEMENT:html[1]/body[1]/form[1]/input[2]');
     expect(result.added).toContain('BUTTON:Login');
   });
@@ -121,10 +125,11 @@ describe('HTML Diff', () => {
     const html2 = '<div>Hello world <span>extra</span></div>';
 
     const result = await htmlDiff(html1, html2);
+    const subtree = allSubtrees(result);
 
     expect(result.similarity).toBeLessThan(100);
     expect(result.added.length).toBeGreaterThan(0);
-    expect(result.subtree).toContain('<span>extra</span>');
+    expect(subtree).toContain('<span>extra</span>');
   });
 
   it('should calculate similarity percentage correctly', async () => {
@@ -154,7 +159,7 @@ describe('HTML Diff', () => {
 
     expect(result.similarity).toBeGreaterThan(30);
     expect(result.similarity).toBeLessThan(40);
-    expect(result.subtree).toBe('');
+    expect(result.parts).toHaveLength(0);
   });
 
   it('should retain ancestors for nested additions', async () => {
@@ -172,12 +177,10 @@ describe('HTML Diff', () => {
     `;
 
     const result = await htmlDiff(original, modified);
+    const subtree = allSubtrees(result);
 
-    expect(result.subtree).toContain('<html');
-    expect(result.subtree).toContain('<body>');
-    expect(result.subtree).toContain('<ul>');
-    expect(result.subtree).toContain('<li>Second item</li>');
-    expect(result.subtree).not.toContain('First item');
+    expect(subtree).toContain('<li>Second item</li>');
+    expect(subtree).not.toContain('First item');
   });
 
   it('should capture text-only changes', async () => {
@@ -186,7 +189,7 @@ describe('HTML Diff', () => {
 
     const result = await htmlDiff(original, modified);
 
-    expect(result.subtree).toBe('');
+    expect(result.parts).toHaveLength(0);
     expect(result.added).toContain('BUTTON:Confirm');
     expect(result.removed).toContain('BUTTON:Submit');
   });
@@ -212,14 +215,48 @@ describe('HTML Diff', () => {
     `;
 
     const result = await htmlDiff(original, modified);
+    const subtree = allSubtrees(result);
 
-    expect(result.subtree).not.toContain('<script');
-    expect(result.subtree).not.toContain('<iframe');
-    expect(result.subtree).not.toContain('<path');
-    expect(result.subtree).not.toContain('<script');
-    expect(result.subtree).not.toContain('<iframe');
-    expect(result.subtree).toContain('<svg');
+    expect(subtree).not.toContain('<script');
+    expect(subtree).not.toContain('<iframe');
+    expect(subtree).not.toContain('<path');
+    expect(subtree).toContain('<svg');
     expect(result.added).toContain('ELEMENT:html[1]/body[1]/svg[1]');
     expect(result.summary).toContain('addition');
+  });
+
+  it('should include container selector in diff parts', async () => {
+    const original = `
+      <html>
+        <body>
+          <div class="sidebar">
+            <ul><li>Item 1</li></ul>
+          </div>
+          <div class="main-content">
+            <p>Hello</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const modified = `
+      <html>
+        <body>
+          <div class="sidebar">
+            <ul><li>Item 1</li></ul>
+          </div>
+          <div class="main-content">
+            <p>Hello</p>
+            <button>New Action</button>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const result = await htmlDiff(original, modified);
+
+    expect(result.parts.length).toBeGreaterThan(0);
+    expect(result.parts[0].container).toBeTruthy();
+    expect(result.parts[0].subtree).toContain('<button>New Action</button>');
   });
 });

@@ -1,4 +1,4 @@
-import { marked, type Token, type Tokens } from 'marked';
+import { type Token, type Tokens, marked } from 'marked';
 
 export type SelectorType = 'section' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'table' | 'heading' | 'paragraph' | 'list' | 'item' | 'code' | 'blockquote' | 'hr' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
 

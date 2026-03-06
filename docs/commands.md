@@ -45,6 +45,65 @@ explorbot start /dashboard --session auth.json  # custom session file
 
 When the flag is provided without a file path, defaults to `output/session.json`.
 
+## Persistent Browser
+
+By default, every CLI command that needs a browser (`start`, `explore`, `plan`, `drill`, `research`, `context`) launches a fresh Chromium process and shuts it down when done. This is slow during development when you restart explorbot frequently.
+
+The `explorbot browser` command lets you run a persistent browser server that survives across explorbot sessions. Any CLI command that launches a browser will automatically detect the running server and connect to it instead of starting a new one.
+
+### `explorbot browser start`
+
+Launch a persistent browser server. The process stays alive until you press Ctrl+C.
+
+```bash
+explorbot browser start            # headless (default)
+explorbot browser start --show     # headed — see the browser window
+explorbot browser start --headless # explicitly headless
+```
+
+The WebSocket endpoint is written to `output/.browser-endpoint` so other commands can find it.
+
+### `explorbot browser stop`
+
+Stop a running browser server and clean up the endpoint file.
+
+```bash
+explorbot browser stop
+```
+
+### `explorbot browser status`
+
+Check whether a persistent browser server is currently running.
+
+```bash
+explorbot browser status
+```
+
+### Workflow
+
+```bash
+# Terminal 1: start persistent browser
+explorbot browser start --show
+
+# Terminal 2: run commands — they reuse the same browser
+explorbot research /login
+explorbot plan /login authentication
+explorbot start /dashboard
+
+# Each command connects to the running browser instead of launching a new one.
+# When explorbot exits, the browser stays open for the next run.
+
+# When done, stop the browser
+explorbot browser stop
+```
+
+| Option | Description |
+|--------|-------------|
+| `-s, --show` | Launch browser in headed mode (visible window) |
+| `--headless` | Launch browser in headless mode |
+| `-c, --config <path>` | Path to configuration file |
+| `-p, --path <path>` | Working directory path |
+
 ## Exploration Commands
 
 ### `/explore [url]`

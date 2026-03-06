@@ -18,6 +18,7 @@ import { NavigateCommand } from './navigate-command.js';
 import { PathCommand } from './path-command.js';
 import { PlanClearCommand } from './plan-clear-command.js';
 import { PlanCommand } from './plan-command.js';
+import { PlanEditCommand } from './plan-edit-command.js';
 import { PlanLoadCommand } from './plan-load-command.js';
 import { PlanReloadCommand } from './plan-reload-command.js';
 import { PlanSaveCommand } from './plan-save-command.js';
@@ -43,6 +44,7 @@ const commandClasses: CommandClass[] = [
   PlanLoadCommand,
   PlanReloadCommand,
   PlanClearCommand,
+  PlanEditCommand,
   NavigateCommand,
   PathCommand,
   KnowCommand,

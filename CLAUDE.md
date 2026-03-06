@@ -464,6 +464,7 @@ export default {
     provider: groq,  // Vercel AI SDK provider
     model: 'gpt-oss-20b',
     visionModel: 'llama-scout-4',
+    agenticModel: 'qwen3-32b',
     langfuse: {
       enabled: true,
       publicKey: process.env.LANGFUSE_PUBLIC_KEY,
@@ -472,7 +473,6 @@ export default {
     agents: {
       tester: { model: 'gpt-oss-20b' },
       navigator: { model: 'gpt-oss-20b' },
-      // Pilot can use smarter model - it only processes tool summaries, not HTML
       pilot: { stepsToReview: 5 },
     },
   },

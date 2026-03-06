@@ -72,7 +72,7 @@ describe('ActionResult Diff', () => {
     await diff.calculate();
 
     expect(diff.htmlDiff).not.toBeNull();
-    expect(diff.htmlSubtree).toBeDefined();
+    expect(diff.htmlParts.length).toBeGreaterThan(0);
   });
 
   test('should not calculate HTML diff when URLs differ', async () => {
@@ -90,7 +90,7 @@ describe('ActionResult Diff', () => {
     await diff.calculate();
 
     expect(diff.htmlDiff).toBeNull();
-    expect(diff.htmlSubtree).toBe('');
+    expect(diff.htmlParts).toEqual([]);
   });
 
   test('should calculate aria diff', async () => {

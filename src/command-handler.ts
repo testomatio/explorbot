@@ -42,6 +42,7 @@ export class CommandHandler implements InputManager {
   constructor(explorBot: ExplorBot) {
     this.explorBot = explorBot;
     this.commands = createCommands(explorBot);
+    explorBot.agentCaptain().setCommandExecutor((cmd) => this.executeCommand(cmd));
   }
 
   private findCommand(name: string): BaseCommand | undefined {
