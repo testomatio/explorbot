@@ -11,6 +11,45 @@ Research provides context for test planning and execution:
 
 You can also run research manually to inspect pages or debug locator issues.
 
+## Configuration
+
+> [!IMPORTANT]
+> The Researcher processes large amounts of HTML and ARIA tokens on every call. Use a **fast, cheap model with low reasoning effort** — it does not need deep thinking, just accurate element extraction. Models like `gpt-oss-20b` via Groq/Cerebras at 100+ TPS are ideal. Set `providerOptions` to reduce reasoning effort if your model supports it.
+
+```javascript
+ai: {
+  agents: {
+    researcher: {
+      model: 'gpt-oss-20b',
+      systemPrompt: 'Focus on form validation elements...',
+      sections: ['focus', 'content', 'list'],
+      excludeSelectors: ['.cookie-banner'],
+      includeSelectors: ['.dropdown-menu'],
+      stopWords: ['cookie', 'share'],
+      maxElementsToExplore: 15,
+      retries: 2,
+      providerOptions: { groq: { reasoningEffort: 'low' } },
+    },
+  },
+}
+```
+
+### Options Reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `model` | `string` | - | Override default model for Researcher |
+| `systemPrompt` | `string` | - | Additional instructions appended to the research prompt |
+| `sections` | `string[]` | all sections | Page sections to identify (order = priority) |
+| `excludeSelectors` | `string[]` | `[]` | CSS selectors to exclude from deep exploration |
+| `includeSelectors` | `string[]` | `[]` | CSS selectors to always explore (second pass) |
+| `stopWords` | `string[]` | defaults | Words to filter during deep exploration (replaces defaults) |
+| `maxElementsToExplore` | `number` | `10` | Max elements per deep exploration |
+| `retries` | `number` | `2` | Retries when most locators are broken in Stage 2 |
+| `providerOptions` | `object` | - | Provider-specific options (e.g. reasoning effort) |
+
+See [Configuration Examples](#configuration-examples) at the end of this document for common setups.
+
 ## Usage
 
 ### CLI Mode
@@ -88,148 +127,15 @@ Without eidx, there would be no reliable way to correlate "the third button in t
 
 Research processes each page through 5 stages:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Stage 1: RESEARCH (AI)                                        │
-│  AI analyzes HTML + ARIA → produces UI map with sections,      │
-│  containers, ARIA locators, CSS locators, eidx references      │
-├─────────────────────────────────────────────────────────────────┤
-│  Stage 2: TEST                                                 │
-│  Test containers first → test element locators →               │
-│  capture exact counts (0 elements, 3 elements, dynamic ID)     │
-│  If all containers broken → retry Stage 1                      │
-│  If > 80% locators broken → retry Stage 1                      │
-├─────────────────────────────────────────────────────────────────┤
-│  Stage 3: FIX (AI, same conversation)                          │
-│  Continue Stage 1 conversation with Playwright test results →  │
-│  AI fixes broken locators with full page context               │
-├─────────────────────────────────────────────────────────────────┤
-│  Stage 4: VISUAL ANALYSIS (optional, requires vision model)    │
-│  Annotate screenshot with eidx labels → AI extracts            │
-│  coordinates, colors, icons → merge into research by eidx      │
-├─────────────────────────────────────────────────────────────────┤
-│  Stage 5: BACKFILL                                             │
-│  Re-test all locators → for still-broken elements:             │
-│  look up eidx in DOM → generate XPath from attributes          │
-│  Nullify containers that are still broken                      │
-└─────────────────────────────────────────────────────────────────┘
-```
+| Stage | Name | What happens |
+|-------|------|--------------|
+| 1 | **Research** (AI) | AI analyzes HTML + ARIA, produces UI map with sections, containers, ARIA locators, CSS locators, eidx references |
+| 2 | **Test** | Test containers first, then element locators. Capture exact counts (`0 elements`, `3 elements`, `dynamic ID`). If all containers broken or >80% locators broken — retry Stage 1 |
+| 3 | **Fix** (AI, same conversation) | Continue Stage 1 conversation with Playwright test results. AI fixes broken locators with full page context |
+| 4 | **Visual** (optional) | Annotate screenshot with eidx labels. AI extracts coordinates, colors, icons. Merge into research by eidx |
+| 5 | **Backfill** | Re-test all locators. For still-broken elements: look up eidx in DOM, generate XPath from attributes. Nullify containers that are still broken |
 
-```mermaid
-flowchart TD
-    A[Annotate elements with eidx] --> B[Capture HTML + ARIA + Screenshot]
-
-    subgraph S1 ["Stage 1: Research"]
-        B --> C[AI analyzes page structure]
-        C --> D[Produces UI map with sections<br/>containers, ARIA, CSS, eidx]
-    end
-
-    subgraph S2 ["Stage 2: Test"]
-        D --> E[Test container locators]
-        E --> F{All containers<br/>broken?}
-        F -->|Yes, retries left| C
-        F -->|No| G[Mark child locators of<br/>broken containers as broken]
-        G --> H[Test remaining locators<br/>capture exact match counts]
-        H --> I{> 80% broken?}
-        I -->|Yes, retries left| C
-    end
-
-    subgraph S3 ["Stage 3: Fix"]
-        I -->|No| J[Continue SAME AI conversation]
-        J --> K[Send broken sections with<br/>Playwright test results]
-        K --> L[AI fixes locators<br/>with full page context]
-        L --> M[Re-test fixed locators]
-    end
-
-    subgraph S4 ["Stage 4: Visual Analysis"]
-        M --> N{Vision model?}
-        N -->|Yes| O[Draw eidx labels on screenshot]
-        O --> P[AI extracts coordinates,<br/>colors, icons per eidx]
-        P --> Q[Merge visual data<br/>into research by eidx]
-    end
-
-    subgraph S5 ["Stage 5: Backfill"]
-        N -->|No| R
-        Q --> R[Re-test all locators]
-        R --> S[Look up broken elements<br/>by eidx in live DOM]
-        S --> T[Generate XPath from<br/>element attributes]
-        T --> U[Nullify still-broken containers]
-    end
-
-    U --> V{Deep mode?}
-    V -->|Yes| W[Deep exploration]
-    V -->|No| X[Cache result]
-    W --> X
-```
-
-### Stage 1: Research
-
-AI receives the page HTML (with eidx attributes) and ARIA tree. It identifies page sections (focus, content, list, menu, etc.), assigns a container CSS selector to each, and produces a UI map table listing every interactive element with ARIA and CSS locators.
-
-The AI conversation is kept open — it will be reused in Stage 3.
-
-### Stage 2: Test
-
-Every locator from Stage 1 is validated against the live page using Playwright:
-
-1. **Containers first** — each container CSS is tested via `page.locator(css).count()`. If ALL containers are broken, the entire research retries from Stage 1.
-2. **Child locators of broken containers** — marked as broken immediately without testing (if the container doesn't exist, its scoped locators can't work).
-3. **Remaining locators** — tested individually. Each test captures the exact element count:
-   - `0 elements` — locator matches nothing
-   - `3 elements` — locator is ambiguous (matches multiple)
-   - `dynamic ID` — locator uses a forbidden pattern like `#ember123` or `#react-select-*`
-4. **Broken ratio check** — if > 80% of locators are broken, research retries from Stage 1.
-
-### Stage 3: Fix (Conversation Continuation)
-
-Instead of starting a new AI call, the Researcher continues the **same conversation** from Stage 1. The AI already has full context about the page HTML and sections, so it can fix locators more accurately.
-
-The fix prompt shows only broken sections with Playwright-style test results:
-
-```
-Some locators in your research are broken. Please fix the broken sections.
-
-## Navigation
-
-> Container: '.nav-bar'
-
-Tested Elements:
-- 'Home': page.locator('.nav-bar').locator('a.home') ← OK
-- 'Settings': page.locator('.nav-bar').locator('a.settings-btn') ← BROKEN (0 elements)
-- 'Profile': page.locator('.nav-bar').getByRole('link', { name: 'Profile' }) ← BROKEN (2 elements)
-
-## Sidebar
-
-> Container: '#sidebar'  ← BROKEN (container not found)
-
-Tested Elements:
-- 'Dashboard': locate('#sidebar').locator('a.dashboard') ← BROKEN (container broken)
-- 'Users': locate('#sidebar').getByRole('link', { name: 'Users' }) ← BROKEN (container broken)
-```
-
-After AI returns corrected sections, they are merged back into the research and re-tested.
-
-### Stage 4: Visual Analysis
-
-When a vision model is configured and `--screenshot` is used:
-
-1. **Annotate** — each eidx element gets a colored border and a numbered label on the screenshot. Section containers get dashed borders with a legend.
-2. **AI vision** — the annotated screenshot is sent to the vision model, which reports coordinates, accent colors, and icon descriptions per eidx number.
-3. **Merge** — visual data is matched back to research elements by eidx and added as Coordinates, Color, and Icon columns.
-
-This is how Explorbot knows that `eidx=5` (a `<button>` in HTML) is visually a red trash icon at position (500, 300) — the eidx bridges HTML and screenshot.
-
-### Stage 5: Backfill
-
-All locators are re-tested one final time (catching any forbidden IDs that survived AI fixing). For elements that still have no working CSS or ARIA locator:
-
-1. **Look up by eidx** — find the element in the live DOM using its `data-explorbot-eidx` attribute
-2. **Generate XPath** — build an attribute-based XPath from the element's tag, classes, text, and other attributes
-3. **Add to research** — the XPath column appears only for elements that needed this fallback
-
-Finally, containers that are still broken after all stages are nullified — their locators are made page-global instead of container-scoped.
-
-XPath backfill is a last resort. XPaths based on attributes are more fragile than CSS selectors but still more reliable than positional XPaths like `//body/div[2]/div[1]/button`.
+Stage 3 reuses the Stage 1 conversation — the AI already has full context about the page HTML, so it fixes locators more accurately without extra token cost.
 
 ### Research Modes
 
@@ -275,48 +181,24 @@ Each section includes:
 - A **container CSS selector** scoping all elements within
 - A **UI map table** listing interactive elements with ARIA and CSS locators
 
-### Configuring Sections
-
-Override the default section list via `ai.agents.researcher.sections`. This controls which sections the Researcher looks for and in what order. The Planner also uses this order when proposing tests.
-
-```javascript
-ai: {
-  agents: {
-    researcher: {
-      // Only look for these sections, in this order
-      sections: ['focus', 'content', 'list'],
-    },
-  },
-}
-```
-
-When not set, all sections are used in the default order.
+Override the default section list via `ai.agents.researcher.sections` — see [Configuration](#configuration).
 
 ## Vision Model Support
 
 ### Without Vision
 
-The researcher works with text-only models by analyzing:
-- HTML structure and attributes
-- ARIA accessibility tree
-- Element roles and names
-
-This is sufficient for most pages and is faster/cheaper.
+The researcher works with text-only models by analyzing HTML structure, ARIA tree, element roles and names. This is sufficient for most pages and is faster/cheaper.
 
 ### With Vision
 
-When a vision model is configured, the researcher can:
-- Analyze screenshots for visual elements
-- Detect icons, images, and visual indicators
-- Provide element coordinates for visual clicking
-- Answer questions about what's displayed
+When a vision model is configured, the researcher can analyze screenshots for visual elements, detect icons and visual indicators, provide element coordinates for visual clicking.
 
 Enable vision in config:
 
 ```javascript
 ai: {
   vision: true,
-  visionModel: 'gpt-4o',  // or any vision-capable model
+  visionModel: 'gpt-4o',
 }
 ```
 
@@ -328,40 +210,11 @@ explorbot research /products --screenshot
 /research --screenshot
 ```
 
-Vision is particularly useful for:
-- Pages with icon-only buttons
-- Canvas-based UIs
-- When HTML doesn't reflect visual layout
-- Debugging element location issues
+Vision is particularly useful for pages with icon-only buttons, canvas-based UIs, and when HTML doesn't reflect visual layout.
 
 ## Deep Exploration
 
-Deep exploration (`--deep` flag) discovers hidden UI by clicking through elements to find **modals, dropdowns, tabs, and menus**:
-
-```
-[1/10] Exploring: "Settings" (button) → opened modal
-[2/10] Exploring: "Help" (link) → navigated to /help
-[3/10] Exploring: "More" (menuitem) → opened menu
-...
-```
-
-```mermaid
-flowchart TD
-    A[/"DEEP EXPLORATION --deep<br/>(modals, dropdowns, tabs, menus)"/] --> B
-    B[Collect Elements from ARIA Tree<br/>buttons, links, tabs, menuitems] --> C
-    C[Filter Elements<br/>stop words, excluded selectors<br/>limit to max 10] --> D
-
-    subgraph LOOP ["Exploration Loop (up to 10 elements)"]
-        D{More elements?} -->|Yes| E[Click Element]
-        E --> F[Detect Change<br/>navigation / modal / menu / tab]
-        F --> G[Record Result]
-        G --> H[Restore State<br/>Escape or Navigate Back]
-        H --> D
-    end
-
-    D -->|No| I[Explore Include Selectors<br/>second pass for .action-menu, #toolbar]
-    I --> J[/"RESULTS TABLE<br/>Element | Role | Result"/]
-```
+Deep exploration (`--deep` flag) discovers hidden UI by clicking through elements to find modals, dropdowns, tabs, and menus.
 
 For each element, the researcher:
 1. Captures state before click
@@ -375,9 +228,7 @@ Not all elements should be explored. The researcher filters by:
 
 #### 1. Role Filtering
 
-Only clickable roles are explored:
-- `button`, `link`, `menuitem`, `tab`
-- `option`, `combobox`, `switch`
+Only clickable roles are explored: `button`, `link`, `menuitem`, `tab`, `option`, `combobox`, `switch`.
 
 #### 2. Stop Words
 
@@ -388,7 +239,6 @@ Elements matching these words are skipped (word-boundary matching):
 - `cookie`, `consent`, `gdpr`, `privacy`
 - `accept all`, `decline all`, `reject all`
 - `share`, `print`, `download`
-
 
 #### 3. CSS Selector Exclusion
 
@@ -410,44 +260,55 @@ researcher: {
 }
 ```
 
-## Configuration
+## Output Format
 
-```javascript
-ai: {
-  agents: {
-    researcher: {
-      // Standard agent options
-      model: 'gpt-4o',
-      systemPrompt: 'Focus on form validation elements...',
+Research results are saved to `output/research/{hash}.md` and include:
 
-      // Page sections (order matters)
-      sections: ['focus', 'content', 'list', 'menu', 'navigation'],
+```markdown
+## Summary
 
-      // Exploration filtering
-      excludeSelectors: ['.cookie-banner'],
-      includeSelectors: ['.dropdown-menu'],
-      stopWords: ['cookie', 'share'],
-      maxElementsToExplore: 15,
+Brief description of the page purpose.
 
-      // Retry count when >80% locators are broken
-      retries: 2,
-    },
-  },
-}
+## Focus Section
+
+Modal dialog for user login...
+
+> Container: '[role="dialog"]'
+
+| Element | ARIA | CSS |
+|---------|------|-----|
+| 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' |
+| 'Password' | { role: 'textbox', text: 'Password' } | 'input[name="password"]' |
+| 'Sign In' | { role: 'button', text: 'Sign In' } | 'button[type="submit"]' |
+
+## Content Section
+
+Main content area...
+
+> Container: '.main-content'
+
+| Element | ARIA | CSS | XPath | Coordinates |
+|---------|------|-----|-------|-------------|
+| 'Save' | { role: 'button', text: 'Save' } | 'button.save' | - | (400, 300) |
+| 'Delete' | { role: 'button', text: 'Delete' } | - | '//button[@class="del"]' | (500, 300) |
 ```
 
-### Options Reference
+Notes:
+- XPath column only appears when CSS is broken and XPath was backfilled from the DOM
+- Coordinates column only appears when vision model analyzed the screenshot
+- Container is shown as a blockquote `> Container: '...'` before the table
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `model` | `string` | - | Override default model |
-| `systemPrompt` | `string` | - | Additional instructions |
-| `sections` | `string[]` | all sections | Page sections to identify (order = priority) |
-| `excludeSelectors` | `string[]` | `[]` | CSS selectors to exclude from deep exploration |
-| `includeSelectors` | `string[]` | `[]` | CSS selectors to always explore |
-| `stopWords` | `string[]` | defaults | Words to filter (replaces defaults) |
-| `maxElementsToExplore` | `number` | `10` | Max elements per deep exploration |
-| `retries` | `number` | `2` | Retries when most locators are broken |
+## Caching
+
+Research results are cached for 1 hour:
+- In memory during session
+- On disk in `output/research/`
+
+Use `--force` to bypass cache:
+
+```bash
+/research --force
+```
 
 ## Configuration Examples
 
@@ -563,8 +424,6 @@ ai: {
 
 ```javascript
 ai: {
-  vision: true,
-  visionModel: 'gpt-4o',
   agents: {
     researcher: {
       systemPrompt: `
@@ -576,56 +435,6 @@ ai: {
     },
   },
 }
-```
-
-## Output Format
-
-Research results are saved to `output/research/{hash}.md` and include:
-
-```markdown
-## Summary
-
-Brief description of the page purpose.
-
-## Focus Section
-
-Modal dialog for user login...
-
-> Container: '[role="dialog"]'
-
-| Element | ARIA | CSS |
-|---------|------|-----|
-| 'Email' | { role: 'textbox', text: 'Email' } | 'input#email' |
-| 'Password' | { role: 'textbox', text: 'Password' } | 'input[name="password"]' |
-| 'Sign In' | { role: 'button', text: 'Sign In' } | 'button[type="submit"]' |
-
-## Content Section
-
-Main content area...
-
-> Container: '.main-content'
-
-| Element | ARIA | CSS | XPath | Coordinates |
-|---------|------|-----|-------|-------------|
-| 'Save' | { role: 'button', text: 'Save' } | 'button.save' | - | (400, 300) |
-| 'Delete' | { role: 'button', text: 'Delete' } | - | '//button[@class="del"]' | (500, 300) |
-```
-
-Notes:
-- XPath column only appears when CSS is broken and XPath was backfilled from the DOM
-- Coordinates column only appears when vision model analyzed the screenshot
-- Container is shown as a blockquote `> Container: '...'` before the table
-
-## Caching
-
-Research results are cached for 1 hour:
-- In memory during session
-- On disk in `output/research/`
-
-Use `--force` to bypass cache:
-
-```bash
-/research --force
 ```
 
 ## See Also
