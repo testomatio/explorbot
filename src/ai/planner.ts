@@ -15,7 +15,7 @@ import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
-import { noFileUploadRule, protectionRule } from './rules.ts';
+import { fileUploadRule, protectionRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -340,7 +340,7 @@ export class Planner implements Agent {
       Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
       Clicking a dropdown is NOT a test — selecting an option and verifying the result IS a test.
       ${protectionRule}
-      ${noFileUploadRule}
+      ${fileUploadRule}
       </rules>
 
       ${

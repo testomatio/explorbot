@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-07
+
+### Configuration
+- **`files`** — Map of description-to-path entries for custom files to use in file upload tests. Default: `{}`.
+
+### Changes
+- [Tester] File upload support — Explorbot can now upload files using `I.attachFile()`. Built-in sample files (PNG, PDF, DOCX, XLSX, ZIP, MP4, MP3) are provided automatically. Custom files can be added via `files` config.
+- [Tester] Automatically resets on 404/Not Found pages and records server errors (500, 503) before resetting.
+- [Tester] Finish verification now requires assertions to prove that test actions actually changed the page, rejecting verifications of pre-existing state.
+- [Pilot] Detects trivial verifications where the asserted state existed before the test started and rejects them.
+- [Pilot] Uses `xpathCheck` proactively on first element-not-found failure instead of waiting for repeated failures.
+- [Pilot] Verification details now include assertion pass ratio (e.g., "2 of 3 assertions passed").
+- [Navigator] Verification now requires majority of assertions to pass (not just one) for multi-assertion checks.
+- [Navigator] Assertions are now required to reference the specific item or value being verified, preventing false positives from generic locators.
+- Type tool now detects when text was not actually entered (no page change after fillField) and suggests click-then-type fallback.
+- Type and pressKey tools now check that an element is focused before attempting input, with clear error messages when nothing is focused.
+- TUI task list auto-scrolls to the currently running test.
+- Fixed Ctrl/Meta key combinations inserting characters in TUI input.
+
 ## 2026-03-06
 
 ### New CLI Options

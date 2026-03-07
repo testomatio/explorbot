@@ -6,6 +6,7 @@ import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { createDebug } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
+import { extractFocusedElement } from '../utils/aria.ts';
 import { WebElement } from '../utils/web-element.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
@@ -126,6 +127,15 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           const action = explorer.createAction();
 
           if (!locator) {
+            const currentAriaState = stateManager.getCurrentState()?.ariaSnapshot;
+            const focused = extractFocusedElement(currentAriaState ?? null);
+            if (!focused) {
+              activeNote.commit(TestResult.FAILED);
+              return failedToolResult('type', 'No element is focused. Cannot type without a target.', {
+                suggestion: 'Click the target input field first using click() tool, then call type() without locator. Or provide a locator parameter.',
+              });
+            }
+
             const typeCommand = `I.type(${JSON.stringify(text)})`;
             await action.attempt(typeCommand, explanation);
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, targetLocator);
@@ -153,6 +163,17 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
           if (!action.lastError) {
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, targetLocator);
+
+            const noChange = !toolResult?.pageDiff?.ariaDiff && !toolResult?.pageDiff?.urlChanged;
+            if (noChange) {
+              activeNote.commit(TestResult.FAILED);
+              return failedToolResult('type', `fillField succeeded but page did not change. Text "${text}" was likely NOT entered.`, {
+                ...toolResult,
+                code: fillCommand,
+                suggestion: 'The input may be a custom component. Try: click the field first with click() tool, then call type() without locator.',
+              });
+            }
+
             activeNote.commit(TestResult.PASSED);
             return successToolResult('type', {
               ...toolResult,
@@ -169,6 +190,16 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, targetLocator);
 
           if (!action.lastError) {
+            const noChange = !toolResult?.pageDiff?.ariaDiff && !toolResult?.pageDiff?.urlChanged;
+            if (noChange) {
+              activeNote.commit(TestResult.FAILED);
+              return failedToolResult('type', `Click + type succeeded but page did not change. Text "${text}" was likely NOT entered.`, {
+                ...toolResult,
+                code: fallbackCommand,
+                suggestion: 'The input may not have been focused by the click. Try: use see() to identify the correct element, then click() it, then type() without locator.',
+              });
+            }
+
             activeNote.commit(TestResult.PASSED);
             return successToolResult('type', {
               ...toolResult,
@@ -317,6 +348,20 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             });
           }
 
+          const focusFreeKeys = new Set(['Escape', 'Esc', 'Tab', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']);
+          const needsFocus = !focusFreeKeys.has(keyToUse) && !modifier;
+
+          if (needsFocus) {
+            const currentAriaState = stateManager.getCurrentState()?.ariaSnapshot;
+            const focused = extractFocusedElement(currentAriaState ?? null);
+            if (!focused) {
+              activeNote.commit(TestResult.FAILED);
+              return failedToolResult('pressKey', `No element is focused. Key '${keyToUse}' requires a focused element.`, {
+                suggestion: 'Click the target element first, then press the key.',
+              });
+            }
+          }
+
           const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
           const action = explorer.createAction();
 
@@ -381,6 +426,9 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         Example - pressing keys:
         I.pressKey('Enter')
         I.pressKey(['Control', 'a'])
+
+        Example - attaching a file:
+        I.attachFile('input[type="file"]', '/absolute/path/to/sample.png')
 
         Example - working with iframe:
         I.switchTo('#payment-iframe')
@@ -660,16 +708,21 @@ export function createAgentTools({
             return failedToolResult('interact', 'No current page state available. Navigate to a page first.');
           }
 
+          const previousState = ActionResult.fromState(currentState);
           const actionResult = ActionResult.fromState(currentState);
           const success = await navigator.resolveState(instruction, actionResult);
 
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, instruction);
+
           if (success) {
             return successToolResult('interact', {
+              ...toolResult,
               message: `Successfully executed: ${instruction}`,
             });
           }
 
           return failedToolResult('interact', `Failed to execute: ${instruction}`, {
+            ...toolResult,
             suggestion: 'The action could not be completed. Try a different instruction or use more specific element descriptions.',
           });
         } catch (error) {

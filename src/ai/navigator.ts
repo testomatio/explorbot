@@ -470,6 +470,12 @@ class Navigator implements Agent {
         Propose different CodeceptJS assertion code blocks to verify the expected state.
         Use only data from the <page> context to plan the verification.
         Try various locators and approaches to verify the assertion.
+
+        IMPORTANT: Each code block must verify the SPECIFIC claim in the message, not just a generic aspect of it.
+        Bad: I.seeElement({"role":"button","aria-pressed":"true"}) — matches ANY button, not the specific one
+        Good: I.see("My Item", ".starred-list") — checks the specific item mentioned in the message
+        If the message mentions a specific item, name, or value, EVERY assertion must include that specific text or identifier.
+        Do not generate assertions that would pass even if the specific claim is false.
       </task>
 
       <page>
@@ -541,7 +547,9 @@ class Navigator implements Agent {
       }
     );
 
-    return { verified: successfulCodes.length > 0, successfulCodes };
+    const totalAttempted = Math.min(codeBlocks.length, this.MAX_ATTEMPTS);
+    const verified = totalAttempted <= 1 ? successfulCodes.length > 0 : successfulCodes.length > totalAttempted / 2;
+    return { verified, successfulCodes, totalAttempted };
   }
 }
 

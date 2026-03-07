@@ -573,7 +573,6 @@ class Explorer {
       const dialogType = dialog.type();
       const dialogMessage = dialog.message();
       test.addNote(`Native dialog ${dialogType} appeared: ${dialogMessage}. Accepted automatically`);
-      dialog.accept();
     };
 
     this.playwrightHelper?.page?.on('dialog', dialogHandler);

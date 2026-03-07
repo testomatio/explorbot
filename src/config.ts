@@ -150,6 +150,7 @@ interface ExplorbotConfig {
     maxReadLines?: number;
   };
   stepsFile?: string;
+  files?: Record<string, string>;
 }
 
 const config: ExplorbotConfig = {

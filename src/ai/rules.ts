@@ -234,12 +234,13 @@ export const multipleLocatorRule = dedent`
   Solutions should be different, do not repeat the same locator in different solutions.
 `;
 
-export const noFileUploadRule = dedent`
-  <limitation>
-  Explorbot currently has NO capability to upload files.
-  Do not plan, suggest, or attempt any tests that involve file uploading.
-  Skip any file upload fields, drag-and-drop file areas, or import-from-file features.
-  </limitation>
+export const fileUploadRule = dedent`
+  <file_upload>
+  Explorbot CAN upload files using I.attachFile() via form() tool.
+  When a test scenario involves file uploading, use the available sample files listed in <available_files>.
+  Use I.attachFile(locator, filePath) where locator points to an input[type="file"] element.
+  For drag-and-drop upload zones, look for a hidden input[type="file"] inside the dropzone container.
+  </file_upload>
 `;
 
 // in rage mode we do not protect from irreversible actions
@@ -407,6 +408,8 @@ export const actionRule = dedent`
 
   IMPORTANT: Requires an active/focused input field. Click the field first if not focused.
   DOES NOT receive any locator, just text to type.
+  NEVER write: I.type('text', locator) or I.type('text', {locator: '...'}) — this is INVALID.
+  To type into a specific field: use I.fillField(locator, text) or I.click(locator) then I.type(text).
 
   ### I.pressKey
 
@@ -457,6 +460,22 @@ export const actionRule = dedent`
     I.selectOption('form select[name=account]', 'Premium');
     I.selectOption({css: 'form select[name=account]'}, 'Premium');
   </example>
+
+  ### I.attachFile
+
+  Attaches a file to a file input element.
+
+  I.attachFile(<locator>, <filePath>)
+
+  <example>
+    I.attachFile('input[type="file"]', '/absolute/path/to/sample.png')
+    I.attachFile('#file-upload', '/absolute/path/to/sample.pdf')
+  </example>
+
+  IMPORTANT: Only works with input[type="file"] elements.
+  The locator must point to a file input or a label associated with one.
+  For drag-and-drop upload zones, look for a hidden input[type="file"] inside the dropzone container.
+  Use the file paths from <available_files> section.
 
   [DO NEVER USE OTHER CODECEPTJS COMMANDS THAN PROPOSED HERE]
   [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML]

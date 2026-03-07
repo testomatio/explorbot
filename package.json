@@ -33,7 +33,6 @@
   },
   "keywords": ["cli", "react", "ink", "codeceptjs", "playwright"],
   "author": "",
-  "license": "MIT",
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0",
     "@ai-sdk/groq": "^3.0",

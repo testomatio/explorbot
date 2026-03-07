@@ -66,7 +66,7 @@ export class Pilot implements Agent {
     const stateContext = this.buildStateContext(currentState);
     const notes = task.notesToString() || 'No notes recorded.';
 
-    const verifyInfo = verdict.verify ? `Tester verification: "${verdict.verify}" — ${verdict.verified ? 'PASSED' : 'FAILED'}` : '';
+    const verifyInfo = verdict.verify ? `Tester verification: "${verdict.verify}" — ${verdict.verified ? 'PASSED' : 'FAILED'}${verdict.verifyDetails ? ` (${verdict.verifyDetails})` : ''}` : '';
 
     const schema = z.object({
       decision: z.enum(['pass', 'fail', 'continue']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going'),
@@ -98,6 +98,8 @@ export class Pilot implements Agent {
               If the scenario says "Edit X", then changes must be saved — opening an edit form is NOT enough.
               For edit/update/rename scenarios, persisted updated value visible in list/detail view is valid save evidence, even without toast and even if page redirected away from edit view.
               DO NOT trust Tester's self-assessment in notes (like "scenario goal achieved"). Verify against actual actions and state.
+
+              TRIVIAL VERIFICATION CHECK: If the verify assertion describes a state that was ALREADY TRUE before the test started (e.g., page content visible on initial load, items that existed before any action), the verification proves nothing. Reject with "continue" and explain that verification must prove the scenario ACTION changed something.
 
               NEGATIVE TESTS: Some scenarios test that something CANNOT or SHOULD NOT happen.
               Patterns: "without a name", "with invalid data", "empty field", "wrong password", "unauthorized", "duplicate".
@@ -397,10 +399,12 @@ export class Pilot implements Agent {
       4. When everything is going well, give brief encouragement and let Tester continue
 
       IMPORTANT — Tool usage policy:
-      - DO NOT use tools (see, context, xpathCheck) when Tester is making progress and no failures are recorded
+      - DO NOT use tools (see, context) when Tester is making progress and no failures are recorded
       - Tester already has full ARIA and HTML context — do not duplicate that work
-      - ONLY use tools when Tester has failed 2+ times on the same element or action
-      - ONLY use xpathCheck when Tester explicitly cannot find an element after multiple attempts
+      - ONLY use see/context tools when Tester has failed 2+ times on the same element or action
+      - Use xpathCheck proactively when Tester fails to find an element even ONCE (element not found error)
+      - If Tester's ARIA locator used wrong role (e.g. "textbox" instead of "combobox"), use xpathCheck to identify the correct element
+      - After finding the element via xpathCheck, include the discovered locator in your NEXT instruction
       ${interactive ? '- Use askUser() only as last resort when automated recovery has failed' : ''}
 
       Diagnosing failures — use <state> context:
@@ -433,4 +437,5 @@ type PendingVerdict = {
   type: 'finish' | 'stop';
   verify?: string;
   verified?: boolean;
+  verifyDetails?: string;
 };

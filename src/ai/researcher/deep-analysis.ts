@@ -203,7 +203,6 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
           if (!diff.ariaChanged && diff.htmlParts.length === 0) {
             debugLog(`No changes from: ${el.description.slice(0, 80)}`);
-            await this._restorePageState(state.url, originalAria);
             continue;
           }
 

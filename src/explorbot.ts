@@ -343,7 +343,7 @@ export class ExplorBot {
   }
 
   async explore(feature?: string) {
-    await this.plan(feature);
+    await this.plan(feature, { fresh: true });
     const tester = this.agentTester();
     for (const test of this.currentPlan.getPendingTests()) {
       await tester.test(test);

@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
@@ -26,6 +27,17 @@ import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools } from './tools.ts';
 
 const debugLog = createDebug('explorbot:tester');
+
+const SAMPLE_FILES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../assets/sample-files');
+const SAMPLE_FILES: Record<string, string> = {
+  'PNG image': 'sample.png',
+  'PDF document': 'sample.pdf',
+  'Word document (DOCX)': 'sample.docx',
+  'Excel spreadsheet (XLSX)': 'sample.xlsx',
+  'ZIP archive': 'sample.zip',
+  'MP4 video': 'sample.mp4',
+  'MP3 audio': 'sample.mp3',
+};
 
 export class Tester extends TaskAgent implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'type', 'select', 'pressKey', 'form'];
@@ -242,8 +254,16 @@ export class Tester extends TaskAgent implements Agent {
         maxAttempts: this.MAX_ITERATIONS,
         interruptPrompt: 'Test interrupted. Enter new instruction (or "stop" to cancel):',
         observability: {
+          name: `test: ${task.scenario}`,
           agent: 'tester',
           sessionId: task.sessionName,
+          metadata: {
+            input: {
+              scenario: task.scenario,
+              startUrl: task.startUrl,
+              expected: task.expected,
+            },
+          },
         },
         catch: async ({ error, stop }) => {
           tag('error').log(`Test execution error: ${error}`);
@@ -530,6 +550,8 @@ export class Tester extends TaskAgent implements Agent {
     - Follow <locator_priority> rules when selecting locators for all tools
     - Before retrying your actions check maybe they already achived expected results. Use see() tool for that
     - When filling complex form with lot of actions performed, use see() to look which fields were filled and which are not
+    - If you land on a "Not Found", 404, or error page that is NOT part of the scenario, call reset() immediately to return to the initial page and try again
+    - If you see a server error page (500, 503, etc.), record it with record({ notes: ["Server error on /path"], status: "fail" }) and call reset() to continue testing
     </rules>
 
     <free_thinking_rule>
@@ -637,6 +659,8 @@ export class Tester extends TaskAgent implements Agent {
 
       ${this.buildDeletionScope(task)}
 
+      ${this.buildAvailableFiles()}
+
       ${knowledge}
 
       ${pageContext}
@@ -649,6 +673,25 @@ export class Tester extends TaskAgent implements Agent {
       .listTests()
       .filter((t) => t.isSuccessful && t.sessionName)
       .map((t) => t.sessionName!);
+  }
+
+  private buildAvailableFiles(): string {
+    const userFiles = this.explorer.getConfig().files || {};
+    const lines: string[] = [];
+
+    for (const [description, filename] of Object.entries(SAMPLE_FILES)) {
+      lines.push(`- ${description}: ${join(SAMPLE_FILES_DIR, filename)}`);
+    }
+    for (const [description, filePath] of Object.entries(userFiles)) {
+      lines.push(`- ${description}: ${resolve(filePath)}`);
+    }
+
+    return dedent`
+      <available_files>
+      When a test requires file uploading, use I.attachFile() via form() tool with these files:
+      ${lines.join('\n')}
+      </available_files>
+    `;
   }
 
   private buildDeletionScope(task: Test): string {
@@ -766,6 +809,12 @@ export class Tester extends TaskAgent implements Agent {
           - "The form shows saved values: name='Test', email='test@test.com'"
           - "Cart shows 2 items with total $50.00"
 
+          CRITICAL: The assertion MUST prove that YOUR ACTIONS changed the page state.
+          Do NOT verify something that was already true before you started testing.
+          BAD: "Page shows nightwatch items" (if page already had them)
+          GOOD: "Search input contains 'nightwatch' and results are filtered"
+          GOOD: "Success message 'Item created' is displayed"
+
           DO NOT use this if:
           - You haven't verified the outcomes yet
           - You're unsure what to verify
@@ -800,7 +849,7 @@ export class Tester extends TaskAgent implements Agent {
           task.addNote(`Verified: ${verify}`, TestResult.PASSED);
 
           if (this.pilot) {
-            this.pilot.requestVerdict({ type: 'finish', verify, verified: true });
+            this.pilot.requestVerdict({ type: 'finish', verify, verified: true, verifyDetails: `${result.successfulCodes.length} of ${result.totalAttempted} assertions passed` });
           } else {
             task.addNote('Test finished successfully', TestResult.PASSED);
             task.finish(TestResult.PASSED);

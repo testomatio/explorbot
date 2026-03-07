@@ -150,8 +150,14 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       planRef.current = plan;
       setTasks([...plan.tests]);
       setTaskScrollOffset(0);
+      let lastInProgressIdx = -1;
       unsubscribeRef.current = plan.onTestsChange((updatedTests) => {
         setTasks([...updatedTests]);
+        const inProgressIdx = updatedTests.findIndex((t) => t.status === 'in_progress' && t.enabled);
+        if (inProgressIdx >= 0 && inProgressIdx !== lastInProgressIdx) {
+          lastInProgressIdx = inProgressIdx;
+          setTaskScrollOffset(Math.max(0, inProgressIdx - Math.floor(7 / 2)));
+        }
       });
     };
 

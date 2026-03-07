@@ -391,7 +391,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
-      if (input && input.length >= 1 && !input.startsWith('\x1b')) {
+      if (input && input.length >= 1 && !input.startsWith('\x1b') && !key.ctrl && !key.meta) {
         insertText(input);
       }
     },

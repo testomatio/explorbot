@@ -60,6 +60,9 @@ export const Observability = {
       if (current?.metadata?.tags && Array.isArray(current.metadata.tags)) {
         initSpan.setAttribute('langfuse.trace.tags', current.metadata.tags);
       }
+      if (current?.metadata?.input) {
+        initSpan.setAttribute('langfuse.trace.input', JSON.stringify(current.metadata.input));
+      }
       initSpan.end();
 
       const span = tracer.startSpan(name, undefined, rootContext);
