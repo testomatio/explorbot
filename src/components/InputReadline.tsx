@@ -250,7 +250,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
-      if (key.ctrl && (input === 'b' || input === 'f')) return;
+      if (key.ctrl) return;
       if (key.meta && (input === 'b' || input === 'f')) return;
 
       if (key.leftArrow) {
@@ -391,7 +391,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
         return;
       }
 
-      if (input && input.length >= 1 && !input.startsWith('\x1b') && !key.ctrl && !key.meta) {
+      if (input && input.length >= 1 && !input.startsWith('\x1b') && !key.meta) {
         insertText(input);
       }
     },

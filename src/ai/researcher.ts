@@ -218,12 +218,18 @@ export class Researcher extends ResearcherBase implements Agent {
         await this.testLocators(freshContainerLocs);
         const freshBroken = freshContainerLocs.filter((l) => l.valid === false).map((l) => l.locator);
         const containers = validContainers.filter((c) => !freshBroken.includes(c.css));
-        await this.explorer.visuallyAnnotateElements({ containers });
+        await this.visuallyAnnotateElements({ containers });
         this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
-        const visualData = await this.analyzeScreenshotForVisualProps();
-        if (visualData.size > 0) {
-          await this.mergeVisualData(result, visualData);
+        const visualResult = await this.analyzeScreenshotForVisualProps();
+        if (visualResult.elements.size > 0) {
+          await this.mergeVisualData(result, visualResult.elements);
           result.parseLocators();
+        }
+        if (visualResult.pagePurpose || visualResult.primaryActions?.length) {
+          const lines: string[] = ['## Primary Actions', ''];
+          if (visualResult.pagePurpose) lines.push(visualResult.pagePurpose, '');
+          if (visualResult.primaryActions?.length) lines.push(...visualResult.primaryActions);
+          result.text = `${lines.join('\n')}\n\n${result.text}`;
         }
       }
 
@@ -699,6 +705,10 @@ export class Researcher extends ResearcherBase implements Agent {
         const parts = [heading];
         if (paragraph) parts.push(paragraph);
         if (elements.length) parts.push(`Elements: ${elements.join(', ')}`);
+        if (heading.toLowerCase() === 'primary actions') {
+          const listItems = s.query('list').text().trim();
+          if (listItems) parts.push(listItems);
+        }
         return parts.join('\n');
       })
       .filter(Boolean)
@@ -718,11 +728,5 @@ export class Researcher extends ResearcherBase implements Agent {
     if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null)) return;
 
     await action.execute(`I.pressKey('Escape')`);
-    if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null)) return;
-
-    const url = this.stateManager.getCurrentState()?.url;
-    if (url) {
-      await action.execute(`I.amOnPage("${url.split('?')[0]}")`);
-    }
   }
 }

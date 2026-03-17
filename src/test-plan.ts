@@ -24,6 +24,7 @@ export interface Note {
   status?: TestResultType;
   startTime: number;
   endTime: number;
+  screenshot?: string;
 }
 
 export class ActiveNote {
@@ -31,6 +32,7 @@ export class ActiveNote {
   startTime: number;
   message: string;
   status?: TestResultType;
+  screenshot?: string;
 
   constructor(task: Task, message: string, status?: TestResultType) {
     this.task = task;
@@ -97,6 +99,7 @@ export class Task {
       status: finalStatus || activeNote.status,
       startTime: activeNote.getStartTime(),
       endTime,
+      screenshot: activeNote.screenshot,
     };
     this.activeNote = undefined;
   }
@@ -113,13 +116,13 @@ export class Task {
       .join('\n');
   }
 
-  addNote(message: string, status: TestResultType = null): void {
+  addNote(message: string, status: TestResultType = null, screenshot?: string): void {
     const isDuplicate = Object.values(this.notes).some((note) => note.message === message && note.status === status);
     if (isDuplicate) return;
 
     const now = performance.now();
     const timestamp = `${now}_${this.timestampCounter++}`;
-    this.notes[timestamp] = { message, status, startTime: now, endTime: now };
+    this.notes[timestamp] = { message, status, startTime: now, endTime: now, screenshot };
   }
 
   addState(state: WebPageState): void {
@@ -171,6 +174,8 @@ export class Test extends Task {
   generatedCode?: string;
   planIteration = 0;
   enabled = true;
+  startTime?: number;
+  endTime?: number;
 
   constructor(scenario: string, priority: 'critical' | 'important' | 'high' | 'normal' | 'low', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);
@@ -240,6 +245,7 @@ export class Test extends Task {
 
   start(): void {
     this.status = TestStatus.IN_PROGRESS;
+    this.startTime = performance.now();
     this.addNote('Test started. Session name: ' + this.sessionName);
     this.plan?.notifyChange();
   }
@@ -247,7 +253,13 @@ export class Test extends Task {
   finish(result: TestResultType = TestResult.FAILED): void {
     this.status = TestStatus.DONE;
     this.result = result;
+    this.endTime = performance.now();
     this.plan?.notifyChange();
+  }
+
+  getDurationMs(): number | null {
+    if (this.startTime != null && this.endTime != null) return this.endTime - this.startTime;
+    return null;
   }
 
   getRemainingExpectations(): string[] {
@@ -286,6 +298,7 @@ export class Plan {
   tests: Test[] = [];
   url?: string;
   iteration = 0;
+  parentPlan?: Plan;
   private changeListeners: PlanChangeListener[] = [];
 
   constructor(title: string) {
@@ -304,6 +317,14 @@ export class Plan {
     this.notifyChange();
   }
 
+  removeTest(test: Test): void {
+    const idx = this.tests.indexOf(test);
+    if (idx === -1) return;
+    this.tests.splice(idx, 1);
+    test.plan = undefined;
+    this.notifyChange();
+  }
+
   onTestsChange(listener: PlanChangeListener): () => void {
     this.changeListeners.push(listener);
     return () => {
@@ -316,6 +337,11 @@ export class Plan {
     for (const listener of this.changeListeners) {
       listener(this.tests);
     }
+  }
+
+  getAllTests(): Test[] {
+    if (!this.parentPlan) return this.tests;
+    return [...this.parentPlan.tests, ...this.tests];
   }
 
   listTests(): Test[] {

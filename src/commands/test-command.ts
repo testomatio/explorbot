@@ -11,30 +11,25 @@ export class TestCommand extends BaseCommand {
     const plan = this.explorBot.getCurrentPlan();
     const toExecute: Test[] = [];
 
+    const requirePlan = () => {
+      if (!plan) throw new Error('No plan found. Please run /plan first to create test scenarios.');
+      return plan;
+    };
+
     if (!args) {
-      if (!plan) {
-        throw new Error('No plan found. Please run /plan first or provide a test scenario: /test <scenario>');
-      }
-      const pending = plan.getPendingTests();
+      const pending = requirePlan().getPendingTests();
       if (pending.length === 0) {
         throw new Error('All tests are already complete. Please run /plan to create new test scenarios.');
       }
       toExecute.push(pending[0]);
-    } else if (args === '*') {
-      if (!plan) {
-        throw new Error('No plan found. Please run /plan first to create test scenarios.');
+    } else if (args === '*' || args === 'all') {
+      toExecute.push(...requirePlan().getPendingTests());
+    } else if (args.match(/^[\d,\-\s]+$/)) {
+      const pending = requirePlan().getPendingTests();
+      const indices = parseTestIndices(args, pending.length);
+      for (const idx of indices) {
+        toExecute.push(pending[idx]);
       }
-      toExecute.push(...plan.getPendingTests());
-    } else if (args.match(/^\d+$/)) {
-      if (!plan) {
-        throw new Error('No plan found. Please run /plan first to create test scenarios.');
-      }
-      const visibleTests = plan.tests.filter((t) => !t.hasFinished && t.enabled);
-      const index = Number.parseInt(args) - 1;
-      if (index < 0 || index >= visibleTests.length) {
-        throw new Error(`Test #${args} not found. Available: 1-${visibleTests.length}`);
-      }
-      toExecute.push(visibleTests[index]);
     } else {
       const matching = plan?.getPendingTests().filter((test) => test.scenario.toLowerCase().includes(args.toLowerCase())) || [];
       if (matching.length > 0) {
@@ -66,4 +61,24 @@ export class TestCommand extends BaseCommand {
     }
     tag('success').log('Test execution finished');
   }
+}
+
+function parseTestIndices(input: string, total: number): number[] {
+  const indices = new Set<number>();
+
+  const addIndex = (n: number) => {
+    if (n < 1 || n > total) throw new Error(`Test #${n} not found. Available: 1-${total}`);
+    indices.add(n - 1);
+  };
+
+  for (const part of input.split(',')) {
+    const trimmed = part.trim();
+    const range = trimmed.match(/^(\d+)-(\d+)$/);
+    if (range) {
+      for (let i = Number.parseInt(range[1]); i <= Number.parseInt(range[2]); i++) addIndex(i);
+    } else {
+      addIndex(Number.parseInt(trimmed));
+    }
+  }
+  return [...indices].sort((a, b) => a - b);
 }

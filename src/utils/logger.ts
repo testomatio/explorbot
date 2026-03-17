@@ -7,6 +7,8 @@ import dedent from 'dedent';
 import { marked } from 'marked';
 import { ConfigParser } from '../config.js';
 import { Observability } from '../observability.ts';
+import stripAnsi from 'strip-ansi';
+import { parseMarkdownToTerminal } from './markdown-terminal.ts';
 
 export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'step' | 'multiline' | 'html' | 'input';
 
@@ -93,7 +95,16 @@ class ConsoleDestination implements LogDestination {
     if (entry.type === 'html') return;
     let content = entry.content;
     if (entry.type === 'multiline') {
-      content = chalk.gray(content);
+      const cleaned = stripAnsi(dedent(entry.content));
+      const parsed = parseMarkdownToTerminal(cleaned);
+      content = parsed;
+      content = chalk.gray(content) + '\n';
+    } else if (entry.type === 'success') {
+      content = chalk.green(content) + '\n';
+    } else if (entry.type === 'error') {
+      content = chalk.red(content) + '\n';
+    } else if (entry.type === 'warning') {
+      content = chalk.yellow(content);
     } else if (entry.type === 'step') {
       content = chalk.gray(`   ${content}`);
     } else if (entry.type === 'substep') {

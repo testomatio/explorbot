@@ -4,11 +4,12 @@ import type { ActionResult } from '../action-result.ts';
 import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
 import { type Test, TestResult } from '../test-plan.ts';
-import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
+import { collectInteractiveNodes, condenseAriaDiff, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
 import { tag } from '../utils/logger.ts';
 import { truncateJson } from '../utils/strings.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
+import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { isInteractive } from './task-agent.ts';
@@ -20,7 +21,6 @@ export class Pilot implements Agent {
   private conversation: Conversation | null = null;
   private researcher: Researcher;
   private explorer: Explorer;
-  private pendingVerdict: PendingVerdict | null = null;
 
   constructor(provider: Provider, agentTools: any, researcher: Researcher, explorer: Explorer) {
     this.provider = provider;
@@ -35,7 +35,6 @@ export class Pilot implements Agent {
 
   reset(): void {
     this.conversation = null;
-    this.pendingVerdict = null;
   }
 
   getLastAnalysis(): string | null {
@@ -43,113 +42,109 @@ export class Pilot implements Agent {
     return this.conversation.getLastMessage() || null;
   }
 
-  get hasPendingVerdict(): boolean {
-    return this.pendingVerdict !== null;
+  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator: Navigator): Promise<void> {
+    await this.reviewDecision('finish', task, currentState, testerConversation, navigator);
   }
 
-  requestVerdict(verdict: PendingVerdict): void {
-    this.pendingVerdict = verdict;
+  async reviewStop(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
+    await this.reviewDecision('stop', task, currentState, testerConversation);
   }
 
-  async reviewVerdict(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
-    if (!this.pendingVerdict) return;
+  async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
+    const verdictType = task.hasAchievedAny() ? 'finish' : 'stop';
+    await this.reviewDecision(verdictType, task, currentState, testerConversation);
+  }
 
-    const verdict = this.pendingVerdict;
-    this.pendingVerdict = null;
+  async finalReview(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
+    if (task.hasFinished) return;
+    await this.reviewDecision('stop', task, currentState, testerConversation);
+  }
 
-    tag('substep').log(`🧭 Pilot reviewing ${verdict.type} verdict...`);
+  private collectVerifications(): Array<{ url: string; verifications: Record<string, boolean> }> {
+    const history = this.explorer.getStateManager().getStateHistory();
+    return history.map((t) => ({ url: t.toState.url, verifications: t.toState.verifications })).filter((s): s is { url: string; verifications: Record<string, boolean> } => !!s.verifications && Object.keys(s.verifications).length > 0);
+  }
+
+  private async reviewDecision(type: 'finish' | 'stop', task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<void> {
+    tag('substep').log(`🧭 Pilot reviewing ${type} verdict...`);
 
     const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
     const actionsContext = this.formatActions(toolCalls);
-    const checked = task.getCheckedExpectations();
-    const remaining = task.getRemainingExpectations();
     const stateContext = this.buildStateContext(currentState);
     const notes = task.notesToString() || 'No notes recorded.';
 
-    const verifyInfo = verdict.verify ? `Tester verification: "${verdict.verify}" — ${verdict.verified ? 'PASSED' : 'FAILED'}${verdict.verifyDetails ? ` (${verdict.verifyDetails})` : ''}` : '';
+    const allVerifications = this.collectVerifications();
+    const verifyInfo =
+      allVerifications.length > 0
+        ? `Verifications:\n${allVerifications
+            .map(
+              (v) =>
+                `  ${v.url}: ${Object.entries(v.verifications)
+                  .map(([a, p]) => `${p ? 'PASS' : 'FAIL'}: ${a}`)
+                  .join(', ')}`
+            )
+            .join('\n')}`
+        : '';
 
     const schema = z.object({
       decision: z.enum(['pass', 'fail', 'continue']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going'),
-      reason: z.string().max(250).describe('For pass/fail: brief explanation. For continue: explain why rejected, suggest alternative approaches not yet tried, suggest reset as last resort.'),
+      reason: z.string().describe('Brief explanation (1-2 sentences). For continue: explain why rejected and suggest alternatives.'),
+      requestVerification: z.string().optional().describe('If evidence is insufficient, provide an assertion to verify on the page'),
     });
 
+    const userContent = dedent`
+      Tester wants to ${type} the test.
+      ${verifyInfo}
+
+      <state>
+      ${stateContext}
+      </state>
+
+      ${this.formatExpectations(task)}
+
+      <notes>
+      ${notes}
+      </notes>
+
+      <recent_actions>
+      ${actionsContext || 'None'}
+      </recent_actions>
+
+      Decide:
+      - "pass" ONLY if the SCENARIO GOAL is fully accomplished (not just milestones)
+      - "fail" if the scenario clearly failed or is incompatible with the page
+      - "continue" if tester hasn't completed the scenario goal yet — even if milestones were checked
+      - If evidence is mixed, but final state indicates goal completion, choose "pass"
+      - If evidence is mixed and final state is unclear, prefer "continue" over "fail"
+    `;
+
+    const messages = [
+      { role: 'system' as const, content: this.buildVerdictSystemPrompt(type, task) },
+      { role: 'user' as const, content: userContent },
+    ];
+
     try {
-      const response = await this.provider.generateObject(
-        [
-          {
-            role: 'system',
-            content: dedent`
-              You are Pilot — the final decision maker for test pass/fail.
-              Tester has requested to ${verdict.type} the test. Review the evidence and decide.
-
-              SCENARIO: ${task.scenario}
-
-              The SCENARIO is the primary goal. The test can only pass if the scenario goal is fully accomplished.
-              PRIORITY ORDER (strict):
-              1) Final observable state proving the scenario goal
-              2) Verification evidence (if provided)
-              3) Intermediate action/step outcomes
-              If final state evidence proves the scenario goal, PASS even when some intermediate actions failed.
-              Do not fail only because a specific click failed, no toast appeared, or navigation was different than expected.
-              Intermediate failures are diagnostic, not decisive, when end state confirms success.
-              Expected results are helpful milestones but they DO NOT override the scenario goal.
-              If the scenario says "Create X", then X must be created — opening a form or navigating to /new URL is NOT enough. There must be evidence that the item now exists: visible on page, redirected to the item's page, or a success/confirmation message appeared.
-              If the scenario says "Delete X", then X must be deleted — clicking delete button is not enough. There must be evidence the item is gone.
-              If the scenario says "Edit X", then changes must be saved — opening an edit form is NOT enough.
-              For edit/update/rename scenarios, persisted updated value visible in list/detail view is valid save evidence, even without toast and even if page redirected away from edit view.
-              DO NOT trust Tester's self-assessment in notes (like "scenario goal achieved"). Verify against actual actions and state.
-
-              TRIVIAL VERIFICATION CHECK: If the verify assertion describes a state that was ALREADY TRUE before the test started (e.g., page content visible on initial load, items that existed before any action), the verification proves nothing. Reject with "continue" and explain that verification must prove the scenario ACTION changed something.
-
-              NEGATIVE TESTS: Some scenarios test that something CANNOT or SHOULD NOT happen.
-              Patterns: "without a name", "with invalid data", "empty field", "wrong password", "unauthorized", "duplicate".
-              For negative tests, success means the system PREVENTED the action — error messages, validation, disabled buttons.
-              Example: "Create X without a name" PASSES if X was NOT created and validation appeared.
-
-              ${this.buildDeletionScope(task)}
-
-              EXPECTED RESULTS (milestones, not the goal):
-              ${task.expected.map((e) => `- ${e}`).join('\n')}
-            `,
-          },
-          {
-            role: 'user',
-            content: dedent`
-              Tester wants to ${verdict.type} the test.
-              ${verifyInfo}
-
-              <state>
-              ${stateContext}
-              </state>
-
-              CHECKED: ${checked.length > 0 ? checked.join(', ') : 'none'}
-              REMAINING: ${remaining.length > 0 ? remaining.join(', ') : 'none'}
-
-              <notes>
-              ${notes}
-              </notes>
-
-              <recent_actions>
-              ${actionsContext || 'None'}
-              </recent_actions>
-
-              Decide:
-              - "pass" ONLY if the SCENARIO GOAL is fully accomplished (not just milestones)
-              - "fail" if the scenario clearly failed or is incompatible with the page
-              - "continue" if tester hasn't completed the scenario goal yet — even if milestones were checked
-              - If evidence is mixed, but final state indicates goal completion, choose "pass"
-              - If evidence is mixed and final state is unclear, prefer "continue" over "fail"
-            `,
-          },
-        ],
-        schema,
-        this.provider.getAgenticModel('pilot'),
-        { agentName: 'pilot', experimental_telemetry: { functionId: 'pilot.reviewVerdict' } }
-      );
+      const response = await this.provider.generateObject(messages, schema, this.provider.getAgenticModel('pilot'), { agentName: 'pilot', experimental_telemetry: { functionId: 'pilot.reviewVerdict' } });
 
       const result = response?.object;
       if (!result) {
-        this.applyFallbackVerdict(task, verdict);
+        task.finish(type === 'finish' ? TestResult.PASSED : TestResult.FAILED);
+        return;
+      }
+
+      if (result.requestVerification && navigator) {
+        tag('substep').log(`🧭 Pilot requesting verification: ${result.requestVerification}`);
+        const action = this.explorer.createAction();
+        const actionResult = await action.capturePageState();
+        const verifyResult = await navigator.verifyState(result.requestVerification, actionResult);
+
+        if (verifyResult.verified) {
+          task.addNote(`Pilot verified: ${result.requestVerification}`, TestResult.PASSED);
+          task.finish(TestResult.PASSED);
+        } else {
+          task.addNote(`Pilot verification failed: ${result.requestVerification}`, TestResult.FAILED);
+          testerConversation.addUserText(`Pilot: verification failed for "${result.requestVerification}". ${result.reason}`);
+        }
         return;
       }
 
@@ -168,26 +163,109 @@ export class Pilot implements Agent {
       }
 
       task.addNote(`Pilot: continue — ${result.reason}`);
-      testerConversation.addUserText(`Pilot rejected ${verdict.type}: ${result.reason}`);
+      testerConversation.addUserText(`Pilot rejected ${type}: ${result.reason}`);
     } catch (error: any) {
-      tag('warning').log(`🧭 Pilot verdict failed: ${error.message}, falling back to tester judgment`);
-      this.applyFallbackVerdict(task, verdict);
+      tag('warning').log(`🧭 Pilot verdict failed: ${error.message}`);
+      task.finish(type === 'finish' ? TestResult.PASSED : TestResult.FAILED);
     }
   }
 
-  async finalReview(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
-    if (task.hasFinished) return;
+  private buildVerdictSystemPrompt(type: string, task: Test): string {
+    return dedent`
+      You are Pilot — the final decision maker for test pass/fail.
+      Tester has requested to ${type} the test. Review the evidence and decide.
 
-    this.requestVerdict({ type: 'stop' });
-    await this.reviewVerdict(task, currentState, testerConversation);
+      SCENARIO: ${task.scenario}
+
+      The SCENARIO is the primary goal. The test can only pass if the scenario goal is fully accomplished.
+      PRIORITY ORDER (strict):
+      1) Final observable state proving the scenario goal
+      2) Verification evidence (if provided)
+      3) Intermediate action/step outcomes
+      If final state evidence proves the scenario goal, PASS even when some intermediate actions failed.
+      Do not fail only because a specific click failed, no toast appeared, or navigation was different than expected.
+      Intermediate failures are diagnostic, not decisive, when end state confirms success.
+      Expected results are helpful milestones but they DO NOT override the scenario goal.
+      If the scenario says "Create X", then X must be created — opening a form or navigating to /new URL is NOT enough. There must be evidence that the item now exists: visible on page, redirected to the item's page, or a success/confirmation message appeared.
+      If the scenario says "Delete X", then X must be deleted — clicking delete button is not enough. There must be evidence the item is gone.
+      If the scenario says "Edit X", then changes must be saved — opening an edit form is NOT enough.
+      For edit/update/rename scenarios, persisted updated value visible in list/detail view is valid save evidence, even without toast and even if page redirected away from edit view.
+      DO NOT trust Tester's self-assessment in notes (like "scenario goal achieved"). Verify against actual actions and state.
+      EVIDENCE SOURCES: verify(), see(), and ariaDiff in recent_actions are all evidence. They may disagree — analyze all of them together to reach your decision. No single source automatically overrides the others. Tester's self-assessment in record() notes is the least reliable — always cross-check against actual evidence.
+
+      TRIVIAL VERIFICATION CHECK: If the verify assertion describes a state that was ALREADY TRUE before the test started (e.g., page content visible on initial load, items that existed before any action), the verification proves nothing. Reject with "continue" and explain that verification must prove the scenario ACTION changed something.
+
+      NEGATIVE TESTS: Some scenarios test that something CANNOT or SHOULD NOT happen.
+      Patterns: "without a name", "with invalid data", "empty field", "wrong password", "unauthorized", "duplicate".
+      For negative tests, success means the system PREVENTED the action — error messages, validation, disabled buttons.
+      Example: "Create X without a name" PASSES if X was NOT created and validation appeared.
+
+      ${this.buildDeletionScope(task)}
+
+      EXPECTED RESULTS (milestones, not the goal):
+      ${task.expected.map((e) => `- ${e}`).join('\n')}
+    `;
   }
 
-  private applyFallbackVerdict(task: Test, verdict: PendingVerdict): void {
-    if (verdict.type === 'finish') {
-      task.finish(TestResult.PASSED);
-    } else {
-      task.finish(TestResult.FAILED);
-    }
+  async planTest(task: Test, currentState: ActionResult): Promise<string> {
+    tag('substep').log('🧭 Pilot planning test...');
+
+    const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
+    const agenticModel = this.provider.getAgenticModel('pilot');
+    this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState, pageSummary), 'pilot', agenticModel);
+
+    const stateContext = this.buildStateContext(currentState);
+
+    return this.sendToPilot(
+      dedent`
+        <state>
+        ${stateContext}
+        </state>
+
+        ${pageSummary ? `<page_summary>\n${pageSummary}\n</page_summary>` : ''}
+
+        Plan the test execution for this scenario.
+        Based on the page elements and current state, outline:
+        1. Which elements to interact with and in what order
+        2. What to verify at each step
+        3. Potential issues to watch for
+
+        Be concise and specific. Tester will follow your plan.
+      `,
+      'pilot.planTest'
+    );
+  }
+
+  async reviewNewPage(task: Test, currentState: ActionResult): Promise<string> {
+    if (!this.conversation) return '';
+
+    tag('substep').log('🧭 Pilot reviewing new page...');
+
+    const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
+    if (!pageSummary) return '';
+
+    const stateContext = this.buildStateContext(currentState);
+
+    this.conversation.cleanupTag('page_summary', '...trimmed...', 1);
+
+    return this.sendToPilot(
+      dedent`
+        Navigated to new page.
+
+        <state>
+        ${stateContext}
+        </state>
+
+        <page_summary>
+        ${pageSummary}
+        </page_summary>
+
+        ${this.formatExpectations(task)}
+
+        Review the new page and plan the next testing steps to achieve remaining goals.
+      `,
+      'pilot.reviewNewPage'
+    );
   }
 
   async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
@@ -201,37 +279,29 @@ export class Pilot implements Agent {
 
     const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
     const actionsContext = this.formatActions(toolCalls);
-    const checked = task.getCheckedExpectations();
-    const remaining = task.getRemainingExpectations();
     const stateContext = this.buildStateContext(currentState);
 
     this.conversation.cleanupTag('recent_actions', '...trimmed...', 2);
 
-    this.conversation.addUserText(dedent`
-      <state>
-      ${stateContext}
-      </state>
-
-      CHECKED: ${checked.length > 0 ? checked.join(', ') : 'none'}
-      REMAINING: ${remaining.length > 0 ? remaining.join(', ') : 'none'}
-
-      <recent_actions>
-      ${actionsContext || 'None'}
-      </recent_actions>
-
-      What should Tester do next?
-    `);
-
     const hasFailures = toolCalls.some((t) => !t.wasSuccessful);
 
-    const result = await this.provider.generateWithTools(this.conversation.messages, this.provider.getAgenticModel('pilot'), this.agentTools, {
-      maxToolRoundtrips: hasFailures ? 2 : 0,
-      agentName: 'pilot',
-      experimental_telemetry: { functionId: 'pilot.analyze' },
-    });
+    const text = await this.sendToPilot(
+      dedent`
+        <state>
+        ${stateContext}
+        </state>
 
-    const text = result?.text || '';
-    this.conversation.addAssistantText(text);
+        ${this.formatExpectations(task)}
+
+        <recent_actions>
+        ${actionsContext || 'None'}
+        </recent_actions>
+
+        What should Tester do next?
+      `,
+      'pilot.analyze',
+      { tools: hasFailures, maxToolRoundtrips: hasFailures ? 2 : 0 }
+    );
 
     const contextToAttach = await this.fetchRequestedContext(text, currentState);
 
@@ -240,6 +310,23 @@ export class Pilot implements Agent {
     }
 
     return text;
+  }
+
+  private formatExpectations(task: Test): string {
+    const checked = task.getCheckedExpectations();
+    const remaining = task.getRemainingExpectations();
+    return `CHECKED: ${checked.length > 0 ? checked.join(', ') : 'none'}\nREMAINING: ${remaining.length > 0 ? remaining.join(', ') : 'none'}`;
+  }
+
+  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number } = {}): Promise<string> {
+    this.conversation!.addUserText(userText);
+    const tools = opts.tools ? this.agentTools : undefined;
+    const result = await this.provider.invokeConversation(this.conversation!, tools, {
+      maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
+      agentName: 'pilot',
+      experimental_telemetry: { functionId },
+    });
+    return result?.response?.text || '';
   }
 
   private buildStateContext(state: ActionResult): string {
@@ -271,6 +358,12 @@ export class Pilot implements Agent {
       lines.push(`other tabs: ${tabs.length} (${tabs.map((t) => `${t.url} - ${t.title}`).join(', ')})`);
     } else {
       lines.push('other tabs: none');
+    }
+
+    const verifications = Object.entries(state.verifications ?? {});
+    if (verifications.length > 0) {
+      const verifyLines = verifications.map(([a, v]) => `${v ? 'PASS' : 'FAIL'}: ${a}`);
+      lines.push(`verifications: ${verifyLines.join(', ')}`);
     }
 
     const interactiveNodes = collectInteractiveNodes(state.ariaSnapshot);
@@ -344,12 +437,14 @@ export class Pilot implements Agent {
         const kind = ASSERTION_TOOLS.includes(t.toolName) ? 'CHECK' : 'ACTION';
         const description = t.input?.explanation || t.input?.request || truncateJson(t.input);
         const resultMessage = t.output?.message || '';
+        const errorDetail = t.output?.attempts?.find((a: any) => a.error)?.error;
 
         let line = `[${status}] ${kind} ${t.toolName}: ${description}`;
         if (resultMessage) line += `\n   result: ${resultMessage}`;
+        if (errorDetail && errorDetail !== resultMessage) line += `\n   error: ${errorDetail}`;
 
-        const ariaDiff = t.output?.pageDiff?.ariaDiff;
-        if (ariaDiff) line += `\n   ariaDiff: ${ariaDiff}`;
+        const ariaDiff = t.output?.pageDiff?.ariaChanges;
+        if (ariaDiff) line += `\n   ${condenseAriaDiff(ariaDiff, t.output?.pageDiff?.urlChanged)}`;
 
         return line;
       })
@@ -393,10 +488,12 @@ export class Pilot implements Agent {
       ${pageSummary ? `PAGE SUMMARY:\n${pageSummary}` : ''}
 
       Your job:
-      1. Detect when Tester is stuck: repeated failures, loops, or wrong direction
-      2. Track which expectations have been checked and which remain
-      3. When problems are detected, suggest concrete alternative approaches
-      4. When everything is going well, give brief encouragement and let Tester continue
+      1. Plan test execution by reviewing page elements and scenario requirements
+      2. When Tester navigates to a new page, review available elements and plan next steps
+      3. Detect when Tester is stuck: repeated failures, loops, or wrong direction
+      4. Track which expectations have been checked and which remain
+      5. When problems are detected, suggest concrete alternative approaches
+      6. When everything is going well, give brief encouragement and let Tester continue
 
       IMPORTANT — Tool usage policy:
       - DO NOT use tools (see, context) when Tester is making progress and no failures are recorded
@@ -412,6 +509,7 @@ export class Pilot implements Agent {
       - Form submit failed → check "active form" for fields that may need values. Instruct Tester to fill them before retrying submit.
       - "modal: none" but Tester tries to interact with a modal → modal was closed or never opened. Instruct Tester to re-trigger the modal.
       - Actions succeed but ariaDiff is empty → action may have worked without visible DOM changes. Check result message before assuming failure.
+      - Multiple elements matched (MultipleElementsFound) → use xpathCheck() to inspect the matched elements and determine which one is correct. Then instruct Tester with a precise locator or suggest visualClick() to click the right element by visual appearance.
       - If diagnosis is unclear, ariaDiff is empty, and your previous advice didn't help → suggest Tester use see() to visually inspect the page. But ONLY as a last resort after other diagnostics failed.
 
       When Tester IS stuck finding an element, use xpathCheck() with COMBINED XPaths:
@@ -426,16 +524,24 @@ export class Pilot implements Agent {
 
       If you need more page context, mention ATTACH_HTML, ATTACH_ARIA, or ATTACH_UI_MAP — but only when recent actions show failures.
 
+      Available Tester tools:
+      - click(locator) — click elements
+      - pressKey(key) — keyboard keys
+      - form(code) — execute multiple commands (fillField, type, selectOption, attachFile)
+      - see(request) — visual screenshot analysis
+      - verify(assertion) — AI-powered DOM assertion (uses I.see, I.seeElement, I.seeInField, I.dontSee)
+      - context() — fresh HTML/ARIA snapshot
+      - research() — get UI map
+      - xpathCheck(xpath) — find elements by XPath
+      - visualClick(element) — coordinate-based click
+      - reset() — return to initial page
+      - finish(verify?) — complete test
+      - stop(reason) — abort test
+      - record(notes) — document findings
+
       Response format:
       PROGRESS: <1 sentence assessment>
       NEXT: <specific actionable instruction for Tester>
     `;
   }
 }
-
-type PendingVerdict = {
-  type: 'finish' | 'stop';
-  verify?: string;
-  verified?: boolean;
-  verifyDetails?: string;
-};

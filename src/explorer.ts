@@ -6,6 +6,7 @@ import { createTest } from 'codeceptjs/lib/mocha/test.js';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
+import { visuallyAnnotateContainers } from './ai/researcher/coordinates.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
@@ -114,6 +115,7 @@ class Explorer {
     const PlaywrightConfig = {
       timeout: 1000,
       highlightElement: true,
+      waitForAction: 500,
       ...playwrightConfig,
       strict: true,
       fullPageScreenshots: true,
@@ -287,60 +289,7 @@ class Explorer {
   }
 
   async visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number> {
-    const page = this.playwrightHelper.page;
-    const containers = opts?.containers || [];
-    return page.evaluate((ctrs: Array<{ css: string; label: string }>) => {
-      const containerColors = ['#9b59b6', '#16a085', '#c0392b', '#2980b9'];
-      const drawnContainers: Array<{ label: string; color: string }> = [];
-      for (let i = 0; i < ctrs.length; i++) {
-        const el = document.querySelector(ctrs[i].css);
-        if (!el) continue;
-        const rect = el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) continue;
-
-        const color = containerColors[i % containerColors.length];
-        const box = document.createElement('div');
-        box.setAttribute('data-explorbot-annotation', 'true');
-        box.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${rect.top + window.scrollY}px;width:${rect.width}px;height:${rect.height}px;border:1px dashed ${color};z-index:99998;pointer-events:none;`;
-        document.body.appendChild(box);
-        drawnContainers.push({ label: ctrs[i].label, color });
-      }
-
-      if (drawnContainers.length > 0) {
-        const legend = document.createElement('div');
-        legend.setAttribute('data-explorbot-annotation', 'true');
-        legend.style.cssText = 'position:fixed;right:10px;bottom:10px;background:white;color:black;font-size:14px;font-family:sans-serif;padding:10px 14px;z-index:100001;pointer-events:none;border:3px solid #e63946;border-radius:6px;line-height:22px;';
-        const title = '<div style="font-weight:bold;margin-bottom:4px;color:#e63946;">Legend</div>';
-        const items = drawnContainers.map((c) => `<div><span style="display:inline-block;width:24px;border-top:3px dashed ${c.color};margin-right:8px;vertical-align:middle;"></span>${c.label}</div>`).join('');
-        legend.innerHTML = title + items;
-        document.body.appendChild(legend);
-      }
-
-      const colors = ['#e63946', '#2a9d8f', '#e9c46a', '#264653', '#f4a261', '#7b2cbf', '#0077b6', '#d62828'];
-      const elements = document.querySelectorAll('[data-explorbot-eidx]');
-      let count = 0;
-      for (const el of elements) {
-        const eidx = el.getAttribute('data-explorbot-eidx');
-        if (!eidx) continue;
-        const rect = el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) continue;
-
-        const color = colors[count % colors.length];
-
-        const box = document.createElement('div');
-        box.setAttribute('data-explorbot-annotation', 'true');
-        box.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${rect.top + window.scrollY}px;width:${rect.width}px;height:${rect.height}px;border:2px solid ${color};z-index:99999;pointer-events:none;`;
-
-        const label = document.createElement('div');
-        label.textContent = eidx;
-        label.style.cssText = `position:absolute;top:-14px;right:-2px;background:${color};color:white;font-size:10px;padding:0 3px;line-height:14px;font-family:monospace;z-index:100000;pointer-events:none;`;
-        box.appendChild(label);
-
-        document.body.appendChild(box);
-        count++;
-      }
-      return count;
-    }, containers);
+    return visuallyAnnotateContainers(this.playwrightHelper.page, opts?.containers || []);
   }
 
   async getEidxInContainer(containerCss: string | null): Promise<number[]> {

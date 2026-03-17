@@ -1,5 +1,7 @@
+import { join } from 'node:path';
 import { Client } from '@testomatio/reporter';
 import type { Step } from '@testomatio/reporter/types/types.js';
+import { ConfigParser } from './config.js';
 import { Test } from './test-plan.js';
 import { createDebug } from './utils/logger.js';
 
@@ -85,6 +87,7 @@ export class Reporter {
         startTime: note.startTime,
         message: note.message,
         status: note.status,
+        screenshot: note.screenshot,
       }))
       .sort((a, b) => a.startTime - b.startTime);
 
@@ -114,7 +117,9 @@ export class Reporter {
         category: 'user',
         title: noteEntry.message,
         duration: 0,
+        status: noteEntry.status || 'none',
         steps: noteSteps.length > 0 ? noteSteps : undefined,
+        ...(noteEntry.screenshot ? { artifacts: [join(ConfigParser.getInstance().getOutputDir(), noteEntry.screenshot)] } : {}),
       });
     }
 
@@ -142,6 +147,9 @@ export class Reporter {
         rid: test.id,
         title: test.scenario,
         suite_title: test.plan?.title || 'Auto-Exploratory Testing',
+        file: '<note>',
+        description: test.description,
+        code: test.generatedCode || '',
         steps,
         logs: Object.values(test.steps)
           .map((stepData) => stepData.text)

@@ -23,7 +23,7 @@ const debugLog = createDebug('explorbot:captain');
 const MAX_STEPS = 15;
 
 export class Captain extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'type', 'select', 'pressKey', 'form', 'navigate', 'record'];
+  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form', 'navigate', 'record'];
   emoji = '🧑‍✈️';
   private explorBot: ExplorBot;
   private conversation: Conversation | null = null;
@@ -76,7 +76,7 @@ export class Captain extends TaskAgent implements Agent {
     </role>
 
     <capabilities>
-    - Page actions: click, type, navigate, form (CodeceptJS tools)
+    - Page actions: click, pressKey, navigate, form (CodeceptJS tools)
     - TUI commands: runCommand() — /research, /plan, /test, /navigate, /explore, etc.
     - Test inspection: test() — flags: --session, --log, --tools, --states, --aria, --code, --pilot
     - Browser diagnostics: browser() — evaluate JS, close tabs, screenshot, reload

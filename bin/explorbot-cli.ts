@@ -10,6 +10,7 @@ import { ConfigParser } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { Stats } from '../src/stats.js';
 import { log, setPreserveConsoleLogs } from '../src/utils/logger.js';
+import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 
 const program = new Command();
 
@@ -111,7 +112,8 @@ addCommonOptions(program.command('explore <path>').description('Start web explor
     const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
     await explorBot.start();
     await explorBot.visit(explorePath);
-    await explorBot.explore();
+    const { ExploreCommand } = await import('../src/commands/explore-command.js');
+    await new ExploreCommand(explorBot).execute('');
     await explorBot.stop();
     await showStatsAndExit(0);
   } catch (error) {
@@ -122,13 +124,14 @@ addCommonOptions(program.command('explore <path>').description('Start web explor
 
 addCommonOptions(program.command('plan <path> [feature]').description('Generate test plan for a page and exit'))
   .option('--fresh', 'Start planning from scratch, ignoring existing plan')
+  .option('--style <style>', 'Planning style: normal, curious, psycho')
   .action(async (planPath, feature, options) => {
     try {
       const explorBot = new ExplorBot(buildExplorBotOptions(planPath, options));
       await explorBot.start();
 
       await explorBot.visit(planPath);
-      await explorBot.plan(feature || undefined, { fresh: options.fresh });
+      await explorBot.plan(feature || undefined, { fresh: options.fresh, style: options.style });
 
       const plan = explorBot.getCurrentPlan();
       if (!plan?.tests.length) {
@@ -137,7 +140,25 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
         await showStatsAndExit(1);
       }
 
-      console.log(`Plan ready with ${plan.tests.length} tests`);
+      const savedPath = explorBot.savePlan();
+      const planFile = savedPath ? path.basename(savedPath) : 'plan.md';
+
+      const cliFlags = [options.path ? `--path ${options.path}` : '', options.session ? '--session' : ''].filter(Boolean).join(' ');
+      const cliSuffix = cliFlags ? ` ${cliFlags}` : '';
+
+      const lines = [`Plan ready with ${plan.tests.length} tests:\n`];
+      plan.tests.forEach((test, i) => {
+        const isNew = test.planIteration === plan.iteration && plan.iteration > 0;
+        const marker = isNew ? ' *[NEW]*' : '';
+        lines.push(`${i + 1}. **${test.scenario}** (${test.priority})${marker}`);
+      });
+      lines.push('');
+      lines.push('Run tests:');
+      lines.push(`\`explorbot test ${planFile} 1${cliSuffix}\` → run first test`);
+      lines.push(`\`explorbot test ${planFile} 1-3${cliSuffix}\` → run tests 1 to 3`);
+      lines.push(`\`explorbot test ${planFile} *${cliSuffix}\` → run all tests`);
+
+      log(parseMarkdownToTerminal(lines.join('\n')));
 
       await explorBot.stop();
       await showStatsAndExit(0);
@@ -147,16 +168,25 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
     }
   });
 
-addCommonOptions(program.command('test <planfile>').description('Execute tests from a plan file').option('--all', 'Run all pending tests').option('--test <number>', 'Run specific test by number').option('--grep <pattern>', 'Run tests matching pattern')).action(async (planfile, options) => {
+addCommonOptions(program.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1,3, 1-5, *, all').option('--grep <pattern>', 'Run tests matching pattern')).action(async (planfile, index, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
     await explorBot.start();
 
-    explorBot.loadPlan(planfile);
+    const plan = explorBot.loadPlan(planfile);
+    const pending = plan.getPendingTests();
+    log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests, ${pending.length} pending)`);
+
+    const startUrl = plan.url || pending[0]?.startUrl;
+    if (!startUrl) {
+      throw new Error('No URL found in plan or tests. Cannot determine where to navigate.');
+    }
+
+    log(`Navigating to ${startUrl}`);
+    await explorBot.visit(startUrl);
 
     let args = '';
-    if (options.all) args = '*';
-    else if (options.test) args = options.test;
+    if (index) args = index;
     else if (options.grep) args = options.grep;
 
     const { TestCommand } = await import('../src/commands/test-command.js');

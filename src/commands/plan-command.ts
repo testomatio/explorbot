@@ -7,9 +7,22 @@ export class PlanCommand extends BaseCommand {
   suggestions = ['/test - to launch first test', '/test * - to launch all tests', 'Edit the plan in file and call /plan:reload to update it'];
 
   async execute(args: string): Promise<void> {
-    const fresh = args.includes('--fresh');
+    const clear = args.includes('--clear');
+    const fresh = args.includes('--fresh') || clear;
     const append = args.includes('--append');
-    const focus = args.replace('--fresh', '').replace('--append', '').trim();
+    const styleMatch = args.match(/--style\s+(\S+)/);
+    const style = styleMatch?.[1];
+    const focus = args
+      .replace('--clear', '')
+      .replace('--fresh', '')
+      .replace('--append', '')
+      .replace(/--style\s+\S+/, '')
+      .trim();
+
+    if (clear) {
+      this.explorBot.clearPlan();
+      tag('success').log('Plan cleared');
+    }
 
     if (!fresh && !append) {
       const existingPlan = this.explorBot.getCurrentPlan();
@@ -24,7 +37,7 @@ export class PlanCommand extends BaseCommand {
       tag('info').log(`Planning focus: ${focus}`);
     }
 
-    await this.explorBot.plan(focus || undefined, { fresh });
+    await this.explorBot.plan(focus || undefined, { fresh, style });
 
     const plan = this.explorBot.getCurrentPlan();
     if (!plan?.tests.length) {

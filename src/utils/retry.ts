@@ -1,6 +1,9 @@
-import { createDebug } from './logger.js';
+import { createDebug, tag } from './logger.js';
 
 const debugLog = createDebug('explorbot:retry');
+
+const RATE_LIMIT_DELAYS = [10_000, 20_000, 30_000, 60_000, 90_000];
+const RATE_LIMIT_MAX_ATTEMPTS = RATE_LIMIT_DELAYS.length + 1;
 
 export interface RetryOptions {
   maxAttempts?: number;
@@ -20,9 +23,14 @@ const defaultOptions: Required<RetryOptions> = {
   },
 };
 
+function isRateLimitError(error: Error): boolean {
+  return error.message.toLowerCase().includes('rate limit');
+}
+
 export async function withRetry<T>(operation: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
   const config = { ...defaultOptions, ...options };
   let lastError: Error;
+  let rateLimitAttempt = 0;
 
   for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
     try {
@@ -30,6 +38,19 @@ export async function withRetry<T>(operation: () => Promise<T>, options: RetryOp
       return await operation();
     } catch (error) {
       lastError = error as Error;
+
+      if (lastError.name === 'AbortError') {
+        throw lastError;
+      }
+
+      if (isRateLimitError(lastError) && rateLimitAttempt < RATE_LIMIT_DELAYS.length) {
+        const delay = RATE_LIMIT_DELAYS[rateLimitAttempt];
+        tag('warning').log(`Rate limit hit, waiting ${delay / 1000}s before retry (${rateLimitAttempt + 1}/${RATE_LIMIT_MAX_ATTEMPTS})...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        rateLimitAttempt++;
+        attempt--;
+        continue;
+      }
 
       if (attempt === config.maxAttempts) {
         debugLog(`All ${config.maxAttempts} attempts failed`);

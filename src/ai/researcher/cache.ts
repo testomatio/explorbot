@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { ConfigParser } from '../../config.ts';
 import { debugLog } from './mixin.ts';
 
-const CACHE_TTL_MS = 60 * 60 * 1000;
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 const memoryCache: Record<string, string> = {};
 const memoryCacheTimestamps: Record<string, number> = {};

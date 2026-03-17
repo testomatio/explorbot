@@ -93,7 +93,19 @@ export class ResearchResult {
   cleanup(): void {
     for (const table of mdq(this.text).query('table').each()) {
       const rows = table.toJson();
-      if (rows.length === 0 || !('eidx' in rows[0])) continue;
+      if (rows.length === 0) continue;
+
+      let changed = false;
+      for (const row of rows) {
+        if (row.ARIA && !parseAriaLocator(row.ARIA)) {
+          row.ARIA = '-';
+          changed = true;
+        }
+      }
+
+      const hasEidx = 'eidx' in rows[0];
+      if (!changed && !hasEidx) continue;
+
       const rawTable = table.text();
       const columns = Object.keys(rows[0]).filter((c) => c !== 'eidx');
       const cleaned = rows.map(({ eidx, ...rest }) => rest);

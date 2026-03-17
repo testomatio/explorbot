@@ -50,7 +50,7 @@ interface DrillOptions {
 }
 
 export class Bosun extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'type', 'select', 'pressKey', 'form'];
+  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
   emoji = '⚓';
   private explorer: Explorer;
   private provider: Provider;
@@ -101,7 +101,7 @@ export class Bosun extends TaskAgent implements Agent {
     <approach>
     1. Review the UI map to understand all available components
     2. Create a plan listing all components to drill using drill_plan tool
-    3. For each component, try appropriate interactions using click, type, select tools
+    3. For each component, try appropriate interactions using click, form tools
     4. Use drill_record to document successful interactions
     5. If an interaction fails multiple times, use drill_ask for help (in interactive mode)
     6. Call drill_finish when all components have been tested
@@ -262,7 +262,7 @@ export class Bosun extends TaskAgent implements Agent {
 
       <instructions>
       1. First, call drill_plan to create a list of components to test
-      2. Then systematically test each component using click, type, or select tools
+      2. Then systematically test each component using click or form tools
       3. Use drill_record to save observations about what each component does
       4. Press Escape or use drill_restore to reset state between tests
       5. Call drill_finish when all components have been tested
@@ -318,7 +318,7 @@ export class Bosun extends TaskAgent implements Agent {
             success: true,
             message: `Plan created with ${components.length} components`,
             components: components.map((c) => `${c.name} (${c.role})`),
-            instruction: 'Now test each component using click, type, or select tools. Record observations with drill_record.',
+            instruction: 'Now test each component using click or form tools. Record observations with drill_record.',
           };
         },
       }),
@@ -327,7 +327,7 @@ export class Bosun extends TaskAgent implements Agent {
         description: 'Record what a component does after testing it. Call this after each successful interaction.',
         inputSchema: z.object({
           component: z.string().describe('Component name that was tested'),
-          action: z.string().describe('Action performed (click, type, select)'),
+          action: z.string().describe('Action performed (click, form)'),
           result: z.string().describe('What happened (opened modal, navigated to X, showed dropdown, etc.)'),
           code: z.string().optional().describe('The CodeceptJS code that worked'),
         }),

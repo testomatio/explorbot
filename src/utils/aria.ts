@@ -617,3 +617,38 @@ export const diffAriaSnapshots = (previous: string | null, current: string | nul
   }
   return lines.join('\n');
 };
+
+export const condenseAriaDiff = (ariaDiff: string, urlChanged = false): string => {
+  const lines = ariaDiff.split('\n');
+  const added: string[] = [];
+  let removedCount = 0;
+  let section: 'none' | 'added' | 'removed' = 'none';
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('ariaDiff:')) continue;
+    if (trimmed === 'added:' || trimmed === 'added: []') {
+      section = 'added';
+      continue;
+    }
+    if (trimmed === 'removed:' || trimmed === 'removed: []') {
+      section = 'removed';
+      continue;
+    }
+
+    if (!trimmed.startsWith('- ')) continue;
+    if (section === 'added') added.push(line);
+    if (section === 'removed') removedCount++;
+  }
+
+  const result: string[] = ['ariaDiff:'];
+  if (urlChanged) result.push('  note: navigated to new page');
+  if (added.length > 0) {
+    result.push('  added:');
+    result.push(...added);
+  }
+  if (removedCount > 0) {
+    result.push(`  removed: ${removedCount} interactive elements`);
+  }
+  return result.join('\n');
+};

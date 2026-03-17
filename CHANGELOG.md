@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026-03-17
+
+### New CLI Options
+- **`--style <style>`** — Set the planning style when generating test plans. Available styles control how aggressively scenarios are invented.
+  ```bash
+  explorbot plan /login --style curious
+  explorbot plan /dashboard --style psycho
+  ```
+
+### New CLI Commands
+- **`explorbot test <planfile> [index]`** — Run specific tests by index, range, or all. Replaces the old `--all` and `--test` flags with a positional argument.
+  ```bash
+  explorbot test plan.md 1           # run first test
+  explorbot test plan.md 1-3         # run tests 1 to 3
+  explorbot test plan.md 1,3,5       # run specific tests
+  explorbot test plan.md *           # run all pending tests
+  explorbot test plan.md all         # same as *
+  ```
+
+### New TUI Commands
+- **`/plan --style <style>`** — Set planning style from TUI.
+  ```
+  /plan --style curious
+  /plan authentication --style psycho
+  ```
+- **`/plan --clear`** — Clear the current plan and immediately create a new one (combines `/plan:clear` + `/plan`).
+  ```
+  /plan --clear
+  /plan --clear authentication
+  ```
+- **Plan Editor: `Del` key** — Remove a test from the plan in the plan editor (Ctrl+E).
+
+### Configuration
+- **`playwright.waitForAction`** — Delay in ms after each Playwright action. Default: `500`.
+- **`ai.agents.planner.styles`** — Custom planning styles as a key-value map of style name to approach prompt.
+
+### Changes
+- [Planner] Planning now cycles through multiple styles (normal, curious, psycho) during exploration to generate diverse test scenarios
+- [Planner] Coverage analysis runs after each planning session, automatically exploring sub-pages with low coverage
+- [Pilot] Now actively plans test execution before Tester starts, providing step-by-step guidance
+- [Pilot] Reviews new pages during test execution, giving Tester updated guidance when navigating
+- [Pilot] Verdict review is now synchronous — Pilot immediately decides pass/fail/continue instead of deferring
+- [Pilot] Can request additional verification from Navigator when evidence is insufficient
+- [Tester] Removed standalone `type()` and `select()` tools — use `form()` for all text input, dropdown selection, and file uploads
+- [Tester] Screenshots are now automatically captured when actions cause page changes (ARIA diff or URL change)
+- [Tester] `finish()` now delegates verification entirely to Pilot instead of running its own verify step
+- [Researcher] Visual analysis now extracts page purpose and primary actions from annotated screenshots
+- [Historian] ARIA diffs are condensed before sending to discovery analysis, reducing token usage
+- Vision model failures are now handled gracefully — `see()` and `visualClick()` auto-disable for the session instead of failing repeatedly
+- `verify()` prevents duplicate verifications on the same page state
+- Context parameter (container) is now the preferred approach for all interaction commands (`I.fillField`, `I.selectOption`, `I.attachFile`)
+- New verification commands documented: `I.seeInField()` and `I.dontSeeInField()` for checking input field values
+- `.env` file is now automatically loaded from the working directory
+- `explorbot plan` CLI now prints a summary with test list and example run commands
+- Test duration is tracked and displayed in the exploration results table
+
 ## 2026-03-07
 
 ### Configuration

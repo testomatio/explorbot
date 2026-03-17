@@ -138,10 +138,10 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
     }
   }
 
-  const prerequisite = mdq(content).query('section("Prerequisite") item').text().trim();
-  const urlMatch = prerequisite.match(/^URL:\s*(.+)/);
+  const firstItem = mdq(content).query('section[0] item[0]').text().trim();
+  const urlMatch = firstItem.match(/^URL:\s*(.+)/);
   if (urlMatch) {
-    plan.url = urlMatch[1].trim();
+    plan.url = urlMatch[1].replace(/\*\*|`|\*|_|~~?/g, '').trim();
     for (const test of plan.tests) {
       if (!test.startUrl) test.startUrl = plan.url;
     }

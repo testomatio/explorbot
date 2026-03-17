@@ -107,7 +107,8 @@ export class CommandHandler implements InputManager {
         try {
           await command.execute(argsString);
           command.suggestions.forEach((s) => tag('step').log(s));
-        } catch (error) {
+        } catch (error: any) {
+          if (error?.name === 'AbortError') throw error;
           tag('error').log(`/${command.name} failed: ${error instanceof Error ? error.message : String(error)}`);
         }
         return;
@@ -119,7 +120,8 @@ export class CommandHandler implements InputManager {
       if (response) {
         tag('multiline').log(response);
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'AbortError') throw error;
       tag('error').log(`Captain failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

@@ -13,6 +13,8 @@ import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
+import { type CoverageResult, analyzeCoverage } from './planner/coverage.ts';
+import { EXPAND_PLAN_SUFFIX, getActiveStyle, getStyles } from './planner/styles.ts';
 import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
 import { fileUploadRule, protectionRule } from './rules.ts';
@@ -28,6 +30,7 @@ const TasksSchema = z.object({
       z.object({
         scenario: z.string().describe('A single sentence describing what to test'),
         priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).describe('Priority of the task based on business importance'),
+        startUrl: z.string().optional().describe('Start URL for the test if different from plan URL (only for tests on visited subpages)'),
         steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Click on Login button", "Enter username in email field", "Submit the form"). Keep steps atomic and actionable.'),
         expectedOutcomes: z
           .array(z.string())
@@ -47,8 +50,9 @@ export class Planner implements Agent {
   MIN_TASKS = 3;
   MAX_TASKS = 12;
   currentPlan: Plan | null = null;
+  private lastStyleName = '';
+  private lastCoverage: CoverageResult | null = null;
   researcher: Researcher;
-  private analyzedUrls: Set<string> = new Set();
 
   constructor(explorer: Explorer, provider: Provider) {
     this.explorer = explorer;
@@ -94,6 +98,10 @@ export class Planner implements Agent {
     this.currentPlan = plan;
   }
 
+  getCoverage() {
+    return this.lastCoverage;
+  }
+
   static getCachedPlan(url: string): Plan | null {
     const baseUrl = url.split('?')[0].split('#')[0];
     return planCache.get(baseUrl) || null;
@@ -104,7 +112,16 @@ export class Planner implements Agent {
     planCache.set(baseUrl, plan);
   }
 
-  async plan(feature?: string): Promise<Plan> {
+  static clearCache(url?: string): void {
+    if (url) {
+      const baseUrl = url.split('?')[0].split('#')[0];
+      planCache.delete(baseUrl);
+    } else {
+      planCache.clear();
+    }
+  }
+
+  async plan(feature?: string, style?: string, parentPlan?: Plan): Promise<Plan> {
     Stats.plans++;
     const state = this.stateManager.getCurrentState();
     debugLog('Planning:', state?.url);
@@ -118,24 +135,12 @@ export class Planner implements Agent {
     }
 
     setActivity(`${this.emoji} Planning...`, 'action');
-    tag('info').log(`Planning test scenarios for ${state.url}...`);
+    tag('info').log(`Planning test scenarios for ${state.url}`);
+    if (style) tag('info').log(`Planning style: ${style}`);
 
     const result = await Observability.run(`planner: ${state.url}`, { tags: ['planner'], sessionId: state.url }, async () => {
-      const allTests: Test[] = [];
-
-      if (this.currentPlan) {
-        const executedTests = this.currentPlan.tests.filter((t) => t.result !== null);
-        if (executedTests.length > 0) {
-          tag('step').log(`Found ${executedTests.length} executed tests, looking for new scenarios...`);
-          const fromVisited = await this.discoverTestsFromVisitedStates();
-          allTests.push(...fromVisited);
-        } else {
-          tag('substep').log('No tests have been executed yet, skipping path discovery');
-        }
-      }
-
       const actionResult = ActionResult.fromState(state);
-      const conversation = await this.buildConversation(actionResult);
+      const conversation = await this.buildConversation(actionResult, style, parentPlan);
 
       if (feature) {
         tag('step').log(`Focusing on ${feature}`);
@@ -152,14 +157,13 @@ export class Planner implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
-      if (aiResult.object.scenarios.length === 0 && !this.currentPlan && allTests.length === 0) {
+      if (aiResult.object.scenarios.length === 0 && !this.currentPlan) {
         throw new Error('No tasks were created successfully');
       }
 
-      const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, state.url, s.steps || []));
-      allTests.push(...fromPlanning);
+      const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, s.startUrl || state.url, s.steps || []));
 
-      return { tests: allTests, planName: aiResult.object.planName };
+      return { tests: fromPlanning, planName: aiResult.object.planName };
     });
 
     const tests = result.tests;
@@ -169,6 +173,7 @@ export class Planner implements Agent {
       const planName = result.planName || state.url;
       this.currentPlan = new Plan(planName);
       this.currentPlan.url = state.url;
+      if (parentPlan) this.currentPlan.parentPlan = parentPlan;
       for (const t of tests) {
         t.startUrl = state.url;
         this.currentPlan.addTest(t);
@@ -186,84 +191,15 @@ export class Planner implements Agent {
     }
 
     this.moveExecutedTestsToEnd();
+    const availableStyles = Object.keys(getStyles()).join(', ');
     tag('success').log(`Planning complete! ${this.currentPlan.tests.length} tests in plan: ${this.currentPlan.title}`);
+    tag('info').log(`Planning style: ${this.lastStyleName} (available: ${availableStyles})`);
+
+    this.lastCoverage = await analyzeCoverage(this.provider, this.currentPlan);
 
     Planner.cachePlan(state.url, this.currentPlan);
 
     return this.currentPlan;
-  }
-
-  protected async discoverTestsFromVisitedStates(): Promise<Test[]> {
-    if (!this.currentPlan) throw new Error('No plan set for discovery');
-
-    const visitedStates = this.currentPlan.getVisitedPages();
-    if (visitedStates.length === 0) {
-      tag('substep').log('No visited pages found from previous test execution');
-      return [];
-    }
-
-    const unanalyzedStates = visitedStates.filter((state) => !this.analyzedUrls.has(state.url));
-    if (unanalyzedStates.length === 0) {
-      tag('substep').log('All visited pages already analyzed');
-      return [];
-    }
-
-    tag('step').log(`Analyzing ${unanalyzedStates.length} visited pages for new test scenarios`);
-
-    for (const state of unanalyzedStates) {
-      this.analyzedUrls.add(state.url);
-    }
-
-    const currentTests = this.currentPlan.tests.map((t) => t.scenario).join('\n');
-
-    const schema = z.object({
-      tests: z
-        .array(
-          z.object({
-            scenario: z.string().describe('Short test scenario name'),
-            firstStep: z.string().describe('First step: which element on which page, e.g. "Click Resend Invite button on /users page"'),
-            triggerUrl: z.string().describe('URL where the trigger element was found'),
-          })
-        )
-        .max(5)
-        .describe('Up to 5 new happy-path test scenarios'),
-    });
-
-    const messages = [
-      {
-        role: 'user' as const,
-        content: dedent`
-          Plan: ${this.currentPlan.title}
-          Current tests:
-          ${currentTests}
-
-          Pages visited during testing:
-          ${unanalyzedStates.map((s) => `- ${s.url} (${s.title || 'untitled'})`).join('\n')}
-
-          Identify NEW happy-path test scenarios from these pages.
-          Only suggest tests NOT covered by current tests.
-          Each test must include a first step stating which element on which page.
-          Return empty array if no new scenarios needed.
-          Maximum 5 tests. Only positive scenarios.
-        `,
-      },
-    ];
-
-    const result = await this.provider.generateObject(messages, schema, this.provider.getModelForAgent('planner'));
-
-    const suggestions = result?.object?.tests || [];
-    const newTests: Test[] = [];
-
-    for (const suggestion of suggestions) {
-      const test = new Test(suggestion.scenario, 'normal', [], suggestion.triggerUrl, [suggestion.firstStep]);
-      newTests.push(test);
-    }
-
-    if (newTests.length > 0) {
-      debugLog(`Discovered ${newTests.length} new test paths from visited states`);
-    }
-
-    return newTests;
   }
 
   private moveExecutedTestsToEnd(): void {
@@ -308,7 +244,14 @@ export class Planner implements Agent {
     return added;
   }
 
-  private async buildConversation(state: ActionResult): Promise<Conversation> {
+  private buildApproach(style?: string): string {
+    const { name, approach } = getActiveStyle(this.currentPlan?.iteration || 0, style);
+    this.lastStyleName = name;
+    const suffix = this.currentPlan ? `\n\n${EXPAND_PLAN_SUFFIX}` : '';
+    return `<approach>\n${approach}${suffix}\n</approach>`;
+  }
+
+  private async buildConversation(state: ActionResult, style?: string, parentPlan?: Plan): Promise<Conversation> {
     const model = this.provider.getModelForAgent('planner');
     const conversation = new Conversation([], model);
     conversation.autoTrimTag('page_research', 20000);
@@ -343,40 +286,7 @@ export class Planner implements Agent {
       ${fileUploadRule}
       </rules>
 
-      ${
-        !this.currentPlan
-          ? dedent`<approach>
-      Study the page and figure out its business purpose. What is this page FOR? What would a user come here to do?
-
-      Based on the page type, propose tests for COMPLETE user workflows:
-      - If this is a data page (lists, tables): test CRUD operations end-to-end (create item → verify in list, edit item → verify changes saved, delete item → verify removed)
-      - If this is a form page: test full submission flow, not just "form appears"
-      - If this has filters and search: test filtering AND verify results change, not just "filter tab clicked"
-      - If this has modals/dropdowns: test the ACTION inside them, not just opening/closing them
-
-      Each test should end with the application in a different state than it started.
-
-      IMPORTANT: Distribute tests across DIFFERENT feature areas from the research.
-      Do not propose more than 2 tests for the same feature area.
-      Every Extended Research section (modal, dropdown, panel) with actionable features deserves at least one test.
-      Prioritize features with business actions (export, import, create, edit, delete) over simple UI interactions.
-
-      Skip the Menu/Navigation section — we are testing THIS page.
-      </approach>`
-          : dedent`<approach>
-      Look at the research sections and find a feature area that has NO existing tests yet.
-      Pick that ONE feature and test it thoroughly — happy paths, edge cases, error handling.
-
-      Think like a user of this product:
-      - What is the purpose of this feature?
-      - What would I expect to happen when I use it?
-      - What could go wrong?
-      - What workflows does this feature enable?
-
-      Look carefully at Extended Research sections — modals, dropdowns, and panels are often untested.
-      Each is a separate feature area. Pick one and go deep.
-      </approach>`
-      }
+      ${this.buildApproach(style)}
 
       <context>
       URL: ${state.url || 'Unknown'}
@@ -416,9 +326,10 @@ export class Planner implements Agent {
     if (this.currentPlan) {
       tag('step').log('Analyzing current plan to expand testing');
 
-      const passed = this.currentPlan.tests.filter((t) => t.result === 'passed');
-      const failed = this.currentPlan.tests.filter((t) => t.result === 'failed');
-      const pending = this.currentPlan.tests.filter((t) => !t.result);
+      const allTests = this.currentPlan.getAllTests();
+      const passed = allTests.filter((t) => t.result === 'passed');
+      const failed = allTests.filter((t) => t.result === 'failed');
+      const pending = allTests.filter((t) => !t.result);
 
       const summaryParts: string[] = [];
       if (passed.length > 0) summaryParts.push(`${passed.length} passed`);
@@ -426,7 +337,7 @@ export class Planner implements Agent {
       if (pending.length > 0) summaryParts.push(`${pending.length} pending`);
       const summary = summaryParts.join(', ');
 
-      const existingTests = this.currentPlan.tests.map((t) => `- "${t.scenario}" [${t.priority}] [${t.result || 'pending'}]`).join('\n');
+      const existingTests = allTests.map((t) => `- "${t.scenario}" [${t.priority}] [${t.result || 'pending'}]`).join('\n');
 
       conversation.addUserText(dedent`
         CRITICAL: This plan already has tests (${summary}).
@@ -444,7 +355,7 @@ export class Planner implements Agent {
         </absolute_rules>
 
         <previous_test_results>
-        ${this.currentPlan.toAiContext()}
+        ${this.currentPlan.parentPlan ? `${this.currentPlan.parentPlan.toAiContext()}\n\n` : ''}${this.currentPlan.toAiContext()}
         </previous_test_results>
 
         <planning_strategy>
@@ -462,15 +373,28 @@ export class Planner implements Agent {
         </planning_strategy>
 
         <context_from_previous_tests>
-        Pages visited during testing:
+        During testing, the following pages were visited:
         ${this.currentPlan
           .getVisitedPages()
           .map((s) => `- ${s.url} (${s.title || 'untitled'})`)
           .join('\n')}
+
+        You MAY propose tests starting from these pages if they are relevant to the plan "${this.currentPlan.title}".
+        Set startUrl for such tests. Ignore pages that belong to a different feature area.
         </context_from_previous_tests>
 
         Propose ONLY new scenarios that are NOT in the existing tests list.
         `);
+    }
+
+    if (!this.currentPlan && parentPlan) {
+      conversation.addUserText(dedent`
+        This is a sub-page exploration. The main plan results are provided for context — avoid duplicating tests already covered.
+
+        <previous_test_results>
+        ${parentPlan.toAiContext()}
+        </previous_test_results>
+      `);
     }
 
     const hasCurrentPlan = !!this.currentPlan;

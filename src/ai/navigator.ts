@@ -425,7 +425,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; successfulCodes: string[] }> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; successfulCodes: string[]; totalAttempted: number }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -549,6 +549,10 @@ class Navigator implements Agent {
 
     const totalAttempted = Math.min(codeBlocks.length, this.MAX_ATTEMPTS);
     const verified = totalAttempted <= 1 ? successfulCodes.length > 0 : successfulCodes.length > totalAttempted / 2;
+
+    actionResult.addVerification(message, verified);
+    this.explorer.getStateManager().updateState(actionResult);
+
     return { verified, successfulCodes, totalAttempted };
   }
 }

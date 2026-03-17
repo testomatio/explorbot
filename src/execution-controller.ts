@@ -9,6 +9,7 @@ export class ExecutionController extends EventEmitter {
   private interrupted = false;
   private inputCallback: InputCallback | null = null;
   private interruptResolvers: Array<() => void> = [];
+  private abortController: AbortController | null = null;
 
   private constructor() {
     super();
@@ -25,10 +26,20 @@ export class ExecutionController extends EventEmitter {
     this.inputCallback = callback;
   }
 
+  startExecution(): void {
+    this.interrupted = false;
+    this.abortController = new AbortController();
+  }
+
+  getAbortSignal(): AbortSignal | undefined {
+    return this.abortController?.signal;
+  }
+
   interrupt(): void {
     clearActivity();
     if (this.interrupted) return;
     this.interrupted = true;
+    this.abortController?.abort();
     this.emit('interrupt');
     for (const resolve of this.interruptResolvers) {
       resolve();
@@ -91,6 +102,7 @@ export class ExecutionController extends EventEmitter {
   reset(): void {
     this.interrupted = false;
     this.interruptResolvers = [];
+    this.abortController = null;
   }
 }
 

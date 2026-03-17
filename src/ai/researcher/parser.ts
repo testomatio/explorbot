@@ -20,7 +20,7 @@ export interface ResearchSection {
   rawMarkdown: string;
 }
 
-const SKIP_SECTIONS = new Set(['summary', 'screenshot analysis', 'data']);
+const SKIP_SECTIONS = new Set(['summary', 'screenshot analysis', 'data', 'primary actions']);
 
 function stripQuotes(str: string): string {
   let trimmed = str.trim();

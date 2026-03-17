@@ -4,6 +4,7 @@ import { generateObject, generateText } from 'ai';
 import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
+import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { Stats } from '../stats.ts';
 import { createDebug, tag } from '../utils/logger.js';
@@ -35,7 +36,9 @@ export class Provider {
           error.message.includes('AI request timeout') ||
           error.message.includes('schema') ||
           error.message.includes('No object generated') ||
-          error.message.includes('No response text')) &&
+          error.message.includes('No response text') ||
+          error.message.includes('Tool choice is required') ||
+          error.message.includes('validate JSON')) &&
         !error.message.includes('output truncated at maxTokens')
       );
     },
@@ -215,6 +218,7 @@ export class Provider {
         ...options,
         ...(telemetry ? { experimental_telemetry: telemetry } : {}),
         model: this.provider(model),
+        abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
@@ -250,6 +254,7 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
+      if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
       if (!options._noContextRetry && Provider.isContextLengthError(error)) {
         const trimmed = Provider.trimMessagesForRetry(messages);
@@ -278,12 +283,13 @@ export class Provider {
       {
         tools,
         maxTokens: 16384,
-        maxToolRoundtrips: options.maxToolRoundtrips || 5,
+        maxToolRoundtrips: options.maxToolRoundtrips ?? 5,
         toolChoice: 'auto',
         ...(this.config.config || {}),
         ...options,
         ...(telemetry ? { experimental_telemetry: telemetry } : {}),
         model: this.provider(model),
+        abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
@@ -323,6 +329,7 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
+      if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
       if (!options._noContextRetry && Provider.isContextLengthError(error)) {
         const trimmed = Provider.trimMessagesForRetry(messages);
@@ -353,6 +360,7 @@ export class Provider {
         ...options,
         ...(telemetry ? { experimental_telemetry: telemetry } : {}),
         model: this.provider(modelToUse),
+        abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
@@ -384,6 +392,7 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
+      if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
       if (!options._noContextRetry && Provider.isContextLengthError(error)) {
         const trimmed = Provider.trimMessagesForRetry(messages);
@@ -473,6 +482,7 @@ export class Provider {
       ...(this.config.config || {}),
       ...(telemetry ? { experimental_telemetry: telemetry } : {}),
       model: this.provider(this.config.visionModel),
+      abortSignal: executionController.getAbortSignal(),
     };
 
     try {
@@ -498,6 +508,7 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
+      if (error?.name === 'AbortError') throw error;
       throw new AiError(error.message || error.toString());
     }
   }

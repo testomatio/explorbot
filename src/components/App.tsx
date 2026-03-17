@@ -35,6 +35,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   const [currentState, setCurrentState] = useState<WebPageState | null>(null);
   const [lastTransition, setLastTransition] = useState<StateTransition | null>(null);
   const [tasks, setTasks] = useState<Test[]>([]);
+  const tasksRef = useRef<Test[]>([]);
   const [showPlanEditor, setShowPlanEditor] = useState(false);
   const [taskScrollOffset, setTaskScrollOffset] = useState(0);
   const [commandHandler] = useState(() => new CommandHandler(explorBot));
@@ -148,11 +149,13 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
     const subscribeToPlan = (plan: NonNullable<ReturnType<typeof explorBot.getCurrentPlan>>) => {
       if (unsubscribeRef.current) unsubscribeRef.current();
       planRef.current = plan;
-      setTasks([...plan.tests]);
+      tasksRef.current = [...plan.tests];
+      setTasks(tasksRef.current);
       setTaskScrollOffset(0);
       let lastInProgressIdx = -1;
       unsubscribeRef.current = plan.onTestsChange((updatedTests) => {
-        setTasks([...updatedTests]);
+        tasksRef.current = [...updatedTests];
+        setTasks(tasksRef.current);
         const inProgressIdx = updatedTests.findIndex((t) => t.status === 'in_progress' && t.enabled);
         if (inProgressIdx >= 0 && inProgressIdx !== lastInProgressIdx) {
           lastInProgressIdx = inProgressIdx;
@@ -168,6 +171,11 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       const currentPlan = explorBot.getCurrentPlan();
       if (currentPlan && currentPlan !== planRef.current) {
         subscribeToPlan(currentPlan);
+      } else if (!currentPlan && planRef.current) {
+        if (unsubscribeRef.current) unsubscribeRef.current();
+        planRef.current = undefined;
+        tasksRef.current = [];
+        setTasks([]);
       }
     }, 2000);
 
@@ -178,11 +186,6 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   }, [explorBot]);
 
   useInput((input, key) => {
-    if (key.ctrl && input === 't') {
-      setShowSessionTimer((prev) => !prev);
-      return;
-    }
-
     if (key.escape) {
       if (!showInput) {
         executionController.interrupt();
@@ -190,16 +193,21 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       return;
     }
 
-    if (key.ctrl && input === 'c') {
-      explorBot.stop().then(() => {
-        process.exit(0);
-      });
-      return;
-    }
-
-    if (key.ctrl && input === 'e' && tasks.length > 0) {
-      setShowPlanEditor(true);
-      return;
+    if (key.ctrl) {
+      if (input === 'c') {
+        explorBot.stop().then(() => {
+          process.exit(0);
+        });
+        return;
+      }
+      if (input === 't') {
+        setShowSessionTimer((prev) => !prev);
+        return;
+      }
+      if (input === 'e' && tasksRef.current.length > 0) {
+        setShowPlanEditor(true);
+        return;
+      }
     }
 
     if (!showInput && !showPlanEditor) {
@@ -229,7 +237,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       const isCommand = trimmed.startsWith('/') || trimmed.startsWith('I.');
 
       if (trimmed.toLowerCase() === '/plan:edit') {
-        if (tasks.length > 0) setShowPlanEditor(true);
+        if (tasksRef.current.length > 0) setShowPlanEditor(true);
         return;
       }
 
@@ -237,7 +245,16 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         setInterruptPrompt(null);
         setShowInput(false);
         interruptResolveRef.current = null;
-        await commandHandler.executeCommand(trimmed);
+        executionController.startExecution();
+        try {
+          await commandHandler.executeCommand(trimmed);
+        } catch (error: any) {
+          if (error?.name === 'AbortError') {
+            tag('info').log('Operation cancelled');
+          } else {
+            throw error;
+          }
+        }
         setShowInput(true);
         return;
       }
@@ -258,10 +275,19 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       }
 
       setShowInput(false);
-      await commandHandler.executeCommand(trimmed);
+      executionController.startExecution();
+      try {
+        await commandHandler.executeCommand(trimmed);
+      } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          tag('info').log('Operation cancelled');
+        } else {
+          throw error;
+        }
+      }
       setShowInput(true);
     },
-    [commandHandler, tasks.length]
+    [commandHandler]
   );
 
   const handleCommandStart = useCallback(() => {
@@ -278,6 +304,8 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       <Box flexDirection="column" flexGrow={1}>
         <LogPane verboseMode={explorBot.getOptions()?.verbose || false} />
       </Box>
+
+      {showPlanEditor && <PlanEditor tasks={tasks} onClose={() => setShowPlanEditor(false)} isActive={showPlanEditor} />}
 
       <Box height={3} flexDirection="row" justifyContent="space-between" alignItems="center" paddingX={1}>
         <ActivityPane isInputVisible={showInput} />
@@ -308,7 +336,6 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         )}
         <Autocomplete />
       </Box>
-      {showPlanEditor && <PlanEditor tasks={tasks} onClose={() => setShowPlanEditor(false)} isActive={showPlanEditor} />}
     </Box>
   );
 }

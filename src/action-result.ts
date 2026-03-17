@@ -70,6 +70,7 @@ export class ActionResult implements ActionResultData {
   private _lastExtractedHtml: string | undefined = undefined;
   notes: any;
   public links: Link[] = [];
+  public verifications?: Record<string, boolean>;
 
   constructor(data: ActionResultData) {
     this.id = data.id;
@@ -81,6 +82,7 @@ export class ActionResult implements ActionResultData {
     this.browserLogs = data.browserLogs ?? [];
     this.iframeSnapshots = data.iframeSnapshots ?? [];
     this.notes = data.notes ?? [];
+    this.verifications = data.verifications;
 
     // Set readonly properties
     if (data.screenshotFile !== undefined) {
@@ -193,6 +195,11 @@ export class ActionResult implements ActionResultData {
     if (!this.h4 && extracted.h4) this.h4 = extracted.h4;
 
     this._lastExtractedHtml = html;
+  }
+
+  addVerification(assertion: string, passed: boolean): void {
+    this.verifications ??= {};
+    this.verifications[assertion] = passed;
   }
 
   isSameUrl(state: WebPageState): boolean {

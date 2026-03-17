@@ -45,6 +45,11 @@ const PlanEditor: React.FC<PlanEditorProps> = ({ tasks, onClose, isActive }) => 
         setEnabledMap(tasks.map(() => false));
         return;
       }
+      if (key.delete && tasks[cursorIndex]?.plan) {
+        tasks[cursorIndex].plan.removeTest(tasks[cursorIndex]);
+        setCursorIndex((prev) => Math.min(prev, tasks.length - 2));
+        return;
+      }
       if (key.return) {
         for (let i = 0; i < tasks.length; i++) {
           tasks[i].enabled = enabledMap[i];
@@ -67,23 +72,39 @@ const PlanEditor: React.FC<PlanEditorProps> = ({ tasks, onClose, isActive }) => 
   const visibleSlice = tasks.slice(scrollStart, scrollEnd);
 
   return (
-    <Box position="absolute" top={0} left={0} width="100%" flexDirection="column" paddingX={2} paddingY={1} backgroundColor="#1a1a2e">
+    <Box flexDirection="column" paddingX={2} paddingY={1}>
       <Box marginBottom={1}>
         <Text color="cyan" bold>
           Edit Plan
         </Text>
         <Text color="dim"> — </Text>
+        <Text color="dim">(</Text>
         <Text bold>↑↓</Text>
+        <Text color="dim">)</Text>
         <Text color="dim"> navigate </Text>
+        <Text color="dim">(</Text>
         <Text bold>Space</Text>
+        <Text color="dim">)</Text>
         <Text color="dim"> toggle </Text>
+        <Text color="dim">(</Text>
         <Text bold>a</Text>
+        <Text color="dim">)</Text>
         <Text color="dim"> all </Text>
+        <Text color="dim">(</Text>
         <Text bold>n</Text>
+        <Text color="dim">)</Text>
         <Text color="dim"> none </Text>
+        <Text color="dim">(</Text>
+        <Text bold>Del</Text>
+        <Text color="dim">)</Text>
+        <Text color="dim"> remove </Text>
+        <Text color="dim">(</Text>
         <Text bold>Enter</Text>
+        <Text color="dim">)</Text>
         <Text color="dim"> confirm </Text>
+        <Text color="dim">(</Text>
         <Text bold>Esc</Text>
+        <Text color="dim">)</Text>
         <Text color="dim"> cancel</Text>
       </Box>
 

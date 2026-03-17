@@ -47,6 +47,7 @@ export interface WebPageState {
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
   links?: Link[];
+  verifications?: Record<string, boolean>;
 }
 
 export interface StateTransition {

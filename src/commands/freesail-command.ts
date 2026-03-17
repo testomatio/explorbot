@@ -3,6 +3,7 @@ import { Researcher } from '../ai/researcher.js';
 import { tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import { BaseCommand } from './base-command.js';
+import { ExploreCommand } from './explore-command.js';
 
 export class FreesailCommand extends BaseCommand {
   name = 'freesail';
@@ -28,8 +29,7 @@ export class FreesailCommand extends BaseCommand {
         if (cachedPlan?.tests.some((t) => t.result)) {
           tag('info').log(`Page already tested (${cachedPlan.tests.length} tests in plan), skipping exploration`);
         } else {
-          await this.explorBot.explore();
-          await this.explorBot.explore();
+          await new ExploreCommand(this.explorBot).execute('');
         }
 
         const navigator = this.explorBot.agentNavigator();

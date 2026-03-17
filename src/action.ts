@@ -50,6 +50,22 @@ class Action {
     return this.capturePageState({ includeScreenshot: true });
   }
 
+  async saveScreenshot(): Promise<string | undefined> {
+    const currentState = this.stateManager.getCurrentState();
+    if (currentState?.screenshotFile) return currentState.screenshotFile;
+
+    const stateHash = currentState?.hash || 'screenshot';
+    const filename = `${stateHash}_${Date.now()}.png`;
+    try {
+      await (this.actor as any).saveScreenshot(filename);
+      if (currentState) currentState.screenshotFile = filename;
+      return filename;
+    } catch (err) {
+      debugLog('Screenshot failed:', err);
+      return undefined;
+    }
+  }
+
   async capturePageState({ includeScreenshot = false }: { includeScreenshot?: boolean } = {}): Promise<ActionResult> {
     const currentState = this.stateManager.getCurrentState();
     const stateHash = currentState?.hash || 'screenshot';

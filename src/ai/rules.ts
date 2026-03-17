@@ -21,6 +21,14 @@ export const locatorRule = dedent`
      Example: '//form[@id="login"]//input[@name="email"]'
   </locator_priority>
 
+  <context_simplification>
+  When container is available from UI map sections:
+  - Text + container is simplest and PREFERRED: I.click('Save', '.modal')
+  - ARIA + container for disambiguation: I.click({"role":"button","text":"Save"}, '.modal')
+  - ALWAYS use context parameter unless locator is XPath or unique ID
+  - No need for complex ARIA when container narrows scope sufficiently
+  </context_simplification>
+
   <disambiguation>
   When multiple elements could match the request, select based on intent:
   1. Match the context of recent actions - if filling a form, use elements in that same form
@@ -200,6 +208,8 @@ export const multipleLocatorRule = dedent`
   - Full path to body (lowest priority): //html/body//div[@id="app"]//form//input[@name="email"]
   </short_vs_long_locators>
 
+  When container is available, text + container is simplest and preferred over complex locators.
+
   Start with short locators (ARIA/Text first), then progressively try longer CSS/XPath.
   Long locators with full path are lowest priority but should still be tried as fallback.
   
@@ -273,21 +283,27 @@ export const focusedElementRule = dedent`
 
 export const sectionContextRule = dedent`
   <section_context_rule>
-  When clicking elements, use the section Context Locator for disambiguation:
+  Context parameter is DEFAULT for all interactions. ALWAYS use container from UI map sections unless locator is XPath or unique ID.
 
   1. Identify which section contains the target element
   2. Get the Context Locator from that section in the UI map
+  3. Pass container as the last parameter
 
-  Use context as second parameter in I.click():
-  - I.click('Submit', '.modal-content')  // element in Focus Section
-  - I.click({"role":"button","text":"Save"}, '.main')  // element in Main Section
-  - I.click('Home', 'nav')  // element in Navigation
+  Context works with ALL interaction methods:
+  - I.click('Submit', '.modal-content')
+  - I.click({"role":"button","text":"Save"}, '.main')
+  - I.fillField('Username', 'admin', '.login-form')
+  - I.selectOption('Country', 'USA', '.address-section')
+  - I.attachFile('input[type="file"]', '/path/file', '.upload-section')
+  - I.seeInField('Email', 'john@example.com', '.profile-form')
+  - I.dontSeeInField('Password', '', '.login-form')
 
   For CSS locators - prepend section context:
   - I.click('.main button.submit')  // instead of I.click('button.submit')
-  - I.click('[role="dialog"] .close-btn')  // for modal elements
 
-  This prevents clicking wrong elements when same text/locator appears in multiple sections.
+  Only omit context when:
+  - Locator is XPath (already includes path context)
+  - Locator is a unique ID (#specific-element)
   </section_context_rule>
 
   <unexpected_popup_rule>
@@ -388,9 +404,10 @@ export const actionRule = dedent`
 
   fills the field with the given value
 
-  I.fillField(<locator>, <text>)
+  I.fillField(<locator>, <text>, <context>)
 
   <example>
+    I.fillField('Username', 'John', '.login-form'); // fills Username inside .login-form
     I.fillField('Username', 'John'); // fills the field located by name or placeholder or label "Username" with the text "John"
     I.fillField('//user/input', 'John'); // fills the field located by XPath "//user/input" with the text "John"
   </example>
@@ -452,22 +469,24 @@ export const actionRule = dedent`
 
   In case you deal with select elements, use selectOption instead of fillField.
 
+  I.selectOption(<locator>, <value>, <context>)
+
   <example>
+    I.selectOption('Choose Plan', 'Monthly', '.billing-section'); // select inside section
     I.selectOption('Choose Plan', 'Monthly'); // select by label
     I.selectOption('subscription', 'Monthly'); // match option by text
-    I.selectOption('subscription', '0'); // or by value
     I.selectOption('//form/select[@name=account]','Premium');
     I.selectOption('form select[name=account]', 'Premium');
-    I.selectOption({css: 'form select[name=account]'}, 'Premium');
   </example>
 
   ### I.attachFile
 
   Attaches a file to a file input element.
 
-  I.attachFile(<locator>, <filePath>)
+  I.attachFile(<locator>, <filePath>, <context>)
 
   <example>
+    I.attachFile('input[type="file"]', '/absolute/path/to/sample.png', '.upload-section')
     I.attachFile('input[type="file"]', '/absolute/path/to/sample.png')
     I.attachFile('#file-upload', '/absolute/path/to/sample.pdf')
   </example>
@@ -513,6 +532,20 @@ export const verificationActionRule = dedent`
     I.seeElement('.success-message');
   </example>
 
+  ### I.seeInField
+
+  I.seeInField(<locator>, <value>, <context>)
+
+  Checks that an input field contains the expected value.
+  Use for verifying text inputs, search fields, textareas, and any form field values.
+  This is the ONLY reliable way to check input values — do NOT use I.seeElement with [value=...] or I.seeInSource.
+
+  <example>
+    I.seeInField('Email', 'john@example.com', '.profile-form');
+    I.seeInField('Search', 'nightwatch');
+    I.seeInField('input[name="search"]', 'test query');
+  </example>
+
   ### I.seeInTitle
 
   I.seeInTitle(<text>)
@@ -556,6 +589,18 @@ export const verificationActionRule = dedent`
     I.dontSeeElement({"role":"alert","text":"Error"});
   </example>
 
+  ### I.dontSeeInField
+
+  I.dontSeeInField(<locator>, <value>, <context>)
+
+  Checks that an input field does NOT contain the specified value.
+
+  <example>
+    I.dontSeeInField('Password', '', '.login-form');
+    I.dontSeeInField('Search', 'old query');
+    I.dontSeeInField('Email', '');
+  </example>
+
   ### I.dontSeeInSource
 
   I.dontSeeInSource(<text>)
@@ -570,6 +615,8 @@ export const verificationActionRule = dedent`
   Be strict in assertions to avoid false positives.
   Prefer I.seeElement() with ARIA locators - most reliable.
   I.see() and I.dontSee() MUST include context parameter.
+  For input field values, ALWAYS use I.seeInField() — never check value via CSS attribute selectors or I.seeInSource.
+  Prefer text locators (label, name, placeholder) for form fields: I.seeInField('Search', 'value') over I.seeInField('input[name="search"]', 'value').
   Only use locators that exist in the provided HTML or ARIA snapshot.
   Verify exact conditions, not approximate matches.
   </verification_rules>

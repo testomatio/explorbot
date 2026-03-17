@@ -40,7 +40,7 @@ const SAMPLE_FILES: Record<string, string> = {
 };
 
 export class Tester extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'type', 'select', 'pressKey', 'form'];
+  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
   emoji = '🧪';
   private explorer: Explorer;
   private provider: Provider;
@@ -125,6 +125,13 @@ export class Tester extends TaskAgent implements Agent {
     const initialPrompt = await this.buildTestPrompt(task, initialState);
     conversation.addUserText(initialPrompt);
 
+    if (this.pilot) {
+      const plan = await this.pilot.planTest(task, initialState);
+      if (plan) {
+        conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
+      }
+    }
+
     debugLog('Starting test execution with tools');
 
     task.start();
@@ -182,11 +189,15 @@ export class Tester extends TaskAgent implements Agent {
         conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
 
         if (iteration > 1) {
+          const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
           let nextStep = '';
           nextStep += await this.reinjectContextIfNeeded(iteration, currentState);
           nextStep += await this.prepareInstructionsForNextStep(task);
 
-          if (iteration % this.progressCheckInterval === 0 && this.pilot) {
+          if (isNewPage && this.pilot) {
+            const guidance = await this.pilot.reviewNewPage(task, currentState);
+            if (guidance) nextStep += `\n\n${guidance}`;
+          } else if (iteration % this.progressCheckInterval === 0 && this.pilot) {
             const guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
             if (guidance) nextStep += `\n\n${guidance}`;
           }
@@ -223,20 +234,16 @@ export class Tester extends TaskAgent implements Agent {
           task.addNote(message, wasSuccessful ? TestResult.PASSED : TestResult.FAILED);
           if (wasSuccessful) {
             conversation.addUserText(dedent`
-                Assertion "${message}" succesfully passed!
+                Assertion "${message}" successfully passed!
 
-                Proceed with next steps and call actions to achieve the scenario goal or expected outcomes.
+                If the scenario goal is achieved, call finish() now to complete the test.
+                If there are remaining expected outcomes that require NEW ACTIONS, proceed with those actions.
+                Do not call verify() again until you perform a new action that changes the page.
 
                 Expected outcomes to check:
                 ${task.expected.map((expectation) => `- ${expectation}`).join('\n')}
-                Do not perform the same assertion again
             `);
           }
-        }
-
-        if (this.pilot?.hasPendingVerdict) {
-          const reviewState = this.getCurrentState();
-          await this.pilot.reviewVerdict(task, reviewState, conversation);
         }
 
         if (task.hasFinished) {
@@ -484,13 +491,13 @@ export class Tester extends TaskAgent implements Agent {
     }
     tag('info').log(`Finished: ${task.scenario}`);
 
-    tag('multiline').log(task.getPrintableNotes());
+    tag('multiline').log(task.getPrintableNotes().join('\n'));
     if (task.isSuccessful) {
-      tag('success').log(`Test ${task.scenario} successful`);
+      tag('success').log(`Successful test: ${task.scenario}`);
     } else if (task.hasFailed) {
-      tag('error').log(`Test ${task.scenario} failed`);
+      tag('error').log(`Failed test: ${task.scenario}`);
     } else {
-      tag('warning').log(`Test ${task.scenario} completed`);
+      tag('warning').log(`Test with no result: ${task.scenario}`);
     }
   }
 
@@ -527,14 +534,15 @@ export class Tester extends TaskAgent implements Agent {
     <rules>
     - Refer to UI Map from <page_ui_map> to understand the page structure and its main elements
     - Use only elements that exist in the provided ARIA tree or HTML, <page_aria> and <page_html>
-    - Use click() for buttons, links, and clickable elements ONLY - do NOT include I.type() commands in click() tool
-    - Use type() for text input (with optional locator parameter) - call separately if you need to click after typing
+    - Use click() for buttons, links, and clickable elements ONLY - do NOT include I.fillField() or I.type() commands in click() tool
+    - Use form() for text input (I.fillField, I.type), dropdown selection (I.selectOption), file uploads (I.attachFile), and multi-step form interactions
     - Use pressKey() for pressing special keys (Enter, Escape, Tab, Arrow keys) or key combinations with modifiers (Ctrl+A, Shift+Delete, etc.)
-    - Use form() for forms with multiple inputs or when you need to combine type + click in one operation
     - Use container CSS locators from <page_ui_map> to interact with elements inside sections
     - Systematically use record({ notes: ["..."] }) to write your findings, planned actions, observations, etc.
     - Call record({ notes: ["..."], status: "success" }) when you see success/info message on a page or when expected outcome is achieved
     - Call record({ notes: ["..."], status: "fail" }) when an expected outcome cannot be achieved or has failed or you see error/alert/warning message on a page
+    - NEVER call record(status: "success") if your last verify() or see() call FAILED. A failed check means the outcome is NOT confirmed — use record(status: "fail") instead, or retry with a different approach.
+    - Use finish() to complete the test, not record(). record() is for intermediate notes.
     - Call finish() when all goals are achieved and verified
     - ONLY call stop() if the scenario itself is completely irrelevant to this page and no expectations can be achieved
     - Use reset() to navigate back to the initial page if needed. Do not call it if you are already on the initial page
@@ -783,7 +791,8 @@ export class Tester extends TaskAgent implements Agent {
           task.addNote(message, TestResult.FAILED);
 
           if (this.pilot) {
-            this.pilot.requestVerdict({ type: 'stop' });
+            const currentState = this.getCurrentState();
+            await this.pilot.reviewStop(task, currentState, conversation);
           } else {
             task.finish(TestResult.FAILED);
           }
@@ -823,33 +832,11 @@ export class Tester extends TaskAgent implements Agent {
           verify: z.string().describe('Specific assertion to verify on the page before finishing (e.g., "New item appears in the list", "Success message is displayed")'),
         }),
         execute: async ({ verify }) => {
-          const state = this.explorer.getStateManager().getCurrentState();
-          if (!state) {
-            return {
-              success: false,
-              action: 'finish',
-              message: 'No page state available for verification',
-            };
-          }
-
-          const actionResult = ActionResult.fromState(state);
-          const result = await this.navigator.verifyState(verify, actionResult);
-
-          if (!result.verified) {
-            task.addNote(`Verification failed: ${verify}`, TestResult.FAILED);
-            return {
-              success: false,
-              action: 'finish',
-              message: `Verification failed: ${verify}`,
-              suggestion: 'Check if the expected state is actually present on the page. Use see() to analyze current state.',
-            };
-          }
-
-          tag('success').log(`Test finished - verified: ${verify}`);
-          task.addNote(`Verified: ${verify}`, TestResult.PASSED);
+          task.addNote(`Finish requested: ${verify}`);
 
           if (this.pilot) {
-            this.pilot.requestVerdict({ type: 'finish', verify, verified: true, verifyDetails: `${result.successfulCodes.length} of ${result.totalAttempted} assertions passed` });
+            const currentState = this.getCurrentState();
+            await this.pilot.reviewFinish(task, currentState, conversation, this.navigator);
           } else {
             task.addNote('Test finished successfully', TestResult.PASSED);
             task.finish(TestResult.PASSED);
@@ -858,7 +845,7 @@ export class Tester extends TaskAgent implements Agent {
           return {
             success: true,
             action: 'finish',
-            message: `Test finished successfully. Verified: ${verify}`,
+            message: `Finish requested: ${verify}`,
           };
         },
       }),
@@ -902,8 +889,10 @@ export class Tester extends TaskAgent implements Agent {
             mappedStatus = TestResult.FAILED;
           }
 
+          const screenshotFile = this.explorer.getStateManager().getCurrentState()?.screenshotFile;
+
           for (const noteText of input.notes) {
-            task.addNote(noteText, mappedStatus);
+            task.addNote(noteText, mappedStatus, screenshotFile);
 
             if (input.status === 'success') {
               tag('success').log(`✔ ${noteText}`);
@@ -914,8 +903,8 @@ export class Tester extends TaskAgent implements Agent {
 
           if (input.status !== null && task.isComplete()) {
             if (this.pilot) {
-              const verdictType = task.hasAchievedAny() ? 'finish' : 'stop';
-              this.pilot.requestVerdict({ type: verdictType });
+              const currentState = this.getCurrentState();
+              await this.pilot.reviewCompletion(task, currentState, conversation);
             } else {
               const hasPassed = task.hasAchievedAny();
               task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);

@@ -1,4 +1,5 @@
 import dedent from 'dedent';
+import type { Page } from 'playwright';
 import type { ActionResult } from '../../action-result.js';
 import type Explorer from '../../explorer.ts';
 import { tag } from '../../utils/logger.js';
@@ -9,24 +10,87 @@ import { type Constructor, debugLog } from './mixin.ts';
 import { parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
 
+export async function visuallyAnnotateContainers(page: Page, containers: Array<{ css: string; label: string }>): Promise<number> {
+  return page.evaluate((ctrs: Array<{ css: string; label: string }>) => {
+    const containerColors = ['#9b59b6', '#16a085', '#c0392b', '#2980b9'];
+    const drawnContainers: Array<{ label: string; color: string }> = [];
+    for (let i = 0; i < ctrs.length; i++) {
+      let el: Element | null;
+      try {
+        el = document.querySelector(ctrs[i].css);
+      } catch {
+        continue;
+      }
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+
+      const color = containerColors[i % containerColors.length];
+      const box = document.createElement('div');
+      box.setAttribute('data-explorbot-annotation', 'true');
+      box.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${rect.top + window.scrollY}px;width:${rect.width}px;height:${rect.height}px;border:1px dashed ${color};z-index:99998;pointer-events:none;`;
+      document.body.appendChild(box);
+      drawnContainers.push({ label: ctrs[i].label, color });
+    }
+
+    if (drawnContainers.length > 0) {
+      const legend = document.createElement('div');
+      legend.setAttribute('data-explorbot-annotation', 'true');
+      legend.style.cssText = 'position:fixed;right:10px;bottom:10px;background:white;color:black;font-size:14px;font-family:sans-serif;padding:10px 14px;z-index:100001;pointer-events:none;border:3px solid #e63946;border-radius:6px;line-height:22px;';
+      const title = '<div style="font-weight:bold;margin-bottom:4px;color:#e63946;">Legend</div>';
+      const items = drawnContainers.map((c) => `<div><span style="display:inline-block;width:24px;border-top:3px dashed ${c.color};margin-right:8px;vertical-align:middle;"></span>${c.label}</div>`).join('');
+      legend.innerHTML = title + items;
+      document.body.appendChild(legend);
+    }
+
+    const colors = ['#e63946', '#2a9d8f', '#e9c46a', '#264653', '#f4a261', '#7b2cbf', '#0077b6', '#d62828'];
+    const elements = document.querySelectorAll('[data-explorbot-eidx]');
+    let count = 0;
+    for (const el of elements) {
+      const eidx = el.getAttribute('data-explorbot-eidx');
+      if (!eidx) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+
+      const color = colors[count % colors.length];
+
+      const box = document.createElement('div');
+      box.setAttribute('data-explorbot-annotation', 'true');
+      box.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${rect.top + window.scrollY}px;width:${rect.width}px;height:${rect.height}px;border:2px solid ${color};z-index:99999;pointer-events:none;`;
+
+      const label = document.createElement('div');
+      label.textContent = eidx;
+      label.style.cssText = `position:absolute;top:-14px;right:-2px;background:${color};color:white;font-size:10px;padding:0 3px;line-height:14px;font-family:monospace;z-index:100000;pointer-events:none;`;
+      box.appendChild(label);
+
+      document.body.appendChild(box);
+      count++;
+    }
+    return count;
+  }, containers);
+}
+
 export function WithCoordinates<T extends Constructor>(Base: T) {
   return class extends Base {
     declare explorer: Explorer;
     declare provider: Provider;
     declare actionResult: ActionResult | undefined;
 
-    analyzeScreenshotForVisualProps(): Promise<Map<number, { coordinates: string | null; color: string | null; icon: string | null }>> {
+    analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult> {
       return this._analyzeScreenshotForVisualProps();
     }
 
-    private async _analyzeScreenshotForVisualProps(): Promise<Map<number, { coordinates: string | null; color: string | null; icon: string | null }>> {
-      const result = new Map<number, { coordinates: string | null; color: string | null; icon: string | null }>();
-      if (!this.actionResult) return result;
+    async visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number> {
+      return visuallyAnnotateContainers(this.explorer.playwrightHelper.page, opts?.containers || []);
+    }
 
-      const screenshotData = this._getScreenshotForVisual();
-      if (!screenshotData) return result;
+    private async _analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult> {
+      const elements = new Map<number, { coordinates: string | null; color: string | null; icon: string | null }>();
+      const emptyResult: VisualAnalysisResult = { elements, pagePurpose: null, primaryActions: null };
+      if (!this.actionResult) return emptyResult;
 
-      const { image } = screenshotData;
+      const image = this.actionResult.screenshot;
+      if (!image) return emptyResult;
       tag('step').log('Analyzing annotated screenshot for visual properties');
 
       const prompt = dedent`
@@ -44,7 +108,15 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
         - Icon: one-word icon description (plus, x, trash, pencil, gear, search, hamburger, ellipsis, chevron, star, check, filter), otherwise -
 
         Ignore the legend block and dashed container borders.
-        Return ONLY the markdown table. No explanations.
+
+        Then add:
+
+        ## Page Purpose
+        One sentence: what this page is for from the user's perspective.
+
+        ## Primary Actions
+        List 3-5 most prominent interactive elements (accent buttons, CTAs, main form actions).
+        Format: - eidx N: action description
       `;
 
       try {
@@ -55,25 +127,33 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
           const eidx = Number.parseInt(row.eidx, 10);
           if (Number.isNaN(eidx)) continue;
           const val = (v: string) => (v && v !== '-' ? v : null);
-          result.set(eidx, {
+          elements.set(eidx, {
             coordinates: val(row.Coordinates),
             color: val(row.Color),
             icon: val(row.Icon),
           });
         }
+
+        const pagePurposeSection = mdq(text).query('section2("Page Purpose")').text().trim();
+        const primaryActionsSection = mdq(text).query('section2("Primary Actions")').text().trim();
+
+        debugLog(`Parsed visual props for ${elements.size} elements`);
+        return {
+          elements,
+          pagePurpose: pagePurposeSection || null,
+          primaryActions: primaryActionsSection
+            ? primaryActionsSection
+                .split('\n')
+                .filter((l) => l.trim().startsWith('-'))
+                .map((l) => l.trim())
+            : null,
+        };
       } catch (err) {
         debugLog(`Screenshot visual analysis failed: ${err instanceof Error ? err.message : err}`);
       }
 
-      debugLog(`Parsed visual props for ${result.size} elements`);
-      return result;
-    }
-
-    private _getScreenshotForVisual(): { image: Buffer } | null {
-      if (!this.actionResult) return null;
-      const image = this.actionResult.screenshot;
-      if (!image) return null;
-      return { image };
+      debugLog(`Parsed visual props for ${elements.size} elements`);
+      return emptyResult;
     }
 
     async mergeVisualData(result: ResearchResult, visualData: Map<number, { coordinates: string | null; color: string | null; icon: string | null }>): Promise<void> {
@@ -133,8 +213,15 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
   };
 }
 
+export interface VisualAnalysisResult {
+  elements: Map<number, { coordinates: string | null; color: string | null; icon: string | null }>;
+  pagePurpose: string | null;
+  primaryActions: string[] | null;
+}
+
 export interface CoordinateMethods {
-  analyzeScreenshotForVisualProps(): Promise<Map<number, { coordinates: string | null; color: string | null; icon: string | null }>>;
+  analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult>;
   mergeVisualData(result: ResearchResult, visualData: Map<number, { coordinates: string | null; color: string | null; icon: string | null }>): Promise<void>;
   backfillCoordinates(result: ResearchResult): Promise<void>;
+  visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number>;
 }

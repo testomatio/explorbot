@@ -41,13 +41,13 @@ const TaskPane: React.FC<TaskPaneProps> = React.memo(({ tasks, scrollOffset = 0 
     };
   }, [tasks]);
 
-  const completedCount = tasks.filter((t) => t.hasFinished).length;
-  const currentIteration = Math.max(0, ...tasks.map((t) => t.planIteration));
   const visibleTasks = tasks.filter((t) => t.enabled);
+  const completedCount = visibleTasks.filter((t) => t.hasFinished).length;
 
-  const aboveCount = scrollOffset;
-  const belowCount = Math.max(0, visibleTasks.length - scrollOffset - WINDOW_SIZE);
-  const windowTasks = visibleTasks.slice(scrollOffset, scrollOffset + WINDOW_SIZE);
+  const clampedOffset = Math.min(scrollOffset, Math.max(0, visibleTasks.length - WINDOW_SIZE));
+  const aboveCount = clampedOffset;
+  const belowCount = Math.max(0, visibleTasks.length - clampedOffset - WINDOW_SIZE);
+  const windowTasks = visibleTasks.slice(clampedOffset, clampedOffset + WINDOW_SIZE);
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -60,7 +60,7 @@ const TaskPane: React.FC<TaskPaneProps> = React.memo(({ tasks, scrollOffset = 0 
             </Text>
             <Text color="dim"> edit </Text>
             <Text color="dim">
-              [{completedCount}/{tasks.length}]
+              [{completedCount}/{visibleTasks.length}]
             </Text>
           </Box>
         </Box>

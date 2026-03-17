@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import path, { dirname, join, resolve } from 'node:path';
+import { parseEnv } from 'node:util';
 import { log } from './utils/logger.js';
 
 interface PlaywrightConfig {
@@ -18,6 +19,7 @@ interface PlaywrightConfig {
     args?: string[];
   };
   timeout?: number;
+  waitForAction?: number;
   waitForNavigation?: 'load' | 'domcontentloaded' | 'networkidle';
   waitForTimeout?: number;
   ignoreHTTPSErrors?: boolean;
@@ -80,11 +82,15 @@ interface NavigatorAgentConfig extends AgentConfig {
   maxAttempts?: number;
 }
 
+interface PlannerAgentConfig extends AgentConfig {
+  styles?: Record<string, string>;
+}
+
 interface AgentsConfig {
   tester?: TesterAgentConfig;
   navigator?: NavigatorAgentConfig;
   researcher?: ResearcherAgentConfig;
-  planner?: AgentConfig;
+  planner?: PlannerAgentConfig;
   pilot?: PilotAgentConfig;
   'experience-compactor'?: AgentConfig;
   captain?: AgentConfig;
@@ -165,7 +171,7 @@ const config: ExplorbotConfig = {
   },
 };
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig, NavigatorAgentConfig, Hook, HookConfig, HooksConfig, PlaywrightHook, CodeceptJSHook, HookPatternMap };
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig, NavigatorAgentConfig, PlannerAgentConfig, Hook, HookConfig, HooksConfig, PlaywrightHook, CodeceptJSHook, HookPatternMap };
 
 export class ConfigParser {
   private static instance: ConfigParser;
@@ -173,6 +179,12 @@ export class ConfigParser {
   private configPath: string | null = null;
 
   private constructor() {}
+
+  public static loadEnv(filePath: string): void {
+    const resolved = resolve(filePath);
+    if (!existsSync(resolved)) return;
+    Object.assign(process.env, parseEnv(readFileSync(resolved, 'utf8')));
+  }
 
   public static getInstance(): ConfigParser {
     if (!ConfigParser.instance) {
@@ -194,12 +206,13 @@ export class ConfigParser {
       process.env.INITIAL_CWD = process.cwd();
     }
 
-    // If path is provided, change to that directory and load .env
     const originalCwd = process.cwd();
     if (options?.path) {
       const resolvedWorkingPath = resolve(options.path);
       process.chdir(resolvedWorkingPath);
     }
+
+    ConfigParser.loadEnv('.env');
 
     try {
       const resolvedPath = options?.config || this.findConfigFile();

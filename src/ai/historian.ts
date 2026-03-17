@@ -7,6 +7,7 @@ import { ConfigParser } from '../config.ts';
 import { ExperienceTracker, type SessionExperienceEntry, type SessionStep } from '../experience-tracker.ts';
 import { type Reporter, type ReporterStep } from '../reporter.ts';
 import { type Plan, type Task, Test } from '../test-plan.ts';
+import { condenseAriaDiff } from '../utils/aria.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
@@ -73,7 +74,7 @@ export class Historian {
   }
 
   private async extractSteps(toolExecutions: ToolExecution[]): Promise<SessionStep[]> {
-    const stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null }> = [];
+    const stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null; urlChanged: boolean }> = [];
 
     for (const exec of toolExecutions) {
       if (!CODECEPT_TOOLS.includes(exec.toolName as any)) continue;
@@ -82,6 +83,7 @@ export class Historian {
 
       const message = exec.input?.explanation || exec.input?.assertion || exec.input?.note || `Executed ${exec.toolName}`;
       const ariaDiff = exec.output?.pageDiff?.ariaChanges || null;
+      const urlChanged = exec.output?.pageDiff?.urlChanged || false;
 
       const step: SessionStep = {
         message,
@@ -90,7 +92,7 @@ export class Historian {
         code: this.stripComments(exec.output.code),
       };
 
-      stepsWithDiffs.push({ step, ariaDiff });
+      stepsWithDiffs.push({ step, ariaDiff, urlChanged });
     }
 
     await this.analyzeDiscoveries(stepsWithDiffs);
@@ -98,7 +100,7 @@ export class Historian {
     return stepsWithDiffs.map((s) => s.step);
   }
 
-  private async analyzeDiscoveries(stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null }>): Promise<void> {
+  private async analyzeDiscoveries(stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null; urlChanged: boolean }>): Promise<void> {
     if (!stepsWithDiffs.some((s) => s.ariaDiff)) return;
 
     const prompt = this.buildDiscoveryPrompt(stepsWithDiffs);
@@ -112,23 +114,27 @@ export class Historian {
       ),
     });
 
-    const response = await this.provider.generateObject(
-      [
-        { role: 'system', content: 'Analyze test execution steps and identify valuable UI discoveries. Return multiple discoveries per step when multiple new elements appear. Return no discoveries for steps with no meaningful changes.' },
-        { role: 'user', content: prompt },
-      ],
-      schema
-    );
+    try {
+      const response = await this.provider.generateObject(
+        [
+          { role: 'system', content: 'Analyze test execution steps and identify valuable UI discoveries. Return multiple discoveries per step when multiple new elements appear. Return no discoveries for steps with no meaningful changes.' },
+          { role: 'user', content: prompt },
+        ],
+        schema
+      );
 
-    for (const { stepNumber, discoveries } of response?.object?.discoveries || []) {
-      const stepIndex = stepNumber - 1;
-      if (!stepsWithDiffs[stepIndex]) continue;
-      if (discoveries.length === 0) continue;
-      stepsWithDiffs[stepIndex].step.discovery = discoveries.join('\n');
+      for (const { stepNumber, discoveries } of response?.object?.discoveries || []) {
+        const stepIndex = stepNumber - 1;
+        if (!stepsWithDiffs[stepIndex]) continue;
+        if (discoveries.length === 0) continue;
+        stepsWithDiffs[stepIndex].step.discovery = discoveries.join('\n');
+      }
+    } catch (error: any) {
+      debugLog('Failed to analyze discoveries: %s', error.message);
     }
   }
 
-  private buildDiscoveryPrompt(stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null }>): string {
+  private buildDiscoveryPrompt(stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null; urlChanged: boolean }>): string {
     let prompt = dedent`
       Review these test steps and their ARIA diffs. Identify new UI elements that appeared
       which could be valuable for:
@@ -144,10 +150,10 @@ export class Historian {
     `;
 
     for (let i = 0; i < stepsWithDiffs.length; i++) {
-      const { step, ariaDiff } = stepsWithDiffs[i];
+      const { step, ariaDiff, urlChanged } = stepsWithDiffs[i];
       prompt += `\n\nStep ${i + 1}: ${step.message}`;
       if (ariaDiff) {
-        prompt += `\n${ariaDiff}`;
+        prompt += `\n${condenseAriaDiff(ariaDiff, urlChanged)}`;
       }
     }
 

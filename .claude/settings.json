@@ -6,5 +6,8 @@
   },
   "enabledPlugins": {
     "crafting-effective-readmes@agent-toolkit": true
+  },
+  "permissions": {
+    "allow": ["Bash(cat:*)"]
   }
 }

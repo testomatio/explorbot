@@ -1,4 +1,5 @@
 import { BaseCommand } from './base-command.js';
+import { ExploreCommand } from './explore-command.js';
 
 export class StartCommand extends BaseCommand {
   name = 'start';
@@ -7,6 +8,6 @@ export class StartCommand extends BaseCommand {
   suggestions = ['/navigate <page> - to go to another page', '/research - to analyze', '/plan <feature> - to plan testing'];
 
   async execute(args: string): Promise<void> {
-    await this.explorBot.explore(args.trim() || undefined);
+    await new ExploreCommand(this.explorBot).execute(args);
   }
 }

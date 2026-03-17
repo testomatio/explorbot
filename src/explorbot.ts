@@ -1,7 +1,5 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import figureSet from 'figures';
-import { Agent } from './ai/agent.ts';
 import { Bosun } from './ai/bosun.ts';
 import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
@@ -9,7 +7,7 @@ import { Historian } from './ai/historian.ts';
 import { Navigator } from './ai/navigator.ts';
 import { Pilot } from './ai/pilot.ts';
 import { Planner } from './ai/planner.ts';
-import { AIProvider, AiError } from './ai/provider.ts';
+import { AIProvider } from './ai/provider.ts';
 import { Quartermaster } from './ai/quartermaster.ts';
 import { Researcher } from './ai/researcher.ts';
 import { Tester } from './ai/tester.ts';
@@ -20,7 +18,7 @@ import Explorer from './explorer.ts';
 import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
 import { Plan } from './test-plan.ts';
-import { log, setVerboseMode, tag } from './utils/logger.ts';
+import { setVerboseMode, tag } from './utils/logger.ts';
 import { sanitizeFilename } from './utils/strings.ts';
 
 export interface ExplorBotOptions {
@@ -248,18 +246,20 @@ export class ExplorBot {
   }
 
   clearPlan(): void {
+    const url = this.currentPlan?.url;
     this.currentPlan = undefined;
     delete this.agents.planner;
+    Planner.clearCache(url);
   }
 
-  async plan(feature?: string, opts: { fresh?: boolean } = {}) {
+  async plan(feature?: string, opts: { fresh?: boolean; style?: string; extend?: Plan } = {}) {
     this.planFeature = feature;
 
     if (opts.fresh) {
       this.clearPlan();
     }
 
-    if (this.currentPlan?.url) {
+    if (!opts.extend && this.currentPlan?.url) {
       const currentUrl = this.explorer?.getStateManager().getCurrentState()?.url;
       if (currentUrl && currentUrl !== this.currentPlan.url) {
         tag('info').log(`Different page detected, clearing previous plan`);
@@ -280,7 +280,7 @@ export class ExplorBot {
     if (this.currentPlan) {
       planner.setPlan(this.currentPlan);
     }
-    this.currentPlan = await planner.plan(feature);
+    this.currentPlan = await planner.plan(feature, opts.style, opts.extend);
 
     const savedPath = this.savePlan();
     if (savedPath) {
@@ -342,36 +342,7 @@ export class ExplorBot {
     return this.currentPlan;
   }
 
-  async explore(feature?: string) {
-    await this.plan(feature, { fresh: true });
-    const tester = this.agentTester();
-    for (const test of this.currentPlan.getPendingTests()) {
-      await tester.test(test);
-    }
-    tag('info').log(`Completed testing: ${this.currentPlan.title}} ${this.currentPlan.url}`);
-
-    for (const test of this.currentPlan.tests) {
-      if (test.isSuccessful) {
-        tag('success').log(`Test: ${test.scenario}`);
-      } else {
-        tag('error').log(`Test: ${test.scenario}`);
-      }
-      test.getPrintableNotes().forEach((note) => {
-        tag('step').log(note);
-      });
-    }
-    tag('info').log(`${figureSet.tick} ${this.currentPlan.tests.length} tests completed`);
-  }
-
-  async testOneByOne() {
-    const tester = this.agentTester();
-    if (!this.currentPlan) {
-      throw new Error('No plan found');
-    }
-    const test = this.currentPlan.getPendingTests()[0];
-    if (!test) {
-      throw new Error('No test to test');
-    }
-    await tester.test(test);
+  setCurrentPlan(plan?: Plan): void {
+    this.currentPlan = plan;
   }
 }
