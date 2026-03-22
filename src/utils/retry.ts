@@ -19,7 +19,7 @@ const defaultOptions: Required<RetryOptions> = {
   maxDelay: 10000,
   backoffMultiplier: 2,
   retryCondition: (error: Error) => {
-    return error.constructor.name === 'AI_APICallError' || error.message.includes('schema') || error.message.includes('timeout') || error.message.includes('network') || error.message.includes('rate limit');
+    return error.constructor.name === 'AI_APICallError' || error.message.includes('schema') || error.message.includes('timeout') || error.message.includes('network') || error.message.includes('rate limit') || error.message.includes('Failed to generate JSON');
   },
 };
 
@@ -37,7 +37,7 @@ export async function withRetry<T>(operation: () => Promise<T>, options: RetryOp
       if (attempt > 1) debugLog(`Attempt ${attempt}/${config.maxAttempts}`);
       return await operation();
     } catch (error) {
-      lastError = error as Error;
+      lastError = error instanceof Error ? error : new Error(String(error));
 
       if (lastError.name === 'AbortError') {
         throw lastError;

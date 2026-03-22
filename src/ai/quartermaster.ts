@@ -44,14 +44,14 @@ interface AnalysisReport {
 
 export class Quartermaster {
   private provider: Provider;
-  private model?: string;
+  private model?: any;
   private outputDir: string;
   private pageAnalyses: Map<string, PageAnalysis> = new Map();
   private unsubscribe: (() => void) | null = null;
   private playwrightHelper: any = null;
   private pendingAnalyses: Promise<void>[] = [];
 
-  constructor(provider: Provider, options?: { model?: string }) {
+  constructor(provider: Provider, options?: { model?: any }) {
     this.provider = provider;
     this.model = options?.model;
 

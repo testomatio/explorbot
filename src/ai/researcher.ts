@@ -119,7 +119,6 @@ export class Researcher extends ResearcherBase implements Agent {
       tag('info').log(`Researching ${state.url} to understand the context...`);
       setActivity(`${this.emoji} Researching...`, 'action');
 
-      const isOnCurrentState = this.actionResult!.getStateHash() === this.stateManager.getCurrentState()?.hash;
       await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
@@ -141,6 +140,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       debugLog('Researching web page:', this.actionResult!.url);
 
+      const isOnCurrentState = this.actionResult!.getStateHash() === this.stateManager.getCurrentState()?.hash;
       this.hasScreenshotToAnalyze = screenshot && this.provider.hasVision() && isOnCurrentState;
 
       const conversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
@@ -334,6 +334,7 @@ export class Researcher extends ResearcherBase implements Agent {
       - Every element MUST have a CSS selector. NEVER leave CSS as "-".
       - For icon-only buttons with empty aria-label, set ARIA to "-" but ALWAYS provide CSS.
       - ARIA locator must be JSON with role and text keys (NOT "name").
+      - Note elements likely to have hover interactions (elements with title attribute, aria-describedby, navigation menu items with submenus) and mark them with "(hover)" in the UI map.
       </rules>
 
       ${generalLocatorRuleText}
@@ -361,7 +362,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       > Container: '.container-css-selector'
 
-      | Element | ARIA | CSS |
+      | Element | ARIA | CSS | eidx |
       </section_format>
       <section_example>
       ## Focus Section
@@ -370,12 +371,12 @@ export class Researcher extends ResearcherBase implements Agent {
 
       > Container: '[role="dialog"]'
 
-      | Element | ARIA | CSS |
-      | 'Email' | { role: 'textbox', text: 'Email' } | 'input[name="email"]' |
-      | 'Password' | { role: 'textbox', text: 'Password' } | 'input[name="password"]' |
-      | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button[type="submit"]' |
-      | 'Cancel' | { role: 'button', text: 'Cancel' } | 'button.cancel-btn' |
-      | 'Close' | { role: 'button', text: 'Close' } | '.close-btn' |
+      | Element | ARIA | CSS | eidx |
+      | 'Email' | { role: 'textbox', text: 'Email' } | 'input[name="email"]' | 3 |
+      | 'Password' | { role: 'textbox', text: 'Password' } | 'input[name="password"]' | 4 |
+      | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button[type="submit"]' | 5 |
+      | 'Cancel' | { role: 'button', text: 'Cancel' } | 'button.cancel-btn' | 6 |
+      | 'Close' | { role: 'button', text: 'Close' } | '.close-btn' | 7 |
       </section_example>
 
       <css_selector_rules>
@@ -689,7 +690,7 @@ export class Researcher extends ResearcherBase implements Agent {
     return this.extractBrief(researchText);
   }
 
-  private extractBrief(researchText: string): string {
+  extractBrief(researchText: string): string {
     return mdq(researchText)
       .query('section2')
       .each()
@@ -724,7 +725,7 @@ export class Researcher extends ResearcherBase implements Agent {
     const beforeAria = this.stateManager.getCurrentState()?.ariaSnapshot || null;
     const action = this.explorer.createAction();
 
-    await action.execute(`I.click('//body')`);
+    await action.execute(`I.clickXY(0, 0)`);
     if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null)) return;
 
     await action.execute(`I.pressKey('Escape')`);

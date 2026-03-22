@@ -24,6 +24,7 @@ import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
 import { throttle } from './utils/throttle.ts';
 
 const debugLog = createDebug('explorbot:action');
+const FATAL_BROWSER_ERRORS = /Frame was detached|Target closed|Execution context was destroyed|Protocol error|Session closed/i;
 
 class Action {
   private actor: CodeceptJS.I;
@@ -67,76 +68,87 @@ class Action {
   }
 
   async capturePageState({ includeScreenshot = false }: { includeScreenshot?: boolean } = {}): Promise<ActionResult> {
-    const currentState = this.stateManager.getCurrentState();
-    const stateHash = currentState?.hash || 'screenshot';
-    const timestamp = Date.now();
-
-    const [url, html, title, browserLogs] = await Promise.all([(this.actor as any).grabCurrentUrl?.(), (this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
-
-    let screenshotFile: string | undefined = undefined;
-
-    if (includeScreenshot) {
-      const filename = `${stateHash}_${timestamp}.png`;
-      screenshotFile = await (this.actor as any)
-        .saveScreenshot(filename)
-        .then(() => filename)
-        .catch((err: Error) => {
-          debugLog('Screenshot failed, continuing without it:', err);
-          return undefined;
-        });
-    }
-
-    // Save HTML to file
-    const htmlFile = `${stateHash}_${timestamp}.html`;
-    const htmlPath = join('output', htmlFile);
-    fs.writeFileSync(htmlPath, html, 'utf8');
-
-    debugLog('Captured page state');
-    // Save logs to file
-    const logFile = `${stateHash}_${timestamp}.log`;
-    const logPath = join('output', logFile);
-    const formattedLogs = browserLogs.map((log: any) => {
-      const logTimestamp = new Date().toISOString();
-      const level = (log.type || log.level || 'LOG').toUpperCase();
-      const message = log.text || log.message || String(log);
-      return `[${logTimestamp}] ${level}: ${message}`;
-    });
-    fs.writeFileSync(logPath, `${formattedLogs.join('\n')}\n`, 'utf8');
-
-    debugLog('Page:', { url, title, size: html.length, html: html.substring(0, 100) });
-
-    // Capture iframe HTML snapshots
-    const iframeSnapshots = await this.captureIframeSnapshots(html);
-
-    let ariaSnapshot: string | null = null;
-    let ariaSnapshotFile: string | undefined = undefined;
-
     try {
+      const currentState = this.stateManager.getCurrentState();
+      const stateHash = currentState?.hash || 'screenshot';
+      const timestamp = Date.now();
       const page = this.playwrightHelper.page;
-      const serializedSnapshot = await page.locator('body').ariaSnapshot();
-      const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
-      const ariaPath = join('output', ariaFileName);
-      fs.writeFileSync(ariaPath, serializedSnapshot, 'utf8');
-      ariaSnapshot = serializedSnapshot;
-      ariaSnapshotFile = ariaFileName;
-    } catch (err) {
-      debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
-    }
+      const frame = this.playwrightHelper.frame;
+      const [html, title, browserLogs] = await Promise.all([(this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
+      const url = page?.url() || (await (this.actor as any).grabCurrentUrl?.());
 
-    const result = new ActionResult({
-      html,
-      title,
-      url,
-      browserLogs,
-      htmlFile,
-      logFile,
-      screenshotFile,
-      iframeSnapshots,
-      ariaSnapshot,
-      ariaSnapshotFile,
-    });
-    this.stateManager.updateState(result);
-    return result;
+      let screenshotFile: string | undefined = undefined;
+
+      if (includeScreenshot) {
+        const filename = `${stateHash}_${timestamp}.png`;
+        screenshotFile = await (this.actor as any)
+          .saveScreenshot(filename)
+          .then(() => filename)
+          .catch((err: Error) => {
+            debugLog('Screenshot failed, continuing without it:', err);
+            return undefined;
+          });
+      }
+
+      // Save HTML to file
+      const htmlFile = `${stateHash}_${timestamp}.html`;
+      const htmlPath = join('output', htmlFile);
+      fs.writeFileSync(htmlPath, html, 'utf8');
+
+      debugLog('Captured page state');
+      // Save logs to file
+      const logFile = `${stateHash}_${timestamp}.log`;
+      const logPath = join('output', logFile);
+      const formattedLogs = browserLogs.map((log: any) => {
+        const logTimestamp = new Date().toISOString();
+        const level = (log.type || log.level || 'LOG').toUpperCase();
+        const message = log.text || log.message || String(log);
+        return `[${logTimestamp}] ${level}: ${message}`;
+      });
+      fs.writeFileSync(logPath, `${formattedLogs.join('\n')}\n`, 'utf8');
+
+      debugLog('Page:', { url, title, size: html.length, html: html.substring(0, 100) });
+
+      // Capture iframe HTML snapshots
+      const iframeSnapshots = await this.captureIframeSnapshots(html);
+
+      let ariaSnapshot: string | null = null;
+      let ariaSnapshotFile: string | undefined = undefined;
+
+      try {
+        const page = this.playwrightHelper.page;
+        const serializedSnapshot = await page.locator('body').ariaSnapshot();
+        const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
+        const ariaPath = join('output', ariaFileName);
+        fs.writeFileSync(ariaPath, serializedSnapshot, 'utf8');
+        ariaSnapshot = serializedSnapshot;
+        ariaSnapshotFile = ariaFileName;
+      } catch (err) {
+        debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
+      }
+
+      const result = new ActionResult({
+        html,
+        title,
+        url,
+        browserLogs,
+        htmlFile,
+        logFile,
+        screenshotFile,
+        iframeSnapshots,
+        ariaSnapshot,
+        ariaSnapshotFile,
+        iframeURL: frame?.url?.() || undefined,
+      });
+      this.stateManager.updateState(result);
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (FATAL_BROWSER_ERRORS.test(msg)) throw err;
+      debugLog('capturePageState failed with non-fatal error:', msg);
+      const url = this.playwrightHelper.page?.url?.() || '';
+      return new ActionResult({ url, error: msg });
+    }
   }
 
   /**
@@ -332,7 +344,7 @@ class Action {
       this.lastError = error as Error;
 
       if (error && typeof error === 'object') {
-        const errorObj = error as { fetchDetails?: () => Promise<string> };
+        const errorObj = error as { fetchDetails?: () => Promise<void> };
         if (typeof errorObj.fetchDetails === 'function') {
           await errorObj.fetchDetails();
         }

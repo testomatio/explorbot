@@ -232,13 +232,23 @@ class SpanDestination implements LogDestination {
 class ReactDestination implements LogDestination {
   private logPane: ((entry: LogEntry) => void) | null = null;
   private pendingLogs: TaggedLogEntry[] = [];
+  private debugMode = false;
 
   isEnabled(): boolean {
     return this.logPane !== null;
   }
 
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+  }
+
+  isDebugMode(): boolean {
+    return this.debugMode;
+  }
+
   private shouldWrite(entry: TaggedLogEntry): boolean {
     if (entry.type !== 'debug') return true;
+    if (this.debugMode) return true;
     if (!entry.namespace) return true;
     return debugFilter.isEnabled(entry.namespace);
   }
@@ -281,6 +291,31 @@ class ReactDestination implements LogDestination {
   }
 }
 
+class CaptainDestination implements LogDestination {
+  private entries: TaggedLogEntry[] = [];
+  private capturing = false;
+
+  isEnabled(): boolean {
+    return this.capturing;
+  }
+
+  startCapture(): void {
+    this.entries = [];
+    this.capturing = true;
+  }
+
+  stopCapture(): string[] {
+    this.capturing = false;
+    const logs = this.entries.filter((e) => e.type !== 'debug' && e.type !== 'html' && e.type !== 'multiline').map((e) => `[${e.type}] ${e.content}`);
+    this.entries = [];
+    return logs;
+  }
+
+  write(entry: TaggedLogEntry): void {
+    this.entries.push(entry);
+  }
+}
+
 class Logger {
   private static instance: Logger;
   private console = new ConsoleDestination();
@@ -288,6 +323,7 @@ class Logger {
   private file = new FileDestination();
   private span = new SpanDestination();
   public react = new ReactDestination();
+  public captain = new CaptainDestination();
   private truncateTags: string[] = ['page_html'];
 
   private constructor() {}
@@ -302,6 +338,14 @@ class Logger {
   setVerboseMode(enabled: boolean): void {
     this.debugDestination.setVerboseMode(enabled);
     this.console.setVerboseMode(enabled);
+  }
+
+  setDebugMode(enabled: boolean): void {
+    this.react.setDebugMode(enabled);
+  }
+
+  isDebugMode(): boolean {
+    return this.react.isDebugMode();
   }
 
   setPreserveConsoleLogs(enabled: boolean): void {
@@ -401,6 +445,7 @@ class Logger {
 
     if (this.file.isEnabled()) this.file.write(entry);
     if (this.span.isEnabled()) this.span.write(entry);
+    if (this.captain.isEnabled()) this.captain.write(entry);
     if (process.env.INK_RUNNING) {
       this.react.write(entry);
     } else if (this.console.isEnabled()) {
@@ -466,9 +511,13 @@ export const getMethodsOfObject = (obj: any): string[] => {
   return methods.sort();
 };
 
+export const startLogCapture = () => logger.captain.startCapture();
+export const stopLogCapture = () => logger.captain.stopCapture();
 export const setVerboseMode = (enabled: boolean) => logger.setVerboseMode(enabled);
 export const setPreserveConsoleLogs = (enabled: boolean) => logger.setPreserveConsoleLogs(enabled);
 export const isVerboseMode = () => logger.isVerboseMode();
+export const setDebugMode = (enabled: boolean) => logger.setDebugMode(enabled);
+export const isDebugMode = () => logger.isDebugMode();
 
 export const registerLogPane = (addLog: (entry: LogEntry) => void) => logger.registerLogPane(addLog);
 export const unregisterLogPane = (addLog: (entry: LogEntry) => void) => logger.unregisterLogPane(addLog);

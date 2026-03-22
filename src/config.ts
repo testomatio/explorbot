@@ -54,7 +54,7 @@ interface HooksConfig {
 }
 
 interface AgentConfig extends HooksConfig {
-  model?: string;
+  model?: any;
   enabled?: boolean;
   systemPrompt?: string;
   providerOptions?: Record<string, any>;
@@ -99,8 +99,7 @@ interface AgentsConfig {
 }
 
 interface AIConfig {
-  provider: any;
-  model: string;
+  model: any;
   apiKey?: string;
   config?: Record<string, any>;
   langfuse?: {
@@ -115,8 +114,8 @@ interface AIConfig {
     timeout: number;
   };
   vision?: boolean;
-  visionModel?: string;
-  agenticModel?: string;
+  visionModel?: any;
+  agenticModel?: any;
   maxAttempts?: number;
   retryDelay?: number;
   agents?: AgentsConfig;
@@ -166,8 +165,7 @@ const config: ExplorbotConfig = {
   },
 
   ai: {
-    provider: null,
-    model: 'gpt-4o',
+    model: null as any,
   },
 };
 
@@ -292,8 +290,7 @@ export class ConfigParser {
         show: false,
       },
       ai: {
-        provider: () => ({ model: 'test' }),
-        model: 'test-model',
+        model: { modelId: 'test-model', provider: 'test' },
         config: {},
         vision: false,
       },
@@ -360,7 +357,7 @@ export class ConfigParser {
   }
 
   public validateConfig(config: ExplorbotConfig): void {
-    const requiredFields = ['playwright.url', 'ai.provider', 'ai.model'];
+    const requiredFields = ['playwright.url', 'ai.model'];
 
     for (const field of requiredFields) {
       const value = this.getNestedValue(config, field);
@@ -404,7 +401,7 @@ export class ConfigParser {
     const result = { ...target };
 
     for (const key in source) {
-      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && source[key].constructor === Object) {
         result[key] = this.deepMerge(result[key] || {}, source[key]);
       } else {
         result[key] = source[key];

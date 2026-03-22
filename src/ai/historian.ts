@@ -2,10 +2,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import dedent from 'dedent';
 import { z } from 'zod';
-import type { ActionResult } from '../action-result.ts';
+import { ActionResult } from '../action-result.ts';
 import { ConfigParser } from '../config.ts';
 import { ExperienceTracker, type SessionExperienceEntry, type SessionStep } from '../experience-tracker.ts';
 import { type Reporter, type ReporterStep } from '../reporter.ts';
+import type { StateManager } from '../state-manager.ts';
 import { type Plan, type Task, Test } from '../test-plan.ts';
 import { condenseAriaDiff } from '../utils/aria.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -19,11 +20,13 @@ export class Historian {
   private provider: Provider;
   private experienceTracker: ExperienceTracker;
   private reporter?: Reporter;
+  private stateManager?: StateManager;
 
-  constructor(provider: Provider, experienceTracker?: ExperienceTracker, reporter?: Reporter) {
+  constructor(provider: Provider, experienceTracker?: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager) {
     this.provider = provider;
     this.experienceTracker = experienceTracker || new ExperienceTracker();
     this.reporter = reporter;
+    this.stateManager = stateManager;
   }
 
   async saveSession(task: Task, initialState: ActionResult, conversation: Conversation): Promise<void> {
@@ -41,6 +44,7 @@ export class Historian {
 
     const toolExecutions = conversation.getToolExecutions();
     const steps = await this.extractSteps(toolExecutions);
+    await this.detectRetryPatterns(toolExecutions, initialState);
     const relatedUrls = this.extractVisitedUrls(toolExecutions, initialState.url || '');
 
     const entry: SessionExperienceEntry = {
@@ -81,7 +85,7 @@ export class Historian {
       if (!exec.output?.code) continue;
       if (!exec.wasSuccessful) continue;
 
-      const message = exec.input?.explanation || exec.input?.assertion || exec.input?.note || `Executed ${exec.toolName}`;
+      const message = this.getExecutionLabel(exec, `Executed ${exec.toolName}`);
       const ariaDiff = exec.output?.pageDiff?.ariaChanges || null;
       const urlChanged = exec.output?.pageDiff?.urlChanged || false;
 
@@ -98,6 +102,98 @@ export class Historian {
     await this.analyzeDiscoveries(stepsWithDiffs);
 
     return stepsWithDiffs.map((s) => s.step);
+  }
+
+  private async detectRetryPatterns(toolExecutions: ToolExecution[], initialState: ActionResult): Promise<void> {
+    if (!this.experienceTracker || !this.stateManager) return;
+
+    const failedByTool = new Map<string, ToolExecution[]>();
+    const candidates: Array<{ failed: ToolExecution[]; success: ToolExecution }> = [];
+
+    for (const exec of toolExecutions) {
+      if (!CODECEPT_TOOLS.includes(exec.toolName as any)) continue;
+      if (!exec.output?.code) continue;
+
+      if (!exec.wasSuccessful) {
+        const bucket = failedByTool.get(exec.toolName) || [];
+        bucket.push(exec);
+        failedByTool.set(exec.toolName, bucket);
+        continue;
+      }
+
+      const failed = failedByTool.get(exec.toolName);
+      if (failed?.length) {
+        candidates.push({ failed: [...failed], success: exec });
+        failedByTool.set(exec.toolName, []);
+      }
+    }
+
+    if (candidates.length === 0) return;
+
+    const prompt = dedent`
+      Analyze these retry patterns where a tool failed multiple times before succeeding.
+      For each candidate, determine which failed attempts were trying to do the same thing as the success.
+
+      ${candidates
+        .map(
+          (c, i) => dedent`
+        Candidate ${i}:
+        Failed attempts:
+        ${c.failed.map((f, j) => `  ${j}: ${this.getExecutionLabel(f, f.toolName)} → code: ${f.output?.code}`).join('\n')}
+        Succeeded:
+          ${this.getExecutionLabel(c.success, c.success.toolName)} → code: ${c.success.output.code}
+      `
+        )
+        .join('\n\n')}
+
+      For each candidate where failures share the same intent as the success:
+      - candidateIndex: index of the candidate
+      - failedIndices: which failed attempts share the same intent
+      - intent: business-focused description of what was being done
+      - explanation: actionable tip explaining which element works and what to avoid
+    `;
+
+    const schema = z.object({
+      retryPatterns: z.array(
+        z.object({
+          candidateIndex: z.number(),
+          failedIndices: z.array(z.number()),
+          intent: z.string(),
+          explanation: z.string(),
+        })
+      ),
+    });
+
+    try {
+      const response = await this.provider.generateObject(
+        [
+          { role: 'system', content: 'Analyze retry patterns in web testing tool executions. Identify when failed attempts share the same intent as a successful one.' },
+          { role: 'user', content: prompt },
+        ],
+        schema
+      );
+
+      for (const pattern of response?.object?.retryPatterns || []) {
+        const candidate = candidates[pattern.candidateIndex];
+        if (!candidate) continue;
+
+        const url = candidate.success.output?.pageDiff?.currentUrl;
+        let state: ActionResult = initialState;
+
+        if (url && url !== initialState.url) {
+          const transition = this.stateManager.getLastVisitToPath(url);
+          if (transition) {
+            state = ActionResult.fromState(transition.toState);
+          }
+        }
+
+        await this.experienceTracker.saveSuccessfulResolution(state, pattern.intent, candidate.success.output.code, pattern.explanation);
+      }
+
+      debugLog('Detected %d retry patterns', response?.object?.retryPatterns?.length || 0);
+    } catch (error: any) {
+      debugLog('Failed to detect retry patterns: %s', error.message);
+    }
   }
 
   private async analyzeDiscoveries(stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null; urlChanged: boolean }>): Promise<void> {
@@ -221,7 +317,7 @@ export class Historian {
     lines.push(`Scenario('${this.escapeString(scenario)}', ({ I }) => {`);
 
     for (const exec of successfulSteps) {
-      const explanation = exec.input?.explanation || exec.input?.assertion || exec.input?.note;
+      const explanation = this.getExecutionLabel(exec);
       if (explanation) {
         lines.push('');
         lines.push(`  Section('${this.escapeString(explanation)}');`);
@@ -290,6 +386,10 @@ export class Historian {
 
     tag('substep').log(`Saved plan tests to: ${filePath}`);
     return filePath;
+  }
+
+  private getExecutionLabel(exec: ToolExecution, fallback?: string): string {
+    return exec.input?.explanation || exec.input?.assertion || exec.input?.note || fallback || '';
   }
 
   private escapeString(str: string): string {

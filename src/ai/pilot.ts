@@ -14,6 +14,9 @@ import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { isInteractive } from './task-agent.ts';
 
+const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
+const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
+
 export class Pilot implements Agent {
   emoji = '🧭';
   private provider: Provider;
@@ -42,12 +45,12 @@ export class Pilot implements Agent {
     return this.conversation.getLastMessage() || null;
   }
 
-  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator: Navigator): Promise<void> {
-    await this.reviewDecision('finish', task, currentState, testerConversation, navigator);
-  }
-
   async reviewStop(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
     await this.reviewDecision('stop', task, currentState, testerConversation);
+  }
+
+  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator: Navigator): Promise<void> {
+    await this.reviewDecision('finish', task, currentState, testerConversation, navigator);
   }
 
   async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
@@ -57,48 +60,43 @@ export class Pilot implements Agent {
 
   async finalReview(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
     if (task.hasFinished) return;
-    await this.reviewDecision('stop', task, currentState, testerConversation);
-  }
-
-  private collectVerifications(): Array<{ url: string; verifications: Record<string, boolean> }> {
-    const history = this.explorer.getStateManager().getStateHistory();
-    return history.map((t) => ({ url: t.toState.url, verifications: t.toState.verifications })).filter((s): s is { url: string; verifications: Record<string, boolean> } => !!s.verifications && Object.keys(s.verifications).length > 0);
+    await this.reviewCompletion(task, currentState, testerConversation);
   }
 
   private async reviewDecision(type: 'finish' | 'stop', task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<void> {
     tag('substep').log(`🧭 Pilot reviewing ${type} verdict...`);
 
-    const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
-    const actionsContext = this.formatActions(toolCalls);
+    const sessionLog = this.formatSessionLog(testerConversation);
     const stateContext = this.buildStateContext(currentState);
     const notes = task.notesToString() || 'No notes recorded.';
 
-    const allVerifications = this.collectVerifications();
-    const verifyInfo =
-      allVerifications.length > 0
-        ? `Verifications:\n${allVerifications
-            .map(
-              (v) =>
-                `  ${v.url}: ${Object.entries(v.verifications)
-                  .map(([a, p]) => `${p ? 'PASS' : 'FAIL'}: ${a}`)
-                  .join(', ')}`
-            )
-            .join('\n')}`
-        : '';
+    let visualAnalysis = '';
+    if (this.provider.hasVision()) {
+      try {
+        const action = this.explorer.createAction();
+        const screenshotState = await action.caputrePageWithScreenshot();
+        if (screenshotState.screenshot) {
+          visualAnalysis = (await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Describe current page state relevant to: ${task.scenario}`)) || '';
+        }
+      } catch {
+        // vision not available, continue without
+      }
+    }
 
     const schema = z.object({
-      decision: z.enum(['pass', 'fail', 'continue']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going'),
+      decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant to the current page/application'),
       reason: z.string().describe('Brief explanation (1-2 sentences). For continue: explain why rejected and suggest alternatives.'),
       requestVerification: z.string().optional().describe('If evidence is insufficient, provide an assertion to verify on the page'),
     });
 
     const userContent = dedent`
       Tester wants to ${type} the test.
-      ${verifyInfo}
 
       <state>
       ${stateContext}
       </state>
+
+      ${visualAnalysis ? `<visual_analysis>\n${visualAnalysis}\n</visual_analysis>` : ''}
 
       ${this.formatExpectations(task)}
 
@@ -106,13 +104,14 @@ export class Pilot implements Agent {
       ${notes}
       </notes>
 
-      <recent_actions>
-      ${actionsContext || 'None'}
-      </recent_actions>
+      <session_log>
+      ${sessionLog || 'No actions recorded'}
+      </session_log>
 
       Decide:
       - "pass" ONLY if the SCENARIO GOAL is fully accomplished (not just milestones)
-      - "fail" if the scenario clearly failed or is incompatible with the page
+      - "fail" if the scenario was attempted but failed
+      - "skipped" if the scenario is irrelevant or inapplicable to the current page/application (e.g., testing feature that doesn't exist, page has no matching UI elements, scenario prerequisites are impossible)
       - "continue" if tester hasn't completed the scenario goal yet — even if milestones were checked
       - If evidence is mixed, but final state indicates goal completion, choose "pass"
       - If evidence is mixed and final state is unclear, prefer "continue" over "fail"
@@ -162,6 +161,12 @@ export class Pilot implements Agent {
         return;
       }
 
+      if (result.decision === 'skipped') {
+        task.addNote(`Pilot: skipped — ${result.reason}`, TestResult.SKIPPED);
+        task.finish(TestResult.SKIPPED);
+        return;
+      }
+
       task.addNote(`Pilot: continue — ${result.reason}`);
       testerConversation.addUserText(`Pilot rejected ${type}: ${result.reason}`);
     } catch (error: any) {
@@ -186,12 +191,15 @@ export class Pilot implements Agent {
       Do not fail only because a specific click failed, no toast appeared, or navigation was different than expected.
       Intermediate failures are diagnostic, not decisive, when end state confirms success.
       Expected results are helpful milestones but they DO NOT override the scenario goal.
+      NEVER fail a test because an expected result (milestone) was not met when the scenario goal itself IS accomplished.
+      The SCENARIO TITLE defines what must happen. If the title says "Create X and verify it appears" and X was created and appears — that's a PASS, even if some milestone about icons/status/styling was not met.
       If the scenario says "Create X", then X must be created — opening a form or navigating to /new URL is NOT enough. There must be evidence that the item now exists: visible on page, redirected to the item's page, or a success/confirmation message appeared.
       If the scenario says "Delete X", then X must be deleted — clicking delete button is not enough. There must be evidence the item is gone.
       If the scenario says "Edit X", then changes must be saved — opening an edit form is NOT enough.
       For edit/update/rename scenarios, persisted updated value visible in list/detail view is valid save evidence, even without toast and even if page redirected away from edit view.
       DO NOT trust Tester's self-assessment in notes (like "scenario goal achieved"). Verify against actual actions and state.
-      EVIDENCE SOURCES: verify(), see(), and ariaDiff in recent_actions are all evidence. They may disagree — analyze all of them together to reach your decision. No single source automatically overrides the others. Tester's self-assessment in record() notes is the least reliable — always cross-check against actual evidence.
+      EVIDENCE SOURCES: verify(), see(), visual_analysis, and action results in session_log are all evidence. They may disagree — analyze all of them together to reach your decision. No single source automatically overrides the others. Visual analysis from screenshots is strong evidence for UI state (active tabs, visible items, counts, colors). Tester's self-assessment in record() notes is the least reliable — always cross-check against actual evidence.
+      SESSION LOG shows ALL actions grouped by URL. If the scenario requires changing data (edit/create/delete) but all form/click actions FAILED, the test cannot pass — even if a verify() found matching content that existed before the test.
 
       TRIVIAL VERIFICATION CHECK: If the verify assertion describes a state that was ALREADY TRUE before the test started (e.g., page content visible on initial load, items that existed before any action), the verification proves nothing. Reject with "continue" and explain that verification must prove the scenario ACTION changed something.
 
@@ -199,6 +207,10 @@ export class Pilot implements Agent {
       Patterns: "without a name", "with invalid data", "empty field", "wrong password", "unauthorized", "duplicate".
       For negative tests, success means the system PREVENTED the action — error messages, validation, disabled buttons.
       Example: "Create X without a name" PASSES if X was NOT created and validation appeared.
+
+      SKIPPED TESTS: Choose "skipped" when the scenario is irrelevant or inapplicable to the current application.
+      Examples: the feature doesn't exist on the page, required UI elements are completely absent, the scenario prerequisites cannot be met.
+      Do NOT use "skipped" when the feature exists but the test just failed to interact with it — that's "fail" or "continue".
 
       ${this.buildDeletionScope(task)}
 
@@ -428,13 +440,74 @@ export class Pilot implements Agent {
     return parts.join('\n\n');
   }
 
-  private formatActions(toolCalls: any[]): string {
-    const ASSERTION_TOOLS = ['verify', 'see', 'research', 'context'];
+  private formatSessionLog(testerConversation: Conversation): string {
+    const executions = testerConversation.getToolExecutions().filter((t) => !META_TOOLS.includes(t.toolName));
+    const stateHistory = this.explorer.getStateManager().getStateHistory();
 
+    const initialUrl = stateHistory[0]?.toState?.url || '';
+    let currentUrl = initialUrl;
+
+    const groups = new Map<string, { title?: string; h1?: string; h3?: string; lines: string[] }>();
+
+    const ensureGroup = (url: string) => {
+      if (!groups.has(url)) {
+        const matchingState = stateHistory.find((t) => t.toState.url === url)?.toState;
+        groups.set(url, {
+          title: matchingState?.title,
+          h1: matchingState?.h1,
+          h3: matchingState?.h3,
+          lines: [],
+        });
+      }
+    };
+
+    ensureGroup(currentUrl);
+
+    for (const exec of executions) {
+      if (!CHECK_TOOLS.includes(exec.toolName) && exec.output?.url && exec.output.url !== currentUrl) {
+        currentUrl = exec.output.url;
+        ensureGroup(currentUrl);
+      }
+
+      const description = exec.input?.explanation || exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
+      const status = exec.wasSuccessful ? 'OK' : 'FAILED';
+      let line = `${exec.toolName} '${description}' -> ${status}`;
+
+      if (exec.toolName === 'verify') {
+        if (!exec.wasSuccessful && exec.output?.alreadyVerified) {
+          line = `${exec.toolName} '${description}' -> BLOCKED (already verified on this state)`;
+        } else if (exec.output?.code) {
+          line += `\n    code: ${exec.output.code}`;
+        }
+      }
+
+      const resultMessage = exec.output?.message || exec.output?.result;
+      if (resultMessage && (CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful)) {
+        line += `\n    result: ${resultMessage}`;
+      }
+
+      groups.get(currentUrl)!.lines.push(line);
+    }
+
+    const parts: string[] = [];
+    for (const [url, group] of groups) {
+      const header = [url];
+      if (group.title) header.push(`  title: ${group.title}`);
+      if (group.h1) header.push(`  h1: ${group.h1}`);
+      if (group.h3) header.push(`  h3: ${group.h3}`);
+      header.push('');
+      const lines = group.lines.map((l) => `  ${l}`);
+      parts.push([...header, ...lines].join('\n'));
+    }
+
+    return parts.join('\n\n');
+  }
+
+  private formatActions(toolCalls: any[]): string {
     return toolCalls
       .map((t) => {
         const status = t.wasSuccessful ? 'SUCCESS' : 'FAILED';
-        const kind = ASSERTION_TOOLS.includes(t.toolName) ? 'CHECK' : 'ACTION';
+        const kind = CHECK_TOOLS.includes(t.toolName) ? 'CHECK' : 'ACTION';
         const description = t.input?.explanation || t.input?.request || truncateJson(t.input);
         const resultMessage = t.output?.message || '';
         const errorDetail = t.output?.attempts?.find((a: any) => a.error)?.error;
@@ -510,6 +583,7 @@ export class Pilot implements Agent {
       - "modal: none" but Tester tries to interact with a modal → modal was closed or never opened. Instruct Tester to re-trigger the modal.
       - Actions succeed but ariaDiff is empty → action may have worked without visible DOM changes. Check result message before assuming failure.
       - Multiple elements matched (MultipleElementsFound) → use xpathCheck() to inspect the matched elements and determine which one is correct. Then instruct Tester with a precise locator or suggest visualClick() to click the right element by visual appearance.
+      - Tester navigated to a page unrelated to the scenario (e.g., settings instead of feature page) → use getVisitedStates() to check which pages were visited, then suggest back() to return to a relevant page, or reset() if multiple wrong navigations occurred. Do NOT try navigating back via breadcrumbs or links — SPA frameworks make manual back-navigation unreliable.
       - If diagnosis is unclear, ariaDiff is empty, and your previous advice didn't help → suggest Tester use see() to visually inspect the page. But ONLY as a last resort after other diagnostics failed.
 
       When Tester IS stuck finding an element, use xpathCheck() with COMBINED XPaths:
@@ -534,9 +608,11 @@ export class Pilot implements Agent {
       - research() — get UI map
       - xpathCheck(xpath) — find elements by XPath
       - visualClick(element) — coordinate-based click
+      - back() — return to previous page
+      - getVisitedStates() — list all visited pages (deduped by URL)
       - reset() — return to initial page
-      - finish(verify?) — complete test
       - stop(reason) — abort test
+      - finish(verify) — complete test successfully
       - record(notes) — document findings
 
       Response format:

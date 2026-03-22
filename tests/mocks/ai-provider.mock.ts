@@ -1,4 +1,4 @@
-import { MockLanguageModelV2 } from 'ai/test';
+import { MockLanguageModelV3 } from 'ai/test';
 
 export interface MockAIResponse {
   text?: string;
@@ -13,15 +13,27 @@ export interface MockAIResponse {
 export class MockAIProvider {
   private responses: MockAIResponse[] = [];
   private responseIndex = 0;
-  private model: MockLanguageModelV2;
+  private model: MockLanguageModelV3;
+  private shouldFail = false;
+  private failureCount = 0;
   public callHistory: string[] = [];
   public lastMessages: any[] = [];
 
   constructor() {
-    this.model = new MockLanguageModelV2({
-      generateTextResponse: async ({ prompt, messages }) => {
-        this.lastMessages = messages || [];
-        this.callHistory.push(JSON.stringify(messages || prompt));
+    this.model = new MockLanguageModelV3({
+      provider: 'test',
+      modelId: 'test-model',
+      doGenerate: async (params) => {
+        const messages = (params as any)?.messages || [];
+        this.lastMessages = messages;
+        this.callHistory.push(JSON.stringify(messages));
+
+        if (this.shouldFail && this.failureCount > 0) {
+          this.failureCount--;
+          const error = new Error('AI_APICallError: Simulated API error');
+          error.name = 'AI_APICallError';
+          throw error;
+        }
 
         const response = this.getNextResponse();
 
@@ -29,10 +41,8 @@ export class MockAIProvider {
           text: response.text || 'Mock AI response',
           toolCalls: response.toolCalls || [],
           finishReason: 'stop' as const,
-          usage: {
-            promptTokens: 10,
-            completionTokens: 20,
-          },
+          usage: { inputTokens: 10, outputTokens: 20 },
+          content: [{ type: 'text' as const, text: response.text || 'Mock AI response' }],
         };
       },
     });
@@ -45,6 +55,11 @@ export class MockAIProvider {
 
   addResponse(response: MockAIResponse) {
     this.responses.push(response);
+  }
+
+  setFailure(shouldFail: boolean, count = 1) {
+    this.shouldFail = shouldFail;
+    this.failureCount = count;
   }
 
   private getNextResponse(): MockAIResponse {
@@ -61,15 +76,13 @@ export class MockAIProvider {
     return this.model;
   }
 
-  getProvider() {
-    return () => this.model;
-  }
-
   reset() {
     this.responses = [];
     this.responseIndex = 0;
     this.callHistory = [];
     this.lastMessages = [];
+    this.shouldFail = false;
+    this.failureCount = 0;
   }
 
   getCallCount(): number {

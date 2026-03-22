@@ -4,7 +4,7 @@ import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
 import { WebPageState } from '../../state-manager.js';
 import { diffAriaSnapshots } from '../../utils/aria.ts';
-import { EXPANDABLE_ICON_DESCRIPTIONS, buildExpandableXPath } from '../../utils/expandable.ts';
+import { EXPANDABLE_ICON_DESCRIPTIONS, buildExpandableXPath, buildExpandableXPathInsideContainers } from '../../utils/expandable.ts';
 import { tag } from '../../utils/logger.js';
 import { findTableLineRange, parseSections } from '../../utils/markdown-parser.ts';
 import { mdq } from '../../utils/markdown-query.ts';
@@ -13,6 +13,8 @@ import type { Provider } from '../provider.js';
 import { type Constructor, debugLog } from './mixin.ts';
 import { extractContainerFromBlockquote, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
+
+const MAX_UNFILTERED_ELEMENTS = 3;
 
 export function WithDeepAnalysis<T extends Constructor>(Base: T) {
   return class extends Base {
@@ -23,6 +25,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
     async performDeepAnalysis(state: WebPageState, result: ResearchResult): Promise<void> {
       tag('info').log('Starting deep analysis to find all expandable elements');
+      await (this as any).navigateTo(state.url);
       const expandedSections: string[] = [];
       const navigationLinks: Array<{ code: string; url: string }> = [];
 
@@ -46,35 +49,30 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       if (dataContainers.length > 0) debugLog(`Data containers to exclude: ${dataContainers.join(', ')}`);
 
       const discoveredElements = await this._discoverExpandableElements(dataContainers);
-      tag('substep').log(`Stage 1: clicking ${discoveredElements.length} XPath-discovered expandable elements`);
-      await this._clickExpandableElements(
-        discoveredElements.map((el) => {
-          const escapeQuote = (s: string) => s.replace(/'/g, "\\'");
-          const commands = [`I.click('${escapeQuote(el.clickXPath)}')`];
-          if (el.xpath) commands.push(`I.click('${escapeQuote(el.xpath)}')`);
-          return { commands, description: el.description };
-        }),
-        state,
-        expandedSections,
-        navigationLinks
-      );
+      const escapeQuote = (s: string) => s.replace(/'/g, "\\'");
+      const xpathElements = discoveredElements.map((el) => {
+        const commands = [`I.click('${escapeQuote(el.clickXPath)}')`];
+        if (el.xpath) commands.push(`I.click('${escapeQuote(el.xpath)}')`);
+        const desc = !el.text && el.outerHTML ? `${el.description} html: ${el.outerHTML}` : el.description;
+        return { commands, description: desc };
+      });
 
+      let visualElements: Array<{ commands: string[]; description: string }> = [];
       if (this.provider.hasVision()) {
-        tag('substep').log(`Stage 2: asking screenshot for missed icons (sections so far: ${expandedSections.length})`);
-        const visualElements = await this._discoverExpandableByScreenshot(
+        tag('substep').log('Discovering expandable elements from screenshot');
+        const visual = await this._discoverExpandableByScreenshot(
           state,
-          expandedSections.map((s) => s.slice(0, 100))
+          discoveredElements.map((el) => el.description.slice(0, 100))
         );
-        if (visualElements.length > 0) {
-          debugLog(`Stage 3: clicking ${visualElements.length} visual elements`);
-          await this._clickExpandableElements(
-            visualElements.map((el) => ({ commands: [el.locator], description: el.description })),
-            state,
-            expandedSections,
-            navigationLinks
-          );
-        }
+        visualElements = visual.map((el) => ({ commands: [el.locator], description: el.description }));
       }
+
+      const allElements = [...xpathElements, ...visualElements];
+      tag('substep').log(`Found ${allElements.length} expandable elements (${xpathElements.length} XPath + ${visualElements.length} visual)`);
+
+      const filtered = await this._filterExpandableElements(allElements, result.text, state.url);
+      tag('substep').log(`Clicking ${filtered.length} filtered expandable elements`);
+      await this._clickExpandableElements(filtered, state, expandedSections, navigationLinks);
 
       tag('info').log(`Deep analysis complete. Sections: ${expandedSections.length}, navigation links: ${navigationLinks.length}`);
 
@@ -96,6 +94,12 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       if (findResult.error || findResult.elements.length === 0) return [];
 
       const elements = findResult.elements.filter((el) => !el.isNavigationLink);
+
+      for (const xpath of buildExpandableXPathInsideContainers(dataContainers)) {
+        const containerResult = await WebElement.findByXPath(html, xpath);
+        const first = containerResult.elements.find((el) => !el.isNavigationLink);
+        if (first) elements.push(first);
+      }
 
       const clickXPathIndex = new Map<string, number>();
       for (const el of elements) {
@@ -159,6 +163,41 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
     }
 
+    private async _filterExpandableElements(elements: Array<{ commands: string[]; description: string }>, researchText: string, url: string): Promise<Array<{ commands: string[]; description: string }>> {
+      if (elements.length <= MAX_UNFILTERED_ELEMENTS) return elements;
+
+      const sectionNames = parseSections(researchText).map((s) => s.name);
+      const list = elements.map((el, i) => `${i + 1}. ${el.description}`).join('\n');
+
+      const prompt = dedent`
+        Page: ${url}
+        Page sections: ${sectionNames.join(', ')}
+
+        These expandable elements were found on the page.
+        Select which elements are worth clicking to discover hidden UI
+        that is relevant to the page's main content and business goals.
+
+        ${list}
+
+        Rules:
+        - Focus on elements in the MAIN CONTENT area of the page
+        - Skip global navigation, sidebar menus, user profile menus, settings icons — anything unrelated to the page purpose
+        - For repeated elements (e.g., per-row action buttons in a list), keep only the FIRST one
+        - Respond with comma-separated numbers to keep, e.g.: 1, 3, 5
+      `;
+
+      const model = this.provider.getModelForAgent('researcher');
+      const r = await this.provider.chat([{ role: 'user', content: prompt }], model, {
+        agentName: 'researcher',
+        telemetryFunctionId: 'researcher.filterExpandable',
+      });
+
+      const nums = (r.text || '').match(/\d+/g)?.map(Number) || [];
+      const filtered = elements.filter((_, i) => nums.includes(i + 1));
+      debugLog(`AI filtered ${elements.length} → ${filtered.length} elements`);
+      return filtered.length > 0 ? filtered : elements.slice(0, MAX_UNFILTERED_ELEMENTS);
+    }
+
     private async _clickExpandableElements(elements: Array<{ commands: string[]; description: string }>, state: WebPageState, expandedSections: string[], navigationLinks: Array<{ code: string; url: string }>): Promise<void> {
       const originalAria = state.ariaSnapshot || '';
 
@@ -166,6 +205,28 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         try {
           debugLog(`Clicking: ${el.description.slice(0, 100)}`);
           const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);
+
+          const hoverCmd = el.commands[0].replace('I.click(', 'I.moveCursorTo(');
+          const hoverAction = this.explorer.createAction();
+          await hoverAction.attempt(hoverCmd, undefined, false);
+          await new Promise((r) => setTimeout(r, 500));
+
+          await this.explorer.createAction().capturePageState();
+          const hoverAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
+          const hoverDiff = await hoverAR.diff(previousState);
+          await hoverDiff.calculate();
+          const hoverHtmlSize = hoverDiff.htmlParts.reduce((sum, p) => sum + p.subtree.length, 0);
+          const hoverRevealed = hoverDiff.ariaChanged && hoverHtmlSize > 500;
+
+          if (hoverRevealed) {
+            const sectionMarkdown = await this._analyzeExpandedAction(hoverCmd, el.description, hoverDiff);
+            if (sectionMarkdown) {
+              expandedSections.push(sectionMarkdown);
+              debugLog(`Captured section from hover: ${el.description.slice(0, 80)}`);
+            }
+            await this._restorePageState(state.url, originalAria);
+            continue;
+          }
 
           let clickCode: string | null = null;
           const action = this.explorer.createAction();
@@ -201,12 +262,13 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
             continue;
           }
 
-          if (!diff.ariaChanged && diff.htmlParts.length === 0) {
+          const clickHtmlSize = diff.htmlParts.reduce((sum, p) => sum + p.subtree.length, 0);
+          if (!diff.ariaChanged && clickHtmlSize <= 150) {
             debugLog(`No changes from: ${el.description.slice(0, 80)}`);
             continue;
           }
 
-          const sectionMarkdown = await this._analyzeExpandedClick(clickCode, el.description, diff);
+          const sectionMarkdown = await this._analyzeExpandedAction(clickCode, el.description, diff);
           if (sectionMarkdown) {
             expandedSections.push(sectionMarkdown);
             debugLog(`Captured section from: ${el.description.slice(0, 80)}`);
@@ -239,9 +301,9 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
     }
 
-    private async _analyzeExpandedClick(code: string, description: string, diff: Diff): Promise<string | null> {
+    private async _analyzeExpandedAction(code: string, description: string, diff: Diff): Promise<string | null> {
       const prompt = dedent`
-        A click on "${description}" (\`${code}\`) revealed new UI content.
+        An action on "${description}" (\`${code}\`) revealed new UI content.
         Analyze the changes and produce a UI map section.
 
         ARIA changes:
@@ -277,7 +339,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       `;
 
       const model = this.provider.getModelForAgent('researcher');
-      const r = await this.provider.chat([{ role: 'user', content: prompt }], model, { agentName: 'researcher', telemetryFunctionId: 'researcher.analyzeExpandedClick' });
+      const r = await this.provider.chat([{ role: 'user', content: prompt }], model, { agentName: 'researcher', telemetryFunctionId: 'researcher.analyzeExpandedAction' });
       const text = r.text || '';
 
       if (text.toLowerCase().includes('no meaningful expansion')) return null;

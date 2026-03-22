@@ -47,8 +47,7 @@ Or configure in `explorbot.config.js`:
 ```javascript
 export default {
   ai: {
-    provider: groq,
-    model: 'gpt-oss-20b',
+    model: groq('gpt-oss-20b'),
     langfuse: {
       enabled: true,
       publicKey: process.env.LANGFUSE_PUBLIC_KEY,

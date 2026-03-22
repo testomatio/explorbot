@@ -5,6 +5,12 @@ export class PlanCommand extends BaseCommand {
   name = 'plan';
   description = 'Plan testing for a feature';
   suggestions = ['/test - to launch first test', '/test * - to launch all tests', 'Edit the plan in file and call /plan:reload to update it'];
+  options = [
+    { flags: '--fresh', description: 'Regenerate plan from scratch' },
+    { flags: '--append', description: 'Add tests to existing plan' },
+    { flags: '--clear', description: 'Clear plan before regenerating' },
+    { flags: '--style <name>', description: 'Planning style (normal, curious, psycho, performer)' },
+  ];
 
   async execute(args: string): Promise<void> {
     const clear = args.includes('--clear');

@@ -2,7 +2,7 @@ import { Box, Text } from 'ink';
 import React, { useEffect, useState } from 'react';
 import { Test } from '../test-plan.ts';
 
-const WINDOW_SIZE = 7;
+export const WINDOW_SIZE = 7;
 
 interface TaskPaneProps {
   tasks: Test[];
@@ -44,7 +44,13 @@ const TaskPane: React.FC<TaskPaneProps> = React.memo(({ tasks, scrollOffset = 0 
   const visibleTasks = tasks.filter((t) => t.enabled);
   const completedCount = visibleTasks.filter((t) => t.hasFinished).length;
 
-  const clampedOffset = Math.min(scrollOffset, Math.max(0, visibleTasks.length - WINDOW_SIZE));
+  const inProgressIdx = visibleTasks.findIndex((t) => t.status === 'in_progress');
+  let effectiveOffset = scrollOffset;
+  if (inProgressIdx >= 0 && (inProgressIdx < scrollOffset || inProgressIdx >= scrollOffset + WINDOW_SIZE)) {
+    effectiveOffset = Math.max(0, inProgressIdx - Math.floor(WINDOW_SIZE / 2));
+  }
+
+  const clampedOffset = Math.min(effectiveOffset, Math.max(0, visibleTasks.length - WINDOW_SIZE));
   const aboveCount = clampedOffset;
   const belowCount = Math.max(0, visibleTasks.length - clampedOffset - WINDOW_SIZE);
   const windowTasks = visibleTasks.slice(clampedOffset, clampedOffset + WINDOW_SIZE);
@@ -72,13 +78,16 @@ const TaskPane: React.FC<TaskPaneProps> = React.memo(({ tasks, scrollOffset = 0 
         )}
 
         {windowTasks.map((task: Test, windowIndex) => {
-          const globalIndex = scrollOffset + windowIndex;
+          const globalIndex = clampedOffset + windowIndex;
           const inProgress = task.status === 'in_progress';
           let taskColor = 'dim';
           let strikethrough = false;
 
           if (task.isSuccessful) {
             taskColor = 'green';
+            strikethrough = true;
+          } else if (task.isSkipped) {
+            taskColor = 'yellow';
             strikethrough = true;
           } else if (task.hasFailed) {
             taskColor = 'red';

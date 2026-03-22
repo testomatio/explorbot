@@ -606,4 +606,7 @@ browserCmd
     }
   });
 
+import { createApiCommands } from '../boat/api-tester/src/cli.ts';
+program.addCommand(createApiCommands('api'));
+
 program.parse();

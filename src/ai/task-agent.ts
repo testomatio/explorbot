@@ -2,7 +2,9 @@ import dedent from 'dedent';
 import type { ActionResult } from '../action-result.js';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
-import { pluralize, tag } from '../utils/logger.js';
+import { createDebug, pluralize, tag } from '../utils/logger.js';
+
+const debugLog = createDebug('explorbot:task-agent');
 import { Historian } from './historian.js';
 import type { Navigator } from './navigator.js';
 import type { Provider } from './provider.js';
@@ -52,14 +54,28 @@ export abstract class TaskAgent {
   }
 
   protected getExperience(actionResult: ActionResult): string {
-    const relevantExperience = this.getExperienceTracker().getRelevantExperience(actionResult);
+    const tracker = this.getExperienceTracker();
+    const relevantExperience = tracker.getRelevantExperience(actionResult);
 
     if (relevantExperience.length === 0) return '';
 
-    const experienceContent = relevantExperience
+    const allContent = relevantExperience
       .map((e) => e.content)
       .filter((e) => !!e)
       .join('\n\n---\n\n');
+
+    const totalChars = allContent.length;
+    let experienceContent: string;
+
+    if (totalChars <= 10_000) {
+      debugLog(`injecting all experience (${Math.round(totalChars / 1000)}k chars)`);
+      experienceContent = allContent;
+    } else {
+      experienceContent = tracker.getSuccessfulExperience(actionResult).join('\n\n---\n\n');
+      debugLog(`injecting success-only experience (${Math.round(experienceContent.length / 1000)}k chars, filtered from ${Math.round(totalChars / 1000)}k)`);
+    }
+
+    if (!experienceContent) return '';
 
     tag('substep').log(`Found ${relevantExperience.length} experience ${pluralize(relevantExperience.length, 'file')}`);
     return dedent`

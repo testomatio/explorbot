@@ -38,11 +38,12 @@ export class CommandHandler implements InputManager {
     onSubmit: InputSubmitCallback;
   }> = new Set();
   private exitOnEmptyInput = false;
+  private runningCommands = new Set<string>();
 
   constructor(explorBot: ExplorBot) {
     this.explorBot = explorBot;
     this.commands = createCommands(explorBot);
-    explorBot.agentCaptain().setCommandExecutor((cmd) => this.executeCommand(cmd));
+    explorBot.agentCaptain().setCommandExecutor((cmd) => this.executeCommand(cmd), this.getCommandDescriptions());
   }
 
   private findCommand(name: string): BaseCommand | undefined {
@@ -61,12 +62,13 @@ export class CommandHandler implements InputManager {
     return [...slashCommands, 'I.amOnPage', 'I.click', 'I.see', 'I.fillField', 'I.selectOption', 'I.checkOption', 'I.pressKey', 'I.wait', 'I.waitForElement', 'I.waitForVisible', 'I.waitForInvisible', 'I.scrollTo'];
   }
 
-  getCommandDescriptions(): { name: string; description: string }[] {
+  getCommandDescriptions(): { name: string; description: string; options: string }[] {
     const descriptions = this.commands.map((cmd) => ({
       name: `/${cmd.name}`,
       description: cmd.description,
+      options: cmd.options.map((o) => `${o.flags}: ${o.description}`).join(', '),
     }));
-    descriptions.push({ name: 'I.*', description: 'CodeceptJS commands for web interaction' });
+    descriptions.push({ name: 'I.*', description: 'CodeceptJS commands for web interaction', options: '' });
     return descriptions;
   }
 
@@ -103,13 +105,20 @@ export class CommandHandler implements InputManager {
     if (parsed) {
       const command = this.findCommand(parsed.name);
       if (command) {
+        if (this.runningCommands.has(command.name)) {
+          tag('warning').log(`/${command.name} is already running, skipping`);
+          return;
+        }
         const argsString = parsed.args.join(' ');
+        this.runningCommands.add(command.name);
         try {
           await command.execute(argsString);
           command.suggestions.forEach((s) => tag('step').log(s));
         } catch (error: any) {
           if (error?.name === 'AbortError') throw error;
           tag('error').log(`/${command.name} failed: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+          this.runningCommands.delete(command.name);
         }
         return;
       }

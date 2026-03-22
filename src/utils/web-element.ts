@@ -14,9 +14,7 @@ export class WebElement {
   outerHTML: string;
   x: number;
   y: number;
-  childIconClass: string | null;
-
-  constructor(data: { tag: string; xpath: string; clickXPath: string; attrs: Record<string, string>; text: string; outerHTML?: string; x: number; y: number; childIconClass?: string | null }) {
+  constructor(data: { tag: string; xpath: string; clickXPath: string; attrs: Record<string, string>; text: string; outerHTML?: string; x: number; y: number }) {
     this.tag = data.tag;
     this.xpath = data.xpath;
     this.clickXPath = data.clickXPath;
@@ -25,7 +23,6 @@ export class WebElement {
     this.outerHTML = data.outerHTML || '';
     this.x = data.x;
     this.y = data.y;
-    this.childIconClass = data.childIconClass || null;
   }
 
   get description(): string {
@@ -68,7 +65,6 @@ export class WebElement {
       text: d.text,
       x: d.x,
       y: d.y,
-      childIconClass: d.childIconClass,
     });
   }
 
@@ -139,19 +135,11 @@ function extractElementData(el: Element) {
     allAttrs[attr.name] = attr.value;
   }
 
-  const iconEl = el.querySelector('svg[class], i[class]');
-  let iconClass: string | null = null;
-  if (iconEl) {
-    const cn = iconEl.className && typeof iconEl.className === 'object' ? (iconEl as SVGElement).className.baseVal : (iconEl.className as string);
-    iconClass = cn.split(/\s+/).find((c: string) => c.length > 2) || null;
-  }
-
   return {
     tag: el.tagName.toLowerCase(),
     text: (el.textContent || '').trim().slice(0, 80),
     allAttrs,
     x: Math.round(rect.x + rect.width / 2),
     y: Math.round(rect.y + rect.height / 2),
-    childIconClass: iconClass,
   };
 }

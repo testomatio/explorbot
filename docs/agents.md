@@ -136,17 +136,16 @@ You can optimize costs by using different models for different agents:
 ```javascript
 export default {
   ai: {
-    provider: groq,
-    model: 'gpt-oss-20b',
-    visionModel: 'llama-scout-4',
+    model: groq('gpt-oss-20b'),
+    visionModel: groq('llama-scout-4'),
     agents: {
-      navigator: { model: 'gpt-oss-20b' },
+      navigator: { model: groq('gpt-oss-20b') },
       researcher: {
-        model: 'gpt-oss-20b',
+        model: groq('gpt-oss-20b'),
         excludeSelectors: ['.cookie-banner'],
       },
-      planner: { model: 'gpt-oss-20b' },
-      tester: { model: 'gpt-oss-20b', progressCheckInterval: 5 },
+      planner: { model: groq('gpt-oss-20b') },
+      tester: { model: groq('gpt-oss-20b'), progressCheckInterval: 5 },
       pilot: { stepsToReview: 5 },
     },
   },

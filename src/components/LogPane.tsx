@@ -7,7 +7,7 @@ import { parseMarkdownToTerminal } from '../utils/markdown-terminal.js';
 
 import { Box, Text } from 'ink';
 import type { LogType, TaggedLogEntry } from '../utils/logger.js';
-import { registerLogPane, setVerboseMode, unregisterLogPane } from '../utils/logger.js';
+import { isDebugMode, registerLogPane, setVerboseMode, unregisterLogPane } from '../utils/logger.js';
 
 // marked.use(new markedTerminal());
 
@@ -102,7 +102,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
 
   const renderLogEntry = (log: TaggedLogEntry, index: number) => {
     // Skip debug logs when not in verbose mode AND DEBUG env var is not set
-    const shouldShowDebug = verboseMode || Boolean(process.env.DEBUG?.includes('explorbot:')) || process.env.DEBUG === '*';
+    const shouldShowDebug = verboseMode || isDebugMode() || Boolean(process.env.DEBUG?.includes('explorbot:')) || process.env.DEBUG === '*';
     if (log.type === 'debug' && !shouldShowDebug) {
       return null;
     }

@@ -14,9 +14,10 @@ import InputPane from './InputPane.js';
 import InputReadline from './InputReadline.js';
 import LogPane from './LogPane.js';
 import PlanEditor from './PlanEditor.js';
+import PlanPane, { type PlanSummary } from './PlanPane.js';
 import SessionTimer from './SessionTimer.js';
 import StateTransitionPane from './StateTransitionPane.js';
-import TaskPane from './TaskPane.js';
+import TaskPane, { WINDOW_SIZE } from './TaskPane.js';
 import WelcomeChecklist from './WelcomeChecklist.js';
 import WelcomeCommands from './WelcomeCommands.js';
 
@@ -144,22 +145,46 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
 
   const planRef = useRef<ReturnType<typeof explorBot.getCurrentPlan>>(undefined);
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
+  const [completedPlans, setCompletedPlans] = useState<PlanSummary[]>([]);
+  const [activePlanInfo, setActivePlanInfo] = useState<PlanSummary | null>(null);
 
   useEffect(() => {
+    const makeSummary = (plan: NonNullable<ReturnType<typeof explorBot.getCurrentPlan>>): PlanSummary => {
+      const enabled = plan.tests.filter((t) => t.enabled);
+      return {
+        title: plan.title,
+        testCount: enabled.length,
+        passed: enabled.filter((t) => t.isSuccessful).length,
+        failed: enabled.filter((t) => t.hasFailed).length,
+      };
+    };
+
     const subscribeToPlan = (plan: NonNullable<ReturnType<typeof explorBot.getCurrentPlan>>) => {
       if (unsubscribeRef.current) unsubscribeRef.current();
+
+      if (planRef.current && planRef.current !== plan && planRef.current.tests.length > 0) {
+        const summary = makeSummary(planRef.current);
+        setCompletedPlans((prev) => {
+          if (prev.some((p) => p.title === summary.title)) return prev;
+          return [...prev, summary];
+        });
+      }
+
       planRef.current = plan;
       tasksRef.current = [...plan.tests];
       setTasks(tasksRef.current);
       setTaskScrollOffset(0);
+      setActivePlanInfo(makeSummary(plan));
+
       let lastInProgressIdx = -1;
       unsubscribeRef.current = plan.onTestsChange((updatedTests) => {
         tasksRef.current = [...updatedTests];
         setTasks(tasksRef.current);
+        setActivePlanInfo(makeSummary(plan));
         const inProgressIdx = updatedTests.findIndex((t) => t.status === 'in_progress' && t.enabled);
         if (inProgressIdx >= 0 && inProgressIdx !== lastInProgressIdx) {
           lastInProgressIdx = inProgressIdx;
-          setTaskScrollOffset(Math.max(0, inProgressIdx - Math.floor(7 / 2)));
+          setTaskScrollOffset(Math.max(0, inProgressIdx - Math.floor(WINDOW_SIZE / 2)));
         }
       });
     };
@@ -173,9 +198,17 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         subscribeToPlan(currentPlan);
       } else if (!currentPlan && planRef.current) {
         if (unsubscribeRef.current) unsubscribeRef.current();
+        if (planRef.current.tests.length > 0) {
+          const summary = makeSummary(planRef.current);
+          setCompletedPlans((prev) => {
+            if (prev.some((p) => p.title === summary.title)) return prev;
+            return [...prev, summary];
+          });
+        }
         planRef.current = undefined;
         tasksRef.current = [];
         setTasks([]);
+        setActivePlanInfo(null);
       }
     }, 2000);
 
@@ -336,6 +369,8 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         )}
         <Autocomplete />
       </Box>
+
+      <PlanPane completedPlans={completedPlans} activePlan={activePlanInfo} />
     </Box>
   );
 }

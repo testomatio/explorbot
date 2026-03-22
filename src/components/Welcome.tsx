@@ -24,11 +24,9 @@ const Welcome: React.FC = () => {
         const loadedConfig = await configParser.loadConfig();
 
         let aiProviderName = 'Not configured';
-        if (loadedConfig.ai?.provider) {
-          const provider = loadedConfig.ai.provider;
-
-          const testModel = provider('test-model');
-          aiProviderName = testModel?.constructor?.name || testModel?.config?.provider;
+        if (loadedConfig.ai?.model) {
+          const model = loadedConfig.ai.model;
+          aiProviderName = model?.modelId || model?.provider || 'configured';
         }
 
         setConfigInfo({

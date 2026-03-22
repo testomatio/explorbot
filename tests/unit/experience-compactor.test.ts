@@ -20,6 +20,10 @@ class MockProvider {
     return 'test-model';
   }
 
+  getSystemPromptForAgent(_agentName: string): string | undefined {
+    return undefined;
+  }
+
   async chat(messages: any[], _model: string): Promise<any> {
     this.lastMessages = messages;
     const response = this.responses[this.callIndex] || { text: 'Compacted content' };
@@ -54,7 +58,7 @@ describe('ExperienceCompactor', () => {
 
     const mockConfig = {
       playwright: { browser: 'chromium', url: 'http://localhost:3000' },
-      ai: { provider: null, model: 'test' },
+      ai: { model: 'test' },
       dirs: {
         knowledge: '/tmp/explorbot-test/knowledge',
         experience: 'experience',

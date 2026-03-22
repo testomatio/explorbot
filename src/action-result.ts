@@ -28,6 +28,7 @@ interface ActionResultData extends WebPageState {
   iframeSnapshots?: Array<{ src: string; html: string; id?: string }>;
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
+  iframeURL?: string;
   links?: Link[];
 }
 
@@ -44,6 +45,7 @@ export interface ToolResultMetadata {
   locator: string;
   targetedHtml: string;
   pageDiff: PageDiff | null;
+  iframeURL?: string;
 }
 
 export class ActionResult implements ActionResultData {
@@ -59,6 +61,7 @@ export class ActionResult implements ActionResultData {
   public fullUrl: string | undefined = undefined;
   public browserLogs: any[] = [];
   public iframeSnapshots: Array<{ src: string; html: string; id?: string }> = [];
+  public iframeURL: string | undefined = undefined;
   readonly screenshotFile: string | undefined = undefined;
   private _screenshot: Buffer | undefined = undefined;
   readonly htmlFile: string | undefined = undefined;
@@ -81,6 +84,7 @@ export class ActionResult implements ActionResultData {
     this.error = data.error ?? null;
     this.browserLogs = data.browserLogs ?? [];
     this.iframeSnapshots = data.iframeSnapshots ?? [];
+    this.iframeURL = data.iframeURL;
     this.notes = data.notes ?? [];
     this.verifications = data.verifications;
 
@@ -233,6 +237,16 @@ export class ActionResult implements ActionResultData {
     return true;
   }
 
+  isRelevantExperienceRecord(record: WebPageState, options?: { includeDescendantExperience?: boolean }): boolean {
+    if (!record.url || !this.url) return false;
+    if (this.isMatchedBy(record)) return true;
+    if (!options?.includeDescendantExperience) return false;
+    const cur = this.extractStatePath(this.url);
+    const exp = this.extractStatePath(record.url);
+    if (!cur || !exp) return false;
+    return this.matchesPattern(`${cur}/*`, exp);
+  }
+
   private extractStatePath(url: string): string {
     if (url.startsWith('/')) {
       return url;
@@ -292,6 +306,7 @@ export class ActionResult implements ActionResultData {
       screenshot = ActionResult.loadScreenshotFromFile(state.screenshotFile);
     }
 
+    const actionState = state as ActionResultData;
     let ariaSnapshot = state.ariaSnapshot ?? null;
 
     if (!ariaSnapshot && state.ariaSnapshotFile) {
@@ -306,6 +321,7 @@ export class ActionResult implements ActionResultData {
       browserLogs,
       screenshot,
       ariaSnapshot,
+      iframeURL: actionState.iframeURL,
     };
 
     if (state.timestamp) {
@@ -452,6 +468,10 @@ export class ActionResult implements ActionResultData {
     }
   }
 
+  get isInsideIframe(): boolean {
+    return !!this.iframeURL;
+  }
+
   getStateHash(): string {
     const parts: string[] = [];
 
@@ -548,6 +568,7 @@ export class ActionResult implements ActionResultData {
       locator,
       targetedHtml: '',
       pageDiff: null,
+      iframeURL: this.iframeURL,
     };
 
     if (previousState) {

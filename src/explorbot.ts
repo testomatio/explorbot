@@ -99,6 +99,10 @@ export class ExplorBot {
     return this.agentNavigator().visit(url);
   }
 
+  async openFreshTab(): Promise<void> {
+    await this.explorer.openFreshTab();
+  }
+
   getCurrentState(): WebPageState | null {
     return this.explorer.getStateManager().getCurrentState();
   }
@@ -185,6 +189,7 @@ export class ExplorBot {
       if (qm) this.agents.tester.setQuartermaster(qm);
       this.agents.tester.setHistorian(this.agentHistorian());
       this.agents.tester.setPilot(this.agentPilot());
+      this.agents.tester.setCaptain(this.agentCaptain());
     }
     return this.agents.tester;
   }
@@ -224,7 +229,7 @@ export class ExplorBot {
     return (this.agents.historian ||= this.createAgent(({ ai, explorer }) => {
       const experienceTracker = explorer.getStateManager().getExperienceTracker();
       const reporter = explorer.getReporter();
-      return new Historian(ai, experienceTracker, reporter);
+      return new Historian(ai, experienceTracker, reporter, explorer.getStateManager());
     }));
   }
 
@@ -246,17 +251,17 @@ export class ExplorBot {
   }
 
   clearPlan(): void {
-    const url = this.currentPlan?.url;
     this.currentPlan = undefined;
     delete this.agents.planner;
-    Planner.clearCache(url);
   }
 
-  async plan(feature?: string, opts: { fresh?: boolean; style?: string; extend?: Plan } = {}) {
+  async plan(feature?: string, opts: { fresh?: boolean; style?: string; extend?: Plan; completedPlans?: Plan[] } = {}) {
     this.planFeature = feature;
 
     if (opts.fresh) {
+      const url = this.currentPlan?.url;
       this.clearPlan();
+      Planner.clearCache(url);
     }
 
     if (!opts.extend && this.currentPlan?.url) {
@@ -280,7 +285,13 @@ export class ExplorBot {
     if (this.currentPlan) {
       planner.setPlan(this.currentPlan);
     }
-    this.currentPlan = await planner.plan(feature, opts.style, opts.extend);
+    try {
+      this.currentPlan = await planner.plan(feature, opts.style, opts.extend, opts.completedPlans);
+    } catch (err) {
+      tag('warning').log(`Planning failed: ${err instanceof Error ? err.message : err}`);
+      if (!this.currentPlan) return undefined;
+      return this.currentPlan;
+    }
 
     const savedPath = this.savePlan();
     if (savedPath) {

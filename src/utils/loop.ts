@@ -25,6 +25,7 @@ export interface LoopContext {
   iteration: number;
   pause: (prompt?: string) => Promise<string | null>;
   userInput: string | null;
+  setUserInput: (input: string) => void;
 }
 
 export interface CatchContext {
@@ -86,6 +87,9 @@ export async function loop<T>(handler: (context: LoopContext) => Promise<T>, opt
           iteration: iteration + 1,
           pause: (prompt?: string) => pause(prompt),
           userInput: pendingUserInput,
+          setUserInput: (input: string) => {
+            pendingUserInput = input;
+          },
         };
         pendingUserInput = null;
 
@@ -106,10 +110,10 @@ export async function loop<T>(handler: (context: LoopContext) => Promise<T>, opt
             return result;
           }
 
-          pendingUserInput = userInput;
-
           if (onInterrupt) {
             await onInterrupt(userInput, context);
+          } else {
+            pendingUserInput = userInput;
           }
 
           continue;

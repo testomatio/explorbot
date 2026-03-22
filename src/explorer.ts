@@ -51,6 +51,7 @@ class Explorer {
   private options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string };
   private reporter!: Reporter;
   private otherTabs: TabInfo[] = [];
+  private _activeTest: Test | null = null;
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string }) {
     this.config = config;
@@ -438,23 +439,7 @@ class Explorer {
         }
       });
 
-      page.on('framenavigated', async (frame: any) => {
-        if (frame !== page.mainFrame()) return;
-
-        const newUrl = await frame.url();
-        let newTitle = '';
-
-        try {
-          newTitle = await frame.title();
-        } catch (error) {
-          debugLog('Failed to get page title:', error);
-        }
-
-        // // Update state from navigation
-        this.stateManager.updateStateFromBasic(newUrl, newTitle, 'navigation');
-
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      });
+      this.bindFrameNavigated(page);
 
       debugLog('Listening for automatic state changes');
     } catch (error) {
@@ -495,7 +480,12 @@ class Explorer {
     }
   }
 
+  get activeTest(): Test | null {
+    return this._activeTest;
+  }
+
   async startTest(test: Test) {
+    this._activeTest = test;
     await this.reporter.reportTestStart(test);
     await this.closeOtherTabs();
     this.otherTabs = [];
@@ -540,12 +530,16 @@ class Explorer {
   }
 
   async stopTest(test: Test) {
+    this._activeTest = null;
     await this.reporter.reportTest(test);
     const codeceptjsTest = toCodeceptjsTest(test);
 
     if (test.isSuccessful) {
       codeceptjsTest.state = 'passed';
       codeceptjs.event.dispatcher.emit('test.passed', codeceptjsTest);
+    } else if (test.isSkipped) {
+      codeceptjsTest.state = 'skipped';
+      codeceptjs.event.dispatcher.emit('test.skipped', codeceptjsTest);
     } else {
       codeceptjsTest.state = 'failed';
       codeceptjs.event.dispatcher.emit('test.failed', codeceptjsTest);
@@ -586,6 +580,43 @@ class Explorer {
       }
       throw error;
     }
+  }
+
+  private bindFrameNavigated(page: any): void {
+    page.on('framenavigated', async (frame: any) => {
+      if (frame !== page.mainFrame()) return;
+
+      const newUrl = await frame.url();
+      let newTitle = '';
+
+      try {
+        newTitle = await frame.title();
+      } catch (error) {
+        debugLog('Failed to get page title:', error);
+      }
+
+      this.stateManager.updateStateFromBasic(newUrl, newTitle, 'navigation');
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+  }
+
+  async openFreshTab(): Promise<void> {
+    if (!this.playwrightHelper?.page) return;
+
+    const oldPage = this.playwrightHelper.page;
+    const context = oldPage.context();
+    const newPage = await context.newPage();
+
+    await oldPage.close();
+    await newPage.bringToFront();
+
+    this.playwrightHelper.page = newPage;
+    this.otherTabs = [];
+
+    this.bindFrameNavigated(newPage);
+
+    debugLog('Opened fresh tab, closed previous tab');
   }
 
   private async closeOtherTabs(): Promise<void> {

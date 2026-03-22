@@ -20,7 +20,6 @@ export class ContextLengthError extends Error {}
 
 export class Provider {
   private config: AIConfig;
-  private provider: any = null;
   private telemetryEnabled = false;
   private otelSdk: NodeSDK | null = null;
   private defaultRetryOptions: RetryOptions = {
@@ -48,24 +47,21 @@ export class Provider {
   lastConversation: Conversation | null = null;
 
   constructor(config: AIConfig) {
-    if (!config?.provider) {
-      throw new AiError('AI provider is not configured. Set ai.provider in your config file.');
-    }
-    if (typeof config.provider !== 'function') {
-      throw new AiError('AI provider must be a function (e.g., from @ai-sdk/openai, @ai-sdk/anthropic).');
-    }
     if (!config?.model) {
       throw new AiError('AI model is not configured. Set ai.model in your config file.');
     }
     this.config = config;
-    this.provider = this.config.provider;
     this.initLangfuse();
+  }
+
+  private getModelName(model: any): string {
+    return model?.modelId || model?.model || 'unknown';
   }
 
   async validateConnection(): Promise<void> {
     try {
       await generateText({
-        model: this.provider(this.config.model),
+        model: this.config.model,
         prompt: 'hi',
         maxTokens: 1,
       });
@@ -74,7 +70,7 @@ export class Provider {
     }
   }
 
-  getModelForAgent(agentName?: string): string {
+  getModelForAgent(agentName?: string): any {
     if (!agentName) {
       return this.config.model;
     }
@@ -83,7 +79,7 @@ export class Provider {
     return agentConfig?.model || this.config.model;
   }
 
-  getAgenticModel(agentName?: string): string {
+  getAgenticModel(agentName?: string): any {
     if (agentName) {
       const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
       if (agentConfig?.model) return agentConfig.model;
@@ -167,7 +163,7 @@ export class Provider {
     };
   }
 
-  startConversation(systemMessage: string, agentName?: string, model?: string) {
+  startConversation(systemMessage: string, agentName?: string, model?: any) {
     const resolvedModel = model || this.getModelForAgent(agentName);
     return new Conversation(
       [
@@ -206,9 +202,10 @@ export class Provider {
     return { conversation, response, toolExecutions };
   }
 
-  async chat(messages: ModelMessage[], model: string, options: any = {}): Promise<any> {
-    setActivity(`🤖 Asking ${model}`, 'ai');
-    promptLog(`Using model: ${model}`);
+  async chat(messages: ModelMessage[], model: any, options: any = {}): Promise<any> {
+    const modelName = this.getModelName(model);
+    setActivity(`🤖 Asking ${modelName}`, 'ai');
+    promptLog(`Using model: ${modelName}`);
 
     const telemetry = this.getTelemetry(options);
     const config = this.mergeProviderOptions(
@@ -217,7 +214,7 @@ export class Provider {
         ...(this.config.config || {}),
         ...options,
         ...(telemetry ? { experimental_telemetry: telemetry } : {}),
-        model: this.provider(model),
+        model,
         abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
@@ -244,7 +241,7 @@ export class Provider {
       responseLog(response.text);
 
       if (response.usage) {
-        Stats.recordTokens(options.agentName || 'unknown', model, {
+        Stats.recordTokens(options.agentName || 'unknown', modelName, {
           input: response.usage.promptTokens || 0,
           output: response.usage.completionTokens || 0,
           total: response.usage.totalTokens || 0,
@@ -256,11 +253,11 @@ export class Provider {
       clearActivity();
       if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
-      if (!options._noContextRetry && Provider.isContextLengthError(error)) {
-        const trimmed = Provider.trimMessagesForRetry(messages);
-        if (trimmed) {
-          tag('warning').log('Context length exceeded, retrying chat with trimmed messages...');
-          return this.chat(trimmed, model, { ...options, _noContextRetry: true });
+      if (Provider.isContextLengthError(error)) {
+        const reduced = this.tryReduceMessages(messages, options._contextRetryLevel || 0);
+        if (reduced) {
+          tag('warning').log('Context length exceeded, retrying with reduced messages...');
+          return this.chat(reduced.messages, model, { ...options, _contextRetryLevel: reduced.nextLevel });
         }
         throw new ContextLengthError(error.message || error.toString());
       }
@@ -269,9 +266,10 @@ export class Provider {
     }
   }
 
-  async generateWithTools(messages: ModelMessage[], model: string, tools: any, options: any = {}): Promise<any> {
-    setActivity(`🤖 Asking ${model} with dynamic tools`, 'ai');
-    promptLog(`Using model: ${model}`);
+  async generateWithTools(messages: ModelMessage[], model: any, tools: any, options: any = {}): Promise<any> {
+    const modelName = this.getModelName(model);
+    setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
+    promptLog(`Using model: ${modelName}`);
 
     const toolNames = Object.keys(tools || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
@@ -288,7 +286,7 @@ export class Provider {
         ...(this.config.config || {}),
         ...options,
         ...(telemetry ? { experimental_telemetry: telemetry } : {}),
-        model: this.provider(model),
+        model,
         abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
@@ -319,7 +317,7 @@ export class Provider {
       responseLog(response.text);
 
       if (response.usage) {
-        Stats.recordTokens(options.agentName || 'unknown', model, {
+        Stats.recordTokens(options.agentName || 'unknown', modelName, {
           input: response.usage.promptTokens || 0,
           output: response.usage.completionTokens || 0,
           total: response.usage.totalTokens || 0,
@@ -331,11 +329,11 @@ export class Provider {
       clearActivity();
       if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
-      if (!options._noContextRetry && Provider.isContextLengthError(error)) {
-        const trimmed = Provider.trimMessagesForRetry(messages);
-        if (trimmed) {
-          tag('warning').log('Context length exceeded, retrying generateWithTools with trimmed messages...');
-          return this.generateWithTools(trimmed, model, tools, { ...options, _noContextRetry: true });
+      if (Provider.isContextLengthError(error)) {
+        const reduced = this.tryReduceMessages(messages, options._contextRetryLevel || 0);
+        if (reduced) {
+          tag('warning').log('Context length exceeded, retrying with reduced messages...');
+          return this.generateWithTools(reduced.messages, model, tools, { ...options, _contextRetryLevel: reduced.nextLevel });
         }
         throw new ContextLengthError(error.message || error.toString());
       }
@@ -347,10 +345,11 @@ export class Provider {
     }
   }
 
-  async generateObject(messages: ModelMessage[], schema: any, model?: string, options: any = {}): Promise<any> {
+  async generateObject(messages: ModelMessage[], schema: any, model?: any, options: any = {}): Promise<any> {
     const modelToUse = model || this.config.model;
-    setActivity(`🤖 Asking ${modelToUse} for structured output`, 'ai');
-    promptLog(`Using model: ${modelToUse}`);
+    const modelName = this.getModelName(modelToUse);
+    setActivity(`🤖 Asking ${modelName} for structured output`, 'ai');
+    promptLog(`Using model: ${modelName}`);
 
     const telemetry = this.getTelemetry(options);
     const config = this.mergeProviderOptions(
@@ -359,7 +358,7 @@ export class Provider {
         ...(this.config.config || {}),
         ...options,
         ...(telemetry ? { experimental_telemetry: telemetry } : {}),
-        model: this.provider(modelToUse),
+        model: modelToUse,
         abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
@@ -382,7 +381,7 @@ export class Provider {
       responseLog(response.object);
 
       if (response.usage) {
-        Stats.recordTokens(options.agentName || 'unknown', modelToUse, {
+        Stats.recordTokens(options.agentName || 'unknown', modelName, {
           input: response.usage.promptTokens || 0,
           output: response.usage.completionTokens || 0,
           total: response.usage.totalTokens || 0,
@@ -394,11 +393,11 @@ export class Provider {
       clearActivity();
       if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
-      if (!options._noContextRetry && Provider.isContextLengthError(error)) {
-        const trimmed = Provider.trimMessagesForRetry(messages);
-        if (trimmed) {
-          tag('warning').log('Context length exceeded, retrying with trimmed messages...');
-          return this.generateObject(trimmed, schema, model, { ...options, _noContextRetry: true });
+      if (Provider.isContextLengthError(error)) {
+        const reduced = this.tryReduceMessages(messages, options._contextRetryLevel || 0);
+        if (reduced) {
+          tag('warning').log('Context length exceeded, retrying with reduced messages...');
+          return this.generateObject(reduced.messages, schema, model, { ...options, _contextRetryLevel: reduced.nextLevel });
         }
         throw new ContextLengthError(error.message || error.toString());
       }
@@ -447,8 +446,89 @@ export class Provider {
     return didTrim ? trimmed : null;
   }
 
-  getProvider(): any {
-    return this.provider;
+  static compactMessagesForRetry(messages: ModelMessage[]): ModelMessage[] | null {
+    if (messages.length <= 5) return null;
+
+    const head = messages[0];
+    let tailStart = messages.length - 4;
+
+    if (messages[tailStart]?.role === 'tool' && tailStart > 1) {
+      tailStart--;
+    }
+
+    const tail = messages.slice(tailStart);
+    const middle = messages.slice(1, tailStart);
+
+    if (middle.length === 0) return null;
+
+    const executions = new Conversation(middle).getToolExecutions();
+    const toolStats = new Map<string, { total: number; success: number; fail: number }>();
+    const urls = new Set<string>();
+    const failedAttempts: string[] = [];
+
+    for (const exec of executions) {
+      const stats = toolStats.get(exec.toolName) || { total: 0, success: 0, fail: 0 };
+      stats.total++;
+      if (exec.wasSuccessful) stats.success++;
+      else stats.fail++;
+      toolStats.set(exec.toolName, stats);
+
+      const url = exec.output?.url || exec.output?.pageDiff?.currentUrl;
+      if (url) urls.add(url);
+
+      if (!exec.wasSuccessful && failedAttempts.length < 10) {
+        const inputLabel = exec.input ? Object.values(exec.input)[0] : '';
+        const errorMsg = exec.output?.message || exec.output?.error || 'failed';
+        failedAttempts.push(`- ${exec.toolName}("${inputLabel}"): ${errorMsg}`);
+      }
+    }
+
+    let lastUserText = '';
+    for (let i = middle.length - 1; i >= 0; i--) {
+      if (middle[i].role === 'user' && typeof middle[i].content === 'string') {
+        lastUserText = middle[i].content as string;
+        break;
+      }
+    }
+
+    const lines: string[] = [`[Previous conversation compacted - ${middle.length} messages summarized]`];
+
+    if (toolStats.size > 0) {
+      lines.push('', 'Actions performed:');
+      for (const [name, stats] of toolStats) {
+        lines.push(`- ${name}: ${stats.total} calls (${stats.success} successful${stats.fail > 0 ? `, ${stats.fail} failed` : ''})`);
+      }
+    }
+
+    if (urls.size > 0) {
+      lines.push('', `Pages visited: ${[...urls].join(', ')}`);
+    }
+
+    if (failedAttempts.length > 0) {
+      lines.push('', 'Failed attempts:', ...failedAttempts);
+    }
+
+    if (lastUserText) {
+      const truncated = lastUserText.length > 1000 ? `${lastUserText.substring(0, 1000)}...` : lastUserText;
+      lines.push('', 'Last context before compaction:', truncated);
+    }
+
+    const summary: ModelMessage = { role: 'user', content: lines.join('\n') };
+    return [head, summary, ...tail];
+  }
+
+  private tryReduceMessages(messages: ModelMessage[], retryLevel: number): { messages: ModelMessage[]; nextLevel: number } | null {
+    if (retryLevel >= 2) return null;
+
+    if (retryLevel === 0) {
+      const trimmed = Provider.trimMessagesForRetry(messages);
+      if (trimmed) return { messages: trimmed, nextLevel: 1 };
+    }
+
+    const compacted = Provider.compactMessagesForRetry(messages);
+    if (compacted) return { messages: compacted, nextLevel: 2 };
+
+    return null;
   }
 
   async processImage(prompt: string, image: string): Promise<any> {
@@ -481,7 +561,7 @@ export class Provider {
       maxTokens: 16384,
       ...(this.config.config || {}),
       ...(telemetry ? { experimental_telemetry: telemetry } : {}),
-      model: this.provider(this.config.visionModel),
+      model: this.config.visionModel,
       abortSignal: executionController.getAbortSignal(),
     };
 
@@ -498,7 +578,7 @@ export class Provider {
       responseLog(response.text);
 
       if (response.usage) {
-        Stats.recordTokens('vision', this.config.visionModel!, {
+        Stats.recordTokens('vision', this.getModelName(this.config.visionModel), {
           input: response.usage.promptTokens || 0,
           output: response.usage.completionTokens || 0,
           total: response.usage.totalTokens || 0,

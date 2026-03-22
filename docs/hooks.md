@@ -22,8 +22,7 @@ Hooks are configured per-agent in `explorbot.config.js`:
 ```javascript
 export default {
   ai: {
-    provider: myProvider,
-    model: 'gpt-4o',
+    model: myProvider('gpt-4o'),
     agents: {
       navigator: {
         beforeHook: {

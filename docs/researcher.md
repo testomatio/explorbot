@@ -20,7 +20,7 @@ You can also run research manually to inspect pages or debug locator issues.
 ai: {
   agents: {
     researcher: {
-      model: 'gpt-oss-20b',
+      model: groq('gpt-oss-20b'),
       systemPrompt: 'Focus on form validation elements...',
       sections: ['focus', 'content', 'list'],
       excludeSelectors: ['.cookie-banner'],

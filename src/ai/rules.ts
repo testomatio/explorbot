@@ -124,14 +124,15 @@ export const uiMapTableFormat = dedent`
   <ui_map_table_format>
   ALWAYS use this exact table format for UI elements:
 
-  | Element | ARIA | CSS |
-  |---------|------|-----|
-  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' |
+  | Element | ARIA | CSS | eidx |
+  |---------|------|-----|------|
+  | 'Save' | { role: 'button', text: 'Save' } | 'button.save' | 5 |
 
   Column definitions:
   - Element: Human-readable name of the element
   - ARIA: JSON format { role: '...', text: '...' } - use "text" key, NOT "name"
   - CSS: Unique CSS selector (relative to section container)
+  - eidx: Value of the eidx attribute from the HTML element. Use "-" if not present.
 
   IMPORTANT: Each section must have a blockquote container before the table: > Container: '.css-selector'
   This container is used for disambiguation when clicking elements.
@@ -312,7 +313,7 @@ export const sectionContextRule = dedent`
   If buttons are disabled unexpectedly, check if a popup is blocking interaction or if required form fields are empty.
 
   Dismiss strategy (try in order):
-  1. I.click('//body') — click outside the popup to close it
+  1. I.clickXY(0, 0) — click outside the popup to close it
   2. I.pressKey('Escape') — press Escape to dismiss
   3. I.click('Cancel') — click Cancel button if present
   4. I.click({ role: 'button', text: 'Close' }) — click X/close button if present
@@ -495,6 +496,21 @@ export const actionRule = dedent`
   The locator must point to a file input or a label associated with one.
   For drag-and-drop upload zones, look for a hidden input[type="file"] inside the dropzone container.
   Use the file paths from <available_files> section.
+
+  ### I.moveCursorTo
+
+  Moves the mouse cursor to an element, triggering hover effects. Does NOT click.
+  Use to discover hover-triggered UI: tooltips, popovers, dropdown menus, preview cards.
+
+  I.moveCursorTo(<locator>, <context>)
+
+  <example>
+    I.moveCursorTo('Settings');
+    I.moveCursorTo({ role: 'menuitem', text: 'Products' }, '.navigation');
+    I.moveCursorTo('.user-avatar');
+  </example>
+
+  After hovering, use see() or context() to check what appeared.
 
   [DO NEVER USE OTHER CODECEPTJS COMMANDS THAN PROPOSED HERE]
   [INTERACT ONLY WITH ELEMENTS THAT ARE ON THE PAGE HTML]

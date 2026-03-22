@@ -461,18 +461,17 @@ Example configuration:
 ```javascript
 export default {
   ai: {
-    provider: groq,  // Vercel AI SDK provider
-    model: 'gpt-oss-20b',
-    visionModel: 'llama-scout-4',
-    agenticModel: 'qwen3-32b',
+    model: groq('gpt-oss-20b'),  // Vercel AI SDK model instance
+    visionModel: groq('llama-scout-4'),
+    agenticModel: groq('qwen3-32b'),
     langfuse: {
       enabled: true,
       publicKey: process.env.LANGFUSE_PUBLIC_KEY,
       secretKey: process.env.LANGFUSE_SECRET_KEY,
     },
     agents: {
-      tester: { model: 'gpt-oss-20b' },
-      navigator: { model: 'gpt-oss-20b' },
+      tester: { model: groq('gpt-oss-20b') },
+      navigator: { model: groq('gpt-oss-20b') },
       pilot: { stepsToReview: 5 },
     },
   },

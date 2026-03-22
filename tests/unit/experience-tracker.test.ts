@@ -17,7 +17,7 @@ describe('ExperienceTracker', () => {
     // Mock config parser with test directory
     const mockConfig = {
       playwright: { browser: 'chromium', url: 'http://localhost:3000' },
-      ai: { provider: null, model: 'test' },
+      ai: { model: 'test' },
       dirs: {
         knowledge: '/tmp/explorbot-test/knowledge',
         experience: 'experience', // Use relative path so it gets resolved properly
@@ -168,6 +168,30 @@ describe('ExperienceTracker', () => {
       // Should only appear once
       const matches = content.match(/I\.click\("#submit"\)/g);
       expect(matches).toHaveLength(1);
+    });
+  });
+
+  describe('getRelevantExperience', () => {
+    it('includes experience from descendant URL paths when requested', async () => {
+      const parent = new ActionResult({
+        html: '<html><body>P</body></html>',
+        url: 'https://example.com/parent',
+        title: 'Parent',
+      });
+      const child = new ActionResult({
+        html: '<html><body>C</body></html>',
+        url: 'https://example.com/parent/child',
+        title: 'Child',
+      });
+
+      await experienceTracker.saveFailedAttempt(parent, 'p', 'I.click("p")', 'x');
+      await experienceTracker.saveFailedAttempt(child, 'c', 'I.click("c")', 'y');
+
+      const exactOnly = experienceTracker.getRelevantExperience(parent);
+      expect(exactOnly).toHaveLength(1);
+
+      const withDesc = experienceTracker.getRelevantExperience(parent, { includeDescendantExperience: true });
+      expect(withDesc).toHaveLength(2);
     });
   });
 

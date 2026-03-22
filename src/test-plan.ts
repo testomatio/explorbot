@@ -7,6 +7,7 @@ import { uniqSessionName } from './utils/unique-names.ts';
 export const TestResult = {
   PASSED: 'passed',
   FAILED: 'failed',
+  SKIPPED: 'skipped',
 } as const;
 
 export type TestResultType = (typeof TestResult)[keyof typeof TestResult] | null;
@@ -61,6 +62,7 @@ export interface StepData {
   status?: string;
   error?: string;
   log?: string;
+  artifacts?: string[];
   noteStartTime?: number;
 }
 
@@ -129,9 +131,9 @@ export class Task {
     this.states.push(state);
   }
 
-  addStep(text: string, duration?: number, status?: string, error?: string, log?: string): void {
+  addStep(text: string, duration?: number, status?: string, error?: string, log?: string, artifacts?: string[]): void {
     const timestamp = `${performance.now()}_${this.timestampCounter++}`;
-    this.steps[timestamp] = { text, duration, status, error, log, noteStartTime: this.activeNote?.getStartTime() };
+    this.steps[timestamp] = { text, duration, status, error, log, artifacts, noteStartTime: this.activeNote?.getStartTime() };
   }
 
   getLog(): Array<{ type: 'step' | 'note' | 'artifact'; content: string; timestamp: number }> {
@@ -172,6 +174,7 @@ export class Test extends Task {
   summary: string;
   artifacts: Record<string, string>;
   generatedCode?: string;
+  style?: string;
   planIteration = 0;
   enabled = true;
   startTime?: number;
@@ -213,6 +216,10 @@ export class Test extends Task {
 
   get hasFailed(): boolean {
     return this.hasFinished && this.result === TestResult.FAILED;
+  }
+
+  get isSkipped(): boolean {
+    return this.hasFinished && this.result === TestResult.SKIPPED;
   }
 
   getCheckedNotes(): Note[] {
@@ -311,6 +318,7 @@ export class Plan {
   }
 
   addTest(test: Test): void {
+    if (this.tests.some((t) => t.scenario.toLowerCase() === test.scenario.toLowerCase())) return;
     test.plan = this;
     test.planIteration = this.iteration;
     this.tests.push(test);

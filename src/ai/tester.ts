@@ -19,12 +19,13 @@ import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import { Navigator } from './navigator.ts';
+import type { Captain } from './captain.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
-import { createCodeceptJSTools } from './tools.ts';
+import { createCodeceptJSTools, createSpecialContextTools } from './tools.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
@@ -41,11 +42,13 @@ const SAMPLE_FILES: Record<string, string> = {
 
 export class Tester extends TaskAgent implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
+  protected readonly SPECIAL_CONTEXT_ACTION_TOOLS = ['exitIframe'];
   emoji = '🧪';
   private explorer: Explorer;
   private provider: Provider;
   private currentConversation: Conversation | null = null;
   private pilot: Pilot | null = null;
+  private captain: Captain | null = null;
 
   MAX_ITERATIONS = 30;
   ASSERTION_TOOLS = ['verify'];
@@ -85,6 +88,10 @@ export class Tester extends TaskAgent implements Agent {
 
   setPilot(pilot: Pilot): void {
     this.pilot = pilot;
+  }
+
+  setCaptain(captain: Captain): void {
+    this.captain = captain;
   }
 
   private getCurrentState(): ActionResult {
@@ -158,6 +165,7 @@ export class Tester extends TaskAgent implements Agent {
 
         const tools = {
           ...codeceptjsTools,
+          ...(currentState.isInsideIframe ? createSpecialContextTools(this.explorer, 'iframe') : {}),
           ...this.createTestFlowTools(task, currentState, conversation),
           ...this.agentTools,
         };
@@ -165,7 +173,7 @@ export class Tester extends TaskAgent implements Agent {
         debugLog(`Test ${task.scenario} iteration ${iteration}`);
 
         if (this.explorer.getStateManager().isInDeadLoop()) {
-          task.addNote('Dead loop detected. Stopped', TestResult.FAILED);
+          task.addNote('Dead loop detected. Stopped');
           stop();
           return;
         }
@@ -187,6 +195,7 @@ export class Tester extends TaskAgent implements Agent {
 
         conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);
         conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
+        conversation.cleanupTag('experience', '...cleaned experience...', 1);
 
         if (iteration > 1) {
           const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
@@ -197,7 +206,7 @@ export class Tester extends TaskAgent implements Agent {
           if (isNewPage && this.pilot) {
             const guidance = await this.pilot.reviewNewPage(task, currentState);
             if (guidance) nextStep += `\n\n${guidance}`;
-          } else if (iteration % this.progressCheckInterval === 0 && this.pilot) {
+          } else if ((iteration % this.progressCheckInterval === 0 || this.consecutiveFailures >= 3) && this.pilot) {
             const guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
             if (guidance) nextStep += `\n\n${guidance}`;
           }
@@ -260,6 +269,27 @@ export class Tester extends TaskAgent implements Agent {
       {
         maxAttempts: this.MAX_ITERATIONS,
         interruptPrompt: 'Test interrupted. Enter new instruction (or "stop" to cancel):',
+        onInterrupt: this.captain
+          ? async (userInput, context) => {
+              if (!userInput) return;
+              const result = await this.captain!.processSupervisorInterrupt(userInput, task);
+              tag('info').log(`🧑‍✈️ Supervisor: ${result.action} — ${result.message}`);
+
+              const terminalResults: Record<string, (typeof TestResult)[keyof typeof TestResult]> = {
+                stop: TestResult.FAILED,
+                pass: TestResult.PASSED,
+                skip: TestResult.SKIPPED,
+              };
+              const terminalResult = terminalResults[result.action];
+              if (terminalResult) {
+                task.addNote(result.message, terminalResult);
+                task.finish(terminalResult);
+                context.stop();
+                return;
+              }
+              context.setUserInput(result.message);
+            }
+          : undefined,
         observability: {
           name: `test: ${task.scenario}`,
           agent: 'tester',
@@ -274,6 +304,7 @@ export class Tester extends TaskAgent implements Agent {
         },
         catch: async ({ error, stop }) => {
           tag('error').log(`Test execution error: ${error}`);
+          task.addNote(`Execution error: ${error instanceof Error ? error.message : String(error)}`);
           stop();
         },
       }
@@ -363,12 +394,12 @@ export class Tester extends TaskAgent implements Agent {
       `;
     }
 
-    if (await this.explorer.isInsideIframe()) {
-      const iframeInfo = this.explorer.getCurrentIframeInfo();
+    if (currentState.isInsideIframe) {
+      const iframeInfo = currentState.iframeURL || this.explorer.getCurrentIframeInfo() || 'iframe context active';
       context += dedent`
         <iframe_context>
         INSIDE IFRAME: ${iframeInfo}
-        You are currently inside an iframe. Call I.switchTo() (without arguments) to exit before interacting with elements outside the iframe.
+        You are currently inside an iframe. Use exitIframe() before interacting with elements outside the iframe.
         </iframe_context>
       `;
     }
@@ -381,6 +412,7 @@ export class Tester extends TaskAgent implements Agent {
 
     if (isNewUrl) {
       const research = await this.researcher.research(currentState);
+      const experience = this.getExperience(currentState);
       let uiMapSection = '';
       if (research) {
         uiMapSection = dedent`
@@ -405,6 +437,8 @@ export class Tester extends TaskAgent implements Agent {
         ${currentState.ariaSnapshot}
         </page_aria>
         ${uiMapSection}
+
+        ${experience}
 
         Use <page_ui_map> to understand the page structure and its main elements.
         However, <page_ui_map> is not always up to date, use <page_aria> and <page_html> to understand the ACTUAL state of the page
@@ -494,6 +528,8 @@ export class Tester extends TaskAgent implements Agent {
     tag('multiline').log(task.getPrintableNotes().join('\n'));
     if (task.isSuccessful) {
       tag('success').log(`Successful test: ${task.scenario}`);
+    } else if (task.isSkipped) {
+      tag('warning').log(`Skipped test: ${task.scenario}`);
     } else if (task.hasFailed) {
       tag('error').log(`Failed test: ${task.scenario}`);
     } else {
@@ -525,7 +561,7 @@ export class Tester extends TaskAgent implements Agent {
     5.2 Always look for the current URL you are on and use only elements that exist in the current page
     5.3 If you see the page is irrelevant to current scenario, call reset() tool to return to the initial page
     6. Some expectations can be wrong so it's ok to skip them and continue testing
-    7. Use finish() when all goals are achieved and verified
+    7. Use finish() ONLY when you have successfully completed the scenario goal and verified it
     8. ONLY use stop() if the scenario is fundamentally incompatible with the initial page and other pages you visited
     9. Be methodical and precise in your interactions
     10. Use record({ notes: ["..."] }) to document your findings, observations, and plans during testing.
@@ -543,7 +579,7 @@ export class Tester extends TaskAgent implements Agent {
     - Call record({ notes: ["..."], status: "fail" }) when an expected outcome cannot be achieved or has failed or you see error/alert/warning message on a page
     - NEVER call record(status: "success") if your last verify() or see() call FAILED. A failed check means the outcome is NOT confirmed — use record(status: "fail") instead, or retry with a different approach.
     - Use finish() to complete the test, not record(). record() is for intermediate notes.
-    - Call finish() when all goals are achieved and verified
+    - Call finish(verify) when all goals are achieved — provide an assertion to verify
     - ONLY call stop() if the scenario itself is completely irrelevant to this page and no expectations can be achieved
     - Use reset() to navigate back to the initial page if needed. Do not call it if you are already on the initial page
     - Be precise with locators (CSS or XPath)
@@ -558,6 +594,9 @@ export class Tester extends TaskAgent implements Agent {
     - Follow <locator_priority> rules when selecting locators for all tools
     - Before retrying your actions check maybe they already achived expected results. Use see() tool for that
     - When filling complex form with lot of actions performed, use see() to look which fields were filled and which are not
+    - When verify() fails, use see() to visually confirm the result — visual confirmation is equally valid evidence
+    - For visual state verification (active tabs, selected items, counts, colors), prefer see() over DOM-based verify()
+    - When click() fails and element is visually present, use visualClick() as fallback
     - If you land on a "Not Found", 404, or error page that is NOT part of the scenario, call reset() immediately to return to the initial page and try again
     - If you see a server error page (500, 503, etc.), record it with record({ notes: ["Server error on /path"], status: "fail" }) and call reset() to continue testing
     </rules>
@@ -729,11 +768,15 @@ export class Tester extends TaskAgent implements Agent {
           reason: z.string().optional().describe('Explanation why you need to navigate'),
         }),
         execute: async ({ reason }) => {
+          if (this.getCurrentState().isInsideIframe) {
+            await this.explorer.switchToMainFrame();
+          }
+
           if (this.explorer.getStateManager().getCurrentState()?.url === resetUrl!) {
             return {
               success: false,
               message: 'Reset failed - already on initial page!',
-              suggestion: 'Try different approach or use stop() tool if you think the scenario is fundamentally incompatible with the page.',
+              suggestion: 'Try different approach or use stop() if the scenario is fundamentally incompatible with the page.',
               action: 'reset',
             };
           }
@@ -770,37 +813,35 @@ export class Tester extends TaskAgent implements Agent {
       }),
       stop: tool({
         description: dedent`
-          Stop the current test because the scenario is completely irrelevant to the current page.
-          ONLY use this when you determine that NONE of the expected outcomes can possibly be achieved
-          because the page does not support the scenario at all.
-
-          DO NOT use this if:
-          - You're having trouble finding the right elements (try different locators instead)
-          - Some outcomes were achieved but not all (the test will be marked successful anyway)
-          - You need to reset and try again (use reset() instead)
-
-          Use this ONLY when the scenario is fundamentally incompatible with the page.
+          Stop the current test because the scenario is fundamentally incompatible with the page.
+          Use this ONLY when the scenario cannot be executed on the current page or application.
+          Do NOT use this for failures — use reset() and retry instead.
         `,
         inputSchema: z.object({
-          reason: z.string().describe('Explanation of why the scenario is irrelevant to this page'),
+          reason: z.string().describe('Explanation why the scenario is incompatible'),
         }),
         execute: async ({ reason }) => {
-          const message = `Test stopped - scenario is irrelevant: ${reason}`;
-          tag('warning').log(`❌ ${message}`);
-
-          task.addNote(message, TestResult.FAILED);
+          task.addNote(`Stop requested: ${reason}`);
 
           if (this.pilot) {
             const currentState = this.getCurrentState();
             await this.pilot.reviewStop(task, currentState, conversation);
+            if (!task.hasFinished) {
+              return {
+                success: false,
+                action: 'stop',
+                message: 'Stop rejected; Continue execution',
+              };
+            }
           } else {
+            task.addNote(reason, TestResult.FAILED);
             task.finish(TestResult.FAILED);
           }
 
           return {
             success: true,
             action: 'stop',
-            message: `Test stopped - scenario is irrelevant: ${reason}`,
+            message: reason,
           };
         },
       }),
@@ -809,27 +850,18 @@ export class Tester extends TaskAgent implements Agent {
           Finish the current test successfully because all goals are achieved and verified.
           ONLY use this when you have successfully completed the scenario goal.
 
-          IMPORTANT: You MUST provide a specific assertion to verify the final state.
-          The assertion should describe what data or state change should be visible on the page.
+          Provide a specific assertion to verify the final state.
+          The assertion MUST prove that YOUR ACTIONS changed the page state.
+          Do NOT verify something that was already true before you started testing.
 
           Examples of good assertions:
           - "New user 'john@example.com' is visible in the users list"
           - "Success message 'Item created' is displayed"
-          - "The form shows saved values: name='Test', email='test@test.com'"
-          - "Cart shows 2 items with total $50.00"
 
-          CRITICAL: The assertion MUST prove that YOUR ACTIONS changed the page state.
-          Do NOT verify something that was already true before you started testing.
-          BAD: "Page shows nightwatch items" (if page already had them)
-          GOOD: "Search input contains 'nightwatch' and results are filtered"
-          GOOD: "Success message 'Item created' is displayed"
-
-          DO NOT use this if:
-          - You haven't verified the outcomes yet
-          - You're unsure what to verify
+          Pilot will review and decide the final verdict.
         `,
         inputSchema: z.object({
-          verify: z.string().describe('Specific assertion to verify on the page before finishing (e.g., "New item appears in the list", "Success message is displayed")'),
+          verify: z.string().describe('Specific assertion to verify on the page before finishing (e.g., "New item appears in the list")'),
         }),
         execute: async ({ verify }) => {
           task.addNote(`Finish requested: ${verify}`);
@@ -837,6 +869,13 @@ export class Tester extends TaskAgent implements Agent {
           if (this.pilot) {
             const currentState = this.getCurrentState();
             await this.pilot.reviewFinish(task, currentState, conversation, this.navigator);
+            if (!task.hasFinished) {
+              return {
+                success: false,
+                action: 'finish',
+                message: 'Finishing rejected; Continue execution',
+              };
+            }
           } else {
             task.addNote('Test finished successfully', TestResult.PASSED);
             task.finish(TestResult.PASSED);
@@ -845,7 +884,7 @@ export class Tester extends TaskAgent implements Agent {
           return {
             success: true,
             action: 'finish',
-            message: `Finish requested: ${verify}`,
+            message: note,
           };
         },
       }),

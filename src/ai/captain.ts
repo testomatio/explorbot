@@ -6,32 +6,35 @@ import { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
+import { executionController } from '../execution-controller.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
-import { createDebug, tag } from '../utils/logger.js';
+import { startLogCapture, stopLogCapture, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
+import { truncateJson } from '../utils/strings.ts';
 import type { Agent } from './agent.js';
-import { createCaptainTools } from './captain-tools.ts';
-import type { Conversation } from './conversation.js';
+import { WithIdleMode } from './captain/idle-mode.ts';
+import { type CaptainMode, type ModeContext, debugLog } from './captain/mixin.ts';
+import { WithTestMode } from './captain/test-mode.ts';
+import { WithWebMode } from './captain/web-mode.ts';
+import { type Conversation, toolExecutionLabel } from './conversation.js';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
-import { actionRule, locatorRule, sectionContextRule } from './rules.ts';
+import { Researcher } from './researcher.ts';
 import { TaskAgent } from './task-agent.ts';
-import { createAgentTools, createCodeceptJSTools } from './tools.ts';
-
-const debugLog = createDebug('explorbot:captain');
 
 const MAX_STEPS = 15;
 
-export class Captain extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form', 'navigate', 'record'];
+const CaptainBase = WithTestMode(WithWebMode(WithIdleMode(TaskAgent as unknown as new (...args: any[]) => TaskAgent)));
+
+export class Captain extends CaptainBase implements Agent {
+  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form', 'navigate'];
   emoji = '🧑‍✈️';
   private explorBot: ExplorBot;
   private conversation: Conversation | null = null;
   private experienceTracker: ExperienceTracker;
-  private awaitingSave = false;
-  private pendingExperience: { state: ActionResult; intent: string; summary: string; code: string } | null = null;
   private hooksRunner: HooksRunner | null = null;
   private commandExecutor: ((cmd: string) => Promise<void>) | null = null;
+  private commandDescriptions: { name: string; description: string; options: string }[] = [];
 
   constructor(explorBot: ExplorBot) {
     super();
@@ -39,8 +42,9 @@ export class Captain extends TaskAgent implements Agent {
     this.experienceTracker = new ExperienceTracker();
   }
 
-  setCommandExecutor(fn: (cmd: string) => Promise<void>): void {
+  setCommandExecutor(fn: (cmd: string) => Promise<void>, descriptions: { name: string; description: string; options: string }[]): void {
     this.commandExecutor = fn;
+    this.commandDescriptions = descriptions;
   }
 
   private getHooksRunner(): HooksRunner {
@@ -67,58 +71,48 @@ export class Captain extends TaskAgent implements Agent {
     return this.explorBot.getProvider();
   }
 
+  protected trackToolExecutions(toolExecutions: any[]): void {
+    super.trackToolExecutions(toolExecutions);
+    for (const exec of toolExecutions) {
+      const label = toolExecutionLabel(exec.input);
+      if (!label) continue;
+      const icon = exec.wasSuccessful ? '→' : '✗';
+      tag('substep').log(`${icon} ${label}`);
+    }
+  }
+
+  private detectMode(): CaptainMode {
+    if (this.explorBot.getExplorer().activeTest) return 'test';
+    if (this.explorBot.getExplorer().getStateManager().getCurrentState()) return 'web';
+    return 'idle';
+  }
+
   private systemPrompt(): string {
+    const mode = this.detectMode();
     const customPrompt = this.explorBot.getProvider().getSystemPromptForAgent('captain');
+
     return dedent`
     <role>
     You are Captain — a smart assistant for the testing session.
-    You execute actions, answer questions, diagnose problems, and run commands.
+    Current mode: ${mode}. ${mode === 'test' ? 'A test is running.' : ''}
     </role>
 
-    <capabilities>
-    - Page actions: click, pressKey, navigate, form (CodeceptJS tools)
-    - TUI commands: runCommand() — /research, /plan, /test, /navigate, /explore, etc.
-    - Test inspection: test() — flags: --session, --log, --tools, --states, --aria, --code, --pilot
-    - Browser diagnostics: browser() — evaluate JS, close tabs, screenshot, reload
-    - File access: readFile, writeFile, listFiles — knowledge/experience/output
-    - Research: getResearch() — cached UI map (no AI cost)
-    - Session log: getSessionLog() — recent events and errors
-    </capabilities>
+    <modes>
+    - idle: plan management, file operations, knowledge. Always available.
+    - web: page interaction, navigation, browser diagnostics. When working with a web page.
+    - test: test analysis, state inspection. When a test is running or analyzing results.
+    </modes>
 
-    <diagnostic_workflow>
-    When user asks "why did X fail?":
-    1. Check <plan> context — find the test sessionName
-    2. test --session <name> — get notes (passed/failed steps)
-    3. test --session <name> --tools --last 5 — recent tool calls with ariaChanges
-    4. test --session <name> --pilot — Pilot's analysis
-    5. browser screenshot — see current page state visually
-    6. If needed: test --session <name> --aria N — ARIA of a specific visited state
-
-    When user asks about the page:
-    1. getResearch() first (free, cached)
-    2. If no cache: runCommand("/research")
-    3. browser evaluate — for runtime state (localStorage, cookies)
-    </diagnostic_workflow>
+    ${this.idleModePrompt()}
+    ${mode === 'web' ? this.webModePrompt() : ''}
+    ${mode === 'test' ? this.testModePrompt() : ''}
 
     <rules>
-    - Answer questions using diagnostic tools BEFORE taking page actions
-    - Use test() with minimal flags first, drill down only if needed
-    - Prefer getResearch() over research() tool (cached, no AI cost)
-    - Prefer ARIA over HTML — avoid full HTML reads
-    - Use browser() for runtime diagnostics (localStorage, cookies, console, tabs)
-    - After each page action, call record() to log what you did
-    - Check if the expected result is achieved
-    - If the goal is achieved — call done() immediately
-    - Follow <locator_priority> rules when selecting locators for all tools
-    - click() accepts array of commands to try in order — include ARIA, CSS, XPath variants
-    - If click() fails with all provided commands, use visualClick() tool as fallback
+    - Call done() when the goal is achieved
+    - NEVER run tests unless the user explicitly asks
+    ${mode === 'web' ? this.webModeRules() : ''}
+    ${mode === 'test' ? this.testModeRules() : ''}
     </rules>
-
-    ${locatorRule}
-
-    ${actionRule}
-
-    ${sectionContextRule}
 
     ${customPrompt || ''}
     `;
@@ -156,21 +150,53 @@ export class Captain extends TaskAgent implements Agent {
     const knowledge = this.getKnowledge(actionResult);
     const experience = this.getExperience(actionResult);
 
+    const headingLines: string[] = [];
+    if (state.h1) headingLines.push(`H1: ${state.h1}`);
+    if (state.h2) headingLines.push(`H2: ${state.h2}`);
+    if (state.h3) headingLines.push(`H3: ${state.h3}`);
+    if (state.h4) headingLines.push(`H4: ${state.h4}`);
+    const headingsBlock = headingLines.join('\n');
+
+    let pageSummary = '';
+    const cachedResearch = Researcher.getCachedResearch(state);
+    if (cachedResearch) {
+      pageSummary = `<page_summary>\n${this.explorBot.agentResearcher().extractBrief(cachedResearch)}\n</page_summary>`;
+    }
+
+    const activeTest = this.explorBot.getExplorer().activeTest;
+    let activeTestContext = '';
+    if (activeTest) {
+      activeTestContext = dedent`
+        <active_test>
+        Session: ${activeTest.sessionName}
+        Scenario: ${activeTest.scenario}
+        Status: ${activeTest.status}
+        Result: ${activeTest.result || 'pending'}
+        Start URL: ${activeTest.startUrl}
+        </active_test>
+      `;
+    }
+
     return dedent`
     <page>
     URL: ${state.url || '/'}
     Title: ${state.title || 'Untitled'}
+    ${headingsBlock}
 
     <page_aria>
     ${actionResult.ariaSnapshot}
     </page_aria>
     </page>
 
+    ${pageSummary}
+
+    ${activeTestContext}
+
     ${knowledge}
 
     ${experience}
 
-    Use research() tool if you need deeper page understanding or UI element mapping.
+    Use runCommand("/research") if you need deeper page understanding or UI element mapping.
     `;
   }
 
@@ -219,31 +245,8 @@ export class Captain extends TaskAgent implements Agent {
     return Promise.resolve();
   }
 
-  private ownTools(task: Task, onDone: (summary: string) => void) {
+  private coreTools(task: Task, onDone: (summary: string) => void) {
     return {
-      navigate: tool({
-        description: 'Navigate to a page or state using AI navigator',
-        inputSchema: z.object({ target: z.string().min(1).describe('URL or known state identifier') }),
-        execute: async ({ target }) => {
-          debugLog('navigate', target);
-          tag('step').log(`Navigating to ${target}`);
-          task.addStep(`Navigate to ${target}`);
-          await this.explorBot.agentNavigator().visit(target);
-          return { success: true, target };
-        },
-      }),
-      record: tool({
-        description: 'Record what action was performed. Use after each action.',
-        inputSchema: z.object({
-          note: z.string().describe('Short description of what was done (max 15 words)'),
-        }),
-        execute: async ({ note }) => {
-          debugLog('record', note);
-          task.addNote(note);
-          tag('substep').log(`📝 ${note}`);
-          return { success: true, note };
-        },
-      }),
       done: tool({
         description: 'Call when the user request is fulfilled.',
         inputSchema: z.object({
@@ -256,86 +259,42 @@ export class Captain extends TaskAgent implements Agent {
           return { success: true, summary };
         },
       }),
-      plan: tool({
-        description: 'Generate or refresh the exploratory test plan',
-        inputSchema: z.object({ feature: z.string().optional().describe('Optional feature or focus area') }),
-        execute: async ({ feature }) => {
-          debugLog('plan', feature);
-          if (feature) {
-            tag('substep').log(`Captain planning focus: ${feature}`);
-          }
-          const newPlan = await this.explorBot.agentPlanner().plan();
-          return { success: true, tests: newPlan?.tests.length || 0 };
-        },
-      }),
-      updatePlan: tool({
-        description: 'Update the current plan by replacing or appending tests',
+      runCommand: tool({
+        description: dedent`
+          Execute a TUI command. Returns log output from command execution.
+          ${this.commandDescriptions
+            .map((c) => {
+              const opts = c.options ? ` (${c.options})` : '';
+              return `${c.name} — ${c.description}${opts}`;
+            })
+            .join('\n')}
+        `,
         inputSchema: z.object({
-          action: z.enum(['replace', 'append']).optional().describe('replace clears existing tests, append keeps them'),
-          title: z.string().optional().describe('New plan title'),
-          tests: z
-            .array(
-              z.object({
-                scenario: z.string(),
-                priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).optional(),
-                expected: z.array(z.string()).optional(),
-              })
-            )
-            .optional(),
+          command: z.string().describe('Slash command to execute, e.g. "/research", "/plan authentication", "/test brave-fox123"'),
         }),
-        execute: async ({ action, title, tests }) => {
-          let plan = this.explorBot.getCurrentPlan();
-          if (!plan) {
-            plan = await this.explorBot.plan();
-          }
-          if (!plan) {
-            return { success: false, message: 'Plan unavailable' };
-          }
-          if (title) {
-            plan.title = title;
-          }
-          if (tests?.length) {
-            if (!action || action === 'replace') {
-              plan.tests.length = 0;
-            }
-            const currentUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url || '';
-            for (const testInput of tests) {
-              const priority = testInput.priority || 'normal';
-              const expected = testInput.expected?.length ? testInput.expected : [];
-              const test = new Test(testInput.scenario, priority, expected, currentUrl);
-              plan.addTest(test);
-            }
-          }
-          plan.updateStatus();
-          return { success: true, tests: plan.tests.length };
+        execute: async ({ command }) => {
+          if (!this.commandExecutor) return { success: false, message: 'Command executor not available' };
+          const cmd = command.startsWith('/') ? command : `/${command}`;
+          startLogCapture();
+          try {
+            await this.commandExecutor(cmd);
+          } catch {}
+          const logs = stopLogCapture();
+          return { success: true, command: cmd, output: logs.join('\n') };
         },
       }),
     };
   }
 
-  private tools(task: Task, onDone: (summary: string) => void) {
-    const explorer = this.explorBot.getExplorer();
-    const codeceptjsTools = createCodeceptJSTools(explorer, task);
+  private async tools(task: Task, onDone: (summary: string) => void) {
+    const mode = this.detectMode();
+    const ctx: ModeContext = { explorBot: this.explorBot, task };
+    const core = this.coreTools(task, onDone);
+    const idle = await this.idleModeTools(ctx);
 
-    const agentTools = createAgentTools({
-      explorer,
-      researcher: this.explorBot.agentResearcher(),
-      navigator: this.explorBot.agentNavigator(),
-    });
-
-    const ownTools = this.ownTools(task, onDone);
-
-    const captainTools = createCaptainTools({
-      explorBot: this.explorBot,
-      commandExecutor: this.commandExecutor,
-    });
-
-    return {
-      ...codeceptjsTools,
-      ...agentTools,
-      ...ownTools,
-      ...captainTools,
-    };
+    if (mode === 'test') return { ...core, ...idle, ...this.testModeTools(ctx) };
+    if (mode === 'web') return { ...core, ...idle, ...this.webModeTools(ctx) };
+    return { ...core, ...idle };
   }
 
   private collectSteps(startIndex: number): string[] {
@@ -348,39 +307,80 @@ export class Captain extends TaskAgent implements Agent {
       .filter((step) => step);
   }
 
-  private async handleSaveResponse(input: string): Promise<string | null> {
-    if (!this.pendingExperience) {
-      this.awaitingSave = false;
-      return null;
+  async processSupervisorInterrupt(userMessage: string, activeTest: Test): Promise<SupervisorAction> {
+    const quickMatch = userMessage.trim().toLowerCase();
+    if (/^(stop|abort|cancel)$/i.test(quickMatch)) {
+      return { action: 'stop', message: 'Stopping test per user request' };
     }
-    const normalized = input.trim().toLowerCase();
-    if (normalized === 'y' || normalized === 'yes') {
-      await this.experienceTracker.saveSuccessfulResolution(this.pendingExperience.state, this.pendingExperience.intent, this.pendingExperience.code, this.pendingExperience.summary);
-      tag('success').log(this.emoji, 'Saved to experience');
-      this.awaitingSave = false;
-      this.pendingExperience = null;
-      return 'Saved';
+    if (/^(pass|ok|approve)$/i.test(quickMatch)) {
+      return { action: 'pass', message: 'Marking test as passed per user request' };
     }
-    if (normalized === 'n' || normalized === 'no') {
-      tag('info').log(this.emoji, 'Skipped saving to experience');
-      this.awaitingSave = false;
-      this.pendingExperience = null;
-      return 'Skipped';
+    if (/^(skip|next)$/i.test(quickMatch)) {
+      return { action: 'skip', message: 'Skipping test per user request' };
     }
-    const prompt = 'Save this solution to experience? (yes/no)';
-    tag('info').log(this.emoji, prompt);
-    return prompt;
+
+    const testerConv = this.explorBot.agentTester().getConversation();
+    let recentToolSummary = '';
+    if (testerConv) {
+      const execs = testerConv.getToolExecutions().slice(-5);
+      recentToolSummary = execs.map((e) => `${e.toolName}: ${e.wasSuccessful ? 'ok' : 'fail'} ${truncateJson(e.input)}`).join('\n');
+    }
+
+    const pilotAnalysis = this.explorBot.agentPilot().getLastAnalysis() || '';
+    const currentUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url || '';
+
+    const schema = z.object({
+      action: z.enum(['inject', 'stop', 'pass', 'skip']),
+      message: z.string().describe('Message to pass to the tester or display to user'),
+    });
+
+    const model = this.explorBot.getProvider().getModelForAgent('captain');
+    const result = await this.explorBot.getProvider().generateObject(
+      [
+        {
+          role: 'system',
+          content: dedent`
+            You are a test supervisor. A test is running and the user has interrupted with a message.
+            Decide what action to take based on the user's intent.
+
+            Actions:
+            - inject: Pass refined guidance to the tester (user wants to redirect, suggest, or help)
+            - stop: Stop the test (user wants to abort)
+            - pass: Mark test as passed (user confirms it's good)
+            - skip: Skip this test (user wants to move to next)
+
+            For "inject", rephrase the user's message as clear instructions for the AI tester.
+          `,
+        },
+        {
+          role: 'user',
+          content: dedent`
+            Test scenario: ${activeTest.scenario}
+            Current URL: ${currentUrl}
+            Recent tool executions:
+            ${recentToolSummary || 'None'}
+            ${pilotAnalysis ? `Pilot analysis: ${pilotAnalysis}` : ''}
+
+            User message: ${userMessage}
+          `,
+        },
+      ],
+      schema,
+      model
+    );
+
+    if (!result?.object) {
+      return { action: 'inject', message: userMessage };
+    }
+
+    return result.object;
   }
 
   async handle(input: string, options: { reset?: boolean } = {}): Promise<string | null> {
-    if (this.awaitingSave) {
-      return await this.handleSaveResponse(input);
-    }
-
     const stateManager = this.explorBot.getExplorer().getStateManager();
-    const currentState = stateManager.getCurrentState();
+    const initialState = stateManager.getCurrentState();
 
-    if (!currentState) {
+    if (!initialState) {
       tag('warning').log(this.emoji, 'No page loaded. Use /navigate or I.amOnPage() first.');
       return null;
     }
@@ -389,8 +389,8 @@ export class Captain extends TaskAgent implements Agent {
     let isDone = false;
     let finalSummary: string | null = null;
 
-    const startUrl = currentState.url || '';
-    const initialActionResult = ActionResult.fromState(currentState);
+    const startUrl = initialState.url || '';
+    const initialActionResult = ActionResult.fromState(initialState);
     const task = new Task(input, startUrl);
     const historyStart = stateManager.getStateHistory().length;
 
@@ -399,7 +399,7 @@ export class Captain extends TaskAgent implements Agent {
       finalSummary = summary;
     };
 
-    const tools = this.tools(task, onDone);
+    const tools = await this.tools(task, onDone);
 
     await this.getHooksRunner().runBeforeHook('captain', startUrl);
 
@@ -431,6 +431,12 @@ export class Captain extends TaskAgent implements Agent {
         debugLog(`Captain iteration ${iteration}`);
 
         if (isDone) {
+          stop();
+          return;
+        }
+
+        const currentState = stateManager.getCurrentState();
+        if (!currentState) {
           stop();
           return;
         }
@@ -504,21 +510,24 @@ export class Captain extends TaskAgent implements Agent {
       const steps = this.collectSteps(historyStart);
       if (steps.length > 0) {
         const summaryLine = (finalSummary as string).split('\n')[0];
-        this.pendingExperience = {
-          state: initialActionResult,
-          intent: input,
-          summary: summaryLine,
-          code: steps.join('\n'),
-        };
-        this.awaitingSave = true;
-        const prompt = 'Save this solution to experience? (yes/no)';
-        tag('info').log(this.emoji, prompt);
-        return prompt;
+        const saveResponse = await executionController.requestInput('Save this solution to experience? (yes/no)');
+        const normalized = (saveResponse || '').trim().toLowerCase();
+        if (normalized === 'y' || normalized === 'yes') {
+          await this.experienceTracker.saveSuccessfulResolution(initialActionResult, input, steps.join('\n'), summaryLine);
+          tag('success').log(this.emoji, 'Saved to experience');
+        } else {
+          tag('info').log(this.emoji, 'Skipped saving to experience');
+        }
       }
     }
 
-    return finalSummary;
+    return null;
   }
 }
 
 export default Captain;
+
+interface SupervisorAction {
+  action: 'inject' | 'stop' | 'pass' | 'skip';
+  message: string;
+}

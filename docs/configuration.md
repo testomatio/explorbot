@@ -17,8 +17,7 @@ export default {
     url: 'http://localhost:3000',
   },
   ai: {
-    provider: groq,
-    model: 'gpt-oss-20b',
+    model: groq('gpt-oss-20b'),
   },
 };
 ```
@@ -57,10 +56,10 @@ playwright: {
 
 ```javascript
 ai: {
-  model: 'gpt-oss-20b',  // Default: fast and smart model
+  model: groq('gpt-oss-20b'),  // Default: fast and smart model
   agents: {
     // Fastest model for summarization
-    'experience-compactor': { model: 'llama-3.1-8b' }, 
+    'experience-compactor': { model: groq('llama-3.1-8b') },
   },
 }
 ```
@@ -160,7 +159,7 @@ Each agent can be individually configured with its own model and custom system p
 ```javascript
 agents: {
   tester: {
-    model: 'gpt-oss-20b',          // Override default model
+    model: groq('gpt-oss-20b'),    // Override default model
     enabled: true,                  // Enable/disable agent
     systemPrompt: '...',           // Append to system prompt
     beforeHook: { /* ... */ },     // Run before agent executes
@@ -171,7 +170,7 @@ agents: {
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `model` | `string` | Model to use for this agent (overrides default) |
+| `model` | `LanguageModel` | Model instance for this agent (overrides default) |
 | `enabled` | `boolean` | Enable or disable the agent |
 | `systemPrompt` | `string` | Additional instructions appended to the agent's system prompt |
 | `beforeHook` | `Hook \| HookPatternMap` | Code to run before agent execution |
@@ -270,9 +269,11 @@ LANGFUSE_SECRET_KEY=sk-...
 Reference in config:
 
 ```javascript
+const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
+
 export default {
   ai: {
-    provider: createGroq({ apiKey: process.env.GROQ_API_KEY }),
+    model: groq('gpt-oss-20b'),
     langfuse: {
       enabled: true,
       publicKey: process.env.LANGFUSE_PUBLIC_KEY,
@@ -330,9 +331,8 @@ export default {
 
   // AI provider settings
   ai: {
-    provider: groq,                // Vercel AI SDK provider (required)
-    model: 'gpt-oss-20b',          // Default model (required)
-    visionModel: 'llama-scout-4',  // Model for screenshot analysis
+    model: groq('gpt-oss-20b'),          // Default model instance (required)
+    visionModel: groq('llama-scout-4'),  // Model for screenshot analysis
     vision: true,                  // Enable vision features
     maxAttempts: 3,                // Retry attempts for AI calls
     retryDelay: 1000,              // Delay between retries (ms)
@@ -345,13 +345,13 @@ export default {
     },
     agents: {                      // Per-agent configuration
       tester: {
-        model: 'gpt-oss-20b',
+        model: groq('gpt-oss-20b'),
         enabled: true,
         systemPrompt: '...',
       },
       planner: { /* ... */ },
       researcher: {                // Researcher-specific options
-        model: 'gpt-oss-20b',      // Override default model
+        model: groq('gpt-oss-20b'), // Override default model
         enabled: true,             // Enable/disable agent
         systemPrompt: '...',       // Additional instructions
         excludeSelectors: [],      // CSS selectors to exclude

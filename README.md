@@ -77,10 +77,9 @@ export default {
     url: 'https://your-app.com',     // <-- Your app URL
   },
   ai: {
-    provider: groq,
-    model: 'gpt-oss-20b',            // Fast cheap model for most agents
-    visionModel: 'llama-scout-4',    // Screenshot analysis
-    agenticModel: 'qwen3-32b',       // Smarter model for Captain & Pilot
+    model: groq('gpt-oss-20b'),            // Fast cheap model for most agents
+    visionModel: groq('llama-scout-4'),    // Screenshot analysis
+    agenticModel: groq('qwen3-32b'),       // Smarter model for Captain & Pilot
   },
 };
 ```

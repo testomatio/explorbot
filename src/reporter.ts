@@ -71,6 +71,7 @@ export class Reporter {
         rid: test.id,
         title: test.scenario,
         suite_title: test.plan?.title || 'Auto-Exploratory Testing',
+        meta: this.buildMeta(test),
       };
 
       debugLog('Test started:', testData);
@@ -137,6 +138,8 @@ export class Reporter {
       let status = null;
       if (test.isSuccessful) {
         status = 'passed';
+      } else if (test.isSkipped) {
+        status = 'skipped';
       } else if (test.hasFailed) {
         status = 'failed';
       }
@@ -155,7 +158,8 @@ export class Reporter {
           .map((stepData) => stepData.text)
           .join('\n'),
         files: Object.values(test.artifacts) || [],
-        message: test.summary || '',
+        message: test.summary || this.extractLastNoteMessage(test) || '',
+        meta: this.buildMeta(test),
       };
 
       debugLog(testData);
@@ -185,6 +189,21 @@ export class Reporter {
     return this.isRunStarted;
   }
 
+  private extractLastNoteMessage(test: Test): string {
+    const notes = Object.values(test.notes);
+    if (notes.length === 0) return '';
+    return notes[notes.length - 1].message;
+  }
+
+  private buildMeta(test: Test): Record<string, string> {
+    const meta: Record<string, string> = {};
+    const baseUrl = ConfigParser.getInstance().getConfig().playwright?.url;
+    if (baseUrl) meta.baseUrl = baseUrl;
+    if (test.style) meta.style = test.style;
+    if (test.sessionName) meta.sessionName = test.sessionName;
+    return meta;
+  }
+
   async reportSteps(test: Test, steps: ReporterStep[]): Promise<void> {
     if (!this.isRunStarted) return;
 
@@ -211,6 +230,7 @@ export class Reporter {
         suite_title: test.plan?.title || 'Auto-Exploratory Testing',
         steps: formattedSteps,
         message: discoveries || test.summary || '',
+        meta: this.buildMeta(test),
       };
 
       debugLog('Reporting steps:', testData);

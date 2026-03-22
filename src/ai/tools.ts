@@ -10,7 +10,7 @@ import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
-import { sectionContextRule, sectionUiMapRule } from './rules.ts';
+import { sectionContextRule } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
@@ -57,20 +57,20 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           return failedToolResult('click', 'No commands provided');
         }
 
+        const invalidCommands = rawCommands.map((cmd) => cmd.trim()).filter((cmd) => cmd.startsWith('I.') && !cmd.startsWith('I.click'));
+
+        if (invalidCommands.length > 0) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('click', `Invalid commands: ${invalidCommands.join(', ')}. Click tool only accepts I.click() or I.clickXY() commands.`, {
+            suggestion: 'Use form() tool for typing text or multiple actions, or exitIframe() to leave iframe context.',
+          });
+        }
+
         const commands = rawCommands.map((cmd) => {
           const trimmed = cmd.trim();
           if (trimmed.startsWith('I.click')) return trimmed;
           return `I.click(${JSON.stringify(trimmed)})`;
         });
-
-        const invalidCommands = commands.filter((cmd) => !cmd.trim().startsWith('I.click'));
-
-        if (invalidCommands.length > 0) {
-          activeNote.commit(TestResult.FAILED);
-          return failedToolResult('click', `Invalid commands: ${invalidCommands.join(', ')}. Click tool only accepts I.click() or I.clickXY() commands.`, {
-            suggestion: 'Use form() tool for typing text or multiple actions (type + click).',
-          });
-        }
 
         const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
         const action = explorer.createAction();
@@ -102,10 +102,19 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           activeNote.screenshot = await action.saveScreenshot();
         }
         activeNote.commit(TestResult.FAILED);
+
+        let suggestion = "Try xpathCheck() to find the element's actual position, see() for visual analysis, or visualClick() to click by visual appearance.";
+        const lastError = attempts[attempts.length - 1]?.error || '';
+        if (lastError.includes('was not found') || lastError.includes('not found by text')) {
+          suggestion = 'Element was not found in the DOM. Use xpathCheck() to locate it, context() to refresh snapshot, or visualClick() to click by visual appearance.';
+        } else if (lastError.includes('Timeout') || lastError.includes('intercept')) {
+          suggestion = 'Element exists but could not be clicked (possibly covered by overlay or not interactable). Try closing overlapping panels first, or use visualClick().';
+        }
+
         return failedToolResult('click', 'All click commands failed', {
           ...toolResult,
           attempts,
-          suggestion: "Try xpathCheck() to find the element's actual position on the page, or use see() for visual analysis.",
+          suggestion,
         });
       },
     }),
@@ -347,6 +356,54 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
   };
 }
 
+export function createSpecialContextTools(explorer: Explorer, context: 'iframe') {
+  const stateManager = explorer.getStateManager();
+
+  if (context !== 'iframe') {
+    return {};
+  }
+
+  return {
+    exitIframe: tool({
+      description: dedent`
+        Exit the current iframe and return to the main page context.
+
+        Use this only when you are already working inside an iframe and need to interact
+        with elements outside that iframe.
+      `,
+      inputSchema: z.object({
+        reason: z.string().optional().describe('Why you need to leave the iframe context.'),
+      }),
+      execute: async ({ reason }) => {
+        try {
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+
+          if (!previousState.isInsideIframe) {
+            return failedToolResult('exitIframe', 'You are not inside an iframe.', {
+              suggestion: 'Continue interacting with the current page context.',
+            });
+          }
+
+          await explorer.switchToMainFrame();
+
+          const action = explorer.createAction();
+          const nextState = await action.capturePageState();
+          const toolResult = await nextState.toToolResult(previousState, 'I.switchTo()');
+
+          return successToolResult('exitIframe', {
+            ...toolResult,
+            message: reason || 'Exited iframe and returned to the main page context.',
+            code: 'I.switchTo()',
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          return failedToolResult('exitIframe', `Failed to exit iframe: ${errorMessage}`);
+        }
+      },
+    }),
+  };
+}
+
 export function createAgentTools({
   explorer,
   researcher,
@@ -395,7 +452,7 @@ export function createAgentTools({
           return successToolResult('see', {
             analysis: analysisResult,
             message: `Successfully analyzed screenshot for: ${request}`,
-            suggestion: 'If an expected data was seen on a page, call verify() to ensure it can be located in DOM',
+            suggestion: 'Visual confirmation is valid evidence for test results. Use record() to note the visual findings.',
           });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
@@ -471,11 +528,11 @@ export function createAgentTools({
           const currentState = explorer.getStateManager().getCurrentState();
           const verifications = currentState?.verifications;
 
-          if (verifications && Object.keys(verifications).length > 0) {
-            const hasPassed = Object.values(verifications).some((v) => v);
-            return failedToolResult('verify', 'Verifications already performed on this page state.', {
+          if (verifications?.[assertion] !== undefined) {
+            return failedToolResult('verify', `Already verified: "${assertion}" → ${verifications[assertion] ? 'PASS' : 'FAIL'}`, {
+              alreadyVerified: true,
               verifications,
-              suggestion: hasPassed ? 'A verification passed. Call finish() to complete the test.' : 'Verifications failed. Perform actions to change the page state, then try again.',
+              suggestion: verifications[assertion] ? 'This verification already passed. Call finish() to complete the test.' : 'This verification already failed. Perform actions to change the page state, then try again.',
             });
           }
 
@@ -722,6 +779,72 @@ export function createAgentTools({
       },
     }),
 
+    back: tool({
+      description: dedent`
+        Navigate back to the previous page (most recent URL different from current).
+        Use when you accidentally navigated to a wrong page and want to return one step.
+        For going all the way back to the starting page, use reset() instead.
+      `,
+      inputSchema: z.object({
+        reason: z.string().describe('Why you need to go back'),
+      }),
+      execute: async ({ reason }) => {
+        const stateManager = explorer.getStateManager();
+        const currentUrl = stateManager.getCurrentState()?.url;
+        const history = stateManager.getStateHistory();
+
+        let targetUrl: string | null = null;
+        for (let i = history.length - 1; i >= 0; i--) {
+          const url = history[i].toState.url;
+          if (url !== currentUrl) {
+            targetUrl = url;
+            break;
+          }
+        }
+
+        if (!targetUrl) {
+          return failedToolResult('back', 'No previous page found in history.', {
+            suggestion: 'Use reset() to navigate to the starting page.',
+          });
+        }
+
+        const action = explorer.createAction();
+        const success = await action.attempt(`I.amOnPage(${JSON.stringify(targetUrl)})`, `${reason} (BACK to ${targetUrl})`);
+
+        if (success) {
+          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+          const toolResult = await previousState.toToolResult(previousState, `I.amOnPage("${targetUrl}")`);
+          return successToolResult('back', {
+            ...toolResult,
+            message: `Navigated back to ${targetUrl}`,
+          });
+        }
+
+        return failedToolResult('back', `Failed to navigate back to ${targetUrl}`, {
+          suggestion: 'Try reset() to return to the starting page.',
+          ...(action.lastError && { error: action.lastError.toString() }),
+        });
+      },
+    }),
+
+    getVisitedStates: tool({
+      description: 'List all previously visited page states (deduped by URL). Use to find pages to navigate back to.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        const history = explorer.getStateManager().getStateHistory();
+        const seen = new Set<string>();
+        const states = history
+          .map((t) => t.toState)
+          .filter((s) => {
+            if (seen.has(s.url)) return false;
+            seen.add(s.url);
+            return true;
+          })
+          .map((s, i) => ({ index: i, url: s.url, title: s.title, h1: s.h1 }));
+        return { success: true, states };
+      },
+    }),
+
     xpathCheck: tool({
       description: dedent`
         It seems the desired element could not be reached by Tester.
@@ -820,7 +943,7 @@ function successToolResult(action: string, data?: Record<string, any>) {
   return result;
 }
 
-function failedToolResult(action: string, message: string, data?: Record<string, any>) {
+async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
   const result: Record<string, any> = { success: false, action, message, ...data };
   if (data?.pageDiff) {
     result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
@@ -830,6 +953,7 @@ function failedToolResult(action: string, message: string, data?: Record<string,
   if (multipleElementsSuggestion) {
     result.suggestion = multipleElementsSuggestion;
     result.multipleElementsDetected = true;
+    result.elements = await formatMatchedElements(error);
     return result;
   }
 
@@ -856,6 +980,38 @@ function getMultipleElementsSuggestion(errorMessage: string): string | null {
     5. Use xpathCheck() to inspect matched elements and pick the correct one
     6. Use visualClick() to click the right element by visual appearance
   `;
+}
+
+async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
+  if (!error || error.name !== 'MultipleElementsFound') return null;
+
+  const elements = (error as any).webElements as Array<{ toAbsoluteXPath: () => Promise<string>; toSimplifiedHTML: () => Promise<string> }> | undefined;
+  if (!elements?.length) return null;
+
+  let allUnknown = true;
+  const lines: string[] = [];
+
+  for (let i = 0; i < Math.min(elements.length, 10); i++) {
+    let xpath = '<unknown>';
+    let html = '<unknown>';
+    try {
+      xpath = await elements[i].toAbsoluteXPath();
+      allUnknown = false;
+    } catch (e) {
+      debugLog('Failed to get XPath for matched element %d: %s', i, e);
+    }
+    try {
+      html = await elements[i].toSimplifiedHTML();
+      allUnknown = false;
+    } catch (e) {
+      debugLog('Failed to get HTML for matched element %d: %s', i, e);
+    }
+    lines.push(`Element ${i + 1}\nXPath: ${xpath}\nHTML: ${html}`);
+  }
+
+  if (allUnknown) return 'Could not fetch element details. Repeat the action to get better info.';
+
+  return lines.join('\n\n');
 }
 
 function getNotFoundSuggestion(errorMessage: string): string | null {

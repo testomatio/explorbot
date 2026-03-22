@@ -1,6 +1,6 @@
 # AI Provider Configuration
 
-Explorbot uses the [Vercel AI SDK](https://sdk.vercel.ai/) to connect to AI providers. This gives you flexibility to use any supported provider.
+Explorbot uses the [Vercel AI SDK](https://sdk.vercel.ai/) to connect to AI providers. This gives you flexibility to use any supported provider — and even mix providers for different models.
 
 ## Requirements
 
@@ -23,9 +23,8 @@ const groq = createGroq({
 
 export default {
   ai: {
-    provider: groq,
-    model: 'gpt-oss-20b',
-    visionModel: 'llama-scout-4',
+    model: groq('gpt-oss-20b'),
+    visionModel: groq('llama-scout-4'),
   },
 };
 ```
@@ -47,9 +46,8 @@ const groq = createGroq({
 
 export default {
   ai: {
-    provider: groq,
-    model: 'gpt-oss-20b',
-    visionModel: 'llama-scout-4',
+    model: groq('gpt-oss-20b'),
+    visionModel: groq('llama-scout-4'),
   },
 };
 ```
@@ -69,9 +67,8 @@ const cerebras = createCerebras({
 
 export default {
   ai: {
-    provider: cerebras,
-    model: 'gpt-oss-20b',
-    visionModel: 'llama-scout-4',
+    model: cerebras('gpt-oss-20b'),
+    visionModel: cerebras('llama-scout-4'),
   },
 };
 ```
@@ -91,9 +88,8 @@ const openai = createOpenAI({
 
 export default {
   ai: {
-    provider: openai,
-    model: 'gpt-4o-mini',
-    visionModel: 'gpt-4o-mini',
+    model: openai('gpt-4o-mini'),
+    visionModel: openai('gpt-4o-mini'),
   },
 };
 ```
@@ -115,9 +111,8 @@ const anthropic = createAnthropic({
 
 export default {
   ai: {
-    provider: anthropic,
-    model: 'claude-sonnet-4-20250514',
-    visionModel: 'claude-sonnet-4-20250514',
+    model: anthropic('claude-sonnet-4-20250514'),
+    visionModel: anthropic('claude-sonnet-4-20250514'),
   },
 };
 ```
@@ -140,8 +135,7 @@ const azure = createAzure({
 
 export default {
   ai: {
-    provider: azure,
-    model: 'your-deployment-name',
+    model: azure('your-deployment-name'),
   },
 };
 ```
@@ -161,9 +155,28 @@ const google = createGoogleGenerativeAI({
 
 export default {
   ai: {
-    provider: google,
-    model: 'gemini-2.0-flash',
-    visionModel: 'gemini-2.0-flash',
+    model: google('gemini-2.0-flash'),
+    visionModel: google('gemini-2.0-flash'),
+  },
+};
+```
+
+## Multi-Provider Configuration
+
+You can mix providers for different models — use a cheap provider for token-hungry agents and a smarter provider for decision-making:
+
+```javascript
+import { createGroq } from '@ai-sdk/groq';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+
+const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
+const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY });
+
+export default {
+  ai: {
+    model: groq('gpt-oss-20b'),
+    visionModel: groq('llama-scout-4'),
+    agenticModel: openrouter('moonshotai/kimi-k2-instruct-0905'),
   },
 };
 ```
@@ -175,14 +188,13 @@ You can use different models for different agents to optimize cost:
 ```javascript
 export default {
   ai: {
-    provider: groq,
-    model: 'gpt-oss-20b',
-    visionModel: 'llama-scout-4',
+    model: groq('gpt-oss-20b'),
+    visionModel: groq('llama-scout-4'),
     agents: {
-      navigator: { model: 'gpt-oss-20b' },
-      researcher: { model: 'gpt-oss-20b', visionModel: 'llama-scout-4' },
-      planner: { model: 'gpt-oss-20b' },
-      tester: { model: 'gpt-oss-20b' },
+      navigator: { model: groq('gpt-oss-20b') },
+      researcher: { model: groq('gpt-oss-20b') },
+      planner: { model: groq('gpt-oss-20b') },
+      tester: { model: groq('gpt-oss-20b') },
     },
   },
 };

@@ -26,6 +26,15 @@ const ChecklistRow: React.FC<{ item: ChecklistItem }> = ({ item }) => (
   </Box>
 );
 
+function getModelLabel(model: any): string | undefined {
+  if (!model) return undefined;
+  const modelId = model?.modelId;
+  const provider = model?.provider;
+  if (!modelId) return undefined;
+  if (provider) return `${provider}:${modelId}`;
+  return modelId;
+}
+
 const WelcomeChecklist: React.FC<WelcomeChecklistProps> = ({ config, knowledgeTracker }) => {
   const knowledge = knowledgeTracker.listAllKnowledge();
   const knowledgeCount = knowledge.length;
@@ -36,11 +45,25 @@ const WelcomeChecklist: React.FC<WelcomeChecklistProps> = ({ config, knowledgeTr
 
   const items: ChecklistItem[] = [
     {
+      label: 'Model',
+      description: 'default model for all agents',
+      enabled: Boolean(config.ai?.model),
+      value: getModelLabel(config.ai?.model),
+      suggestion: 'set ai.model in config',
+    },
+    {
       label: 'Vision model',
       description: 'analyze screenshots for visual assertions',
       enabled: Boolean(config.ai?.visionModel || config.ai?.vision),
-      value: config.ai?.visionModel,
+      value: getModelLabel(config.ai?.visionModel),
       suggestion: 'set ai.visionModel in config',
+    },
+    {
+      label: 'Agentic model',
+      description: 'smarter model for Captain & Pilot decisions',
+      enabled: Boolean(config.ai?.agenticModel),
+      value: getModelLabel(config.ai?.agenticModel),
+      suggestion: 'set ai.agenticModel in config',
     },
     {
       label: 'Knowledge',

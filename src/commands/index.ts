@@ -1,6 +1,7 @@
 import type { ExplorBot } from '../explorbot.js';
 import type { BaseCommand } from './base-command.js';
 import { CleanCommand } from './clean-command.js';
+import { DebugCommand } from './debug-command.js';
 import { ContextAriaCommand } from './context-aria-command.js';
 import { ContextCommand } from './context-command.js';
 import { ContextDataCommand } from './context-data-command.js';
@@ -57,6 +58,7 @@ const commandClasses: CommandClass[] = [
   ContextDataCommand,
   TestCommand,
   StatusCommand,
+  DebugCommand,
   ExitCommand,
 ];
 

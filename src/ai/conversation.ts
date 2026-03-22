@@ -7,14 +7,18 @@ export interface ToolExecution {
   wasSuccessful: boolean;
 }
 
+export function toolExecutionLabel(input: Record<string, any> | undefined): string {
+  return input?.explanation || input?.assertion || input?.reason || input?.request || '';
+}
+
 export class Conversation {
   id: string;
   messages: ModelMessage[];
-  model: string;
+  model: any;
   telemetryFunctionId?: string;
   private autoTrimRules: Map<string, number>;
 
-  constructor(messages: ModelMessage[] = [], model?: string, telemetryFunctionId?: string) {
+  constructor(messages: ModelMessage[] = [], model?: any, telemetryFunctionId?: string) {
     this.id = this.generateId();
     this.messages = messages;
     this.model = model || '';

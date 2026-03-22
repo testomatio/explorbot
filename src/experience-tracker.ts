@@ -6,9 +6,10 @@ import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
 import { createDebug, log, tag } from './utils/logger.js';
+import { mdq } from './utils/markdown-query.js';
 
 const debugLog = createDebug('explorbot:experience');
-const DEFAULT_MAX_EXPERIENCE_LINES = 50;
+const DEFAULT_MAX_EXPERIENCE_LINES = 100;
 
 interface ExperienceEntry {
   timestamp: string;
@@ -270,7 +271,7 @@ ${filteredCode}
     return allFiles;
   }
 
-  getRelevantExperience(state: ActionResult): { filePath: string; data: any; content: string }[] {
+  getRelevantExperience(state: ActionResult, options?: { includeDescendantExperience?: boolean }): { filePath: string; data: any; content: string }[] {
     const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(state);
     const readingDisabled = relevantKnowledge.some((knowledge) => knowledge.noExperienceReading === true || knowledge.noExperienceReading === 'true');
     if (readingDisabled) {
@@ -282,18 +283,15 @@ ${filteredCode}
     return this.getAllExperience()
       .filter((experience) => {
         const experienceState = experience.data as WebPageState;
-        if (!experienceState.url || !state.url) return false;
-        return this.normalizeUrl(state.url) === this.normalizeUrl(experienceState.url);
+        return state.isRelevantExperienceRecord(experienceState, {
+          includeDescendantExperience: options?.includeDescendantExperience,
+        });
       })
       .map((experience) => {
         const lines = experience.content.split('\n');
         if (lines.length <= maxLines) return experience;
         return { ...experience, content: lines.slice(0, maxLines).join('\n') };
       });
-  }
-
-  private normalizeUrl(url: string): string {
-    return url.replace(/\/+$/, '');
   }
 
   private extractStatePath(url: string): string {
@@ -380,6 +378,31 @@ ${filteredCode}
     this.writeExperienceFile(stateHash, updatedContent, data);
 
     tag('substep').log(`Added flow experience to: ${stateHash}.md`);
+  }
+
+  getSuccessfulExperience(state: ActionResult, options?: { includeDescendants?: boolean; stripCode?: boolean }): string[] {
+    const records = this.getRelevantExperience(state, {
+      includeDescendantExperience: options?.includeDescendants,
+    });
+
+    const results: string[] = [];
+    for (const record of records) {
+      if (!record.content) continue;
+
+      const successFlows = mdq(record.content).query('section(~"Successful Flow")').text();
+      const succeeded = mdq(record.content).query('section(~"SUCCEEDED")').text();
+      let combined = [successFlows, succeeded].filter(Boolean).join('\n\n');
+
+      if (!combined.trim()) continue;
+
+      if (options?.stripCode) {
+        combined = mdq(combined).query('code').replace('');
+      }
+
+      if (combined.trim()) results.push(combined.trim());
+    }
+
+    return results;
   }
 
   private generateFlowContent(scenario: string, flowSteps: string[]): string {

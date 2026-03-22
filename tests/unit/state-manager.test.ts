@@ -10,7 +10,7 @@ describe('StateManager', () => {
     // Mock config parser with writable temp directories
     const mockConfig = {
       playwright: { browser: 'chromium', url: 'http://localhost:3000' },
-      ai: { provider: null, model: 'test' },
+      ai: { model: 'test' },
       dirs: {
         knowledge: '/tmp/explorbot-test/knowledge',
         experience: '/tmp/explorbot-test/experience',

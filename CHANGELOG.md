@@ -1,5 +1,57 @@
 # Changelog
 
+## 2026-03-22
+
+### New CLI Commands
+- **`explorbot api plan <endpoint>`** — AI-powered API testing. Generate test plans for API endpoints and execute them.
+  ```bash
+  explorbot api init                          # initialize API testing project
+  explorbot api plan /users                   # generate test plan for endpoint
+  explorbot api plan /users --style curious   # use a specific planning style
+  explorbot api test plan.md                  # run tests from plan
+  explorbot api test plan.md 1-3             # run specific tests
+  explorbot api know /users "CRUD endpoint"  # add API knowledge
+  ```
+
+### New TUI Commands
+- **`/debug`** — Toggle debug output on/off during a session.
+  ```
+  /debug
+  ```
+
+### Configuration
+- **`ai.model`** — Now accepts Vercel AI SDK model instances directly (e.g., `groq('gpt-oss-20b')`) instead of requiring separate `ai.provider` and `ai.model` string. This enables mixing providers for different agents.
+- **`experience.maxReadLines`** — Default increased from `50` to `100`.
+
+### Changes
+- [Provider] Simplified configuration — pass model instances directly instead of separate provider function and model string. `ai.provider` is no longer required. Each agent can use a model from a different provider
+- [Provider] Multi-level context reduction on overflow — progressively trims tagged content, then compacts middle messages, instead of a single trim attempt
+- [Tester] New `back()` tool to navigate to the previous page when accidentally navigated to a wrong page
+- [Tester] New `exitIframe()` tool to leave iframe context instead of calling `I.switchTo()` directly
+- [Tester] Captain can now interrupt running tests to pass, fail, or skip them via supervisor mode
+- [Tester] Click failures now show error-specific suggestions (element not found vs timeout/overlay) and list matched elements when multiple are found
+- [Tester] Visual confirmation from `see()` is now valid evidence for test results
+- [Tester] `verify()` checks per-assertion duplicates instead of blocking all verifications after the first one
+- [Tester] Pilot review triggers after 3 consecutive failures instead of only at fixed iteration intervals
+- [Tester] Experience from previous sessions is now included in test execution context
+- [Pilot] New "skipped" verdict for tests where the feature does not exist on the page
+- [Pilot] Session log now groups actions by URL with page headings for clearer context
+- [Pilot] Visual analysis from screenshots is now considered strong evidence for UI state
+- [Pilot] Scenario goal takes priority over individual milestones when deciding pass/fail
+- [Planner] Automatically discovers and plans tests for related sub-pages after the main page
+- [Planner] Scenarios already tested in previous planning rounds are skipped (session deduplication)
+- [Planner] Stricter test independence — workflows are never split into multiple tests
+- [Researcher] UI map now includes `eidx` column for element index references
+- [Researcher] Elements with hover interactions (tooltips, popovers, submenus) are now detected and marked
+- [Researcher] Deep analysis filters expandable elements using AI when there are many candidates, and probes elements for hover-triggered UI
+- [Historian] Detects retry patterns in test sessions and saves successful resolutions to experience automatically
+- [Captain] Refactored with idle mode — includes bash tool, file access, and diagnostic capabilities
+- [Explorer] Tests can now be marked as "skipped" with proper event reporting
+- TUI: New plan pane shows completed and active plan progress with pass/fail/skip counts
+- TUI: Skipped tests shown in yellow with strikethrough in task list
+- Rules: `I.moveCursorTo` documented for triggering hover effects (tooltips, dropdown menus, preview cards)
+- Rules: Popup dismissal now uses `I.clickXY(0, 0)` instead of `I.click('//body')`
+
 ## 2026-03-17
 
 ### New CLI Options

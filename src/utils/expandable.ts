@@ -13,16 +13,26 @@ export const EXPANDABLE_ICON_DESCRIPTIONS = [
   'expand / collapse toggle icon',
 ];
 
-const ICON_CLASSES = ['dots', 'chevron', 'ellipsis', 'caret', 'arrow', 'expand', 'collapse', 'hamburger', 'more'];
+const ICON_CLASSES = ['dots', 'chevron', 'ellipsis', 'caret', 'arrow', 'expand', 'collapse', 'hamburger', 'more', 'filter', 'tune'];
 const TRIGGER_CLASSES = ['toggle', 'trigger', 'split', 'popup', 'filter', 'tune'];
 const CONTAINER_CLASSES = ['dropdown-trigger', 'dropdown-toggle', 'popover-trigger', 'menu-trigger'];
 const CLICKABLE = `@role='button' or self::button or self::a or @tabindex`;
 const cc = (classes: string[]) => classes.map((c) => `contains(@class,'${c}')`).join(' or ');
 
-const XPATHS = [`//*[@aria-haspopup or @aria-expanded]`, `//*[(${CLICKABLE}) and .//*[${cc(ICON_CLASSES)}]]`, `//*[${cc(CONTAINER_CLASSES)}]`, `//*[(${CLICKABLE}) and (${cc(TRIGGER_CLASSES)})]`];
+export const EXPANDABLE_XPATHS = ['//*[@aria-haspopup or @aria-expanded]', `//*[(${CLICKABLE}) and .//*[${cc(ICON_CLASSES)}]]`, `//*[${cc(CONTAINER_CLASSES)}]`, `//*[(${CLICKABLE}) and (${cc(TRIGGER_CLASSES)})]`];
 
 export function buildExpandableXPath(excludeContainers: string[] = []): string {
   const exclusions = excludeContainers.map((css) => cssToAncestorXPath(css)).filter(Boolean);
   const predicate = exclusions.length > 0 ? `[not(ancestor::*[${exclusions.join(' or ')}])]` : '';
-  return XPATHS.map((x) => `(${x}${predicate})`).join(' | ');
+  return EXPANDABLE_XPATHS.map((x) => `(${x}${predicate})`).join(' | ');
+}
+
+export function buildExpandableXPathInsideContainers(containers: string[]): string[] {
+  return containers
+    .map((css) => {
+      const pred = cssToAncestorXPath(css);
+      if (!pred) return null;
+      return EXPANDABLE_XPATHS.map((x) => `(${x}[ancestor::*[${pred}]])`).join(' | ');
+    })
+    .filter((x): x is string => x !== null);
 }

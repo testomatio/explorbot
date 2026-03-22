@@ -1,0 +1,26 @@
+{
+  "name": "apibot",
+  "version": "1.0.0",
+  "description": "AI-powered API testing CLI tool",
+  "type": "module",
+  "bin": {
+    "apibot": "./bin/apibot-cli.ts"
+  },
+  "scripts": {
+    "format": "biome format --write .",
+    "lint:fix": "biome lint --write .",
+    "check:fix": "biome check --write ."
+  },
+  "dependencies": {
+    "@scalar/openapi-parser": "^0.25.6",
+    "ai": "^6.0.6",
+    "commander": "^14.0.1",
+    "dedent": "^1.6.0",
+    "expect": "^30.3.0",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.5.3",
+    "typescript": "^5.0.0"
+  }
+}

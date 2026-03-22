@@ -13,15 +13,14 @@ import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
-import { type CoverageResult, analyzeCoverage } from './planner/coverage.ts';
-import { EXPAND_PLAN_SUFFIX, getActiveStyle, getStyles } from './planner/styles.ts';
+import { getActiveStyle, getStyles } from './planner/styles.ts';
+import { WithSessionDedup } from './planner/session-dedup.ts';
+import { WithSubPages, clearPlanRegistry, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
 import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
 import { fileUploadRule, protectionRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
-
-const planCache: Map<string, Plan> = new Map();
 
 const TasksSchema = z.object({
   planName: z.string().describe('Short descriptive name for the test plan (e.g., "User Authentication Testing", "Product Catalog Navigation", "Form Validation Tests")'),
@@ -40,21 +39,23 @@ const TasksSchema = z.object({
     .describe('List of testing scenarios'),
 });
 
-export class Planner implements Agent {
+const PlannerBase = WithSessionDedup(WithSubPages(Object as unknown as new (...args: any[]) => object));
+
+export class Planner extends PlannerBase implements Agent {
   emoji = '📋';
   private explorer: Explorer;
-  private provider: Provider;
-  private stateManager: StateManager;
+  provider: Provider;
+  stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
 
   MIN_TASKS = 3;
   MAX_TASKS = 12;
   currentPlan: Plan | null = null;
   private lastStyleName = '';
-  private lastCoverage: CoverageResult | null = null;
   researcher: Researcher;
 
   constructor(explorer: Explorer, provider: Provider) {
+    super();
     this.explorer = explorer;
     this.provider = provider;
     this.researcher = new Researcher(explorer, provider);
@@ -87,7 +88,11 @@ export class Planner implements Agent {
       Tests must be relevant to the page
       Tests must be achievable from UI
       Tests must be verifiable from UI
-      Tests must be independent of each other
+      NEVER split one workflow into multiple tests. Each test must be a complete end-to-end flow.
+      Bad: "Open delete dropdown" + "Confirm deletion" — these are ONE test, not two.
+      Bad: "Search for X" + "Verify search results" — searching and verifying is ONE test.
+      Bad: "Leave field empty" + "Click submit" — that's one negative test, not two.
+      If two scenarios cannot run independently (one requires the other to run first), merge them into one.
     </task>
 
     ${customPrompt || ''}
@@ -98,34 +103,28 @@ export class Planner implements Agent {
     this.currentPlan = plan;
   }
 
-  getCoverage() {
-    return this.lastCoverage;
-  }
-
   static getCachedPlan(url: string): Plan | null {
-    const baseUrl = url.split('?')[0].split('#')[0];
-    return planCache.get(baseUrl) || null;
-  }
-
-  static cachePlan(url: string, plan: Plan): void {
-    const baseUrl = url.split('?')[0].split('#')[0];
-    planCache.set(baseUrl, plan);
+    return getRegisteredPlan(url)?.plan || null;
   }
 
   static clearCache(url?: string): void {
-    if (url) {
-      const baseUrl = url.split('?')[0].split('#')[0];
-      planCache.delete(baseUrl);
-    } else {
-      planCache.clear();
-    }
+    clearPlanRegistry(url);
   }
 
-  async plan(feature?: string, style?: string, parentPlan?: Plan): Promise<Plan> {
+  async plan(feature?: string, style?: string, parentPlan?: Plan, completedPlans?: Plan[]): Promise<Plan> {
     Stats.plans++;
     const state = this.stateManager.getCurrentState();
     debugLog('Planning:', state?.url);
     if (!state) throw new Error('No state found');
+
+    if (!feature && !this.currentPlan && state.url) {
+      const similar = this.findSimilarPlan(state.url);
+      if (similar) {
+        tag('info').log(`Similar page already planned: ${similar.url} (${similar.plan.tests.length} tests)`);
+        this.registerPlanInSession(similar.plan);
+        return similar.plan;
+      }
+    }
 
     if (!this.currentPlan && state.url) {
       this.currentPlan = Planner.getCachedPlan(state.url);
@@ -140,7 +139,7 @@ export class Planner implements Agent {
 
     const result = await Observability.run(`planner: ${state.url}`, { tags: ['planner'], sessionId: state.url }, async () => {
       const actionResult = ActionResult.fromState(state);
-      const conversation = await this.buildConversation(actionResult, style, parentPlan);
+      const conversation = await this.buildConversation(actionResult, style);
 
       if (feature) {
         tag('step').log(`Focusing on ${feature}`);
@@ -174,7 +173,10 @@ export class Planner implements Agent {
       this.currentPlan = new Plan(planName);
       this.currentPlan.url = state.url;
       if (parentPlan) this.currentPlan.parentPlan = parentPlan;
+      const allPreviousScenarios = this.getPreviousSessionScenarios();
       for (const t of tests) {
+        if (allPreviousScenarios.has(t.scenario.toLowerCase())) continue;
+        t.style = this.lastStyleName;
         t.startUrl = state.url;
         this.currentPlan.addTest(t);
       }
@@ -195,9 +197,9 @@ export class Planner implements Agent {
     tag('success').log(`Planning complete! ${this.currentPlan.tests.length} tests in plan: ${this.currentPlan.title}`);
     tag('info').log(`Planning style: ${this.lastStyleName} (available: ${availableStyles})`);
 
-    this.lastCoverage = await analyzeCoverage(this.provider, this.currentPlan);
+    if (state.url) registerPlan(state.url, this.currentPlan, feature);
 
-    Planner.cachePlan(state.url, this.currentPlan);
+    this.registerPlanInSession(this.currentPlan);
 
     return this.currentPlan;
   }
@@ -207,33 +209,22 @@ export class Planner implements Agent {
     const pending = this.currentPlan.tests.filter((t) => t.result === null);
     const executed = this.currentPlan.tests.filter((t) => t.result !== null);
     this.currentPlan.tests = [...pending, ...executed];
-  }
-
-  private extractFlowsFromExperience(state: ActionResult): string[] {
-    const relevantExperience = this.experienceTracker.getRelevantExperience(state);
-    const flows: string[] = [];
-
-    for (const experience of relevantExperience) {
-      const sections = mdq(experience.content).query('section(~"Flow")').each();
-      for (const section of sections) {
-        const sectionText = section.text();
-        const cleaned = mdq(sectionText).query('code').replace('');
-        if (cleaned.trim()) flows.push(cleaned.trim());
-      }
-    }
-
-    return flows;
+    this.currentPlan.notifyChange();
   }
 
   private addNewTests(tests: Test[], defaultStartUrl: string): Test[] {
     if (!this.currentPlan) return [];
 
-    const existingScenarios = new Set(this.currentPlan.tests.map((t) => t.scenario.toLowerCase()));
+    const existingScenarios = new Set(this.currentPlan.getAllTests().map((t) => t.scenario.toLowerCase()));
     const added: Test[] = [];
+
+    const allPreviousScenarios = this.getPreviousSessionScenariosExcluding(this.currentPlan);
 
     for (const test of tests) {
       if (existingScenarios.has(test.scenario.toLowerCase())) continue;
+      if (allPreviousScenarios.has(test.scenario.toLowerCase())) continue;
 
+      test.style = this.lastStyleName;
       test.startUrl = test.startUrl || defaultStartUrl;
       test.plan = this.currentPlan;
       this.currentPlan.addTest(test);
@@ -247,11 +238,10 @@ export class Planner implements Agent {
   private buildApproach(style?: string): string {
     const { name, approach } = getActiveStyle(this.currentPlan?.iteration || 0, style);
     this.lastStyleName = name;
-    const suffix = this.currentPlan ? `\n\n${EXPAND_PLAN_SUFFIX}` : '';
-    return `<approach>\n${approach}${suffix}\n</approach>`;
+    return `<approach>\n${approach}\n</approach>`;
   }
 
-  private async buildConversation(state: ActionResult, style?: string, parentPlan?: Plan): Promise<Conversation> {
+  private async buildConversation(state: ActionResult, style?: string): Promise<Conversation> {
     const model = this.provider.getModelForAgent('planner');
     const conversation = new Conversation([], model);
     conversation.autoTrimTag('page_research', 20000);
@@ -307,11 +297,11 @@ export class Planner implements Agent {
       </page_research>
     `);
 
-    const flows = this.extractFlowsFromExperience(state);
+    const flows = this.experienceTracker.getSuccessfulExperience(state, { includeDescendants: true, stripCode: true });
     if (flows.length > 0) {
       conversation.addUserText(dedent`
         <previously_tested_flows>
-        These flows have been tested before on this page:
+        These flows have been tested before on this URL path or on a longer sub-path under it (same site):
 
         ${flows.join('\n\n')}
 
@@ -319,6 +309,7 @@ export class Planner implements Agent {
         1. Re-testing these flows if not in current plan
         2. Proposing variations of these flows (different inputs, edge cases, negative scenarios)
         3. Avoiding exact duplicates
+        4. When the <approach> above requires systematic valid combinatorial coverage (each select option, checkbox combinations, alternate valid values), scenarios that differ only along those dimensions still count as new coverage
         </previously_tested_flows>
       `);
     }
@@ -350,8 +341,9 @@ export class Planner implements Agent {
         1. DO NOT re-propose tests with the same scenario name or identical steps
         2. You CAN propose tests for the same feature if they test a genuinely different operation (create vs edit vs delete)
         3. A group of identical elements counts as ONE feature — one tab test covers tabs, one suite link covers suite navigation
-        4. Do NOT propose tests that only differ by input data (e.g., "Search X" and "Search Y")
-        5. If no genuinely new operations or features remain, return EMPTY scenarios array
+        4. Do NOT propose tests that only differ by trivial input data (e.g., "Search X" and "Search Y"), except when the <approach> requires systematic valid combinatorial coverage per control — then separate scenarios for distinct select options, meaningful checkbox combinations, or alternate valid field values are allowed
+        5. Do NOT split one workflow into sequential tests (e.g., "Open modal" + "Fill form in modal" = ONE test)
+        6. If no genuinely new operations or features remain, return EMPTY scenarios array
         </absolute_rules>
 
         <previous_test_results>
@@ -363,11 +355,7 @@ export class Planner implements Agent {
         Pick that ONE feature and propose ${this.MIN_TASKS}-${this.MAX_TASKS} tests for it.
         ${mdq(research).query('section("Extended Research")').count() > 0 ? 'IMPORTANT: The research contains "Extended Research" sections with dropdowns, modals, and panels. Prioritize testing features from Extended Research that have no coverage yet.' : ''}
 
-        Think like a real user of this product:
-        - What is this feature for? What business problem does it solve?
-        - What would I expect to see and be able to do?
-        - What are the important workflows around this feature?
-        - What could go wrong when using it?
+        Follow the <approach> described above when proposing tests for this feature.
 
         If ALL features across ALL research sections are covered, return empty scenarios array.
         </planning_strategy>
@@ -387,13 +375,14 @@ export class Planner implements Agent {
         `);
     }
 
-    if (!this.currentPlan && parentPlan) {
+    const sessionTests = this.getSessionTestsSummary();
+    if (sessionTests) {
       conversation.addUserText(dedent`
-        This is a sub-page exploration. The main plan results are provided for context — avoid duplicating tests already covered.
+        Tests already planned in this session across all pages. DO NOT duplicate any of these:
 
-        <previous_test_results>
-        ${parentPlan.toAiContext()}
-        </previous_test_results>
+        <session_tests>
+        ${sessionTests}
+        </session_tests>
       `);
     }
 
@@ -422,6 +411,7 @@ export class Planner implements Agent {
          - Bad: "Open the dropdown menu" (opening is not a goal, it's a means)
          - Bad: "Verify modal appears" (verification belongs in expected outcomes, not steps)
          - Steps should form a complete workflow, not stop at opening a UI element
+         - NEVER split a workflow across two tests. One test = one complete action + its verification
 
          EXPECTED OUTCOMES - verifiable results:
          - Good: "New suite 'My New Suite' appears in the suite list"
