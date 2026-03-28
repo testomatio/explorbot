@@ -19,7 +19,7 @@ import { mdq } from '../utils/markdown-query.ts';
 import type { Agent } from './agent.js';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
-import { getCachedResearch, saveResearch } from './researcher/cache.ts';
+import { findSimilarResearch, getCachedResearch, saveResearch } from './researcher/cache.ts';
 import { type CoordinateMethods, WithCoordinates } from './researcher/coordinates.ts';
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
@@ -87,7 +87,8 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   getSystemMessage(): string {
-    const customPrompt = this.provider.getSystemPromptForAgent('researcher');
+    const currentUrl = this.stateManager.getCurrentState()?.url;
+    const customPrompt = this.provider.getSystemPromptForAgent('researcher', currentUrl);
     return dedent`
     <role>
     You are senior QA focused on exploritary testig of web application.
@@ -140,6 +141,20 @@ export class Researcher extends ResearcherBase implements Agent {
 
       debugLog('Researching web page:', this.actionResult!.url);
 
+      const combinedHtml = await this.actionResult!.combinedHtml();
+
+      if (!deep) {
+        const similar = await findSimilarResearch(combinedHtml);
+        if (similar) {
+          tag('info').log('Similar research found, reusing cached result');
+          if (stateHash) saveResearch(stateHash, similar, combinedHtml);
+          tag('multiline').log(similar);
+          tag('success').log(`Research complete! ${similar.length} characters (reused)`);
+          await this.hooksRunner.runAfterHook('researcher', state.url);
+          return similar;
+        }
+      }
+
       const isOnCurrentState = this.actionResult!.getStateHash() === this.stateManager.getCurrentState()?.hash;
       this.hasScreenshotToAnalyze = screenshot && this.provider.hasVision() && isOnCurrentState;
 
@@ -168,11 +183,18 @@ export class Researcher extends ResearcherBase implements Agent {
       const result = new ResearchResult(invocationResult.response.text, state.url);
       debugLog(`Original research response length: ${result.text.length} chars`);
 
+      if (mdq(result.text).query('section("Error Page Detected")').count() > 0 && result.text.length < 500) {
+        tag('warning').log(`AI detected error page at ${state.url}`);
+        if (stateHash) saveResearch(stateHash, result.text);
+        await this.hooksRunner.runAfterHook('researcher', state.url);
+        return result.text;
+      }
+
       // Stage 2: Test containers + locators
       result.parseLocators();
       debugLog(`Extracted ${result.locators.length} locators from research`);
 
-      if (result.locators.length === 0) {
+      if (result.locators.length === 0 && retriesLeft > 0) {
         tag('warning').log(`No locators parsed, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
         await new Promise((r) => setTimeout(r, 1000));
         return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
@@ -250,7 +272,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       let researchFile: string | null = null;
       if (stateHash) {
-        researchFile = saveResearch(stateHash, result.text);
+        researchFile = saveResearch(stateHash, result.text, combinedHtml);
       }
 
       const summaryMatch = result.text.match(/## Summary\s*\n+([\s\S]*?)(?=\n##|$)/i);
@@ -355,6 +377,15 @@ export class Researcher extends ResearcherBase implements Agent {
       - UI map CSS locators must be relative to the section container.
       </section_identification>
 
+      <container_rules>
+      CRITICAL: Container CSS must be a SINGLE selector — one class, one ID, or one attribute.
+      No spaces, no >, no combinators, no nesting.
+      - INVALID: '.filterbar-filter-btn-div button', 'div.static nav', 'div > .content'
+      - INVALID: 'div', 'section', 'nav', 'div:first' (bare tags are not containers)
+      - VALID: '.sticky-header', '.tree-list-item', '[role="dialog"]', 'nav.static', '.pagination-centered'
+      Container must uniquely identify a semantic wrapper, not a path through the DOM.
+      </container_rules>
+
       <section_format>
       ## Section Name
 
@@ -385,6 +416,7 @@ export class Researcher extends ResearcherBase implements Agent {
       - Bad: '#submit-wrapper' (div container)
       - Good: '#submit-wrapper input[type="submit"]' or 'input[type="submit"][value="Submit"]'
       - For buttons with similar text, include distinguishing attributes like type, value, or form context
+
       </css_selector_rules>
     `;
   }
@@ -411,7 +443,7 @@ export class Researcher extends ResearcherBase implements Agent {
         </hint>`;
     }
 
-    const ariaSnapshot = this.actionResult.ariaSnapshot || '';
+    const ariaSnapshot = this.actionResult.getCompactARIA();
 
     return dedent`
       Analyze this web page and provide a comprehensive research report in markdown format.

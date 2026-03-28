@@ -233,6 +233,7 @@ export function createCurlerTools(apiClient: ApiClient, requestState: RequestSta
         summary: z.string().describe('Summary of what was tested and results'),
       }),
       execute: async ({ summary }) => {
+        test.summary = summary;
         test.addNote(`Test complete: ${summary}`, TestResult.PASSED);
         test.finish(TestResult.PASSED);
         tag('success').log(`Test finished: ${summary}`);
@@ -248,6 +249,7 @@ export function createCurlerTools(apiClient: ApiClient, requestState: RequestSta
         reason: z.string().describe('Why the test cannot continue'),
       }),
       execute: async ({ reason }) => {
+        test.summary = `Test stopped: ${reason}`;
         test.addNote(`Test stopped: ${reason}`, TestResult.FAILED);
         test.finish(TestResult.FAILED);
         tag('warning').log(`Test stopped: ${reason}`);

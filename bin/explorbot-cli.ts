@@ -107,13 +107,15 @@ addCommonOptions(program.command('start [path]').alias('sail').description('Star
   await startTUI(explorBot);
 });
 
-addCommonOptions(program.command('explore <path>').description('Start web exploration (legacy command)')).action(async (explorePath, options) => {
+addCommonOptions(program.command('explore <path>').description('Start web exploration (legacy command)').option('--max-tests <count>', 'Maximum number of tests to run')).action(async (explorePath, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
     await explorBot.start();
     await explorBot.visit(explorePath);
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
-    await new ExploreCommand(explorBot).execute('');
+    const cmd = new ExploreCommand(explorBot);
+    if (options.maxTests) cmd.maxTests = Number.parseInt(options.maxTests, 10);
+    await cmd.execute('');
     await explorBot.stop();
     await showStatsAndExit(0);
   } catch (error) {
@@ -123,7 +125,7 @@ addCommonOptions(program.command('explore <path>').description('Start web explor
 });
 
 addCommonOptions(program.command('plan <path> [feature]').description('Generate test plan for a page and exit'))
-  .option('--fresh', 'Start planning from scratch, ignoring existing plan')
+  .option('-a, --append', 'Add tests to existing plan file')
   .option('--style <style>', 'Planning style: normal, curious, psycho')
   .action(async (planPath, feature, options) => {
     try {
@@ -131,7 +133,16 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
       await explorBot.start();
 
       await explorBot.visit(planPath);
-      await explorBot.plan(feature || undefined, { fresh: options.fresh, style: options.style });
+
+      if (options.append) {
+        const planFilename = explorBot.generatePlanFilename();
+        const existingPlanPath = path.join(explorBot.getPlansDir(), planFilename);
+        if (fs.existsSync(existingPlanPath)) {
+          explorBot.loadPlan(existingPlanPath);
+        }
+      }
+
+      await explorBot.plan(feature || undefined, { fresh: !options.append, style: options.style });
 
       const plan = explorBot.getCurrentPlan();
       if (!plan?.tests.length) {
@@ -208,10 +219,11 @@ addCommonOptions(
     .option('--deep', 'Depth-first: prioritize newly discovered pages')
     .option('--shallow', 'Breadth-first: pick globally least-visited page')
     .option('--scope <prefix>', 'Restrict navigation to URL prefix')
+    .option('--max-tests <count>', 'Maximum number of tests to run')
 ).action(async (startUrl, options) => {
   const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
   await explorBot.start();
-  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`].filter(Boolean).join(' ');
+  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`].filter(Boolean).join(' ');
   const { FreesailCommand } = await import('../src/commands/freesail-command.js');
   const cmd = new FreesailCommand(explorBot);
   await cmd.execute(args);
@@ -252,6 +264,10 @@ const config = {
     provider: <your provider here>,
     model: '<your model here>',
     apiKey: '<your api key here>',
+  },
+
+  reporter: {
+    enabled: true,
   },
 };
 
@@ -604,6 +620,48 @@ browserCmd
     } else {
       console.log('No running browser server found.');
     }
+  });
+
+program
+  .command('extract-styles <agent>')
+  .description('Extract built-in planning styles to a directory for customization')
+  .option('-d, --dir <path>', 'Target directory (default: ./rules/<agent>/styles)')
+  .action(async (agent, options) => {
+    try {
+      const { RulesLoader } = await import('../src/utils/rules-loader.js');
+      const targetDir = options.dir || path.resolve(`./rules/${agent}/styles`);
+      const extracted = RulesLoader.extractStyles(agent, targetDir);
+      if (extracted.length === 0) {
+        console.log('All style files already exist in target directory.');
+      } else {
+        console.log(`\nExtracted ${extracted.length} style files to ${targetDir}`);
+      }
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('add-rule [agent] [name]')
+  .alias('rules:add')
+  .description('Create a rule file for an agent')
+  .option('--url <pattern>', 'URL pattern for this rule')
+  .option('-p, --path <path>', 'Working directory path')
+  .action(async (agent, name, options) => {
+    if (options.path) process.chdir(path.resolve(options.path));
+
+    if (agent && name) {
+      const { AddRuleCommand } = await import('../src/commands/add-rule-command.js');
+      const result = AddRuleCommand.createRuleFile(agent, name, { urlPattern: options.url });
+      process.exit(result ? 0 : 1);
+    }
+
+    const AddRule = (await import('../src/components/AddRule.js')).default;
+    render(React.createElement(AddRule, { initialAgent: agent || '', initialName: name || '' }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+    });
   });
 
 import { createApiCommands } from '../boat/api-tester/src/cli.ts';

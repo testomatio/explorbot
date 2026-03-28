@@ -4,6 +4,7 @@ import { mdq } from '../../utils/markdown-query.ts';
 
 export interface ResearchElement {
   name: string;
+  type: string | null;
   aria: { role: string; text: string } | null;
   css: string | null;
   xpath: string | null;
@@ -21,6 +22,8 @@ export interface ResearchSection {
 }
 
 const SKIP_SECTIONS = new Set(['summary', 'screenshot analysis', 'data', 'primary actions']);
+
+export const RESEARCH_COLUMN_ORDER = ['Element', 'Type', 'ARIA', 'CSS', 'XPath', 'Coordinates', 'Color', 'Icon', 'eidx'];
 
 function stripQuotes(str: string): string {
   let trimmed = str.trim();
@@ -59,9 +62,12 @@ export function mapRowToElement(row: Record<string, string>): ResearchElement | 
   const eidxRaw = (colMap.eidx || '').trim();
   const eidxNum = eidxRaw ? Number.parseInt(eidxRaw, 10) : Number.NaN;
 
+  const aria = parseAriaLocator(colMap.aria || '-');
+
   return {
     name,
-    aria: parseAriaLocator(colMap.aria || '-'),
+    type: colMap.type?.trim() || aria?.role || null,
+    aria,
     css: normalizeLocatorValue(colMap.css || '-'),
     xpath: normalizeLocatorValue(colMap.xpath || '-'),
     coordinates: (colMap.coordinates || '-').trim() === '-' ? null : colMap.coordinates.trim(),
@@ -107,19 +113,23 @@ export function rebuildSectionMarkdown(section: ResearchSection): string {
   const hasColor = section.elements.some((e) => e.color);
   const hasIcon = section.elements.some((e) => e.icon);
 
-  const columns = ['Element', 'ARIA', 'CSS'];
-  if (hasXpath) columns.push('XPath');
-  if (hasCoordinates) columns.push('Coordinates');
-  if (hasColor) columns.push('Color');
-  if (hasIcon) columns.push('Icon');
-  if (hasEidx) columns.push('eidx');
+  const presentColumns = new Set(['Element', 'ARIA', 'CSS']);
+  if (section.elements.some((e) => e.type || e.aria)) presentColumns.add('Type');
+  if (hasXpath) presentColumns.add('XPath');
+  if (hasCoordinates) presentColumns.add('Coordinates');
+  if (hasColor) presentColumns.add('Color');
+  if (hasIcon) presentColumns.add('Icon');
+  if (hasEidx) presentColumns.add('eidx');
+
+  const columns = RESEARCH_COLUMN_ORDER.filter((c) => presentColumns.has(c));
 
   const rows = section.elements.map((el) => {
     const row: Record<string, string> = {
       Element: `'${el.name}'`,
-      ARIA: el.aria ? `{ role: '${el.aria.role}', text: '${el.aria.text}' }` : '-',
-      CSS: el.css ? `'${el.css}'` : '-',
     };
+    if (presentColumns.has('Type')) row.Type = el.type || el.aria?.role || '-';
+    row.ARIA = el.aria ? `{ role: '${el.aria.role}', text: '${el.aria.text}' }` : '-';
+    row.CSS = el.css ? `'${el.css}'` : '-';
     if (hasXpath) row.XPath = el.xpath ? `'${el.xpath}'` : '-';
     if (hasCoordinates) row.Coordinates = el.coordinates || '-';
     if (hasColor) row.Color = el.color || '-';

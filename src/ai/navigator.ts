@@ -275,6 +275,14 @@ class Navigator implements Agent {
       }
     );
 
+    if (!resolved && this.currentUrl) {
+      await this.currentAction.getActor().wait(1);
+      if (this.isOnExpectedPage(this.currentUrl, this.currentAction.stateManager)) {
+        resolved = true;
+        tag('success').log('Navigation resolved after delayed redirect');
+      }
+    }
+
     if (!resolved && totalAttempts > 0) {
       tag('error').log(`Navigation failed after ${totalAttempts} attempts`);
     }

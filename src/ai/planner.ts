@@ -9,13 +9,15 @@ import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { Plan, Test } from '../test-plan.ts';
+import { planToCompactAiContext } from '../utils/test-plan-markdown.ts';
 import { createDebug, tag } from '../utils/logger.js';
+import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import { getActiveStyle, getStyles } from './planner/styles.ts';
 import { WithSessionDedup } from './planner/session-dedup.ts';
-import { WithSubPages, clearPlanRegistry, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
+import { WithSubPages, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
 import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
 import { fileUploadRule, protectionRule } from './rules.ts';
@@ -51,6 +53,7 @@ export class Planner extends PlannerBase implements Agent {
   MIN_TASKS = 3;
   MAX_TASKS = 12;
   currentPlan: Plan | null = null;
+  freshStart = false;
   private lastStyleName = '';
   researcher: Researcher;
 
@@ -68,7 +71,8 @@ export class Planner extends PlannerBase implements Agent {
   }
 
   getSystemMessage(): string {
-    const customPrompt = this.provider.getSystemPromptForAgent('planner');
+    const currentUrl = this.stateManager.getCurrentState()?.url;
+    const customPrompt = this.provider.getSystemPromptForAgent('planner', currentUrl);
     return dedent`
     <role>
     You are ISTQB certified senior manual QA planning exploratory testing session of a web application.
@@ -107,17 +111,13 @@ export class Planner extends PlannerBase implements Agent {
     return getRegisteredPlan(url)?.plan || null;
   }
 
-  static clearCache(url?: string): void {
-    clearPlanRegistry(url);
-  }
-
   async plan(feature?: string, style?: string, parentPlan?: Plan, completedPlans?: Plan[]): Promise<Plan> {
     Stats.plans++;
     const state = this.stateManager.getCurrentState();
     debugLog('Planning:', state?.url);
     if (!state) throw new Error('No state found');
 
-    if (!feature && !this.currentPlan && state.url) {
+    if (!this.freshStart && !feature && !this.currentPlan && state.url) {
       const similar = this.findSimilarPlan(state.url);
       if (similar) {
         tag('info').log(`Similar page already planned: ${similar.url} (${similar.plan.tests.length} tests)`);
@@ -126,20 +126,23 @@ export class Planner extends PlannerBase implements Agent {
       }
     }
 
-    if (!this.currentPlan && state.url) {
+    if (!this.freshStart && !this.currentPlan && state.url) {
       this.currentPlan = Planner.getCachedPlan(state.url);
       if (this.currentPlan) {
         tag('step').log(`Loaded cached plan: "${this.currentPlan.title}"`);
       }
     }
+    this.freshStart = false;
 
     setActivity(`${this.emoji} Planning...`, 'action');
     tag('info').log(`Planning test scenarios for ${state.url}`);
     if (style) tag('info').log(`Planning style: ${style}`);
 
-    const result = await Observability.run(`planner: ${state.url}`, { tags: ['planner'], sessionId: state.url }, async () => {
+    const tags = ['planner'];
+    if (style) tags.push(style);
+    const result = await Observability.run(`planner: ${state.url}`, { tags, sessionId: state.url }, async () => {
       const actionResult = ActionResult.fromState(state);
-      const conversation = await this.buildConversation(actionResult, style);
+      const conversation = await this.buildConversation(actionResult, style, parentPlan);
 
       if (feature) {
         tag('step').log(`Focusing on ${feature}`);
@@ -169,7 +172,8 @@ export class Planner extends PlannerBase implements Agent {
     debugLog('Created tests:', tests);
 
     if (!this.currentPlan) {
-      const planName = result.planName || state.url;
+      const cached = state.url ? getRegisteredPlan(state.url) : null;
+      const planName = feature || cached?.plan.title || result.planName || state.url;
       this.currentPlan = new Plan(planName);
       this.currentPlan.url = state.url;
       if (parentPlan) this.currentPlan.parentPlan = parentPlan;
@@ -235,17 +239,46 @@ export class Planner extends PlannerBase implements Agent {
     return added;
   }
 
+  private cleanExperienceFlows(text: string): string | null {
+    const seenTitles = new Set<string>();
+    let result = text;
+
+    for (const section of [...mdq(text).query('section2').each(), ...mdq(text).query('section3').each()]) {
+      const heading = section.query('heading').text().trim();
+      const body = mdq(section.text())
+        .query('heading')
+        .replace('')
+        .replace(/^---\s*$/gm, '')
+        .trim();
+
+      if (!body || seenTitles.has(heading)) {
+        result = result.replace(section.text(), '');
+        continue;
+      }
+      seenTitles.add(heading);
+
+      const blockquotes = section.query('blockquote').each();
+      if (blockquotes.length <= 10) continue;
+      for (const bq of blockquotes.slice(10)) {
+        result = result.replace(bq.text(), '');
+      }
+      result = result.replace(section.text().trim(), `${section.text().trim()}\n> ... and ${blockquotes.length - 10} more discoveries`);
+    }
+
+    return result.trim() || null;
+  }
+
   private buildApproach(style?: string): string {
     const { name, approach } = getActiveStyle(this.currentPlan?.iteration || 0, style);
     this.lastStyleName = name;
-    return `<approach>\n${approach}\n</approach>`;
+    return `Your approach is ${name} testing:\n<approach>\n${approach}\n</approach>`;
   }
 
-  private async buildConversation(state: ActionResult, style?: string): Promise<Conversation> {
-    const model = this.provider.getModelForAgent('planner');
+  private async buildConversation(state: ActionResult, style?: string, parentPlan?: Plan): Promise<Conversation> {
+    const model = this.provider.getAgenticModel('planner');
     const conversation = new Conversation([], model);
     conversation.autoTrimTag('page_research', 20000);
-    conversation.autoTrimTag('previous_test_results', 10000);
+    conversation.autoTrimTag('tested_scenarios', 10000);
 
     conversation.addUserText(this.getSystemMessage());
 
@@ -260,7 +293,6 @@ export class Planner extends PlannerBase implements Agent {
       Scenarios must focus on business logic and functionality of the page.
       Focus on interactive elements of the page. Skip navigation links that lead away from current page.
       Each dropdown menu, modal, or panel discovered in Extended Research is a separate feature.
-      Propose business scenarios first, then technical scenarios.
       You can suggest scenarios that can be tested only through web interface.
       You can't test emails, database, SMS, or any external services.
       Suggest scenarios that can be potentially verified by UI.
@@ -272,6 +304,12 @@ export class Planner extends PlannerBase implements Agent {
       Every test must complete a meaningful action that changes application state or produces a business outcome.
       Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
       Clicking a dropdown is NOT a test — selecting an option and verifying the result IS a test.
+      <priority_order>
+      Tests that change application data are MORE valuable than tests that only change the UI display.
+      Prioritize interactions that create, update, or delete data — these test real application behavior.
+      Tests that only switch views, toggle filters, or paginate are LESS valuable — propose them only after data-changing tests are covered.
+      If multiple ways to create or modify data exist (different types, different forms), propose a separate test for each.
+      </priority_order>
       ${protectionRule}
       ${fileUploadRule}
       </rules>
@@ -287,17 +325,27 @@ export class Planner extends PlannerBase implements Agent {
     conversation.addUserText(planningPrompt);
     const currentState = this.stateManager.getCurrentState();
     const research = await this.researcher.research(currentState || state, { deep: true });
+    let plannerResearch = mdq(research).query('code').replace('');
+    for (const table of mdq(plannerResearch).query('table').each()) {
+      const rawTable = table.text();
+      const rows = table.toJson();
+      if (rows.length === 0 || !rows[0].Element) continue;
+      const elementWithType = rows.map((r) => ({ Element: r.Element, Type: r.Type || '' }));
+      plannerResearch = plannerResearch.replace(rawTable, jsonToTable(elementWithType, ['Element', 'Type']));
+    }
+
     conversation.addUserText(dedent`
       <page_research>
       The following research describes ALL interactive elements on the page, organized by sections.
       Each numbered section and each Extended Research subsection represents a testable feature area.
       Skip the Menu/Navigation section — we test THIS page, not navigation away from it.
 
-      ${research}
+      ${plannerResearch}
       </page_research>
     `);
 
-    const flows = this.experienceTracker.getSuccessfulExperience(state, { includeDescendants: true, stripCode: true });
+    const rawFlows = this.experienceTracker.getSuccessfulExperience(state, { includeDescendants: true, stripCode: true });
+    const flows = rawFlows.map((f) => this.cleanExperienceFlows(f)).filter(Boolean) as string[];
     if (flows.length > 0) {
       conversation.addUserText(dedent`
         <previously_tested_flows>
@@ -317,25 +365,11 @@ export class Planner extends PlannerBase implements Agent {
     if (this.currentPlan) {
       tag('step').log('Analyzing current plan to expand testing');
 
-      const allTests = this.currentPlan.getAllTests();
-      const passed = allTests.filter((t) => t.result === 'passed');
-      const failed = allTests.filter((t) => t.result === 'failed');
-      const pending = allTests.filter((t) => !t.result);
-
-      const summaryParts: string[] = [];
-      if (passed.length > 0) summaryParts.push(`${passed.length} passed`);
-      if (failed.length > 0) summaryParts.push(`${failed.length} failed`);
-      if (pending.length > 0) summaryParts.push(`${pending.length} pending`);
-      const summary = summaryParts.join(', ');
-
-      const existingTests = allTests.map((t) => `- "${t.scenario}" [${t.priority}] [${t.result || 'pending'}]`).join('\n');
+      const compactContext = planToCompactAiContext(this.currentPlan);
+      const parentContext = this.currentPlan.parentPlan ? planToCompactAiContext(this.currentPlan.parentPlan) : '';
 
       conversation.addUserText(dedent`
-        CRITICAL: This plan already has tests (${summary}).
-
-        <existing_tests>
-        ${existingTests}
-        </existing_tests>
+        CRITICAL: This plan already has tests.
 
         <absolute_rules>
         1. DO NOT re-propose tests with the same scenario name or identical steps
@@ -346,14 +380,14 @@ export class Planner extends PlannerBase implements Agent {
         6. If no genuinely new operations or features remain, return EMPTY scenarios array
         </absolute_rules>
 
-        <previous_test_results>
-        ${this.currentPlan.parentPlan ? `${this.currentPlan.parentPlan.toAiContext()}\n\n` : ''}${this.currentPlan.toAiContext()}
-        </previous_test_results>
+        <tested_scenarios>
+        ${parentContext ? `${parentContext}\n\n` : ''}${compactContext}
+        </tested_scenarios>
 
         <planning_strategy>
         Find a feature area in the research that has NO or minimal test coverage.
         Pick that ONE feature and propose ${this.MIN_TASKS}-${this.MAX_TASKS} tests for it.
-        ${mdq(research).query('section("Extended Research")').count() > 0 ? 'IMPORTANT: The research contains "Extended Research" sections with dropdowns, modals, and panels. Prioritize testing features from Extended Research that have no coverage yet.' : ''}
+        ${mdq(plannerResearch).query('section("Extended Research")').count() > 0 ? 'IMPORTANT: The research contains "Extended Research" sections with dropdowns, modals, and panels. Prioritize testing features from Extended Research that have no coverage yet.' : ''}
 
         Follow the <approach> described above when proposing tests for this feature.
 
@@ -383,6 +417,19 @@ export class Planner extends PlannerBase implements Agent {
         <session_tests>
         ${sessionTests}
         </session_tests>
+      `);
+    }
+
+    if (parentPlan && !this.currentPlan) {
+      const parentTests = parentPlan.tests.map((t) => `- "${t.scenario}"`).join('\n');
+      conversation.addUserText(dedent`
+        <parent_page_context>
+        This is a SUBPAGE of a page that already has these tests planned:
+        ${parentTests}
+
+        DO NOT propose tests that overlap with parent page tests even if the wording differs.
+        Focus ONLY on features and interactions UNIQUE to this subpage.
+        </parent_page_context>
       `);
     }
 

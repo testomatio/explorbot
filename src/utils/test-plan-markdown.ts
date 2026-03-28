@@ -1,6 +1,80 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { Plan, Test } from '../test-plan.ts';
+import { type Note, Plan, Test } from '../test-plan.ts';
 import { mdq } from './markdown-query.ts';
+
+const NOISE_PREFIXES = ['Test started', 'Finish requested:', 'Session name:'];
+
+function isNoiseNote(message: string): boolean {
+  return NOISE_PREFIXES.some((prefix) => message.startsWith(prefix));
+}
+
+function getPilotVerdict(notes: Record<string, Note>): string | null {
+  for (const note of Object.values(notes)) {
+    if (note.status === 'passed' && note.message.startsWith('Pilot:')) {
+      return note.message.replace(/^Pilot:\s*/, '');
+    }
+  }
+  return null;
+}
+
+function formatFailedNotes(notes: Record<string, Note>): string[] {
+  const lines: string[] = [];
+  for (const note of Object.values(notes)) {
+    if (!note.status) continue;
+    if (isNoiseNote(note.message)) continue;
+    if (note.message.startsWith('Pilot:')) continue;
+    if (note.status === 'passed') {
+      lines.push(`  ${note.message}`);
+    } else if (note.status === 'failed') {
+      lines.push(`  FAILED ${note.message}`);
+    }
+  }
+  return lines;
+}
+
+export function planToCompactAiContext(plan: Plan): string {
+  const allTests = plan.getAllTests();
+  const passed = allTests.filter((t) => t.result === 'passed');
+  const failed = allTests.filter((t) => t.result === 'failed');
+  const pending = allTests.filter((t) => !t.result);
+
+  const summaryParts: string[] = [];
+  if (passed.length > 0) summaryParts.push(`${passed.length} passed`);
+  if (failed.length > 0) summaryParts.push(`${failed.length} failed`);
+  if (pending.length > 0) summaryParts.push(`${pending.length} pending`);
+
+  let content = `${allTests.length} tests (${summaryParts.join(', ')})\n`;
+
+  if (passed.length > 0) {
+    content += '\n## Passed\n';
+    for (const test of passed) {
+      content += `- [${test.priority}]${test.style ? ` [${test.style}]` : ''} "${test.scenario}"\n`;
+      if (test.startUrl) content += `  url: ${test.startUrl}\n`;
+      const verdict = getPilotVerdict(test.notes);
+      if (verdict) content += `  Verdict: ${verdict}\n`;
+    }
+  }
+
+  if (failed.length > 0) {
+    content += '\n## Failed\n';
+    for (const test of failed) {
+      content += `- [${test.priority}]${test.style ? ` [${test.style}]` : ''} "${test.scenario}"\n`;
+      if (test.startUrl) content += `  url: ${test.startUrl}\n`;
+      const noteLines = formatFailedNotes(test.notes);
+      content += noteLines.join('\n');
+      if (noteLines.length > 0) content += '\n';
+    }
+  }
+
+  if (pending.length > 0) {
+    content += '\n## Pending\n';
+    for (const test of pending) {
+      content += `- [${test.priority}] "${test.scenario}"\n`;
+    }
+  }
+
+  return content;
+}
 
 export function parsePlanFromMarkdown(filePath: string): Plan {
   const content = readFileSync(filePath, 'utf-8');
@@ -197,7 +271,7 @@ export function savePlanToMarkdown(plan: Plan, filePath: string): void {
   writeFileSync(filePath, content, 'utf-8');
 }
 
-export function planToAiContext(plan: Plan): string {
+export function planToAiContext(plan: Plan, options?: { skipSteps?: boolean }): string {
   let content = `# Test Plan: ${plan.title}\n\n`;
 
   if (plan.url) {
@@ -237,7 +311,7 @@ export function planToAiContext(plan: Plan): string {
       content += '\n';
     }
 
-    if (Object.keys(test.steps).length > 0) {
+    if (!options?.skipSteps && Object.keys(test.steps).length > 0) {
       content += '**Steps:**\n';
       for (const step of Object.values(test.steps)) {
         content += `- ${step.text}\n`;

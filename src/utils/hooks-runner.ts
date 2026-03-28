@@ -1,7 +1,7 @@
-import micromatch from 'micromatch';
 import type { ExplorbotConfig, Hook, HookConfig } from '../config.ts';
 import type Explorer from '../explorer.ts';
 import { createDebug } from './logger.ts';
+import { matchesUrl } from './url-matcher.ts';
 
 const debugLog = createDebug('explorbot:hooks');
 
@@ -39,7 +39,7 @@ export class HooksRunner {
     const urlPath = this.extractPath(url);
     const entries = Object.entries(config).sort(([a], [b]) => this.patternSpecificity(b) - this.patternSpecificity(a));
     for (const [pattern, hook] of entries) {
-      if (this.matchesPattern(pattern, urlPath)) return hook as Hook;
+      if (matchesUrl(pattern, urlPath)) return hook as Hook;
     }
     return null;
   }
@@ -75,25 +75,5 @@ export class HooksRunner {
     } catch {
       return url;
     }
-  }
-
-  private matchesPattern(pattern: string, path: string): boolean {
-    if (pattern === '*') return true;
-    if (pattern.toLowerCase() === path.toLowerCase()) return true;
-
-    if (pattern.endsWith('/*')) {
-      const base = pattern.slice(0, -2);
-      if (path === base || path.startsWith(`${base}/`)) return true;
-    }
-
-    if (pattern.startsWith('^')) {
-      try {
-        return new RegExp(pattern.slice(1)).test(path);
-      } catch {
-        return false;
-      }
-    }
-
-    return micromatch.isMatch(path, pattern);
   }
 }

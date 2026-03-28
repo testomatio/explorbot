@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-03-29
+
+### New CLI Options
+- **`--max-tests <count>`** — Limit the number of tests to run during exploration or freesail. Stops after the specified count is reached.
+  ```bash
+  explorbot explore /dashboard --max-tests 5
+  explorbot freesail /app --max-tests 10
+  ```
+- **`-a, --append`** — Add tests to an existing plan file instead of replacing it. Loads the saved plan before generating new scenarios.
+  ```bash
+  explorbot plan /login -a
+  explorbot plan /login --append
+  ```
+
+### New CLI Commands
+- **`explorbot extract-styles <agent>`** — Extract built-in planning styles to `rules/<agent>/styles/` for customization. Edit the generated markdown files to change how the Planner generates test scenarios.
+  ```bash
+  explorbot extract-styles planner              # extracts to rules/planner/styles/
+  explorbot extract-styles planner -d ./styles  # custom target directory
+  ```
+- **`explorbot add-rule [agent] [name]`** — Create a rule file for an agent. Opens an interactive TUI form when called without arguments.
+  ```bash
+  explorbot add-rule researcher check-tooltips
+  explorbot add-rule tester wait-for-toasts --url '/admin/*'
+  explorbot add-rule                              # interactive mode
+  ```
+
+### New TUI Commands
+- **`/rules:add`** (alias: `/add-rule`) — Create a rule file for an agent interactively from TUI.
+  ```
+  /add-rule researcher check-tooltips
+  /rules:add tester slow-forms
+  ```
+- **`/explore --max-tests <n>`** — Limit the number of tests during exploration.
+  ```
+  /explore --max-tests 5
+  ```
+- **`/freesail --max-tests <n>`** — Limit the number of tests during autonomous exploration.
+  ```
+  /freesail --max-tests 10
+  /freesail --deep --max-tests 20
+  ```
+
+### Configuration
+- **`ai.agents.<name>.rules`** — Load markdown rule files per agent from `rules/<agent>/` directory. Supports URL-pattern matching for page-specific rules. Default: `[]`.
+- **`ai.agents.planner.styles`** — Now takes an array of style names (e.g., `['normal', 'curious', 'psycho']`) instead of a key-value map. Styles are loaded from `rules/planner/styles/` as markdown files.
+- **`reporter.enabled`** — Enable HTML test reports without requiring Testomatio. Generates reports to `output/reports/`. Default: `false` (enabled automatically when `TESTOMATIO` env var is set).
+
+### Changes
+- [Tester] Pilot can now extend test execution up to 2 additional rounds when the initial iteration limit is reached but the test is not yet complete
+- [Tester] Tests are stopped after 5 consecutive empty AI responses instead of running until max iterations
+- [Pilot] "Skipped" verdict now also covers systematic execution failures (repeated LLM errors, tool crashes unrelated to the scenario)
+- [Pilot] Only the last few actions before finish/stop are considered verification evidence — older verify results are ignored
+- [Pilot] Test summaries no longer start with "scenario goal achieved/not achieved" — they describe what happened
+- [Pilot] Prefers exploring the current page before suggesting navigation to another page
+- [Planner] Default style order changed to normal → curious → psycho (curious now runs before psycho)
+- [Planner] Tests that create, update, or delete data are prioritized over UI-only interactions (view switching, filtering, pagination)
+- [Planner] Experience flows are deduplicated and trimmed before planning — removes empty sections and limits blockquotes per section
+- [Planner] `/plan --append` removed from TUI (use CLI `explorbot plan -a` instead)
+- [Researcher] Similar pages reuse cached research via HTML fingerprint matching, skipping re-analysis when the page structure hasn't changed
+- [Researcher] Error pages are detected early and short-circuited without running the full research pipeline
+- [Researcher] Container CSS validation improved — multi-part selectors like `div.static nav` are simplified to their first segment; bare tag selectors are rejected
+- [Navigator] Delayed redirects are now detected — waits 1 second and rechecks after initial navigation appears to fail
+- [Historian] Test steps are verified by AI before saving to experience — filters out unstable locators, duplicates, and trivial navigation
+- [Historian] Generated CodeceptJS code is saved for all test results (not just successful ones)
+- [Reporter] HTML reports generated locally when `reporter.enabled` is true, even without a Testomatio account
+- [Reporter] Last screenshot is attached to the final test step in reports
+- Click and form tools now auto-disambiguate when multiple elements match — uses AI to pick the correct element by XPath
+- Planning styles moved from hardcoded code to `rules/planner/styles/` markdown files — extract and edit them with `explorbot extract-styles planner`
+
 ## 2026-03-22
 
 ### New CLI Commands

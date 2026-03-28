@@ -46,7 +46,7 @@ export class ApiBot {
     const outputDir = this.configParser.getOutputDir();
     this.configParser.ensureDirectory(outputDir);
     this.requestState = new RequestStateManager(outputDir);
-    this.reporter = new Reporter();
+    this.reporter = new Reporter(this.config.reporter);
 
     validateSpecs(this.config.api.spec);
     this.apiSpec = await loadSpec(this.config.api.spec!, outputDir);

@@ -24,24 +24,92 @@ export default {
 
 For detailed AI provider setup (OpenAI, Anthropic, Groq, Cerebras, Google, Azure), see [AI Providers](./providers.md).
 
-## Tips & Tricks
+## Rules
 
-### Add custom instructions to agents
+Rules are markdown files that customize how agents behave. They live in the `rules/` directory, organized by agent name:
 
-Teach agents about your app's patterns without changing source code:
+```
+rules/
+  researcher/         # Rules for the Researcher agent
+    check-tooltips.md
+  tester/             # Rules for the Tester agent
+    wait-for-toasts.md
+    admin-credentials.md
+  planner/            # Rules + styles for the Planner agent
+    no-delete-tests.md
+    styles/
+      normal.md
+      psycho.md
+      curious.md
+```
+
+Each rule file is plain markdown — its content is appended to the agent's prompt.
+
+### Configuring Rules
+
+Add a `rules` array to any agent's config. Each entry is either a filename (loads for all URLs) or an object mapping a URL pattern to a filename:
 
 ```javascript
 ai: {
   agents: {
     tester: {
-      systemPrompt: `
-        Wait for toast notifications after form submissions.
-        Admin features require "admin@test.com" login first.
-      `,
+      rules: [
+        'wait-for-toasts',                    // loads rules/tester/wait-for-toasts.md for all URLs
+        { '/admin/*': 'admin-credentials' },  // loads rules/tester/admin-credentials.md only on /admin pages
+      ],
+    },
+    researcher: {
+      rules: [
+        'check-tooltips',                     // loads rules/researcher/check-tooltips.md
+        { '/users/*': 'user-testing' },       // loads rules/researcher/user-testing.md for /users and subpages
+      ],
+    },
+    planner: {
+      rules: [
+        { '/checkout/*': 'payment-rules' },   // loads rules/planner/payment-rules.md for checkout pages
+      ],
     },
   },
 }
 ```
+
+URL patterns work the same as [knowledge files](./knowledge.md#url-patterns): `*`, `/exact`, `/path/*`, `^regex$`, glob patterns.
+
+### Planning Styles
+
+The Planner and Chief agents cycle through **styles** — different testing approaches applied on each planning iteration. Built-in styles include `normal`, `psycho` (stress-testing), and `curious` (coverage gaps).
+
+To customize styles, extract the built-in ones and edit them:
+
+```bash
+explorbot extract-styles planner
+```
+
+This copies built-in style files to `rules/planner/styles/`. Edit them freely — Explorbot loads from your `rules/` directory first, falling back to built-in styles.
+
+Override which styles to use and their order in config:
+
+```javascript
+ai: {
+  agents: {
+    planner: {
+      styles: ['normal', 'psycho', 'curious'],  // default order
+    },
+  },
+}
+```
+
+### Rules vs Knowledge vs systemPrompt
+
+| Mechanism | Purpose | URL-aware | File-based |
+|-----------|---------|-----------|------------|
+| **Rules** | Agent-specific instructions | Yes | Yes (`rules/<agent>/`) |
+| **Knowledge** | App domain info (credentials, data) | Yes | Yes (`knowledge/`) |
+| **systemPrompt** | Quick inline instructions | No | No (in config) |
+
+Rules and `systemPrompt` can be used together — rules from files load first, then `systemPrompt` is appended.
+
+## Tips & Tricks
 
 ### Handle slow pages
 
@@ -60,52 +128,6 @@ ai: {
   agents: {
     // Fastest model for summarization
     'experience-compactor': { model: groq('llama-3.1-8b') },
-  },
-}
-```
-
-### Multi-language apps
-
-```javascript
-ai: {
-  agents: {
-    tester: {
-      systemPrompt: `
-        UI text may appear in English, Spanish, or French.
-        Use ARIA roles and data-testid for locators, not text content.
-      `,
-    },
-  },
-}
-```
-
-### Focus on specific testing areas
-
-```javascript
-ai: {
-  agents: {
-    planner: {
-      systemPrompt: `
-        Prioritize payment flows and checkout.
-        Include scenarios for failed payments.
-      `,
-    },
-  },
-}
-```
-
-### Custom React components
-
-```javascript
-ai: {
-  agents: {
-    researcher: {
-      systemPrompt: `
-        App uses custom components:
-        - <DataGrid> for tables - look for data-testid="grid-*"
-        - <Modal> for dialogs - look for role="dialog"
-      `,
-    },
   },
 }
 ```
@@ -161,7 +183,8 @@ agents: {
   tester: {
     model: groq('gpt-oss-20b'),    // Override default model
     enabled: true,                  // Enable/disable agent
-    systemPrompt: '...',           // Append to system prompt
+    rules: ['wait-for-toasts'],    // Load rules from rules/tester/
+    systemPrompt: '...',           // Append to system prompt (inline)
     beforeHook: { /* ... */ },     // Run before agent executes
     afterHook: { /* ... */ },      // Run after agent completes
   },
@@ -172,7 +195,8 @@ agents: {
 |--------|------|-------------|
 | `model` | `LanguageModel` | Model instance for this agent (overrides default) |
 | `enabled` | `boolean` | Enable or disable the agent |
-| `systemPrompt` | `string` | Additional instructions appended to the agent's system prompt |
+| `rules` | `Array<string \| Record<string, string>>` | Rule files to load from `rules/<agent>/` (URL-aware). See [Rules](#rules) |
+| `systemPrompt` | `string` | Additional instructions appended to the agent's prompt (inline fallback) |
 | `beforeHook` | `Hook \| HookPatternMap` | Code to run before agent execution |
 | `afterHook` | `Hook \| HookPatternMap` | Code to run after agent execution |
 
@@ -237,6 +261,11 @@ your-project/
 ├── explorbot.config.js
 ├── knowledge/           # Domain hints (you create these)
 │   └── login.md
+├── rules/               # Agent-specific rules (you create these)
+│   ├── tester/
+│   │   └── wait-for-toasts.md
+│   └── planner/
+│       └── styles/      # Custom planning styles
 ├── experience/          # Learned patterns (auto-generated)
 │   └── abc123.md
 └── output/              # Test results (auto-generated)
@@ -347,9 +376,13 @@ export default {
       tester: {
         model: groq('gpt-oss-20b'),
         enabled: true,
-        systemPrompt: '...',
+        rules: ['wait-for-toasts', { '/admin/*': 'admin-creds' }],
+        systemPrompt: '...',       // Inline fallback
       },
-      planner: { /* ... */ },
+      planner: {
+        styles: ['normal', 'psycho', 'curious'],
+        rules: [{ '/checkout/*': 'payment-rules' }],
+      },
       researcher: {                // Researcher-specific options
         model: groq('gpt-oss-20b'), // Override default model
         enabled: true,             // Enable/disable agent
@@ -404,5 +437,6 @@ export default {
 - [Agents](./agents.md) - Agent descriptions and workflows
 - [Agent Hooks](./hooks.md) - Custom code before/after agent execution
 - [Researcher Agent](./researcher.md) - Researcher configuration and usage
+- [Planner Agent](./planner.md) - Planning styles and customization
 - [Knowledge Files](./knowledge.md) - Domain knowledge format
 - [Observability](./observability.md) - Langfuse integration

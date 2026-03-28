@@ -30,7 +30,7 @@ Explorbot can start testing features which were not covered by unit tests or bro
 ## Requirements
 
 - **Bun** (not Node.js)
-- **AI provider API key** — Groq, Cerebras, OpenAI, or Anthropic
+- **AI provider API key** — OpenRouter recommended; Groq, Cerebras, OpenAI, Anthropic, or others via [Vercel AI SDK](https://sdk.vercel.ai/providers)
 - **Modern terminal** — iTerm2, WARP, Kitty, Ghostty. WSL if running on Windows
 - **Compatible web app** — Check [docs/prerequisites.md](docs/prerequisites.md) to verify your app works with Explorbot
 
@@ -40,6 +40,7 @@ Explorbot can start testing features which were not covered by unit tests or bro
 
 ```bash
 bun install
+bun add @openrouter/ai-sdk-provider
 bunx playwright install
 ```
 
@@ -56,30 +57,30 @@ explorbot init
 >
 > | Type | Config key | Purpose | Recommendation |
 > |------|-----------|---------|----------------|
-> | **model** | `ai.model` | Standard model for HTML/ARIA processing. Used by Tester, Navigator, Researcher. Should be fast and cheap — these agents are token-hungry. | `gpt-oss-20b` via Groq/Cerebras (100+ TPS) |
-> | **visionModel** | `ai.visionModel` | Screenshot analysis. Used when agents need to visually inspect the page. | `llama-scout-4` |
-> | **agenticModel** | `ai.agenticModel` | Exceptional decision making. Used by Captain and Pilot — agents that read compact action logs and make high-level decisions. Benefits from a smarter model. | GPT-5, Claude Sonnet, Kimi K2, Qwen 3 |
+> | **model** | `ai.model` | Standard model for HTML/ARIA processing. Used by Tester, Navigator, Researcher. Should be fast and cheap — these agents are token-hungry. | e.g. `openai/gpt-oss-20b` |
+> | **visionModel** | `ai.visionModel` | Screenshot analysis. Used when agents need to visually inspect the page. | e.g. `meta-llama/llama-4-scout-17b-16e-instruct` |
+> | **agenticModel** | `ai.agenticModel` | Exceptional decision making. Used by Captain and Pilot — agents that read compact action logs and make high-level decisions. Benefits from a smarter model. | Strong agentic models but fast (MiniMax 2.5, Grok Fast, Qwen, …) |
 >
-> See [OpenRouter](https://openrouter.ai/rankings#performance) for fastest models.
+> See [OpenRouter](https://openrouter.ai/rankings#performance) for latency-focused model picks.
 
-Groq is used in this example but you can use any provider supported by Vercel AI SDK. See [docs/providers.md](docs/providers.md) for other providers.
+This example uses **OpenRouter** (one API key, many providers). Any Vercel AI SDK provider works; see [docs/providers.md](docs/providers.md).
 
 ```javascript
-import { createGroq } from '@ai-sdk/groq';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 
-const groq = createGroq({
-  apiKey: process.env.GROQ_API_KEY,
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
 });
 
 export default {
   playwright: {
     browser: 'chromium',
-    url: 'https://your-app.com',     // <-- Your app URL
+    url: 'https://your-app.com',
   },
   ai: {
-    model: groq('gpt-oss-20b'),            // Fast cheap model for most agents
-    visionModel: groq('llama-scout-4'),    // Screenshot analysis
-    agenticModel: groq('qwen3-32b'),       // Smarter model for Captain & Pilot
+    model: openrouter('openai/gpt-oss-20b'),
+    visionModel: openrouter('meta-llama/llama-4-scout-17b-16e-instruct'),
+    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
   },
 };
 ```
@@ -130,17 +131,7 @@ Requires a modern terminal (iTerm2, WARP, Kitty, Ghostty, Windows Terminal). On 
 
 Explorbot explores websites, analyzes their UI, and proposes tests — which it can then execute. It controls its own browser through CodeceptJS → Playwright (no MCP involved).
 
-```mermaid
-flowchart LR
-    N[🧭 Navigator] --> R[🔍 Researcher] --> P[📋 Planner] --> T[🧪 Tester]
-    Pi[🎯 Pilot] -.->|supervises| T
-```
-
-| 🧭 Navigator | 🔍 Researcher | 📋 Planner | 🧪 Tester |
-|--------------|---------------|------------|-----------|
-| Opens pages | Analyzes UI | Generates test scenarios | Executes tests |
-| Clicks buttons, fills forms | Discovers all interactive elements | Assigns priorities (HIGH/MED/LOW) | Adapts when things fail |
-| Self-heals broken selectors | Expands hidden content | Balances positive & negative cases | Documents results |
+![Explorbot Architecture](assets/architecture.png)
 
 Run `/explore` in TUI or use `explorbot explore` from CLI to watch the cycle: research → plan → test → repeat.
 
@@ -227,6 +218,7 @@ When tuned, Explorbot **can run autonomously for hours** navigating a web applic
 ## Teaching Explorbot
 
 * **Knowledge** (`./knowledge/`) — Tell Explorbot about your app: credentials, form rules, navigation quirks. See [docs/knowledge.md](docs/knowledge.md).
+* **Rules** (`./rules/`) — Customize agent behavior with markdown files. Add page-specific instructions, override planning styles, or tune how agents work on different parts of your app. See [docs/configuration.md](docs/configuration.md#rules).
 * **Experience** (`./experience/`) — Explorbot learns automatically from successful interactions and saves what works.
 
 ## Further Reading
@@ -236,6 +228,7 @@ When tuned, Explorbot **can run autonomously for hours** navigating a web applic
 - [docs/knowledge.md](docs/knowledge.md) — Knowledge system and URL patterns
 - [docs/providers.md](docs/providers.md) — AI provider configuration
 - [docs/agents.md](docs/agents.md) — Agent descriptions and capabilities
+- [docs/planner.md](docs/planner.md) — Planner agent: planning styles and customization
 - [docs/scripting.md](docs/scripting.md) — Building custom autonomous scripts
 - [docs/observability.md](docs/observability.md) — Langfuse tracing and debugging
 - [docs/page-interaction.md](docs/page-interaction.md) — How agents interact with pages
@@ -249,7 +242,7 @@ No, Explorbot is a separate application designed for constant testing. Cursor, C
 Opus is great for coding. Here we need a simple model that can consume lots of HTML tokens to find the relevant ones. Leave more interesting tasks to Opus.
 
 **Is that expensive?**
-No. It costs ~$1 per hour of running if you use Groq Cloud with gpt-oss-20b.
+No. With fast open models (e.g. `openai/gpt-oss-20b` on OpenRouter or Groq), expect roughly ~$1/hour of continuous run, depending on provider and traffic.
 
 **Does Explorbot have MCP?**
 Not yet.

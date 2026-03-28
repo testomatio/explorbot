@@ -60,7 +60,7 @@ class Explorer {
     this.initializeContainer();
     this.stateManager = new StateManager({ incognito: this.options?.incognito });
     this.knowledgeTracker = new KnowledgeTracker();
-    this.reporter = new Reporter();
+    this.reporter = new Reporter(config.reporter);
   }
 
   private initializeContainer() {
@@ -529,9 +529,14 @@ class Explorer {
     });
   }
 
-  async stopTest(test: Test) {
+  async stopTest(test: Test, meta?: Record<string, string>) {
     this._activeTest = null;
-    await this.reporter.reportTest(test);
+    const lastScreenshot = this.stateManager.getCurrentState()?.screenshotFile;
+    if (lastScreenshot) {
+      meta ||= {};
+      meta.screenshotFile = lastScreenshot;
+    }
+    await this.reporter.reportTest(test, meta);
     const codeceptjsTest = toCodeceptjsTest(test);
 
     if (test.isSuccessful) {

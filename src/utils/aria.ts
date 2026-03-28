@@ -45,6 +45,20 @@ type AriaNode = {
   value?: string | boolean | null;
   attributes: Record<string, string | boolean | null>;
   children: AriaNode[];
+  rawChildren?: AriaNode[];
+};
+
+const serializeChildContent = (node: AriaNode): string => {
+  const children = node.rawChildren || node.children;
+  const parts: string[] = [];
+  for (const child of children) {
+    let part = child.role;
+    if (child.name) part += ` "${child.name}"`;
+    const nested = serializeChildContent(child);
+    if (nested) part += ` > ${nested}`;
+    parts.push(part);
+  }
+  return parts.join(', ');
 };
 
 const buildInteractiveEntry = (node: AriaNode): Record<string, unknown> | null => {
@@ -79,7 +93,12 @@ const buildInteractiveEntry = (node: AriaNode): Record<string, unknown> | null =
     shouldInclude = true;
   }
   if (isButtonOrLink && !entryName && !hasValue) {
-    entry.unnamed = true;
+    const resolved = resolveDisplayName(node);
+    if (resolved) {
+      entry.name = resolved;
+    } else {
+      entry.unnamed = true;
+    }
     shouldInclude = true;
   }
   if (!shouldInclude) {
@@ -257,24 +276,26 @@ const splitHeaderValue = (content: string): { header: string; value: string | nu
   return { header: content.trim(), value: null };
 };
 
-const pruneNodes = (nodes: AriaNode[]): AriaNode[] => {
+const pruneNodes = (nodes: AriaNode[], keepNamed = false): AriaNode[] => {
   const result: AriaNode[] = [];
   for (const node of nodes) {
-    const children = pruneNodes(node.children);
+    const children = pruneNodes(node.children, keepNamed);
     if (IGNORED_CONTAINER_ROLES.has(node.role)) {
       result.push(...children);
       continue;
     }
     const interactive = INTERACTIVE_ROLES.has(node.role);
     if (!interactive && children.length === 0) {
-      continue;
+      if (!keepNamed || (!node.name && node.value === undefined)) {
+        continue;
+      }
     }
-    result.push({ ...node, children });
+    result.push({ ...node, children, rawChildren: node.children });
   }
   return result;
 };
 
-const parseAriaSnapshot = (snapshot: string | null): AriaNode[] => {
+const parseAriaSnapshot = (snapshot: string | null, keepNamed = false): AriaNode[] => {
   if (!snapshot) {
     return [];
   }
@@ -325,7 +346,7 @@ const parseAriaSnapshot = (snapshot: string | null): AriaNode[] => {
     }
     stack.push({ depth, node });
   }
-  return pruneNodes(roots);
+  return pruneNodes(roots, keepNamed);
 };
 
 export interface FocusAreaResult {
@@ -385,70 +406,34 @@ export const collectInteractiveNodes = (snapshot: string | null): Array<Record<s
   return result;
 };
 
-export const collectExpandableNodes = (snapshot: string | null): Array<{ role: string; name: string }> => {
-  const nodes = parseAriaSnapshot(snapshot);
-  const result: Array<{ role: string; name: string }> = [];
-  const visit = (node: AriaNode) => {
-    const name = node.name?.trim() || '';
-    if (name && node.attributes.expanded !== undefined) {
-      result.push({ role: node.role, name });
-    }
-    if (name && node.attributes.haspopup !== undefined) {
-      result.push({ role: node.role, name });
-    }
-    node.children.forEach(visit);
-  };
-  nodes.forEach(visit);
-  return result;
-};
-
-const formatSummary = (node: Record<string, unknown>): string => {
-  const role = typeof node.role === 'string' ? node.role : '';
-  if (!role) {
-    return '';
-  }
-  const name = typeof node.name === 'string' && node.name.trim() !== '' ? `"${node.name.trim()}"` : '';
-  const attributeKeys = Object.keys(node)
-    .filter((key) => key !== 'role' && key !== 'name' && key !== 'value')
-    .sort();
-  const attributes = attributeKeys.map((key) => {
-    const value = node[key];
-    if (value === true) {
-      return key;
-    }
-    return `${key}=${value}`;
-  });
-  const attributeText = attributes.length > 0 ? `[${attributes.join(' ')}]` : '';
-  let valueText: string | null = null;
-  if (Object.prototype.hasOwnProperty.call(node, 'value')) {
-    const raw = node.value as unknown;
-    if (raw !== null && raw !== undefined) {
-      const text = `${raw}`.trim();
-      if (text !== '') {
-        valueText = text;
-      }
-    }
-  }
-  const parts = [role];
-  if (name) {
-    parts.push(name);
-  }
-  if (attributeText) {
-    parts.push(attributeText);
-  }
-  let line = parts.join(' ').trim();
-  if (valueText !== null) {
-    line = `${line}: ${valueText}`;
+const renderNodeLine = (role: string, name: string | undefined, attrs: Record<string, string | boolean | null>, value: string | boolean | null | undefined): string => {
+  let line = role;
+  const displayName = name?.trim();
+  if (displayName) line += ` "${displayName}"`;
+  const attrStr = Object.entries(attrs)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => (v === true ? k : `${k}=${v}`))
+    .join(' ');
+  if (attrStr) line += ` [${attrStr}]`;
+  if (value !== undefined && value !== null) {
+    const text = `${value}`.trim();
+    if (text) line += `: ${text}`;
   }
   return line;
 };
 
-export const summarizeInteractiveNodes = (snapshot: string | null): string[] => {
-  if (!snapshot) {
-    return [];
+const formatSummary = (node: Record<string, unknown>): string => {
+  const role = typeof node.role === 'string' ? node.role : '';
+  if (!role) return '';
+  const name = typeof node.name === 'string' ? node.name : undefined;
+  const attrs: Record<string, string | boolean | null> = {};
+  for (const key of Object.keys(node)
+    .filter((k) => k !== 'role' && k !== 'name' && k !== 'value')
+    .sort()) {
+    attrs[key] = node[key] as string | boolean | null;
   }
-  const nodes = collectInteractiveNodes(snapshot);
-  return nodes.map((node) => formatSummary(node)).filter((line) => line !== '');
+  const value = Object.prototype.hasOwnProperty.call(node, 'value') ? (node.value as string | boolean | null) : undefined;
+  return renderNodeLine(role, name, attrs, value);
 };
 
 type FlatInteractiveNode = {
@@ -604,51 +589,41 @@ export const diffAriaSnapshots = (previous: string | null, current: string | nul
         lines.push(`    - ${formatDiffItem(item, count)}`);
       });
   }
-  const removedSummary = buildCountMap(removed);
-  if (removedSummary.size === 0) {
+  if (removed.length === 0) {
     lines.push('  removed: []');
   } else {
-    lines.push('  removed:');
-    Array.from(removedSummary.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .forEach(([item, count]) => {
-        lines.push(`    - ${formatDiffItem(item, count)}`);
-      });
+    lines.push(`  removed: ${removed.length} interactive elements`);
   }
   return lines.join('\n');
 };
 
-export const condenseAriaDiff = (ariaDiff: string, urlChanged = false): string => {
-  const lines = ariaDiff.split('\n');
-  const added: string[] = [];
-  let removedCount = 0;
-  let section: 'none' | 'added' | 'removed' = 'none';
+const resolveDisplayName = (node: AriaNode): string | undefined => {
+  if (node.name) return node.name;
+  const isButtonOrLink = node.role === 'button' || node.role === 'link';
+  if (!isButtonOrLink) return undefined;
+  const childContent = serializeChildContent(node);
+  if (childContent) return `{${childContent}}`;
+  return undefined;
+};
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('ariaDiff:')) continue;
-    if (trimmed === 'added:' || trimmed === 'added: []') {
-      section = 'added';
-      continue;
+const serializeAriaNodes = (nodes: AriaNode[], depth = 0): string => {
+  const lines: string[] = [];
+  for (const node of nodes) {
+    const indent = '  '.repeat(depth);
+    let line = `${indent}- ${renderNodeLine(node.role, resolveDisplayName(node), node.attributes, node.value)}`;
+    if (node.children.length > 0) {
+      line += ':';
     }
-    if (trimmed === 'removed:' || trimmed === 'removed: []') {
-      section = 'removed';
-      continue;
+    lines.push(line);
+    if (node.children.length > 0) {
+      lines.push(serializeAriaNodes(node.children, depth + 1));
     }
+  }
+  return lines.join('\n');
+};
 
-    if (!trimmed.startsWith('- ')) continue;
-    if (section === 'added') added.push(line);
-    if (section === 'removed') removedCount++;
-  }
-
-  const result: string[] = ['ariaDiff:'];
-  if (urlChanged) result.push('  note: navigated to new page');
-  if (added.length > 0) {
-    result.push('  added:');
-    result.push(...added);
-  }
-  if (removedCount > 0) {
-    result.push(`  removed: ${removedCount} interactive elements`);
-  }
-  return result.join('\n');
+export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false): string => {
+  if (!snapshot) return '';
+  const nodes = parseAriaSnapshot(snapshot, keepNamed);
+  return serializeAriaNodes(nodes);
 };

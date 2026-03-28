@@ -7,7 +7,6 @@ export class PlanCommand extends BaseCommand {
   suggestions = ['/test - to launch first test', '/test * - to launch all tests', 'Edit the plan in file and call /plan:reload to update it'];
   options = [
     { flags: '--fresh', description: 'Regenerate plan from scratch' },
-    { flags: '--append', description: 'Add tests to existing plan' },
     { flags: '--clear', description: 'Clear plan before regenerating' },
     { flags: '--style <name>', description: 'Planning style (normal, curious, psycho, performer)' },
   ];
@@ -15,28 +14,17 @@ export class PlanCommand extends BaseCommand {
   async execute(args: string): Promise<void> {
     const clear = args.includes('--clear');
     const fresh = args.includes('--fresh') || clear;
-    const append = args.includes('--append');
     const styleMatch = args.match(/--style\s+(\S+)/);
     const style = styleMatch?.[1];
     const focus = args
       .replace('--clear', '')
       .replace('--fresh', '')
-      .replace('--append', '')
       .replace(/--style\s+\S+/, '')
       .trim();
 
     if (clear) {
       this.explorBot.clearPlan();
       tag('success').log('Plan cleared');
-    }
-
-    if (!fresh && !append) {
-      const existingPlan = this.explorBot.getCurrentPlan();
-      if (existingPlan?.tests.length) {
-        tag('info').log(`Plan already exists: "${existingPlan.title}" with ${existingPlan.tests.length} tests`);
-        tag('info').log('Use /plan --append to add more tests');
-        return;
-      }
     }
 
     if (focus) {

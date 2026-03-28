@@ -181,6 +181,12 @@ function stripElementsByTag(node: ParentNodeLike, tagsToRemove: Set<string>): vo
   }
 }
 
+export function computeHtmlFingerprint(html: string): string[] {
+  const document = parseDocument(html);
+  const root = getRootNodeForFlatten(document);
+  return flattenHtml(root);
+}
+
 /**
  * Compares two HTML documents and returns differences along with a diff subtree.
  */

@@ -89,7 +89,8 @@ export class Captain extends CaptainBase implements Agent {
 
   private systemPrompt(): string {
     const mode = this.detectMode();
-    const customPrompt = this.explorBot.getProvider().getSystemPromptForAgent('captain');
+    const currentUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url;
+    const customPrompt = this.explorBot.getProvider().getSystemPromptForAgent('captain', currentUrl);
 
     return dedent`
     <role>
@@ -184,7 +185,7 @@ export class Captain extends CaptainBase implements Agent {
     ${headingsBlock}
 
     <page_aria>
-    ${actionResult.ariaSnapshot}
+    ${actionResult.getInteractiveARIA()}
     </page_aria>
     </page>
 
@@ -234,7 +235,7 @@ export class Captain extends CaptainBase implements Agent {
         </page>
 
         <page_aria>
-        ${actionResult.ariaSnapshot}
+        ${actionResult.getInteractiveARIA()}
         </page_aria>
 
         <page_html>

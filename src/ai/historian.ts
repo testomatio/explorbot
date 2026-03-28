@@ -8,10 +8,10 @@ import { ExperienceTracker, type SessionExperienceEntry, type SessionStep } from
 import { type Reporter, type ReporterStep } from '../reporter.ts';
 import type { StateManager } from '../state-manager.ts';
 import { type Plan, type Task, Test } from '../test-plan.ts';
-import { condenseAriaDiff } from '../utils/aria.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
+import { extractStatePath } from '../utils/url-matcher.ts';
 import { ASSERTION_TOOLS, CODECEPT_TOOLS } from './tools.ts';
 
 const debugLog = createDebug('explorbot:historian');
@@ -33,31 +33,28 @@ export class Historian {
     debugLog('Saving session experience');
 
     const result = this.determineResult(task);
-
-    if (result === 'failed') {
-      debugLog('Skipping session experience for failed test');
-      if ('scenario' in task) {
-        (task as Test).generatedCode = this.toCode(conversation, task.description);
-      }
-      return;
-    }
-
     const toolExecutions = conversation.getToolExecutions();
-    const steps = await this.extractSteps(toolExecutions);
-    await this.detectRetryPatterns(toolExecutions, initialState);
-    const relatedUrls = this.extractVisitedUrls(toolExecutions, initialState.url || '');
-
-    const entry: SessionExperienceEntry = {
-      scenario: task.description,
-      result,
-      steps,
-      relatedUrls,
-    };
-
-    this.experienceTracker.saveSessionExperience(initialState, entry);
 
     if (task instanceof Test) {
       task.generatedCode = this.toCode(conversation, task.description);
+    }
+
+    const steps = await this.extractSteps(toolExecutions);
+    await this.detectRetryPatterns(toolExecutions, initialState);
+    const verifiedSteps = await this.verifySteps(steps, initialState);
+
+    if (verifiedSteps.length > 0) {
+      const relatedUrls = this.extractVisitedUrls(toolExecutions, initialState.url || '');
+      const entry: SessionExperienceEntry = {
+        scenario: task.description,
+        result,
+        steps: verifiedSteps,
+        relatedUrls,
+      };
+      this.experienceTracker.saveSessionExperience(initialState, entry);
+    }
+
+    if (task instanceof Test && result !== 'failed') {
       await this.reportSession(task, steps);
     }
 
@@ -102,6 +99,68 @@ export class Historian {
     await this.analyzeDiscoveries(stepsWithDiffs);
 
     return stepsWithDiffs.map((s) => s.step);
+  }
+
+  private async verifySteps(steps: SessionStep[], initialState: ActionResult): Promise<SessionStep[]> {
+    if (steps.length === 0) return [];
+
+    const existingExperience = this.experienceTracker
+      .getRelevantExperience(initialState)
+      .map((e) => e.content)
+      .filter(Boolean)
+      .join('\n');
+
+    const existingSummary = existingExperience.length > 2000 ? existingExperience.substring(0, 2000) : existingExperience;
+
+    const stepsList = steps.map((s, i) => `${i}. ${s.message}\n   Code: ${s.code || 'none'}`).join('\n');
+    const prompt = dedent`
+      Review these test steps and determine which are valuable to save as experience
+      for future test executions on this page.
+
+      <steps>
+      ${stepsList}
+      </steps>
+
+      ${existingSummary ? `<existing_experience>\n${existingSummary}\n</existing_experience>` : ''}
+
+      For each step, determine if it is useful:
+      - NOT useful if it uses auto-generated or unstable locators (ember IDs, numeric data-testid, random IDs)
+      - NOT useful if it is already documented in existing experience
+      - NOT useful if it requires an unclear precondition that would not be reproducible
+      - NOT useful if it is trivial navigation (I.amOnPage) without meaningful context
+      - USEFUL if it demonstrates how to interact with a specific UI component (expand dropdown, fill form, etc)
+      - USEFUL if it shows a working approach for a common task on this page
+    `;
+
+    const schema = z.object({
+      steps: z.array(
+        z.object({
+          stepIndex: z.number(),
+          useful: z.boolean(),
+        })
+      ),
+    });
+
+    try {
+      const response = await this.provider.generateObject(
+        [
+          { role: 'system', content: 'Evaluate test steps for experience value. Be selective — only keep steps that teach something reusable.' },
+          { role: 'user', content: prompt },
+        ],
+        schema,
+        undefined,
+        { telemetryFunctionId: 'historian.verifySteps' }
+      );
+
+      const usefulIndices = new Set((response?.object?.steps || []).filter((s) => s.useful).map((s) => s.stepIndex));
+
+      const verified = steps.filter((_, i) => usefulIndices.has(i));
+      debugLog('Verified %d/%d steps as useful', verified.length, steps.length);
+      return verified;
+    } catch (error: any) {
+      debugLog('Step verification failed, keeping all steps: %s', error.message);
+      return steps;
+    }
   }
 
   private async detectRetryPatterns(toolExecutions: ToolExecution[], initialState: ActionResult): Promise<void> {
@@ -249,7 +308,7 @@ export class Historian {
       const { step, ariaDiff, urlChanged } = stepsWithDiffs[i];
       prompt += `\n\nStep ${i + 1}: ${step.message}`;
       if (ariaDiff) {
-        prompt += `\n${condenseAriaDiff(ariaDiff, urlChanged)}`;
+        prompt += `\n${ariaDiff}`;
       }
     }
 
@@ -279,29 +338,19 @@ export class Historian {
 
   private extractVisitedUrls(toolExecutions: ToolExecution[], initialUrl: string): string[] {
     const urls = new Set<string>();
-    const initialPath = this.toRelativeUrl(initialUrl);
+    const initialPath = extractStatePath(initialUrl);
 
     for (const exec of toolExecutions) {
       const currentUrl = exec.output?.pageDiff?.currentUrl;
       if (!currentUrl) continue;
 
-      const relativePath = this.toRelativeUrl(currentUrl);
+      const relativePath = extractStatePath(currentUrl);
       if (relativePath && relativePath !== initialPath) {
         urls.add(relativePath);
       }
     }
 
     return [...urls];
-  }
-
-  private toRelativeUrl(url: string): string {
-    if (url.startsWith('/')) return url;
-    try {
-      const urlObj = new URL(url);
-      return urlObj.pathname + urlObj.hash;
-    } catch {
-      return url;
-    }
   }
 
   toCode(conversation: Conversation, scenario: string): string {

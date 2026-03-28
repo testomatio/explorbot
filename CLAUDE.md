@@ -55,6 +55,7 @@ Do not use try/catch inside try/catch
 When updating do the smallest change possible
 Avoid repetetive code patterns
 Avoid ternary operators!
+Never use `...(condition ? { key: value } : {})` spread pattern — use a plain `if` statement instead
 Avoid creating extra functions that were not explicitly set
 Use dedent when formatting prompts
 Use `mdq()` from `src/utils/markdown-query.ts` for all markdown manipulation (find sections, replace tables, extract text). Never do manual line-splitting/counting on markdown.

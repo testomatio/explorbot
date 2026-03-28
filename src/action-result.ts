@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
-import micromatch from 'micromatch';
 import { ConfigParser, type HtmlConfig } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
-import { diffAriaSnapshots, summarizeInteractiveNodes } from './utils/aria.ts';
+import { compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
+import { extractStatePath, matchesUrl } from './utils/url-matcher.ts';
 
 const debugLog = createDebug('explorbot:state');
 
@@ -130,7 +130,7 @@ export class ActionResult implements ActionResultData {
     }
 
     if (this.url && this.url !== '') {
-      this.url = this.extractStatePath(this.url);
+      this.url = extractStatePath(this.url);
     }
   }
 
@@ -210,7 +210,7 @@ export class ActionResult implements ActionResultData {
     if (!this.url || this.url === '') {
       return false;
     }
-    return this.extractStatePath(state.url) === this.extractStatePath(this.url);
+    return extractStatePath(state.url) === extractStatePath(this.url);
   }
 
   isMatchedBy(state: WebPageState): boolean {
@@ -218,19 +218,19 @@ export class ActionResult implements ActionResultData {
       return false;
     }
 
-    const isRelevant = this.matchesPattern(this.extractStatePath(state.url), this.extractStatePath(this.url));
+    const isRelevant = matchesUrl(extractStatePath(state.url), extractStatePath(this.url));
     if (!isRelevant) {
       return false;
     }
 
     // If headings are provided in state, they must match
-    if (state.h1 && this.h1 && !this.matchesPattern(this.h1, state.h1)) {
+    if (state.h1 && this.h1 && !matchesUrl(this.h1, state.h1)) {
       return false;
     }
-    if (state.h2 && this.h2 && !this.matchesPattern(this.h2, state.h2)) {
+    if (state.h2 && this.h2 && !matchesUrl(this.h2, state.h2)) {
       return false;
     }
-    if (state.h3 && this.h3 && !this.matchesPattern(this.h3, state.h3)) {
+    if (state.h3 && this.h3 && !matchesUrl(this.h3, state.h3)) {
       return false;
     }
 
@@ -241,22 +241,10 @@ export class ActionResult implements ActionResultData {
     if (!record.url || !this.url) return false;
     if (this.isMatchedBy(record)) return true;
     if (!options?.includeDescendantExperience) return false;
-    const cur = this.extractStatePath(this.url);
-    const exp = this.extractStatePath(record.url);
+    const cur = extractStatePath(this.url);
+    const exp = extractStatePath(record.url);
     if (!cur || !exp) return false;
-    return this.matchesPattern(`${cur}/*`, exp);
-  }
-
-  private extractStatePath(url: string): string {
-    if (url.startsWith('/')) {
-      return url;
-    }
-    try {
-      const urlObj = new URL(url);
-      return urlObj.pathname + urlObj.hash;
-    } catch {
-      return url;
-    }
+    return matchesUrl(`${cur}/*`, exp);
   }
 
   async simplifiedHtml(htmlConfig?: HtmlConfig): Promise<string> {
@@ -276,6 +264,14 @@ export class ActionResult implements ActionResultData {
   async textHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
     return await minifyHtml(htmlTextSnapshot(this.html ?? '', normalizedConfig?.text));
+  }
+
+  getInteractiveARIA(): string {
+    return compactAriaSnapshot(this.ariaSnapshot, false);
+  }
+
+  getCompactARIA(): string {
+    return compactAriaSnapshot(this.ariaSnapshot, true);
   }
 
   private normalizeHtmlConfig(htmlConfig?: HtmlConfig): HtmlConfig | undefined {
@@ -437,9 +433,9 @@ export class ActionResult implements ActionResultData {
       parts.push(`<notes>${this.notes.join('\n')}</notes>`);
     }
 
-    const ariaSummary = summarizeInteractiveNodes(this.ariaSnapshot);
-    if (ariaSummary.length > 0) {
-      parts.push(`<aria>\n${ariaSummary.map((item) => `- ${item}`).join('\n')}</aria>`);
+    const ariaSummary = this.getInteractiveARIA();
+    if (ariaSummary) {
+      parts.push(`<aria>\n${ariaSummary}</aria>`);
     }
 
     if (this.links.length > 0) {
@@ -620,63 +616,6 @@ export class ActionResult implements ActionResultData {
 
     result.pageDiff = pageDiff;
     return result;
-  }
-
-  private globMatch(pattern: string, str: string): boolean {
-    return micromatch.isMatch(str, pattern);
-  }
-
-  /**
-   * Check if a pattern matches an actual value
-   * Supports multiple modes:
-   * - If pattern starts with '^', treat as regex: ^/user/\d+$
-   * - If pattern starts and ends with '~', treat as regex: ~/user/\d+~
-   * - Special handling for /* patterns to match both exact path and sub-paths
-   * - Otherwise, use glob matching via micromatch with advanced patterns
-   * Can be extended to match h1, h2, h3, title, etc.
-   */
-  private matchesPattern(pattern: string, actualValue: string): boolean {
-    if (pattern === '*') return true;
-    if (pattern?.toLowerCase() === actualValue?.toLowerCase()) return true;
-
-    // Special handling for /* patterns - they should match both exact path and sub-paths
-    if (pattern.endsWith('/*')) {
-      const basePattern = pattern.slice(0, -2); // Remove /*
-      if (actualValue === basePattern) return true;
-      if (actualValue.startsWith(`${basePattern}/`)) return true;
-    }
-
-    // If pattern starts with '^', treat as regex
-    if (pattern.startsWith('^')) {
-      try {
-        const regexPattern = pattern.slice(1);
-        const regex = new RegExp(regexPattern);
-        return regex.test(actualValue);
-      } catch (error) {
-        debugLog(`Invalid regex pattern: ${pattern}`, error);
-        return false;
-      }
-    }
-
-    // If pattern starts and ends with '~', treat as regex
-    if (pattern.startsWith('~') && pattern.endsWith('~') && pattern.length > 2) {
-      try {
-        const regexPattern = pattern.slice(1, -1);
-        const regex = new RegExp(regexPattern);
-        return regex.test(actualValue);
-      } catch (error) {
-        debugLog(`Invalid regex pattern: ${pattern}`, error);
-        return false;
-      }
-    }
-
-    // Use glob matching for everything else
-    try {
-      return this.globMatch(pattern, actualValue);
-    } catch (error) {
-      debugLog(`Invalid glob pattern: ${pattern}`, error);
-      return false;
-    }
   }
 }
 

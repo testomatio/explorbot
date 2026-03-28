@@ -8,9 +8,19 @@ import { BaseCommand } from './base-command.js';
 export class ExploreCommand extends BaseCommand {
   name = 'explore';
   description = 'Start web exploration';
+  options = [{ flags: '--max-tests <number>', description: 'Maximum number of tests to run' }];
   suggestions = ['/navigate <page> - to go to another page', '/research - to analyze', '/plan <feature> - to plan testing'];
 
+  maxTests?: number;
+  private testsRun = 0;
+
   async execute(args: string): Promise<void> {
+    const maxTestsMatch = args.match(/--max-tests\s+(\d+)/);
+    if (maxTestsMatch) {
+      this.maxTests = Number.parseInt(maxTestsMatch[1], 10);
+      args = args.replace(/--max-tests\s+\d+/, '').trim();
+    }
+
     const feature = args.trim() || undefined;
     const mainUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url;
 
@@ -19,8 +29,17 @@ export class ExploreCommand extends BaseCommand {
     if (!mainPlan) return;
     const completedPlans: Plan[] = [mainPlan];
 
+    if (this.isLimitReached()) {
+      this.explorBot.setCurrentPlan(mainPlan);
+      if (mainUrl) await this.explorBot.visit(mainUrl);
+      this.printResults();
+      return;
+    }
+
     const planner = this.explorBot.agentPlanner();
     while (true) {
+      if (this.isLimitReached()) break;
+
       const candidates = planner.collectSubPageCandidates(mainPlan, mainUrl || '/');
       if (candidates.length === 0) break;
 
@@ -30,7 +49,6 @@ export class ExploreCommand extends BaseCommand {
       tag('info').log(`Exploring sub-page: ${pick.url} (${pick.reason})`);
       try {
         await this.explorBot.visit(pick.url);
-        this.explorBot.clearPlan();
         await this.runAllStyles(pick.url, undefined, mainPlan, completedPlans);
         const subPlan = this.explorBot.getCurrentPlan();
         if (subPlan) {
@@ -86,11 +104,17 @@ export class ExploreCommand extends BaseCommand {
     tag('info').log(`${figureSet.tick} ${currentPlan.tests.length} tests completed`);
   }
 
+  private isLimitReached(): boolean {
+    return this.maxTests != null && this.testsRun >= this.maxTests;
+  }
+
   private async runPendingTests(): Promise<void> {
     const plan = this.explorBot.getCurrentPlan();
     if (!plan) return;
     for (const test of plan.getPendingTests()) {
+      if (this.isLimitReached()) break;
       await this.explorBot.agentTester().test(test);
+      this.testsRun++;
     }
   }
 }

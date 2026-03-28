@@ -422,7 +422,7 @@ export class Plan {
     return mergedPlan;
   }
 
-  toAiContext(): string {
-    return planToAiContext(this);
+  toAiContext(options?: { skipSteps?: boolean }): string {
+    return planToAiContext(this, options);
   }
 }

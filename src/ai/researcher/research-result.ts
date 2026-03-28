@@ -2,7 +2,7 @@ import { parseAriaLocator } from '../../utils/aria.ts';
 import { jsonToTable } from '../../utils/markdown-parser.ts';
 import { mdq } from '../../utils/markdown-query.ts';
 import type { Locator } from './locators.ts';
-import { type ResearchSection, parseResearchSections, rebuildSectionMarkdown } from './parser.ts';
+import { RESEARCH_COLUMN_ORDER, type ResearchSection, parseResearchSections, rebuildSectionMarkdown } from './parser.ts';
 
 export class ResearchResult {
   text: string;
@@ -46,21 +46,6 @@ export class ResearchResult {
     }));
   }
 
-  nullifyBrokenContainers(broken: string[]): void {
-    if (broken.length === 0) return;
-    const sections = parseResearchSections(this.text);
-    for (const section of sections) {
-      if (!section.containerCss || !broken.includes(section.containerCss)) continue;
-      section.containerCss = null;
-      this.rebuildSectionInText(section);
-    }
-    for (const loc of this.locators) {
-      if (loc.container && broken.includes(loc.container)) {
-        loc.container = null;
-      }
-    }
-  }
-
   updateSection(sectionName: string, locators: Locator[]): void {
     const sections = parseResearchSections(this.text);
     const section = sections.find((s) => s.name === sectionName);
@@ -96,6 +81,14 @@ export class ResearchResult {
       if (rows.length === 0) continue;
 
       let changed = false;
+
+      if (!('Type' in rows[0]) && 'ARIA' in rows[0]) {
+        for (const row of rows) {
+          row.Type = parseAriaLocator(row.ARIA || '-')?.role || '-';
+        }
+        changed = true;
+      }
+
       for (const row of rows) {
         if (row.ARIA && !parseAriaLocator(row.ARIA)) {
           row.ARIA = '-';
@@ -107,9 +100,16 @@ export class ResearchResult {
       if (!changed && !hasEidx) continue;
 
       const rawTable = table.text();
-      const columns = Object.keys(rows[0]).filter((c) => c !== 'eidx');
+      const baseColumns = Object.keys(rows[0]).filter((c) => c !== 'eidx');
+      const columns = this.reorderColumns(baseColumns);
       const cleaned = rows.map(({ eidx, ...rest }) => rest);
       this.text = this.text.replace(rawTable, jsonToTable(cleaned, columns));
     }
+  }
+
+  private reorderColumns(columns: string[]): string[] {
+    const ordered = RESEARCH_COLUMN_ORDER.filter((c) => columns.includes(c));
+    const rest = columns.filter((c) => !RESEARCH_COLUMN_ORDER.includes(c));
+    return [...ordered, ...rest];
   }
 }

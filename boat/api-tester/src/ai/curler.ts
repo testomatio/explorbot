@@ -104,9 +104,18 @@ export class Curler {
       }
     );
 
-    await this.finalReview(test);
+    try {
+      await this.finalReview(test);
+    } catch (error) {
+      tag('error').log(`Final review failed: ${error}`);
+    }
     this.finishTest(test);
-    await this.reporter.reportTest(test);
+    const meta: Record<string, string | undefined> = {
+      endpoint: test.startUrl,
+      style: test.style,
+      sessionName: test.sessionName,
+    };
+    await this.reporter.reportTest(test, meta);
 
     return { success: test.isSuccessful };
   }

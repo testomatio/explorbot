@@ -2,8 +2,11 @@ import { join } from 'node:path';
 import { Client } from '@testomatio/reporter';
 import type { Step } from '@testomatio/reporter/types/types.js';
 import { ConfigParser } from './config.js';
+import type { ReporterConfig } from './config.js';
 import { Test } from './test-plan.js';
 import { createDebug } from './utils/logger.js';
+
+export type ReporterMeta = Record<string, string | undefined>;
 
 const debugLog = createDebug('explorbot:reporter');
 
@@ -17,10 +20,35 @@ export interface ReporterStep {
 export class Reporter {
   private client: Client;
   private isRunStarted = false;
+  private reporterEnabled: boolean;
 
-  constructor() {
+  constructor(config?: ReporterConfig) {
+    this.reporterEnabled = Reporter.resolveEnabled(config);
+
+    if (this.reporterEnabled && !process.env.TESTOMATIO) {
+      this.configureHtmlPipe();
+    }
+
     this.client = new Client({ apiKey: process.env.TESTOMATIO || '' });
-    debugLog('Testomat.io reporter initialized');
+    debugLog('Reporter initialized', { enabled: this.reporterEnabled, pipe: process.env.TESTOMATIO ? 'testomatio' : 'html' });
+  }
+
+  static resolveEnabled(config?: ReporterConfig): boolean {
+    if (config?.enabled === true) return true;
+    if (config?.enabled === false) return false;
+    return Boolean(process.env.TESTOMATIO);
+  }
+
+  private configureHtmlPipe(): void {
+    process.env.TESTOMATIO_HTML_REPORT_SAVE = '1';
+    let outputDir = 'output';
+    try {
+      outputDir = ConfigParser.getInstance().getOutputDir();
+    } catch {
+      // config not loaded yet, use default
+    }
+    process.env.TESTOMATIO_HTML_REPORT_FOLDER = join(outputDir, 'reports');
+    debugLog('HTML report pipe configured', { folder: process.env.TESTOMATIO_HTML_REPORT_FOLDER });
   }
 
   async startRun(): Promise<void> {
@@ -28,7 +56,7 @@ export class Reporter {
       return;
     }
 
-    if (!process.env.TESTOMATIO) {
+    if (!this.reporterEnabled) {
       return;
     }
 
@@ -39,19 +67,19 @@ export class Reporter {
       const result = await Promise.race([this.client.createRun().then(() => 'success' as const), timeoutPromise]);
 
       if (result === 'timeout') {
-        debugLog('Testomat.io run creation timed out');
+        debugLog('Reporter run creation timed out');
         return;
       }
 
-      if (!this.client.runId) {
+      if (process.env.TESTOMATIO && !this.client.runId) {
         debugLog('Testomat.io run creation failed - no runId received');
         return;
       }
 
       this.isRunStarted = true;
-      debugLog('Testomat.io run started with ID:', this.client.runId);
+      debugLog('Reporter run started', { runId: this.client.runId || 'html-only' });
     } catch (error) {
-      debugLog('Failed to start Testomat.io reporter:', error);
+      debugLog('Failed to start reporter:', error);
       return;
     }
 
@@ -61,28 +89,11 @@ export class Reporter {
 
   async reportTestStart(test: Test): Promise<void> {
     await this.startRun();
-
-    if (!this.isRunStarted) {
-      return;
-    }
-
-    try {
-      const testData = {
-        rid: test.id,
-        title: test.scenario,
-        suite_title: test.plan?.title || 'Auto-Exploratory Testing',
-        meta: this.buildMeta(test),
-      };
-
-      debugLog('Test started:', testData);
-      await this.client.addTestRun(null, testData);
-      debugLog(`Test reported as pending: ${test.scenario}`);
-    } catch (error) {
-      debugLog('Failed to report test start:', error);
-    }
   }
 
-  protected combineStepsAndNotes(test: Test): Step[] {
+  protected combineStepsAndNotes(test: Test, lastScreenshotFile?: string): Step[] {
+    let outputDir: string | undefined;
+    const getOutputDir = () => (outputDir ||= ConfigParser.getInstance().getOutputDir());
     const noteEntries = Object.entries(test.notes)
       .map(([timestampKey, note]) => ({
         startTime: note.startTime,
@@ -114,20 +125,33 @@ export class Reporter {
           ...Object.fromEntries(Object.entries(entry).filter(([k]) => k !== 'noteStartTime' && k !== 'text' && k !== 'duration')),
         }));
 
-      steps.push({
+      const step: Step = {
         category: 'user',
         title: noteEntry.message,
         duration: 0,
         status: noteEntry.status || 'none',
         steps: noteSteps.length > 0 ? noteSteps : undefined,
-        ...(noteEntry.screenshot ? { artifacts: [join(ConfigParser.getInstance().getOutputDir(), noteEntry.screenshot)] } : {}),
-      });
+      };
+      if (noteEntry.screenshot) {
+        step.artifacts = [join(getOutputDir(), noteEntry.screenshot)];
+      }
+      steps.push(step);
+    }
+
+    if (lastScreenshotFile && steps.length > 0) {
+      const lastStep = steps[steps.length - 1];
+      const screenshotPath = join(getOutputDir(), lastScreenshotFile);
+      if (lastStep.artifacts) {
+        lastStep.artifacts.push(screenshotPath);
+      } else {
+        lastStep.artifacts = [screenshotPath];
+      }
     }
 
     return steps;
   }
 
-  async reportTest(test: Test): Promise<void> {
+  async reportTest(test: Test, meta?: ReporterMeta): Promise<void> {
     await this.startRun();
 
     if (!this.isRunStarted) {
@@ -144,7 +168,13 @@ export class Reporter {
         status = 'failed';
       }
 
-      const steps = this.combineStepsAndNotes(test);
+      const screenshotFile = meta?.screenshotFile;
+      if (meta) {
+        delete meta.screenshotFile;
+        meta = Object.fromEntries(Object.entries(meta).filter(([, v]) => v));
+      }
+
+      const steps = this.combineStepsAndNotes(test, screenshotFile);
 
       const testData = {
         rid: test.id,
@@ -159,7 +189,7 @@ export class Reporter {
           .join('\n'),
         files: Object.values(test.artifacts) || [],
         message: test.summary || this.extractLastNoteMessage(test) || '',
-        meta: this.buildMeta(test),
+        meta,
       };
 
       debugLog(testData);
@@ -195,48 +225,7 @@ export class Reporter {
     return notes[notes.length - 1].message;
   }
 
-  private buildMeta(test: Test): Record<string, string> {
-    const meta: Record<string, string> = {};
-    const baseUrl = ConfigParser.getInstance().getConfig().playwright?.url;
-    if (baseUrl) meta.baseUrl = baseUrl;
-    if (test.style) meta.style = test.style;
-    if (test.sessionName) meta.sessionName = test.sessionName;
-    return meta;
-  }
-
   async reportSteps(test: Test, steps: ReporterStep[]): Promise<void> {
-    if (!this.isRunStarted) return;
-
-    const formattedSteps: Step[] = steps.map((step) => ({
-      category: 'user',
-      title: step.title,
-      duration: 0,
-      steps: step.code.map((code) => ({
-        category: 'framework',
-        title: code,
-        duration: 0,
-      })),
-    }));
-
-    const discoveries = steps
-      .filter((s) => s.discovery)
-      .map((s) => s.discovery)
-      .join('\n');
-
-    try {
-      const testData = {
-        rid: test.id,
-        title: test.scenario,
-        suite_title: test.plan?.title || 'Auto-Exploratory Testing',
-        steps: formattedSteps,
-        message: discoveries || test.summary || '',
-        meta: this.buildMeta(test),
-      };
-
-      debugLog('Reporting steps:', testData);
-      await this.client.addTestRun(null, testData);
-    } catch (error) {
-      debugLog('Failed to report steps:', error);
-    }
+    return;
   }
 }

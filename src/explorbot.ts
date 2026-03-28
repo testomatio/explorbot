@@ -259,9 +259,7 @@ export class ExplorBot {
     this.planFeature = feature;
 
     if (opts.fresh) {
-      const url = this.currentPlan?.url;
       this.clearPlan();
-      Planner.clearCache(url);
     }
 
     if (!opts.extend && this.currentPlan?.url) {
@@ -272,16 +270,8 @@ export class ExplorBot {
       }
     }
 
-    if (!this.currentPlan && !opts.fresh) {
-      const planFilename = this.generatePlanFilename();
-      const planPath = path.join(this.getPlansDir(), planFilename);
-      if (existsSync(planPath)) {
-        tag('info').log(`Loading existing plan from ${planFilename}`);
-        this.currentPlan = Plan.fromMarkdown(planPath);
-      }
-    }
-
     const planner = this.agentPlanner();
+    planner.freshStart = !!opts.fresh;
     if (this.currentPlan) {
       planner.setPlan(this.currentPlan);
     }
@@ -322,7 +312,7 @@ export class ExplorBot {
     return planPath;
   }
 
-  private generatePlanFilename(): string {
+  generatePlanFilename(): string {
     const state = this.explorer?.getStateManager().getCurrentState();
     const urlPath = state?.url || '/';
     const urlPart = sanitizeFilename(urlPath) || 'root';

@@ -11,6 +11,7 @@ import { WebElement } from '../utils/web-element.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
+import type { AIProvider } from './provider.ts';
 import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
@@ -97,6 +98,25 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           }
         }
 
+        const hasMultipleElements = attempts.some((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN));
+        if (hasMultipleElements) {
+          const disambiguatedXPath = await disambiguateElements(action.lastError, explanation, explorer.getAIProvider());
+          if (disambiguatedXPath) {
+            const xpathCommand = `I.click('${disambiguatedXPath.replace(/'/g, "\\'")}')`;
+            debugLog('Disambiguation picked XPath: %s', disambiguatedXPath);
+            const retrySuccess = await action.attempt(xpathCommand, explanation, true);
+            if (retrySuccess) {
+              const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, xpathCommand);
+              if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
+                activeNote.screenshot = await action.saveScreenshot();
+              }
+              activeNote.commit(TestResult.PASSED);
+              return successToolResult('click', { ...toolResult, attempts, code: xpathCommand, disambiguated: true });
+            }
+            attempts.push({ command: xpathCommand, success: false, error: action.lastError?.toString() });
+          }
+        }
+
         const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
         if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
           activeNote.screenshot = await action.saveScreenshot();
@@ -111,11 +131,16 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           suggestion = 'Element exists but could not be clicked (possibly covered by overlay or not interactable). Try closing overlapping panels first, or use visualClick().';
         }
 
-        return failedToolResult('click', 'All click commands failed', {
-          ...toolResult,
-          attempts,
-          suggestion,
-        });
+        return failedToolResult(
+          'click',
+          'All click commands failed',
+          {
+            ...toolResult,
+            attempts,
+            suggestion,
+          },
+          action.lastError
+        );
       },
     }),
 
@@ -328,11 +353,25 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               activeNote.screenshot = await action.saveScreenshot();
             }
             activeNote.commit(TestResult.FAILED);
-            return failedToolResult('form', `Form execution FAILED! ${message}`, {
-              ...toolResult,
-              code: codeBlock,
-              suggestion: 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and form() tools.',
-            });
+
+            let formSuggestion = 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and form() tools.';
+            if (message.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN)) {
+              const disambiguatedXPath = await disambiguateElements(action.lastError, explanation, explorer.getAIProvider());
+              if (disambiguatedXPath) {
+                formSuggestion = `Multiple elements matched. Use this specific locator instead: ${disambiguatedXPath}`;
+              }
+            }
+
+            return failedToolResult(
+              'form',
+              `Form execution FAILED! ${message}`,
+              {
+                ...toolResult,
+                code: codeBlock,
+                suggestion: formSuggestion,
+              },
+              action.lastError
+            );
           }
 
           if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
@@ -493,7 +532,7 @@ export function createAgentTools({
 
           const actionResult = ActionResult.fromState(currentState);
           const html = await actionResult.simplifiedHtml();
-          const aria = currentState.ariaSnapshot || '';
+          const aria = actionResult.getInteractiveARIA();
 
           return successToolResult('context', {
             url: currentState.url,
@@ -593,7 +632,7 @@ export function createAgentTools({
 
           return successToolResult('research', {
             analysis: researchResult,
-            aria: await ActionResult.fromState(currentState).ariaSnapshot,
+            aria: ActionResult.fromState(currentState).getInteractiveARIA(),
             message: `Successfully researched page: ${currentState.url}.`,
             suggestion: dedent`
               You received comprehensive UI map report. Use it to understand the page structure and navigate to the elements. 
@@ -938,7 +977,12 @@ function transformContainsCommand(command: string): string {
 function successToolResult(action: string, data?: Record<string, any>) {
   const result: Record<string, any> = { success: true, action, ...data };
   if (data?.pageDiff) {
-    result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
+    let suggestion = PAGE_DIFF_SUGGESTION;
+    const ariaChanges = data.pageDiff.ariaChanges || '';
+    if (ariaChanges.includes('heading') && ariaChanges.includes('added')) {
+      suggestion += ' WARNING: A new panel or modal may have appeared. If this was not the intended action, close it and try a different element.';
+    }
+    result.suggestion = data.suggestion ? `${data.suggestion} ${suggestion}` : suggestion;
   }
   return result;
 }
@@ -949,7 +993,9 @@ async function failedToolResult(action: string, message: string, data?: Record<s
     result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;
   }
 
-  const multipleElementsSuggestion = getMultipleElementsSuggestion(message);
+  const errorTexts = [message, ...(data?.attempts?.map((a: any) => a.error || '') || [])];
+  const hasMultipleElements = errorTexts.some((t: string) => t.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN));
+  const multipleElementsSuggestion = hasMultipleElements ? getMultipleElementsSuggestion() : null;
   if (multipleElementsSuggestion) {
     result.suggestion = multipleElementsSuggestion;
     result.multipleElementsDetected = true;
@@ -966,11 +1012,7 @@ async function failedToolResult(action: string, message: string, data?: Record<s
   return result;
 }
 
-function getMultipleElementsSuggestion(errorMessage: string): string | null {
-  if (!errorMessage.includes('Multiple elements') && !errorMessage.includes('multiple elements')) {
-    return null;
-  }
-
+function getMultipleElementsSuggestion(): string {
   return dedent`
     Multiple elements matched your locator. To fix this:
     1. Use container context: I.click({ "role": "button", "text": "Submit" }, '.form-container')
@@ -982,36 +1024,76 @@ function getMultipleElementsSuggestion(errorMessage: string): string | null {
   `;
 }
 
-async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
+const MAX_DISAMBIGUATE_ELEMENTS = 10;
+const MULTIPLE_ELEMENTS_PATTERN = 'multiple elements';
+
+async function extractWebElements(error: Error | null | undefined): Promise<Array<{ xpath: string; html: string }> | null> {
   if (!error || error.name !== 'MultipleElementsFound') return null;
 
   const elements = (error as any).webElements as Array<{ toAbsoluteXPath: () => Promise<string>; toSimplifiedHTML: () => Promise<string> }> | undefined;
   if (!elements?.length) return null;
 
-  let allUnknown = true;
-  const lines: string[] = [];
-
-  for (let i = 0; i < Math.min(elements.length, 10); i++) {
-    let xpath = '<unknown>';
-    let html = '<unknown>';
+  const result: Array<{ xpath: string; html: string }> = [];
+  for (let i = 0; i < Math.min(elements.length, MAX_DISAMBIGUATE_ELEMENTS); i++) {
     try {
-      xpath = await elements[i].toAbsoluteXPath();
-      allUnknown = false;
+      const xpath = await elements[i].toAbsoluteXPath();
+      const html = await elements[i].toSimplifiedHTML();
+      result.push({ xpath, html });
     } catch (e) {
-      debugLog('Failed to get XPath for matched element %d: %s', i, e);
+      debugLog('Failed to get details for element %d: %s', i, e);
     }
-    try {
-      html = await elements[i].toSimplifiedHTML();
-      allUnknown = false;
-    } catch (e) {
-      debugLog('Failed to get HTML for matched element %d: %s', i, e);
-    }
-    lines.push(`Element ${i + 1}\nXPath: ${xpath}\nHTML: ${html}`);
   }
+  return result.length > 0 ? result : null;
+}
 
-  if (allUnknown) return 'Could not fetch element details. Repeat the action to get better info.';
+async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
+  const details = await extractWebElements(error);
+  if (!details) return 'Could not fetch element details. Repeat the action to get better info.';
+  return details.map((el, i) => `Element ${i + 1}\nXPath: ${el.xpath}\nHTML: ${el.html}`).join('\n\n');
+}
 
-  return lines.join('\n\n');
+async function disambiguateElements(error: Error | null | undefined, explanation: string, provider: AIProvider): Promise<string | null> {
+  const elementDetails = await extractWebElements(error);
+  if (!elementDetails) return null;
+
+  const elementList = elementDetails.map((el, i) => `Element ${i + 1}:\nXPath: ${el.xpath}\nHTML: ${el.html}`).join('\n\n');
+
+  const schema = z.object({
+    position: z.number().nullable().describe('1-based position of the correct element, or null if none match'),
+  });
+
+  try {
+    const result = await provider.generateObject(
+      [
+        {
+          role: 'user' as const,
+          content: dedent`
+            A click action failed because multiple elements matched the locator.
+            The intended action was: ${explanation}
+
+            Here are the matched elements:
+
+            ${elementList}
+
+            Which element (1-${elementDetails.length}) best matches the intended action?
+            Return the position number, or null if none of them match.
+          `,
+        },
+      ],
+      schema,
+      provider.getAgenticModel(),
+      { agentName: 'disambiguator', timeout: 15000 }
+    );
+
+    const position = result?.object?.position;
+    if (position && position >= 1 && position <= elementDetails.length) {
+      return elementDetails[position - 1].xpath;
+    }
+    return null;
+  } catch (e) {
+    debugLog('Element disambiguation AI call failed: %s', e);
+    return null;
+  }
 }
 
 function getNotFoundSuggestion(errorMessage: string): string | null {

@@ -4,6 +4,7 @@ import { generateObject, generateText } from 'ai';
 import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
+import { RulesLoader } from '../utils/rules-loader.ts';
 import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { Stats } from '../stats.ts';
@@ -36,7 +37,6 @@ export class Provider {
           error.message.includes('schema') ||
           error.message.includes('No object generated') ||
           error.message.includes('No response text') ||
-          error.message.includes('Tool choice is required') ||
           error.message.includes('validate JSON')) &&
         !error.message.includes('output truncated at maxTokens')
       );
@@ -87,9 +87,18 @@ export class Provider {
     return this.config.agenticModel || this.config.model;
   }
 
-  getSystemPromptForAgent(agentName: string): string | undefined {
+  getSystemPromptForAgent(agentName: string, currentUrl?: string): string | undefined {
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
-    return agentConfig?.systemPrompt;
+    const parts: string[] = [];
+
+    if (agentConfig?.rules && currentUrl) {
+      const rulesText = RulesLoader.loadRules(agentName, agentConfig.rules, currentUrl);
+      if (rulesText) parts.push(rulesText);
+    }
+
+    if (agentConfig?.systemPrompt) parts.push(agentConfig.systemPrompt);
+
+    return parts.length > 0 ? parts.join('\n\n') : undefined;
   }
 
   getProviderOptionsForAgent(agentName: string): Record<string, any> | undefined {
@@ -327,6 +336,10 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
+      if (error?.message?.includes('Tool choice is required')) {
+        tag('warning').log('Model completed without calling a tool, returning empty result');
+        return { text: '', toolCalls: [], toolResults: [], response: { messages: [] }, usage: null };
+      }
       if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
       if (Provider.isContextLengthError(error)) {

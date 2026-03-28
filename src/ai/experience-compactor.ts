@@ -223,7 +223,7 @@ export class ExperienceCompactor implements Agent {
   }
 
   private getSystemPrompt(): string {
-    const customPrompt = this.provider.getSystemPromptForAgent('experience-compactor');
+    const customPrompt = this.provider.getSystemPromptForAgent('experience-compactor', '*');
     return dedent`
       You are an expert test automation engineer specializing in CodeceptJS.
       Your task is to compact experience data from test automation attempts into clean markdown format.
@@ -236,9 +236,10 @@ export class ExperienceCompactor implements Agent {
     return dedent`
       <rules>
       - Use markdown headers only (##, ###) - NO XML tags or wrappers in output
-      - Prioritize content in this order: Flows > Successful Attempts > Failed Attempts
+      - Prioritize content in this order: Flows > Successful Attempts
       - Merge similar flows and successful sessions to remove duplicates
-      - Keep maximum 5 unsuccessful attempts (most recent or most informative)
+      - Remove any remaining FAILED entries — they are no longer useful
+      - Keep the most valuable and actionable entries, deduplicate approaches that achieve the same goal
       - Remove all I.amOnPage, I.grab, and I.see calls from compacted experiences
       - Keep output under ${this.MAX_LENGTH} characters
       - Be explicit and short - no proposals or explanations
@@ -262,15 +263,6 @@ export class ExperienceCompactor implements Agent {
       \`\`\`js
       // working code
       \`\`\`
-
-      ## Failed Attempts
-
-      Keep only the 5 most informative failed attempts:
-      - Purpose: what was attempted
-      \`\`\`js
-      // failed code
-      \`\`\`
-      Reason: why it failed
       </output_format>
 
       <context>

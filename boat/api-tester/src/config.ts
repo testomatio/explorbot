@@ -22,6 +22,7 @@ interface ApibotConfig {
   dirs?: {
     output: string;
     knowledge?: string;
+    styles?: string;
   };
 }
 

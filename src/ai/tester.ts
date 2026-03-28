@@ -51,6 +51,7 @@ export class Tester extends TaskAgent implements Agent {
   private captain: Captain | null = null;
 
   MAX_ITERATIONS = 30;
+  MAX_EXTENSIONS = 2;
   ASSERTION_TOOLS = ['verify'];
   researcher: Researcher;
   navigator: Navigator;
@@ -158,28 +159,34 @@ export class Tester extends TaskAgent implements Agent {
 
     const codeceptjsTools = createCodeceptJSTools(this.explorer, task);
     let assertionPerformed = false;
-    await loop(
-      async ({ stop, pause, iteration, userInput }) => {
-        debugLog('iteration', iteration);
-        const currentState = this.getCurrentState();
+    let extensions = 0;
+    let shouldContinue = true;
 
-        const tools = {
-          ...codeceptjsTools,
-          ...(currentState.isInsideIframe ? createSpecialContextTools(this.explorer, 'iframe') : {}),
-          ...this.createTestFlowTools(task, currentState, conversation),
-          ...this.agentTools,
-        };
+    while (shouldContinue) {
+      shouldContinue = false;
 
-        debugLog(`Test ${task.scenario} iteration ${iteration}`);
+      await loop(
+        async ({ stop, pause, iteration, userInput }) => {
+          debugLog('iteration', iteration);
+          const currentState = this.getCurrentState();
 
-        if (this.explorer.getStateManager().isInDeadLoop()) {
-          task.addNote('Dead loop detected. Stopped');
-          stop();
-          return;
-        }
+          const tools = {
+            ...codeceptjsTools,
+            ...(currentState.isInsideIframe ? createSpecialContextTools(this.explorer, 'iframe') : {}),
+            ...this.createTestFlowTools(task, currentState, conversation),
+            ...this.agentTools,
+          };
 
-        if (userInput) {
-          conversation.addUserText(dedent`
+          debugLog(`Test ${task.scenario} iteration ${iteration}`);
+
+          if (this.explorer.getStateManager().isInDeadLoop()) {
+            task.addNote('Dead loop detected. Stopped');
+            stop();
+            return;
+          }
+
+          if (userInput) {
+            conversation.addUserText(dedent`
             <page>
             CURRENT URL: ${currentState.url}
             CURRENT TITLE: ${currentState.title}
@@ -191,58 +198,69 @@ export class Tester extends TaskAgent implements Agent {
 
             The user has interrupted and wants to change direction. Follow the new instruction.
           `);
-        }
-
-        conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);
-        conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
-        conversation.cleanupTag('experience', '...cleaned experience...', 1);
-
-        if (iteration > 1) {
-          const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
-          let nextStep = '';
-          nextStep += await this.reinjectContextIfNeeded(iteration, currentState);
-          nextStep += await this.prepareInstructionsForNextStep(task);
-
-          if (isNewPage && this.pilot) {
-            const guidance = await this.pilot.reviewNewPage(task, currentState);
-            if (guidance) nextStep += `\n\n${guidance}`;
-          } else if ((iteration % this.progressCheckInterval === 0 || this.consecutiveFailures >= 3) && this.pilot) {
-            const guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
-            if (guidance) nextStep += `\n\n${guidance}`;
           }
-          conversation.addUserText(nextStep);
-        }
 
-        const result = await this.provider.invokeConversation(conversation, tools, {
-          maxToolRoundtrips: 5,
-          toolChoice: 'required',
-        });
+          conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);
+          conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
+          conversation.cleanupTag('experience', '...cleaned experience...', 1);
 
-        if (!result) throw new Error('Failed to get response from provider');
+          if (iteration > 1) {
+            const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
+            let nextStep = '';
+            nextStep += await this.reinjectContextIfNeeded(iteration, currentState);
+            nextStep += await this.prepareInstructionsForNextStep(task);
 
-        debugLog('tool executions:', result?.toolExecutions?.map((execution: any) => execution.toolName).join(', '));
+            if (isNewPage && this.pilot) {
+              const guidance = await this.pilot.reviewNewPage(task, currentState);
+              if (guidance) nextStep += `\n\n${guidance}`;
+            } else if ((iteration % this.progressCheckInterval === 0 || this.consecutiveFailures >= 3 || this.consecutiveEmptyResults >= 2) && this.pilot) {
+              const guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
+              if (guidance) nextStep += `\n\n${guidance}`;
+              this.consecutiveFailures = 0;
+            }
+            conversation.addUserText(nextStep);
+          }
 
-        const allToolNames = result?.toolExecutions?.map((execution: any) => execution.toolName) || [];
-        const successfulToolNames = result?.toolExecutions?.filter((execution: any) => execution.wasSuccessful)?.map((execution: any) => execution.toolName) || [];
-        const actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
-        assertionPerformed = !!successfulToolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
-        const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
+          const result = await this.provider.invokeConversation(conversation, tools, {
+            maxToolRoundtrips: 5,
+            toolChoice: 'required',
+          });
 
-        this.trackToolExecutions(result?.toolExecutions || []);
+          if (!result) throw new Error('Failed to get response from provider');
 
-        if (actionPerformed && !wasSuccessful) {
-          result?.toolExecutions
-            ?.filter((execution: any) => !execution.wasSuccessful && execution.input?.explanation)
-            .forEach((execution: any) => {
-              task.addNote(`Failed to ${execution.input.explanation} (${execution.toolName})`, TestResult.FAILED);
-            });
-        }
+          if (result.response?.text && result.toolExecutions?.length === 0) {
+            task.addNote(result.response.text.substring(0, 200));
+          }
 
-        if (assertionPerformed) {
-          const message = result?.toolExecutions?.find((execution: any) => execution.toolName === 'verify')?.output?.message || '';
-          task.addNote(message, wasSuccessful ? TestResult.PASSED : TestResult.FAILED);
-          if (wasSuccessful) {
-            conversation.addUserText(dedent`
+          debugLog('tool executions:', result?.toolExecutions?.map((execution: any) => execution.toolName).join(', '));
+
+          const allToolNames = result?.toolExecutions?.map((execution: any) => execution.toolName) || [];
+          const successfulToolNames = result?.toolExecutions?.filter((execution: any) => execution.wasSuccessful)?.map((execution: any) => execution.toolName) || [];
+          const actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
+          assertionPerformed = !!successfulToolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
+          const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
+
+          this.trackToolExecutions(result?.toolExecutions || []);
+
+          if (this.consecutiveEmptyResults >= 5) {
+            task.addNote('AI model is not responding with actions. Stopped');
+            stop();
+            return;
+          }
+
+          if (actionPerformed && !wasSuccessful) {
+            result?.toolExecutions
+              ?.filter((execution: any) => !execution.wasSuccessful && execution.input?.explanation)
+              .forEach((execution: any) => {
+                task.addNote(`Failed to ${execution.input.explanation} (${execution.toolName})`, TestResult.FAILED);
+              });
+          }
+
+          if (assertionPerformed) {
+            const message = result?.toolExecutions?.find((execution: any) => execution.toolName === 'verify')?.output?.message || '';
+            task.addNote(message, wasSuccessful ? TestResult.PASSED : TestResult.FAILED);
+            if (wasSuccessful) {
+              conversation.addUserText(dedent`
                 Assertion "${message}" successfully passed!
 
                 If the scenario goal is achieved, call finish() now to complete the test.
@@ -252,73 +270,85 @@ export class Tester extends TaskAgent implements Agent {
                 Expected outcomes to check:
                 ${task.expected.map((expectation) => `- ${expectation}`).join('\n')}
             `);
-          }
-        }
-
-        if (task.hasFinished) {
-          stop();
-          return;
-        }
-
-        if (iteration >= this.MAX_ITERATIONS) {
-          task.addNote('Max iterations reached. Stopped');
-          stop();
-          return;
-        }
-      },
-      {
-        maxAttempts: this.MAX_ITERATIONS,
-        interruptPrompt: 'Test interrupted. Enter new instruction (or "stop" to cancel):',
-        onInterrupt: this.captain
-          ? async (userInput, context) => {
-              if (!userInput) return;
-              const result = await this.captain!.processSupervisorInterrupt(userInput, task);
-              tag('info').log(`🧑‍✈️ Supervisor: ${result.action} — ${result.message}`);
-
-              const terminalResults: Record<string, (typeof TestResult)[keyof typeof TestResult]> = {
-                stop: TestResult.FAILED,
-                pass: TestResult.PASSED,
-                skip: TestResult.SKIPPED,
-              };
-              const terminalResult = terminalResults[result.action];
-              if (terminalResult) {
-                task.addNote(result.message, terminalResult);
-                task.finish(terminalResult);
-                context.stop();
-                return;
-              }
-              context.setUserInput(result.message);
             }
-          : undefined,
-        observability: {
-          name: `test: ${task.scenario}`,
-          agent: 'tester',
-          sessionId: task.sessionName,
-          metadata: {
-            input: {
-              scenario: task.scenario,
-              startUrl: task.startUrl,
-              expected: task.expected,
+          }
+
+          if (task.hasFinished) {
+            stop();
+            return;
+          }
+
+          if (iteration >= this.MAX_ITERATIONS) {
+            task.addNote('Max iterations reached. Stopped');
+            stop();
+            return;
+          }
+        },
+        {
+          maxAttempts: this.MAX_ITERATIONS,
+          interruptPrompt: 'Test interrupted. Enter new instruction (or "stop" to cancel):',
+          onInterrupt: this.captain
+            ? async (userInput, context) => {
+                if (!userInput) return;
+                const result = await this.captain!.processSupervisorInterrupt(userInput, task);
+                tag('info').log(`🧑‍✈️ Supervisor: ${result.action} — ${result.message}`);
+
+                const terminalResults: Record<string, (typeof TestResult)[keyof typeof TestResult]> = {
+                  stop: TestResult.FAILED,
+                  pass: TestResult.PASSED,
+                  skip: TestResult.SKIPPED,
+                };
+                const terminalResult = terminalResults[result.action];
+                if (terminalResult) {
+                  task.addNote(result.message, terminalResult);
+                  task.finish(terminalResult);
+                  context.stop();
+                  return;
+                }
+                context.setUserInput(result.message);
+              }
+            : undefined,
+          observability: {
+            name: `test: ${task.scenario}`,
+            agent: 'tester',
+            sessionId: task.sessionName,
+            metadata: {
+              input: {
+                scenario: task.scenario,
+                startUrl: task.startUrl,
+                expected: task.expected,
+              },
             },
           },
-        },
-        catch: async ({ error, stop }) => {
-          tag('error').log(`Test execution error: ${error}`);
-          task.addNote(`Execution error: ${error instanceof Error ? error.message : String(error)}`);
-          stop();
-        },
+          catch: async ({ error, stop }) => {
+            tag('error').log(`Test execution error: ${error}`);
+            task.addNote(`Execution error: ${error instanceof Error ? error.message : String(error)}`);
+            stop();
+          },
+        }
+      );
+
+      if (task.hasFinished) break;
+
+      if (!this.pilot) {
+        await this.finalReview(task);
+        break;
       }
-    );
+
+      const finalState = this.getCurrentState();
+      const wantsContinue = await this.pilot.finalReview(task, finalState, conversation);
+
+      if (!wantsContinue || task.hasFinished) break;
+      if (extensions >= this.MAX_EXTENSIONS) break;
+
+      extensions++;
+      tag('info').log(`🧭 Pilot extending test (${extensions}/${this.MAX_EXTENSIONS})`);
+      shouldContinue = true;
+    }
 
     const finalUrl = this.explorer.getStateManager().getCurrentState()?.url || currentUrl;
     await this.hooksRunner.runAfterHook('tester', finalUrl);
 
-    if (this.pilot) {
-      const finalState = this.getCurrentState();
-      await this.pilot.finalReview(task, finalState, conversation);
-    } else {
-      await this.finalReview(task);
-    }
     await this.getHistorian().saveSession(task, initialState, conversation);
     if (task.plan) {
       this.getHistorian().savePlanToFile(task.plan);
@@ -327,7 +357,11 @@ export class Tester extends TaskAgent implements Agent {
 
     offStateChange();
     await this.finishTest(task);
-    await this.explorer.stopTest(task);
+    await this.explorer.stopTest(task, {
+      startUrl: task.startUrl,
+      style: task.style,
+      sessionName: task.sessionName,
+    });
 
     return {
       success: task.isSuccessful,
@@ -434,7 +468,7 @@ export class Tester extends TaskAgent implements Agent {
         </page>
 
         <page_aria>
-        ${currentState.ariaSnapshot}
+        ${currentState.getInteractiveARIA()}
         </page_aria>
         ${uiMapSection}
 
@@ -482,7 +516,7 @@ export class Tester extends TaskAgent implements Agent {
       </page>
 
       <page_aria>
-      ${currentState.ariaSnapshot}
+      ${currentState.getInteractiveARIA()}
       </page_aria>
     `;
   }
@@ -619,7 +653,7 @@ export class Tester extends TaskAgent implements Agent {
 
     ${sectionContextRule}
 
-    ${this.provider.getSystemPromptForAgent('tester') || ''}
+    ${this.provider.getSystemPromptForAgent('tester', this.explorer.getStateManager().getCurrentState()?.url) || ''}
     `;
   }
 
@@ -884,7 +918,7 @@ export class Tester extends TaskAgent implements Agent {
           return {
             success: true,
             action: 'finish',
-            message: note,
+            message: verify,
           };
         },
       }),

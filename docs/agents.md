@@ -64,19 +64,23 @@ See [Researcher Agent](./researcher.md) for detailed configuration and usage.
 
 **What it does:**
 - Creates business-focused test scenarios
-- Assigns priority levels (HIGH/MEDIUM/LOW)
+- Assigns priority levels (critical/important/high/normal/low)
 - Generates expected outcomes for verification
 - Balances positive and negative test cases
 - Avoids duplicating existing scenarios
+- Cycles through planning styles (normal, psycho, curious) for comprehensive coverage
 
 **Why you'll love it:**
 - Creates tests that matter, not just "click stuff"
 - Prioritizes by risk (critical flows first)
-- Focuses on UI-testable functionality
+- Different styles ensure broad coverage over multiple iterations
+- Fully customizable — add your own styles and page-specific rules
 
 **Commands that use Planner:**
 - `/plan [feature]`
 - `/explore`
+
+See [Planner Agent](./planner.md) for detailed documentation on planning styles, customization, and configuration.
 
 ## Tester Agent
 

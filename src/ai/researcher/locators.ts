@@ -3,6 +3,7 @@ import type { ActionResult } from '../../action-result.js';
 import type Explorer from '../../explorer.ts';
 import { parseAriaLocator } from '../../utils/aria.ts';
 import { tag } from '../../utils/logger.js';
+import { mdq } from '../../utils/markdown-query.ts';
 import { WebElement } from '../../utils/web-element.ts';
 import type { Conversation } from '../conversation.ts';
 import type { Provider } from '../provider.js';
@@ -10,6 +11,11 @@ import { locatorRule as generalLocatorRuleText } from '../rules.js';
 import { type Constructor, debugLog } from './mixin.ts';
 import { parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
+
+function firstCssSegment(css: string): string | null {
+  const parts = css.split(/\s*>\s*|\s+/);
+  return parts.length > 1 ? parts[0] : null;
+}
 
 export const DYNAMIC_ID_PATTERN = /^#ember\d|^\/\/[^[]*\[@id="ember\d|#react-select-|#rc-|#ng-|#cdk-|#mat-|data-ebd-id/;
 export const isForbiddenLocator = (s: string) => DYNAMIC_ID_PATTERN.test(s) || s.includes('data-explorbot-eidx') || /\[eidx=/.test(s);
@@ -198,11 +204,57 @@ export function WithLocators<T extends Constructor>(Base: T) {
         tag('substep').log(`Backfilled XPath for ${webElements.length} elements missing working locators`);
       }
 
-      const containerLocs = result.containerLocators;
-      await this.testLocators(containerLocs);
-      const brokenContainers = containerLocs.filter((c) => c.valid === false).map((c) => c.locator);
-      if (brokenContainers.length > 0) {
-        result.nullifyBrokenContainers(brokenContainers);
+      await this.validateContainers(result);
+    }
+
+    private async validateContainers(result: ResearchResult): Promise<void> {
+      const sections = parseResearchSections(result.text);
+
+      for (const section of sections) {
+        if (!section.containerCss) continue;
+
+        let count = 0;
+        try {
+          count = await this.explorer.playwrightLocatorCount((page) => page.locator(section.containerCss!));
+        } catch {}
+
+        if (count >= 1) continue;
+
+        const simplified = firstCssSegment(section.containerCss);
+        if (simplified) {
+          let simplifiedCount = 0;
+          try {
+            simplifiedCount = await this.explorer.playwrightLocatorCount((page) => page.locator(simplified));
+          } catch {}
+
+          if (simplifiedCount >= 1) {
+            debugLog(`Simplified container: '${section.containerCss}' → '${simplified}'`);
+            this.updateSectionContainer(result, section, simplified);
+            continue;
+          }
+        }
+
+        debugLog(`Nullified broken container: '${section.containerCss}' in "${section.name}"`);
+        this.updateSectionContainer(result, section, null);
+      }
+    }
+
+    private updateSectionContainer(result: ResearchResult, section: ReturnType<typeof parseResearchSections>[0], newCss: string | null): void {
+      const oldCss = section.containerCss;
+      const escaped = section.name.replace(/"/g, '\\"');
+      let sectionQuery = mdq(result.text).query(`section2(~"${escaped}")`);
+      if (sectionQuery.count() === 0) sectionQuery = mdq(result.text).query(`section3(~"${escaped}")`);
+
+      if (newCss) {
+        result.text = sectionQuery.query('blockquote[0]').replace(`Container: '${newCss}'`);
+      } else {
+        result.text = sectionQuery.query('blockquote[0]').replace('');
+      }
+
+      for (const loc of result.locators) {
+        if (loc.container === oldCss && loc.section === section.name) {
+          loc.container = newCss;
+        }
       }
     }
   };

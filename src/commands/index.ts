@@ -13,6 +13,7 @@ import { ExitCommand } from './exit-command.js';
 import { ExploreCommand } from './explore-command.js';
 import { FreesailCommand } from './freesail-command.js';
 import { HelpCommand } from './help-command.js';
+import { AddRuleCommand } from './add-rule-command.js';
 import { KnowCommand } from './know-command.js';
 import { KnowsCommand } from './knows-command.js';
 import { NavigateCommand } from './navigate-command.js';
@@ -50,6 +51,7 @@ const commandClasses: CommandClass[] = [
   PathCommand,
   KnowCommand,
   KnowsCommand,
+  AddRuleCommand,
   ContextCommand,
   ContextAriaCommand,
   ContextHtmlCommand,

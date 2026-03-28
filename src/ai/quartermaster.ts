@@ -192,7 +192,7 @@ export class Quartermaster {
       })
       .join('\n');
 
-    const ariaSnapshot = initialState.ariaSnapshot?.slice(0, 3000) || '';
+    const ariaSnapshot = initialState.getCompactARIA().slice(0, 3000);
 
     const schema = z.object({
       issues: z.array(

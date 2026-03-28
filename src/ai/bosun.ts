@@ -91,7 +91,8 @@ export class Bosun extends TaskAgent implements Agent {
   }
 
   getSystemMessage(): string {
-    const customPrompt = this.provider.getSystemPromptForAgent('bosun');
+    const currentUrl = this.explorer.getStateManager().getCurrentState()?.url;
+    const customPrompt = this.provider.getSystemPromptForAgent('bosun', currentUrl);
     return dedent`
     <role>
     You are a senior QA automation engineer focused on learning how to interact with UI components.
@@ -254,7 +255,7 @@ export class Bosun extends TaskAgent implements Agent {
       </page_ui_map>
 
       <page_aria>
-      ${state.ariaSnapshot || ''}
+      ${actionResult.getInteractiveARIA()}
       </page_aria>
 
       ${knowledge}
@@ -281,7 +282,7 @@ export class Bosun extends TaskAgent implements Agent {
       </context_update>
 
       <page_aria>
-      ${currentState.ariaSnapshot || ''}
+      ${currentState.getInteractiveARIA()}
       </page_aria>
 
       Continue drilling components. Test each one and record what it does.

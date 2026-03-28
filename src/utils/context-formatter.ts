@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import chalk from 'chalk';
-import { summarizeInteractiveNodes } from './aria.js';
+import { compactAriaSnapshot } from './aria.js';
 
 export interface ContextData {
   url: string;
@@ -150,13 +150,14 @@ function formatContextCompact(data: ContextData): string {
   }
   lines.push('');
 
-  const ariaSummary = summarizeInteractiveNodes(data.ariaSnapshot);
-  if (ariaSummary.length > 0) {
+  const ariaSummary = compactAriaSnapshot(data.ariaSnapshot, false);
+  if (ariaSummary) {
     lines.push(section('INTERACTIVE ELEMENTS') + chalk.gray(' (Auto-attached)'));
-    const display = ariaSummary.slice(0, 15);
+    const ariaLines = ariaSummary.split('\n');
+    const display = ariaLines.slice(0, 15);
     lines.push(indent(display.join('\n')));
-    if (ariaSummary.length > 15) {
-      lines.push(indent(`... and ${ariaSummary.length - 15} more`));
+    if (ariaLines.length > 15) {
+      lines.push(indent(`... and ${ariaLines.length - 15} more`));
     }
     lines.push('');
   }

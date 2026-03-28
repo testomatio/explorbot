@@ -1,10 +1,11 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { ReporterConfig } from '../../src/config.ts';
 import { Reporter } from '../../src/reporter.ts';
 import { ActiveNote, Plan, Task, Test, TestResult } from '../../src/test-plan.ts';
 
 class TestableReporter extends Reporter {
-  public combineStepsAndNotes(test: Test) {
-    return super.combineStepsAndNotes(test);
+  public combineStepsAndNotes(test: Test, lastScreenshotFile?: string) {
+    return super.combineStepsAndNotes(test, lastScreenshotFile);
   }
 }
 
@@ -238,5 +239,72 @@ describe('Reporter', () => {
       const notes = Object.values(test.notes);
       expect(notes[0].endTime).toBeGreaterThanOrEqual(notes[0].startTime);
     });
+  });
+});
+
+describe('Reporter config', () => {
+  let savedTestomatio: string | undefined;
+  let savedHtmlSave: string | undefined;
+  let savedHtmlFolder: string | undefined;
+
+  function clearEnv(key: string) {
+    delete process.env[key];
+  }
+
+  function restoreEnv(key: string, value: string | undefined) {
+    if (value !== undefined) {
+      process.env[key] = value;
+    } else {
+      clearEnv(key);
+    }
+  }
+
+  beforeEach(() => {
+    savedTestomatio = process.env.TESTOMATIO;
+    savedHtmlSave = process.env.TESTOMATIO_HTML_REPORT_SAVE;
+    savedHtmlFolder = process.env.TESTOMATIO_HTML_REPORT_FOLDER;
+    clearEnv('TESTOMATIO');
+    clearEnv('TESTOMATIO_HTML_REPORT_SAVE');
+    clearEnv('TESTOMATIO_HTML_REPORT_FOLDER');
+  });
+
+  afterEach(() => {
+    restoreEnv('TESTOMATIO', savedTestomatio);
+    restoreEnv('TESTOMATIO_HTML_REPORT_SAVE', savedHtmlSave);
+    restoreEnv('TESTOMATIO_HTML_REPORT_FOLDER', savedHtmlFolder);
+  });
+
+  test('enabled: true without TESTOMATIO sets HTML report env vars', () => {
+    const reporter = new Reporter({ enabled: true });
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBe('1');
+    expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
+  });
+
+  test('enabled: true with TESTOMATIO does not set HTML env vars', () => {
+    process.env.TESTOMATIO = 'tstmt_test_key';
+    const reporter = new Reporter({ enabled: true });
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
+  });
+
+  test('enabled: false does not set HTML env vars', () => {
+    const reporter = new Reporter({ enabled: false });
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
+  });
+
+  test('enabled: false with TESTOMATIO does not set HTML env vars', () => {
+    process.env.TESTOMATIO = 'tstmt_test_key';
+    const reporter = new Reporter({ enabled: false });
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
+  });
+
+  test('undefined config with TESTOMATIO does not set HTML env vars', () => {
+    process.env.TESTOMATIO = 'tstmt_test_key';
+    const reporter = new Reporter();
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
+  });
+
+  test('undefined config without TESTOMATIO does not set HTML env vars', () => {
+    const reporter = new Reporter();
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
   });
 });

@@ -13,11 +13,9 @@ import { Navigator } from './ai/navigator.js';
 import type { Provider } from './ai/provider.js';
 import { ConfigParser } from './config.js';
 import type { ExplorbotConfig } from './config.js';
-import { ExperienceTracker } from './experience-tracker.js';
 import type { UserResolveFunction } from './explorbot.ts';
 import { Observability } from './observability.ts';
 import type { StateManager } from './state-manager.js';
-import { collectInteractiveNodes } from './utils/aria.ts';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
@@ -29,7 +27,6 @@ const FATAL_BROWSER_ERRORS = /Frame was detached|Target closed|Execution context
 class Action {
   private actor: CodeceptJS.I;
   public stateManager: StateManager;
-  private experienceTracker: ExperienceTracker;
   public actionResult: ActionResult | null = null;
   private config: ExplorbotConfig;
 
@@ -42,7 +39,6 @@ class Action {
   constructor(actor: CodeceptJS.I, stateManager: StateManager) {
     this.actor = actor;
     this.stateManager = stateManager;
-    this.experienceTracker = stateManager.getExperienceTracker();
     this.config = ConfigParser.getInstance().getConfig();
     this.playwrightHelper = container.helpers('Playwright');
   }
@@ -335,10 +331,6 @@ class Action {
       }
 
       debugLog('Resolved Expectation:', this.expectation);
-      if (originalMessage && experience) {
-        await this.experienceTracker.saveSuccessfulResolution(prevActionResult!, originalMessage, codeBlock);
-      }
-
       return true;
     } catch (error) {
       this.lastError = error as Error;
@@ -350,13 +342,7 @@ class Action {
         }
       }
 
-      const executionError = errorToString(error);
-      debugLog(`Attempt failed: ${codeBlock}: ${executionError || this.lastError?.toString()}`);
-
-      if (experience) {
-        await this.experienceTracker.saveFailedAttempt(this.actionResult!, originalMessage ?? '', codeBlock, executionError);
-      }
-
+      debugLog(`Attempt failed: ${codeBlock}: ${errorToString(error) || this.lastError?.toString()}`);
       return false;
     }
   }

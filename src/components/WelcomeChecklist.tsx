@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import React from 'react';
 import type { ExplorbotConfig } from '../config.js';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
+import { Reporter } from '../reporter.js';
 
 interface ChecklistItem {
   label: string;
@@ -75,8 +76,9 @@ const WelcomeChecklist: React.FC<WelcomeChecklistProps> = ({ config, knowledgeTr
     {
       label: 'Reporter',
       description: 'get a complete test run report',
-      enabled: Boolean(process.env.TESTOMATIO),
-      suggestion: 'set TESTOMATIO env var',
+      enabled: Reporter.resolveEnabled(config.reporter),
+      value: process.env.TESTOMATIO ? 'Testomat.io' : config.reporter?.enabled ? 'HTML report' : undefined,
+      suggestion: 'set reporter.enabled in config',
     },
     {
       label: 'Quartermaster',

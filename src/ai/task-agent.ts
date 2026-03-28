@@ -22,6 +22,7 @@ function createNullProxy<T extends object>(): T {
 
 export abstract class TaskAgent {
   protected consecutiveFailures = 0;
+  protected consecutiveEmptyResults = 0;
   protected recentToolCalls: any[] = [];
   protected abstract readonly ACTION_TOOLS: string[];
 
@@ -107,6 +108,12 @@ export abstract class TaskAgent {
   }
 
   protected trackToolExecutions(toolExecutions: any[]): void {
+    if (toolExecutions.length === 0) {
+      this.consecutiveEmptyResults++;
+      return;
+    }
+    this.consecutiveEmptyResults = 0;
+
     const failedActions = toolExecutions.filter((e) => !e.wasSuccessful && this.ACTION_TOOLS.includes(e.toolName));
     const successActions = toolExecutions.filter((e) => e.wasSuccessful && this.ACTION_TOOLS.includes(e.toolName));
     const hasAnyActionTool = toolExecutions.some((e) => this.ACTION_TOOLS.includes(e.toolName));
@@ -128,6 +135,7 @@ export abstract class TaskAgent {
 
   protected resetFailureCount(): void {
     this.consecutiveFailures = 0;
+    this.consecutiveEmptyResults = 0;
     this.recentToolCalls = [];
   }
 }

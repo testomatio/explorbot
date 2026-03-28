@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
 import { ExperienceTracker } from '../../src/experience-tracker';
@@ -9,24 +9,22 @@ describe('ExperienceTracker', () => {
   const testDir = '/tmp/experience';
 
   beforeEach(() => {
-    // Always clean up any existing test directory to ensure test isolation
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
 
-    // Mock config parser with test directory
     const mockConfig = {
       playwright: { browser: 'chromium', url: 'http://localhost:3000' },
       ai: { model: 'test' },
       dirs: {
         knowledge: '/tmp/explorbot-test/knowledge',
-        experience: 'experience', // Use relative path so it gets resolved properly
+        experience: 'experience',
       },
     };
 
     const configParser = ConfigParser.getInstance();
     (configParser as any).config = mockConfig;
-    (configParser as any).configPath = '/tmp/config.js'; // Point to parent dir
+    (configParser as any).configPath = '/tmp/config.js';
 
     experienceTracker = new ExperienceTracker();
   });
@@ -34,7 +32,6 @@ describe('ExperienceTracker', () => {
   afterEach(() => {
     experienceTracker.cleanup();
 
-    // Clean up test directory
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
@@ -47,52 +44,6 @@ describe('ExperienceTracker', () => {
     });
   });
 
-  describe('saveFailedAttempt', () => {
-    it('should save failed attempt to experience file', async () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test Page</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      await experienceTracker.saveFailedAttempt(actionResult, 'Click the login button', 'I.click("#login-btn")', 'Element not found: #login-btn', 1);
-
-      const stateHash = actionResult.getStateHash();
-      const filePath = `${testDir}/${stateHash}.md`;
-
-      expect(existsSync(filePath)).toBe(true);
-
-      const content = readFileSync(filePath, 'utf8');
-      expect(content).toContain('### FAILED: Click the login button');
-      expect(content).toContain('Element not found: #login-btn');
-      expect(content).toContain('I.click("#login-btn")');
-    });
-
-    it('should append multiple failed attempts to same file', async () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test Page</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test Page',
-      });
-
-      // First failed attempt
-      await experienceTracker.saveFailedAttempt(actionResult, 'Click login button', 'I.click("#login")', 'Element not found', 1);
-
-      // Second failed attempt
-      await experienceTracker.saveFailedAttempt(actionResult, 'Click login button', 'I.click(".login-btn")', 'Element not clickable', 2);
-
-      const stateHash = actionResult.getStateHash();
-      const filePath = `${testDir}/${stateHash}.md`;
-      const content = readFileSync(filePath, 'utf8');
-
-      // Should contain both attempts
-      expect(content).toContain('I.click("#login")');
-      expect(content).toContain('I.click(".login-btn")');
-      expect(content).toContain('Element not found');
-      expect(content).toContain('Element not clickable');
-    });
-  });
-
   describe('saveSuccessfulResolution', () => {
     it('should save successful resolution to experience file', async () => {
       const actionResult = new ActionResult({
@@ -101,21 +52,13 @@ describe('ExperienceTracker', () => {
         title: 'Dashboard',
       });
 
-      // First create a failed attempt so the file exists
-      await experienceTracker.saveFailedAttempt(actionResult, 'Navigate to dashboard', 'I.click("Wrong")', 'Element not found', 1);
-
       await experienceTracker.saveSuccessfulResolution(actionResult, 'Navigate to dashboard', 'I.click("Dashboard")');
 
       const stateHash = actionResult.getStateHash();
-      const filePath = `${testDir}/${stateHash}.md`;
+      const { content } = experienceTracker.readExperienceFile(stateHash);
 
-      expect(existsSync(filePath)).toBe(true);
-
-      const content = readFileSync(filePath, 'utf8');
       expect(content).toContain('### SUCCEEDED: Navigate to dashboard');
       expect(content).toContain('I.click("Dashboard")');
-      // The file contains both successful and failed attempts
-      expect(content).toContain('### FAILED:');
     });
 
     it('should prepend successful resolution before existing content', async () => {
@@ -125,23 +68,15 @@ describe('ExperienceTracker', () => {
         title: 'Test',
       });
 
-      // First save a failed attempt
-      await experienceTracker.saveFailedAttempt(actionResult, 'Click button', 'I.click("#wrong")', 'Element not found', 1);
-
-      // Then save successful resolution
-      await experienceTracker.saveSuccessfulResolution(actionResult, 'Click button', 'I.click("#correct")');
+      await experienceTracker.saveSuccessfulResolution(actionResult, 'Click first', 'I.click("#first")');
+      await experienceTracker.saveSuccessfulResolution(actionResult, 'Click second', 'I.click("#second")');
 
       const stateHash = actionResult.getStateHash();
-      const filePath = `${testDir}/${stateHash}.md`;
-      const content = readFileSync(filePath, 'utf8');
+      const { content } = experienceTracker.readExperienceFile(stateHash);
 
-      // Success should appear before failure in content
-      const successIndex = content.indexOf('### SUCCEEDED:');
-      const failureIndex = content.indexOf('### FAILED:');
-
-      expect(successIndex).toBeGreaterThan(-1);
-      expect(failureIndex).toBeGreaterThan(-1);
-      expect(successIndex).toBeLessThan(failureIndex);
+      const firstIndex = content.indexOf('Click second');
+      const secondIndex = content.indexOf('Click first');
+      expect(firstIndex).toBeLessThan(secondIndex);
     });
 
     it('should skip duplicate successful resolutions', async () => {
@@ -153,19 +88,12 @@ describe('ExperienceTracker', () => {
 
       const code = 'I.click("#submit")';
 
-      // First create a failed attempt so the file exists
-      await experienceTracker.saveFailedAttempt(actionResult, 'Submit form', 'I.click("#wrong")', 'Element not found', 1);
-
-      // Save successful resolution twice
       await experienceTracker.saveSuccessfulResolution(actionResult, 'Submit form', code);
-
       await experienceTracker.saveSuccessfulResolution(actionResult, 'Submit form again', code);
 
       const stateHash = actionResult.getStateHash();
-      const filePath = `${testDir}/${stateHash}.md`;
-      const content = readFileSync(filePath, 'utf8');
+      const { content } = experienceTracker.readExperienceFile(stateHash);
 
-      // Should only appear once
       const matches = content.match(/I\.click\("#submit"\)/g);
       expect(matches).toHaveLength(1);
     });
@@ -184,8 +112,8 @@ describe('ExperienceTracker', () => {
         title: 'Child',
       });
 
-      await experienceTracker.saveFailedAttempt(parent, 'p', 'I.click("p")', 'x');
-      await experienceTracker.saveFailedAttempt(child, 'c', 'I.click("c")', 'y');
+      await experienceTracker.saveSuccessfulResolution(parent, 'p', 'I.click("p")');
+      await experienceTracker.saveSuccessfulResolution(child, 'c', 'I.click("c")');
 
       const exactOnly = experienceTracker.getRelevantExperience(parent);
       expect(exactOnly).toHaveLength(1);
@@ -203,10 +131,6 @@ describe('ExperienceTracker', () => {
         title: 'Test Page',
       });
 
-      // Create an experience file first with a failed attempt
-      await experienceTracker.saveFailedAttempt(actionResult, 'Test action', 'I.click("Wrong")', 'Element not found', 1);
-
-      // Then save successful resolution
       await experienceTracker.saveSuccessfulResolution(actionResult, 'Test action', 'I.click("Test")');
 
       const stateHash = actionResult.getStateHash();
@@ -242,7 +166,6 @@ describe('ExperienceTracker', () => {
 
   describe('getAllExperience', () => {
     it('should return empty array when no experience files exist', () => {
-      // Clean up directory first to ensure it's truly empty
       if (existsSync(testDir)) {
         rmSync(testDir, { recursive: true, force: true });
       }
@@ -252,7 +175,6 @@ describe('ExperienceTracker', () => {
     });
 
     it('should return all experience files from directory', async () => {
-      // Create multiple experience files
       const actionResult1 = new ActionResult({
         html: '<html><body>Page 1</body></html>',
         url: 'https://example.com/page1',
@@ -265,12 +187,11 @@ describe('ExperienceTracker', () => {
         title: 'Page 2',
       });
 
-      // Create the first file with failed then successful
-      await experienceTracker.saveFailedAttempt(actionResult1, 'Action 1', 'I.click("Wrong1")', 'Element not found', 1);
-
       await experienceTracker.saveSuccessfulResolution(actionResult1, 'Action 1', 'I.click("Link1")');
-
-      await experienceTracker.saveFailedAttempt(actionResult2, 'Action 2', 'I.click("Link2")', 'Element not found', 1);
+      experienceTracker.writeExperienceFile(actionResult2.getStateHash(), '### Test content with I.click("Link2")', {
+        url: '/page2',
+        title: 'Page 2',
+      });
 
       const experiences = experienceTracker.getAllExperience();
 
@@ -286,57 +207,8 @@ describe('ExperienceTracker', () => {
     });
 
     it('should handle file reading errors gracefully', () => {
-      // This test verifies the error handling in getAllExperience
-      // Since we can't easily create a corrupted file in this test environment,
-      // we'll just verify the method returns what it can read
       const experiences = experienceTracker.getAllExperience();
       expect(Array.isArray(experiences)).toBe(true);
-    });
-  });
-
-  describe('error handling', () => {
-    it('should compact long error messages', async () => {
-      const actionResult = new ActionResult({
-        html: '<html><body>Test</body></html>',
-        url: 'https://example.com/test',
-        title: 'Test',
-      });
-
-      const longError = 'This is a very long error message that should be truncated because it exceeds the maximum length limit for error messages in the experience tracker system';
-
-      await experienceTracker.saveFailedAttempt(actionResult, 'Test action', 'I.click("test")', longError, 1);
-
-      const stateHash = actionResult.getStateHash();
-      const filePath = `${testDir}/${stateHash}.md`;
-      const content = readFileSync(filePath, 'utf8');
-
-      // Should be truncated with ellipsis
-      expect(content).toContain('...');
-      expect(content).not.toContain(longError);
-    });
-
-    it('should handle null error messages', async () => {
-      const actionResult = new ActionResult({
-        html: '<html><head><title>Unique Test</title></head><body><h1>Null Error Unique Test</h1></body></html>',
-        url: 'https://example.com/completely-unique-null-error-test-path',
-        title: 'Unique Null Error Test',
-        h1: 'Null Error Unique Test',
-      });
-
-      await experienceTracker.saveFailedAttempt(actionResult, 'Unique null error test action', 'I.click("unique-null-test-element")', null, 1);
-
-      const stateHash = actionResult.getStateHash();
-      const filePath = `${testDir}/${stateHash}.md`;
-
-      // Verify file exists and contains our failed attempt
-      expect(existsSync(filePath)).toBe(true);
-
-      const content = readFileSync(filePath, 'utf8');
-
-      // Should handle null error gracefully - just verify the file has the right structure
-      expect(content).toContain('I.click("unique-null-test-element")');
-      expect(content).toContain('Unique null error test action');
-      expect(content).toContain('url: /completely-unique-null-error-test-path');
     });
   });
 
@@ -363,9 +235,6 @@ describe('ExperienceTracker', () => {
           url: testCase.url,
           title: 'Test',
         });
-
-        // Create failed attempt first
-        await experienceTracker.saveFailedAttempt(actionResult, 'Test action', 'I.click("wrong")', 'Element not found', 1);
 
         await experienceTracker.saveSuccessfulResolution(actionResult, 'Test action', 'I.click("test")');
 

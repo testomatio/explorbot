@@ -4,7 +4,7 @@ import type { ActionResult } from '../action-result.ts';
 import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
 import { type Test, TestResult } from '../test-plan.ts';
-import { collectInteractiveNodes, condenseAriaDiff, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
+import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
 import { tag } from '../utils/logger.ts';
 import { truncateJson } from '../utils/strings.ts';
 import type { Agent } from './agent.ts';
@@ -45,25 +45,25 @@ export class Pilot implements Agent {
     return this.conversation.getLastMessage() || null;
   }
 
-  async reviewStop(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
-    await this.reviewDecision('stop', task, currentState, testerConversation);
+  async reviewStop(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
+    return this.reviewDecision('stop', task, currentState, testerConversation);
   }
 
-  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator: Navigator): Promise<void> {
-    await this.reviewDecision('finish', task, currentState, testerConversation, navigator);
+  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator: Navigator): Promise<boolean> {
+    return this.reviewDecision('finish', task, currentState, testerConversation, navigator);
   }
 
-  async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
+  async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
     const verdictType = task.hasAchievedAny() ? 'finish' : 'stop';
-    await this.reviewDecision(verdictType, task, currentState, testerConversation);
+    return this.reviewDecision(verdictType, task, currentState, testerConversation);
   }
 
-  async finalReview(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<void> {
-    if (task.hasFinished) return;
-    await this.reviewCompletion(task, currentState, testerConversation);
+  async finalReview(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
+    if (task.hasFinished) return false;
+    return this.reviewCompletion(task, currentState, testerConversation);
   }
 
-  private async reviewDecision(type: 'finish' | 'stop', task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<void> {
+  private async reviewDecision(type: 'finish' | 'stop', task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
     tag('substep').log(`🧭 Pilot reviewing ${type} verdict...`);
 
     const sessionLog = this.formatSessionLog(testerConversation);
@@ -84,9 +84,9 @@ export class Pilot implements Agent {
     }
 
     const schema = z.object({
-      decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant to the current page/application'),
-      reason: z.string().describe('Brief explanation (1-2 sentences). For continue: explain why rejected and suggest alternatives.'),
-      requestVerification: z.string().optional().describe('If evidence is insufficient, provide an assertion to verify on the page'),
+      decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
+      reason: z.string().describe('What happened and why (1-2 sentences). Do NOT repeat the decision status (e.g. "scenario goal achieved/not achieved") — just explain the evidence. For continue: explain why rejected and suggest alternatives.'),
+      requestVerification: z.string().nullish().describe('If evidence is insufficient, provide an assertion to verify on the page'),
     });
 
     const userContent = dedent`
@@ -111,7 +111,7 @@ export class Pilot implements Agent {
       Decide:
       - "pass" ONLY if the SCENARIO GOAL is fully accomplished (not just milestones)
       - "fail" if the scenario was attempted but failed
-      - "skipped" if the scenario is irrelevant or inapplicable to the current page/application (e.g., testing feature that doesn't exist, page has no matching UI elements, scenario prerequisites are impossible)
+      - "skipped" if the scenario is irrelevant/inapplicable OR systematic execution failures prevented testing (e.g., repeated LLM errors, navigation crashes, tool failures unrelated to the scenario)
       - "continue" if tester hasn't completed the scenario goal yet — even if milestones were checked
       - If evidence is mixed, but final state indicates goal completion, choose "pass"
       - If evidence is mixed and final state is unclear, prefer "continue" over "fail"
@@ -127,8 +127,8 @@ export class Pilot implements Agent {
 
       const result = response?.object;
       if (!result) {
-        task.finish(type === 'finish' ? TestResult.PASSED : TestResult.FAILED);
-        return;
+        task.finish(TestResult.FAILED);
+        return false;
       }
 
       if (result.requestVerification && navigator) {
@@ -138,40 +138,44 @@ export class Pilot implements Agent {
         const verifyResult = await navigator.verifyState(result.requestVerification, actionResult);
 
         if (verifyResult.verified) {
-          task.addNote(`Pilot verified: ${result.requestVerification}`, TestResult.PASSED);
+          task.summary = `Verified: ${result.requestVerification}`;
+          task.addNote(`Verified: ${result.requestVerification}`, TestResult.PASSED);
           task.finish(TestResult.PASSED);
         } else {
           task.addNote(`Pilot verification failed: ${result.requestVerification}`, TestResult.FAILED);
           testerConversation.addUserText(`Pilot: verification failed for "${result.requestVerification}". ${result.reason}`);
         }
-        return;
+        return false;
       }
 
       tag('info').log(`🧭 Pilot: ${result.decision} — ${result.reason}`);
+      task.summary = result.reason;
 
       if (result.decision === 'pass') {
         task.addNote(`Pilot: ${result.reason}`, TestResult.PASSED);
         task.finish(TestResult.PASSED);
-        return;
+        return false;
       }
 
       if (result.decision === 'fail') {
         task.addNote(`Pilot: ${result.reason}`, TestResult.FAILED);
         task.finish(TestResult.FAILED);
-        return;
+        return false;
       }
 
       if (result.decision === 'skipped') {
         task.addNote(`Pilot: skipped — ${result.reason}`, TestResult.SKIPPED);
         task.finish(TestResult.SKIPPED);
-        return;
+        return false;
       }
 
       task.addNote(`Pilot: continue — ${result.reason}`);
       testerConversation.addUserText(`Pilot rejected ${type}: ${result.reason}`);
+      return true;
     } catch (error: any) {
       tag('warning').log(`🧭 Pilot verdict failed: ${error.message}`);
-      task.finish(type === 'finish' ? TestResult.PASSED : TestResult.FAILED);
+      task.finish(TestResult.FAILED);
+      return false;
     }
   }
 
@@ -201,6 +205,10 @@ export class Pilot implements Agent {
       EVIDENCE SOURCES: verify(), see(), visual_analysis, and action results in session_log are all evidence. They may disagree — analyze all of them together to reach your decision. No single source automatically overrides the others. Visual analysis from screenshots is strong evidence for UI state (active tabs, visible items, counts, colors). Tester's self-assessment in record() notes is the least reliable — always cross-check against actual evidence.
       SESSION LOG shows ALL actions grouped by URL. If the scenario requires changing data (edit/create/delete) but all form/click actions FAILED, the test cannot pass — even if a verify() found matching content that existed before the test.
 
+      VERIFICATION RULE: Only the LAST few actions before finish/stop count as verification evidence.
+      - If verify() is among the last actions → use its result as evidence.
+      - Otherwise → set requestVerification to prove the scenario goal was achieved.
+
       TRIVIAL VERIFICATION CHECK: If the verify assertion describes a state that was ALREADY TRUE before the test started (e.g., page content visible on initial load, items that existed before any action), the verification proves nothing. Reject with "continue" and explain that verification must prove the scenario ACTION changed something.
 
       NEGATIVE TESTS: Some scenarios test that something CANNOT or SHOULD NOT happen.
@@ -208,11 +216,14 @@ export class Pilot implements Agent {
       For negative tests, success means the system PREVENTED the action — error messages, validation, disabled buttons.
       Example: "Create X without a name" PASSES if X was NOT created and validation appeared.
 
-      SKIPPED TESTS: Choose "skipped" when the scenario is irrelevant or inapplicable to the current application.
-      Examples: the feature doesn't exist on the page, required UI elements are completely absent, the scenario prerequisites cannot be met.
+      SKIPPED TESTS: Choose "skipped" in two cases:
+      1) Scenario is irrelevant: feature doesn't exist on the page, required UI elements are completely absent, scenario prerequisites cannot be met.
+      2) Systematic execution failures: repeated LLM/API errors, navigation crashes, tool failures unrelated to the scenario itself. These are infrastructure problems, not test failures.
       Do NOT use "skipped" when the feature exists but the test just failed to interact with it — that's "fail" or "continue".
 
       ${this.buildDeletionScope(task)}
+
+      REASON FORMAT: The "reason" field goes into the test report. Do NOT start with "The scenario goal was/was not achieved" or similar status phrases — the decision field already conveys that. Instead, state what happened: what was verified, what failed, or what evidence was found.
 
       EXPECTED RESULTS (milestones, not the goal):
       ${task.expected.map((e) => `- ${e}`).join('\n')}
@@ -241,6 +252,10 @@ export class Pilot implements Agent {
         1. Which elements to interact with and in what order
         2. What to verify at each step
         3. Potential issues to watch for
+
+        Before planning navigation to another page, assume the current page may already contain
+        the elements needed for the scenario. The page summary does not list every element.
+        Prefer interacting with the current page over navigating away.
 
         Be concise and specific. Tester will follow your plan.
       `,
@@ -295,7 +310,7 @@ export class Pilot implements Agent {
 
     this.conversation.cleanupTag('recent_actions', '...trimmed...', 2);
 
-    const hasFailures = toolCalls.some((t) => !t.wasSuccessful);
+    const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 
     const text = await this.sendToPilot(
       dedent`
@@ -410,7 +425,7 @@ export class Pilot implements Agent {
     if (text.includes('ATTACH_ARIA')) {
       parts.push(dedent`
         <page_aria>
-        ${currentState.ariaSnapshot}
+        ${currentState.getInteractiveARIA()}
         </page_aria>
       `);
     }
@@ -517,7 +532,7 @@ export class Pilot implements Agent {
         if (errorDetail && errorDetail !== resultMessage) line += `\n   error: ${errorDetail}`;
 
         const ariaDiff = t.output?.pageDiff?.ariaChanges;
-        if (ariaDiff) line += `\n   ${condenseAriaDiff(ariaDiff, t.output?.pageDiff?.urlChanged)}`;
+        if (ariaDiff) line += `\n   ${ariaDiff}`;
 
         return line;
       })
@@ -567,6 +582,7 @@ export class Pilot implements Agent {
       4. Track which expectations have been checked and which remain
       5. When problems are detected, suggest concrete alternative approaches
       6. When everything is going well, give brief encouragement and let Tester continue
+      7. Before suggesting navigation to another page, assume the current page may already have what the scenario needs. The page summary is incomplete — not every element is listed. Prefer exploring the current page first.
 
       IMPORTANT — Tool usage policy:
       - DO NOT use tools (see, context) when Tester is making progress and no failures are recorded

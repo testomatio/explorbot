@@ -7,6 +7,7 @@ import { ExperienceTracker } from './experience-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
 import { htmlTextSnapshot } from './utils/html.js';
 import { createDebug, tag } from './utils/logger.js';
+import { extractStatePath } from './utils/url-matcher.js';
 
 const debugLog = createDebug('explorbot:state');
 
@@ -144,19 +145,6 @@ export class StateManager {
    * Removes domain, port, protocol, and query params
    * Keeps path and hash: /path/to/page#section
    */
-  private extractStatePath(fullUrl: string): string {
-    try {
-      const url = new URL(fullUrl);
-      const path = url.pathname || '/';
-      const hash = url.hash || '';
-      const result = path + hash;
-      return result || '/';
-    } catch {
-      // If URL parsing fails, return as-is
-      return fullUrl || '/';
-    }
-  }
-
   /**
    * Update current state from ActionResult and record transition if state changed
    */
@@ -197,7 +185,7 @@ export class StateManager {
    * Update state from basic data (for navigation events)
    */
   updateStateFromBasic(url: string, title?: string, trigger: 'manual' | 'navigation' | 'automatic' = 'navigation'): WebPageState {
-    const path = this.extractStatePath(url);
+    const path = extractStatePath(url) || '/';
 
     // no extra navigation happened
     if (normalizeUrl(this.currentState?.url || '') === normalizeUrl(path)) {

@@ -262,6 +262,20 @@ Exit the application gracefully.
 /quit
 ```
 
+## Rules & Styles
+
+### `explorbot extract-styles <agent>`
+
+Extract built-in planning styles to your `rules/` directory for customization.
+
+```bash
+explorbot extract-styles planner        # extracts to rules/planner/styles/
+explorbot extract-styles chief          # extracts to rules/chief/styles/
+explorbot extract-styles planner -d ./my-styles  # custom directory
+```
+
+After extraction, edit the markdown files to customize how the Planner or Chief generates test scenarios. See [Configuration: Rules](./configuration.md#rules) for details.
+
 ## Direct Browser Control
 
 In addition to slash commands, you can execute CodeceptJS commands directly:
