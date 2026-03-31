@@ -10,6 +10,7 @@ import { findTableLineRange, parseSections } from '../../utils/markdown-parser.t
 import { mdq } from '../../utils/markdown-query.ts';
 import { WebElement } from '../../utils/web-element.ts';
 import type { Provider } from '../provider.js';
+import { hasFocusedSection } from './focus.ts';
 import { type Constructor, debugLog } from './mixin.ts';
 import { extractContainerFromBlockquote, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
@@ -70,14 +71,20 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       const allElements = [...xpathElements, ...visualElements];
       tag('substep').log(`Found ${allElements.length} expandable elements (${xpathElements.length} XPath + ${visualElements.length} visual)`);
 
-      const filtered = await this._filterExpandableElements(allElements, result.text, state.url);
+      const focusedContainer = this._getFocusedContainer(result.text);
+      const filtered = await this._filterExpandableElements(allElements, result.text, state.url, focusedContainer);
       tag('substep').log(`Clicking ${filtered.length} filtered expandable elements`);
       await this._clickExpandableElements(filtered, state, expandedSections, navigationLinks);
 
       tag('info').log(`Deep analysis complete. Sections: ${expandedSections.length}, navigation links: ${navigationLinks.length}`);
 
-      if (expandedSections.length > 0) {
-        result.text += `\n\n# Extended Research\n\n${expandedSections.join('\n\n---\n\n')}`;
+      const dedupedSections = this._deduplicateExpandedSections(expandedSections);
+      if (dedupedSections.length !== expandedSections.length) {
+        tag('substep').log(`Deduplicated ${expandedSections.length} → ${dedupedSections.length} extended sections`);
+      }
+
+      if (dedupedSections.length > 0) {
+        result.text += `\n\n# Extended Research\n\n${dedupedSections.join('\n\n---\n\n')}`;
       }
       if (navigationLinks.length > 0) {
         const links = navigationLinks.map((l) => `- \`${l.code}\` opens ${l.url}`).join('\n');
@@ -163,11 +170,12 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
     }
 
-    private async _filterExpandableElements(elements: Array<{ commands: string[]; description: string }>, researchText: string, url: string): Promise<Array<{ commands: string[]; description: string }>> {
+    private async _filterExpandableElements(elements: Array<{ commands: string[]; description: string }>, researchText: string, url: string, focusedContainer?: string | null): Promise<Array<{ commands: string[]; description: string }>> {
       if (elements.length <= MAX_UNFILTERED_ELEMENTS) return elements;
 
       const sectionNames = parseSections(researchText).map((s) => s.name);
       const list = elements.map((el, i) => `${i + 1}. ${el.description}`).join('\n');
+      const focusHint = focusedContainer ? `- Select expandable elements from the focused section (container: ${focusedContainer}) before selecting from other sections` : '';
 
       const prompt = dedent`
         Page: ${url}
@@ -181,7 +189,9 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
         Rules:
         - Focus on elements in the MAIN CONTENT area of the page
-        - Skip global navigation, sidebar menus, user profile menus, settings icons — anything unrelated to the page purpose
+        ${focusHint}
+        - Buttons that reveal hidden content are the most valuable: overflow/ellipsis menus (hide actions like edit, delete), chevrons and arrows (expand sections, show submenus), accordion toggles, disclosure triangles
+        - Skip global navigation, sidebar menus, user profile menus — anything unrelated to the page purpose
         - For repeated elements (e.g., per-row action buttons in a list), keep only the FIRST one
         - Respond with comma-separated numbers to keep, e.g.: 1, 3, 5
       `;
@@ -206,26 +216,30 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           debugLog(`Clicking: ${el.description.slice(0, 100)}`);
           const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);
 
-          const hoverCmd = el.commands[0].replace('I.click(', 'I.moveCursorTo(');
-          const hoverAction = this.explorer.createAction();
-          await hoverAction.attempt(hoverCmd, undefined, false);
-          await new Promise((r) => setTimeout(r, 500));
+          const isCoordinateClick = el.commands[0].startsWith('I.clickXY(');
+          if (!isCoordinateClick) {
+            const hoverCmd = el.commands[0].replace('I.click(', 'I.moveCursorTo(');
+            const hoverAction = this.explorer.createAction();
+            await hoverAction.attempt(hoverCmd, undefined, false);
+            await new Promise((r) => setTimeout(r, 500));
 
-          await this.explorer.createAction().capturePageState();
-          const hoverAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
-          const hoverDiff = await hoverAR.diff(previousState);
-          await hoverDiff.calculate();
-          const hoverHtmlSize = hoverDiff.htmlParts.reduce((sum, p) => sum + p.subtree.length, 0);
-          const hoverRevealed = hoverDiff.ariaChanged && hoverHtmlSize > 500;
+            await this.explorer.createAction().capturePageState();
+            const hoverAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
+            const hoverDiff = await hoverAR.diff(previousState);
+            await hoverDiff.calculate();
+            const hoverHtmlSize = hoverDiff.htmlParts.reduce((sum, p) => sum + p.subtree.length, 0);
+            const hoverRevealed = hoverDiff.ariaChanged && hoverHtmlSize > 500;
 
-          if (hoverRevealed) {
-            const sectionMarkdown = await this._analyzeExpandedAction(hoverCmd, el.description, hoverDiff);
-            if (sectionMarkdown) {
-              expandedSections.push(sectionMarkdown);
-              debugLog(`Captured section from hover: ${el.description.slice(0, 80)}`);
+            if (hoverRevealed) {
+              const sectionMarkdown = await this._analyzeExpandedAction(hoverCmd, el.description, hoverDiff);
+              if (sectionMarkdown) {
+                expandedSections.push(sectionMarkdown);
+                debugLog(`Captured section from hover: ${el.description.slice(0, 80)}`);
+                await this._restorePageState(state.url, originalAria);
+                continue;
+              }
+              await this._restorePageState(state.url, originalAria);
             }
-            await this._restorePageState(state.url, originalAria);
-            continue;
           }
 
           let clickCode: string | null = null;
@@ -355,6 +369,39 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
 
       return section.rawMarkdown;
+    }
+
+    private _getFocusedContainer(researchText: string): string | null {
+      if (!hasFocusedSection(researchText)) return null;
+      for (const section of parseResearchSections(researchText)) {
+        if (section.rawMarkdown.includes('> **Focused**') && section.containerCss) {
+          return section.containerCss;
+        }
+      }
+      return null;
+    }
+
+    private _deduplicateExpandedSections(sections: string[]): string[] {
+      const seen = new Set<string>();
+      const result: string[] = [];
+      for (const section of sections) {
+        const container = extractContainerFromBlockquote(section);
+        const fingerprint = container ? this._normalizeContainer(container) : null;
+        if (fingerprint && seen.has(fingerprint)) {
+          debugLog(`Dedup: skipping duplicate extended section with container "${container}"`);
+          continue;
+        }
+        if (fingerprint) seen.add(fingerprint);
+        result.push(section);
+      }
+      return result;
+    }
+
+    private _normalizeContainer(css: string): string {
+      const lastSegment = css.split(/[\s>]+/).pop() || css;
+      const classes = lastSegment.match(/\.[\w-]+/g);
+      if (!classes || classes.length === 0) return css.trim().toLowerCase();
+      return classes.sort().join(' ');
     }
   };
 }

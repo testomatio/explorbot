@@ -16,3 +16,6 @@ If the research shows multiple ways to create or modify data (different types, f
 View only tests (tab switching, pagination, view toggles) should be proposed only after  data-changing interactions are covered.
 
 Skip the Menu/Navigation section — we are testing THIS page.
+
+When <previously_tested_flows> is present, review the successful flows and consider re-testing important ones for regression coverage. Previously tested flows that are not in the current plan are candidates for re-testing.
+Propose variations with different inputs or edge cases when re-testing a known flow.

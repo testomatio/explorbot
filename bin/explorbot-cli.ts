@@ -11,6 +11,8 @@ import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { Stats } from '../src/stats.js';
 import { log, setPreserveConsoleLogs } from '../src/utils/logger.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
+import { Plan } from '../src/test-plan.js';
+import { jsonToTable } from '../src/utils/markdown-parser.js';
 
 const program = new Command();
 
@@ -178,6 +180,73 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
       await showStatsAndExit(1);
     }
   });
+
+addCommonOptions(program.command('plan:load <planfile> [index]').description('Load a plan file and display its tests. Pass index to see test details.')).action(async (planfile: string, index: string | undefined) => {
+  try {
+    const resolvedPath = path.resolve(planfile);
+    if (!fs.existsSync(resolvedPath)) {
+      console.error(`Plan file not found: ${resolvedPath}`);
+      process.exit(1);
+    }
+
+    const plan = Plan.fromMarkdown(resolvedPath);
+    const planFile = path.basename(resolvedPath);
+
+    if (index) {
+      const idx = Number.parseInt(index, 10);
+      if (Number.isNaN(idx) || idx < 1 || idx > plan.tests.length) {
+        console.error(`Invalid index: ${index}. Must be 1-${plan.tests.length}`);
+        process.exit(1);
+      }
+      const test = plan.tests[idx - 1];
+      const lines: string[] = [];
+      lines.push(`## #${idx} ${test.scenario}\n`);
+      lines.push(`**Priority:** ${test.priority}`);
+      const planUrl = plan.url || plan.tests[0]?.startUrl;
+      if (planUrl) lines.push(`**Plan URL:** ${planUrl}`);
+      if (test.startUrl && test.startUrl !== planUrl) lines.push(`**Test URL:** ${test.startUrl}`);
+      if (test.plannedSteps.length) {
+        lines.push('\n**Steps:**');
+        for (const step of test.plannedSteps) lines.push(`- ${step}`);
+      }
+      if (test.expected.length) {
+        lines.push('\n**Expected:**');
+        for (const exp of test.expected) lines.push(`- ${exp}`);
+      }
+      lines.push('');
+      lines.push(`Run: \`explorbot test ${planFile} ${idx}\``);
+      console.log(parseMarkdownToTerminal(lines.join('\n')));
+      return;
+    }
+
+    const planUrl = plan.url || plan.tests[0]?.startUrl;
+    const lines: string[] = [`**${plan.title}** (${plan.tests.length} tests)\n`];
+    if (planUrl) {
+      lines.push(`URL: ${planUrl}\n`);
+    }
+
+    const rows = plan.tests.map((test, i) => ({
+      '#': String(i + 1),
+      Priority: test.priority,
+      Title: test.scenario.replace(/\|/g, '-'),
+      Steps: String(test.plannedSteps.length),
+      Expected: String(test.expected.length),
+    }));
+    lines.push(jsonToTable(rows, ['#', 'Priority', 'Title', 'Steps', 'Expected']));
+
+    lines.push('View test details:');
+    lines.push(`\`explorbot plan:load ${planFile} <index>\`\n`);
+    lines.push('Run tests:');
+    lines.push(`\`explorbot test ${planFile} 1\` → run first test`);
+    lines.push(`\`explorbot test ${planFile} 1-3\` → run tests 1 to 3`);
+    lines.push(`\`explorbot test ${planFile} *\` → run all tests`);
+
+    console.log(parseMarkdownToTerminal(lines.join('\n')));
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    process.exit(1);
+  }
+});
 
 addCommonOptions(program.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1,3, 1-5, *, all').option('--grep <pattern>', 'Run tests matching pattern')).action(async (planfile, index, options) => {
   try {
@@ -546,6 +615,27 @@ program
       await showStatsAndExit(1);
     }
   });
+
+addCommonOptions(program.command('shell <url> <command>').description('Execute a CodeceptJS command on a page and exit')).action(async (url, command, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+    await explorBot.start();
+    await explorBot.agentNavigator().visit(url);
+
+    const action = explorBot.getExplorer().createAction();
+    await action.execute(command);
+
+    log('Command executed successfully');
+    const state = explorBot.getExplorer().getStateManager().getCurrentState();
+    if (state) log(`URL: ${state.url}`);
+
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
 
 const browserCmd = program.command('browser').description('Manage persistent browser server');
 

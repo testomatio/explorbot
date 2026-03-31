@@ -38,6 +38,7 @@ export interface PageDiff {
   currentUrl: string;
   ariaChanges?: string | null;
   htmlParts?: HtmlDiffPart[];
+  iframes?: string;
 }
 
 export interface ToolResultMetadata {
@@ -611,6 +612,15 @@ export class ActionResult implements ActionResultData {
       }
       if (processedParts.length > 0) {
         pageDiff.htmlParts = processedParts;
+      }
+    }
+
+    if (pageDiff.ariaChanges && this.iframeSnapshots.length > 0) {
+      const addedCount = (pageDiff.ariaChanges.match(/\n {4}- /g) || []).length;
+      const removedMatch = pageDiff.ariaChanges.match(/removed: (\d+) interactive/);
+      const removedCount = removedMatch ? Number.parseInt(removedMatch[1]) : 0;
+      if (addedCount + removedCount >= 50) {
+        pageDiff.iframes = this.iframeSnapshots.map((snap) => `iframe src="${snap.src}":\n${snap.html}`).join('\n\n');
       }
     }
 

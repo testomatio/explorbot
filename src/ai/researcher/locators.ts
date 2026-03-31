@@ -5,6 +5,7 @@ import { parseAriaLocator } from '../../utils/aria.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
 import { WebElement } from '../../utils/web-element.ts';
+import { FOCUSED_MARKER } from './focus.ts';
 import type { Conversation } from '../conversation.ts';
 import type { Provider } from '../provider.js';
 import { locatorRule as generalLocatorRuleText } from '../rules.js';
@@ -249,6 +250,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
         result.text = sectionQuery.query('blockquote[0]').replace(`Container: '${newCss}'`);
       } else {
         result.text = sectionQuery.query('blockquote[0]').replace('');
+        result.text = result.text.replace(`${FOCUSED_MARKER}\n`, '');
       }
 
       for (const loc of result.locators) {

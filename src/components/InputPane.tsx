@@ -44,7 +44,7 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
       onCommandStart?.();
 
       // Check if this is a command (starts with / or I.) or is 'exit'
-      const isCommand = trimmedValue.startsWith('/') || trimmedValue.startsWith('I.') || trimmedValue === 'exit' || trimmedValue === 'quit';
+      const isCommand = trimmedValue.startsWith('/') || trimmedValue.startsWith('I.') || trimmedValue.startsWith('page.') || trimmedValue.startsWith('await ') || trimmedValue === 'exit' || trimmedValue === 'quit';
 
       if (isCommand) {
         if (onSubmit) {
@@ -85,7 +85,7 @@ const InputPane: React.FC<InputPaneProps> = ({ commandHandler, exitOnEmptyInput 
   const shouldShowAutocomplete = useCallback((value: string) => {
     if (!value) return false;
     if (value.startsWith('/')) return true;
-    if (value.startsWith('I.')) return true;
+    if (value.startsWith('I.') || value.startsWith('page.') || value.startsWith('await ')) return true;
     const lowered = value.toLowerCase();
     return 'exit'.startsWith(lowered);
   }, []);

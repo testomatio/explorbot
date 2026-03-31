@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-03-31
+
+### New CLI Commands
+- **`explorbot plan:load <planfile> [index]`** — Display a saved plan file as a table, or view details of a specific test by index.
+  ```bash
+  explorbot plan:load plan.md            # show all tests in table
+  explorbot plan:load plan.md 3          # show details for test #3
+  ```
+- **`explorbot shell <url> <command>`** — Navigate to a URL, execute a single CodeceptJS command, and exit. Useful for quick one-off browser interactions.
+  ```bash
+  explorbot shell /login "I.see('Welcome')"
+  explorbot shell /dashboard "I.click('Settings')"
+  ```
+
+### New TUI Commands
+- **`page.*` commands** — Execute raw Playwright page commands directly in TUI alongside existing `I.*` commands.
+  ```
+  page.click('.my-button')
+  page.fill('#email', 'test@example.com')
+  await page.locator('.item').count()
+  ```
+
+### Configuration
+- **`ai.agents.researcher.errorPageTimeout`** — Seconds to wait for an error page to recover before giving up. Researcher retries with exponential backoff during this window. Default: `10`. Set to `0` to disable.
+- **`reporter.html`** — Force HTML report generation even when Testomatio is configured. When set, reports are generated to both Testomatio and local HTML. Default: `false`.
+
+### Changes
+- [Researcher] Error pages now trigger a retry with exponential backoff instead of immediately returning an error — pages that load slowly or redirect are given time to recover
+- [Researcher] Cached research results are now clearly marked as potentially stale, prompting refresh when issues are noticed
+- [Researcher] UI map now requires every element with an `eidx` attribute to be included, even icon-only elements without text
+- [Researcher] Sections can no longer be named "Focus" or "Focused" — they must describe their content (e.g., "Detail", "Modal", "Form")
+- [Researcher] New "Focused section" detection — automatically identifies the user's primary interaction area (dialogs, main content) using AI declaration, ARIA analysis, and visual fallback. Focused sections are marked in research output.
+- [Researcher] Deep analysis prioritizes expandable elements from the focused section and deduplicates expanded sections with the same container
+- [Researcher] Deep analysis skips hover probing for coordinate-based clicks where hover would miss the target
+- [Pilot] Verdict review now provides concrete guidance when requesting continuation — tells Tester exactly what to verify, retry, or complete next
+- [Pilot] Session log now includes executed code, targeted element HTML, and skipped fallback attempts for each action — enabling detection of wrong-element clicks
+- [Pilot] New detection rules for logically wrong successes: mismatched executed vs intended commands, text sent to wrong elements, and unrelated ARIA changes after actions
+- [Pilot] Navigation awareness — compares current URL to start URL and flags suspicious outer-page or outer-site navigation
+- [Pilot] Already-achieved state detection — recognizes when the scenario goal is already met and adapts instead of repeating the same action
+- [Pilot] Complex component guidance — instructs Tester on search-and-select dropdown sequences and generic trigger mismatches
+- [Pilot] Removed standalone verification via Navigator — continuation guidance now directs Tester to verify within the test flow
+- [Planner] Focused research sections are highlighted to concentrate test generation on the user's primary interaction area first
+- [Planner] Previously tested flows are now presented with discovery annotations, and curious style avoids re-proposing covered flows
+- [Planner] Normal style now considers re-testing important previously tested flows for regression coverage with input variations
+- [Tester] Click tool now enforces that all commands in the fallback array target the same element — mixing different elements in one click call is rejected
+- [Tester] File paths in `<available_files>` are now relative to the project directory instead of absolute
+- [Tester] Removed standalone final review — all test verdicts now go through Pilot
+- [Tester] Major page changes (50+ ARIA elements added/removed) trigger a suggestion to check iframe content and HTML parts
+- Click disambiguation now tries `elementIndex` option first before falling back to XPath, improving reliability with framework-rendered lists
+- Explore command now shows test index numbers and source plan names in the results table, and prints the saved plan path with a re-run command
+- Plan file loading improved — searches current directory before falling back to plans directory, and auto-appends `.md` extension
+- [Explorer] Playwright `page.*` commands are now supported in the action executor alongside CodeceptJS `I.*` commands
+- [Explorer] CodeceptJS steps and store listeners are now properly initialized, enabling `step.opts()` for element index selection
+
 ## 2026-03-29
 
 ### New CLI Options

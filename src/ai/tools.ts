@@ -36,9 +36,14 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           I.click("Delete", ".row-1") - clicks Delete inside element with class row-1
 
         IMPORTANT: This tool ONLY accepts click commands. For typing text, use form() tool.
+        CRITICAL: All commands MUST target the SAME element using different locators.
+        This is a FALLBACK list, NOT a sequence of different clicks.
+        If you need to click multiple different elements, make SEPARATE click() calls.
       `,
       inputSchema: z.object({
         commands: z.array(z.string()).describe(dedent`
+          FALLBACK LOCATORS for ONE element. All commands must click the SAME element.
+          Never mix different elements — use separate click() calls instead.
           Order by reliability:
           1. I.click(text, container) - PREFERRED when container is known - e.g. I.click("Save", ".modal")
           2. I.click(ARIA, container) - e.g. I.click({"role":"button","text":"Save"}, ".modal")
@@ -98,22 +103,31 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           }
         }
 
-        const hasMultipleElements = attempts.some((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN));
-        if (hasMultipleElements) {
-          const disambiguatedXPath = await disambiguateElements(action.lastError, explanation, explorer.getAIProvider());
-          if (disambiguatedXPath) {
-            const xpathCommand = `I.click('${disambiguatedXPath.replace(/'/g, "\\'")}')`;
-            debugLog('Disambiguation picked XPath: %s', disambiguatedXPath);
-            const retrySuccess = await action.attempt(xpathCommand, explanation, true);
-            if (retrySuccess) {
-              const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, xpathCommand);
-              if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-                activeNote.screenshot = await action.saveScreenshot();
-              }
-              activeNote.commit(TestResult.PASSED);
-              return successToolResult('click', { ...toolResult, attempts, code: xpathCommand, disambiguated: true });
+        let disambiguated = null;
+        if (attempts.some((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))) {
+          disambiguated = await disambiguateElements(action.lastError, explanation, explorer.getAIProvider());
+        }
+
+        if (disambiguated) {
+          debugLog('Disambiguation picked element %d', disambiguated.position);
+          const failedCommand = attempts.find((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))?.command;
+          const retryCommands = [];
+          if (failedCommand) {
+            retryCommands.push(failedCommand.replace(/\)$/, `, step.opts({ elementIndex: ${disambiguated.position} }))`));
+          }
+          retryCommands.push(`I.click('${disambiguated.xpath.replace(/'/g, "\\'")}')`);
+
+          for (const retryCmd of retryCommands) {
+            if (!(await action.attempt(retryCmd, explanation, true))) {
+              attempts.push({ command: retryCmd, success: false, error: action.lastError?.toString() });
+              continue;
             }
-            attempts.push({ command: xpathCommand, success: false, error: action.lastError?.toString() });
+            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, retryCmd);
+            if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
+              activeNote.screenshot = await action.saveScreenshot();
+            }
+            activeNote.commit(TestResult.PASSED);
+            return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true });
           }
         }
 
@@ -274,7 +288,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
     form: tool({
       description: dedent`
         Execute raw CodeceptJS code block with multiple commands.
-        USE THIS TOOL for all keyboard interactions: I.fillField, I.type, I.pressKey.
+        USE THIS TOOL for all keyboard interactions: I.fillField, I.type, I.pressKey
 
         Follow <actions> from system prompt for available commands.
         Follow <locator_priority> from system prompt for locator selection.
@@ -289,28 +303,11 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')
         I.selectOption('Country', 'USA', '.address-section')
-        I.attachFile('input[type="file"]', '/path/file', '.upload-section')
+        I.attachFile('input[type="file"]', 'path/to/file', '.upload-section')
 
         Example - filling a form with ARIA locators:
         I.fillField({"role":"textbox","text":"Title"}, 'My Article')
         I.selectOption({"role":"combobox","text":"Category"}, 'Technology')
-
-        Example - typing into Monaco editor or rich text:
-        I.click({"role":"textbox","text":"Description"})
-        I.type('This is the description text')
-
-        Example - pressing keys:
-        I.pressKey('Enter')
-        I.pressKey(['Control', 'a'])
-
-        Example - attaching a file:
-        I.attachFile('input[type="file"]', '/absolute/path/to/sample.png')
-
-        Example - working with iframe:
-        I.switchTo('#payment-iframe')
-        I.fillField({"role":"textbox","text":"Card"}, '4242424242424242')
-        I.fillField({"role":"textbox","text":"CVV"}, '123')
-        I.switchTo()
 
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
         Do not use: wait functions, amOnPage, reloadPage, saveScreenshot
@@ -356,9 +353,9 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
             let formSuggestion = 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and form() tools.';
             if (message.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN)) {
-              const disambiguatedXPath = await disambiguateElements(action.lastError, explanation, explorer.getAIProvider());
-              if (disambiguatedXPath) {
-                formSuggestion = `Multiple elements matched. Use this specific locator instead: ${disambiguatedXPath}`;
+              const disambiguated = await disambiguateElements(action.lastError, explanation, explorer.getAIProvider());
+              if (disambiguated) {
+                formSuggestion = `Multiple elements matched. Add step.opts({ elementIndex: ${disambiguated.position} }) to the failing command. Fallback locator: ${disambiguated.xpath}`;
               }
             }
 
@@ -974,12 +971,21 @@ function transformContainsCommand(command: string): string {
   return command;
 }
 
+function countAriaChanges(ariaChanges: string): number {
+  const addedCount = (ariaChanges.match(/\n {4}- /g) || []).length;
+  const removedMatch = ariaChanges.match(/removed: (\d+) interactive/);
+  const removedCount = removedMatch ? Number.parseInt(removedMatch[1]) : 0;
+  return addedCount + removedCount;
+}
+
 function successToolResult(action: string, data?: Record<string, any>) {
   const result: Record<string, any> = { success: true, action, ...data };
   if (data?.pageDiff) {
     let suggestion = PAGE_DIFF_SUGGESTION;
     const ariaChanges = data.pageDiff.ariaChanges || '';
-    if (ariaChanges.includes('heading') && ariaChanges.includes('added')) {
+    if (countAriaChanges(ariaChanges) >= 50) {
+      suggestion = `MAJOR PAGE CHANGE. Page entered a different mode. Check htmlParts and iframes in pageDiff before next action. ${suggestion}`;
+    } else if (ariaChanges.includes('heading') && ariaChanges.includes('added')) {
       suggestion += ' WARNING: A new panel or modal may have appeared. If this was not the intended action, close it and try a different element.';
     }
     result.suggestion = data.suggestion ? `${data.suggestion} ${suggestion}` : suggestion;
@@ -1052,7 +1058,7 @@ async function formatMatchedElements(error: Error | null | undefined): Promise<s
   return details.map((el, i) => `Element ${i + 1}\nXPath: ${el.xpath}\nHTML: ${el.html}`).join('\n\n');
 }
 
-async function disambiguateElements(error: Error | null | undefined, explanation: string, provider: AIProvider): Promise<string | null> {
+async function disambiguateElements(error: Error | null | undefined, explanation: string, provider: AIProvider): Promise<{ position: number; xpath: string } | null> {
   const elementDetails = await extractWebElements(error);
   if (!elementDetails) return null;
 
@@ -1087,7 +1093,7 @@ async function disambiguateElements(error: Error | null | undefined, explanation
 
     const position = result?.object?.position;
     if (position && position >= 1 && position <= elementDetails.length) {
-      return elementDetails[position - 1].xpath;
+      return { position, xpath: elementDetails[position - 1].xpath };
     }
     return null;
   } catch (e) {

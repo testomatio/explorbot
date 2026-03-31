@@ -520,7 +520,6 @@ class Navigator implements Agent {
           const result = await this.provider.invokeConversation(conversation);
           if (!result) return;
           const aiResponse = result?.response?.text;
-          tag('info').log(aiResponse?.split('\n')[0]);
           debugLog('Received AI response:', aiResponse.length, 'characters');
           tag('step').log('Verifying assertion...');
           codeBlocks = extractCodeBlocks(aiResponse ?? '');
@@ -536,7 +535,6 @@ class Navigator implements Agent {
           return;
         }
 
-        tag('step').log(`Attempting verification: ${codeBlock}`);
         const verified = await action.attempt(codeBlock, message, false);
 
         if (verified) {

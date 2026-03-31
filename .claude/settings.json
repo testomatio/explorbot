@@ -8,6 +8,6 @@
     "crafting-effective-readmes@agent-toolkit": true
   },
   "permissions": {
-    "allow": ["Bash(cat:*)"]
+    "allow": ["Bash(cat *)", "Bash(jq *)", "Bash(select *)", "Bash(ls *)", "Bash(bun *)", "Bash(grep *)", "Bash(head *)", "Bash(find *)", "Bash(echo *)", "Bash(curl *)", "Bash(wc *)", "Bash(sort *)", "Bash(tee *)"]
   }
 }

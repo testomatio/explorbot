@@ -25,12 +25,13 @@ export class Reporter {
   constructor(config?: ReporterConfig) {
     this.reporterEnabled = Reporter.resolveEnabled(config);
 
-    if (this.reporterEnabled && !process.env.TESTOMATIO) {
+    if (this.reporterEnabled && (!process.env.TESTOMATIO || config?.html)) {
       this.configureHtmlPipe();
     }
 
     this.client = new Client({ apiKey: process.env.TESTOMATIO || '' });
-    debugLog('Reporter initialized', { enabled: this.reporterEnabled, pipe: process.env.TESTOMATIO ? 'testomatio' : 'html' });
+    const pipe = process.env.TESTOMATIO && config?.html ? 'both' : process.env.TESTOMATIO ? 'testomatio' : 'html';
+    debugLog('Reporter initialized', { enabled: this.reporterEnabled, pipe });
   }
 
   static resolveEnabled(config?: ReporterConfig): boolean {

@@ -5,6 +5,7 @@ import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
 import { hopeThat, retryTo, tryTo, within } from 'codeceptjs/lib/effects.js';
+import step from 'codeceptjs/steps';
 import dedent from 'dedent';
 import { ActionResult } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
@@ -218,18 +219,27 @@ class Action {
     const tracer = trace.getTracer('ai');
     const stepSpan = activeSpan ? tracer.startSpan('codeceptjs.step', undefined, trace.setSpan(context.active(), activeSpan)) : null;
     setStepSpanParent(stepSpan);
+    const sanitizedCode = sanitizeCodeBlock(codeString);
+    const isPlaywright = hasPlaywrightCommands(sanitizedCode);
+
     try {
       debugLog('Executing action:', codeString);
 
-      const sanitizedCode = sanitizeCodeBlock(codeString);
       if (!sanitizedCode) {
-        throw new Error('No valid I.* commands found in code block');
+        throw new Error('No valid I.* or page.* commands found in code block');
       }
-      const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', sanitizedCode);
-      codeFunction(this.actor, tryTo, retryTo, within, hopeThat);
 
-      await recorder.add(() => sleep(this.config.action?.delay || 500)); // wait for the action to be executed
-      await recorder.promise();
+      if (isPlaywright) {
+        const page = this.playwrightHelper.page;
+        const asyncFn = new Function('page', `return (async () => { ${sanitizedCode} })()`);
+        await asyncFn(page);
+        await sleep(this.config.action?.delay || 500);
+      } else {
+        const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', sanitizedCode);
+        codeFunction(this.actor, tryTo, retryTo, within, hopeThat, step);
+        await recorder.add(() => sleep(this.config.action?.delay || 500));
+        await recorder.promise();
+      }
 
       const pageState = await this.capturePageState();
       if (executedSteps.length > 0) {
@@ -242,8 +252,10 @@ class Action {
     } catch (err) {
       debugLog('Action error', errorToString(err));
       error = err as Error;
-      await recorder.reset();
-      await recorder.start();
+      if (!isPlaywright) {
+        await recorder.reset();
+        await recorder.start();
+      }
       throw err;
     } finally {
       unregisterStepLogger();
@@ -272,9 +284,9 @@ class Action {
         if (!sanitizedCode) {
           throw new Error('No valid I.* commands found in code block');
         }
-        codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', sanitizedCode);
+        codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', sanitizedCode);
       }
-      codeFunction(this.actor, tryTo, retryTo, within, hopeThat);
+      codeFunction(this.actor, tryTo, retryTo, within, hopeThat, step);
       await recorder.promise();
       debugLog('Expectation executed successfully');
 
@@ -377,8 +389,15 @@ function sanitizeCodeBlock(code: string): string {
   return code
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.startsWith('I.'))
+    .filter((line) => line.startsWith('I.') || line.startsWith('page.') || line.startsWith('await '))
     .join('\n');
+}
+
+function hasPlaywrightCommands(code: string): boolean {
+  return code.split('\n').some((line) => {
+    const trimmed = line.trim();
+    return trimmed.startsWith('page.') || trimmed.startsWith('await page.');
+  });
 }
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

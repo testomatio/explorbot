@@ -2,6 +2,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path, { join } from 'node:path';
 // @ts-ignore
 import * as codeceptjs from 'codeceptjs';
+import stepsListener from 'codeceptjs/lib/listener/steps.js';
+import storeListener from 'codeceptjs/lib/listener/store.js';
 import { createTest } from 'codeceptjs/lib/mocha/test.js';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
@@ -70,6 +72,7 @@ class Explorer {
       const configPath = configParser.getConfigPath();
       const projectRoot = configPath ? path.dirname(configPath) : process.cwd();
       (global as any).output_dir = path.join(projectRoot, 'output');
+      (global as any).codecept_dir = projectRoot;
 
       configParser.validateConfig(this.config);
 
@@ -181,6 +184,8 @@ class Explorer {
 
     await codeceptjs.recorder.start();
     await codeceptjs.container.started(null);
+    storeListener();
+    stepsListener();
 
     codeceptjs.recorder.retry({
       retries: this.config.action?.retries || 3,
@@ -456,7 +461,7 @@ class Explorer {
       const dir = path.dirname(this.options.session);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       await this.playwrightHelper.browserContext.storageState({ path: this.options.session });
-      tag('info').log(`Session saved to ${path.relative(process.cwd(), this.options.session)}`);
+      debugLog(`Session saved to ${path.relative(process.cwd(), this.options.session)}`);
     }
 
     codeceptjs.event.dispatcher.emit('global.after');

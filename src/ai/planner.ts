@@ -19,6 +19,7 @@ import { getActiveStyle, getStyles } from './planner/styles.ts';
 import { WithSessionDedup } from './planner/session-dedup.ts';
 import { WithSubPages, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
 import type { Provider } from './provider.js';
+import { hasFocusedSection } from './researcher/focus.ts';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
 import { fileUploadRule, protectionRule } from './rules.ts';
 
@@ -334,11 +335,15 @@ export class Planner extends PlannerBase implements Agent {
       plannerResearch = plannerResearch.replace(rawTable, jsonToTable(elementWithType, ['Element', 'Type']));
     }
 
+    const hasFocusedOverlay = hasFocusedSection(plannerResearch);
+    const focusNote = hasFocusedOverlay ? "IMPORTANT: One section is marked as **Focused** — this is the user's current focus area. Concentrate testing on the Focused section FIRST — test all interactions inside it before planning tests for the rest of the page." : '';
+
     conversation.addUserText(dedent`
       <page_research>
       The following research describes ALL interactive elements on the page, organized by sections.
       Each numbered section and each Extended Research subsection represents a testable feature area.
       Skip the Menu/Navigation section — we test THIS page, not navigation away from it.
+      ${focusNote}
 
       ${plannerResearch}
       </page_research>
@@ -353,11 +358,9 @@ export class Planner extends PlannerBase implements Agent {
 
         ${flows.join('\n\n')}
 
-        Consider:
-        1. Re-testing these flows if not in current plan
-        2. Proposing variations of these flows (different inputs, edge cases, negative scenarios)
-        3. Avoiding exact duplicates
-        4. When the <approach> above requires systematic valid combinatorial coverage (each select option, checkbox combinations, alternate valid values), scenarios that differ only along those dimensions still count as new coverage
+        Lines starting with > are discoveries made during those flows (buttons, fields, options that appeared).
+        How to use this data depends on <approach> above.
+        When the <approach> requires systematic valid combinatorial coverage (each select option, checkbox combinations, alternate valid values), scenarios that differ only along those dimensions still count as new coverage.
         </previously_tested_flows>
       `);
     }

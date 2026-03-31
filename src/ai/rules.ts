@@ -295,7 +295,7 @@ export const sectionContextRule = dedent`
   - I.click({"role":"button","text":"Save"}, '.main')
   - I.fillField('Username', 'admin', '.login-form')
   - I.selectOption('Country', 'USA', '.address-section')
-  - I.attachFile('input[type="file"]', '/path/file', '.upload-section')
+  - I.attachFile('input[type="file"]', 'path/to/file', '.upload-section')
   - I.seeInField('Email', 'john@example.com', '.profile-form')
   - I.dontSeeInField('Password', '', '.login-form')
 
@@ -487,13 +487,14 @@ export const actionRule = dedent`
   I.attachFile(<locator>, <filePath>, <context>)
 
   <example>
-    I.attachFile('input[type="file"]', '/absolute/path/to/sample.png', '.upload-section')
-    I.attachFile('input[type="file"]', '/absolute/path/to/sample.png')
-    I.attachFile('#file-upload', '/absolute/path/to/sample.pdf')
+    I.attachFile('input[type="file"]', 'path/to/sample.png', '.upload-section')
+    I.attachFile('input[type="file"]', 'path/to/sample.png')
+    I.attachFile('#file-upload', 'path/to/sample.pdf')
   </example>
 
   IMPORTANT: Only works with input[type="file"] elements.
   The locator must point to a file input or a label associated with one.
+  Use file paths exactly as listed in <available_files>.
   For drag-and-drop upload zones, look for a hidden input[type="file"] inside the dropzone container.
   Use the file paths from <available_files> section.
 

@@ -388,7 +388,7 @@ export class Historian {
   savePlanToFile(plan: Plan): string {
     const lines: string[] = [];
 
-    lines.push(`import { Section } from 'codeceptjs/steps';`);
+    lines.push(`import step, { Section } from 'codeceptjs/steps';`);
     lines.push('');
     lines.push(`Feature('${this.escapeString(plan.title)}')`);
     lines.push('');

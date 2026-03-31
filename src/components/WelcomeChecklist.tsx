@@ -77,7 +77,7 @@ const WelcomeChecklist: React.FC<WelcomeChecklistProps> = ({ config, knowledgeTr
       label: 'Reporter',
       description: 'get a complete test run report',
       enabled: Reporter.resolveEnabled(config.reporter),
-      value: process.env.TESTOMATIO ? 'Testomat.io' : config.reporter?.enabled ? 'HTML report' : undefined,
+      value: process.env.TESTOMATIO ? 'cloud report to Testomat.io' : undefined,
       suggestion: 'set reporter.enabled in config',
     },
     {

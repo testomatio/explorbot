@@ -267,7 +267,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       }
       tag('input').log(`> ${trimmed}`);
 
-      const isCommand = trimmed.startsWith('/') || trimmed.startsWith('I.');
+      const isCommand = trimmed.startsWith('/') || trimmed.startsWith('I.') || trimmed.startsWith('page.') || trimmed.startsWith('await ');
 
       if (trimmed.toLowerCase() === '/plan:edit') {
         if (tasksRef.current.length > 0) setShowPlanEditor(true);

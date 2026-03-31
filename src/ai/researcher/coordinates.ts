@@ -86,7 +86,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
 
     private async _analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult> {
       const elements = new Map<number, { coordinates: string | null; color: string | null; icon: string | null }>();
-      const emptyResult: VisualAnalysisResult = { elements, pagePurpose: null, primaryActions: null };
+      const emptyResult: VisualAnalysisResult = { elements, pagePurpose: null, primaryActions: null, focusedSection: null };
       if (!this.actionResult) return emptyResult;
 
       const image = this.actionResult.screenshot;
@@ -117,6 +117,13 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
         ## Primary Actions
         List 3-5 most prominent interactive elements (accent buttons, CTAs, main form actions).
         Format: - eidx N: action description
+
+        ## Focused Section
+        Which section from the legend appears to be the user's primary focus area?
+        Look for: modal overlays, drawers, panels with shadows or elevated z-index, highlighted/active areas.
+        If a dialog or overlay is visible, that is the focused section.
+        Otherwise, pick the section with the most prominent interactive content.
+        Reply with the exact section name from the legend. If no legend is shown, reply with "-".
       `;
 
       try {
@@ -136,6 +143,8 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
 
         const pagePurposeSection = mdq(text).query('section2("Page Purpose")').text().trim();
         const primaryActionsSection = mdq(text).query('section2("Primary Actions")').text().trim();
+        const focusedSectionRaw = mdq(text).query('section2("Focused Section")').text().trim();
+        const focusedSection = focusedSectionRaw && focusedSectionRaw !== '-' ? focusedSectionRaw.split('\n')[0].trim() : null;
 
         debugLog(`Parsed visual props for ${elements.size} elements`);
         return {
@@ -147,6 +156,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
                 .filter((l) => l.trim().startsWith('-'))
                 .map((l) => l.trim())
             : null,
+          focusedSection,
         };
       } catch (err) {
         debugLog(`Screenshot visual analysis failed: ${err instanceof Error ? err.message : err}`);
@@ -217,6 +227,7 @@ export interface VisualAnalysisResult {
   elements: Map<number, { coordinates: string | null; color: string | null; icon: string | null }>;
   pagePurpose: string | null;
   primaryActions: string[] | null;
+  focusedSection: string | null;
 }
 
 export interface CoordinateMethods {

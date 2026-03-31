@@ -152,7 +152,7 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
       if (!commandHandler) return false;
       if (!value) return false;
       if (value.startsWith('/')) return true;
-      if (value.startsWith('I.')) return true;
+      if (value.startsWith('I.') || value.startsWith('page.') || value.startsWith('await ')) return true;
       return false;
     },
     [commandHandler]

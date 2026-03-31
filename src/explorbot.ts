@@ -325,10 +325,16 @@ export class ExplorBot {
   }
 
   loadPlan(filename: string): Plan {
-    const plansDir = this.getPlansDir();
     let planPath = filename;
 
-    if (!path.isAbsolute(filename)) {
+    if (path.isAbsolute(filename)) {
+      if (!existsSync(planPath) && !filename.endsWith('.md')) {
+        planPath = filename + '.md';
+      }
+    } else if (existsSync(filename) || existsSync(filename + '.md')) {
+      planPath = existsSync(filename) ? filename : filename + '.md';
+    } else {
+      const plansDir = this.getPlansDir();
       planPath = path.join(plansDir, filename);
       if (!existsSync(planPath) && !filename.endsWith('.md')) {
         planPath = path.join(plansDir, filename + '.md');

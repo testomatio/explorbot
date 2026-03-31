@@ -307,4 +307,11 @@ describe('Reporter config', () => {
     const reporter = new Reporter();
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
   });
+
+  test('html: true with TESTOMATIO also sets HTML env vars', () => {
+    process.env.TESTOMATIO = 'tstmt_test_key';
+    const reporter = new Reporter({ enabled: true, html: true });
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBe('1');
+    expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
+  });
 });

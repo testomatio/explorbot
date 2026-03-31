@@ -16,14 +16,16 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
+import { withRetry } from '../utils/retry.ts';
 import type { Agent } from './agent.js';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, saveResearch } from './researcher/cache.ts';
 import { type CoordinateMethods, WithCoordinates } from './researcher/coordinates.ts';
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
+import { detectFocusFromAria, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
-import { extractValidContainers } from './researcher/parser.ts';
+import { extractValidContainers, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
 import { locatorRule as generalLocatorRuleText, listElementRule, uiMapTableFormat } from './rules.js';
 import { TaskAgent } from './task-agent.ts';
@@ -33,7 +35,7 @@ export type { Locator } from './researcher/locators.ts';
 const debugLog = createDebug('explorbot:researcher');
 
 export const POSSIBLE_SECTIONS = {
-  focus: 'focused overlay (modal, drawer, popup, active form)',
+  overlay: 'dialog, modal, drawer, popup, or active form overlay',
   list: 'list area (items collection, table, cards, or list view)',
   detail: 'detail area (selected item preview or full details)',
   panes: 'screen is split into equal panes, describe each pane',
@@ -98,7 +100,7 @@ export class Researcher extends ResearcherBase implements Agent {
     `;
   }
 
-  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; _retriesLeft?: number } = {}): Promise<string> {
+  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; _retriesLeft?: number; _skipErrorPageRetry?: boolean } = {}): Promise<string> {
     const { screenshot = false, force = false, deep = false, data = false, fix = true } = opts;
     const maxRetries = (this.explorer.getConfig().ai?.agents?.researcher as any)?.retries ?? 2;
     let retriesLeft = opts._retriesLeft ?? maxRetries;
@@ -109,7 +111,7 @@ export class Researcher extends ResearcherBase implements Agent {
       const cached = getCachedResearch(stateHash);
       if (cached) {
         debugLog('Previous research result found');
-        return cached;
+        return `!! UI MAP IS CACHED AND MAY NOT REPRESENT CURRENT STATE; REFRESH RESEARCH IF YOU NOTICE ISSUES !!\n\n${cached}`;
       }
     }
 
@@ -128,15 +130,18 @@ export class Researcher extends ResearcherBase implements Agent {
       this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot && this.provider.hasVision() });
 
       if (isErrorPage(this.actionResult!)) {
-        tag('warning').log(`Detected error page at ${state.url}`);
-        return dedent`
-          ## Error Page Detected
+        const recovered = await this.waitForPageLoad(screenshot);
+        if (!recovered) {
+          tag('warning').log(`Detected error page at ${state.url}`);
+          return dedent`
+            ## Error Page Detected
 
-          URL: ${state.url}
-          Title: ${this.actionResult!.title || 'N/A'}
+            URL: ${state.url}
+            Title: ${this.actionResult!.title || 'N/A'}
 
-          Research skipped. Navigate to a valid page to continue.
-        `;
+            Research skipped. Navigate to a valid page to continue.
+          `;
+        }
       }
 
       debugLog('Researching web page:', this.actionResult!.url);
@@ -184,6 +189,9 @@ export class Researcher extends ResearcherBase implements Agent {
       debugLog(`Original research response length: ${result.text.length} chars`);
 
       if (mdq(result.text).query('section("Error Page Detected")').count() > 0 && result.text.length < 500) {
+        if (!opts._skipErrorPageRetry && (await this.waitForPageLoad(screenshot))) {
+          return this.research(state, { ...opts, force: true, _skipErrorPageRetry: true });
+        }
         tag('warning').log(`AI detected error page at ${state.url}`);
         if (stateHash) saveResearch(stateHash, result.text);
         await this.hooksRunner.runAfterHook('researcher', state.url);
@@ -232,6 +240,19 @@ export class Researcher extends ResearcherBase implements Agent {
         await this.fixBrokenSections(result, conversation);
       }
 
+      // Focused section: parse AI declaration, then ARIA fallback
+      const focusMatch = result.text.match(/^>\s*Focused:\s*(.+)/m);
+      if (focusMatch) {
+        result.text = result.text.replace(focusMatch[0], '');
+        markSectionAsFocused(result, focusMatch[1].trim());
+      }
+      if (!hasFocusedSection(result.text)) {
+        const sections = parseResearchSections(result.text);
+        const ariaSnapshot = this.actionResult?.getCompactARIA() || '';
+        const focusedName = detectFocusFromAria(ariaSnapshot, sections);
+        if (focusedName) markSectionAsFocused(result, focusedName);
+      }
+
       // Stage 4: Visual analysis
       if (this.hasScreenshotToAnalyze) {
         const validContainers = extractValidContainers(result.text);
@@ -253,11 +274,23 @@ export class Researcher extends ResearcherBase implements Agent {
           if (visualResult.primaryActions?.length) lines.push(...visualResult.primaryActions);
           result.text = `${lines.join('\n')}\n\n${result.text}`;
         }
+
+        // Focused section: visual fallback
+        if (!hasFocusedSection(result.text) && visualResult.focusedSection) {
+          markSectionAsFocused(result, visualResult.focusedSection);
+        }
       }
 
       // Stage 5: Backfill broken elements
       await this.backfillCoordinates(result);
       await this.backfillBrokenLocators(result);
+
+      // Focused section: final fallback
+      if (!hasFocusedSection(result.text)) {
+        const sections = parseResearchSections(result.text);
+        const fallback = pickDefaultFocusedSection(sections);
+        if (fallback) markSectionAsFocused(result, fallback);
+      }
 
       if (deep) {
         await this.performDeepAnalysis(state, result);
@@ -325,6 +358,33 @@ export class Researcher extends ResearcherBase implements Agent {
     this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot ?? false });
   }
 
+  private async waitForPageLoad(screenshot: boolean): Promise<boolean> {
+    const errorPageTimeout = (this.explorer.getConfig().ai?.agents?.researcher as any)?.errorPageTimeout ?? 10;
+    if (errorPageTimeout <= 0) return false;
+
+    try {
+      await withRetry(
+        async () => {
+          await this.explorer.annotateElements();
+          this.actionResult = await this.explorer.createAction().capturePageState({
+            includeScreenshot: screenshot && this.provider.hasVision(),
+          });
+          if (isErrorPage(this.actionResult!)) throw new Error('Error page detected');
+        },
+        {
+          maxAttempts: Math.ceil(errorPageTimeout / 3) + 1,
+          baseDelay: 1000,
+          maxDelay: 5000,
+          backoffMultiplier: 2,
+          retryCondition: (e) => e.message === 'Error page detected',
+        }
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private getConfiguredSections(): Record<string, string> {
     const configSections = (this.explorer.getConfig().ai?.agents?.researcher as any)?.sections as string[] | undefined;
     if (!configSections?.length) return POSSIBLE_SECTIONS;
@@ -355,6 +415,7 @@ export class Researcher extends ResearcherBase implements Agent {
       - UI map table must include ARIA and CSS for every element.
       - Every element MUST have a CSS selector. NEVER leave CSS as "-".
       - For icon-only buttons with empty aria-label, set ARIA to "-" but ALWAYS provide CSS.
+      - NEVER skip elements that have an eidx attribute. Every element with eidx MUST appear in the UI map table, even if it has no text or accessible name. Describe icon-only elements using their SVG class (e.g., md-icon-dots-horizontal → "More actions (ellipsis)") or their visual appearance.
       - ARIA locator must be JSON with role and text keys (NOT "name").
       - Note elements likely to have hover interactions (elements with title attribute, aria-describedby, navigation menu items with submenus) and mark them with "(hover)" in the UI map.
       </rules>
@@ -372,6 +433,7 @@ export class Researcher extends ResearcherBase implements Agent {
         .join('\n')}
 
       - Sections can overlap, prefer more detailed sections over broader ones.
+      - Never name a section "Focus" or "Focused" — describe what the section actually contains (e.g., "Detail", "Modal", "Form", "Content", "List").
       - If a proposed section is not relevant or not detected, do not include it.
       - Each section must have a container CSS locator.
       - UI map CSS locators must be relative to the section container.
@@ -396,19 +458,30 @@ export class Researcher extends ResearcherBase implements Agent {
       | Element | ARIA | CSS | eidx |
       </section_format>
       <section_example>
-      ## Focus Section
+      ## List
 
-      Login modal dialog that appears as an overlay when user clicks the login button.
+      Product catalog showing available items with sorting and filtering.
 
-      > Container: '[role="dialog"]'
+      > Container: '.product-list'
 
       | Element | ARIA | CSS | eidx |
-      | 'Email' | { role: 'textbox', text: 'Email' } | 'input[name="email"]' | 3 |
-      | 'Password' | { role: 'textbox', text: 'Password' } | 'input[name="password"]' | 4 |
-      | 'Sign In' | { role: 'button', text: 'Sign In' } | 'button[type="submit"]' | 5 |
-      | 'Cancel' | { role: 'button', text: 'Cancel' } | 'button.cancel-btn' | 6 |
-      | 'Close' | { role: 'button', text: 'Close' } | '.close-btn' | 7 |
+      | 'Sort by price' | { role: 'button', text: 'Sort by price' } | '.sort-btn' | 3 |
+      | 'Add to cart' | { role: 'button', text: 'Add to cart' } | '.add-btn' | 4 |
+      | 'Product name' | { role: 'link', text: 'Widget Pro' } | 'a.product-link' | 5 |
       </section_example>
+
+      <focused_section>
+      At the very end of your output, add a single line declaring which section is the user's primary focus area:
+
+      > Focused: <exact section name>
+
+      Rules for determining the focused section:
+      - If the page has a dialog, modal, drawer, or overlay — that section is focused
+      - If no overlay exists, pick the section where the user performs the main business action of this page (e.g., a list section for a catalog page, a detail section for an item page, a content section for an article page)
+      - Navigation is NEVER focused — it exists on every page
+      - Menu/toolbar is NEVER focused — it contains actions, not the main content
+      - The focused section is the one the user came to this page to interact with
+      </focused_section>
 
       <css_selector_rules>
       CSS selectors MUST point to the actual interactive element (input, button, a, select), NOT to container divs.

@@ -9,7 +9,6 @@ import { tag } from '../utils/logger.ts';
 import { truncateJson } from '../utils/strings.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
-import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { isInteractive } from './task-agent.ts';
@@ -49,8 +48,8 @@ export class Pilot implements Agent {
     return this.reviewDecision('stop', task, currentState, testerConversation);
   }
 
-  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator: Navigator): Promise<boolean> {
-    return this.reviewDecision('finish', task, currentState, testerConversation, navigator);
+  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
+    return this.reviewDecision('finish', task, currentState, testerConversation);
   }
 
   async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
@@ -63,8 +62,8 @@ export class Pilot implements Agent {
     return this.reviewCompletion(task, currentState, testerConversation);
   }
 
-  private async reviewDecision(type: 'finish' | 'stop', task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
-    tag('substep').log(`🧭 Pilot reviewing ${type} verdict...`);
+  private async reviewDecision(type: 'finish' | 'stop', task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
+    tag('substep').log(`Pilot reviewing ${type} verdict...`);
 
     const sessionLog = this.formatSessionLog(testerConversation);
     const stateContext = this.buildStateContext(currentState);
@@ -86,7 +85,7 @@ export class Pilot implements Agent {
     const schema = z.object({
       decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
       reason: z.string().describe('What happened and why (1-2 sentences). Do NOT repeat the decision status (e.g. "scenario goal achieved/not achieved") — just explain the evidence. For continue: explain why rejected and suggest alternatives.'),
-      requestVerification: z.string().nullish().describe('If evidence is insufficient, provide an assertion to verify on the page'),
+      guidance: z.string().nullish().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
     });
 
     const userContent = dedent`
@@ -131,24 +130,7 @@ export class Pilot implements Agent {
         return false;
       }
 
-      if (result.requestVerification && navigator) {
-        tag('substep').log(`🧭 Pilot requesting verification: ${result.requestVerification}`);
-        const action = this.explorer.createAction();
-        const actionResult = await action.capturePageState();
-        const verifyResult = await navigator.verifyState(result.requestVerification, actionResult);
-
-        if (verifyResult.verified) {
-          task.summary = `Verified: ${result.requestVerification}`;
-          task.addNote(`Verified: ${result.requestVerification}`, TestResult.PASSED);
-          task.finish(TestResult.PASSED);
-        } else {
-          task.addNote(`Pilot verification failed: ${result.requestVerification}`, TestResult.FAILED);
-          testerConversation.addUserText(`Pilot: verification failed for "${result.requestVerification}". ${result.reason}`);
-        }
-        return false;
-      }
-
-      tag('info').log(`🧭 Pilot: ${result.decision} — ${result.reason}`);
+      tag('info').log(`Pilot: ${result.decision} — ${result.reason}`);
       task.summary = result.reason;
 
       if (result.decision === 'pass') {
@@ -170,10 +152,11 @@ export class Pilot implements Agent {
       }
 
       task.addNote(`Pilot: continue — ${result.reason}`);
-      testerConversation.addUserText(`Pilot rejected ${type}: ${result.reason}`);
+      const guidanceText = result.guidance ? `\n\nWhat to do next: ${result.guidance}` : '';
+      testerConversation.addUserText(`Pilot: ${result.reason}${guidanceText}`);
       return true;
     } catch (error: any) {
-      tag('warning').log(`🧭 Pilot verdict failed: ${error.message}`);
+      tag('warning').log(`Pilot verdict failed: ${error.message}`);
       task.finish(TestResult.FAILED);
       return false;
     }
@@ -206,10 +189,16 @@ export class Pilot implements Agent {
       SESSION LOG shows ALL actions grouped by URL. If the scenario requires changing data (edit/create/delete) but all form/click actions FAILED, the test cannot pass — even if a verify() found matching content that existed before the test.
 
       VERIFICATION RULE: Only the LAST few actions before finish/stop count as verification evidence.
-      - If verify() is among the last actions → use its result as evidence.
-      - Otherwise → set requestVerification to prove the scenario goal was achieved.
+      - If verify() or see() is among the last actions → use its result as evidence.
+      - If no verification was done → prefer "continue" with guidance telling tester what to verify.
+      - If verify assertion describes a state that was ALREADY TRUE before the test started, the verification proves nothing — reject with "continue".
 
-      TRIVIAL VERIFICATION CHECK: If the verify assertion describes a state that was ALREADY TRUE before the test started (e.g., page content visible on initial load, items that existed before any action), the verification proves nothing. Reject with "continue" and explain that verification must prove the scenario ACTION changed something.
+      GUIDANCE FIELD: When decision is "continue", you MUST provide "guidance" — a specific actionable instruction:
+      - If evidence is insufficient: tell tester to verify with see()/verify(), specify WHAT to check
+      - If approach was wrong: tell tester to try a different method, suggest which one
+      - If remaining steps exist: tell tester which steps to complete next
+      Be concrete. Example: "Use see() to check if the description text appears in the Description tab panel" not "verify the result".
+      Do NOT tell tester to redo the same actions that already succeeded.
 
       NEGATIVE TESTS: Some scenarios test that something CANNOT or SHOULD NOT happen.
       Patterns: "without a name", "with invalid data", "empty field", "wrong password", "unauthorized", "duplicate".
@@ -231,7 +220,7 @@ export class Pilot implements Agent {
   }
 
   async planTest(task: Test, currentState: ActionResult): Promise<string> {
-    tag('substep').log('🧭 Pilot planning test...');
+    tag('substep').log('Pilot planning test...');
 
     const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
     const agenticModel = this.provider.getAgenticModel('pilot');
@@ -266,7 +255,7 @@ export class Pilot implements Agent {
   async reviewNewPage(task: Test, currentState: ActionResult): Promise<string> {
     if (!this.conversation) return '';
 
-    tag('substep').log('🧭 Pilot reviewing new page...');
+    tag('substep').log('Pilot reviewing new page...');
 
     const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
     if (!pageSummary) return '';
@@ -278,6 +267,7 @@ export class Pilot implements Agent {
     return this.sendToPilot(
       dedent`
         Navigated to new page.
+        START URL: ${task.startUrl}
 
         <state>
         ${stateContext}
@@ -289,14 +279,14 @@ export class Pilot implements Agent {
 
         ${this.formatExpectations(task)}
 
-        Review the new page and plan the next testing steps to achieve remaining goals.
+        First: evaluate whether this navigation makes sense for the scenario goal. If the page is unrelated, instruct Tester to back() or reset(). Then plan next steps.
       `,
       'pilot.reviewNewPage'
     );
   }
 
   async analyzeProgress(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
-    tag('substep').log('🧭 Pilot analyzing progress...');
+    tag('substep').log('Pilot analyzing progress...');
 
     if (!this.conversation) {
       const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
@@ -314,6 +304,8 @@ export class Pilot implements Agent {
 
     const text = await this.sendToPilot(
       dedent`
+        START URL: ${task.startUrl}
+
         <state>
         ${stateContext}
         </state>
@@ -496,7 +488,8 @@ export class Pilot implements Agent {
         }
       }
 
-      const resultMessage = exec.output?.message || exec.output?.result;
+      const analysisText = exec.output?.analysis;
+      const resultMessage = analysisText ? (analysisText.length > 500 ? analysisText.slice(0, 500) + '...' : analysisText) : exec.output?.message || exec.output?.result;
       if (resultMessage && (CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful)) {
         line += `\n    result: ${resultMessage}`;
       }
@@ -524,12 +517,32 @@ export class Pilot implements Agent {
         const status = t.wasSuccessful ? 'SUCCESS' : 'FAILED';
         const kind = CHECK_TOOLS.includes(t.toolName) ? 'CHECK' : 'ACTION';
         const description = t.input?.explanation || t.input?.request || truncateJson(t.input);
-        const resultMessage = t.output?.message || '';
+        const analysisText = t.output?.analysis;
+        const resultMessage = analysisText ? (analysisText.length > 500 ? analysisText.slice(0, 500) + '...' : analysisText) : t.output?.message || '';
         const errorDetail = t.output?.attempts?.find((a: any) => a.error)?.error;
 
         let line = `[${status}] ${kind} ${t.toolName}: ${description}`;
+
+        const executedCode = t.output?.code;
+        if (executedCode && t.toolName === 'click') {
+          line += `\n   executed: ${executedCode}`;
+        }
+
+        const targeted = t.output?.targetedHtml;
+        if (targeted) {
+          line += `\n   element: ${targeted}`;
+        }
+
         if (resultMessage) line += `\n   result: ${resultMessage}`;
         if (errorDetail && errorDetail !== resultMessage) line += `\n   error: ${errorDetail}`;
+
+        const attempts = t.output?.attempts;
+        if (attempts && attempts.length > 1 && t.wasSuccessful) {
+          const failedBefore = attempts.filter((a: any) => !a.success);
+          if (failedBefore.length > 0) {
+            line += `\n   skipped: ${failedBefore.map((a: any) => a.command).join(', ')}`;
+          }
+        }
 
         const ariaDiff = t.output?.pageDiff?.ariaChanges;
         if (ariaDiff) line += `\n   ${ariaDiff}`;
@@ -584,6 +597,17 @@ export class Pilot implements Agent {
       6. When everything is going well, give brief encouragement and let Tester continue
       7. Before suggesting navigation to another page, assume the current page may already have what the scenario needs. The page summary is incomplete — not every element is listed. Prefer exploring the current page first.
 
+      Already-achieved state detection:
+      - When planning or reviewing, check if the scenario goal is ALREADY met in the current state (page_summary, ariaDiff, or state context).
+      - If the goal appears already achieved at start: adapt the scenario — suggest different input values or data to make the test meaningful.
+      - If the goal was achieved by a previous action (SUCCESS in recent_actions with confirming ariaDiff): instruct Tester to verify() the result and finish(). Do NOT repeat the same action.
+      - If Tester keeps re-opening the same panel and re-submitting the same data — STOP. The action was already completed.
+
+      Navigation awareness — always compare current page url to START URL:
+      - subpage navigation (deeper path from START URL) — OK, scenario may need sub-pages
+      - outer-page navigation (parent/sibling path from START URL) — SUSPICIOUS. The scenario target is on the START page. Do NOT rationalize leaving it. Instruct Tester to back() or reset().
+      - outer-site navigation (different domain) — WRONG. Instruct Tester to reset() immediately.
+
       IMPORTANT — Tool usage policy:
       - DO NOT use tools (see, context) when Tester is making progress and no failures are recorded
       - Tester already has full ARIA and HTML context — do not duplicate that work
@@ -601,6 +625,24 @@ export class Pilot implements Agent {
       - Multiple elements matched (MultipleElementsFound) → use xpathCheck() to inspect the matched elements and determine which one is correct. Then instruct Tester with a precise locator or suggest visualClick() to click the right element by visual appearance.
       - Tester navigated to a page unrelated to the scenario (e.g., settings instead of feature page) → use getVisitedStates() to check which pages were visited, then suggest back() to return to a relevant page, or reset() if multiple wrong navigations occurred. Do NOT try navigating back via breadcrumbs or links — SPA frameworks make manual back-navigation unreliable.
       - If diagnosis is unclear, ariaDiff is empty, and your previous advice didn't help → suggest Tester use see() to visually inspect the page. But ONLY as a last resort after other diagnostics failed.
+      - Click succeeded but ariaDiff shows elements unrelated to tester's intention (e.g., clicked "Edit" but dropdown appeared) → wrong button or unexpected behavior. Instruct Tester to Escape and try a different approach.
+      - form(I.type()) succeeded → I.type() sends keys to whatever is focused, no guarantee it's the right field. Instruct Tester to verify with see() that text appeared in the correct field. If targetedHtml shows a button/link, text went to wrong element — click the correct field first and retry.
+      - ariaDiff shows 5+ elements removed/added after clicking content → page entered a different mode (editor, panel, modal). Instruct Tester to call context() to see current state before guessing selectors.
+
+      Detecting logically wrong successes — review "executed", "element", and "skipped" fields:
+      - Click SUCCESS but "executed" command differs from "explanation" intent → wrong element was clicked. The intended element wasn't found and a different one was clicked instead.
+      - Click SUCCESS with "skipped" commands listed → earlier attempts failed, fell through to a different locator. Check if the successful locator actually targets the intended element.
+      - form(I.type()) SUCCESS but "element" shows a button/link instead of input → text went to wrong element. Instruct Tester to click the correct input first.
+      - Action SUCCESS but ariaDiff shows changes unrelated to the stated goal → action hit the wrong target. Instruct Tester to undo (Escape/back) and retry with precise locator.
+      - If Tester's explanation mentions TWO distinct actions in ONE tool call → flag this. Each distinct action should be a separate tool call. Instruct Tester to split into individual steps.
+
+      Complex component patterns — when Tester fails to interact with dropdowns/selects:
+      - Search-and-select dropdowns require a SEQUENCE: click/focus the trigger input, type to filter, then click an option from the dropdown list. Instruct Tester to split this into separate tool calls.
+      - If Tester clicks a generic dropdown trigger and ariaDiff shows unrelated options → wrong dropdown was triggered. Instruct Tester to use a more specific selector with container context.
+      - If Tester types into an input but no dropdown appears → they may need to click the trigger element first. Suggest using context() to check the current DOM state.
+
+      Tester ignoring visible elements:
+      - If <state> shows "active form" fields but Tester is clicking elements not found in ARIA, or trying buttons that don't exist → Tester is ignoring interactive elements that are actually on the page. Instruct Tester to focus on the elements listed in "active form" — these are the real interactive controls on the current page. The UI map may be outdated.
 
       When Tester IS stuck finding an element, use xpathCheck() with COMBINED XPaths:
       - NEVER guess one exact text. UI labels differ from scenario wording.

@@ -4,6 +4,8 @@ When <previously_tested_flows> is present, treat it as the ground truth for what
 - List items under Successful Flow describe the path that was executed
 - Lines in blockquotes (lines starting with >) are discoveries: extra fields, side panels, conditional UI, inputs called out during that run
 Infer what was never tried or only partially exercised from that material.
+DO NOT re-propose these flows or reword them into new scenarios. They are already covered.
+Instead, use the discoveries (lines starting with >) as leads for NEW tests around elements that were revealed but never interacted with.
 
 When <previously_tested_flows> is NOT present, use <tested_scenarios> as the ground truth instead.
 Read the step lines for each test to understand which controls were actually interacted with.

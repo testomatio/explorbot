@@ -68,6 +68,7 @@ interface ResearcherAgentConfig extends AgentConfig {
   maxElementsToExplore?: number;
   retries?: number;
   sections?: string[];
+  errorPageTimeout?: number;
 }
 
 interface TesterAgentConfig extends AgentConfig {
@@ -145,6 +146,7 @@ interface ActionConfig {
 
 interface ReporterConfig {
   enabled?: boolean;
+  html?: boolean;
 }
 
 interface ExplorbotConfig {

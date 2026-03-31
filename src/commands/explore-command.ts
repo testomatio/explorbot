@@ -1,4 +1,5 @@
 import figureSet from 'figures';
+import path from 'node:path';
 import { getStyles } from '../ai/planner/styles.js';
 import type { Plan } from '../test-plan.js';
 import { jsonToTable } from '../utils/markdown-parser.js';
@@ -13,6 +14,8 @@ export class ExploreCommand extends BaseCommand {
 
   maxTests?: number;
   private testsRun = 0;
+  private testPlanOrigin = new Map<string, string>();
+  private hasSubPages = false;
 
   async execute(args: string): Promise<void> {
     const maxTestsMatch = args.match(/--max-tests\s+(\d+)/);
@@ -32,7 +35,8 @@ export class ExploreCommand extends BaseCommand {
     if (this.isLimitReached()) {
       this.explorBot.setCurrentPlan(mainPlan);
       if (mainUrl) await this.explorBot.visit(mainUrl);
-      this.printResults();
+      const savedPath = this.explorBot.savePlan();
+      this.printResults(savedPath);
       return;
     }
 
@@ -53,9 +57,12 @@ export class ExploreCommand extends BaseCommand {
         const subPlan = this.explorBot.getCurrentPlan();
         if (subPlan) {
           completedPlans.push(subPlan);
+          this.hasSubPages = true;
           for (const test of subPlan.tests) {
             const isDup = mainPlan.tests.some((t) => t.scenario.toLowerCase() === test.scenario.toLowerCase());
-            if (!isDup) mainPlan.addTest(test);
+            if (isDup) continue;
+            mainPlan.addTest(test);
+            this.testPlanOrigin.set(test.scenario.toLowerCase(), subPlan.title);
           }
         }
       } catch (err) {
@@ -65,7 +72,8 @@ export class ExploreCommand extends BaseCommand {
 
     this.explorBot.setCurrentPlan(mainPlan);
     if (mainUrl) await this.explorBot.visit(mainUrl);
-    this.printResults();
+    const savedPath = this.explorBot.savePlan();
+    this.printResults(savedPath);
   }
 
   private async runAllStyles(pageUrl?: string, feature?: string, parentPlan?: Plan, completedPlans?: Plan[]): Promise<void> {
@@ -82,26 +90,38 @@ export class ExploreCommand extends BaseCommand {
     }
   }
 
-  private printResults(): void {
+  private printResults(savedPath?: string | null): void {
     const currentPlan = this.explorBot.getCurrentPlan();
     if (!currentPlan) return;
 
-    const rows = currentPlan.tests.map((test) => {
+    const rows = currentPlan.tests.map((test, index) => {
       const durationMs = test.getDurationMs();
       const duration = durationMs != null ? `${(durationMs / 1000).toFixed(1)}s` : '-';
       let status = 'failed';
       if (test.isSuccessful) status = 'passed';
       else if (test.isSkipped) status = 'skipped';
-      return {
+      const row: Record<string, string> = {
+        '#': String(index + 1),
         Status: status,
         Title: test.scenario.replace(/\|/g, '-'),
         Priority: test.priority,
         Time: duration,
         Steps: String(Object.keys(test.notes).length),
       };
+      if (this.hasSubPages) {
+        row.Plan = this.testPlanOrigin.get(test.scenario.toLowerCase()) || '';
+      }
+      return row;
     });
-    tag('multiline').log(jsonToTable(rows, ['Status', 'Title', 'Priority', 'Time', 'Steps']));
+    const columns = ['#', 'Status', 'Title', 'Priority', 'Time', 'Steps'];
+    if (this.hasSubPages) columns.push('Plan');
+    tag('multiline').log(jsonToTable(rows, columns));
     tag('info').log(`${figureSet.tick} ${currentPlan.tests.length} tests completed`);
+
+    if (savedPath) {
+      const relativePath = path.relative(process.cwd(), savedPath);
+      tag('info').log(`Re-run tests: explorbot test ${relativePath} <index>`);
+    }
   }
 
   private isLimitReached(): boolean {

@@ -59,7 +59,27 @@ export class CommandHandler implements InputManager {
         }
       }
     }
-    return [...slashCommands, 'I.amOnPage', 'I.click', 'I.see', 'I.fillField', 'I.selectOption', 'I.checkOption', 'I.pressKey', 'I.wait', 'I.waitForElement', 'I.waitForVisible', 'I.waitForInvisible', 'I.scrollTo'];
+    return [
+      ...slashCommands,
+      'I.amOnPage',
+      'I.click',
+      'I.see',
+      'I.fillField',
+      'I.selectOption',
+      'I.checkOption',
+      'I.pressKey',
+      'I.wait',
+      'I.waitForElement',
+      'I.waitForVisible',
+      'I.waitForInvisible',
+      'I.scrollTo',
+      'page.click',
+      'page.fill',
+      'page.goto',
+      'page.locator',
+      'page.waitForSelector',
+      'page.evaluate',
+    ];
   }
 
   getCommandDescriptions(): { name: string; description: string; options: string }[] {
@@ -69,6 +89,7 @@ export class CommandHandler implements InputManager {
       options: cmd.options.map((o) => `${o.flags}: ${o.description}`).join(', '),
     }));
     descriptions.push({ name: 'I.*', description: 'CodeceptJS commands for web interaction', options: '' });
+    descriptions.push({ name: 'page.*', description: 'Playwright page commands', options: '' });
     return descriptions;
   }
 
@@ -76,11 +97,11 @@ export class CommandHandler implements InputManager {
     const trimmedInput = input.trim();
     const lowered = trimmedInput.toLowerCase();
 
-    if (trimmedInput.startsWith('I.')) {
+    if (trimmedInput.startsWith('I.') || trimmedInput.startsWith('page.') || trimmedInput.startsWith('await ')) {
       try {
-        await this.executeCodeceptJSCommand(trimmedInput);
+        await this.executeBrowserCommand(trimmedInput);
       } catch (error) {
-        tag('error').log(`CodeceptJS command failed: ${error instanceof Error ? error.message : String(error)}`);
+        tag('error').log(`Browser command failed: ${error instanceof Error ? error.message : String(error)}`);
       }
       return;
     }
@@ -135,7 +156,7 @@ export class CommandHandler implements InputManager {
     }
   }
 
-  private async executeCodeceptJSCommand(input: string): Promise<void> {
+  private async executeBrowserCommand(input: string): Promise<void> {
     const action = this.explorBot.getExplorer().createAction();
     await action.execute(input);
   }
@@ -144,7 +165,7 @@ export class CommandHandler implements InputManager {
     const trimmedInput = input.trim();
     const lowered = trimmedInput.toLowerCase();
 
-    if (trimmedInput.startsWith('I.')) {
+    if (trimmedInput.startsWith('I.') || trimmedInput.startsWith('page.') || trimmedInput.startsWith('await ')) {
       return true;
     }
 
@@ -204,7 +225,7 @@ export class CommandHandler implements InputManager {
       return;
     }
 
-    const isCommand = trimmedInput.startsWith('/') || trimmedInput.startsWith('I.');
+    const isCommand = trimmedInput.startsWith('/') || trimmedInput.startsWith('I.') || trimmedInput.startsWith('page.') || trimmedInput.startsWith('await ');
 
     if (isCommand) {
       try {

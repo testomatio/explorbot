@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tool } from 'ai';
 import dedent from 'dedent';
@@ -330,19 +330,14 @@ export class Tester extends TaskAgent implements Agent {
 
       if (task.hasFinished) break;
 
-      if (!this.pilot) {
-        await this.finalReview(task);
-        break;
-      }
-
       const finalState = this.getCurrentState();
-      const wantsContinue = await this.pilot.finalReview(task, finalState, conversation);
+      const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation);
 
       if (!wantsContinue || task.hasFinished) break;
       if (extensions >= this.MAX_EXTENSIONS) break;
 
       extensions++;
-      tag('info').log(`🧭 Pilot extending test (${extensions}/${this.MAX_EXTENSIONS})`);
+      tag('info').log(`Pilot extending test (${extensions}/${this.MAX_EXTENSIONS})`);
       shouldContinue = true;
     }
 
@@ -559,7 +554,6 @@ export class Tester extends TaskAgent implements Agent {
     }
     tag('info').log(`Finished: ${task.scenario}`);
 
-    tag('multiline').log(task.getPrintableNotes().join('\n'));
     if (task.isSuccessful) {
       tag('success').log(`Successful test: ${task.scenario}`);
     } else if (task.isSkipped) {
@@ -605,6 +599,7 @@ export class Tester extends TaskAgent implements Agent {
     - Refer to UI Map from <page_ui_map> to understand the page structure and its main elements
     - Use only elements that exist in the provided ARIA tree or HTML, <page_aria> and <page_html>
     - Use click() for buttons, links, and clickable elements ONLY - do NOT include I.fillField() or I.type() commands in click() tool
+    - click() commands array is for FALLBACK LOCATORS of the SAME element, NOT for clicking different elements in sequence. If you need to click two different elements, make two separate click() calls.
     - Use form() for text input (I.fillField, I.type), dropdown selection (I.selectOption), file uploads (I.attachFile), and multi-step form interactions
     - Use pressKey() for pressing special keys (Enter, Escape, Tab, Arrow keys) or key combinations with modifiers (Ctrl+A, Shift+Delete, etc.)
     - Use container CSS locators from <page_ui_map> to interact with elements inside sections
@@ -657,64 +652,6 @@ export class Tester extends TaskAgent implements Agent {
     `;
   }
 
-  private async finalReview(task: Test): Promise<void> {
-    const notes = task.notesToString() || 'No notes recorded.';
-    const schema = z.object({
-      summary: z.string().describe('Concise overview of the test findings'),
-      scenarioAchieved: z.boolean().describe('Indicates if the scenario goal appears satisfied'),
-      recommendation: z.string().optional().describe('Follow-up suggestion if needed'),
-    });
-
-    const model = this.provider.getModelForAgent('tester');
-    const response = await this.provider.generateObject(
-      [
-        {
-          role: 'system',
-          content: dedent`
-            You evaluate exploratory test notes.
-            Summarize findings and decide whether the main scenario goal is fulfilled.
-          `,
-        },
-        {
-          role: 'user',
-          content: dedent`
-            Scenario: ${task.scenario}
-
-            <notes>
-            ${notes}
-            </notes>
-
-            <steps>
-            ${Object.values(task.steps)
-              .map((s) => `- ${s.text}`)
-              .join('\n')}
-            </steps>
-
-            Based on the notes check if the scenario goal was actually accomplished.
-            Write a brief one line summary (one line only) to summarize the test findings.
-          `,
-        },
-      ],
-      schema,
-      model
-    );
-
-    const result = response?.object;
-    if (!result) return;
-
-    task.summary = result.summary;
-    if (result.scenarioAchieved) {
-      task.addNote(result.summary, TestResult.PASSED);
-      task.finish(TestResult.PASSED);
-    } else {
-      task.addNote(result.summary);
-    }
-
-    if (result.recommendation) {
-      task.addNote(result.recommendation);
-    }
-  }
-
   private async buildTestPrompt(task: Test, actionResult: ActionResult): Promise<string> {
     const knowledge = this.getKnowledge(actionResult);
     const pageContext = await this.reinjectContextIfNeeded(1, actionResult);
@@ -758,13 +695,14 @@ export class Tester extends TaskAgent implements Agent {
 
   private buildAvailableFiles(): string {
     const userFiles = this.explorer.getConfig().files || {};
+    const codeceptDir = (global as any).codecept_dir || process.cwd();
     const lines: string[] = [];
 
     for (const [description, filename] of Object.entries(SAMPLE_FILES)) {
-      lines.push(`- ${description}: ${join(SAMPLE_FILES_DIR, filename)}`);
+      lines.push(`- ${description}: ${relative(codeceptDir, join(SAMPLE_FILES_DIR, filename))}`);
     }
     for (const [description, filePath] of Object.entries(userFiles)) {
-      lines.push(`- ${description}: ${resolve(filePath)}`);
+      lines.push(`- ${description}: ${relative(codeceptDir, resolve(filePath))}`);
     }
 
     return dedent`
@@ -902,7 +840,7 @@ export class Tester extends TaskAgent implements Agent {
 
           if (this.pilot) {
             const currentState = this.getCurrentState();
-            await this.pilot.reviewFinish(task, currentState, conversation, this.navigator);
+            await this.pilot.reviewFinish(task, currentState, conversation);
             if (!task.hasFinished) {
               return {
                 success: false,
