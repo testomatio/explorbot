@@ -32,7 +32,7 @@ const TasksSchema = z.object({
       z.object({
         scenario: z.string().describe('A single sentence describing what to test'),
         priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).describe('Priority of the task based on business importance'),
-        startUrl: z.string().optional().describe('Start URL for the test if different from plan URL (only for tests on visited subpages)'),
+        startUrl: z.string().nullable().describe('Start URL for the test if different from plan URL (only for tests on visited subpages)'),
         steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Click on Login button", "Enter username in email field", "Submit the form"). Keep steps atomic and actionable.'),
         expectedOutcomes: z
           .array(z.string())
@@ -325,13 +325,18 @@ export class Planner extends PlannerBase implements Agent {
 
     conversation.addUserText(planningPrompt);
     const currentState = this.stateManager.getCurrentState();
-    const research = await this.researcher.research(currentState || state, { deep: true });
+    const research = await this.researcher.research(currentState || state, {
+      deep: true,
+    });
     let plannerResearch = mdq(research).query('code').replace('');
     for (const table of mdq(plannerResearch).query('table').each()) {
       const rawTable = table.text();
       const rows = table.toJson();
       if (rows.length === 0 || !rows[0].Element) continue;
-      const elementWithType = rows.map((r) => ({ Element: r.Element, Type: r.Type || '' }));
+      const elementWithType = rows.map((r) => ({
+        Element: r.Element,
+        Type: r.Type || '',
+      }));
       plannerResearch = plannerResearch.replace(rawTable, jsonToTable(elementWithType, ['Element', 'Type']));
     }
 
@@ -349,7 +354,10 @@ export class Planner extends PlannerBase implements Agent {
       </page_research>
     `);
 
-    const rawFlows = this.experienceTracker.getSuccessfulExperience(state, { includeDescendants: true, stripCode: true });
+    const rawFlows = this.experienceTracker.getSuccessfulExperience(state, {
+      includeDescendants: true,
+      stripCode: true,
+    });
     const flows = rawFlows.map((f) => this.cleanExperienceFlows(f)).filter(Boolean) as string[];
     if (flows.length > 0) {
       conversation.addUserText(dedent`

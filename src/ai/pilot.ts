@@ -85,7 +85,7 @@ export class Pilot implements Agent {
     const schema = z.object({
       decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
       reason: z.string().describe('What happened and why (1-2 sentences). Do NOT repeat the decision status (e.g. "scenario goal achieved/not achieved") — just explain the evidence. For continue: explain why rejected and suggest alternatives.'),
-      guidance: z.string().nullish().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
+      guidance: z.string().nullable().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
     });
 
     const userContent = dedent`
@@ -117,12 +117,18 @@ export class Pilot implements Agent {
     `;
 
     const messages = [
-      { role: 'system' as const, content: this.buildVerdictSystemPrompt(type, task) },
+      {
+        role: 'system' as const,
+        content: this.buildVerdictSystemPrompt(type, task),
+      },
       { role: 'user' as const, content: userContent },
     ];
 
     try {
-      const response = await this.provider.generateObject(messages, schema, this.provider.getAgenticModel('pilot'), { agentName: 'pilot', experimental_telemetry: { functionId: 'pilot.reviewVerdict' } });
+      const response = await this.provider.generateObject(messages, schema, this.provider.getAgenticModel('pilot'), {
+        agentName: 'pilot',
+        experimental_telemetry: { functionId: 'pilot.reviewVerdict' },
+      });
 
       const result = response?.object;
       if (!result) {
@@ -222,7 +228,9 @@ export class Pilot implements Agent {
   async planTest(task: Test, currentState: ActionResult): Promise<string> {
     tag('substep').log('Pilot planning test...');
 
-    const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
+    const pageSummary = await this.researcher.summary(currentState, {
+      allowNewResearch: false,
+    });
     const agenticModel = this.provider.getAgenticModel('pilot');
     this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState, pageSummary), 'pilot', agenticModel);
 
@@ -257,7 +265,9 @@ export class Pilot implements Agent {
 
     tag('substep').log('Pilot reviewing new page...');
 
-    const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
+    const pageSummary = await this.researcher.summary(currentState, {
+      allowNewResearch: false,
+    });
     if (!pageSummary) return '';
 
     const stateContext = this.buildStateContext(currentState);
@@ -289,7 +299,9 @@ export class Pilot implements Agent {
     tag('substep').log('Pilot analyzing progress...');
 
     if (!this.conversation) {
-      const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
+      const pageSummary = await this.researcher.summary(currentState, {
+        allowNewResearch: false,
+      });
       const agenticModel = this.provider.getAgenticModel('pilot');
       this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState, pageSummary), 'pilot', agenticModel);
     }
