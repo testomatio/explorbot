@@ -144,7 +144,10 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
         }
       }
 
-      await explorBot.plan(feature || undefined, { fresh: !options.append, style: options.style });
+      await explorBot.plan(feature || undefined, {
+        fresh: !options.append,
+        style: options.style,
+      });
 
       const plan = explorBot.getCurrentPlan();
       if (!plan?.tests.length) {
@@ -314,7 +317,13 @@ program
       log(`Working in directory: ${resolvedPath}`);
     }
 
-    const defaultConfig = `import { <your provider here> } from 'ai';
+    const defaultConfig = `import { '<your provider here>' } from '<your provider package here>';
+
+// This example uses OpenRouter (one API key, many providers). Any Vercel AI SDK provider works; see
+// https://github.com/testomatio/explorbot/blob/main/docs/providers.md
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
 
 const config = {
   playwright: {
@@ -324,9 +333,9 @@ const config = {
   },
 
   ai: {
-    provider: <your provider here>,
     model: '<your model here>',
-    apiKey: '<your api key here>',
+    visionModel: '<your vision model here>',
+    agenticModel: '<your agentic model here>',
   },
 
   reporter: {
@@ -464,7 +473,9 @@ program
   .option('-p, --path <path>', 'Working directory path')
   .action(async (url, description, options) => {
     try {
-      await ConfigParser.getInstance().loadConfig({ path: options.path || process.cwd() });
+      await ConfigParser.getInstance().loadConfig({
+        path: options.path || process.cwd(),
+      });
 
       if (url && description) {
         const { KnowledgeTracker } = await import('../src/knowledge-tracker.js');
@@ -492,7 +503,9 @@ program
   .option('-p, --path <path>', 'Working directory path')
   .action(async (url, options) => {
     try {
-      await ConfigParser.getInstance().loadConfig({ path: options.path || process.cwd() });
+      await ConfigParser.getInstance().loadConfig({
+        path: options.path || process.cwd(),
+      });
       const { KnowsCommand } = await import('../src/commands/knows-command.js');
       const explorBot = new ExplorBot({ path: options.path });
       const command = new KnowsCommand(explorBot);
@@ -642,14 +655,20 @@ browserCmd
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
     const { launchServer, removeEndpointFile } = await import('../src/browser-server.js');
-    await ConfigParser.getInstance().loadConfig({ config: options.config, path: options.path });
+    await ConfigParser.getInstance().loadConfig({
+      config: options.config,
+      path: options.path,
+    });
     const config = ConfigParser.getInstance().getConfig();
 
     let show = config.playwright.show || false;
     if (options.show !== undefined) show = true;
     if (options.headless !== undefined) show = false;
 
-    const server = await launchServer({ browser: config.playwright.browser, show });
+    const server = await launchServer({
+      browser: config.playwright.browser,
+      show,
+    });
 
     console.log('Browser server is running. Press Ctrl+C to stop.');
 
@@ -671,7 +690,10 @@ browserCmd
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
     const { getAliveEndpoint, removeEndpointFile } = await import('../src/browser-server.js');
-    await ConfigParser.getInstance().loadConfig({ config: options.config, path: options.path });
+    await ConfigParser.getInstance().loadConfig({
+      config: options.config,
+      path: options.path,
+    });
 
     const endpoint = await getAliveEndpoint();
     if (!endpoint) {
@@ -696,7 +718,10 @@ browserCmd
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
     const { getAliveEndpoint } = await import('../src/browser-server.js');
-    await ConfigParser.getInstance().loadConfig({ config: options.config, path: options.path });
+    await ConfigParser.getInstance().loadConfig({
+      config: options.config,
+      path: options.path,
+    });
 
     const endpoint = await getAliveEndpoint();
     if (endpoint) {
@@ -737,15 +762,23 @@ program
 
     if (agent && name) {
       const { AddRuleCommand } = await import('../src/commands/add-rule-command.js');
-      const result = AddRuleCommand.createRuleFile(agent, name, { urlPattern: options.url });
+      const result = AddRuleCommand.createRuleFile(agent, name, {
+        urlPattern: options.url,
+      });
       process.exit(result ? 0 : 1);
     }
 
     const AddRule = (await import('../src/components/AddRule.js')).default;
-    render(React.createElement(AddRule, { initialAgent: agent || '', initialName: name || '' }), {
-      exitOnCtrlC: false,
-      patchConsole: false,
-    });
+    render(
+      React.createElement(AddRule, {
+        initialAgent: agent || '',
+        initialName: name || '',
+      }),
+      {
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
   });
 
 import { createApiCommands } from '../boat/api-tester/src/cli.ts';
