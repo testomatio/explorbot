@@ -14,8 +14,7 @@ export class ExploreCommand extends BaseCommand {
 
   maxTests?: number;
   private testsRun = 0;
-  private testPlanOrigin = new Map<string, string>();
-  private hasSubPages = false;
+  private completedPlans: Plan[] = [];
 
   async execute(args: string): Promise<void> {
     const maxTestsMatch = args.match(/--max-tests\s+(\d+)/);
@@ -30,49 +29,36 @@ export class ExploreCommand extends BaseCommand {
     await this.runAllStyles(mainUrl, feature);
     const mainPlan = this.explorBot.getCurrentPlan();
     if (!mainPlan) return;
-    const completedPlans: Plan[] = [mainPlan];
+    this.completedPlans.push(mainPlan);
 
-    if (this.isLimitReached()) {
-      this.explorBot.setCurrentPlan(mainPlan);
-      if (mainUrl) await this.explorBot.visit(mainUrl);
-      const savedPath = this.explorBot.savePlan();
-      this.printResults(savedPath);
-      return;
-    }
+    if (!this.isLimitReached()) {
+      const planner = this.explorBot.agentPlanner();
+      while (true) {
+        if (this.isLimitReached()) break;
 
-    const planner = this.explorBot.agentPlanner();
-    while (true) {
-      if (this.isLimitReached()) break;
+        const candidates = planner.collectSubPageCandidates(mainPlan, mainUrl || '/');
+        if (candidates.length === 0) break;
 
-      const candidates = planner.collectSubPageCandidates(mainPlan, mainUrl || '/');
-      if (candidates.length === 0) break;
+        const pick = await planner.pickNextSubPage(candidates);
+        if (!pick) break;
 
-      const pick = await planner.pickNextSubPage(candidates);
-      if (!pick) break;
-
-      tag('info').log(`Exploring sub-page: ${pick.url} (${pick.reason})`);
-      try {
-        await this.explorBot.visit(pick.url);
-        await this.runAllStyles(pick.url, undefined, mainPlan, completedPlans);
-        const subPlan = this.explorBot.getCurrentPlan();
-        if (subPlan) {
-          completedPlans.push(subPlan);
-          this.hasSubPages = true;
-          for (const test of subPlan.tests) {
-            const isDup = mainPlan.tests.some((t) => t.scenario.toLowerCase() === test.scenario.toLowerCase());
-            if (isDup) continue;
-            mainPlan.addTest(test);
-            this.testPlanOrigin.set(test.scenario.toLowerCase(), subPlan.title);
+        tag('info').log(`Exploring sub-page: ${pick.url} (${pick.reason})`);
+        try {
+          await this.explorBot.visit(pick.url);
+          await this.runAllStyles(pick.url, undefined, mainPlan, this.completedPlans);
+          const subPlan = this.explorBot.getCurrentPlan();
+          if (subPlan) {
+            this.completedPlans.push(subPlan);
           }
+        } catch (err) {
+          tag('warning').log(`Sub-page exploration failed: ${err instanceof Error ? err.message : err}`);
         }
-      } catch (err) {
-        tag('warning').log(`Sub-page exploration failed: ${err instanceof Error ? err.message : err}`);
       }
     }
 
     this.explorBot.setCurrentPlan(mainPlan);
     if (mainUrl) await this.explorBot.visit(mainUrl);
-    const savedPath = this.explorBot.savePlan();
+    const savedPath = this.explorBot.savePlans(this.completedPlans);
     this.printResults(savedPath);
   }
 
@@ -91,10 +77,12 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private printResults(savedPath?: string | null): void {
-    const currentPlan = this.explorBot.getCurrentPlan();
-    if (!currentPlan) return;
+    const allTests = this.completedPlans.flatMap((plan) => plan.tests.filter((t) => t.status !== 'pending').map((test) => ({ test, planTitle: plan.title })));
 
-    const rows = currentPlan.tests.map((test, index) => {
+    if (allTests.length === 0) return;
+
+    const hasSubPages = this.completedPlans.length > 1;
+    const rows = allTests.map(({ test, planTitle }, index) => {
       const durationMs = test.getDurationMs();
       const duration = durationMs != null ? `${(durationMs / 1000).toFixed(1)}s` : '-';
       let status = 'failed';
@@ -108,15 +96,15 @@ export class ExploreCommand extends BaseCommand {
         Time: duration,
         Steps: String(Object.keys(test.notes).length),
       };
-      if (this.hasSubPages) {
-        row.Plan = this.testPlanOrigin.get(test.scenario.toLowerCase()) || '';
+      if (hasSubPages) {
+        row.Plan = planTitle;
       }
       return row;
     });
     const columns = ['#', 'Status', 'Title', 'Priority', 'Time', 'Steps'];
-    if (this.hasSubPages) columns.push('Plan');
+    if (hasSubPages) columns.push('Plan');
     tag('multiline').log(jsonToTable(rows, columns));
-    tag('info').log(`${figureSet.tick} ${currentPlan.tests.length} tests completed`);
+    tag('info').log(`${figureSet.tick} ${allTests.length} tests completed`);
 
     if (savedPath) {
       const relativePath = path.relative(process.cwd(), savedPath);

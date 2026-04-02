@@ -124,7 +124,6 @@ export function WithWebMode<T extends Constructor>(Base: T) {
         - click() accepts array of commands to try in order — include ARIA, CSS, XPath variants
         - If click() fails with all provided commands, use visualClick() tool as fallback
         - When an action fails or result is unexpected, investigate or inform the user instead of retrying silently
-        - After each page action, call record() to log what you did
       `;
     }
   };

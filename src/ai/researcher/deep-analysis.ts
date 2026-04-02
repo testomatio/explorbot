@@ -5,6 +5,7 @@ import type { StateManager } from '../../state-manager.js';
 import { WebPageState } from '../../state-manager.js';
 import { diffAriaSnapshots } from '../../utils/aria.ts';
 import { EXPANDABLE_ICON_DESCRIPTIONS, buildExpandableXPath, buildExpandableXPathInsideContainers } from '../../utils/expandable.ts';
+import { executionController } from '../../execution-controller.ts';
 import { tag } from '../../utils/logger.js';
 import { findTableLineRange, parseSections } from '../../utils/markdown-parser.ts';
 import { mdq } from '../../utils/markdown-query.ts';
@@ -212,6 +213,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       const originalAria = state.ariaSnapshot || '';
 
       for (const el of elements) {
+        if (executionController.isInterrupted()) break;
         try {
           debugLog(`Clicking: ${el.description.slice(0, 100)}`);
           const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);

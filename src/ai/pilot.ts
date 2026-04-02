@@ -1,3 +1,4 @@
+import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import type { ActionResult } from '../action-result.ts';
@@ -5,10 +6,13 @@ import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
-import { tag } from '../utils/logger.ts';
+import { createDebug, tag } from '../utils/logger.ts';
+
+const debugLog = createDebug('explorbot:pilot');
 import { truncateJson } from '../utils/strings.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
+import type { Fisherman } from './fisherman.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { isInteractive } from './task-agent.ts';
@@ -23,12 +27,17 @@ export class Pilot implements Agent {
   private conversation: Conversation | null = null;
   private researcher: Researcher;
   private explorer: Explorer;
+  private fisherman: Fisherman | null = null;
 
   constructor(provider: Provider, agentTools: any, researcher: Researcher, explorer: Explorer) {
     this.provider = provider;
     this.agentTools = agentTools;
     this.researcher = researcher;
     this.explorer = explorer;
+  }
+
+  setFisherman(fisherman: Fisherman): void {
+    this.fisherman = fisherman;
   }
 
   private get stepsToReview(): number {
@@ -221,6 +230,7 @@ export class Pilot implements Agent {
 
   async planTest(task: Test, currentState: ActionResult): Promise<string> {
     tag('substep').log('Pilot planning test...');
+    debugLog('planTest: %s, fisherman: %s', task.scenario, this.fisherman ? 'available' : 'none');
 
     const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
     const agenticModel = this.provider.getAgenticModel('pilot');
@@ -237,7 +247,11 @@ export class Pilot implements Agent {
         ${pageSummary ? `<page_summary>\n${pageSummary}\n</page_summary>` : ''}
 
         Plan the test execution for this scenario.
-        Based on the page elements and current state, outline:
+
+        FIRST: Call precondition() for every piece of data this scenario needs.
+        Think about what items, records, or entities must exist before testing can begin.
+
+        THEN: Based on the page elements and current state, outline:
         1. Which elements to interact with and in what order
         2. What to verify at each step
         3. Potential issues to watch for
@@ -248,7 +262,8 @@ export class Pilot implements Agent {
 
         Be concise and specific. Tester will follow your plan.
       `,
-      'pilot.planTest'
+      'pilot.planTest',
+      { tools: true, maxToolRoundtrips: 3, task }
     );
   }
 
@@ -319,7 +334,7 @@ export class Pilot implements Agent {
         What should Tester do next?
       `,
       'pilot.analyze',
-      { tools: hasFailures, maxToolRoundtrips: hasFailures ? 2 : 0 }
+      { tools: hasFailures, maxToolRoundtrips: hasFailures ? 2 : 0, task }
     );
 
     const contextToAttach = await this.fetchRequestedContext(text, currentState);
@@ -337,15 +352,60 @@ export class Pilot implements Agent {
     return `CHECKED: ${checked.length > 0 ? checked.join(', ') : 'none'}\nREMAINING: ${remaining.length > 0 ? remaining.join(', ') : 'none'}`;
   }
 
-  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number } = {}): Promise<string> {
+  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
+    debugLog('sendToPilot: %s, tools: %s, roundtrips: %d', functionId, !!opts.tools, opts.maxToolRoundtrips ?? 0);
     this.conversation!.addUserText(userText);
-    const tools = opts.tools ? this.agentTools : undefined;
+    let tools = opts.tools ? this.agentTools : undefined;
+
+    if (opts.tools && opts.task) {
+      tools = { ...tools, ...this.buildPreconditionTool(opts.task) };
+    }
+
     const result = await this.provider.invokeConversation(this.conversation!, tools, {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
       agentName: 'pilot',
       experimental_telemetry: { functionId },
     });
     return result?.response?.text || '';
+  }
+
+  private buildPreconditionTool(task: Test) {
+    return {
+      precondition: tool({
+        description: 'Declare test data that must exist before the test runs. Do NOT request users — assume one user already exists. Examples: "1 post and 2 comments in it", "tag called Item".',
+        inputSchema: z.object({
+          description: z.string().describe('What data is needed, e.g. "1 post and 2 comments in it"'),
+        }),
+        execute: async ({ description }) => {
+          task.addNote(`Precondition: ${description}`);
+          tag('info').log(`Precondition: ${description}`);
+          debugLog('precondition: %s, fisherman: %s', description, this.fisherman?.isAvailable() ? 'available' : 'none');
+
+          if (!this.fisherman || !this.fisherman.isAvailable()) {
+            return { noted: true, prepared: false, reason: 'Fisherman not available' };
+          }
+
+          const result = await this.fisherman.prepareData(description, task.startUrl);
+
+          if (!result.success || result.created.length === 0) {
+            if (result.summary) tag('warning').log(`Precondition failed: ${result.summary}`);
+            return { noted: true, prepared: false, reason: result.summary };
+          }
+
+          const items = result.created.map((c) => {
+            const parts = [c.type];
+            if (c.title) parts.push(`"${c.title}"`);
+            if (c.id) parts.push(`(id: ${c.id})`);
+            return parts.join(' ');
+          });
+          const stepText = `Precondition: created ${items.join(', ')}`;
+          task.addStep(stepText);
+          tag('success').log(stepText);
+
+          return { noted: true, prepared: true, created: result.created };
+        },
+      }),
+    };
   }
 
   private buildStateContext(state: ActionResult): string {
@@ -656,6 +716,7 @@ export class Pilot implements Agent {
 
       If you need more page context, mention ATTACH_HTML, ATTACH_ARIA, or ATTACH_UI_MAP — but only when recent actions show failures.
 
+
       Available Tester tools:
       - click(locator) — click elements
       - pressKey(key) — keyboard keys
@@ -672,6 +733,17 @@ export class Pilot implements Agent {
       - stop(reason) — abort test
       - finish(verify) — complete test successfully
       - record(notes) — document findings
+
+      YOUR tools (Pilot-only):
+      - precondition(description) — declare what test data must exist before the test starts. Do NOT request users.
+
+      PRECONDITIONS ARE CRITICAL — call precondition() for EVERY piece of data the scenario needs:
+      - If scenario says "edit a post" → precondition("1 post to edit")
+      - If scenario says "delete a comment" → precondition("1 post with 1 comment to delete")
+      - If scenario says "assign a label" → precondition("1 item and 1 label called Bug")
+      - If scenario says "filter by tag" → precondition("3 items, 2 tagged Important, 1 tagged Other")
+      Declare ALL data needs upfront. Be specific about quantities, names, and relationships.
+      For Edit/Update/Delete scenarios, ALWAYS create fresh data via precondition — never modify or delete pre-existing items.
 
       Response format:
       PROGRESS: <1 sentence assessment>

@@ -6,6 +6,8 @@ import type { AIProvider } from '../../../../src/ai/provider.ts';
 import { Observability } from '../../../../src/observability.ts';
 import { Plan, Test } from '../../../../src/test-plan.ts';
 import { createDebug, tag } from '../../../../src/utils/logger.ts';
+import { RulesLoader } from '../../../../src/utils/rules-loader.ts';
+import type { ApiClient } from '../api-client.ts';
 import type { ApibotConfig } from '../config.ts';
 import { getActiveStyle, getStyles } from './chief/styles.ts';
 
@@ -30,39 +32,44 @@ const ChiefBase = WithSessionDedup(Object as unknown as new (...args: any[]) => 
 export class Chief extends ChiefBase {
   private provider: AIProvider;
   private config: ApibotConfig;
+  private apiClient: ApiClient | null;
   currentPlan: Plan | null = null;
   private lastStyleName = '';
 
   MIN_TASKS = 3;
   MAX_TASKS = 10;
 
-  constructor(provider: AIProvider, config: ApibotConfig) {
+  constructor(provider: AIProvider, config: ApibotConfig, apiClient?: ApiClient | null) {
     super();
     this.provider = provider;
     this.config = config;
+    this.apiClient = apiClient || null;
   }
 
   async plan(endpoint: string, opts?: { style?: string; specDefinition?: string }): Promise<Plan> {
     tag('info').log(`Planning API tests for ${endpoint}`);
     if (opts?.style) tag('info').log(`Planning style: ${opts.style}`);
 
-    const conversation = this.buildConversation(endpoint, opts?.style);
-
-    if (opts?.specDefinition) {
-      conversation.addUserText(dedent`
-        <api_spec>
-        ${opts.specDefinition}
-        </api_spec>
-
-        NOTE: The spec may show absolute paths (e.g. /api/v2/{project_id}/suites) but the base URL is ${this.config.api.baseEndpoint}.
-        In planned steps, use ONLY relative paths after the base prefix: e.g. /suites, /suites/{id}.
-      `);
-    }
-
     debugLog('Sending planning prompt to AI provider');
 
     await Observability.run(`chief: ${endpoint}`, { tags: ['chief'], sessionId: endpoint }, async () => {
-      const aiResult = await this.provider.generateObject(conversation.messages, ApiTasksSchema, conversation.model);
+      const sampleData = await this.collectSampleData(endpoint);
+      const conversation = this.buildConversation(endpoint, opts?.style, sampleData);
+
+      if (opts?.specDefinition) {
+        conversation.addUserText(dedent`
+          <api_spec>
+          ${opts.specDefinition}
+          </api_spec>
+
+          NOTE: The spec may show absolute paths (e.g. /api/) but the base URL is ${this.config.api.baseEndpoint}.
+        `);
+      }
+
+      const aiResult = await this.provider.generateObject(conversation.messages, ApiTasksSchema, conversation.model, {
+        agentName: 'chief',
+        timeout: 120_000,
+      });
 
       if (!aiResult?.object?.scenarios?.length) {
         throw new Error('No test scenarios generated');
@@ -114,7 +121,97 @@ export class Chief extends ChiefBase {
     }
   }
 
-  private buildConversation(endpoint: string, style?: string): Conversation {
+  private async collectSampleData(endpoint: string): Promise<string> {
+    if (!this.apiClient) return '';
+
+    tag('info').log(`Collecting sample data for ${endpoint}`);
+
+    try {
+      const listResult = await this.apiClient.request({ method: 'GET', path: endpoint });
+      if (listResult.error || listResult.status >= 400) {
+        tag('warning').log(`Sample data fetch failed: ${listResult.error || listResult.status}`);
+        return '';
+      }
+
+      const body = listResult.responseBody;
+      if (!body) return '';
+
+      const items = Array.isArray(body) ? body : Array.isArray(body.data) ? body.data : Array.isArray(body.items) ? body.items : [];
+      if (!items.length) return '';
+
+      const sampleItem = items[0];
+      const fields = Object.keys(sampleItem);
+      const idField = fields.find((f) => f === '_id' || f === 'id');
+
+      let detailItem = sampleItem;
+      if (idField && items.length > 0) {
+        const detailResult = await this.apiClient.request({ method: 'GET', path: `${endpoint}/${sampleItem[idField]}` });
+        if (!detailResult.error && detailResult.status < 400) {
+          const detailBody = detailResult.responseBody;
+          if (detailBody?.data) detailItem = detailBody.data;
+          else if (detailBody && !Array.isArray(detailBody)) detailItem = detailBody;
+        }
+      }
+
+      const lines: string[] = [];
+      lines.push(`Records found: ${body.meta?.total || items.length}`);
+      lines.push(`Fields: ${fields.join(', ')}`);
+
+      const ids: string[] = [];
+      for (const item of items.slice(0, 10)) {
+        const id = item._id || item.id;
+        if (id) ids.push(String(id));
+      }
+      if (ids.length) lines.push(`IDs: ${ids.join(', ')}`);
+
+      const foreignKeys: Record<string, Set<string>> = {};
+      const stringValues: Record<string, Set<string>> = {};
+
+      for (const item of items.slice(0, 30)) {
+        for (const [key, val] of Object.entries(item)) {
+          if (key.endsWith('_id') && val != null) {
+            foreignKeys[key] ||= new Set();
+            if (foreignKeys[key].size < 5) foreignKeys[key].add(String(val));
+          }
+          if (typeof val === 'string' && val.length > 0 && val.length < 100 && key !== 'id' && key !== '_id') {
+            stringValues[key] ||= new Set();
+            if (stringValues[key].size < 10) stringValues[key].add(val);
+          }
+        }
+      }
+
+      for (const [key, vals] of Object.entries(foreignKeys)) {
+        lines.push(`${key}: ${[...vals].join(', ')}`);
+      }
+
+      for (const [key, vals] of Object.entries(stringValues)) {
+        if (vals.size < items.length * 0.8) {
+          lines.push(`${key} values: ${[...vals].join(', ')}`);
+        }
+      }
+
+      const truncatedSample: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(detailItem)) {
+        if (typeof val === 'string' && val.length > 100) {
+          truncatedSample[key] = val.substring(0, 100) + '...';
+        } else {
+          truncatedSample[key] = val;
+        }
+      }
+      lines.push(`Sample record: ${JSON.stringify(truncatedSample, null, 2)}`);
+
+      const sampleData = lines.join('\n');
+      tag('success').log('Sample data collected');
+      debugLog('Sample data:', sampleData.substring(0, 500));
+      return sampleData;
+    } catch (error: any) {
+      tag('warning').log(`Sample data collection failed: ${error.message}`);
+      debugLog('collectSampleData error:', error);
+      return '';
+    }
+  }
+
+  private buildConversation(endpoint: string, style?: string, sampleData?: string): Conversation {
     const model = this.provider.getModelForAgent('chief');
     const conversation = new Conversation([], model);
 
@@ -134,23 +231,34 @@ export class Chief extends ChiefBase {
       </approach>
 
       <rules>
-      - Each scenario must be a complete, independent test
-      - Steps should specify exact HTTP methods, paths, and key payload details
-      - Expected outcomes should be specific and verifiable (status codes, response fields, error messages)
-      - For CRUD operations, each test should handle its own setup and teardown
-      - Expect standard REST conventions: 200 OK, 201 Created, 204 No Content, 400 Bad Request, 404 Not Found, 422 Unprocessable Entity
-      - NEVER propose scenarios that test the same thing. "Create a basic suite" and "Successful creation of a simple suite" are DUPLICATES. Each scenario must test a DISTINCT behavior or aspect.
-      - Before finalizing, review all scenarios and remove any that overlap in what they actually verify.
+      ${RulesLoader.loadRules('chief', ['general'], endpoint)}
       </rules>
 
       <context>
       Endpoint: ${endpoint}
       Base URL: ${this.config.api.baseEndpoint}
-      Default headers: ${JSON.stringify(this.config.api.headers || {})}
+      Headers and authentication are handled automatically — do NOT include them in test steps.
+      Steps should only contain relative paths (e.g. /tests, /tests/{id}), not full URLs.
       </context>
     `;
 
     conversation.addUserText(planningPrompt);
+
+    if (sampleData) {
+      conversation.addUserText(dedent`
+        <sample_data>
+        ${sampleData}
+        </sample_data>
+
+        Use this real data from the API when planning test scenarios:
+        - Reference real existing IDs for parent record references (e.g. use actual milestone_id, project_id values)
+        - Use real enum values discovered in the data
+        - Each test MUST use DIFFERENT data — never reuse the same field values across tests
+        - For "create" tests: base payload on a real record but change field values to create new unique data
+        - For "update" tests: pick a real existing ID and modify specific fields
+        - For tests needing parent references: use real _id field values from sample_data
+      `);
+    }
 
     if (this.currentPlan) {
       const existingTests = this.currentPlan.tests

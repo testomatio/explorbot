@@ -1,6 +1,6 @@
 import { RulesLoader } from '../../../../../src/utils/rules-loader.ts';
 
-const DEFAULT_STYLES = ['normal', 'psycho', 'curious', 'hacker'];
+export const DEFAULT_STYLES = ['normal', 'curious', 'psycho', 'hacker'];
 
 let cache: Record<string, string> | null = null;
 

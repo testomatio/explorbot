@@ -17,6 +17,33 @@ function getPilotVerdict(notes: Record<string, Note>): string | null {
   return null;
 }
 
+function formatBulletItem(text: string): string {
+  const lines = text.split('\n');
+  let result = `* ${lines[0]}\n`;
+  for (let i = 1; i < lines.length; i++) {
+    result += `${lines[i]}\n`;
+  }
+  return result;
+}
+
+function parseMultiLineBullet(lines: string[], i: number): { text: string; nextIndex: number } {
+  let text = lines[i].replace(/^\*\s+/, '');
+  let j = i + 1;
+  while (j < lines.length) {
+    const nextLine = lines[j];
+    const trimmedNext = nextLine.trim();
+    if (nextLine.match(/^\*\s+/)) break;
+    if (trimmedNext.startsWith('##') || trimmedNext.startsWith('<!--')) break;
+    if (nextLine.startsWith('  ')) {
+      text += '\n' + nextLine;
+      j++;
+    } else {
+      break;
+    }
+  }
+  return { text, nextIndex: j - 1 };
+}
+
 function formatFailedNotes(notes: Record<string, Note>): string[] {
   const lines: string[] = [];
   for (const note of Object.values(notes)) {
@@ -77,27 +104,48 @@ export function planToCompactAiContext(plan: Plan): string {
 }
 
 export function parsePlanFromMarkdown(filePath: string): Plan {
+  const plans = parsePlansFromMarkdown(filePath);
+  if (plans.length === 0) return new Plan('');
+  if (plans.length === 1) return plans[0];
+
+  const main = plans[0];
+  for (let i = 1; i < plans.length; i++) {
+    for (const test of plans[i].tests) {
+      main.addTest(test);
+    }
+  }
+  return main;
+}
+
+export function parsePlansFromMarkdown(filePath: string): Plan[] {
   const content = readFileSync(filePath, 'utf-8');
   const lines = content.split('\n');
 
-  let title = '';
+  const plans: Plan[] = [];
+  let currentPlan: Plan | null = null;
   let currentTest: Test | null = null;
   let inRequirements = false;
   let inSteps = false;
   let inExpected = false;
   let priority: 'critical' | 'important' | 'high' | 'normal' | 'low' = 'normal';
 
-  const plan = new Plan('');
-
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    if (line.startsWith('<!-- suite -->') && !plan.title) {
-      title = lines[i + 1]?.replace(/^#\s+/, '') || '';
-      plan.title = title;
+    if (line.startsWith('<!-- suite -->')) {
+      currentTest = null;
+      inRequirements = false;
+      inSteps = false;
+      inExpected = false;
+      priority = 'normal';
+      const title = lines[i + 1]?.replace(/^#\s+/, '') || '';
+      currentPlan = new Plan(title);
+      plans.push(currentPlan);
       i++;
       continue;
     }
+
+    if (!currentPlan) continue;
 
     if (line.startsWith('<!-- test')) {
       currentTest = null;
@@ -109,7 +157,7 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
     if (line.startsWith('# ') && currentTest === null) {
       const scenario = line.replace(/^#\s+/, '');
       currentTest = new Test(scenario, priority, [], '');
-      plan.addTest(currentTest);
+      currentPlan.addTest(currentTest);
       inRequirements = false;
       inSteps = false;
       inExpected = false;
@@ -143,88 +191,40 @@ export function parsePlanFromMarkdown(filePath: string): Plan {
     }
 
     if (currentTest && inSteps && line.startsWith('* ')) {
-      let step = line.replace(/^\*\s+/, '');
-
-      let j = i + 1;
-      while (j < lines.length) {
-        const nextLine = lines[j];
-        const trimmedNext = nextLine.trim();
-
-        if (nextLine.match(/^\*\s+/)) {
-          break;
-        }
-
-        if (trimmedNext.startsWith('##') || trimmedNext.startsWith('<!--')) {
-          break;
-        }
-
-        if (nextLine.startsWith('  ')) {
-          step += '\n' + nextLine;
-          j++;
-        } else if (trimmedNext === '') {
-          break;
-        } else {
-          break;
-        }
-      }
-
-      currentTest.plannedSteps.push(step);
-      i = j - 1;
+      const { text, nextIndex } = parseMultiLineBullet(lines, i);
+      currentTest.plannedSteps.push(text);
+      i = nextIndex;
       continue;
     }
 
     if (currentTest && inExpected && line.startsWith('* ')) {
-      let expectation = line.replace(/^\*\s+/, '');
-
-      let j = i + 1;
-      while (j < lines.length) {
-        const nextLine = lines[j];
-        const trimmedNext = nextLine.trim();
-
-        if (nextLine.match(/^\*\s+/)) {
-          break;
-        }
-
-        if (trimmedNext.startsWith('##') || trimmedNext.startsWith('<!--')) {
-          break;
-        }
-
-        if (nextLine.startsWith('  ')) {
-          expectation += '\n' + nextLine;
-          j++;
-        } else if (trimmedNext === '') {
-          break;
-        } else {
-          break;
-        }
-      }
-
-      currentTest.expected.push(expectation);
-      i = j - 1;
+      const { text, nextIndex } = parseMultiLineBullet(lines, i);
+      currentTest.expected.push(text);
+      i = nextIndex;
       continue;
     }
+  }
 
-    if (line.startsWith('<!-- test -->') || line.startsWith('<!-- suite -->')) {
-      currentTest = null;
-      inRequirements = false;
-      inExpected = false;
-      priority = 'normal';
+  for (const plan of plans) {
+    if (plan.url) continue;
+    const suiteStart = content.indexOf(`# ${plan.title}`);
+    if (suiteStart === -1) continue;
+    const nextSuite = content.indexOf('<!-- suite -->', suiteStart + 1);
+    const suiteContent = nextSuite === -1 ? content.slice(suiteStart) : content.slice(suiteStart, nextSuite);
+    const firstItem = mdq(suiteContent).query('section[0] item[0]').text().trim();
+    const urlMatch = firstItem.match(/^URL:\s*(.+)/);
+    if (urlMatch) {
+      plan.url = urlMatch[1].replace(/\*\*|`|\*|_|~~?/g, '').trim();
+      for (const test of plan.tests) {
+        if (!test.startUrl) test.startUrl = plan.url;
+      }
     }
   }
 
-  const firstItem = mdq(content).query('section[0] item[0]').text().trim();
-  const urlMatch = firstItem.match(/^URL:\s*(.+)/);
-  if (urlMatch) {
-    plan.url = urlMatch[1].replace(/\*\*|`|\*|_|~~?/g, '').trim();
-    for (const test of plan.tests) {
-      if (!test.startUrl) test.startUrl = plan.url;
-    }
-  }
-
-  return plan;
+  return plans;
 }
 
-export function savePlanToMarkdown(plan: Plan, filePath: string): void {
+function formatPlanSuite(plan: Plan): string {
   let content = `<!-- suite -->\n# ${plan.title}\n\n`;
 
   if (plan.url) {
@@ -244,12 +244,7 @@ export function savePlanToMarkdown(plan: Plan, filePath: string): void {
     if (test.plannedSteps.length > 0) {
       content += '## Steps\n';
       for (const step of test.plannedSteps) {
-        const lines = step.split('\n');
-        content += `* ${lines[0]}\n`;
-
-        for (let i = 1; i < lines.length; i++) {
-          content += `${lines[i]}\n`;
-        }
+        content += formatBulletItem(step);
       }
       content += '\n';
     }
@@ -257,17 +252,21 @@ export function savePlanToMarkdown(plan: Plan, filePath: string): void {
     content += '## Expected\n';
 
     for (const expectation of test.expected) {
-      const lines = expectation.split('\n');
-      content += `* ${lines[0]}\n`;
-
-      for (let i = 1; i < lines.length; i++) {
-        content += `${lines[i]}\n`;
-      }
+      content += formatBulletItem(expectation);
     }
 
     content += '\n';
   }
 
+  return content;
+}
+
+export function savePlanToMarkdown(plan: Plan, filePath: string): void {
+  writeFileSync(filePath, formatPlanSuite(plan), 'utf-8');
+}
+
+export function savePlansToMarkdown(plans: Plan[], filePath: string): void {
+  const content = plans.map((plan) => formatPlanSuite(plan)).join('\n');
   writeFileSync(filePath, content, 'utf-8');
 }
 

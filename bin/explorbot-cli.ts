@@ -159,13 +159,7 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
       const cliFlags = [options.path ? `--path ${options.path}` : '', options.session ? '--session' : ''].filter(Boolean).join(' ');
       const cliSuffix = cliFlags ? ` ${cliFlags}` : '';
 
-      const lines = [`Plan ready with ${plan.tests.length} tests:\n`];
-      plan.tests.forEach((test, i) => {
-        const isNew = test.planIteration === plan.iteration && plan.iteration > 0;
-        const marker = isNew ? ' *[NEW]*' : '';
-        lines.push(`${i + 1}. **${test.scenario}** (${test.priority})${marker}`);
-      });
-      lines.push('');
+      const lines: string[] = [];
       lines.push('Run tests:');
       lines.push(`\`explorbot test ${planFile} 1${cliSuffix}\` → run first test`);
       lines.push(`\`explorbot test ${planFile} 1-3${cliSuffix}\` → run tests 1 to 3`);

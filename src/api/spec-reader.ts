@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { dereference } from '@scalar/openapi-parser';
-import { tag } from '../../../src/utils/logger.ts';
+import { tag } from '../utils/logger.ts';
 
 export function validateSpecs(specs?: string[]): void {
   if (!specs?.length) {
@@ -70,7 +70,7 @@ export function searchEndpoints(schema: any, query: string, baseEndpoint?: strin
     const lines = Object.keys(schema.paths).map((p) => {
       const normalized = stripBasePath(p, basePath);
       const methods = Object.keys(schema.paths[p])
-        .filter((m) => ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'].includes(m))
+        .filter((m) => HTTP_METHODS.includes(m))
         .map((m) => m.toUpperCase())
         .join(',');
       return `${methods} ${normalized}`;
@@ -86,6 +86,29 @@ export function searchEndpoints(schema: any, query: string, baseEndpoint?: strin
   }
 
   return safeStringify(matched);
+}
+
+const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'];
+
+export function listAllEndpoints(schema: any, baseEndpoint?: string): string {
+  if (!schema?.paths) return '';
+
+  const basePath = toBasePath(baseEndpoint);
+  const lines: string[] = [];
+
+  for (const specPath of Object.keys(schema.paths)) {
+    const normalized = stripBasePath(specPath, basePath);
+    const pathDef = schema.paths[specPath];
+
+    for (const method of HTTP_METHODS) {
+      if (!pathDef[method]) continue;
+      const summary = pathDef[method].summary || pathDef[method].description || '';
+      const desc = summary ? ` - ${summary}` : '';
+      lines.push(`${method.toUpperCase()} ${normalized}${desc}`);
+    }
+  }
+
+  return lines.join('\n');
 }
 
 function toBasePath(baseEndpoint?: string): string {
@@ -140,7 +163,7 @@ function stripBasePath(specPath: string, basePath: string): string {
     break;
   }
 
-  return '/' + specSegments.slice(i).join('/');
+  return `/${specSegments.slice(i).join('/')}`;
 }
 
 function matchesEndpoint(specPath: string, endpoint: string): boolean {

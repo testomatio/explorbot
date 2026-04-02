@@ -7,13 +7,13 @@ import type { Test, TestResultType } from '../../../../src/test-plan.ts';
 import { TestResult } from '../../../../src/test-plan.ts';
 import { tag } from '../../../../src/utils/logger.ts';
 import type { ApiClient } from '../api-client.ts';
-import type { RequestStateManager } from '../request-state.ts';
+import type { RequestStore } from '../../../../src/api/request-store.ts';
 
 const readResponseData = (responseFile: string) => {
   return JSON.parse(readFileSync(responseFile, 'utf8'));
 };
 
-export function createCurlerTools(apiClient: ApiClient, requestState: RequestStateManager, test: Test, searchSpec?: (query: string) => string) {
+export function createCurlerTools(apiClient: ApiClient, requestState: RequestStore, test: Test, searchSpec?: (query: string) => string) {
   const commitVerification = (label: string, passed: boolean, failDetail: string) => {
     const activeNote = test.startNote(label);
     if (passed) {

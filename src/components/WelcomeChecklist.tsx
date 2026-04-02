@@ -87,6 +87,13 @@ const WelcomeChecklist: React.FC<WelcomeChecklistProps> = ({ config, knowledgeTr
       suggestion: 'enable ai.agents.quartermaster',
     },
     {
+      label: 'Fisherman',
+      description: 'prepare test data via API',
+      enabled: config.ai?.agents?.fisherman?.enabled === true || !!(config as any).api,
+      value: (config as any).api ? 'achieve mode' : 'replicate mode',
+      suggestion: 'enable ai.agents.fisherman or configure api section',
+    },
+    {
       label: 'Langfuse',
       description: 'collect execution reports and analyze failures',
       enabled: langfuseEnabled,

@@ -1,7 +1,9 @@
 import { useSyncExternalStore } from 'react';
+import type { CommandAutocompleteSuggestion } from '../command-handler.js';
 
 interface AutocompleteState {
-  commands: string[];
+  suggestions: CommandAutocompleteSuggestion[];
+  argumentHint?: string;
   selectedIndex: number;
   visible: boolean;
 }
@@ -9,7 +11,7 @@ interface AutocompleteState {
 const listeners = new Set<() => void>();
 
 let state: AutocompleteState = {
-  commands: [],
+  suggestions: [],
   selectedIndex: 0,
   visible: false,
 };

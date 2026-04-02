@@ -1,5 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { sanitizeFilename } from '../utils/strings.ts';
+
+let requestCounter = 0;
+
+export function generateRequestId(method: string, urlPath: string, prefix = ''): string {
+  requestCounter++;
+  const num = String(requestCounter).padStart(3, '0');
+  const sanitized = sanitizeFilename(urlPath.replace(/^\//, ''));
+  return `${prefix}${num}_${method}_${sanitized}`;
+}
+
+export function resetRequestCounter(): void {
+  requestCounter = 0;
+}
 
 export class RequestResult {
   id: string;
@@ -166,6 +180,22 @@ export class RequestResult {
 
   toSummary(): string {
     return `${this.method} ${this.path} → ${this.status} (${this.timing}ms)`;
+  }
+
+  extractIdAndTitle(): { id?: string | number; title?: string } {
+    const body = this.responseBody;
+    if (!body || typeof body !== 'object') return {};
+
+    const data = body.data || body;
+    if (Array.isArray(data)) return {};
+
+    const id = data.id ?? data._id ?? data.uuid;
+    const title = data.name ?? data.title ?? data.label;
+
+    const result: { id?: string | number; title?: string } = {};
+    if (id !== undefined) result.id = id;
+    if (title !== undefined) result.title = String(title);
+    return result;
   }
 
   toCurlCommand(): string {

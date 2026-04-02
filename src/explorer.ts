@@ -16,6 +16,8 @@ import { KnowledgeTracker } from './knowledge-tracker.js';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
 import { Test } from './test-plan.ts';
+import { RequestStore } from './api/request-store.ts';
+import { XhrCapture } from './api/xhr-capture.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 
 declare global {
@@ -54,6 +56,8 @@ class Explorer {
   private reporter!: Reporter;
   private otherTabs: TabInfo[] = [];
   private _activeTest: Test | null = null;
+  private xhrCapture: XhrCapture | null = null;
+  private requestStore: RequestStore | null = null;
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string }) {
     this.config = config;
@@ -173,6 +177,31 @@ class Explorer {
     return this.reporter;
   }
 
+  public getRequestStore(): RequestStore | null {
+    return this.requestStore;
+  }
+
+  async extractCookies(): Promise<Record<string, string>> {
+    if (!this.playwrightHelper?.browserContext) return {};
+    try {
+      const cookies = await this.playwrightHelper.browserContext.cookies();
+      if (!cookies.length) return {};
+      const cookieString = cookies.map((c: any) => `${c.name}=${c.value}`).join('; ');
+      return { Cookie: cookieString };
+    } catch {
+      return {};
+    }
+  }
+
+  private setupXhrCapture(): void {
+    const configParser = ConfigParser.getInstance();
+    const outputDir = configParser.getOutputDir();
+    this.requestStore = new RequestStore(outputDir);
+    const baseUrl = this.config.playwright.url;
+    this.xhrCapture = new XhrCapture(this.requestStore, baseUrl);
+    this.xhrCapture.attach(this.playwrightHelper.page);
+  }
+
   async start() {
     if (this.isStarted) {
       return;
@@ -206,6 +235,7 @@ class Explorer {
     const hasSession = this.options?.session && existsSync(this.options.session);
     const contextOptions = hasSession ? { storageState: this.options!.session } : undefined;
     await this.playwrightHelper._createContextPage(contextOptions);
+    this.setupXhrCapture();
     if (hasSession) {
       tag('info').log(`Session restored from ${path.relative(process.cwd(), this.options!.session!)}`);
     }
@@ -457,6 +487,10 @@ class Explorer {
       return;
     }
 
+    if (this.xhrCapture && this.playwrightHelper?.page) {
+      this.xhrCapture.detach(this.playwrightHelper.page);
+    }
+
     if (this.options?.session && this.playwrightHelper?.browserContext) {
       const dir = path.dirname(this.options.session);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -625,6 +659,9 @@ class Explorer {
     this.otherTabs = [];
 
     this.bindFrameNavigated(newPage);
+    if (this.xhrCapture) {
+      this.xhrCapture.attach(newPage);
+    }
 
     debugLog('Opened fresh tab, closed previous tab');
   }

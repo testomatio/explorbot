@@ -35,6 +35,22 @@ export class RulesLoader {
     return styles;
   }
 
+  static listStyleNames(agentName: string): string[] {
+    const names = new Set<string>();
+    const userDir = join(process.cwd(), 'rules', agentName, 'styles');
+    const builtInDir = join(BUILT_IN_DIR, agentName, 'styles');
+    for (const dir of [userDir, builtInDir]) {
+      if (!existsSync(dir)) continue;
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith('.md')) names.add(basename(f, '.md'));
+      }
+    }
+    if (!names.size) {
+      throw new Error(`No planning styles found for agent "${agentName}". Expected .md files under rules/${agentName}/styles/ or bundled rules.`);
+    }
+    return [...names].sort();
+  }
+
   static getActiveStyle(styles: Record<string, string>, iteration: number, override?: string): { name: string; approach: string } {
     const names = Object.keys(styles);
 

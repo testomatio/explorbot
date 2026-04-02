@@ -6,7 +6,6 @@ import { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
-import { executionController } from '../execution-controller.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { startLogCapture, stopLogCapture, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
@@ -109,7 +108,8 @@ export class Captain extends CaptainBase implements Agent {
     ${mode === 'test' ? this.testModePrompt() : ''}
 
     <rules>
-    - Call done() when the goal is achieved
+    - After a successful action, if the pageDiff confirms the goal, call done() immediately — do not verify with see() or context() unless the user explicitly asked for verification
+    - Prefer completing in fewer tool calls over thoroughness
     - NEVER run tests unless the user explicitly asks
     ${mode === 'web' ? this.webModeRules() : ''}
     ${mode === 'test' ? this.testModeRules() : ''}
@@ -138,7 +138,7 @@ export class Captain extends CaptainBase implements Agent {
 
   cleanConversation(): void {
     this.conversation = null;
-    tag('info').log(this.emoji, 'Conversation cleaned');
+    tag('info').log('Conversation cleaned');
   }
 
   private async getPageContext(): Promise<string> {
@@ -298,16 +298,6 @@ export class Captain extends CaptainBase implements Agent {
     return { ...core, ...idle };
   }
 
-  private collectSteps(startIndex: number): string[] {
-    const history = this.explorBot.getExplorer().getStateManager().getStateHistory().slice(startIndex);
-    return history
-      .map((transition) => transition.codeBlock)
-      .filter((block) => block)
-      .flatMap((block) => block.split('\n'))
-      .map((step) => step.trim())
-      .filter((step) => step);
-  }
-
   async processSupervisorInterrupt(userMessage: string, activeTest: Test): Promise<SupervisorAction> {
     const quickMatch = userMessage.trim().toLowerCase();
     if (/^(stop|abort|cancel)$/i.test(quickMatch)) {
@@ -382,7 +372,7 @@ export class Captain extends CaptainBase implements Agent {
     const initialState = stateManager.getCurrentState();
 
     if (!initialState) {
-      tag('warning').log(this.emoji, 'No page loaded. Use /navigate or I.amOnPage() first.');
+      tag('warning').log('No page loaded. Use /navigate or I.amOnPage() first.');
       return null;
     }
 
@@ -391,10 +381,7 @@ export class Captain extends CaptainBase implements Agent {
     let finalSummary: string | null = null;
 
     const startUrl = initialState.url || '';
-    const initialActionResult = ActionResult.fromState(initialState);
     const task = new Task(input, startUrl);
-    const historyStart = stateManager.getStateHistory().length;
-
     const onDone = (summary: string) => {
       isDone = true;
       finalSummary = summary;
@@ -421,11 +408,10 @@ export class Captain extends CaptainBase implements Agent {
     ${input}
     </request>
 
-    Execute the request using available tools. Call done() only after completing the action.
+    Execute the request using available tools. After a successful action, check the pageDiff — if it confirms the goal, call done() immediately.
     `;
 
     conversation.addUserText(initialPrompt);
-    tag('info').log(this.emoji, `Processing: ${input}`);
 
     await loop(
       async ({ stop, iteration, userInput }) => {
@@ -476,6 +462,13 @@ export class Captain extends CaptainBase implements Agent {
           stop();
           return;
         }
+
+        if (result?.toolExecutions?.length) {
+          const lastExec = result.toolExecutions[result.toolExecutions.length - 1];
+          if (lastExec.wasSuccessful && this.ACTION_TOOLS.includes(lastExec.toolName)) {
+            conversation.addUserText('Action succeeded. If the goal is achieved, call done() now with a brief summary.');
+          }
+        }
       },
       {
         maxAttempts: MAX_STEPS,
@@ -494,32 +487,9 @@ export class Captain extends CaptainBase implements Agent {
     await this.getHooksRunner().runAfterHook('captain', finalUrl);
 
     if (finalSummary) {
-      tag('success').log(this.emoji, finalSummary);
+      tag('info').log(finalSummary);
     } else {
-      tag('warning').log(this.emoji, 'Request may not be fully completed');
-    }
-
-    await this.getHistorian().saveSession(task, initialActionResult, conversation);
-    await this.getQuartermaster().analyzeSession(task, initialActionResult, conversation);
-
-    const notes = task.getPrintableNotes();
-    if (notes.length > 0) {
-      tag('multiline').log(`Task log:\n${notes.join('\n')}`);
-    }
-
-    if (finalSummary) {
-      const steps = this.collectSteps(historyStart);
-      if (steps.length > 0) {
-        const summaryLine = (finalSummary as string).split('\n')[0];
-        const saveResponse = await executionController.requestInput('Save this solution to experience? (yes/no)');
-        const normalized = (saveResponse || '').trim().toLowerCase();
-        if (normalized === 'y' || normalized === 'yes') {
-          await this.experienceTracker.saveSuccessfulResolution(initialActionResult, input, steps.join('\n'), summaryLine);
-          tag('success').log(this.emoji, 'Saved to experience');
-        } else {
-          tag('info').log(this.emoji, 'Skipped saving to experience');
-        }
-      }
+      tag('warning').log('Request may not be fully completed');
     }
 
     return null;

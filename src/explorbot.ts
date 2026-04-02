@@ -1,8 +1,12 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { ApiClient } from './api/api-client.ts';
+import { RequestStore } from './api/request-store.ts';
+import { loadSpec } from './api/spec-reader.ts';
 import { Bosun } from './ai/bosun.ts';
 import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
+import { Fisherman } from './ai/fisherman.ts';
 import { Historian } from './ai/historian.ts';
 import { Navigator } from './ai/navigator.ts';
 import { Pilot } from './ai/pilot.ts';
@@ -190,6 +194,9 @@ export class ExplorBot {
       this.agents.tester.setHistorian(this.agentHistorian());
       this.agents.tester.setPilot(this.agentPilot());
       this.agents.tester.setCaptain(this.agentCaptain());
+
+      const fisherman = this.agentFisherman();
+      if (fisherman) this.agentPilot().setFisherman(fisherman);
     }
     return this.agents.tester;
   }
@@ -240,6 +247,39 @@ export class ExplorBot {
       const tools = createAgentTools({ explorer, researcher, navigator });
       return new Bosun(explorer, ai, researcher, navigator, tools);
     }));
+  }
+
+  agentFisherman(): Fisherman | null {
+    const fishermanConfig = this.config.ai?.agents?.fisherman;
+    const hasApiConfig = !!this.config.api;
+
+    if (!hasApiConfig && fishermanConfig?.enabled !== true) return null;
+
+    if (!this.agents.fisherman) {
+      const apiConfig = this.config.api;
+      const outputDir = this.configParser.getOutputDir();
+      const requestStore = this.explorer.getRequestStore() || new RequestStore(outputDir);
+      const baseEndpoint = apiConfig?.baseEndpoint || this.config.playwright.url;
+      const configHeaders = apiConfig?.headers || {};
+      const apiClient = new ApiClient(baseEndpoint);
+
+      const specPaths = apiConfig?.spec;
+      const specLoader = async () => {
+        if (!specPaths?.length) return null;
+        try {
+          return await loadSpec(specPaths, outputDir);
+        } catch {
+          return null;
+        }
+      };
+
+      const cookieProvider = () => this.explorer.extractCookies();
+
+      this.agents.fisherman = this.createAgent(({ ai }) => {
+        return new Fisherman(ai, apiClient, requestStore, specLoader, baseEndpoint, cookieProvider, configHeaders, hasApiConfig);
+      });
+    }
+    return this.agents.fisherman;
   }
 
   getCurrentPlan(): Plan | undefined {
@@ -300,6 +340,11 @@ export class ExplorBot {
 
   savePlan(filename?: string): string | null {
     if (!this.currentPlan) return null;
+    return this.savePlans([this.currentPlan], filename);
+  }
+
+  savePlans(plans: Plan[], filename?: string): string | null {
+    if (plans.length === 0) return null;
 
     const plansDir = this.getPlansDir();
     if (!existsSync(plansDir)) {
@@ -308,7 +353,7 @@ export class ExplorBot {
 
     const planFilename = filename || this.generatePlanFilename();
     const planPath = path.join(plansDir, planFilename);
-    this.currentPlan.saveToMarkdown(planPath);
+    Plan.saveMultipleToMarkdown(plans, planPath);
     return planPath;
   }
 

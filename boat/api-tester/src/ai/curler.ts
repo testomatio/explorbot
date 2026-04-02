@@ -6,7 +6,7 @@ import { type Test, TestResult } from '../../../../src/test-plan.ts';
 import { createDebug, tag } from '../../../../src/utils/logger.ts';
 import { loop } from '../../../../src/utils/loop.ts';
 import type { ApiClient } from '../api-client.ts';
-import type { RequestStateManager } from '../request-state.ts';
+import type { RequestStore } from '../../../../src/api/request-store.ts';
 import { createCurlerTools } from './curler-tools.ts';
 
 const debugLog = createDebug('explorbot:curler');
@@ -16,10 +16,10 @@ const MAX_ITERATIONS = 10;
 export class Curler {
   private provider: AIProvider;
   private apiClient: ApiClient;
-  private requestState: RequestStateManager;
+  private requestState: RequestStore;
   private reporter: Reporter;
 
-  constructor(provider: AIProvider, apiClient: ApiClient, requestState: RequestStateManager, reporter: Reporter) {
+  constructor(provider: AIProvider, apiClient: ApiClient, requestState: RequestStore, reporter: Reporter) {
     this.provider = provider;
     this.apiClient = apiClient;
     this.requestState = requestState;
@@ -34,7 +34,7 @@ export class Curler {
     test.start();
     await this.reporter.reportTestStart(test);
 
-    const conversation = this.provider.startConversation(this.getSystemMessage(), 'curler');
+    const conversation = this.provider.startConversation(this.buildSystemPrompt(), 'curler');
     const tools = createCurlerTools(this.apiClient, this.requestState, test, opts?.searchSpec);
 
     const initialPrompt = this.buildTestPrompt(test, opts?.specDefinition, opts?.baseEndpoint);
@@ -158,13 +158,7 @@ export class Curler {
       [
         {
           role: 'system',
-          content: dedent`
-            You evaluate API test results.
-            Analyze notes and request log to determine if test goals were achieved.
-            Decide if assertion failures are critical (should fail the test) or minor (test still passes).
-            Critical failures: wrong HTTP status codes, missing required data, broken CRUD operations.
-            Minor failures: optional fields missing, cosmetic differences, extra fields in response.
-          `,
+          content: this.buildFinalReviewSystemPrompt(),
         },
         {
           role: 'user',
@@ -247,7 +241,7 @@ export class Curler {
     return prompt;
   }
 
-  private getSystemMessage(): string {
+  private buildSystemPrompt(): string {
     return dedent`
       <role>
       You are a senior API test engineer. Execute HTTP requests to test API endpoints.
@@ -280,6 +274,32 @@ export class Curler {
       - Be precise about what you expect vs what you observe
       - If a test requires data from another endpoint, use schemaFor to look it up before guessing
       </rules>
+    `;
+  }
+
+  private buildFinalReviewSystemPrompt(): string {
+    return dedent`
+      You evaluate API test results.
+      Analyze notes and request log to determine if test goals were achieved.
+      Decide if assertion failures are critical (should fail the test) or minor (test still passes).
+
+      
+      Status code rules:
+      - 500+ errors are always critical failures regardless of test type
+      - 4xx codes (400, 403, 404, 412, 422, etc.) are NOT failures by themselves — different APIs return different 4xx codes for similar situations, so do not be strict about the exact 4xx code
+      
+      For positive tests (creating/updating data):
+      - Focus on whether the expected data was actually saved correctly
+      - Never trust POST/PUT/PATCH response alone — a follow-up GET must confirm the data was persisted
+      - The real measure of success is the data state verified via GET, not the write response or status code
+      
+      For negative tests (invalid input, unauthorized access):
+      - PUT and PATCH methods are usually the same so do not treat them differently.
+      - Verify the invalid data was NOT created — check with GET to ensure nothing was saved by accident
+      - Any 4xx response that correctly rejects the request is acceptable
+
+      Critical failures: 500+ errors, data not saved in positive tests, invalid data accidentally created in negative tests, broken CRUD operations.
+      Minor failures: optional fields missing, cosmetic differences, extra fields in response, different-than-expected 4xx code.
     `;
   }
 }

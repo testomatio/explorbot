@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-04-02
+
+### Configuration
+- **`api.baseEndpoint`** — Base URL for API requests used by the Fisherman agent. Default: same as `playwright.url`.
+- **`api.spec`** — Array of OpenAPI spec file paths or URLs. Fisherman uses these to learn request formats before making API calls.
+- **`api.headers`** — Custom headers to include in all API requests (e.g., API keys, auth tokens).
+- **`ai.agents.fisherman`** — Configuration for the Fisherman agent. Set `enabled: true` to activate without full API config.
+
+### Changes
+- [Fisherman] New agent that prepares test data via API requests before tests run. Automatically discovers endpoints from captured XHR traffic or OpenAPI specs, authenticates using browser cookies, and creates items needed by test scenarios.
+- [Pilot] Now calls `precondition()` before each test to declare what data must exist. When Fisherman is available, data is created automatically via API; otherwise preconditions are noted for manual setup.
+- [Captain] Completes commands faster — after a successful action, if the page diff confirms the goal, finishes immediately instead of running extra verification steps.
+- [Navigator] Rules for output format, multiple locators, and verification actions moved from inline code to external markdown rule files under `rules/navigator/`.
+- [Researcher] Rules for UI map tables, section maps, screenshot maps, and list element indexing moved to external rule files under `rules/researcher/`.
+- [Planner] When a feature focus is specified, all proposed scenarios must relate directly to it. Feature directive is now injected into the system message for stronger adherence.
+- [Explorer] Automatically captures XHR/fetch write requests (POST, PUT, PATCH, DELETE) from the browser. Captured requests are saved to `output/requests/` and used by Fisherman to discover API endpoints and auth headers.
+- Explore command now saves multi-plan output correctly — each sub-page plan is preserved as a separate suite in the saved markdown file, and results table shows which plan each test belongs to.
+- TUI autocomplete redesigned — now shows descriptions alongside commands, displays argument hints after typing a command, supports fuzzy/substring matching, and uses cursor-aware replacement instead of replacing the full input line.
+- TUI input now supports Ctrl+A/E (home/end of line), Ctrl+W (delete word back), Ctrl+U/K (delete to line start/end), Ctrl+Delete (delete word forward), and Escape to dismiss autocomplete.
+
 ## 2026-03-31
 
 ### New CLI Commands

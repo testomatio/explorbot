@@ -17,6 +17,7 @@ import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
 import { withRetry } from '../utils/retry.ts';
+import { executionController } from '../execution-controller.ts';
 import type { Agent } from './agent.js';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
@@ -27,7 +28,8 @@ import { detectFocusFromAria, hasFocusedSection, markSectionAsFocused, pickDefau
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
 import { extractValidContainers, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
-import { locatorRule as generalLocatorRuleText, listElementRule, uiMapTableFormat } from './rules.js';
+import { locatorRule as generalLocatorRuleText } from './rules.js';
+import { RulesLoader } from '../utils/rules-loader.ts';
 import { TaskAgent } from './task-agent.ts';
 
 export type { Locator } from './researcher/locators.ts';
@@ -95,6 +97,10 @@ export class Researcher extends ResearcherBase implements Agent {
     <role>
     You are senior QA focused on exploritary testig of web application.
     </role>
+
+    <wording>
+    In the UI map and all descriptions, name concrete UI parts (visible labels, headings, regions, ARIA roles). Do not use vague placeholders like "the page", "the element", "the button", "the input", "the link", "the form", "the table", "the list", or "the item". Do not use filler such as "comprehensive", "All required", "All elements", or "All necessary".
+    </wording>
 
     ${customPrompt || ''}
     `;
@@ -198,45 +204,49 @@ export class Researcher extends ResearcherBase implements Agent {
         return result.text;
       }
 
+      const interrupted = () => executionController.isInterrupted();
+
       // Stage 2: Test containers + locators
       result.parseLocators();
       debugLog(`Extracted ${result.locators.length} locators from research`);
 
-      if (result.locators.length === 0 && retriesLeft > 0) {
+      if (!interrupted() && result.locators.length === 0 && retriesLeft > 0) {
         tag('warning').log(`No locators parsed, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
         await new Promise((r) => setTimeout(r, 1000));
         return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
       }
 
-      const containerLocs = result.containerLocators;
-      await this.testLocators(containerLocs);
-      const brokenContainers = containerLocs.filter((l) => l.valid === false);
-      if (containerLocs.length > 0 && brokenContainers.length === containerLocs.length && retriesLeft > 0) {
-        tag('warning').log(`All ${containerLocs.length} containers broken, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
-        await new Promise((r) => setTimeout(r, 2000));
-        return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
-      }
+      if (!interrupted()) {
+        const containerLocs = result.containerLocators;
+        await this.testLocators(containerLocs);
+        const brokenContainers = containerLocs.filter((l) => l.valid === false);
+        if (containerLocs.length > 0 && brokenContainers.length === containerLocs.length && retriesLeft > 0) {
+          tag('warning').log(`All ${containerLocs.length} containers broken, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
+          await new Promise((r) => setTimeout(r, 2000));
+          return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
+        }
 
-      for (const loc of result.locators) {
-        if (loc.container && brokenContainers.some((c) => c.locator === loc.container)) {
-          loc.valid = false;
-          loc.error = 'container broken';
+        for (const loc of result.locators) {
+          if (loc.container && brokenContainers.some((c) => c.locator === loc.container)) {
+            loc.valid = false;
+            loc.error = 'container broken';
+          }
+        }
+
+        const toTest = result.locators.filter((l) => l.valid === null);
+        await this.testLocators(toTest);
+
+        const brokenCount = result.locators.filter((l) => l.valid === false).length;
+        const brokenRatio = result.locators.length > 0 ? brokenCount / result.locators.length : 0;
+        if (brokenRatio > 0.8 && retriesLeft > 0) {
+          tag('warning').log(`${Math.round(brokenRatio * 100)}% locators broken, waiting 3s and retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
+          await new Promise((r) => setTimeout(r, 3000));
+          return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
         }
       }
 
-      const toTest = result.locators.filter((l) => l.valid === null);
-      await this.testLocators(toTest);
-
-      const brokenCount = result.locators.filter((l) => l.valid === false).length;
-      const brokenRatio = result.locators.length > 0 ? brokenCount / result.locators.length : 0;
-      if (brokenRatio > 0.8 && retriesLeft > 0) {
-        tag('warning').log(`${Math.round(brokenRatio * 100)}% locators broken, waiting 3s and retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
-        await new Promise((r) => setTimeout(r, 3000));
-        return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
-      }
-
       // Stage 3: Fix broken sections via AI conversation continuation
-      if (fix && result.locators.some((l) => l.valid === false)) {
+      if (!interrupted() && fix && result.locators.some((l) => l.valid === false)) {
         await this.fixBrokenSections(result, conversation);
       }
 
@@ -254,7 +264,7 @@ export class Researcher extends ResearcherBase implements Agent {
       }
 
       // Stage 4: Visual analysis
-      if (this.hasScreenshotToAnalyze) {
+      if (!interrupted() && this.hasScreenshotToAnalyze) {
         const validContainers = extractValidContainers(result.text);
         result.parseLocators();
         const freshContainerLocs = result.containerLocators;
@@ -282,8 +292,10 @@ export class Researcher extends ResearcherBase implements Agent {
       }
 
       // Stage 5: Backfill broken elements
-      await this.backfillCoordinates(result);
-      await this.backfillBrokenLocators(result);
+      if (!interrupted()) {
+        await this.backfillCoordinates(result);
+        await this.backfillBrokenLocators(result);
+      }
 
       // Focused section: final fallback
       if (!hasFocusedSection(result.text)) {
@@ -292,13 +304,17 @@ export class Researcher extends ResearcherBase implements Agent {
         if (fallback) markSectionAsFocused(result, fallback);
       }
 
-      if (deep) {
+      if (!interrupted() && deep) {
         await this.performDeepAnalysis(state, result);
       }
 
-      if (data) {
+      if (!interrupted() && data) {
         const extractedData = await this.extractData(state);
         result.text += `\n\n## Data\n\n${extractedData}`;
+      }
+
+      if (interrupted()) {
+        tag('info').log('Research interrupted, returning partial result');
       }
 
       result.cleanup();
@@ -422,9 +438,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       ${generalLocatorRuleText}
 
-      ${uiMapTableFormat}
-
-      ${listElementRule}
+      ${RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element'], this.stateManager.getCurrentState()?.url || '')}
 
       <section_identification>
       Identify page sections in this priority order:

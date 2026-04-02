@@ -8,8 +8,8 @@ import { Chief } from './ai/chief.ts';
 import { Curler } from './ai/curler.ts';
 import { ApiClient } from './api-client.ts';
 import { type ApibotConfig, ApibotConfigParser } from './config.ts';
-import { RequestStateManager } from './request-state.ts';
-import { extractEndpointDefinition, loadSpec, searchEndpoints, validateSpecs } from './spec-reader.ts';
+import { RequestStore } from '../../../src/api/request-store.ts';
+import { extractEndpointDefinition, loadSpec, searchEndpoints, validateSpecs } from '../../../src/api/spec-reader.ts';
 
 export class ApiBot {
   private configParser: ApibotConfigParser;
@@ -18,7 +18,7 @@ export class ApiBot {
   private agents: Record<string, any> = {};
   private currentPlan?: Plan;
   private apiClient!: ApiClient;
-  private requestState!: RequestStateManager;
+  private requestState!: RequestStore;
   private reporter!: Reporter;
   private options: ApibotOptions;
   private apiSpec: any;
@@ -45,7 +45,7 @@ export class ApiBot {
 
     const outputDir = this.configParser.getOutputDir();
     this.configParser.ensureDirectory(outputDir);
-    this.requestState = new RequestStateManager(outputDir);
+    this.requestState = new RequestStore(outputDir);
     this.reporter = new Reporter(this.config.reporter);
 
     validateSpecs(this.config.api.spec);
@@ -84,7 +84,7 @@ export class ApiBot {
     await this.apiClient?.teardown();
   }
 
-  createAgent<T>(factory: (deps: { ai: AIProvider; config: ApibotConfig; apiClient: ApiClient; requestState: RequestStateManager }) => T): T {
+  createAgent<T>(factory: (deps: { ai: AIProvider; config: ApibotConfig; apiClient: ApiClient; requestState: RequestStore }) => T): T {
     return factory({
       ai: this.provider,
       config: this.config,
@@ -94,7 +94,7 @@ export class ApiBot {
   }
 
   agentChief(): Chief {
-    return (this.agents.chief ||= this.createAgent(({ ai, config }) => new Chief(ai, config)));
+    return (this.agents.chief ||= this.createAgent(({ ai, config, apiClient }) => new Chief(ai, config, apiClient)));
   }
 
   agentCurler(): Curler {
@@ -166,7 +166,7 @@ export class ApiBot {
     return this.configParser;
   }
 
-  getRequestState(): RequestStateManager {
+  getRequestState(): RequestStore {
     return this.requestState;
   }
 

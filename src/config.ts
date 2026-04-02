@@ -99,6 +99,7 @@ interface AgentsConfig {
   captain?: AgentConfig;
   quartermaster?: AgentConfig;
   historian?: AgentConfig;
+  fisherman?: AgentConfig;
 }
 
 interface AIConfig {
@@ -149,6 +150,12 @@ interface ReporterConfig {
   html?: boolean;
 }
 
+interface ApiConfig {
+  baseEndpoint?: string;
+  spec?: string[];
+  headers?: Record<string, string>;
+}
+
 interface ExplorbotConfig {
   playwright: PlaywrightConfig;
   ai: AIConfig;
@@ -163,6 +170,7 @@ interface ExplorbotConfig {
     maxReadLines?: number;
   };
   reporter?: ReporterConfig;
+  api?: ApiConfig;
   stepsFile?: string;
   files?: Record<string, string>;
 }
@@ -180,7 +188,7 @@ const config: ExplorbotConfig = {
 
 type RuleEntry = string | Record<string, string>;
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig, NavigatorAgentConfig, PlannerAgentConfig, Hook, HookConfig, HooksConfig, PlaywrightHook, CodeceptJSHook, HookPatternMap, RuleEntry, ReporterConfig };
+export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig, NavigatorAgentConfig, PlannerAgentConfig, Hook, HookConfig, HooksConfig, PlaywrightHook, CodeceptJSHook, HookPatternMap, RuleEntry, ReporterConfig, ApiConfig };
 
 export class ConfigParser {
   private static instance: ConfigParser;

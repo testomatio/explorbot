@@ -1,3 +1,4 @@
+import { recommendedCodeceptCommands } from './ai/rules.js';
 import { type BaseCommand, createCommands } from './commands/index.js';
 import type { ExplorBot } from './explorbot.js';
 import { tag } from './utils/logger.js';
@@ -8,12 +9,28 @@ export interface InputManager {
   registerInputPane(addLog: (entry: string) => void, onSubmit: InputSubmitCallback): () => void;
   getAvailableCommands(): string[];
   getFilteredCommands(input: string): string[];
+  getAutocomplete(input: string, cursor: number): CommandAutocomplete;
   setExitOnEmptyInput(enabled: boolean): void;
 }
 
 export interface ParsedCommand {
   name: string;
   args: string[];
+}
+
+export interface CommandAutocompleteSuggestion {
+  value: string;
+  display: string;
+  description: string;
+  argumentHint?: string;
+}
+
+export interface CommandAutocomplete {
+  suggestions: CommandAutocompleteSuggestion[];
+  replaceFrom: number;
+  replaceTo: number;
+  visible: boolean;
+  argumentHint?: string;
 }
 
 function parseCommand(input: string): ParsedCommand | null {
@@ -59,27 +76,32 @@ export class CommandHandler implements InputManager {
         }
       }
     }
-    return [
-      ...slashCommands,
-      'I.amOnPage',
-      'I.click',
-      'I.see',
-      'I.fillField',
-      'I.selectOption',
-      'I.checkOption',
-      'I.pressKey',
-      'I.wait',
-      'I.waitForElement',
-      'I.waitForVisible',
-      'I.waitForInvisible',
-      'I.scrollTo',
-      'page.click',
-      'page.fill',
-      'page.goto',
-      'page.locator',
-      'page.waitForSelector',
-      'page.evaluate',
-    ];
+    return [...slashCommands, ...recommendedCodeceptCommands];
+  }
+
+  getAutocomplete(input: string, cursor: number): CommandAutocomplete {
+    const safeCursor = Math.max(0, Math.min(cursor, input.length));
+    const slashAutocomplete = this.getSlashAutocomplete(input, safeCursor);
+    if (slashAutocomplete) {
+      return slashAutocomplete;
+    }
+
+    const codeceptAutocomplete = this.getCodeceptAutocomplete(input, safeCursor);
+    if (codeceptAutocomplete) {
+      return codeceptAutocomplete;
+    }
+
+    const exitAutocomplete = this.getExitAutocomplete(input, safeCursor);
+    if (exitAutocomplete) {
+      return exitAutocomplete;
+    }
+
+    return {
+      suggestions: [],
+      replaceFrom: safeCursor,
+      replaceTo: safeCursor,
+      visible: false,
+    };
   }
 
   getCommandDescriptions(): { name: string; description: string; options: string }[] {
@@ -88,8 +110,7 @@ export class CommandHandler implements InputManager {
       description: cmd.description,
       options: cmd.options.map((o) => `${o.flags}: ${o.description}`).join(', '),
     }));
-    descriptions.push({ name: 'I.*', description: 'CodeceptJS commands for web interaction', options: '' });
-    descriptions.push({ name: 'page.*', description: 'Playwright page commands', options: '' });
+    descriptions.push({ name: 'I.click / I.type / I.fillField / I.see / I.seeElement', description: 'Recommended CodeceptJS interaction commands', options: '' });
     return descriptions;
   }
 
@@ -191,24 +212,7 @@ export class CommandHandler implements InputManager {
   }
 
   getFilteredCommands(input: string): string[] {
-    const trimmedInput = input.trim();
-    const normalizedInput = trimmedInput === '/' ? '' : trimmedInput;
-    const allCommands = this.getAvailableCommands().filter((cmd) => cmd.startsWith('/'));
-    const hasColon = normalizedInput.includes(':');
-    const slashCommands = hasColon ? allCommands : allCommands.filter((cmd) => !cmd.includes(':'));
-    const defaultCommands = ['/help', '/explore', '/navigate', '/plan', '/knows', '/research', '/test', 'exit'];
-
-    if (!normalizedInput) {
-      const prioritized = defaultCommands.filter((cmd) => cmd === 'exit' || slashCommands.includes(cmd));
-      const extras = slashCommands.filter((cmd) => !prioritized.includes(cmd) && cmd !== 'exit');
-      const ordered = [...prioritized, ...extras];
-      const unique = ordered.filter((cmd, index) => ordered.indexOf(cmd) === index);
-      return unique.slice(0, 20);
-    }
-
-    const searchTerm = normalizedInput.toLowerCase();
-    const pool = Array.from(new Set([...slashCommands, 'exit']));
-    return pool.filter((cmd) => cmd.toLowerCase().includes(searchTerm)).slice(0, 20);
+    return this.getAutocomplete(input, input.length).suggestions.map((suggestion) => suggestion.value);
   }
 
   setExitOnEmptyInput(enabled: boolean): void {
@@ -249,4 +253,202 @@ export class CommandHandler implements InputManager {
       }
     }
   }
+
+  private getSlashAutocomplete(input: string, cursor: number): CommandAutocomplete | null {
+    if (!input.startsWith('/')) {
+      return null;
+    }
+
+    const commandEnd = input.search(/\s/);
+    const replaceTo = commandEnd === -1 ? input.length : commandEnd;
+    const query = input.slice(0, replaceTo);
+    const insideCommand = cursor <= replaceTo;
+    const parsed = parseCommand(query);
+    const exactCommand = parsed ? this.findCommand(parsed.name) : undefined;
+    const hasArguments = commandEnd !== -1 && input.slice(commandEnd + 1).trim().length > 0;
+    const commandEntries = this.getSlashCommandEntries();
+    let suggestions: CommandAutocompleteSuggestion[] = [];
+    if (insideCommand) {
+      if (query === '/') {
+        suggestions = commandEntries.slice(0, 20).map((entry) => ({
+          value: entry.value,
+          display: entry.value,
+          description: entry.description,
+          argumentHint: entry.argumentHint,
+        }));
+      } else {
+        suggestions = this.rankSuggestions(query, commandEntries);
+      }
+    }
+    const argumentHint = !insideCommand && exactCommand && !hasArguments && exactCommand.options.length > 0 ? exactCommand.options.map((option) => option.flags).join(' ') : undefined;
+
+    return {
+      suggestions,
+      replaceFrom: 0,
+      replaceTo,
+      visible: insideCommand && suggestions.length > 0,
+      argumentHint,
+    };
+  }
+
+  private getCodeceptAutocomplete(input: string, cursor: number): CommandAutocomplete | null {
+    if (!input.startsWith('I.')) {
+      return null;
+    }
+
+    const query = input.slice(0, cursor).split(/\s+/).pop() || 'I.';
+    const replaceFrom = cursor - query.length;
+    const firstWhitespace = input.search(/\s/);
+    const tokenEnd = firstWhitespace === -1 ? input.length : firstWhitespace;
+    const insideCommand = cursor <= tokenEnd;
+    const suggestions = insideCommand ? this.rankSuggestions(query, this.getCodeceptEntries()) : [];
+
+    return {
+      suggestions,
+      replaceFrom,
+      replaceTo: tokenEnd,
+      visible: insideCommand && suggestions.length > 0,
+    };
+  }
+
+  private getExitAutocomplete(input: string, cursor: number): CommandAutocomplete | null {
+    if (input.includes(' ')) {
+      return null;
+    }
+
+    const query = input.slice(0, cursor).trim();
+    if (!query) {
+      return null;
+    }
+
+    const exitCommand = this.findCommand('exit');
+    if (!exitCommand) {
+      return null;
+    }
+
+    const entries = [
+      {
+        aliases: exitCommand.aliases,
+        argumentHint: undefined,
+        canonical: exitCommand.name,
+        description: exitCommand.description,
+        value: exitCommand.name,
+      },
+    ];
+    const suggestions = this.rankSuggestions(query, entries);
+
+    return {
+      suggestions,
+      replaceFrom: 0,
+      replaceTo: input.length,
+      visible: suggestions.length > 0,
+    };
+  }
+
+  private getSlashCommandEntries(): AutocompleteEntry[] {
+    const entries: AutocompleteEntry[] = [];
+
+    for (const command of this.commands) {
+      if (!command.tuiEnabled) {
+        continue;
+      }
+
+      entries.push({
+        aliases: command.aliases.map((alias) => `/${alias}`),
+        argumentHint: command.options.length > 0 ? command.options.map((option) => option.flags).join(' ') : undefined,
+        canonical: `/${command.name}`,
+        description: command.description,
+        value: `/${command.name}`,
+      });
+    }
+
+    return entries;
+  }
+
+  private getCodeceptEntries(): AutocompleteEntry[] {
+    return recommendedCodeceptCommands.map((value) => ({
+      aliases: [],
+      argumentHint: undefined,
+      canonical: value,
+      description: 'Recommended CodeceptJS interaction command',
+      value,
+    }));
+  }
+
+  private rankSuggestions(query: string, entries: AutocompleteEntry[]): CommandAutocompleteSuggestion[] {
+    if (!query) {
+      return entries.slice(0, 20).map((entry) => ({
+        value: entry.value,
+        display: entry.value,
+        description: entry.description,
+        argumentHint: entry.argumentHint,
+      }));
+    }
+
+    const ranked = entries
+      .map((entry) => {
+        const matches = [entry.canonical, ...entry.aliases]
+          .map((candidate) => ({ candidate, score: this.getMatchScore(query, candidate) }))
+          .filter((candidate) => candidate.score > 0)
+          .sort((left, right) => right.score - left.score);
+
+        const match = matches[0];
+        if (!match) {
+          return null;
+        }
+
+        const display = match.candidate === entry.canonical ? entry.value : `${entry.value} (${match.candidate})`;
+
+        return {
+          value: match.candidate,
+          display,
+          description: entry.description,
+          argumentHint: entry.argumentHint,
+          score: match.score,
+        };
+      })
+      .filter((entry): entry is CommandAutocompleteSuggestion & { score: number } => !!entry)
+      .sort((left, right) => {
+        if (left.score !== right.score) {
+          return right.score - left.score;
+        }
+        return left.display.localeCompare(right.display);
+      });
+
+    return ranked.slice(0, 20).map(({ score: _score, ...suggestion }) => suggestion);
+  }
+
+  private getMatchScore(query: string, candidate: string): number {
+    const normalizedQuery = query.toLowerCase();
+    const normalizedCandidate = candidate.toLowerCase();
+
+    if (normalizedCandidate === normalizedQuery) {
+      return 500;
+    }
+
+    if (normalizedCandidate.startsWith(normalizedQuery)) {
+      return 400 - normalizedCandidate.length;
+    }
+
+    const candidateParts = normalizedCandidate.split(/[:.\-]/).filter(Boolean);
+    const queryCore = normalizedQuery.replace(/^\//, '');
+    if (candidateParts.some((part) => part.startsWith(queryCore))) {
+      return 300 - normalizedCandidate.length;
+    }
+
+    const index = normalizedCandidate.indexOf(normalizedQuery);
+    if (index !== -1) {
+      return 200 - index;
+    }
+
+    return 0;
+  }
 }
+
+type AutocompleteEntry = {
+  aliases: string[];
+  argumentHint?: string;
+  canonical: string;
+  description: string;
+  value: string;
+};

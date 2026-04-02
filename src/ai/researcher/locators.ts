@@ -1,6 +1,7 @@
 import dedent from 'dedent';
 import type { ActionResult } from '../../action-result.js';
 import type Explorer from '../../explorer.ts';
+import { executionController } from '../../execution-controller.ts';
 import { parseAriaLocator } from '../../utils/aria.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
@@ -40,6 +41,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
     async testLocators(locators: Locator[]): Promise<void> {
       let broken = 0;
       for (const loc of locators) {
+        if (executionController.isInterrupted()) break;
         if (loc.type !== 'aria' && isForbiddenLocator(loc.locator)) {
           loc.valid = false;
           loc.error = 'dynamic ID';

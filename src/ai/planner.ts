@@ -71,9 +71,10 @@ export class Planner extends PlannerBase implements Agent {
     return ConfigParser.getInstance().getConfig().ai?.agents?.researcher?.sections || Object.keys(POSSIBLE_SECTIONS);
   }
 
-  getSystemMessage(): string {
+  getSystemMessage(feature?: string): string {
     const currentUrl = this.stateManager.getCurrentState()?.url;
     const customPrompt = this.provider.getSystemPromptForAgent('planner', currentUrl);
+    const featureDirective = feature ? `\n    IMPORTANT: The user requested to focus specifically on: "${feature}"\n    ALL scenarios MUST be directly related to this feature. Do not propose generic page tests unrelated to it.` : '';
     return dedent`
     <role>
     You are ISTQB certified senior manual QA planning exploratory testing session of a web application.
@@ -97,7 +98,7 @@ export class Planner extends PlannerBase implements Agent {
       Bad: "Open delete dropdown" + "Confirm deletion" — these are ONE test, not two.
       Bad: "Search for X" + "Verify search results" — searching and verifying is ONE test.
       Bad: "Leave field empty" + "Click submit" — that's one negative test, not two.
-      If two scenarios cannot run independently (one requires the other to run first), merge them into one.
+      If two scenarios cannot run independently (one requires the other to run first), merge them into one.${featureDirective}
     </task>
 
     ${customPrompt || ''}
@@ -143,11 +144,11 @@ export class Planner extends PlannerBase implements Agent {
     if (style) tags.push(style);
     const result = await Observability.run(`planner: ${state.url}`, { tags, sessionId: state.url }, async () => {
       const actionResult = ActionResult.fromState(state);
-      const conversation = await this.buildConversation(actionResult, style, parentPlan);
+      const conversation = await this.buildConversation(actionResult, style, parentPlan, feature);
 
       if (feature) {
         tag('step').log(`Focusing on ${feature}`);
-        conversation.addUserText(feature);
+        conversation.addUserText(`REMINDER: Every scenario must relate to the user's focus described above. Skip research elements unrelated to it.`);
       } else {
         tag('step').log('Focusing on main content of this page');
       }
@@ -275,13 +276,13 @@ export class Planner extends PlannerBase implements Agent {
     return `Your approach is ${name} testing:\n<approach>\n${approach}\n</approach>`;
   }
 
-  private async buildConversation(state: ActionResult, style?: string, parentPlan?: Plan): Promise<Conversation> {
+  private async buildConversation(state: ActionResult, style?: string, parentPlan?: Plan, feature?: string): Promise<Conversation> {
     const model = this.provider.getAgenticModel('planner');
     const conversation = new Conversation([], model);
     conversation.autoTrimTag('page_research', 20000);
     conversation.autoTrimTag('tested_scenarios', 10000);
 
-    conversation.addUserText(this.getSystemMessage());
+    conversation.addUserText(this.getSystemMessage(feature));
 
     const planningPrompt = dedent`
       <task>
@@ -478,7 +479,7 @@ export class Planner extends PlannerBase implements Agent {
          - Do not wrap text in ** or * quotes, ( or ) brackets.
          - Avoid using emojis or special characters.
       7. Only tests that can be tested from web UI should be proposed.
-      ${hasCurrentPlan ? '8. CRITICAL: Return ONLY NEW scenarios not in the existing tests list. Return empty array if no new tests needed.' : `8. At least ${this.MIN_TASKS} tests should be proposed. Cover as many different feature areas from the research as possible — do not cluster all tests around one feature.`}
+      ${hasCurrentPlan ? '8. CRITICAL: Return ONLY NEW scenarios not in the existing tests list. Return empty array if no new tests needed.' : `8. At least ${this.MIN_TASKS} tests should be proposed.`}
     </task>
     `;
 

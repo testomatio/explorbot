@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import figures from 'figures';
 import { WebPageState } from './state-manager.ts';
-import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown } from './utils/test-plan-markdown.ts';
+import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown, savePlansToMarkdown } from './utils/test-plan-markdown.ts';
 import { uniqSessionName } from './utils/unique-names.ts';
 
 export const TestResult = {
@@ -380,6 +380,10 @@ export class Plan {
 
   saveToMarkdown(filePath: string): void {
     savePlanToMarkdown(this, filePath);
+  }
+
+  static saveMultipleToMarkdown(plans: Plan[], filePath: string): void {
+    savePlansToMarkdown(plans, filePath);
   }
 
   getVisitedPages(): WebPageState[] {

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
+import { getStyles } from './ai/chief/styles.ts';
 import { ApiBot, type ApibotOptions } from './apibot.ts';
 
 function buildOptions(options: any): ApibotOptions {
@@ -45,7 +46,7 @@ export function createApiCommands(name = 'api'): Command {
   const cmd = new Command(name);
   cmd.description('AI-powered API testing tool');
 
-  addCommonOptions(cmd.command('plan <endpoint>').description('Generate test plan for an API endpoint').option('--style <style>', 'Planning style: normal, psycho, curious, performer').option('--fresh', 'Start planning from scratch')).action(async (endpoint, options) => {
+  addCommonOptions(cmd.command('plan <endpoint>').description('Generate test plan for an API endpoint').option('--style <style>', 'Planning style: basename of a file in rules/chief/styles/').option('--fresh', 'Start planning from scratch')).action(async (endpoint, options) => {
     setPreserveConsoleLogs(true);
     try {
       const bot = new ApiBot(buildOptions(options));
@@ -124,7 +125,7 @@ export function createApiCommands(name = 'api'): Command {
       const bot = new ApiBot(buildOptions(options));
       await bot.start();
 
-      const styles = ['normal', 'psycho', 'curious', 'performer'];
+      const styles = Object.keys(getStyles());
       let totalPassed = 0;
       let totalFailed = 0;
       let totalTests = 0;

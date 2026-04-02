@@ -316,10 +316,9 @@ export class Provider {
 
       // Log tool usage summary
       if (response.toolCalls && response.toolCalls.length > 0) {
-        tag('debug').log(`AI executed ${response.toolCalls.length} tool calls`);
         responseLog(response.toolCalls);
         response.toolCalls.forEach((call: any, index: number) => {
-          tag('step').log(`${call.toolName}(${Object.values(call?.input || []).join(', ')})`);
+          tag('debug').log(`${call.toolName} > ${Object.values(call?.input || []).join(', ')}`);
         });
       }
 

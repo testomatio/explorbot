@@ -13,7 +13,8 @@ import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import { actionRule, locatorRule, outputRule, verificationActionRule } from './rules.js';
+import { actionRule, locatorRule } from './rules.js';
+import { RulesLoader } from '../utils/rules-loader.ts';
 import { isInteractive } from './task-agent.js';
 
 const debugLog = createDebug('explorbot:navigator');
@@ -193,7 +194,9 @@ class Navigator implements Agent {
 
       ${experience}
 
-      ${outputRule(this.MAX_ATTEMPTS)}
+      ${locatorRule}
+
+      ${RulesLoader.loadRules('navigator', ['multiple-locator', 'output'], actionResult.url || '').replace('{{maxAttempts}}', String(this.MAX_ATTEMPTS))}
     `;
 
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
@@ -248,11 +251,14 @@ class Navigator implements Agent {
         debugLog(`Attempting resolution: ${codeBlock}`);
         resolved = await this.currentAction.attempt(codeBlock, message);
 
-        if (resolved && this.currentUrl) {
-          await this.currentAction.getActor().wait(1);
-          if (!this.isOnExpectedPage(this.currentUrl, this.currentAction.stateManager)) {
-            const actualPath = this.currentAction.stateManager.getCurrentState()?.url || '';
-            tag('warning').log(`URL verification failed: expected ${this.currentUrl}, got ${actualPath}`);
+        if (this.currentUrl) {
+          await this.currentAction.getActor().wait(2);
+          const freshState = await this.currentAction.capturePageState();
+
+          if (normalizeUrl(freshState.url || '') === normalizeUrl(this.currentUrl)) {
+            resolved = true;
+          } else if (resolved) {
+            tag('warning').log(`URL verification failed: expected ${this.currentUrl}, got ${freshState.url}`);
             resolved = false;
           }
         }
@@ -496,7 +502,7 @@ class Navigator implements Agent {
 
       ${knowledge}
 
-      ${verificationActionRule}
+      ${RulesLoader.loadRules('navigator', ['verification-actions'], actionResult.url || '')}
 
       ${locatorRule}
 
