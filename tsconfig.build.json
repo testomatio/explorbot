@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rewriteRelativeImportExtensions": true,
+    "declaration": false,
+    "sourceMap": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*", "bin/**/*", "boat/**/*"],
+  "exclude": ["node_modules", "dist", "tests", "**/*.test.ts"]
+}

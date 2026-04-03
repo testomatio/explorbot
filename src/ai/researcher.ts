@@ -24,7 +24,7 @@ import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, saveResearch } from './researcher/cache.ts';
 import { type CoordinateMethods, WithCoordinates } from './researcher/coordinates.ts';
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
-import { detectFocusFromAria, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
+import { FOCUSED_MARKER, detectFocusFromAria, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
 import { extractValidContainers, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
@@ -45,6 +45,27 @@ export const POSSIBLE_SECTIONS = {
   menu: 'page menu (toolbar, context actions, filters, dropdowns)',
   navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
+
+function formatResearchSummary(text: string, opts?: { visionUsed?: boolean }): string {
+  const sections = parseResearchSections(text);
+  const coordCount = sections.reduce((sum, s) => sum + s.elements.filter((e) => e.coordinates !== null).length, 0);
+
+  const lines: string[] = [];
+  for (const s of sections) {
+    const focused = s.rawMarkdown.includes(FOCUSED_MARKER);
+    lines.push(`- **${s.name}** (${pluralize(s.elements.length, 'element')})`);
+    if (focused) lines.push('  - Focused');
+    if (s.containerCss) lines.push(`  - Container: \`${s.containerCss}\``);
+  }
+
+  lines.push('', `Chars: ${text.length}`);
+
+  if (opts?.visionUsed || coordCount > 0) {
+    lines.push(`Vision: ${coordCount} elements with coordinates`);
+  }
+
+  return lines.join('\n');
+}
 
 const ResearcherBase = WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent)));
 
@@ -159,7 +180,7 @@ export class Researcher extends ResearcherBase implements Agent {
         if (similar) {
           tag('info').log('Similar research found, reusing cached result');
           if (stateHash) saveResearch(stateHash, similar, combinedHtml);
-          tag('multiline').log(similar);
+          tag('multiline').log(formatResearchSummary(similar));
           tag('success').log(`Research complete! ${similar.length} characters (reused)`);
           await this.hooksRunner.runAfterHook('researcher', state.url);
           return similar;
@@ -330,7 +351,7 @@ export class Researcher extends ResearcherBase implements Agent {
         if (summaryLine) this.experienceTracker.updateSummary(this.actionResult!, summaryLine);
       }
 
-      tag('multiline').log(result.text);
+      tag('multiline').log(formatResearchSummary(result.text, { visionUsed: this.hasScreenshotToAnalyze }));
       tag('success').log(`Research complete! ${result.text.length} characters`);
       if (researchFile) tag('substep').log(`Research file saved to: ${researchFile}`);
       if (this.actionResult?.screenshotFile) {

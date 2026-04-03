@@ -212,6 +212,91 @@ describe('ExperienceTracker', () => {
     });
   });
 
+  describe('saveSessionExperience trimming', () => {
+    function makeState() {
+      return new ActionResult({
+        html: '<html><body>Test</body></html>',
+        url: 'https://example.com/suite/abc',
+        title: 'Suite',
+      });
+    }
+
+    it('should save valid session with heading and code', () => {
+      const state = makeState();
+      experienceTracker.saveSessionExperience(state, {
+        scenario: 'Create a test',
+        result: 'success',
+        steps: [{ message: 'Click create', status: 'passed', code: 'I.click("Create")' }],
+      });
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+      expect(content).toContain('## Successful Flow: Create a test');
+      expect(content).toContain('I.click("Create")');
+    });
+
+    it('should reject session with no code blocks', () => {
+      const state = makeState();
+      experienceTracker.saveSessionExperience(state, {
+        scenario: 'Empty flow',
+        result: 'success',
+        steps: [{ message: 'Did nothing useful', status: 'passed' }],
+      });
+      const stateHash = state.getStateHash();
+      const filePath = `/tmp/experience/${stateHash}.md`;
+      if (existsSync(filePath)) {
+        const { content } = experienceTracker.readExperienceFile(stateHash);
+        expect(content.trim()).toBe('');
+      }
+    });
+
+    it('should trim code blocks to max 2', () => {
+      const state = makeState();
+      experienceTracker.saveSessionExperience(state, {
+        scenario: 'Many steps',
+        result: 'success',
+        steps: [
+          { message: 'Step 1', status: 'passed', code: 'I.click("A")' },
+          { message: 'Step 2', status: 'passed', code: 'I.click("B")' },
+          { message: 'Step 3', status: 'passed', code: 'I.click("C")' },
+          { message: 'Step 4', status: 'passed', code: 'I.click("D")' },
+        ],
+      });
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+      const codeMatches = content.match(/```js/g) || [];
+      expect(codeMatches.length).toBeLessThanOrEqual(2);
+    });
+
+    it('should trim blockquotes to max 5', () => {
+      const state = makeState();
+      const discoveries = Array.from({ length: 10 }, (_, i) => `A new button appeared: Btn${i}`).join('\n');
+      experienceTracker.saveSessionExperience(state, {
+        scenario: 'Many discoveries',
+        result: 'success',
+        steps: [{ message: 'Click something', status: 'passed', code: 'I.click("X")', discovery: discoveries }],
+      });
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+      const bqMatches = content.match(/^>/gm) || [];
+      expect(bqMatches.length).toBeLessThanOrEqual(5);
+    });
+
+    it('should trim content to max 40 lines', () => {
+      const state = makeState();
+      const steps = Array.from({ length: 2 }, (_, i) => ({
+        message: `Step ${i}`,
+        status: 'passed' as const,
+        code: `I.click("Btn${i}")`,
+        discovery: Array.from({ length: 5 }, (_, j) => `A new element appeared: El${i}_${j}`).join('\n'),
+      }));
+      experienceTracker.saveSessionExperience(state, {
+        scenario: 'Long flow',
+        result: 'success',
+        steps,
+      });
+      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
+      const lines = content.split('\n');
+      expect(lines.length).toBeLessThanOrEqual(40);
+    });
+  });
+
   describe('file path extraction', () => {
     it('should extract proper paths from different URL formats', async () => {
       const testCases = [

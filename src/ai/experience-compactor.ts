@@ -236,13 +236,22 @@ export class ExperienceCompactor implements Agent {
     return dedent`
       <rules>
       - Use markdown headers only (##, ###) - NO XML tags or wrappers in output
-      - Prioritize content in this order: Flows > Successful Attempts
-      - Merge similar flows and successful sessions to remove duplicates
-      - Remove any remaining FAILED entries — they are no longer useful
-      - Keep the most valuable and actionable entries, deduplicate approaches that achieve the same goal
-      - Remove all I.amOnPage, I.grab, and I.see calls from compacted experiences
+      - Merge similar flows to remove duplicates
       - Keep output under ${this.MAX_LENGTH} characters
       - Be explicit and short - no proposals or explanations
+
+      KEEP only:
+      - Positive flows that complete a business action (create, edit, delete, navigate)
+      - Reusable interaction patterns (opening dropdowns, filling forms, using pickers)
+      - Discovery lines (> prefixed) that document UI elements appearing at each step — keep at most 5 per flow step
+      - Working CodeceptJS code for common interactions
+
+      REMOVE:
+      - All FAILED entries
+      - Edge-case and negative flows (empty values, disabled buttons, validation errors, boundary testing)
+      - Flows whose purpose is to test what happens when something goes wrong
+      - All I.amOnPage, I.grab, I.see, I.seeElement, I.dontSee calls
+      - Duplicate approaches that achieve the same goal
       </rules>
 
       <output_format>
@@ -250,15 +259,15 @@ export class ExperienceCompactor implements Agent {
 
       ## Flows
 
-      For each unique flow (merge duplicates):
+      For each unique positive flow (merge duplicates):
       - Purpose: what was accomplished
       \`\`\`js
       // working code
       \`\`\`
 
-      ## Successful Attempts
+      ## Reusable Actions
 
-      For each successful attempt not covered by flows:
+      For each reusable interaction pattern not covered by flows:
       - Purpose: what was accomplished
       \`\`\`js
       // working code

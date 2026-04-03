@@ -4,13 +4,16 @@
   "description": "CLI app built with React Ink, CodeceptJS, and Playwright",
   "license": "Elastic-2.0",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "bin": {
-    "explorbot": "./bin/explorbot-cli.ts"
+    "explorbot": "./dist/bin/explorbot-cli.js"
   },
+  "files": ["dist/", "rules/", "assets/sample-files/", "prompts/"],
   "scripts": {
     "build": "bun run src/index.tsx build && bun run build:bin",
     "build:bin": "bun build bin/explorbot-cli.ts --outdir bin --target node --external commander --format esm",
+    "build:npm": "bash scripts/build-npm.sh",
+    "prepublishOnly": "npm run build:npm",
     "dev": "bun run src/index.tsx",
     "start": "node dist/index.js",
     "init": "bun run src/index.tsx init",
@@ -67,6 +70,7 @@
     "ink-select-input": "^6.2.0",
     "ink-text-input": "^6.0.0",
     "jsdom": "^28.0.0",
+    "jsonpath-plus": "^10.4.0",
     "just-bash": "^2.14.0",
     "langfuse": "^3.5.0",
     "marked": "^16.2.0",
@@ -98,7 +102,7 @@
     "vitest": "^3.2.4"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   },
   "overrides": {
     "has-flag": "4.0.0",

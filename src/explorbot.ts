@@ -168,7 +168,12 @@ export class ExplorBot {
   }
 
   agentPlanner(): Planner {
-    return (this.agents.planner ||= this.createAgent(({ ai, explorer }) => new Planner(explorer, ai)));
+    if (!this.agents.planner) {
+      this.agents.planner = this.createAgent(({ ai, explorer }) => new Planner(explorer, ai));
+      const fisherman = this.agentFisherman();
+      if (fisherman) this.agents.planner.setFisherman(fisherman);
+    }
+    return this.agents.planner;
   }
 
   agentPilot(): Pilot {

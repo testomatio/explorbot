@@ -4,7 +4,7 @@ import { context, trace } from '@opentelemetry/api';
 import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
-import { hopeThat, retryTo, tryTo, within } from 'codeceptjs/lib/effects.js';
+import { hopeThat, retryTo, tryTo, within } from 'codeceptjs/lib/effects';
 import step from 'codeceptjs/steps';
 import dedent from 'dedent';
 import { ActionResult } from './action-result.js';

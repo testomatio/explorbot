@@ -50,3 +50,9 @@ jobs:
 
     - name: Run unit tests
       run: bun test tests/unit/
+
+    - name: Build for npm
+      run: bun run build:npm
+
+    - name: Verify CLI on Node.js
+      run: node dist/bin/explorbot-cli.js --help

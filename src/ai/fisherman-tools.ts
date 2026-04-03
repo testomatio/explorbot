@@ -16,8 +16,8 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   const tools = {
     getEndpointSpec: tool({
       description: dedent`
-        Get the complete request specification for an endpoint.
-        Returns request body schema, required fields, and example from captured XHR or OpenAPI spec.
+        Get the request specification for an endpoint.
+        Returns the request body example from a previously captured request, or OpenAPI spec definition.
         Call this before making a request to an endpoint you haven't used before.
       `,
       inputSchema: z.object({
@@ -29,15 +29,12 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
 
         const captured = requestStore.findCapturedRequest(method, path);
         if (captured) {
-          const bodyShape = captured.requestBody ? describeShape(captured.requestBody) : 'no body';
-          const responseShape = captured.responseBody ? describeShape(captured.responseBody) : 'no response';
           return {
             source: 'captured',
             method: captured.method,
             path: captured.path,
             status: captured.status,
-            requestBody: bodyShape,
-            responseShape,
+            requestBody: captured.requestBody || 'no body',
           };
         }
 
@@ -57,8 +54,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
     request: tool({
       description: dedent`
         Make an HTTP request to the API.
-        Returns status code, timing, and extracted ID/title from response.
-        Full response body is NOT returned to save context.
+        Returns status, timing, and auto-extracted IDs and names from the response.
       `,
       inputSchema: z.object({
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
@@ -83,21 +79,23 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
           return { success: false, error: reqResult.error };
         }
 
-        const extracted = reqResult.extractIdAndTitle();
         const statusLine = `${reqResult.status} ${reqResult.statusText}`;
 
         if (reqResult.status >= 400) {
           tag('error').log(`Fisherman: ${input.method} ${input.path} > ${statusLine}`);
-          const preview = reqResult.rawResponseBody.substring(0, 200);
-          return { success: false, status: reqResult.status, statusText: reqResult.statusText, errorPreview: preview };
+          return {
+            success: false,
+            status: reqResult.status,
+            statusText: reqResult.statusText,
+            errorPreview: reqResult.rawResponseBody.substring(0, 300),
+          };
         }
 
+        const extracted = extractKeyFields(reqResult.responseBody);
         tag('success').log(`Fisherman: ${input.method} ${input.path} > ${statusLine}`);
         return {
           success: true,
           status: reqResult.status,
-          statusText: reqResult.statusText,
-          timing: reqResult.timing,
           ...extracted,
         };
       },
@@ -151,22 +149,28 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   return { tools, getResult, isFinished };
 }
 
-function describeShape(obj: any): string {
-  if (Array.isArray(obj)) {
-    if (obj.length === 0) return '[]';
-    return `[${describeShape(obj[0])}, ... (${obj.length} items)]`;
+function extractKeyFields(body: any, result: Record<string, any> = {}, depth = 0): Record<string, any> {
+  if (!body || typeof body !== 'object' || depth > 5) return result;
+
+  if (Array.isArray(body)) {
+    if (body.length > 0) extractKeyFields(body[0], result, depth + 1);
+    return result;
   }
-  if (obj && typeof obj === 'object') {
-    const entries = Object.entries(obj).slice(0, 15);
-    const fields = entries.map(([k, v]) => {
-      if (v === null) return `${k}: null`;
-      if (Array.isArray(v)) return `${k}: array(${v.length})`;
-      if (typeof v === 'object') return `${k}: object`;
-      return `${k}: ${typeof v}`;
-    });
-    return `{ ${fields.join(', ')} }`;
+
+  for (const [key, value] of Object.entries(body)) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === 'object') {
+      extractKeyFields(value, result, depth + 1);
+      continue;
+    }
+    if (key === 'id' || key === '_id' || key === 'uuid' || key.endsWith('_id')) {
+      result[key] ??= value;
+    }
+    if (key === 'name' || key === 'title' || key === 'status') {
+      result[key] ??= String(value).slice(0, 100);
+    }
   }
-  return String(typeof obj);
+  return result;
 }
 
 export interface FishermanResult {

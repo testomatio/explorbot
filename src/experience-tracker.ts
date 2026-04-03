@@ -249,7 +249,8 @@ ${filteredCode}
       data.related = allRelated.filter((url) => url !== currentPath);
     }
 
-    const sessionContent = this.generateSessionContent(entry);
+    const sessionContent = this.trimSessionContent(this.generateSessionContent(entry));
+    if (!sessionContent) return;
     const updatedContent = `${sessionContent}\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
@@ -276,6 +277,35 @@ ${filteredCode}
 
     content += '---\n';
     return content;
+  }
+
+  private trimSessionContent(content: string): string | null {
+    const q = mdq(content);
+    if (q.query('heading').count() === 0) return null;
+    if (q.query('code').count() === 0) return null;
+
+    let result = content;
+    const codeBlocks = q.query('code').each();
+    if (codeBlocks.length > 2) {
+      for (const block of codeBlocks.slice(2)) {
+        result = result.replace(block.text(), '');
+      }
+    }
+
+    const blockquotes = mdq(result).query('blockquote').each();
+    if (blockquotes.length > 5) {
+      for (const bq of blockquotes.slice(5)) {
+        result = result.replace(bq.text(), '');
+      }
+    }
+
+    const lines = result.split('\n');
+    if (lines.length > 40) {
+      result = lines.slice(0, 40).join('\n');
+    }
+
+    if (!result.trim()) return null;
+    return result;
   }
 
   getSuccessfulExperience(state: ActionResult, options?: { includeDescendants?: boolean; stripCode?: boolean }): string[] {

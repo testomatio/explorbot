@@ -2,9 +2,9 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path, { join } from 'node:path';
 // @ts-ignore
 import * as codeceptjs from 'codeceptjs';
-import stepsListener from 'codeceptjs/lib/listener/steps.js';
-import storeListener from 'codeceptjs/lib/listener/store.js';
-import { createTest } from 'codeceptjs/lib/mocha/test.js';
+import stepsListener from 'codeceptjs/lib/listener/steps';
+import storeListener from 'codeceptjs/lib/listener/store';
+import { createTest } from 'codeceptjs/lib/mocha/test';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';

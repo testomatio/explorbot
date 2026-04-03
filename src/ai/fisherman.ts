@@ -21,6 +21,7 @@ export class Fisherman implements Agent {
   private specLoader: () => Promise<any | null>;
   private cookieProvider: () => Promise<Record<string, string>>;
   private configHeaders: Record<string, string>;
+  private sessionName?: string;
   private baseEndpoint: string;
   private spec: any | null = null;
   private mode: 'replicate' | 'achieve' | 'disabled' = 'disabled';
@@ -46,20 +47,29 @@ export class Fisherman implements Agent {
     return this.mode;
   }
 
-  async prepareData(instructions: string, scopeUrl?: string): Promise<FishermanResult> {
+  async ensureReady(scopeUrl?: string): Promise<void> {
+    await this.detectMode(scopeUrl);
+    this.spec ??= await this.specLoader();
+    debugLog(`ensureReady: mode=${this.mode}, scope=${scopeUrl}`);
+  }
+
+  getEndpointList(scopeUrl?: string): string {
+    return this.buildEndpointList(scopeUrl);
+  }
+
+  async prepareData(instructions: string, scopeUrl?: string, sessionName?: string): Promise<FishermanResult> {
+    this.sessionName = sessionName;
     tag('info').log(`Fisherman [${this.mode}]: preparing data — ${instructions}`);
 
-    await this.detectMode(scopeUrl);
-    debugLog('mode: %s, scope: %s', this.mode, scopeUrl);
+    await this.ensureReady(scopeUrl);
 
     if (this.mode === 'disabled') {
       debugLog('disabled — no data for scope');
       return { success: false, summary: 'No API data available for this scope', created: [], failed: [] };
     }
 
-    this.spec ??= await this.specLoader();
     const endpointList = this.buildEndpointList(scopeUrl);
-    debugLog('endpoints:\n%s', endpointList || '(none)');
+    debugLog(`endpoints:\n${endpointList || '(none)'}`);
 
     if (!endpointList) {
       tag('warning').log('Fisherman: no endpoints available');
@@ -68,7 +78,7 @@ export class Fisherman implements Agent {
     }
 
     await this.refreshAuth();
-    debugLog('auth headers: %o', Object.keys(this.apiClient.getHeaders()));
+    debugLog(`auth headers: ${Object.keys(this.apiClient.getHeaders()).join(', ')}`);
 
     const { tools, getResult, isFinished } = createFishermanTools(this.apiClient, this.requestStore, {
       spec: this.spec,
@@ -80,11 +90,13 @@ export class Fisherman implements Agent {
 
     await loop(
       async ({ stop, iteration }) => {
-        await this.provider.invokeConversation(conversation, tools, {
+        debugLog(`iteration ${iteration}`);
+        const invokeResult = await this.provider.invokeConversation(conversation, tools, {
           maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS,
           toolChoice: 'required',
           agentName: 'fisherman',
         });
+        debugLog(`iteration ${iteration} done, text: ${invokeResult?.response?.text?.slice(0, 200) || '(none)'}`);
 
         if (isFinished()) {
           stop();
@@ -101,8 +113,11 @@ export class Fisherman implements Agent {
         observability: {
           name: `fisherman: ${instructions.slice(0, 50)}`,
           agent: 'fisherman',
+          sessionId: this.sessionName,
         },
-        catch: async ({ stop }) => {
+        catch: async ({ error, stop }) => {
+          debugLog(`error: ${error.message}`);
+          tag('warning').log(`Fisherman error: ${error.message}`);
           stop();
         },
       }
@@ -122,7 +137,7 @@ export class Fisherman implements Agent {
 
     this.requestStore.loadFromDisk();
     const allRequests = this.requestStore.getCapturedRequests();
-    debugLog('total stored requests: %d, scope: %s', allRequests.length, scopeUrl);
+    debugLog(`total stored requests: ${allRequests.length}, scope: ${scopeUrl}`);
 
     if (allRequests.length > 0) {
       this.mode = 'replicate';
@@ -154,9 +169,10 @@ export class Fisherman implements Agent {
       if (specEndpoints) return specEndpoints;
     }
 
-    const scope = scopeUrl || '/';
-    const writeRequests = this.requestStore.getWriteRequestsForScope(scope);
-    if (writeRequests.length === 0) return this.requestStore.toEndpointList();
+    let writeRequests = this.requestStore.getWriteRequestsForScope(scopeUrl || '/');
+    if (writeRequests.length === 0) {
+      writeRequests = this.requestStore.getWriteRequestsForScope('/');
+    }
 
     const seen = new Set<string>();
     const lines: string[] = [];
@@ -182,11 +198,10 @@ export class Fisherman implements Agent {
       ${scopeBlock}
 
       WORKFLOW:
-      1. Review the task instructions
-      2. For each item to create, call getEndpointSpec to learn the request format
-      3. Make requests using the request tool
-      4. Extract IDs from responses to chain requests (e.g., create suite first, then create tests in it using the suite ID)
-      5. Call finish with a summary of all created items
+      1. Call getEndpointSpec to see the request body example for the endpoint
+      2. Make requests — the response automatically extracts IDs, names, and status fields
+      3. Use extracted IDs to chain requests (e.g., create suite, use its id to create tests in it)
+      4. Call finish with a summary and IDs of all created items
 
       RULES:
       - Always call getEndpointSpec before your first request to an unfamiliar endpoint

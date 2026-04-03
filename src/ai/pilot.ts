@@ -230,7 +230,7 @@ export class Pilot implements Agent {
 
   async planTest(task: Test, currentState: ActionResult): Promise<string> {
     tag('substep').log('Pilot planning test...');
-    debugLog('planTest: %s, fisherman: %s', task.scenario, this.fisherman ? 'available' : 'none');
+    debugLog(`planTest: ${task.scenario}, fisherman: ${this.fisherman ? 'available' : 'none'}`);
 
     const pageSummary = await this.researcher.summary(currentState, { allowNewResearch: false });
     const agenticModel = this.provider.getAgenticModel('pilot');
@@ -248,8 +248,9 @@ export class Pilot implements Agent {
 
         Plan the test execution for this scenario.
 
-        FIRST: Call precondition() for every piece of data this scenario needs.
-        Think about what items, records, or entities must exist before testing can begin.
+        FIRST: Call precondition() to create fresh data that this test will act on.
+        Ask: "What will this test edit/delete/use?" — create THAT item via precondition.
+        Do not describe what's already on the page — create new disposable items for the test.
 
         THEN: Based on the page elements and current state, outline:
         1. Which elements to interact with and in what order
@@ -353,7 +354,7 @@ export class Pilot implements Agent {
   }
 
   private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
-    debugLog('sendToPilot: %s, tools: %s, roundtrips: %d', functionId, !!opts.tools, opts.maxToolRoundtrips ?? 0);
+    debugLog(`sendToPilot: ${functionId}, tools: ${!!opts.tools}, roundtrips: ${opts.maxToolRoundtrips ?? 0}`);
     this.conversation!.addUserText(userText);
     let tools = opts.tools ? this.agentTools : undefined;
 
@@ -372,20 +373,20 @@ export class Pilot implements Agent {
   private buildPreconditionTool(task: Test) {
     return {
       precondition: tool({
-        description: 'Declare test data that must exist before the test runs. Do NOT request users — assume one user already exists. Examples: "1 post and 2 comments in it", "tag called Item".',
+        description: 'Create fresh disposable data that the test will act on (edit, delete, filter). Describe WHAT to create, not what exists. Do NOT request users. Examples: "1 post", "1 comment", "1 label named Bug".',
         inputSchema: z.object({
           description: z.string().describe('What data is needed, e.g. "1 post and 2 comments in it"'),
         }),
         execute: async ({ description }) => {
           task.addNote(`Precondition: ${description}`);
           tag('info').log(`Precondition: ${description}`);
-          debugLog('precondition: %s, fisherman: %s', description, this.fisherman?.isAvailable() ? 'available' : 'none');
+          debugLog(`precondition: ${description}, fisherman: ${this.fisherman?.isAvailable() ? 'available' : 'none'}`);
 
           if (!this.fisherman || !this.fisherman.isAvailable()) {
             return { noted: true, prepared: false, reason: 'Fisherman not available' };
           }
 
-          const result = await this.fisherman.prepareData(description, task.startUrl);
+          const result = await this.fisherman.prepareData(description, task.startUrl, task.sessionName);
 
           if (!result.success || result.created.length === 0) {
             if (result.summary) tag('warning').log(`Precondition failed: ${result.summary}`);
@@ -735,15 +736,25 @@ export class Pilot implements Agent {
       - record(notes) — document findings
 
       YOUR tools (Pilot-only):
-      - precondition(description) — declare what test data must exist before the test starts. Do NOT request users.
+      - precondition(description) — create FRESH test data via API that the test will act on. Do NOT request users.
 
-      PRECONDITIONS ARE CRITICAL — call precondition() for EVERY piece of data the scenario needs:
-      - If scenario says "edit a post" → precondition("1 post to edit")
-      - If scenario says "delete a comment" → precondition("1 post with 1 comment to delete")
-      - If scenario says "assign a label" → precondition("1 item and 1 label called Bug")
-      - If scenario says "filter by tag" → precondition("3 items, 2 tagged Important, 1 tagged Other")
-      Declare ALL data needs upfront. Be specific about quantities, names, and relationships.
-      For Edit/Update/Delete scenarios, ALWAYS create fresh data via precondition — never modify or delete pre-existing items.
+      PRECONDITIONS — what to create:
+      Preconditions create NEW disposable items that the test will modify, delete, or interact with.
+      Do NOT describe what already exists on the page — describe what NEW data the test needs to act on.
+
+      Ask yourself: "What object will this test change/delete/use? Create THAT."
+
+      Examples:
+      - "Edit test description" → precondition("1 test") — the test will edit this item
+      - "Delete a comment" → precondition("1 comment") — the test will delete this item
+      - "Assign a label to item" → precondition("1 item and 1 label named Bug") — test assigns the label
+      - "Filter by status" → precondition("3 items: 2 with status Open, 1 with status Closed")
+      - "Move item between lists" → precondition("1 item in list A")
+
+      WRONG: precondition("1 test suite named Updated Suite with existing tests") — this describes the page, not what to create
+      RIGHT: precondition("1 test") — create a fresh test that the scenario will edit
+
+      Call precondition() for EVERY item the scenario will act on. Keep descriptions short and specific.
 
       Response format:
       PROGRESS: <1 sentence assessment>

@@ -15,6 +15,7 @@ import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
+import type { Fisherman } from './fisherman.ts';
 import { getActiveStyle, getStyles } from './planner/styles.ts';
 import { WithSessionDedup } from './planner/session-dedup.ts';
 import { WithSubPages, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
@@ -57,6 +58,7 @@ export class Planner extends PlannerBase implements Agent {
   freshStart = false;
   private lastStyleName = '';
   researcher: Researcher;
+  private fisherman: Fisherman | null = null;
 
   constructor(explorer: Explorer, provider: Provider) {
     super();
@@ -67,6 +69,10 @@ export class Planner extends PlannerBase implements Agent {
     this.experienceTracker = new ExperienceTracker();
   }
 
+  setFisherman(fisherman: Fisherman): void {
+    this.fisherman = fisherman;
+  }
+
   private get sectionOrder(): string[] {
     return ConfigParser.getInstance().getConfig().ai?.agents?.researcher?.sections || Object.keys(POSSIBLE_SECTIONS);
   }
@@ -74,7 +80,9 @@ export class Planner extends PlannerBase implements Agent {
   getSystemMessage(feature?: string): string {
     const currentUrl = this.stateManager.getCurrentState()?.url;
     const customPrompt = this.provider.getSystemPromptForAgent('planner', currentUrl);
-    const featureDirective = feature ? `\n    IMPORTANT: The user requested to focus specifically on: "${feature}"\n    ALL scenarios MUST be directly related to this feature. Do not propose generic page tests unrelated to it.` : '';
+    const featureDirective = feature
+      ? `\n    IMPORTANT: The user requested to focus specifically on: "${feature}"\n    ALL scenarios MUST be directly related to this feature. Do not propose generic page tests unrelated to it.\n    Use the user's exact wording to guide scenario names — do not substitute different entities (e.g., do not plan "suite" actions when user said "test").`
+      : '';
     return dedent`
     <role>
     You are ISTQB certified senior manual QA planning exploratory testing session of a web application.
@@ -148,7 +156,7 @@ export class Planner extends PlannerBase implements Agent {
 
       if (feature) {
         tag('step').log(`Focusing on ${feature}`);
-        conversation.addUserText(`REMINDER: Every scenario must relate to the user's focus described above. Skip research elements unrelated to it.`);
+        conversation.addUserText(`CRITICAL: Every scenario must focus on: "${feature}". Use the user's exact wording — do not substitute different entities. Skip unrelated page elements.`);
       } else {
         tag('step').log('Focusing on main content of this page');
       }
@@ -338,32 +346,58 @@ export class Planner extends PlannerBase implements Agent {
 
     const hasFocusedOverlay = hasFocusedSection(plannerResearch);
     const focusNote = hasFocusedOverlay ? "IMPORTANT: One section is marked as **Focused** — this is the user's current focus area. Concentrate testing on the Focused section FIRST — test all interactions inside it before planning tests for the rest of the page." : '';
+    const featureFilter = feature ? `FOCUS FILTER: Only propose scenarios using elements relevant to "${feature}". Ignore all other elements.` : '';
 
     conversation.addUserText(dedent`
       <page_research>
       The following research describes ALL interactive elements on the page, organized by sections.
       Each numbered section and each Extended Research subsection represents a testable feature area.
       Skip the Menu/Navigation section — we test THIS page, not navigation away from it.
+      ${featureFilter}
       ${focusNote}
 
       ${plannerResearch}
       </page_research>
     `);
 
-    const rawFlows = this.experienceTracker.getSuccessfulExperience(state, { includeDescendants: true, stripCode: true });
-    const flows = rawFlows.map((f) => this.cleanExperienceFlows(f)).filter(Boolean) as string[];
-    if (flows.length > 0) {
-      conversation.addUserText(dedent`
-        <previously_tested_flows>
-        These flows have been tested before on this URL path or on a longer sub-path under it (same site):
+    if (this.fisherman) {
+      await this.fisherman.ensureReady(state.url);
+      if (this.fisherman.isAvailable()) {
+        const endpointList = this.fisherman.getEndpointList(state.url);
+        if (endpointList) {
+          conversation.addUserText(dedent`
+            <api_data_preparation>
+            An API is available to create test data before tests run (preconditions).
+            The following write endpoints were observed or configured:
 
-        ${flows.join('\n\n')}
+            ${endpointList}
 
-        Lines starting with > are discoveries made during those flows (buttons, fields, options that appeared).
-        How to use this data depends on <approach> above.
-        When the <approach> requires systematic valid combinatorial coverage (each select option, checkbox combinations, alternate valid values), scenarios that differ only along those dimensions still count as new coverage.
-        </previously_tested_flows>
-      `);
+            Use this knowledge to understand the data model beyond what the UI shows.
+            When planning scenarios that need specific data (edit, delete, filter, sort), note that
+            preconditions can create that data via API before the test starts.
+            For example: "Edit a post" test can have a precondition "1 post to edit" created via API.
+            </api_data_preparation>
+          `);
+        }
+      }
+    }
+
+    if (!feature) {
+      const rawFlows = this.experienceTracker.getSuccessfulExperience(state, { includeDescendants: true, stripCode: true });
+      const flows = rawFlows.map((f) => this.cleanExperienceFlows(f)).filter(Boolean) as string[];
+      if (flows.length > 0) {
+        conversation.addUserText(dedent`
+          <previously_tested_flows>
+          These flows have been tested before on this URL path or on a longer sub-path under it (same site):
+
+          ${flows.join('\n\n')}
+
+          Lines starting with > are discoveries made during those flows (buttons, fields, options that appeared).
+          How to use this data depends on <approach> above.
+          When the <approach> requires systematic valid combinatorial coverage (each select option, checkbox combinations, alternate valid values), scenarios that differ only along those dimensions still count as new coverage.
+          </previously_tested_flows>
+        `);
+      }
     }
 
     if (this.currentPlan) {
