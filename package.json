@@ -31,12 +31,18 @@
     "check:fix": "biome check --write .",
     "langfuse:export": "bun run .claude/skills/explorbot-debug/langfuse-export.ts"
   },
-  "keywords": ["cli", "react", "ink", "codeceptjs", "playwright"],
+  "keywords": [
+    "cli",
+    "react",
+    "ink",
+    "codeceptjs",
+    "playwright"
+  ],
   "author": "",
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0",
     "@ai-sdk/groq": "^3.0",
-    "@ai-sdk/openai": "^3.0",
+    "@ai-sdk/openai": "^3.0.49",
     "@axe-core/playwright": "^4.11.0",
     "@inkjs/ui": "^2.0.0",
     "@langfuse/otel": "^4.5.1",
@@ -49,7 +55,7 @@
     "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@opentelemetry/semantic-conventions": "^1.38.0",
     "@scalar/openapi-parser": "^0.25.6",
-    "@testomatio/reporter": "2.7.3",
+    "@testomatio/reporter": "2.7.6",
     "ai": "^6.0.6",
     "axe-core": "^4.11.1",
     "bash-tool": "^1.3.15",

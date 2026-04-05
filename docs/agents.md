@@ -19,17 +19,20 @@ flowchart LR
 **Purpose:** Handles all browser interactions — clicks, form fills, navigation.
 
 **What it does:**
+
 - Executes CodeceptJS commands in the browser
 - Tries multiple locator strategies when selectors fail
 - Automatically resolves failed interactions without stopping
 - Remembers what worked (and what didn't) for next time
 
 **Why you'll love it:**
+
 - No more `ElementNotFound` exceptions killing your test runs
 - Self-healing when your UI changes
 - Learns optimal selectors for your specific app
 
 **Commands that use Navigator:**
+
 - `/navigate <target>`
 - `I.click()`, `I.fillField()`, `I.amOnPage()`, etc.
 
@@ -38,6 +41,7 @@ flowchart LR
 **Purpose:** Analyzes pages to understand what's actually there.
 
 **What it does:**
+
 - Discovers all interactive UI elements
 - Expands hidden content (accordions, dropdowns, modals)
 - Maps navigation paths and form structures
@@ -45,12 +49,14 @@ flowchart LR
 - Filters out irrelevant elements (cookie banners, ads)
 
 **Why you'll love it:**
+
 - Discovers UI elements you forgot existed
 - Gives you a complete picture of what's testable
 - Documents forms with all their validation rules
 - Configurable filtering to focus on what matters
 
 **Commands that use Researcher:**
+
 - `explorbot research /path` (CLI)
 - `/research [path]` (TUI)
 - `/research --deep` — expand hidden elements
@@ -63,6 +69,7 @@ See [Researcher Agent](./researcher.md) for detailed configuration and usage.
 **Purpose:** Generates test scenarios from research findings.
 
 **What it does:**
+
 - Creates business-focused test scenarios
 - Assigns priority levels (critical/important/high/normal/low)
 - Generates expected outcomes for verification
@@ -71,12 +78,14 @@ See [Researcher Agent](./researcher.md) for detailed configuration and usage.
 - Cycles through planning styles (normal, psycho, curious) for comprehensive coverage
 
 **Why you'll love it:**
+
 - Creates tests that matter, not just "click stuff"
 - Prioritizes by risk (critical flows first)
 - Different styles ensure broad coverage over multiple iterations
 - Fully customizable — add your own styles and page-specific rules
 
 **Commands that use Planner:**
+
 - `/plan [feature]`
 - `/explore`
 
@@ -87,6 +96,7 @@ See [Planner Agent](./planner.md) for detailed documentation on planning styles,
 **Purpose:** Executes the planned scenarios.
 
 **What it does:**
+
 - Runs test scenarios step by step
 - Adapts when things don't go as expected
 - Tracks state changes during execution
@@ -94,11 +104,13 @@ See [Planner Agent](./planner.md) for detailed documentation on planning styles,
 - Uses research context for smart decisions
 
 **Why you'll love it:**
+
 - Handles unexpected modals and popups
 - Recovers from minor failures automatically
 - Produces detailed execution logs
 
 **Commands that use Tester:**
+
 - `/test [scenario]`
 - `/explore`
 
@@ -107,31 +119,37 @@ See [Planner Agent](./planner.md) for detailed documentation on planning styles,
 **Purpose:** Supervises Tester and intervenes when tests get stuck.
 
 **What it does:**
+
 - Maintains separate conversation to track test progress over time
 - Detects stuck patterns (loops, repeated failures, no page changes)
 - Decides what context Tester needs (HTML, ARIA, UI map)
 - Asks user for help when automated recovery fails
 
 **Why you'll love it:**
+
 - Catches when Tester is spinning wheels on the same failure
 - Requests user input before giving up on a test
 - Can use smarter models without token cost explosion (only sees tool summaries, not raw HTML)
 
 **When Pilot intervenes:**
+
 - Actions succeed but page doesn't change (wrong element)
 - Same action repeated multiple times (loop)
 - Same locator keeps failing (need alternative approach)
 - Only research/context calls, no action tools (not progressing)
 
-## Captain Agent *(coming soon)*
+## Captain Agent
 
-**Purpose:** Orchestrates the whole testing session.
+**Purpose:** Orchestrates the whole testing session and handles user commands in TUI.
 
 **What it does:**
-- Coordinates all agents intelligently
+
 - Responds to user commands in real-time
 - Adjusts strategy based on discoveries
 - Manages conversation context efficiently
+- Runs in idle mode with access to diagnostic tools
+- Inspects test sessions (logs, tool calls, ARIA states, pilot analysis)
+- Reads/writes files, evaluates browser JS, manages tabs
 
 ## Per-Agent Model Configuration
 
@@ -157,6 +175,7 @@ export default {
 ```
 
 **Typical optimization:**
+
 - Navigator needs fast responses for real-time interaction
 - Researcher benefits from vision capabilities
 - Planner can use a slightly larger model for better test design

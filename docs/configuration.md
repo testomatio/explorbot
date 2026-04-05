@@ -101,11 +101,11 @@ ai: {
 
 ### Rules vs Knowledge vs systemPrompt
 
-| Mechanism | Purpose | URL-aware | File-based |
-|-----------|---------|-----------|------------|
-| **Rules** | Agent-specific instructions | Yes | Yes (`rules/<agent>/`) |
-| **Knowledge** | App domain info (credentials, data) | Yes | Yes (`knowledge/`) |
-| **systemPrompt** | Quick inline instructions | No | No (in config) |
+| Mechanism        | Purpose                             | URL-aware | File-based             |
+| ---------------- | ----------------------------------- | --------- | ---------------------- |
+| **Rules**        | Agent-specific instructions         | Yes       | Yes (`rules/<agent>/`) |
+| **Knowledge**    | App domain info (credentials, data) | Yes       | Yes (`knowledge/`)     |
+| **systemPrompt** | Quick inline instructions           | No        | No (in config)         |
 
 Rules and `systemPrompt` can be used together — rules from files load first, then `systemPrompt` is appended.
 
@@ -165,16 +165,16 @@ Each agent can be individually configured with its own model and custom system p
 
 ### Available Agents
 
-| Agent | Purpose |
-|-------|---------|
-| `tester` | Executes test scenarios |
-| `planner` | Generates test plans |
-| `researcher` | Analyzes page structure |
-| `navigator` | Handles browser navigation |
-| `captain` | Orchestrates user commands |
+| Agent                  | Purpose                    |
+| ---------------------- | -------------------------- |
+| `tester`               | Executes test scenarios    |
+| `planner`              | Generates test plans       |
+| `researcher`           | Analyzes page structure    |
+| `navigator`            | Handles browser navigation |
+| `captain`              | Orchestrates user commands |
 | `experience-compactor` | Compresses experience data |
-| `quartermaster` | Accessibility analysis |
-| `historian` | Session recording |
+| `quartermaster`        | Accessibility analysis     |
+| `historian`            | Session recording          |
 
 ### Agent Options
 
@@ -191,14 +191,15 @@ agents: {
 }
 ```
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `model` | `LanguageModel` | Model instance for this agent (overrides default) |
-| `enabled` | `boolean` | Enable or disable the agent |
-| `rules` | `Array<string \| Record<string, string>>` | Rule files to load from `rules/<agent>/` (URL-aware). See [Rules](#rules) |
-| `systemPrompt` | `string` | Additional instructions appended to the agent's prompt (inline fallback) |
-| `beforeHook` | `Hook \| HookPatternMap` | Code to run before agent execution |
-| `afterHook` | `Hook \| HookPatternMap` | Code to run after agent execution |
+| Option            | Type                                      | Description                                                                            |
+| ----------------- | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| `model`           | `LanguageModel`                           | Model instance for this agent (overrides default)                                      |
+| `enabled`         | `boolean`                                 | Enable or disable the agent                                                            |
+| `rules`           | `Array<string \| Record<string, string>>` | Rule files to load from `rules/<agent>/` (URL-aware). See [Rules](#rules)              |
+| `systemPrompt`    | `string`                                  | Additional instructions appended to the agent's prompt (inline fallback)               |
+| `providerOptions` | `object`                                  | Provider-specific options passed through (e.g. `{ groq: { reasoningEffort: 'low' } }`) |
+| `beforeHook`      | `Hook \| HookPatternMap`                  | Code to run before agent execution                                                     |
+| `afterHook`       | `Hook \| HookPatternMap`                  | Code to run after agent execution                                                      |
 
 See [Agent Hooks](./hooks.md) for detailed hook configuration.
 
@@ -206,12 +207,13 @@ See [Agent Hooks](./hooks.md) for detailed hook configuration.
 
 The researcher agent supports all standard agent options plus additional options for controlling interactive exploration:
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `excludeSelectors` | `string[]` | CSS selectors for containers to exclude |
-| `includeSelectors` | `string[]` | CSS selectors for containers to always explore |
-| `stopWords` | `string[]` | Words to filter out (replaces defaults if provided) |
-| `maxElementsToExplore` | `number` | Maximum elements to explore per page (default: 10) |
+| Option                 | Type       | Description                                                                                     |
+| ---------------------- | ---------- | ----------------------------------------------------------------------------------------------- |
+| `excludeSelectors`     | `string[]` | CSS selectors for containers to exclude                                                         |
+| `includeSelectors`     | `string[]` | CSS selectors for containers to always explore                                                  |
+| `stopWords`            | `string[]` | Words to filter out (replaces defaults if provided)                                             |
+| `maxElementsToExplore` | `number`   | Maximum elements to explore per page (default: 10)                                              |
+| `errorPageTimeout`     | `number`   | Seconds to wait for error page recovery before giving up. Default: `10`. Set to `0` to disable. |
 
 ```javascript
 ai: {
@@ -228,6 +230,48 @@ See [Researcher Agent](./researcher.md) for detailed documentation and examples.
 
 See [AI Providers](./providers.md) for recommended models and provider setup.
 
+## Reporter
+
+Explorbot can generate HTML test reports locally without requiring a Testomatio account.
+
+```javascript
+reporter: {
+  enabled: true,   // Generate HTML reports to output/reports/
+  html: false,     // Force HTML reports even when Testomatio is configured
+}
+```
+
+| Option    | Type      | Default | Description                                                                   |
+| --------- | --------- | ------- | ----------------------------------------------------------------------------- |
+| `enabled` | `boolean` | `false` | Enable HTML report generation (auto-enabled when `TESTOMATIO` env var is set) |
+| `html`    | `boolean` | `false` | Generate HTML reports in addition to Testomatio when both are configured      |
+
+## File Uploads
+
+Provide custom files for upload tests:
+
+```javascript
+files: {
+  'Profile photo': './fixtures/photo.png',
+  'Test document': './fixtures/document.pdf',
+  'Data export': './fixtures/data.xlsx',
+}
+```
+
+Explorbot includes built-in sample files (PNG, PDF, DOCX, XLSX, ZIP, MP4, MP3). Custom entries extend the built-in set.
+
+## Experience
+
+```javascript
+experience: {
+  maxReadLines: 100,  // Maximum lines to read from each experience entry
+}
+```
+
+| Option         | Type     | Default | Description                                          |
+| -------------- | -------- | ------- | ---------------------------------------------------- |
+| `maxReadLines` | `number` | `100`   | Truncates long experience entries to this many lines |
+
 ## Playwright Settings
 
 ### Browser Selection
@@ -237,6 +281,14 @@ playwright: {
   browser: 'chromium',  // Most compatible
   // browser: 'firefox',  // Better privacy testing
   // browser: 'webkit',   // Safari/iOS testing
+}
+```
+
+### Action Delay
+
+```javascript
+playwright: {
+  waitForAction: 500,  // Delay in ms after each Playwright action (default: 500)
 }
 ```
 
@@ -338,65 +390,81 @@ explorbot explore --config ./custom/path/config.js
 export default {
   // Browser automation settings
   playwright: {
-    browser: 'chromium',           // 'chromium' | 'firefox' | 'webkit'
-    url: 'http://localhost:3000',  // Starting URL (required)
-    show: false,                   // Show browser window
-    windowSize: '1280x720',        // Browser window size
-    slowMo: 0,                     // Slow down actions (ms)
-    timeout: 30000,                // Default timeout (ms)
-    waitForNavigation: 'load',     // 'load' | 'domcontentloaded' | 'networkidle'
-    waitForTimeout: 1000,          // Wait after navigation (ms)
-    ignoreHTTPSErrors: false,      // Ignore HTTPS certificate errors
-    userAgent: 'custom-agent',     // Custom user agent string
+    browser: 'chromium', // 'chromium' | 'firefox' | 'webkit'
+    url: 'http://localhost:3000', // Starting URL (required)
+    show: false, // Show browser window
+    windowSize: '1280x720', // Browser window size
+    slowMo: 0, // Slow down actions (ms)
+    timeout: 30000, // Default timeout (ms)
+    waitForNavigation: 'load', // 'load' | 'domcontentloaded' | 'networkidle'
+    waitForTimeout: 1000, // Wait after navigation (ms)
+    ignoreHTTPSErrors: false, // Ignore HTTPS certificate errors
+    userAgent: 'custom-agent', // Custom user agent string
     viewport: {
       width: 1280,
       height: 720,
     },
-    args: ['--disable-gpu'],       // Browser launch arguments
-    chromium: { args: [] },        // Chromium-specific args
-    firefox: { args: [] },         // Firefox-specific args
-    webkit: { args: [] },          // WebKit-specific args
+    args: ['--disable-gpu'], // Browser launch arguments
+    chromium: { args: [] }, // Chromium-specific args
+    firefox: { args: [] }, // Firefox-specific args
+    webkit: { args: [] }, // WebKit-specific args
   },
 
   // AI provider settings
   ai: {
-    model: groq('gpt-oss-20b'),          // Default model instance (required)
-    visionModel: groq('llama-scout-4'),  // Model for screenshot analysis
-    vision: true,                  // Enable vision features
-    maxAttempts: 3,                // Retry attempts for AI calls
-    retryDelay: 1000,              // Delay between retries (ms)
-    config: {},                    // Additional provider config
-    langfuse: {                    // Observability settings
+    model: groq('gpt-oss-20b'), // Default model instance (required)
+    visionModel: groq('llama-scout-4'), // Model for screenshot analysis
+    agenticModel: groq('gpt-oss-120b'), // Model for agentic tasks (Captain, Pilot verdict review)
+    vision: true, // Enable vision features
+    maxAttempts: 3, // Retry attempts for AI calls
+    retryDelay: 1000, // Delay between retries (ms)
+    config: {}, // Additional provider config
+    langfuse: {
+      // Observability settings
       enabled: true,
       publicKey: 'pk-...',
       secretKey: 'sk-...',
       baseUrl: 'https://cloud.langfuse.com',
     },
-    agents: {                      // Per-agent configuration
+    agents: {
+      // Per-agent configuration
       tester: {
         model: groq('gpt-oss-20b'),
         enabled: true,
         rules: ['wait-for-toasts', { '/admin/*': 'admin-creds' }],
-        systemPrompt: '...',       // Inline fallback
+        systemPrompt: '...', // Inline fallback
       },
       planner: {
         styles: ['normal', 'psycho', 'curious'],
         rules: [{ '/checkout/*': 'payment-rules' }],
       },
-      researcher: {                // Researcher-specific options
+      researcher: {
+        // Researcher-specific options
         model: groq('gpt-oss-20b'), // Override default model
-        enabled: true,             // Enable/disable agent
-        systemPrompt: '...',       // Additional instructions
-        excludeSelectors: [],      // CSS selectors to exclude
-        includeSelectors: [],      // CSS selectors to always explore
-        stopWords: [],             // Text patterns to skip (replaces defaults)
-        maxElementsToExplore: 10,  // Max elements per page
+        enabled: true, // Enable/disable agent
+        systemPrompt: '...', // Additional instructions
+        excludeSelectors: [], // CSS selectors to exclude
+        includeSelectors: [], // CSS selectors to always explore
+        stopWords: [], // Text patterns to skip (replaces defaults)
+        maxElementsToExplore: 10, // Max elements per page
+        errorPageTimeout: 10, // Seconds to wait for error page recovery (0 to disable)
+        providerOptions: {}, // Provider-specific options
       },
-      navigator: { /* ... */ },
-      captain: { /* ... */ },
-      'experience-compactor': { /* ... */ },
-      quartermaster: { /* ... */ },
-      historian: { /* ... */ },
+      navigator: {
+        /* ... */
+      },
+      captain: {
+        /* ... */
+      },
+      'experience-compactor': {
+        /* ... */
+      },
+      quartermaster: {
+        /* ... */
+      },
+      historian: {
+        /* ... */
+      },
     },
   },
 
@@ -416,17 +484,33 @@ export default {
     },
   },
 
+  // Reporter settings
+  reporter: {
+    enabled: false, // Generate HTML reports to output/reports/
+    html: false, // Force HTML reports even when Testomatio is configured
+  },
+
+  // Custom files for upload tests
+  files: {
+    // 'Profile photo': './fixtures/photo.png',
+  },
+
+  // Experience settings
+  experience: {
+    maxReadLines: 100, // Max lines to read from each experience entry
+  },
+
   // Action execution settings
   action: {
-    delay: 1000,                   // Delay between actions (ms)
-    retries: 3,                    // Retry failed actions
+    delay: 1000, // Delay between actions (ms)
+    retries: 3, // Retry failed actions
   },
 
   // Directory paths
   dirs: {
-    knowledge: 'knowledge',        // Domain knowledge files
-    experience: 'experience',      // Learned patterns
-    output: 'output',              // Test results and logs
+    knowledge: 'knowledge', // Domain knowledge files
+    experience: 'experience', // Learned patterns
+    output: 'output', // Test results and logs
   },
 };
 ```
