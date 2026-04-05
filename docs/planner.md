@@ -31,13 +31,13 @@ ai: {
 
 ### Options Reference
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `model` | `LanguageModel` | default model | Override model for Planner |
-| `styles` | `string[]` | `['normal', 'psycho', 'curious']` | Style names and cycling order |
-| `stylesDir` | `string` | `rules/planner/styles/` | Custom directory for style files |
-| `rules` | `RuleEntry[]` | `[]` | URL-aware rule files from `rules/planner/` |
-| `systemPrompt` | `string` | - | Inline instructions appended to the prompt |
+| Option         | Type            | Default                           | Description                                |
+| -------------- | --------------- | --------------------------------- | ------------------------------------------ |
+| `model`        | `LanguageModel` | default model                     | Override model for Planner                 |
+| `styles`       | `string[]`      | `['normal', 'curious', 'psycho']` | Style names and cycling order              |
+| `stylesDir`    | `string`        | `rules/planner/styles/`           | Custom directory for style files           |
+| `rules`        | `RuleEntry[]`   | `[]`                              | URL-aware rule files from `rules/planner/` |
+| `systemPrompt` | `string`        | -                                 | Inline instructions appended to the prompt |
 
 ## Planning Styles
 
@@ -45,22 +45,22 @@ Each time the Planner generates scenarios, it applies a **style** — a testing 
 
 ### Built-in Styles
 
-| Style | Focus | What it generates |
-|-------|-------|-------------------|
-| **normal** | Complete user workflows | CRUD operations, form submissions, filter+verify flows. Each test changes application state. Distributes tests across all feature areas. |
-| **psycho** | Invalid and extreme inputs | Empty submissions, 10000-character strings, special characters, SQL injection, wrong formats, boundary values, incompatible combinations. Finds what breaks. |
-| **curious** | Coverage gaps | Cross-references previous test results with page research to find untested controls. Exercises every select option, checkbox state, and skipped form field. Fills gaps, not repeats. |
+| Style       | Focus                      | What it generates                                                                                                                                                                    |
+| ----------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **normal**  | Complete user workflows    | CRUD operations, form submissions, filter+verify flows. Each test changes application state. Distributes tests across all feature areas.                                             |
+| **psycho**  | Invalid and extreme inputs | Empty submissions, 10000-character strings, special characters, SQL injection, wrong formats, boundary values, incompatible combinations. Finds what breaks.                         |
+| **curious** | Coverage gaps              | Cross-references previous test results with page research to find untested controls. Exercises every select option, checkbox state, and skipped form field. Fills gaps, not repeats. |
 
 ### How Cycling Works
 
-The default cycle is: **normal** → **psycho** → **curious** → **normal** → ...
+The default cycle is: **normal** → **curious** → **psycho** → **normal** → ...
 
-| Iteration | Style | Purpose |
-|-----------|-------|---------|
-| 1st `/plan` | normal | Cover core workflows and CRUD operations |
-| 2nd `/plan` | psycho | Stress-test with invalid and extreme inputs |
-| 3rd `/plan` | curious | Fill coverage gaps from previous iterations |
-| 4th `/plan` | normal | Re-examine with fresh research |
+| Iteration   | Style   | Purpose                                     |
+| ----------- | ------- | ------------------------------------------- |
+| 1st `/plan` | normal  | Cover core workflows and CRUD operations    |
+| 2nd `/plan` | curious | Fill coverage gaps from previous iterations |
+| 3rd `/plan` | psycho  | Stress-test with invalid and extreme inputs |
+| 4th `/plan` | normal  | Re-examine with fresh research              |
 
 Each iteration only proposes scenarios that don't already exist in the plan. When all feature areas are covered, the Planner returns an empty list.
 
@@ -99,6 +99,7 @@ Create `rules/planner/styles/security.md`:
 
 ```markdown
 Focus on security-related scenarios:
+
 - Test all inputs for XSS by entering <script> tags
 - Check that sensitive data is masked in the UI
 - Verify that unauthorized actions show proper error messages
@@ -121,6 +122,14 @@ Use only stress-testing:
 ```javascript
 planner: {
   styles: ['psycho'],
+}
+```
+
+Use the default order (normal → curious → psycho):
+
+```javascript
+planner: {
+  styles: ['normal', 'curious', 'psycho'],
 }
 ```
 
@@ -153,6 +162,7 @@ Write it as instructions to a senior QA engineer describing how to think about t
 Think like a real user of this product. What would they actually do on this page?
 
 Prefer maximal realistic happy paths:
+
 - Fill required AND optional fields
 - Set meaningful non-default choices
 - Continue the story after creation (open the item, adjust attributes, add a note)
@@ -185,13 +195,15 @@ Rules are additive — all matching rules are concatenated and appended to the P
 
 The Planner assigns priorities based on business importance:
 
-| Priority | Meaning | Examples |
-|----------|---------|---------|
-| **critical** | Core business functionality | Login, checkout, primary CRUD |
-| **important** | Key user flows | Profile edit, search, main filters |
-| **high** | Secondary features | Edge cases for critical flows |
-| **normal** | Supporting actions | Settings, configuration |
-| **low** | Minor interactions | Cosmetic checks, boundary tests |
+| Priority      | Meaning                     | Examples                           |
+| ------------- | --------------------------- | ---------------------------------- |
+| **critical**  | Core business functionality | Login, checkout, primary CRUD      |
+| **important** | Key user flows              | Profile edit, search, main filters |
+| **high**      | Secondary features          | Edge cases for critical flows      |
+| **normal**    | Supporting actions          | Settings, configuration            |
+| **low**       | Minor interactions          | Cosmetic checks, boundary tests    |
+
+Tests that create, update, or delete data are prioritized over UI-only interactions (view switching, filtering, pagination).
 
 ## See Also
 
