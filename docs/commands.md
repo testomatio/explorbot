@@ -15,7 +15,7 @@ Some commands work in both modes. Where a CLI equivalent exists, it is noted bel
 | `/research [url]` | `explorbot research <url>` |
 | `/plan [feature]` | `explorbot plan <path> [feature]` |
 | `/drill` | `explorbot drill <url>` |
-| `/know [note]` | `explorbot knows:add [url] [description]` |
+| `/learn [note]` | `explorbot learn [url] [description]` |
 
 CLI commands run headless by default, execute the task, and exit. TUI commands run inside an interactive session where you can chain multiple actions.
 
@@ -230,13 +230,22 @@ Uses AI to identify and format data on the page.
 
 ## Knowledge Management
 
-### `/know [note]`
+### `/knows [url]`
+
+List all knowledge or show matching knowledge for a URL.
+
+```
+/knows
+/knows /login
+```
+
+### `/learn [note]`
 
 Store knowledge about the current page for future reference.
 
 ```
-/know
-/know Test user credentials: test@example.com / test123
+/learn
+/learn Test user credentials: test@example.com / test123
 ```
 
 Without arguments, opens an interactive editor. Knowledge is saved to `./knowledge/` and used by agents during exploration.
