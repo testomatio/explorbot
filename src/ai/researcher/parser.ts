@@ -1,6 +1,8 @@
 import { parseAriaLocator } from '../../utils/aria.ts';
+import { pluralize } from '../../utils/logger.ts';
 import { jsonToTable, parseSections, tableToJson } from '../../utils/markdown-parser.ts';
 import { mdq } from '../../utils/markdown-query.ts';
+import { FOCUSED_MARKER } from './focus.ts';
 
 export interface ResearchElement {
   name: string;
@@ -19,6 +21,7 @@ export interface ResearchSection {
   containerCss: string | null;
   elements: ResearchElement[];
   rawMarkdown: string;
+  isExtended: boolean;
 }
 
 const SKIP_SECTIONS = new Set(['summary', 'screenshot analysis', 'data', 'primary actions']);
@@ -88,14 +91,17 @@ export function extractContainerFromBlockquote(sectionMarkdown: string): string 
 }
 
 export function parseResearchSections(markdown: string): ResearchSection[] {
+  const hasExtendedResearch = markdown.includes('\n# Extended Research') || markdown.startsWith('# Extended Research');
+
   return parseSections(markdown)
     .filter((s) => !SKIP_SECTIONS.has(s.name.toLowerCase()) && !s.name.toLowerCase().includes('data:'))
     .map((section) => {
       const containerCss = extractContainerFromBlockquote(section.rawMarkdown);
       const rows = tableToJson(section.rawMarkdown);
       const elements = rows.map(mapRowToElement).filter(Boolean) as ResearchElement[];
+      const isExtended = hasExtendedResearch && section.depth === 3;
 
-      return { name: section.name, containerCss, elements, rawMarkdown: section.rawMarkdown };
+      return { name: section.name, containerCss, elements, rawMarkdown: section.rawMarkdown, isExtended };
     });
 }
 
@@ -139,4 +145,42 @@ export function rebuildSectionMarkdown(section: ResearchSection): string {
   });
 
   return jsonToTable(rows, columns);
+}
+
+export function formatResearchSummary(text: string, opts?: { visionUsed?: boolean }): string {
+  const sections = parseResearchSections(text);
+  const coordCount = sections.reduce((sum, s) => sum + s.elements.filter((e) => e.coordinates !== null).length, 0);
+
+  const mainSections = sections.filter((s) => !s.isExtended);
+  const extendedSections = sections.filter((s) => s.isExtended);
+
+  const lines: string[] = [];
+
+  for (const s of mainSections) {
+    if (s.elements.length === 0 && !s.containerCss) continue;
+    lines.push(formatSectionLine(s));
+  }
+
+  if (extendedSections.length > 0) {
+    lines.push('', 'Extended Research', '');
+    for (const s of extendedSections) {
+      if (s.elements.length === 0 && !s.containerCss) continue;
+      lines.push(formatSectionLine(s));
+    }
+  }
+
+  lines.push('', `Chars: ${text.length}`);
+
+  if (opts?.visionUsed || coordCount > 0) {
+    lines.push(`Vision: ${coordCount} elements with coordinates`);
+  }
+
+  return lines.join('\n');
+}
+
+function formatSectionLine(s: ResearchSection): string {
+  const parts = [`* ${s.name} (${s.elements.length} ${pluralize(s.elements.length, 'element')})`];
+  if (s.containerCss) parts.push(`\`${s.containerCss}\``);
+  if (s.rawMarkdown.includes(FOCUSED_MARKER)) parts.push('**Focused**');
+  return parts.join(' ');
 }

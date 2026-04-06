@@ -10,7 +10,7 @@ import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
 import { visuallyAnnotateContainers } from './ai/researcher/coordinates.ts';
 import type { ExplorbotConfig } from './config.js';
-import { ConfigParser } from './config.js';
+import { ConfigParser, outputPath } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import { Reporter } from './reporter.ts';
@@ -75,7 +75,7 @@ class Explorer {
       const configParser = ConfigParser.getInstance();
       const configPath = configParser.getConfigPath();
       const projectRoot = configPath ? path.dirname(configPath) : process.cwd();
-      (global as any).output_dir = path.join(projectRoot, 'output');
+      (global as any).output_dir = path.join(projectRoot, 'output', 'states');
       (global as any).codecept_dir = projectRoot;
 
       configParser.validateConfig(this.config);
@@ -543,7 +543,7 @@ class Explorer {
       const lastScreenshot = ActionResult.fromState(this.stateManager.getCurrentState()!).screenshotFile;
       if (!lastScreenshot) return;
 
-      const screenshotPath = join(ConfigParser.getInstance().getOutputDir(), lastScreenshot);
+      const screenshotPath = outputPath('states', lastScreenshot);
       test.addArtifact(screenshotPath);
     };
 

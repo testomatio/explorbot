@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ConfigParser } from '../../config.ts';
+import { outputPath } from '../../config.ts';
 import { computeHtmlFingerprint } from '../../utils/html-diff.ts';
 import { debugLog } from './mixin.ts';
 
@@ -15,7 +15,7 @@ const memoryCacheTimestamps: Record<string, number> = {};
 let fingerprintWorker: Worker | null = null;
 
 function getStatesDir(): string {
-  return join(ConfigParser.getInstance().getOutputDir(), 'states');
+  return outputPath('states');
 }
 
 function getFingerprintWorker(): Worker {
@@ -32,8 +32,7 @@ export function getCachedResearch(hash: string): string {
   if (timestamp && now - timestamp <= CACHE_TTL_MS) {
     return memoryCache[hash] || '';
   }
-  const outputDir = ConfigParser.getInstance().getOutputDir();
-  const researchFile = join(outputDir, 'research', `${hash}.md`);
+  const researchFile = outputPath('research', `${hash}.md`);
   if (!existsSync(researchFile)) return '';
   const stats = statSync(researchFile);
   if (now - stats.mtimeMs > CACHE_TTL_MS) return '';
@@ -44,8 +43,7 @@ export function getCachedResearch(hash: string): string {
 }
 
 export function saveResearch(hash: string, text: string, combinedHtml?: string): string {
-  const outputDir = ConfigParser.getInstance().getOutputDir();
-  const researchDir = join(outputDir, 'research');
+  const researchDir = outputPath('research');
   const researchFile = join(researchDir, `${hash}.md`);
   if (!existsSync(researchDir)) mkdirSync(researchDir, { recursive: true });
   writeFileSync(researchFile, text);

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
-import { ConfigParser, type HtmlConfig } from './config.ts';
+import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
 import { compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
@@ -330,7 +330,7 @@ export class ActionResult implements ActionResultData {
 
   private static loadHtmlFromFile(htmlFile: string): string | null {
     try {
-      const filePath = join(ConfigParser.getInstance().getOutputDir(), htmlFile);
+      const filePath = outputPath('states', htmlFile);
       if (fs.existsSync(filePath)) {
         return fs.readFileSync(filePath, 'utf8');
       }
@@ -343,7 +343,7 @@ export class ActionResult implements ActionResultData {
 
   private static loadScreenshotFromFile(screenshotFile: string): Buffer | undefined {
     try {
-      const filePath = join(ConfigParser.getInstance().getOutputDir(), screenshotFile);
+      const filePath = outputPath('states', screenshotFile);
       if (fs.existsSync(filePath)) {
         return fs.readFileSync(filePath);
       }
@@ -356,7 +356,7 @@ export class ActionResult implements ActionResultData {
 
   private static loadBrowserLogsFromFile(logFile: string): any[] {
     try {
-      const filePath = join('output', logFile);
+      const filePath = outputPath('states', logFile);
       if (fs.existsSync(filePath)) {
         const logContent = fs.readFileSync(filePath, 'utf8');
         return logContent
@@ -385,7 +385,7 @@ export class ActionResult implements ActionResultData {
 
   private static loadAriaSnapshotFromFile(ariaSnapshotFile: string): string | null {
     try {
-      const filePath = join(ConfigParser.getInstance().getOutputDir(), ariaSnapshotFile);
+      const filePath = outputPath('states', ariaSnapshotFile);
       if (!fs.existsSync(filePath)) {
         return null;
       }

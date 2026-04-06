@@ -1,7 +1,6 @@
-import { join } from 'node:path';
 import { ActionResult } from '../action-result.js';
 import { Researcher } from '../ai/researcher.js';
-import { ConfigParser } from '../config.js';
+import { outputPath } from '../config.js';
 import { type ContextData, type ContextMode, formatContextSummary } from '../utils/context-formatter.js';
 import { tag } from '../utils/logger.js';
 import { extractValidContainers } from '../utils/research-parser.js';
@@ -61,7 +60,7 @@ export class ContextCommand extends BaseCommand {
     tag('multiline').log(output);
 
     if (isVisual && actionResult.screenshotFile) {
-      const fullPath = join(ConfigParser.getInstance().getOutputDir(), actionResult.screenshotFile);
+      const fullPath = outputPath('states', actionResult.screenshotFile);
       tag('info').log(`Screenshot saved: file://${fullPath}`);
     }
   }

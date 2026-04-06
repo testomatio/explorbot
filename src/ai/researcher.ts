@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { setActivity } from '../activity.ts';
-import { ConfigParser } from '../config.ts';
+import { ConfigParser, outputPath } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.ts';
@@ -24,9 +24,9 @@ import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, saveResearch } from './researcher/cache.ts';
 import { type CoordinateMethods, WithCoordinates } from './researcher/coordinates.ts';
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
-import { FOCUSED_MARKER, detectFocusFromAria, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
+import { detectFocusFromAria, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
-import { extractValidContainers, parseResearchSections } from './researcher/parser.ts';
+import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
 import { locatorRule as generalLocatorRuleText } from './rules.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
@@ -45,27 +45,6 @@ export const POSSIBLE_SECTIONS = {
   menu: 'page menu (toolbar, context actions, filters, dropdowns)',
   navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
-
-function formatResearchSummary(text: string, opts?: { visionUsed?: boolean }): string {
-  const sections = parseResearchSections(text);
-  const coordCount = sections.reduce((sum, s) => sum + s.elements.filter((e) => e.coordinates !== null).length, 0);
-
-  const lines: string[] = [];
-  for (const s of sections) {
-    const focused = s.rawMarkdown.includes(FOCUSED_MARKER);
-    lines.push(`- **${s.name}** (${pluralize(s.elements.length, 'element')})`);
-    if (focused) lines.push('  - Focused');
-    if (s.containerCss) lines.push(`  - Container: \`${s.containerCss}\``);
-  }
-
-  lines.push('', `Chars: ${text.length}`);
-
-  if (opts?.visionUsed || coordCount > 0) {
-    lines.push(`Vision: ${coordCount} elements with coordinates`);
-  }
-
-  return lines.join('\n');
-}
 
 const ResearcherBase = WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent)));
 
@@ -215,14 +194,18 @@ export class Researcher extends ResearcherBase implements Agent {
       const result = new ResearchResult(invocationResult.response.text, state.url);
       debugLog(`Original research response length: ${result.text.length} chars`);
 
-      if (mdq(result.text).query('section("Error Page Detected")').count() > 0 && result.text.length < 500) {
-        if (!opts._skipErrorPageRetry && (await this.waitForPageLoad(screenshot))) {
-          return this.research(state, { ...opts, force: true, _skipErrorPageRetry: true });
+      const errorSection = mdq(result.text).query('section("Error Page Detected")');
+      if (errorSection.count() > 0) {
+        if (result.text.length < 500) {
+          if (!opts._skipErrorPageRetry && (await this.waitForPageLoad(screenshot))) {
+            return this.research(state, { ...opts, force: true, _skipErrorPageRetry: true });
+          }
+          tag('warning').log(`AI detected error page at ${state.url}`);
+          if (stateHash) saveResearch(stateHash, result.text);
+          await this.hooksRunner.runAfterHook('researcher', state.url);
+          return result.text;
         }
-        tag('warning').log(`AI detected error page at ${state.url}`);
-        if (stateHash) saveResearch(stateHash, result.text);
-        await this.hooksRunner.runAfterHook('researcher', state.url);
-        return result.text;
+        result.text = errorSection.replace('');
       }
 
       const interrupted = () => executionController.isInterrupted();
@@ -355,7 +338,7 @@ export class Researcher extends ResearcherBase implements Agent {
       tag('success').log(`Research complete! ${result.text.length} characters`);
       if (researchFile) tag('substep').log(`Research file saved to: ${researchFile}`);
       if (this.actionResult?.screenshotFile) {
-        const screenshotPath = join(ConfigParser.getInstance().getOutputDir(), this.actionResult.screenshotFile);
+        const screenshotPath = outputPath('states', this.actionResult.screenshotFile);
         tag('substep').log(`UI screenshot: file://${screenshotPath}`);
       }
 
@@ -479,7 +462,8 @@ export class Researcher extends ResearcherBase implements Agent {
       No spaces, no >, no combinators, no nesting.
       - INVALID: '.filterbar-filter-btn-div button', 'div.static nav', 'div > .content'
       - INVALID: 'div', 'section', 'nav', 'div:first' (bare tags are not containers)
-      - VALID: '.sticky-header', '.tree-list-item', '[role="dialog"]', 'nav.static', '.pagination-centered'
+      - INVALID: Tailwind/Bootstrap utility classes that describe layout or styling (e.g. flex-none, d-flex, col-md-6, items-center, mt-4, p-2, bg-white, text-sm, rounded-lg). These are visual, not semantic.
+      - VALID: Semantic class names that describe WHAT the section IS — e.g. '.product-list', '.sidebar-menu', '.user-profile', '[role="dialog"]', '.search-results'
       Container must uniquely identify a semantic wrapper, not a path through the DOM.
       </container_rules>
 

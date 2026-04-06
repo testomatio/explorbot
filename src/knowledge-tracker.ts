@@ -58,7 +58,7 @@ export class KnowledgeTracker {
         this.knowledgeFiles.push({
           filePath,
           url: urlPattern,
-          content: parsed.content,
+          content: this.interpolateVars(parsed.content),
           ...parsed.data,
         });
       } catch (error) {
@@ -127,6 +127,27 @@ export class KnowledgeTracker {
     }
 
     return { filename, filePath, isNewFile };
+  }
+
+  private interpolateVars(content: string): string {
+    return content.replace(/\$\{([^}]+)\}/g, (match, expr: string) => {
+      const dotIndex = expr.indexOf('.');
+      if (dotIndex === -1) return match;
+
+      const namespace = expr.slice(0, dotIndex);
+      const key = expr.slice(dotIndex + 1);
+
+      if (namespace === 'env') return process.env[key] ?? '';
+
+      if (namespace === 'config') {
+        const config = ConfigParser.getInstance().getConfig();
+        const value = key.split('.').reduce((obj: any, k) => obj?.[k], config);
+        if (value !== undefined && typeof value !== 'object') return String(value);
+        return '';
+      }
+
+      return match;
+    });
   }
 
   private generateFilename(url: string): string {

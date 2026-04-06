@@ -14,7 +14,7 @@ import { ExploreCommand } from './explore-command.js';
 import { FreesailCommand } from './freesail-command.js';
 import { HelpCommand } from './help-command.js';
 import { AddRuleCommand } from './add-rule-command.js';
-import { KnowCommand } from './know-command.js';
+import { LearnCommand } from './learn-command.js';
 import { KnowsCommand } from './knows-command.js';
 import { NavigateCommand } from './navigate-command.js';
 import { PathCommand } from './path-command.js';
@@ -49,7 +49,7 @@ const commandClasses: CommandClass[] = [
   PlanEditCommand,
   NavigateCommand,
   PathCommand,
-  KnowCommand,
+  LearnCommand,
   KnowsCommand,
   AddRuleCommand,
   ContextCommand,

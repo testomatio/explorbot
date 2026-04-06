@@ -46,9 +46,9 @@ const WelcomeCommands: React.FC<WelcomeCommandsProps> = ({ hasKnowledge }) => {
   ];
 
   const knowledgeCommand: CommandInfo = {
-    command: '/knows:add',
+    command: '/learn',
     description: 'add knowledge about your app (credentials, workflows)',
-    examples: ['/knows:add login uses admin@test.com'],
+    examples: ['/learn login uses admin@test.com'],
   };
 
   return (

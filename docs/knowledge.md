@@ -7,7 +7,7 @@ Explorbot can learn about your application through knowledge files. This helps a
 ### Interactive Mode
 
 ```bash
-explorbot know
+explorbot learn
 ```
 
 Opens a TUI form where you can:
@@ -18,29 +18,29 @@ Opens a TUI form where you can:
 ### CLI Mode
 
 ```bash
-explorbot know "<url-pattern>" "<description>"
+explorbot learn "<url-pattern>" "<description>"
 ```
 
 Examples:
 
 ```bash
 # Login credentials
-explorbot know "/login" "Use credentials: admin@example.com / secret123"
+explorbot learn "/login" "Use credentials: admin@example.com / secret123"
 
 # General knowledge (applies to all pages)
-explorbot know "*" "This is a React SPA. Wait for loading spinners to disappear."
+explorbot learn "*" "This is a React SPA. Wait for loading spinners to disappear."
 
 # Specific page behavior
-explorbot know "/checkout" "Credit card field requires format: XXXX-XXXX-XXXX-XXXX"
+explorbot learn "/checkout" "Credit card field requires format: XXXX-XXXX-XXXX-XXXX"
 ```
 
 ### Inside TUI
 
-While exploring, use the `/know` command:
+While exploring, use the `/learn` command:
 
 ```
-/know                              # Opens interactive form
-/know Test user: test@example.com  # Adds to current page
+/learn                              # Opens interactive form
+/learn Test user: test@example.com  # Adds to current page
 ```
 
 ## URL Patterns
@@ -80,6 +80,50 @@ Notes:
 | `url` | URL pattern to match (required) |
 | `title` | Human-readable title (optional) |
 | Custom fields | Any additional metadata for agents |
+
+## Variables
+
+Knowledge files support variable interpolation using `${namespace.key}` syntax. Variables are resolved when knowledge is loaded.
+
+### Environment Variables
+
+Use `${env.VARNAME}` to reference environment variables. This keeps secrets out of knowledge files.
+
+```markdown
+---
+url: /login
+---
+
+Login credentials:
+- email: ${env.LOGIN}
+- password: ${env.PASSWORD}
+```
+
+Missing environment variables are replaced with an empty string.
+
+### Config Variables
+
+Use `${config.path}` to reference values from `explorbot.config.js` using dot notation.
+
+```markdown
+---
+url: *
+---
+
+Base URL: ${config.playwright.url}
+Browser: ${config.playwright.browser}
+```
+
+Any scalar config value can be referenced. Object values are replaced with an empty string.
+
+### Supported Namespaces
+
+| Namespace | Source | Example |
+|-----------|--------|---------|
+| `env` | `process.env` | `${env.API_KEY}` |
+| `config` | `explorbot.config.js` | `${config.playwright.url}` |
+
+Expressions with unknown namespaces (e.g. `${other.value}`) or without a namespace (e.g. `${value}`) are left as-is.
 
 ## Page Automation
 

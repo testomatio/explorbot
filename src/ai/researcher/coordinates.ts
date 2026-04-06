@@ -116,7 +116,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
 
         ## Primary Actions
         List 3-5 most prominent interactive elements (accent buttons, CTAs, main form actions).
-        Format: - eidx N: action description
+        Format: - action description
 
         ## Focused Section
         Which section from the legend appears to be the user's primary focus area?

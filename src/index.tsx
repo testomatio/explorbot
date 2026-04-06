@@ -42,7 +42,7 @@ program
 
 program
   .command('add-knowledge')
-  .alias('knows')
+  .alias('learn')
   .description('Add knowledge for specific URLs')
   .option('-p, --path <path>', 'Knowledge directory path')
   .action(async (options) => {
@@ -54,7 +54,7 @@ program.parse();
 const options = program.opts();
 const command = program.args[0];
 
-if (command === 'clean' || command === 'init' || command === 'add-knowledge' || command === 'knows') {
+if (command === 'clean' || command === 'init' || command === 'add-knowledge' || command === 'learn') {
   // These commands are handled by their respective actions
 } else {
   // Default to explore command

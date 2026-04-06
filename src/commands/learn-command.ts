@@ -3,9 +3,8 @@ import React from 'react';
 import { tag } from '../utils/logger.js';
 import { BaseCommand } from './base-command.js';
 
-export class KnowCommand extends BaseCommand {
-  name = 'knows:add';
-  aliases = ['add-knowledge'];
+export class LearnCommand extends BaseCommand {
+  name = 'learn';
   description = 'Store knowledge for current page';
   suggestions = ['/knows - to view all knowledge'];
 

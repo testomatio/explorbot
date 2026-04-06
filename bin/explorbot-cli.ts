@@ -380,85 +380,69 @@ export default config;
   });
 
 program
-  .command('clean')
-  .description('Clean generated files and folders')
-  .option('-t, --type <type>', 'Type of cleaning: artifacts, experience, or all', 'artifacts')
+  .command('clean [target]')
+  .description('Clean files: states, research, plans, experiences, output (default: output + experiences)')
   .option('-p, --path <path>', 'Custom path to clean')
-  .action(async (options) => {
-    const type = options.type || 'artifacts';
+  .action(async (target, options) => {
     const customPath = options.path;
     const originalCwd = process.cwd();
     const basePath = customPath ? path.resolve(originalCwd, customPath) : process.cwd();
 
-    async function cleanDirectoryContents(dirPath: string): Promise<void> {
-      const items = fs.readdirSync(dirPath);
-      for (const item of items) {
+    const targets: Record<string, { description: string; dir: string }> = {
+      states: { description: 'page states', dir: path.join(basePath, 'output', 'states') },
+      research: { description: 'research cache', dir: path.join(basePath, 'output', 'research') },
+      plans: { description: 'test plans', dir: path.join(basePath, 'output', 'plans') },
+      experiences: { description: 'experience files', dir: path.join(basePath, 'experience') },
+      output: { description: 'all output files', dir: path.join(basePath, 'output') },
+    };
+
+    function cleanDirectoryContents(dirPath: string): number {
+      let count = 0;
+      for (const item of fs.readdirSync(dirPath)) {
         const itemPath = path.join(dirPath, item);
-        const stat = fs.statSync(itemPath);
-        if (stat.isDirectory()) {
-          await cleanDirectoryContents(itemPath);
-          console.log(`Removed directory: ${item}`);
+        if (fs.statSync(itemPath).isDirectory()) {
+          count += cleanDirectoryContents(itemPath);
+          fs.rmSync(itemPath, { recursive: true });
         } else {
           fs.unlinkSync(itemPath);
-          console.log(`Removed file: ${item}`);
+          count++;
         }
       }
+      return count;
     }
 
-    async function cleanPath(targetPath: string, displayName: string): Promise<void> {
-      const resolvedPath = path.resolve(targetPath);
-      if (!fs.existsSync(resolvedPath)) {
-        console.log(`${displayName} path does not exist: ${resolvedPath}`);
+    function cleanTarget(name: string): void {
+      const t = targets[name];
+      if (!fs.existsSync(t.dir)) {
+        console.log(`${name}: nothing to clean (${t.dir} not found)`);
         return;
       }
-      const stat = fs.statSync(resolvedPath);
-      try {
-        if (stat.isDirectory()) {
-          console.log(`Cleaning ${displayName} folder: ${resolvedPath}`);
-          await cleanDirectoryContents(resolvedPath);
-          console.log(`${displayName} folder cleaned successfully`);
-        } else {
-          console.log(`Removing ${displayName} file: ${resolvedPath}`);
-          fs.unlinkSync(resolvedPath);
-          console.log(`${displayName} file removed successfully`);
-        }
-      } catch (error) {
-        console.error(`Failed to clean ${displayName}:`, error);
-      }
+      const count = cleanDirectoryContents(t.dir);
+      console.log(`Cleaned ${count} ${t.description} files from ${t.dir}`);
     }
 
     try {
-      if (customPath) {
-        const resolvedPath = path.resolve(originalCwd, customPath);
-        console.log(`Working in directory: ${resolvedPath}`);
-        process.chdir(resolvedPath);
-        try {
-          await ConfigParser.getInstance().loadConfig({ path: '.' });
-          console.log(`Configuration loaded from: ${resolvedPath}`);
-        } catch {
-          console.log(`No configuration found in ${resolvedPath}, using default paths`);
-        }
+      if (target && !targets[target]) {
+        console.error(`Unknown target: ${target}. Available: ${Object.keys(targets).join(', ')}`);
+        process.exit(1);
       }
 
-      if (type === 'artifacts' || type === 'all') {
-        await cleanPath(path.join(basePath, 'output'), 'output');
+      if (!target) {
+        cleanTarget('output');
+        cleanTarget('experiences');
+      } else {
+        cleanTarget(target);
       }
-      if (type === 'experience' || type === 'all') {
-        await cleanPath(path.join(basePath, 'experience'), 'experience');
-      }
+
       console.log('Cleanup completed successfully!');
     } catch (error) {
       console.error('Failed to clean:', error);
       process.exit(1);
-    } finally {
-      if (process.cwd() !== originalCwd) {
-        process.chdir(originalCwd);
-      }
     }
   });
 
 program
-  .command('knows:add [url] [description]')
+  .command('learn [url] [description]')
   .alias('add-knowledge')
   .description('Add knowledge for URLs')
   .option('-p, --path <path>', 'Working directory path')
@@ -506,32 +490,16 @@ program
 addCommonOptions(program.command('research <url>').description('Research a page and print UI analysis').option('--data', 'Include data extraction in research').option('--deep', 'Enable deep analysis (expand hidden elements)').option('--no-fix', 'Skip locator fix cycle (for debugging)')).action(
   async (url, options) => {
     try {
-      const mainOptions: ExplorBotOptions = {
-        path: options.path,
-        config: options.config,
-        show: options.show,
-        headless: options.headless,
-        verbose: options.verbose || options.debug,
-        session: options.session === true ? 'output/session.json' : options.session,
-      };
-
-      const explorBot = new ExplorBot(mainOptions);
+      const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
       await explorBot.start();
 
-      await explorBot.visit(url);
+      const argParts: string[] = [url];
+      if (options.data) argParts.push('--data');
+      if (options.deep) argParts.push('--deep');
+      if (options.fix === false) argParts.push('--no-fix');
 
-      const state = explorBot.getExplorer().getStateManager().getCurrentState();
-      if (!state) {
-        throw new Error('No active page to research');
-      }
-
-      await explorBot.agentResearcher().research(state, {
-        screenshot: true,
-        force: true,
-        data: options.data || false,
-        deep: options.deep || false,
-        fix: options.fix !== false,
-      });
+      const { ResearchCommand } = await import('../src/commands/research-command.js');
+      await new ResearchCommand(explorBot).execute(argParts.join(' '));
 
       await explorBot.stop();
       await showStatsAndExit(0);

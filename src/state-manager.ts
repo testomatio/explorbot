@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
-import { ConfigParser } from './config.js';
+import { ConfigParser, outputPath } from './config.js';
 import { ExperienceTracker } from './experience-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
 import { htmlTextSnapshot } from './utils/html.js';
@@ -278,8 +278,8 @@ export class StateManager {
   }
 
   isInDeadLoop(): boolean {
-    const minWindow = 10;
-    const increment = 3;
+    const minWindow = 6;
+    const increment = 2;
     const stateHashes = this.stateHistory.map((transition) => {
       const state = transition.toState;
       return state.hash || this.generateBasicHash(state.url || '/', state.title);
@@ -489,7 +489,7 @@ export class StateManager {
    */
   loadHtmlFromFile(htmlFile: string): string | null {
     try {
-      const filePath = join('output', htmlFile);
+      const filePath = outputPath('states', htmlFile);
       if (existsSync(filePath)) {
         return readFileSync(filePath, 'utf8');
       }

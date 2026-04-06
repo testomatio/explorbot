@@ -73,6 +73,7 @@ Follow separation of concerns principle when implementing new features:
 - shared logic for html/aria should be added to corresponding files in util/ dir
 - TUI and tsx should contain only logic of TUI interaction, all business logic must be moved to corresponding agents
 - tools only contain tool definitions, result parsing, etc
+- CLI commands in `bin/explorbot-cli.ts` must delegate to command classes from `src/commands/` — never duplicate command logic inline in the CLI
 - avoid using `And` in a function name, if you use it probably you need 2 functions 
 
 ## Architecture Overview
@@ -443,8 +444,8 @@ explorbot init --force  # overwrite existing config
 
 ### Add domain knowledge:
 ```bash
-explorbot add-knowledge  # or explorbot knows
-explorbot add-knowledge --path ./knowledge
+explorbot learn              # interactive mode
+explorbot learn /login "Use admin credentials"  # add directly
 ```
 
 ### Clean generated files:

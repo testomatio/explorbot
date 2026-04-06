@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-04-06
+
+### New CLI Commands
+- **`explorbot learn [url] [description]`** — Add domain knowledge for URLs. Replaces `knows:add`.
+  ```bash
+  explorbot learn                                    # interactive mode
+  explorbot learn /login "Use admin credentials"     # add directly
+  ```
+- **`explorbot clean [target]`** — Clean specific file categories instead of generic `--type` flag. Available targets: `states`, `research`, `plans`, `experiences`, `output`. Without a target, cleans `output` and `experiences`.
+  ```bash
+  explorbot clean                  # clean output + experiences (default)
+  explorbot clean states           # clean page state files only
+  explorbot clean research         # clean research cache only
+  explorbot clean plans            # clean test plans only
+  ```
+
+### New TUI Commands
+- **`/learn [note]`** — Add knowledge for the current page. Replaces `/know`. Without arguments, opens interactive form.
+  ```
+  /learn
+  /learn Test user: test@example.com
+  ```
+- **`/clean [target]`** — Clean files by category. Supports same targets as CLI: `states`, `research`, `plans`, `experiences`, `output`.
+  ```
+  /clean
+  /clean research
+  ```
+
+### Changes
+- Knowledge files now support variable interpolation: `${env.VARNAME}` for environment variables and `${config.path}` for values from `explorbot.config.js`. This keeps secrets out of knowledge files.
+- Page state files (HTML, ARIA, screenshots, logs) are now stored in `output/states/` subdirectory instead of directly in `output/`.
+- Dead loop detection is now more sensitive — detects repeated navigation patterns earlier.
+- [Researcher] Research summary now separates main and extended research sections, and hides empty sections.
+- npm publish workflow added for automated package releases on version tags.
+
 ## 2026-04-02
 
 ### Configuration

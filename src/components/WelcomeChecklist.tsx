@@ -71,7 +71,7 @@ const WelcomeChecklist: React.FC<WelcomeChecklistProps> = ({ config, knowledgeTr
       description: 'teach AI web app usage, pass credentials',
       enabled: knowledgeCount > 0,
       value: knowledgeCount > 0 ? `${knowledgeCount} file${knowledgeCount > 1 ? 's' : ''}` : undefined,
-      suggestion: 'use /knows:add',
+      suggestion: 'use /learn',
     },
     {
       label: 'Reporter',

@@ -29,7 +29,7 @@ export class KnowsCommand extends BaseCommand {
       const allKnowledge = tracker.listAllKnowledge();
 
       if (allKnowledge.length === 0) {
-        log('No knowledge files found. Use /knows:add to add knowledge about your application.');
+        log('No knowledge files found. Use /learn to add knowledge about your application.');
         return;
       }
 
@@ -46,7 +46,7 @@ export class KnowsCommand extends BaseCommand {
         }
       }
 
-      output += '\n\nUse /knows:add to add knowledge';
+      output += '\n\nUse /learn to add knowledge';
       tag('multiline').log(output);
       return;
     }

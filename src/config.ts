@@ -66,6 +66,7 @@ interface ResearcherAgentConfig extends AgentConfig {
   includeSelectors?: string[];
   stopWords?: string[];
   maxElementsToExplore?: number;
+  maxExpandableClicks?: number;
   retries?: number;
   sections?: string[];
   errorPageTimeout?: number;
@@ -283,8 +284,12 @@ export class ConfigParser {
     return path.join(path.dirname(configPath), config.dirs?.output || 'output');
   }
 
+  public getStatesDir(): string {
+    return outputPath('states');
+  }
+
   public getPlansDir(): string {
-    return path.join(this.getOutputDir(), 'plans');
+    return outputPath('plans');
   }
 
   // For testing purposes only
@@ -435,4 +440,8 @@ export class ConfigParser {
       mkdirSync(path, { recursive: true });
     }
   }
+}
+
+export function outputPath(...segments: string[]): string {
+  return path.join(ConfigParser.getInstance().getOutputDir(), ...segments);
 }

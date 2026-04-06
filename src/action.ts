@@ -12,7 +12,7 @@ import { clearActivity, setActivity } from './activity.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.js';
 import { Navigator } from './ai/navigator.js';
 import type { Provider } from './ai/provider.js';
-import { ConfigParser } from './config.js';
+import { ConfigParser, outputPath } from './config.js';
 import type { ExplorbotConfig } from './config.js';
 import type { UserResolveFunction } from './explorbot.ts';
 import { Observability } from './observability.ts';
@@ -88,14 +88,16 @@ class Action {
       }
 
       // Save HTML to file
+      const statesDir = outputPath('states');
+      fs.mkdirSync(statesDir, { recursive: true });
       const htmlFile = `${stateHash}_${timestamp}.html`;
-      const htmlPath = join('output', htmlFile);
+      const htmlPath = join(statesDir, htmlFile);
       fs.writeFileSync(htmlPath, html, 'utf8');
 
       debugLog('Captured page state');
       // Save logs to file
       const logFile = `${stateHash}_${timestamp}.log`;
-      const logPath = join('output', logFile);
+      const logPath = join(statesDir, logFile);
       const formattedLogs = browserLogs.map((log: any) => {
         const logTimestamp = new Date().toISOString();
         const level = (log.type || log.level || 'LOG').toUpperCase();
@@ -116,7 +118,7 @@ class Action {
         const page = this.playwrightHelper.page;
         const serializedSnapshot = await page.locator('body').ariaSnapshot();
         const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
-        const ariaPath = join('output', ariaFileName);
+        const ariaPath = join(statesDir, ariaFileName);
         fs.writeFileSync(ariaPath, serializedSnapshot, 'utf8');
         ariaSnapshot = serializedSnapshot;
         ariaSnapshotFile = ariaFileName;

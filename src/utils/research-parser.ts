@@ -4,6 +4,7 @@ export {
   type ResearchSection,
   extractContainerFromBlockquote,
   extractValidContainers,
+  formatResearchSummary,
   mapRowToElement,
   parseResearchSections,
   rebuildSectionMarkdown,

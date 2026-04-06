@@ -4,19 +4,14 @@ import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
 import { WebPageState } from '../../state-manager.js';
 import { diffAriaSnapshots } from '../../utils/aria.ts';
-import { EXPANDABLE_ICON_DESCRIPTIONS, buildExpandableXPath, buildExpandableXPathInsideContainers } from '../../utils/expandable.ts';
 import { executionController } from '../../execution-controller.ts';
 import { tag } from '../../utils/logger.js';
-import { findTableLineRange, parseSections } from '../../utils/markdown-parser.ts';
-import { mdq } from '../../utils/markdown-query.ts';
-import { WebElement } from '../../utils/web-element.ts';
 import type { Provider } from '../provider.js';
-import { hasFocusedSection } from './focus.ts';
 import { type Constructor, debugLog } from './mixin.ts';
-import { extractContainerFromBlockquote, parseResearchSections } from './parser.ts';
+import { type ResearchElement, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
 
-const MAX_UNFILTERED_ELEMENTS = 3;
+const DEFAULT_MAX_EXPANDABLE_CLICKS = 10;
 
 export function WithDeepAnalysis<T extends Constructor>(Base: T) {
   return class extends Base {
@@ -26,56 +21,44 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     declare actionResult: ActionResult | undefined;
 
     async performDeepAnalysis(state: WebPageState, result: ResearchResult): Promise<void> {
-      tag('info').log('Starting deep analysis to find all expandable elements');
+      tag('info').log('Starting deep analysis of expandable elements');
       await (this as any).navigateTo(state.url);
+
+      let expandables = await this._discoverExpandables(result.text);
+      if (expandables.length === 0) {
+        tag('info').log('No expandable elements identified by AI');
+        return;
+      }
+      tag('substep').log(`Identified ${expandables.length} expandable elements`);
+
+      const maxClicks = (this.explorer.getConfig().ai?.agents?.researcher as any)?.maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
+      if (expandables.length > maxClicks) {
+        expandables = await this._selectExpandables(expandables, state.url, maxClicks);
+        tag('substep').log(`Selected ${expandables.length} expandables to click (max: ${maxClicks})`);
+      }
+
+      const elements = expandables
+        .map((el) => ({
+          commands: this._buildClickCommands(el),
+          description: el.name,
+        }))
+        .filter((el) => el.commands.length > 0);
+
+      if (elements.length === 0) {
+        tag('info').log('No expandables with valid locators');
+        return;
+      }
+
+      const expandableRows = elements.map((el) => `| ${el.description} | \`${el.commands[0]}\` |`).join('\n');
+      result.text += `\n\n# Expandables\n\n| Element | Action |\n|---------|--------|\n${expandableRows}`;
+
+      for (const el of elements) debugLog(`Expandable: ${el.description} → ${el.commands[0]}`);
+      tag('substep').log(`Clicking ${elements.length} expandable elements`);
+
       const expandedSections: string[] = [];
       const navigationLinks: Array<{ code: string; url: string }> = [];
 
-      const allSections = parseSections(result.text);
-      const dataContainerCandidates: string[] = [];
-      for (const s of allSections) {
-        const container = extractContainerFromBlockquote(s.rawMarkdown);
-        if (!container) continue;
-        const isDataSection = s.name.toLowerCase().includes('data') || !findTableLineRange(s.rawMarkdown);
-        if (isDataSection) dataContainerCandidates.push(container);
-      }
-      const dataContainers: string[] = [];
-      for (const css of dataContainerCandidates) {
-        const valid = await this.explorer.hasPlaywrightLocator((page) => page.locator(css), { contents: true });
-        if (valid) {
-          dataContainers.push(css);
-        } else {
-          debugLog(`Data container "${css}" not found on page, skipping exclusion`);
-        }
-      }
-      if (dataContainers.length > 0) debugLog(`Data containers to exclude: ${dataContainers.join(', ')}`);
-
-      const discoveredElements = await this._discoverExpandableElements(dataContainers);
-      const escapeQuote = (s: string) => s.replace(/'/g, "\\'");
-      const xpathElements = discoveredElements.map((el) => {
-        const commands = [`I.click('${escapeQuote(el.clickXPath)}')`];
-        if (el.xpath) commands.push(`I.click('${escapeQuote(el.xpath)}')`);
-        const desc = !el.text && el.outerHTML ? `${el.description} html: ${el.outerHTML}` : el.description;
-        return { commands, description: desc };
-      });
-
-      let visualElements: Array<{ commands: string[]; description: string }> = [];
-      if (this.provider.hasVision()) {
-        tag('substep').log('Discovering expandable elements from screenshot');
-        const visual = await this._discoverExpandableByScreenshot(
-          state,
-          discoveredElements.map((el) => el.description.slice(0, 100))
-        );
-        visualElements = visual.map((el) => ({ commands: [el.locator], description: el.description }));
-      }
-
-      const allElements = [...xpathElements, ...visualElements];
-      tag('substep').log(`Found ${allElements.length} expandable elements (${xpathElements.length} XPath + ${visualElements.length} visual)`);
-
-      const focusedContainer = this._getFocusedContainer(result.text);
-      const filtered = await this._filterExpandableElements(allElements, result.text, state.url, focusedContainer);
-      tag('substep').log(`Clicking ${filtered.length} filtered expandable elements`);
-      await this._clickExpandableElements(filtered, state, expandedSections, navigationLinks);
+      await this._clickExpandableElements(elements, state, expandedSections, navigationLinks);
 
       tag('info').log(`Deep analysis complete. Sections: ${expandedSections.length}, navigation links: ${navigationLinks.length}`);
 
@@ -93,120 +76,134 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
     }
 
-    private async _discoverExpandableElements(dataContainers: string[] = []): Promise<WebElement[]> {
-      const freshState = await this.explorer.createAction().capturePageState();
-      const html = freshState.html;
-      if (!html) return [];
+    private async _discoverExpandables(researchText: string): Promise<ExpandableElement[]> {
+      const allElements = new Map<number, ExpandableElement>();
+      for (const section of parseResearchSections(researchText)) {
+        for (const el of section.elements) {
+          if (el.eidx != null) allElements.set(el.eidx, { ...el, container: section.containerCss });
+        }
+      }
+      if (allElements.size === 0) return [];
 
-      const findResult = await WebElement.findByXPath(html, buildExpandableXPath(dataContainers));
-      if (findResult.error || findResult.elements.length === 0) return [];
+      const eidxList = [...allElements.keys()].join(', ');
 
-      const elements = findResult.elements.filter((el) => !el.isNavigationLink);
+      const textPrompt = dedent`
+        From this UI research, identify elements that could reveal hidden UI when clicked
+        (dropdown menus, popups, expandable panels, accordion sections, overflow menus, tab switches).
 
-      for (const xpath of buildExpandableXPathInsideContainers(dataContainers)) {
-        const containerResult = await WebElement.findByXPath(html, xpath);
-        const first = containerResult.elements.find((el) => !el.isNavigationLink);
-        if (first) elements.push(first);
+        Available eidx numbers: ${eidxList}
+
+        ${researchText}
+
+        Rules:
+        - Only pick elements that HIDE content until clicked (menus, dropdowns, accordions, tabs)
+        - Skip regular links, data items, and navigation
+        - For repeated elements (same expand button on every row), pick only the FIRST one
+        - Respond with comma-separated eidx numbers only, e.g.: 3, 7, 15
+      `;
+
+      const model = this.provider.getModelForAgent('researcher');
+      const textCall = this.provider.chat([{ role: 'user', content: textPrompt }], model, {
+        agentName: 'researcher',
+        telemetryFunctionId: 'researcher.discoverExpandables.text',
+      });
+
+      let visionCall: Promise<{ text?: string } | null> = Promise.resolve(null);
+      const screenshot = this.actionResult?.screenshot;
+      if (screenshot && this.provider.hasVision()) {
+        const visionPrompt = dedent`
+          This screenshot has interactive elements labeled with eidx numbers (solid bordered boxes with numbers).
+          Identify elements that could reveal hidden UI when clicked.
+
+          Look for: overflow/ellipsis menus, chevron dropdowns, hamburger menus,
+          gear/settings buttons, accordion toggles, tab switches, filter buttons.
+
+          Rules:
+          - For repeated icons (same icon on every list row), pick only the FIRST one
+          - Skip regular text buttons, links, and navigation items
+          - Respond with comma-separated eidx numbers only, e.g.: 3, 7, 15
+        `;
+        visionCall = this.provider.processImage(visionPrompt, screenshot.toString('base64'));
       }
 
-      const clickXPathIndex = new Map<string, number>();
-      for (const el of elements) {
-        const idx = (clickXPathIndex.get(el.clickXPath) || 0) + 1;
-        clickXPathIndex.set(el.clickXPath, idx);
-        if (idx > 1) el.clickXPath = `(${el.clickXPath})[${idx}]`;
-      }
-      for (const [xpath, count] of clickXPathIndex) {
-        if (count > 1) {
-          const first = elements.find((el) => el.clickXPath === xpath);
-          if (first) first.clickXPath = `(${xpath})[1]`;
+      const [textRes, visionRes] = await Promise.all([textCall, visionCall]);
+
+      const eidxSet = new Set<number>();
+      for (const res of [textRes, visionRes]) {
+        if (!res?.text) continue;
+        const nums = res.text.match(/\d+/g)?.map(Number) || [];
+        for (const n of nums) {
+          if (allElements.has(n)) eidxSet.add(n);
         }
       }
 
-      debugLog(`Discovered ${elements.length} expandable elements`);
-      for (const el of elements) debugLog(`  -> ${el.description.slice(0, 80)}  click: ${el.clickXPath}`);
+      const textNums =
+        textRes?.text
+          ?.match(/\d+/g)
+          ?.map(Number)
+          .filter((n) => allElements.has(n)) || [];
+      const visionNums =
+        visionRes?.text
+          ?.match(/\d+/g)
+          ?.map(Number)
+          .filter((n) => allElements.has(n)) || [];
+      debugLog(`Text model picked eidx: [${textNums.join(', ')}], Vision model picked eidx: [${visionNums.join(', ')}]`);
 
-      return elements;
+      return [...eidxSet].map((eidx) => allElements.get(eidx)!);
     }
 
-    private async _discoverExpandableByScreenshot(state: WebPageState, alreadyFound: string[]): Promise<Array<{ locator: string; description: string }>> {
-      const actionResult = ActionResult.fromState(state);
-      const screenshot = actionResult.screenshot;
-      if (!screenshot) return [];
-
-      const alreadyList = alreadyFound.length > 0 ? `\nIgnore these elements already found:\n${alreadyFound.map((e, i) => `${i + 1}. ${e}`).join('\n')}` : '';
-
-      const iconList = EXPANDABLE_ICON_DESCRIPTIONS.map((d) => `- ${d}`).join('\n');
-
-      const prompt = dedent`
-        Find ALL small clickable icons on this page that could reveal hidden UI (dropdowns, menus, popups, expandable sections).
-
-        Look specifically for these icon types:
-        ${iconList}
-
-        Focus on icon-only buttons and small icons next to text labels.
-        Ignore regular text buttons, links, and navigation items.
-        ${alreadyList}
-
-        Return a markdown table with columns: Description | X | Y
-        where X and Y are integer pixel coordinates of the icon center.
-
-        If no expandable icons found, respond with <none>.
-      `;
-
-      try {
-        const r = await this.provider.processImage(prompt, screenshot.toString('base64'));
-        const text = r.text || '';
-        if (text.toLowerCase().includes('<none>')) return [];
-
-        const rows = mdq(text).query('table').toJson();
-        return rows
-          .filter((r) => r.X && r.Y && /^\d+$/.test(r.X) && /^\d+$/.test(r.Y))
-          .map((r) => ({
-            locator: `I.clickXY(${r.X}, ${r.Y})`,
-            description: `[VISUAL] ${r.Description || 'icon'} at (${r.X}, ${r.Y})`,
-          }));
-      } catch (err) {
-        debugLog(`Screenshot expandable discovery failed: ${err instanceof Error ? err.message : err}`);
-        return [];
+    private _buildClickCommands(el: ExpandableElement): string[] {
+      const commands: string[] = [];
+      const escapeQuote = (s: string) => s.replace(/'/g, "\\'");
+      const hasAriaText = el.aria && /\w/.test(el.aria.text) && el.aria.text !== '-';
+      if (hasAriaText && el.container) {
+        commands.push(`I.click(${JSON.stringify(el.aria)}, '${escapeQuote(el.container)}')`);
       }
+      if (hasAriaText) {
+        commands.push(`I.click(${JSON.stringify(el.aria)})`);
+      }
+      if (el.css && el.container) {
+        commands.push(`I.click('${escapeQuote(el.css)}', '${escapeQuote(el.container)}')`);
+      }
+      if (el.css) {
+        commands.push(`I.click('${escapeQuote(el.css)}')`);
+      }
+      if (el.coordinates) {
+        const match = el.coordinates.match(/\((\d+),\s*(\d+)\)/);
+        if (match && Number(match[1]) > 1 && Number(match[2]) > 1) {
+          commands.push(`I.clickXY(${match[1]}, ${match[2]})`);
+        }
+      }
+      return commands;
     }
 
-    private async _filterExpandableElements(elements: Array<{ commands: string[]; description: string }>, researchText: string, url: string, focusedContainer?: string | null): Promise<Array<{ commands: string[]; description: string }>> {
-      if (elements.length <= MAX_UNFILTERED_ELEMENTS) return elements;
-
-      const sectionNames = parseSections(researchText).map((s) => s.name);
-      const list = elements.map((el, i) => `${i + 1}. ${el.description}`).join('\n');
-      const focusHint = focusedContainer ? `- Select expandable elements from the focused section (container: ${focusedContainer}) before selecting from other sections` : '';
+    private async _selectExpandables(expandables: ExpandableElement[], url: string, maxClicks: number): Promise<ExpandableElement[]> {
+      const list = expandables.map((el, i) => `${i + 1}. ${el.name} ${el.aria ? JSON.stringify(el.aria) : el.css || ''}`).join('\n');
 
       const prompt = dedent`
         Page: ${url}
-        Page sections: ${sectionNames.join(', ')}
 
         These expandable elements were found on the page.
-        Select which elements are worth clicking to discover hidden UI
-        that is relevant to the page's main content and business goals.
+        Select up to ${maxClicks} elements worth clicking to discover hidden UI.
 
         ${list}
 
         Rules:
-        - Focus on elements in the MAIN CONTENT area of the page
-        ${focusHint}
-        - Buttons that reveal hidden content are the most valuable: overflow/ellipsis menus (hide actions like edit, delete), chevrons and arrows (expand sections, show submenus), accordion toggles, disclosure triangles
-        - Skip global navigation, sidebar menus, user profile menus — anything unrelated to the page purpose
-        - For repeated elements (e.g., per-row action buttons in a list), keep only the FIRST one
+        - Prioritize overflow/ellipsis menus, settings dropdowns, and toolbar buttons
+        - Skip repeated expand icons on list rows — keep only the first
+        - Skip global navigation, sidebar menus, user profile menus
         - Respond with comma-separated numbers to keep, e.g.: 1, 3, 5
       `;
 
       const model = this.provider.getModelForAgent('researcher');
       const r = await this.provider.chat([{ role: 'user', content: prompt }], model, {
         agentName: 'researcher',
-        telemetryFunctionId: 'researcher.filterExpandable',
+        telemetryFunctionId: 'researcher.selectExpandables',
       });
 
       const nums = (r.text || '').match(/\d+/g)?.map(Number) || [];
-      const filtered = elements.filter((_, i) => nums.includes(i + 1));
-      debugLog(`AI filtered ${elements.length} → ${filtered.length} elements`);
-      return filtered.length > 0 ? filtered : elements.slice(0, MAX_UNFILTERED_ELEMENTS);
+      const selected = expandables.filter((_, i) => nums.includes(i + 1));
+      return selected.length > 0 ? selected.slice(0, maxClicks) : expandables.slice(0, maxClicks);
     }
 
     private async _clickExpandableElements(elements: Array<{ commands: string[]; description: string }>, state: WebPageState, expandedSections: string[], navigationLinks: Array<{ code: string; url: string }>): Promise<void> {
@@ -233,7 +230,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
             const hoverRevealed = hoverDiff.ariaChanged && hoverHtmlSize > 500;
 
             if (hoverRevealed) {
-              const sectionMarkdown = await this._analyzeExpandedAction(hoverCmd, el.description, hoverDiff);
+              const sectionMarkdown = await this._analyzeExpandedAction(hoverCmd, el.description, hoverDiff, this._summarizeExpanded(expandedSections));
               if (sectionMarkdown) {
                 expandedSections.push(sectionMarkdown);
                 debugLog(`Captured section from hover: ${el.description.slice(0, 80)}`);
@@ -284,7 +281,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
             continue;
           }
 
-          const sectionMarkdown = await this._analyzeExpandedAction(clickCode, el.description, diff);
+          const sectionMarkdown = await this._analyzeExpandedAction(clickCode, el.description, diff, this._summarizeExpanded(expandedSections));
           if (sectionMarkdown) {
             expandedSections.push(sectionMarkdown);
             debugLog(`Captured section from: ${el.description.slice(0, 80)}`);
@@ -317,7 +314,9 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
     }
 
-    private async _analyzeExpandedAction(code: string, description: string, diff: Diff): Promise<string | null> {
+    private async _analyzeExpandedAction(code: string, description: string, diff: Diff, alreadyExpanded: string[]): Promise<string | null> {
+      const alreadyHint = alreadyExpanded.length > 0 ? `\nAlready expanded sections:\n${alreadyExpanded.join('\n')}` : '';
+
       const prompt = dedent`
         An action on "${description}" (\`${code}\`) revealed new UI content.
         Analyze the changes and produce a UI map section.
@@ -327,6 +326,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
         HTML changes:
         ${diff.htmlParts.map((p) => `[Container: ${p.container}]\n${p.subtree}`).join('\n\n') || 'none'}
+        ${alreadyHint}
 
         Respond with a SINGLE section in this format:
 
@@ -338,20 +338,20 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         ${code}
         \`\`\`
 
-        > Container: \`<css-selector>\`
-
-        <One sentence about what appeared>
+        <One sentence: what appeared — dropdown menu, modal, tab content, expanded panel, etc.>
 
         | Element | ARIA | CSS |
         |---------|------|-----|
-        | 'Name' | { role: 'x', text: 'y' } | - |
+        | 'Save' | { role: 'button', text: 'Save' } | 'button.save' |
 
         Rules:
-        - Container CSS must NOT use dynamic IDs (ember*, react*, data-id)
-        - Use ARIA locators for elements inside the container
-        - Set CSS to \`-\` for elements inside expandable containers
+        - Only include interactive elements (buttons, links, inputs, selects, toggles)
+        - Exclude non-interactive elements (paragraphs, headings, static text, decorative icons) — describe them in the sentence above the table
+        - Provide CSS selectors derived from HTML classes, or ARIA locators — both are acceptable
+        - Do NOT expand similar list items — if the revealed content has the same structure as an already expanded section (same type of elements on a different list row), respond with "No meaningful expansion."
         - If changes are minor (no new interactive elements), respond with "No meaningful expansion."
         - If the revealed content is purely data items (list of records, entries, rows) with no new UI controls, respond with "No meaningful expansion."
+        - If you cannot clearly name what appeared, respond with "No meaningful expansion."
       `;
 
       const model = this.provider.getModelForAgent('researcher');
@@ -363,34 +363,16 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       const sections = parseResearchSections(text);
       if (sections.length === 0) return null;
 
-      const section = sections[0];
-      if (!section.containerCss) return null;
-      if (/(?:#ember|#react|#__next)\d+/.test(section.containerCss)) {
-        debugLog(`Expanded section "${section.name}" has dynamic ID container, skipping`);
-        return null;
-      }
-
-      return section.rawMarkdown;
-    }
-
-    private _getFocusedContainer(researchText: string): string | null {
-      if (!hasFocusedSection(researchText)) return null;
-      for (const section of parseResearchSections(researchText)) {
-        if (section.rawMarkdown.includes('> **Focused**') && section.containerCss) {
-          return section.containerCss;
-        }
-      }
-      return null;
+      return sections[0].rawMarkdown;
     }
 
     private _deduplicateExpandedSections(sections: string[]): string[] {
       const seen = new Set<string>();
       const result: string[] = [];
       for (const section of sections) {
-        const container = extractContainerFromBlockquote(section);
-        const fingerprint = container ? this._normalizeContainer(container) : null;
+        const fingerprint = this._sectionFingerprint(section);
         if (fingerprint && seen.has(fingerprint)) {
-          debugLog(`Dedup: skipping duplicate extended section with container "${container}"`);
+          debugLog('Dedup: skipping duplicate extended section');
           continue;
         }
         if (fingerprint) seen.add(fingerprint);
@@ -399,13 +381,33 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       return result;
     }
 
-    private _normalizeContainer(css: string): string {
-      const lastSegment = css.split(/[\s>]+/).pop() || css;
-      const classes = lastSegment.match(/\.[\w-]+/g);
-      if (!classes || classes.length === 0) return css.trim().toLowerCase();
-      return classes.sort().join(' ');
+    private _summarizeExpanded(expandedSections: string[]): string[] {
+      return expandedSections
+        .map((s) => {
+          const info = this._parseSectionKeys(s);
+          if (!info) return null;
+          return `- ${info.name}: ${info.keys.join(', ')}`;
+        })
+        .filter(Boolean) as string[];
+    }
+
+    private _sectionFingerprint(sectionMarkdown: string): string | null {
+      const info = this._parseSectionKeys(sectionMarkdown);
+      if (!info) return null;
+      return [...info.keys].sort().join('|');
+    }
+
+    private _parseSectionKeys(sectionMarkdown: string): { name: string; keys: string[] } | null {
+      const parsed = parseResearchSections(sectionMarkdown);
+      if (parsed.length === 0 || parsed[0].elements.length === 0) return null;
+      const section = parsed[0];
+      return { name: section.name, keys: section.elements.map((el) => el.css || (el.aria ? `${el.aria.role}:${el.aria.text}` : null) || el.name) };
     }
   };
+}
+
+interface ExpandableElement extends ResearchElement {
+  container: string | null;
 }
 
 export interface DeepAnalysisMethods {

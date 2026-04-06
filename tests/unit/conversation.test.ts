@@ -115,13 +115,13 @@ describe('Conversation', () => {
       const conversation = new Conversation();
       conversation.addUserText('Message 1 <page_html><div>Important content</div></page_html>');
       conversation.addUserText('Message 2 <page_html><span>More content</span></page_html>');
-      conversation.addAssistantText('');
+      conversation.addAssistantText('Response without tag');
 
       conversation.cleanupTag('page_html', '...cleaned...', 1);
 
       expect(conversation.messages[0].content).toBe('Message 1 <page_html>...cleaned...</page_html>');
       expect(conversation.messages[1].content).toBe('Message 2 <page_html><span>More content</span></page_html>');
-      expect(conversation.messages[2].content).toBe('');
+      expect(conversation.messages[2].content).toBe('Response without tag');
     });
 
     it('should keep last tag when keepLast is set and last message does not contain tag', () => {

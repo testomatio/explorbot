@@ -1018,7 +1018,6 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
   if (element.tagName.toLowerCase() === 'svg') {
     element.attrs = element.attrs.filter((attr) => attr.name === 'class');
     element.childNodes = [];
-    return;
   }
 
   const keepAttrs = [

@@ -68,7 +68,7 @@ mock.module('codeceptjs', () => {
   };
 
   const ensureOutputDir = () => {
-    const dir = (globalThis as any).output_dir || join(process.cwd(), 'output');
+    const dir = (globalThis as any).output_dir || join(process.cwd(), 'output', 'states');
     if (existsSync(dir)) {
       return dir;
     }
@@ -121,8 +121,9 @@ mock.module('codeceptjs', () => {
       pages: () => [page],
     }),
     on: () => {},
+    off: () => {},
     mainFrame: () => page,
-    url: async () => state.url,
+    url: () => state.url,
     title: async () => state.title,
     waitForLoadState: async () => {},
     bringToFront: async () => {},
@@ -163,7 +164,7 @@ mock.module('codeceptjs', () => {
     default: {
       container,
       recorder,
-      event: { dispatcher: dispatch },
+      event: { dispatcher: dispatch, step: { passed: 'step.passed', failed: 'step.failed' }, suite: { before: 'suite.before', after: 'suite.after' }, test: { before: 'test.before', after: 'test.after' }, all: { before: 'global.before', after: 'global.after' } },
       output: {},
       helper: {},
       actor,
@@ -173,7 +174,7 @@ mock.module('codeceptjs', () => {
     },
     container,
     recorder,
-    event: { dispatcher: dispatch },
+    event: { dispatcher: dispatch, step: { passed: 'step.passed', failed: 'step.failed' }, suite: { before: 'suite.before', after: 'suite.after' }, test: { before: 'test.before', after: 'test.after' }, all: { before: 'global.before', after: 'global.after' } },
     output: {},
     helper: {},
     actor,
@@ -193,6 +194,14 @@ mock.module('codeceptjs/lib/mocha/test.js', () => ({
     },
     addArtifact: () => {},
   }),
+}));
+
+mock.module('codeceptjs/lib/listener/steps.js', () => ({
+  default: () => {},
+}));
+
+mock.module('codeceptjs/lib/listener/store.js', () => ({
+  default: () => {},
 }));
 
 import { AIProvider } from '../../src/ai/provider.ts';
@@ -228,7 +237,7 @@ describe('Explorer', () => {
       mkdirSync(dir, { recursive: true });
     }
 
-    (globalThis as any).output_dir = config.dirs?.output || join(process.cwd(), 'output');
+    (globalThis as any).output_dir = config.dirs?.output || join(process.cwd(), 'output', 'states');
 
     vi.spyOn(Reporter.prototype, 'startRun').mockResolvedValue();
     vi.spyOn(Reporter.prototype, 'finishRun').mockResolvedValue();
