@@ -127,7 +127,7 @@ export const fileUploadRule = dedent`
   Explorbot CAN upload files using I.attachFile() via form() tool.
   When a test scenario involves file uploading, use the available sample files listed in <available_files>.
   Use I.attachFile(locator, filePath) where locator points to an input[type="file"] element.
-  For drag-and-drop upload zones, look for a hidden input[type="file"] inside the dropzone container.
+  Works with drag-and-drop upload zones.
   </file_upload>
 `;
 

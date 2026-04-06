@@ -393,13 +393,16 @@ export class Planner extends PlannerBase implements Agent {
       if (flows.length > 0) {
         conversation.addUserText(dedent`
           <previously_tested_flows>
-          These flows have been tested before on this URL path or on a longer sub-path under it (same site):
+          You are provided with previously tested scenarios.
+          This information is used to increase the testing coverage and discover untested paths.
+
+          These flows have been tested before on this URL:
 
           ${flows.join('\n\n')}
 
-          Lines starting with > are discoveries made during those flows (buttons, fields, options that appeared).
-          How to use this data depends on <approach> above.
-          When the <approach> requires systematic valid combinatorial coverage (each select option, checkbox combinations, alternate valid values), scenarios that differ only along those dimensions still count as new coverage.
+          Blockquote items are discoveries made during those flows (buttons, fields, options that appeared).
+          They show new elements that appeared during the flow.
+          Use them in your tests if needed, depending on the <approach>.
           </previously_tested_flows>
         `);
       }
