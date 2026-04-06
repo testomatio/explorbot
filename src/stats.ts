@@ -12,16 +12,16 @@ export class Stats {
   static models: Record<string, TokenUsage> = {};
 
   static recordTokens(_agent: string, model: string, usage: TokenUsage): void {
-    if (!this.models[model]) {
-      this.models[model] = { input: 0, output: 0, total: 0 };
+    if (!Stats.models[model]) {
+      Stats.models[model] = { input: 0, output: 0, total: 0 };
     }
-    this.models[model].input += usage.input;
-    this.models[model].output += usage.output;
-    this.models[model].total += usage.total;
+    Stats.models[model].input += usage.input;
+    Stats.models[model].output += usage.output;
+    Stats.models[model].total += usage.total;
   }
 
   static getElapsedTime(): string {
-    const elapsed = Date.now() - this.startTime;
+    const elapsed = Date.now() - Stats.startTime;
     const seconds = Math.floor(elapsed / 1000) % 60;
     const minutes = Math.floor(elapsed / 60000) % 60;
     const hours = Math.floor(elapsed / 3600000);
@@ -46,8 +46,8 @@ export class Stats {
   }
 
   static hasActivity(): boolean {
-    if (this.tests > 0 || this.plans > 0 || this.researches > 0) return true;
-    const totalTokens = Object.values(this.models).reduce((sum, m) => sum + m.total, 0);
+    if (Stats.tests > 0 || Stats.plans > 0 || Stats.researches > 0) return true;
+    const totalTokens = Object.values(Stats.models).reduce((sum, m) => sum + m.total, 0);
     return totalTokens > 0;
   }
 }

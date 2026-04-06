@@ -92,7 +92,7 @@ describe('isErrorPage', () => {
       const result = isErrorPage(
         createActionResult({
           h1: 'Room 404',
-          html: '<html><body><h1>Room 404</h1>' + 'x'.repeat(600) + '</body></html>',
+          html: `<html><body><h1>Room 404</h1>${'x'.repeat(600)}</body></html>`,
         })
       );
       expect(result).toBe(false);
@@ -102,7 +102,7 @@ describe('isErrorPage', () => {
       const result = isErrorPage(
         createActionResult({
           title: 'Order #500 - Details',
-          html: '<html><body><h1>Order Details</h1>' + 'x'.repeat(600) + '</body></html>',
+          html: `<html><body><h1>Order Details</h1>${'x'.repeat(600)}</body></html>`,
         })
       );
       expect(result).toBe(false);
@@ -112,7 +112,7 @@ describe('isErrorPage', () => {
       const result = isErrorPage(
         createActionResult({
           title: '404',
-          html: '<html><body>' + 'x'.repeat(600) + '</body></html>',
+          html: `<html><body>${'x'.repeat(600)}</body></html>`,
         })
       );
       expect(result).toBe(false);
@@ -123,7 +123,7 @@ describe('isErrorPage', () => {
         createActionResult({
           title: 'Login',
           h1: 'Sign In',
-          html: '<html><body><h1>Sign In</h1><form>' + 'x'.repeat(600) + '</form></body></html>',
+          html: `<html><body><h1>Sign In</h1><form>${'x'.repeat(600)}</form></body></html>`,
         })
       );
       expect(result).toBe(false);
@@ -134,7 +134,7 @@ describe('isErrorPage', () => {
         createActionResult({
           title: 'Dashboard',
           h1: 'Welcome Back',
-          html: '<html><body><h1>Welcome Back</h1>' + 'x'.repeat(600) + '</body></html>',
+          html: `<html><body><h1>Welcome Back</h1>${'x'.repeat(600)}</body></html>`,
         })
       );
       expect(result).toBe(false);
@@ -145,7 +145,7 @@ describe('isErrorPage', () => {
     it('should handle missing title, h1, h2', () => {
       const result = isErrorPage(
         createActionResult({
-          html: '<html><body><p>Content</p>' + 'x'.repeat(600) + '</body></html>',
+          html: `<html><body><p>Content</p>${'x'.repeat(600)}</body></html>`,
         })
       );
       expect(result).toBe(false);

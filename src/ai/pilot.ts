@@ -562,7 +562,7 @@ export class Pilot implements Agent {
       }
 
       const analysisText = exec.output?.analysis;
-      const resultMessage = analysisText ? (analysisText.length > 500 ? analysisText.slice(0, 500) + '...' : analysisText) : exec.output?.message || exec.output?.result;
+      const resultMessage = analysisText ? (analysisText.length > 500 ? `${analysisText.slice(0, 500)}...` : analysisText) : exec.output?.message || exec.output?.result;
       if (resultMessage && (CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful)) {
         line += `\n    result: ${resultMessage}`;
       }
@@ -591,7 +591,7 @@ export class Pilot implements Agent {
         const kind = CHECK_TOOLS.includes(t.toolName) ? 'CHECK' : 'ACTION';
         const description = t.input?.explanation || t.input?.request || truncateJson(t.input);
         const analysisText = t.output?.analysis;
-        const resultMessage = analysisText ? (analysisText.length > 500 ? analysisText.slice(0, 500) + '...' : analysisText) : t.output?.message || '';
+        const resultMessage = analysisText ? (analysisText.length > 500 ? `${analysisText.slice(0, 500)}...` : analysisText) : t.output?.message || '';
         const errorDetail = t.output?.attempts?.find((a: any) => a.error)?.error;
 
         let line = `[${status}] ${kind} ${t.toolName}: ${description}`;

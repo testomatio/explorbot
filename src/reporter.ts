@@ -171,7 +171,7 @@ export class Reporter {
 
       const screenshotFile = meta?.screenshotFile;
       if (meta) {
-        delete meta.screenshotFile;
+        meta.screenshotFile = undefined;
         meta = Object.fromEntries(Object.entries(meta).filter(([, v]) => v));
       }
 

@@ -253,7 +253,7 @@ export class Test extends Task {
   start(): void {
     this.status = TestStatus.IN_PROGRESS;
     this.startTime = performance.now();
-    this.addNote('Test started. Session name: ' + this.sessionName);
+    this.addNote(`Test started. Session name: ${this.sessionName}`);
     this.plan?.notifyChange();
   }
 

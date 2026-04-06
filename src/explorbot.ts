@@ -297,7 +297,7 @@ export class ExplorBot {
 
   clearPlan(): void {
     this.currentPlan = undefined;
-    delete this.agents.planner;
+    this.agents.planner = undefined;
   }
 
   async plan(feature?: string, opts: { fresh?: boolean; style?: string; extend?: Plan; completedPlans?: Plan[] } = {}) {
@@ -310,7 +310,7 @@ export class ExplorBot {
     if (!opts.extend && this.currentPlan?.url) {
       const currentUrl = this.explorer?.getStateManager().getCurrentState()?.url;
       if (currentUrl && currentUrl !== this.currentPlan.url) {
-        tag('info').log(`Different page detected, clearing previous plan`);
+        tag('info').log('Different page detected, clearing previous plan');
         this.clearPlan();
       }
     }
@@ -368,7 +368,7 @@ export class ExplorBot {
     const urlPart = sanitizeFilename(urlPath) || 'root';
     const suffix = '.md';
     if (!this.planFeature) return urlPart.slice(0, 256 - suffix.length) + suffix;
-    const featurePart = '_' + sanitizeFilename(this.planFeature);
+    const featurePart = `_${sanitizeFilename(this.planFeature)}`;
     const maxFeatureLen = 256 - suffix.length - urlPart.length;
     if (maxFeatureLen <= 1) return urlPart.slice(0, 256 - suffix.length) + suffix;
     return urlPart + featurePart.slice(0, maxFeatureLen) + suffix;
@@ -379,15 +379,15 @@ export class ExplorBot {
 
     if (path.isAbsolute(filename)) {
       if (!existsSync(planPath) && !filename.endsWith('.md')) {
-        planPath = filename + '.md';
+        planPath = `${filename}.md`;
       }
-    } else if (existsSync(filename) || existsSync(filename + '.md')) {
-      planPath = existsSync(filename) ? filename : filename + '.md';
+    } else if (existsSync(filename) || existsSync(`${filename}.md`)) {
+      planPath = existsSync(filename) ? filename : `${filename}.md`;
     } else {
       const plansDir = this.getPlansDir();
       planPath = path.join(plansDir, filename);
       if (!existsSync(planPath) && !filename.endsWith('.md')) {
-        planPath = path.join(plansDir, filename + '.md');
+        planPath = path.join(plansDir, `${filename}.md`);
       }
     }
 

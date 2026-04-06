@@ -68,7 +68,7 @@ export function createApiCommands(name = 'api'): Command {
       const savedPath = bot.savePlan();
       if (savedPath) {
         console.log(`\nSaved to: ${savedPath}`);
-        console.log(`\nRun tests:`);
+        console.log('\nRun tests:');
         console.log(`  ${name} test ${savedPath} 1       # run first test`);
         console.log(`  ${name} test ${savedPath} 1-3     # run tests 1 to 3`);
         console.log(`  ${name} test ${savedPath} *       # run all tests`);
@@ -155,7 +155,7 @@ export function createApiCommands(name = 'api'): Command {
         bot.savePlan(`${endpoint.replace(/^\//, '').replace(/[^a-zA-Z0-9]/g, '_')}_${style}.md`);
       }
 
-      console.log(`\n=== Final Results ===`);
+      console.log('\n=== Final Results ===');
       console.log(`Total: ${totalTests} tests, ${totalPassed} passed, ${totalFailed} failed`);
       await bot.stop();
       process.exit(totalFailed > 0 ? 1 : 0);

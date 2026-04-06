@@ -104,7 +104,7 @@ export class ApiBot {
   async plan(endpoint: string, opts: { style?: string; fresh?: boolean } = {}): Promise<Plan> {
     if (opts.fresh) {
       this.currentPlan = undefined;
-      delete this.agents.chief;
+      this.agents.chief = undefined;
     }
 
     const chief = this.agentChief();
@@ -124,7 +124,7 @@ export class ApiBot {
     if (!path.isAbsolute(filename)) {
       planPath = path.join(plansDir, filename);
       if (!existsSync(planPath) && !filename.endsWith('.md')) {
-        planPath = path.join(plansDir, filename + '.md');
+        planPath = path.join(plansDir, `${filename}.md`);
       }
     }
 

@@ -493,7 +493,7 @@ export function createAgentTools({
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           visionDisabled = true;
-          tag('warning').log(`⚠️ Vision model is not available. Visual checks are disabled for this session.`);
+          tag('warning').log('⚠️ Vision model is not available. Visual checks are disabled for this session.');
           return failedToolResult('see', `See tool failed: ${errorMessage}`, {
             suggestion: 'Vision is now disabled. Use context() to get fresh ARIA snapshot and analyze page state from ARIA data.',
           });
@@ -767,7 +767,7 @@ export function createAgentTools({
         } catch (error) {
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           visionDisabled = true;
-          tag('warning').log(`⚠️ Vision model is not available. Visual clicks are disabled for this session.`);
+          tag('warning').log('⚠️ Vision model is not available. Visual clicks are disabled for this session.');
           return failedToolResult('visualClick', `visualClick tool failed: ${errorMessage}`, {
             suggestion: 'Vision is now disabled. Use xpathCheck() to find the element, then click() with the discovered locator.',
           });

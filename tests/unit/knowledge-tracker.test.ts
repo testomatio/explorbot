@@ -47,12 +47,12 @@ describe('KnowledgeTracker', () => {
       expect(content[0]).toContain('email: admin@example.com');
       expect(content[0]).toContain('password: secret123');
 
-      delete process.env.TEST_LOGIN;
-      delete process.env.TEST_PASSWORD;
+      process.env.TEST_LOGIN = undefined;
+      process.env.TEST_PASSWORD = undefined;
     });
 
     it('should replace missing env vars with empty string', () => {
-      delete process.env.NONEXISTENT_VAR;
+      process.env.NONEXISTENT_VAR = undefined;
 
       writeKnowledgeFile('login.md', '/login', 'token: ${env.NONEXISTENT_VAR}');
 
@@ -92,7 +92,7 @@ describe('KnowledgeTracker', () => {
       expect(content[0]).toContain('Login as testuser on the main page');
       expect(content[0]).toContain('Then check dashboard');
 
-      delete process.env.TEST_USER;
+      process.env.TEST_USER = undefined;
     });
 
     it('should replace ${config.*} with config values', () => {

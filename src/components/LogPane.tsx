@@ -113,7 +113,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
       const parsed = parseMarkdownToTerminal(cleaned);
       const lines = parsed.split('\n');
       const maxLines = 30;
-      const truncated = lines.length > maxLines ? lines.slice(0, maxLines).join('\n') + `\n... (${lines.length - maxLines} more lines)` : cleaned;
+      const truncated = lines.length > maxLines ? `${lines.slice(0, maxLines).join('\n')}\n... (${lines.length - maxLines} more lines)` : cleaned;
       return (
         <Box key={index} borderStyle="classic" borderLeft={false} borderRight={false} marginY={1} padding={1} borderColor="dim" overflow="hidden">
           <Text color="gray" dimColor>

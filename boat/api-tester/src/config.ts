@@ -5,7 +5,7 @@ import type { AIConfig } from '../../../src/config.ts';
 
 export type { AIConfig };
 
-type HookFn = (ctx: { headers: Record<string, string>; baseEndpoint: string }) => Promise<Record<string, string> | void> | Record<string, string> | void;
+type HookFn = (ctx: { headers: Record<string, string>; baseEndpoint: string }) => Promise<Record<string, string> | undefined> | Record<string, string> | undefined;
 
 interface ApiConfig {
   baseEndpoint: string;

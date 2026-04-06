@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": ["node_modules/**", "dist/**", "build/**", "coverage/**", ".bun/**", "*.min.js", "*.min.css", "package-lock.json", "yarn.lock", "bun.lock", ".git/**", ".DS_Store", "*.log", "output/**"]
+    "ignore": ["node_modules/**", "dist/**", "build/**", "coverage/**", ".bun/**", "*.min.js", "*.min.css", "package-lock.json", "yarn.lock", "bun.lock", ".git/**", ".DS_Store", "*.log", "output/**", "Bunoshfile.js"]
   },
   "formatter": {
     "enabled": true,
@@ -24,7 +24,8 @@
         "noExplicitAny": "off",
         "noAssignInExpressions": "off",
         "noImplicitAnyLet": "off",
-        "noArrayIndexKey": "off"
+        "noArrayIndexKey": "off",
+        "noUnsafeDeclarationMerging": "off"
       },
       "style": {
         "noNonNullAssertion": "off",
@@ -32,7 +33,8 @@
         "noParameterAssign": "off"
       },
       "complexity": {
-        "noForEach": "off"
+        "noForEach": "off",
+        "noStaticOnlyClass": "off"
       },
       "security": {
         "noGlobalEval": "off"

@@ -98,11 +98,11 @@ class ConsoleDestination implements LogDestination {
       const cleaned = stripAnsi(dedent(entry.content));
       const parsed = parseMarkdownToTerminal(cleaned);
       content = parsed;
-      content = chalk.gray(content) + '\n';
+      content = `${chalk.gray(content)}\n`;
     } else if (entry.type === 'success') {
-      content = chalk.green(content) + '\n';
+      content = `${chalk.green(content)}\n`;
     } else if (entry.type === 'error') {
-      content = chalk.red(content) + '\n';
+      content = `${chalk.red(content)}\n`;
     } else if (entry.type === 'warning') {
       content = chalk.yellow(content);
     } else if (entry.type === 'step') {

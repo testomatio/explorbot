@@ -35,7 +35,7 @@ function parseMultiLineBullet(lines: string[], i: number): { text: string; nextI
     if (nextLine.match(/^\*\s+/)) break;
     if (trimmedNext.startsWith('##') || trimmedNext.startsWith('<!--')) break;
     if (nextLine.startsWith('  ')) {
-      text += '\n' + nextLine;
+      text += `\n${nextLine}`;
       j++;
     } else {
       break;
@@ -201,7 +201,6 @@ export function parsePlansFromMarkdown(filePath: string): Plan[] {
       const { text, nextIndex } = parseMultiLineBullet(lines, i);
       currentTest.expected.push(text);
       i = nextIndex;
-      continue;
     }
   }
 

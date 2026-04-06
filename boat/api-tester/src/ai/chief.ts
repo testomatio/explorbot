@@ -193,7 +193,7 @@ export class Chief extends ChiefBase {
       const truncatedSample: Record<string, unknown> = {};
       for (const [key, val] of Object.entries(detailItem)) {
         if (typeof val === 'string' && val.length > 100) {
-          truncatedSample[key] = val.substring(0, 100) + '...';
+          truncatedSample[key] = `${val.substring(0, 100)}...`;
         } else {
           truncatedSample[key] = val;
         }

@@ -40,7 +40,6 @@ Explorbot can start testing features which were not covered by unit tests or bro
 
 ```bash
 bun install
-bun add @openrouter/ai-sdk-provider
 bunx playwright install
 ```
 

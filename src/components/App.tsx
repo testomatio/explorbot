@@ -49,6 +49,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
   const interruptResolveRef = useRef<((value: string | null) => void) | null>(null);
 
   useEffect(() => {
+    // biome-ignore lint/style/useConst: assigned after declaration in useEffect pattern
     let unsubscribe: (() => void) | undefined;
     let mounted = true;
 
