@@ -93,10 +93,10 @@ If your app requires authentication, tell Explorbot how to log in:
 
 ```bash
 # Interactive mode
-explorbot know
+explorbot learn
 
 # Or via CLI
-explorbot know "/login" "Use credentials: admin@example.com / secret123"
+explorbot learn "/login" "Use credentials: admin@example.com / secret123"
 ```
 
 > [!TIP]
