@@ -54,5 +54,5 @@ jobs:
     - name: Build for npm
       run: bun run build:npm
 
-    - name: Verify CLI on Node.js
-      run: node dist/bin/explorbot-cli.js --help
+    - name: Run Node.js build tests
+      run: node --test tests/node/*.mjs

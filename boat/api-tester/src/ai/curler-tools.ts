@@ -1,5 +1,5 @@
 import { tool } from 'ai';
-const { expect } = require('expect');
+import { expect } from 'expect';
 import { readFileSync } from 'node:fs';
 import dedent from 'dedent';
 import { z } from 'zod';

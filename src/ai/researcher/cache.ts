@@ -20,7 +20,8 @@ function getStatesDir(): string {
 
 function getFingerprintWorker(): Worker {
   if (!fingerprintWorker) {
-    fingerprintWorker = new Worker(new URL('./fingerprint-worker.ts', import.meta.url).href);
+    const ext = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
+    fingerprintWorker = new Worker(new URL(`./fingerprint-worker${ext}`, import.meta.url).href);
   }
   return fingerprintWorker;
 }

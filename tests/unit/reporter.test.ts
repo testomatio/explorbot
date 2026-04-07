@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ReporterConfig } from '../../src/config.ts';
+import { ConfigParser } from '../../src/config.ts';
 import { Reporter } from '../../src/reporter.ts';
 import { ActiveNote, Plan, Task, Test, TestResult } from '../../src/test-plan.ts';
 
@@ -260,6 +261,9 @@ describe('Reporter config', () => {
   }
 
   beforeEach(() => {
+    const configParser = ConfigParser.getInstance();
+    (configParser as any).config = { dirs: { output: '/tmp/explorbot-test' } };
+    (configParser as any).configPath = '/tmp/explorbot.config.js';
     savedTestomatio = process.env.TESTOMATIO;
     savedHtmlSave = process.env.TESTOMATIO_HTML_REPORT_SAVE;
     savedHtmlFolder = process.env.TESTOMATIO_HTML_REPORT_FOLDER;
