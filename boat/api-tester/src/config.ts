@@ -1,19 +1,15 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
-import type { AIConfig } from '../../../src/config.ts';
+import { EXPLORBOT_CONFIG_PATHS, type AIConfig, type ApiConfig as BaseApiConfig, type ApiHookFn } from '../../../src/config.ts';
 
 export type { AIConfig };
 
-type HookFn = (ctx: { headers: Record<string, string>; baseEndpoint: string }) => Promise<Record<string, string> | undefined> | Record<string, string> | undefined;
+type HookFn = ApiHookFn;
 
-interface ApiConfig {
+interface ApiConfig extends BaseApiConfig {
   baseEndpoint: string;
-  spec?: string[];
   specs?: string[];
-  headers?: Record<string, string>;
-  bootstrap?: HookFn;
-  teardown?: HookFn;
 }
 
 interface ApibotConfig {
@@ -64,10 +60,18 @@ export class ApibotConfigParser {
 
     try {
       const configModule = await this.loadConfigModule(resolvedPath);
-      const loadedConfig = configModule.default || configModule;
+      let loadedConfig = configModule.default || configModule;
 
       if (!loadedConfig) {
         throw new Error('Configuration file is empty or invalid');
+      }
+
+      if (loadedConfig.playwright || loadedConfig.web) {
+        loadedConfig = {
+          ai: loadedConfig.ai,
+          api: loadedConfig.api || {},
+          dirs: loadedConfig.dirs,
+        };
       }
 
       this.config = this.mergeWithDefaults(loadedConfig);
@@ -120,9 +124,13 @@ export class ApibotConfigParser {
   }
 
   private findConfigFile(): string | null {
-    const possiblePaths = ['apibot.config.js', 'apibot.config.mjs', 'apibot.config.ts'];
+    const apibotPaths = ['apibot.config.js', 'apibot.config.mjs', 'apibot.config.ts'];
+    for (const p of apibotPaths) {
+      const fullPath = resolve(process.cwd(), p);
+      if (existsSync(fullPath)) return fullPath;
+    }
 
-    for (const p of possiblePaths) {
+    for (const p of EXPLORBOT_CONFIG_PATHS) {
       const fullPath = resolve(process.cwd(), p);
       if (existsSync(fullPath)) return fullPath;
     }

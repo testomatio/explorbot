@@ -411,8 +411,9 @@ export class Planner extends PlannerBase implements Agent {
     if (this.currentPlan) {
       tag('step').log('Analyzing current plan to expand testing');
 
+      const allTests = this.currentPlan.getAllTests();
+      const titleListing = allTests.map((t) => `- "${t.scenario}" [${t.result || 'pending'}]`).join('\n');
       const compactContext = planToCompactAiContext(this.currentPlan);
-      const parentContext = this.currentPlan.parentPlan ? planToCompactAiContext(this.currentPlan.parentPlan) : '';
 
       conversation.addUserText(dedent`
         CRITICAL: This plan already has tests.
@@ -426,8 +427,11 @@ export class Planner extends PlannerBase implements Agent {
         6. If no genuinely new operations or features remain, return EMPTY scenarios array
         </absolute_rules>
 
+        All tested scenario titles (DO NOT duplicate any of these):
+        ${titleListing}
+
         <tested_scenarios>
-        ${parentContext ? `${parentContext}\n\n` : ''}${compactContext}
+        ${compactContext}
         </tested_scenarios>
 
         <planning_strategy>

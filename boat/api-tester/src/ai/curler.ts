@@ -34,7 +34,7 @@ export class Curler {
     test.start();
     await this.reporter.reportTestStart(test);
 
-    const conversation = this.provider.startConversation(this.buildSystemPrompt(), 'curler');
+    const conversation = this.provider.startConversation(this.buildSystemPrompt(), 'curler', this.provider.getAgenticModel('curler'));
     const tools = createCurlerTools(this.apiClient, this.requestState, test, opts?.searchSpec);
 
     const initialPrompt = this.buildTestPrompt(test, opts?.specDefinition, opts?.baseEndpoint);
@@ -153,7 +153,7 @@ export class Curler {
       details: z.string().describe('Brief explanation of what passed, what failed, and why failures are or are not critical'),
     });
 
-    const model = this.provider.getModelForAgent('curler');
+    const model = this.provider.getAgenticModel('curler');
     const response = await this.provider.generateObject(
       [
         {
@@ -256,9 +256,10 @@ export class Curler {
          Example: schema = "z.object({ id: z.number(), name: z.string(), items: z.array(z.string()) })"
          Use z.any() for fields you don't care about, z.optional() for nullable fields
       5. Use verifyData with expect() assertions to check specific values
-         Example: "expect(data.name).toBe('Test Suite')"
-         Example: "expect(data.items).toHaveLength(3)"
-         Example: "expect(data.status).not.toBe('deleted')"
+         The "response" variable is the full parsed JSON body — use the structure from verifyStructure to access nested fields correctly
+         Example: "expect(response.name).toBe('Test Suite')"
+         Example: "expect(response.data.items).toHaveLength(3)"
+         Example: "expect(response.status).not.toBe('deleted')"
       6. Use record to document findings and observations
       7. Use finish when all test goals are achieved and verified
       8. Use stop only if the scenario cannot be completed at all
@@ -267,7 +268,7 @@ export class Curler {
       <rules>
       - Always check HTTP status codes from the request tool result
       - After each request, verify structure with a Zod schema matching the API spec
-      - Use verifyData with expect() for value assertions — data is the parsed response JSON
+      - Use verifyData with expect() for value assertions — "response" is the full parsed JSON, use the structure returned by verifyStructure to access the correct paths
       - For CRUD tests: create first, extract ID from preview, then read/update/delete
       - Chain requests logically — extract IDs from response preview
       - Record important findings as you go

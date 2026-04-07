@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { Client } from '@testomatio/reporter';
 import type { Step } from '@testomatio/reporter/types/types.js';
-import { ConfigParser } from './config.js';
+import { ConfigParser, outputPath } from './config.js';
 import type { ReporterConfig } from './config.js';
 import { Test } from './test-plan.js';
 import { createDebug } from './utils/logger.js';
@@ -42,13 +42,7 @@ export class Reporter {
 
   private configureHtmlPipe(): void {
     process.env.TESTOMATIO_HTML_REPORT_SAVE = '1';
-    let outputDir = 'output';
-    try {
-      outputDir = ConfigParser.getInstance().getOutputDir();
-    } catch {
-      // config not loaded yet, use default
-    }
-    process.env.TESTOMATIO_HTML_REPORT_FOLDER = join(outputDir, 'reports');
+    process.env.TESTOMATIO_HTML_REPORT_FOLDER = outputPath('reports');
     debugLog('HTML report pipe configured', { folder: process.env.TESTOMATIO_HTML_REPORT_FOLDER });
   }
 
@@ -93,8 +87,6 @@ export class Reporter {
   }
 
   protected combineStepsAndNotes(test: Test, lastScreenshotFile?: string): Step[] {
-    let outputDir: string | undefined;
-    const getOutputDir = () => (outputDir ||= ConfigParser.getInstance().getOutputDir());
     const noteEntries = Object.entries(test.notes)
       .map(([timestampKey, note]) => ({
         startTime: note.startTime,
@@ -134,14 +126,14 @@ export class Reporter {
         steps: noteSteps.length > 0 ? noteSteps : undefined,
       };
       if (noteEntry.screenshot) {
-        step.artifacts = [join(getOutputDir(), noteEntry.screenshot)];
+        step.artifacts = [outputPath('states', noteEntry.screenshot)];
       }
       steps.push(step);
     }
 
     if (lastScreenshotFile && steps.length > 0) {
       const lastStep = steps[steps.length - 1];
-      const screenshotPath = join(getOutputDir(), lastScreenshotFile);
+      const screenshotPath = outputPath('states', lastScreenshotFile);
       if (lastStep.artifacts) {
         lastStep.artifacts.push(screenshotPath);
       } else {

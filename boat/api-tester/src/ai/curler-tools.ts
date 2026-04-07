@@ -1,5 +1,5 @@
 import { tool } from 'ai';
-import { expect } from 'expect';
+const { expect } = require('expect');
 import { readFileSync } from 'node:fs';
 import dedent from 'dedent';
 import { z } from 'zod';
@@ -12,6 +12,21 @@ import type { RequestStore } from '../../../../src/api/request-store.ts';
 const readResponseData = (responseFile: string) => {
   return JSON.parse(readFileSync(responseFile, 'utf8'));
 };
+
+function summarizeStructure(value: unknown, depth = 0): string {
+  if (depth > 2) return '...';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    return `[${summarizeStructure(value[0], depth + 1)}]`;
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.keys(value).slice(0, 10);
+    const parts = entries.map((k) => `${k}: ${summarizeStructure((value as any)[k], depth + 1)}`);
+    if (Object.keys(value).length > 10) parts.push('...');
+    return `{ ${parts.join(', ')} }`;
+  }
+  return typeof value;
+}
 
 export function createCurlerTools(apiClient: ApiClient, requestState: RequestStore, test: Test, searchSpec?: (query: string) => string) {
   const commitVerification = (label: string, passed: boolean, failDetail: string) => {
@@ -118,6 +133,7 @@ export function createCurlerTools(apiClient: ApiClient, requestState: RequestSto
         Write a JS expression that returns a Zod schema (z is available).
         Example schema: "z.object({ id: z.number(), name: z.string(), items: z.array(z.object({ title: z.string() })) })"
         Returns validation errors if the response doesn't match.
+        On success, returns a "structure" field showing the actual response shape — use it to write correct verifyData assertions.
       `,
       inputSchema: z.object({
         responseFile: z.string().describe('Path to the response JSON file'),
@@ -138,7 +154,8 @@ export function createCurlerTools(apiClient: ApiClient, requestState: RequestSto
 
           if (result.success) {
             commitVerification('Structure check: ✓ schema valid', true, '');
-            return { passed: true, errors: [] };
+            const structure = summarizeStructure(data);
+            return { passed: true, errors: [], structure };
           }
 
           const errors = result.error.issues.map((i: any) => `${i.path.join('.')}: ${i.message}`);
@@ -154,23 +171,24 @@ export function createCurlerTools(apiClient: ApiClient, requestState: RequestSto
     verifyData: tool({
       description: dedent`
         Verify specific values in the response JSON using expect() assertions.
-        Each assertion is a JS expression with "data" (parsed response) and "expect" (Jest expect) available.
+        Each assertion is a JS expression with "response" (full parsed JSON body) and "expect" (Jest expect) available.
+        "response" is the entire parsed JSON — access nested fields accordingly.
         Example assertions:
-        - "expect(data.name).toBe('Test Suite')"
-        - "expect(data.items).toHaveLength(3)"
-        - "expect(data).toHaveProperty('id')"
-        - "expect(data.count).toBeGreaterThan(0)"
-        - "expect(data.tags).toContain('urgent')"
-        - "expect(data).toMatchObject({ status: 'active' })"
+        - "expect(response.name).toBe('Test Suite')"
+        - "expect(response.items).toHaveLength(3)"
+        - "expect(response).toHaveProperty('id')"
+        - "expect(response.count).toBeGreaterThan(0)"
+        - "expect(response.data.tags).toContain('urgent')"
+        - "expect(response).toMatchObject({ status: 'active' })"
       `,
       inputSchema: z.object({
         responseFile: z.string().describe('Path to the response JSON file'),
-        assertions: z.array(z.string()).describe('JS expressions using expect(data) — e.g. "expect(data.id).toBe(1)"'),
+        assertions: z.array(z.string()).describe('JS expressions using expect(response) — e.g. "expect(response.id).toBe(1)"'),
       }),
       execute: async ({ responseFile, assertions }) => {
-        let data: unknown;
+        let response: unknown;
         try {
-          data = readResponseData(responseFile);
+          response = readResponseData(responseFile);
         } catch (e: any) {
           commitVerification('Data check: failed to read response', false, e.message);
           return { passed: false, results: [{ code: '<read file>', passed: false, error: e.message }] };
@@ -179,7 +197,7 @@ export function createCurlerTools(apiClient: ApiClient, requestState: RequestSto
         const results: Array<{ code: string; passed: boolean; error?: string }> = [];
         for (const code of assertions) {
           try {
-            new Function('expect', 'data', code)(expect, data);
+            new Function('expect', 'response', code)(expect, response);
             results.push({ code, passed: true });
           } catch (e: any) {
             results.push({ code, passed: false, error: e.message });

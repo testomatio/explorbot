@@ -326,10 +326,8 @@ const openrouter = createOpenRouter({
 });
 
 const config = {
-  playwright: {
-    browser: 'chromium',
+  web: {
     url: 'http://localhost:3000',
-    windowSize: '1200x900',
   },
 
   ai: {
@@ -341,6 +339,14 @@ const config = {
   reporter: {
     enabled: true,
   },
+
+  // api: {
+  //   baseEndpoint: 'http://localhost:3000/api',
+  //   spec: ['http://localhost:3000/api/openapi.json'],
+  //   headers: {
+  //     'Authorization': 'Bearer <token>',
+  //   },
+  // },
 };
 
 export default config;

@@ -101,6 +101,8 @@ interface AgentsConfig {
   quartermaster?: AgentConfig;
   historian?: AgentConfig;
   fisherman?: AgentConfig;
+  chief?: AgentConfig;
+  curler?: AgentConfig;
 }
 
 interface AIConfig {
@@ -151,13 +153,22 @@ interface ReporterConfig {
   html?: boolean;
 }
 
+type ApiHookFn = (ctx: { headers: Record<string, string>; baseEndpoint: string }) => Promise<Record<string, string> | undefined> | Record<string, string> | undefined;
+
 interface ApiConfig {
   baseEndpoint?: string;
   spec?: string[];
   headers?: Record<string, string>;
+  bootstrap?: ApiHookFn;
+  teardown?: ApiHookFn;
+}
+
+interface WebConfig {
+  url: string;
 }
 
 interface ExplorbotConfig {
+  web?: WebConfig;
   playwright: PlaywrightConfig;
   ai: AIConfig;
   html?: HtmlConfig;
@@ -189,7 +200,31 @@ const config: ExplorbotConfig = {
 
 type RuleEntry = string | Record<string, string>;
 
-export type { ExplorbotConfig, PlaywrightConfig, AIConfig, HtmlConfig, ActionConfig, AgentConfig, AgentsConfig, ResearcherAgentConfig, NavigatorAgentConfig, PlannerAgentConfig, Hook, HookConfig, HooksConfig, PlaywrightHook, CodeceptJSHook, HookPatternMap, RuleEntry, ReporterConfig, ApiConfig };
+export const EXPLORBOT_CONFIG_PATHS = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts'];
+
+export type {
+  ExplorbotConfig,
+  PlaywrightConfig,
+  AIConfig,
+  HtmlConfig,
+  ActionConfig,
+  AgentConfig,
+  AgentsConfig,
+  ResearcherAgentConfig,
+  NavigatorAgentConfig,
+  PlannerAgentConfig,
+  Hook,
+  HookConfig,
+  HooksConfig,
+  PlaywrightHook,
+  CodeceptJSHook,
+  HookPatternMap,
+  RuleEntry,
+  ReporterConfig,
+  ApiConfig,
+  WebConfig,
+  ApiHookFn,
+};
 
 export class ConfigParser {
   private static instance: ConfigParser;
@@ -246,7 +281,7 @@ export class ConfigParser {
         throw new Error('Configuration file is empty or invalid');
       }
 
-      this.config = loadedConfig as ExplorbotConfig;
+      this.config = this.resolveConfig(loadedConfig as ExplorbotConfig);
       this.configPath = resolvedPath;
 
       log(`Configuration loaded from: ${resolvedPath}`);
@@ -348,7 +383,7 @@ export class ConfigParser {
   }
 
   private findConfigFile(): string | null {
-    const possiblePaths = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts', 'config/explorbot.config.js', 'config/explorbot.config.mjs', 'config/explorbot.config.ts', 'src/config/explorbot.config.js', 'src/config/explorbot.config.mjs', 'src/config/explorbot.config.ts'];
+    const possiblePaths = [...EXPLORBOT_CONFIG_PATHS, 'config/explorbot.config.js', 'config/explorbot.config.mjs', 'config/explorbot.config.ts', 'src/config/explorbot.config.js', 'src/config/explorbot.config.mjs', 'src/config/explorbot.config.ts'];
 
     for (const path of possiblePaths) {
       const fullPath = resolve(process.cwd(), path);
@@ -380,20 +415,28 @@ export class ConfigParser {
     }
   }
 
-  public validateConfig(config: ExplorbotConfig): void {
-    const requiredFields = ['playwright.url', 'ai.model'];
+  private resolveConfig(config: ExplorbotConfig): ExplorbotConfig {
+    if (config.web?.url && !config.playwright?.url) {
+      config.playwright = config.playwright || { browser: 'chromium', url: '' };
+      config.playwright.url = config.web.url;
+    }
+    return config;
+  }
 
-    for (const field of requiredFields) {
-      const value = this.getNestedValue(config, field);
-      if (value === undefined || value === null) {
-        throw new Error(`Missing required configuration field: ${field}`);
-      }
+  public validateConfig(config: ExplorbotConfig): void {
+    if (!config.ai?.model) {
+      throw new Error('Missing required configuration field: ai.model');
+    }
+
+    const url = config.playwright?.url || config.web?.url;
+    if (!url) {
+      throw new Error('Missing required configuration: web.url or playwright.url');
     }
 
     try {
-      new URL(config.playwright.url);
+      new URL(url);
     } catch {
-      throw new Error(`Invalid URL in configuration: ${config.playwright.url}`);
+      throw new Error(`Invalid URL in configuration: ${url}`);
     }
   }
 

@@ -212,7 +212,7 @@ export class Chief extends ChiefBase {
   }
 
   private buildConversation(endpoint: string, style?: string, sampleData?: string): Conversation {
-    const model = this.provider.getModelForAgent('chief');
+    const model = this.provider.getAgenticModel('chief');
     const conversation = new Conversation([], model);
 
     conversation.addUserText(this.getSystemMessage());

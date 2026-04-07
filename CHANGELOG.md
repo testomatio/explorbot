@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-04-07
+
+### Configuration
+- **`web.url`** — Simplified way to set the application URL. Replaces `playwright.url` for common use cases. Explorbot resolves `web.url` to `playwright.url` automatically. Default: none.
+- **`api.bootstrap`** — Async hook function called before API tests start. Receives `{ headers, baseEndpoint }` context, can return updated headers. Default: none.
+- **`api.teardown`** — Async hook function called after API tests finish. Receives same context as bootstrap. Default: none.
+
+### Changes
+- [Planner] Duplicate scenario prevention improved — all existing test titles are now listed explicitly when expanding plans
+- [Curler] `verifyStructure` tool now returns the actual response shape on success, helping write correct `verifyData` assertions
+- [Curler] `verifyData` tool now uses `response` variable instead of `data` for clarity — `response` is the full parsed JSON body
+- API tester now falls back to `explorbot.config.*` files when no `apibot.config.*` is found, allowing a single shared config
+
 ## 2026-04-06
 
 ### New CLI Commands
