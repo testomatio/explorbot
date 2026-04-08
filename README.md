@@ -2,12 +2,12 @@
 
 **The vibe-testing agent for web applications.**
 
-![Explorbot Terminal UI](assets/screenshot.png)
+![Explorbot Terminal UI](https://github.com/testomatio/explorbot/blob/main/assets/screenshot.png)
 
 Explorbot explores your web app like a curious human would — clicking around, filling forms, finding bugs, and learning as it goes. No test scripts required. Just point it at your app and let it work.
 
 ```bash
-explorbot start https://your-app.com
+npx explorbot start https://your-app.com
 ```
 
 Explorbot is your first assitant in testing.
@@ -25,11 +25,11 @@ Explorbot can start testing features which were not covered by unit tests or bro
 
 ## Demo
 
-![Explorbot in action](assets/demo.gif)
+![Explorbot in action](https://github.com/testomatio/explorbot/blob/main/assets/demo.gif)
 
 ## Requirements
 
-- **Bun** (not Node.js)
+- NodeJS 24+ or **Bun**
 - **AI provider API key** — OpenRouter recommended; Groq, Cerebras, OpenAI, Anthropic, or others via [Vercel AI SDK](https://sdk.vercel.ai/providers)
 - **Modern terminal** — iTerm2, WARP, Kitty, Ghostty. WSL if running on Windows
 - **Compatible web app** — Check [docs/prerequisites.md](docs/prerequisites.md) to verify your app works with Explorbot
@@ -39,14 +39,14 @@ Explorbot can start testing features which were not covered by unit tests or bro
 **1. Install dependencies**
 
 ```bash
-bun install
-bunx playwright install
+npm i explorbot --save
+npx playwright install
 ```
 
 **2. Initialize config**
 
 ```bash
-explorbot init
+npx explorbot init
 ```
 
 **3. Edit `explorbot.config.js`** — set your app URL and AI provider:
@@ -72,8 +72,7 @@ const openrouter = createOpenRouter({
 });
 
 export default {
-  playwright: {
-    browser: 'chromium',
+  web: {
     url: 'https://your-app.com',
   },
   ai: {
@@ -93,18 +92,18 @@ If your app requires authentication, tell Explorbot how to log in:
 
 ```bash
 # Interactive mode
-explorbot learn
+npx explorbot learn
 
 # Or via CLI
-explorbot learn "/login" "Use credentials: admin@example.com / secret123"
+npx explorbot learn "/login" "Use credentials: admin@example.com / secret123"
 ```
 
 > [!TIP]
 > Use `--session` to persist browser cookies and localStorage between runs. Log in once, and Explorbot will restore the session on next start:
 > ```bash
-> explorbot start /login --session          # saves to output/session.json
-> explorbot start /dashboard --session      # restores session, skips login
-> explorbot start /app --session auth.json  # custom session file
+> npx explorbot start /login --session          # saves to output/session.json
+> npx explorbot start /dashboard --session      # restores session, skips login
+> npx explorbot start /app --session auth.json  # custom session file
 > ```
 
 > [!NOTE]
@@ -113,7 +112,7 @@ explorbot learn "/login" "Use credentials: admin@example.com / secret123"
 **5. Run**
 
 ```bash
-explorbot start /admin/users
+npx explorbot start /admin/users
 ```
 
 Start from a small functional area of your app (admin panel, settings, any CRUD section) so Explorbot can quickly understand its business purpose and context.
@@ -121,7 +120,7 @@ Start from a small functional area of your app (admin panel, settings, any CRUD 
 Browser runs headless by default — use `--show` to see it:
 
 ```bash
-explorbot start /settings --show
+npx explorbot start /settings --show
 ```
 
 Requires a modern terminal (iTerm2, WARP, Kitty, Ghostty, Windows Terminal). On Windows, use WSL.
@@ -179,25 +178,58 @@ See [docs/commands.md](docs/commands.md) for all commands.
 **Interactive mode** — Launch TUI, guide exploration, get real-time feedback:
 
 ```bash
-explorbot start https://your-app.com
+npx explorbot start https://your-app.com
 ```
 
 **Autonomous mode** — Non-interactive testing and planning:
 
 ```bash
-explorbot explore /admin/users
+npx explorbot explore /admin/users
 ```
 
 **Freesail mode** — Fully autonomous, continuous exploration across multiple pages:
 
 ```bash
-explorbot freesail /admin              # explore and test pages indefinitely
-explorbot freesail /app --deep         # depth-first: explore nearby pages first
-explorbot freesail /app --shallow      # breadth-first: spread across many pages
-explorbot freesail /app --scope /admin # restrict to URLs under /admin
+npx explorbot freesail /admin              # explore and test pages indefinitely
+npx explorbot freesail /app --deep         # depth-first: explore nearby pages first
+npx explorbot freesail /app --shallow      # breadth-first: spread across many pages
+npx explorbot freesail /app --scope /admin # restrict to URLs under /admin
 ```
 
 Freesail navigates to a page, researches it, runs tests, then moves on to the next least-visited page — repeating until stopped. Also available as `/freesail` in TUI.
+
+## API Testing
+
+Explorbot also tests REST APIs. Add an `api` section to your config and point it at your API:
+
+```javascript
+export default {
+  web: {
+    url: 'http://localhost:3000',
+  },
+  ai: {
+    model: openrouter('openai/gpt-oss-20b'),
+    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
+  },
+  api: {
+    baseEndpoint: 'http://localhost:3000/api/v1',
+    spec: ['http://localhost:3000/api/openapi.json'],
+    headers: {
+      'Authorization': 'Bearer <token>',
+    },
+  },
+};
+```
+
+```bash
+npx explorbot api explore /users          # full cycle: plan + test all styles
+npx explorbot api plan /users             # generate test plan only
+npx explorbot api test plans/users.md *   # run all tests from a plan
+```
+
+The API tester uses two agents — **Chief** (plans test scenarios across styles: normal, curious, psycho, hacker) and **Curler** (executes HTTP requests and verifies responses). Both use `agenticModel` by default.
+
+See [docs/api-testing.md](docs/api-testing.md) for setup, authentication hooks, and full command reference.
 
 ## Core Philosophy
 
@@ -224,6 +256,7 @@ When tuned, Explorbot **can run autonomously for hours** navigating a web applic
 
 - [docs/prerequisites.md](docs/prerequisites.md) — Application compatibility checklist
 - [docs/commands.md](docs/commands.md) — Terminal command reference
+- [docs/api-testing.md](docs/api-testing.md) — API testing setup and commands
 - [docs/knowledge.md](docs/knowledge.md) — Knowledge system and URL patterns
 - [docs/providers.md](docs/providers.md) — AI provider configuration
 - [docs/agents.md](docs/agents.md) — Agent descriptions and capabilities
@@ -237,11 +270,16 @@ When tuned, Explorbot **can run autonomously for hours** navigating a web applic
 **Can I run it in Cursor? or Claude Code?**
 No, Explorbot is a separate application designed for constant testing. Cursor, Codex, or Claude Code are coding agents — not relevant here.
 
-**Why do you hate Opus?**
-Opus is great for coding. Here we need a simple model that can consume lots of HTML tokens to find the relevant ones. Leave more interesting tasks to Opus.
+> However, Explorbot can be used as subagent or terminal command which is controlled by coding agent.
+
+**Can I bring Cursor or OpenAI Subscription?**
+No Cursor and OpenAI subscription can't be used. Mostly because their models are slow for Explorbot's usage. We recommend using pay-per-token via Groq and OpenRouter.
+
+**I want to use Opus!!!**
+Opus is great for coding. But for testing we need a simpler model that can safely consume lots of HTML tokens. Opus must be used for sophisticated decision-making, while explorbot needs to collect knowledge from webpages and do it fast.
 
 **Is that expensive?**
-No. With fast open models (e.g. `openai/gpt-oss-20b` on OpenRouter or Groq), expect roughly ~$1/hour of continuous run, depending on provider and traffic.
+No. With fast open models (e.g. `openai/gpt-oss-20b` on OpenRouter or Groq), expect roughly **~$1/hour of continuous run**, depending on provider and traffic.
 
 **Does Explorbot have MCP?**
 Not yet.
@@ -250,7 +288,23 @@ Not yet.
 Yes, use the programmatic API. See [docs/scripting.md](docs/scripting.md).
 
 **Ok, but I can do the same in Cursor with Playwright MCP!**
-Good luck running it on CI! Also, you'll need to check on it every 10 seconds to see how it's running the browser.
+Good luck running it on CI!
+
+## Development
+
+* Clone this repository
+* Use **Bun** to run TS and TSX with no building
+* Create a sample project under `example` directory:
+
+```
+./bin/explorbot-cli.ts init --path example
+```
+
+* Run your commands using `--path example`
+
+```
+./bin/explorbot-cli.ts start --path example
+```
 
 ## License
 

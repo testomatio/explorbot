@@ -12,8 +12,7 @@ const groq = createGroq({
 });
 
 export default {
-  playwright: {
-    browser: 'chromium',
+  web: {
     url: 'http://localhost:3000',
   },
   ai: {
@@ -175,6 +174,8 @@ Each agent can be individually configured with its own model and custom system p
 | `experience-compactor` | Compresses experience data |
 | `quartermaster` | Accessibility analysis |
 | `historian` | Session recording |
+| `chief` | API test planning |
+| `curler` | API test execution |
 
 ### Agent Options
 
@@ -336,10 +337,23 @@ explorbot explore --config ./custom/path/config.js
 
 ```javascript
 export default {
-  // Browser automation settings
+  // Application URL (required — or set playwright.url instead)
+  web: {
+    url: 'http://localhost:3000',
+  },
+
+  // API testing (optional)
+  api: {
+    baseEndpoint: 'http://localhost:3000/api/v1',
+    spec: ['http://localhost:3000/api/openapi.json'],
+    headers: { 'Content-Type': 'application/json' },
+    // bootstrap: async ({ headers, baseEndpoint }) => { ... },
+    // teardown: async ({ headers, baseEndpoint }) => { ... },
+  },
+
+  // Browser automation settings (url is inherited from web.url if not set)
   playwright: {
     browser: 'chromium',           // 'chromium' | 'firefox' | 'webkit'
-    url: 'http://localhost:3000',  // Starting URL (required)
     show: false,                   // Show browser window
     windowSize: '1280x720',        // Browser window size
     slowMo: 0,                     // Slow down actions (ms)
@@ -433,6 +447,7 @@ export default {
 
 ## See Also
 
+- [API Testing](./api-testing.md) - API testing setup and commands
 - [AI Providers](./providers.md) - Provider setup examples
 - [Agents](./agents.md) - Agent descriptions and workflows
 - [Agent Hooks](./hooks.md) - Custom code before/after agent execution
