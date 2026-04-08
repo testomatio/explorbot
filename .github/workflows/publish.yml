@@ -41,11 +41,14 @@ jobs:
     - name: Verify CLI on Node.js
       run: node dist/bin/explorbot-cli.js --help
 
-    - name: Detect beta release
+    - name: Set version from tag
       id: check
       run: |
         TAG="${GITHUB_REF#refs/tags/}"
-        if [[ "$TAG" == *beta* || "$TAG" == *pre* || "$TAG" == *alpha* || "$TAG" == *rc* ]]; then
+        VERSION="${TAG#v}"
+        echo "Setting version to $VERSION"
+        npm version "$VERSION" --no-git-tag-version
+        if [[ "$VERSION" == *beta* || "$VERSION" == *pre* || "$VERSION" == *alpha* || "$VERSION" == *rc* ]]; then
           echo "tag=beta" >> "$GITHUB_OUTPUT"
         else
           echo "tag=latest" >> "$GITHUB_OUTPUT"
