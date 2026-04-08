@@ -103,7 +103,7 @@
     "vitest": "^3.2.4"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24.0.0"
   },
   "overrides": {
     "has-flag": "4.0.0",
