@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '[0-9]+.*'
 
 jobs:
   publish:
@@ -20,7 +21,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 22
+        node-version: 24
         registry-url: https://registry.npmjs.org
 
     - name: Setup Bun
@@ -40,7 +41,17 @@ jobs:
     - name: Verify CLI on Node.js
       run: node dist/bin/explorbot-cli.js --help
 
+    - name: Detect beta release
+      id: check
+      run: |
+        TAG="${GITHUB_REF#refs/tags/}"
+        if [[ "$TAG" == *beta* || "$TAG" == *pre* || "$TAG" == *alpha* || "$TAG" == *rc* ]]; then
+          echo "tag=beta" >> "$GITHUB_OUTPUT"
+        else
+          echo "tag=latest" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Publish to npm
-      run: npm publish --provenance --access public
+      run: npm publish --provenance --access public --tag ${{ steps.check.outputs.tag }}
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
