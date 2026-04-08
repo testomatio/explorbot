@@ -16,7 +16,7 @@ The build uses TypeScript compiler (`tsc`) with a dedicated `tsconfig.build.json
 
 1. **TypeScript compilation** - Compiles `src/`, `bin/`, and `boat/` to `dist/` preserving the directory structure
 2. **Import rewriting** - `rewriteRelativeImportExtensions` rewrites `.ts` imports to `.js` in the output (TypeScript 5.7+ feature)
-3. **Asset copying** - Copies `rules/`, `assets/sample-files/`, and `prompts/` into `dist/` so runtime path resolution works
+3. **Asset copying** - Copies `rules/` and `assets/sample-files/` into `dist/` so runtime path resolution works
 4. **Shebang replacement** - Replaces `#!/usr/bin/env bun` with `#!/usr/bin/env node` in the CLI entry point
 
 ### Build Configuration
@@ -44,8 +44,7 @@ dist/
 ├── src/                    # Compiled application code
 ├── boat/                   # Compiled API tester module
 ├── rules/                  # Agent rule files (markdown)
-├── assets/sample-files/    # Sample files for testing
-└── prompts/                # Prompt templates
+└── assets/sample-files/    # Sample files for testing
 ```
 
 Key `package.json` fields:
@@ -54,7 +53,7 @@ Key `package.json` fields:
 {
   "bin": { "explorbot": "./dist/bin/explorbot-cli.js" },
   "main": "dist/src/index.js",
-  "files": ["dist/", "rules/", "assets/sample-files/", "prompts/"],
+  "files": ["dist/", "rules/", "assets/sample-files/"],
   "engines": { "node": ">=18.0.0" }
 }
 ```

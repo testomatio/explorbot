@@ -1,14 +1,20 @@
 {
   "name": "explorbot",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "CLI app built with React Ink, CodeceptJS, and Playwright",
   "license": "Elastic-2.0",
   "type": "module",
   "main": "dist/src/index.js",
+  "exports": {
+    ".": {
+      "bun": "./src/index.tsx",
+      "import": "./dist/src/index.js"
+    }
+  },
   "bin": {
     "explorbot": "./dist/bin/explorbot-cli.js"
   },
-  "files": ["dist/", "rules/", "assets/sample-files/", "prompts/"],
+  "files": ["dist/", "src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts", "boat/api-tester/src/**/*.ts", "rules/", "assets/sample-files/"],
   "scripts": {
     "build": "bun run src/index.tsx build && bun run build:bin",
     "build:bin": "bun build bin/explorbot-cli.ts --outdir bin --target node --external commander --format esm",

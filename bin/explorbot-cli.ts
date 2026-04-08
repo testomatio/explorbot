@@ -9,14 +9,16 @@ import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { Stats } from '../src/stats.js';
-import { log, setPreserveConsoleLogs } from '../src/utils/logger.js';
-import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 import { Plan } from '../src/test-plan.js';
+import { getCliName } from '../src/utils/cli-name.ts';
+import { log, setPreserveConsoleLogs } from '../src/utils/logger.js';
 import { jsonToTable } from '../src/utils/markdown-parser.js';
+import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 
 const program = new Command();
+const cli = getCliName();
 
-program.name('explorbot').description('AI-powered web exploration tool');
+program.name(cli).description('AI-powered web exploration tool');
 
 interface CLIOptions {
   verbose?: boolean;
@@ -164,9 +166,9 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
 
       const lines: string[] = [];
       lines.push('Run tests:');
-      lines.push(`\`explorbot test ${planFile} 1${cliSuffix}\` → run first test`);
-      lines.push(`\`explorbot test ${planFile} 1-3${cliSuffix}\` → run tests 1 to 3`);
-      lines.push(`\`explorbot test ${planFile} *${cliSuffix}\` → run all tests`);
+      lines.push(`\`${cli} test ${planFile} 1${cliSuffix}\` → run first test`);
+      lines.push(`\`${cli} test ${planFile} 1-3${cliSuffix}\` → run tests 1 to 3`);
+      lines.push(`\`${cli} test ${planFile} *${cliSuffix}\` → run all tests`);
 
       log(parseMarkdownToTerminal(lines.join('\n')));
 
@@ -211,7 +213,7 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
         for (const exp of test.expected) lines.push(`- ${exp}`);
       }
       lines.push('');
-      lines.push(`Run: \`explorbot test ${planFile} ${idx}\``);
+      lines.push(`Run: \`${cli} test ${planFile} ${idx}\``);
       console.log(parseMarkdownToTerminal(lines.join('\n')));
       return;
     }
@@ -232,11 +234,11 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
     lines.push(jsonToTable(rows, ['#', 'Priority', 'Title', 'Steps', 'Expected']));
 
     lines.push('View test details:');
-    lines.push(`\`explorbot plan:load ${planFile} <index>\`\n`);
+    lines.push(`\`${cli} plan:load ${planFile} <index>\`\n`);
     lines.push('Run tests:');
-    lines.push(`\`explorbot test ${planFile} 1\` → run first test`);
-    lines.push(`\`explorbot test ${planFile} 1-3\` → run tests 1 to 3`);
-    lines.push(`\`explorbot test ${planFile} *\` → run all tests`);
+    lines.push(`\`${cli} test ${planFile} 1\` → run first test`);
+    lines.push(`\`${cli} test ${planFile} 1-3\` → run tests 1 to 3`);
+    lines.push(`\`${cli} test ${planFile} *\` → run all tests`);
 
     console.log(parseMarkdownToTerminal(lines.join('\n')));
   } catch (error) {
@@ -302,96 +304,12 @@ program
   .option('-f, --force', 'Overwrite existing config file')
   .option('-p, --path <path>', 'Working directory for initialization')
   .action(async (options) => {
-    const configPath = options.configPath || './explorbot.config.js';
-    const force = options.force || false;
-    const customPath = options.path;
-    const originalCwd = process.cwd();
-
-    if (customPath) {
-      const resolvedPath = path.resolve(customPath);
-      if (!fs.existsSync(resolvedPath)) {
-        fs.mkdirSync(resolvedPath, { recursive: true });
-        log(`Created directory: ${resolvedPath}`);
-      }
-      process.chdir(resolvedPath);
-      log(`Working in directory: ${resolvedPath}`);
-    }
-
-    const defaultConfig = `import { '<your provider here>' } from '<your provider package here>';
-
-// This example uses OpenRouter (one API key, many providers). Any Vercel AI SDK provider works; see
-// https://github.com/testomatio/explorbot/blob/main/docs/providers.md
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
-
-const config = {
-  web: {
-    url: 'http://localhost:3000',
-  },
-
-  ai: {
-    model: '<your model here>',
-    visionModel: '<your vision model here>',
-    agenticModel: '<your agentic model here>',
-  },
-
-  reporter: {
-    enabled: true,
-  },
-
-  // api: {
-  //   baseEndpoint: 'http://localhost:3000/api',
-  //   spec: ['http://localhost:3000/api/openapi.json'],
-  //   headers: {
-  //     'Authorization': 'Bearer <token>',
-  //   },
-  // },
-};
-
-export default config;
-`;
-
-    try {
-      let resolvedPath = path.resolve(configPath);
-      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
-        resolvedPath = path.join(resolvedPath, 'explorbot.config.js');
-      } else if (!path.extname(resolvedPath)) {
-        resolvedPath = path.join(resolvedPath, 'explorbot.config.js');
-      }
-
-      const dir = path.dirname(resolvedPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-        log(`Created directory: ${dir}`);
-      }
-
-      if (fs.existsSync(resolvedPath) && !force) {
-        log(`Config file already exists: ${resolvedPath}`);
-        log('Use --force to overwrite existing file');
-        process.exit(1);
-      }
-
-      fs.writeFileSync(resolvedPath, defaultConfig, 'utf8');
-      log(`Created config file: ${resolvedPath}`);
-      log('');
-      log('Next steps:');
-      log('1. Set your API key in the config file or as environment variable');
-      log('2. Customize the configuration as needed');
-      log('3. Run: explorbot start');
-
-      if (!fs.existsSync('./output')) {
-        fs.mkdirSync('./output', { recursive: true });
-        log('Created directory: ./output');
-      }
-    } catch (error) {
-      log('Failed to create config file:', error);
-      process.exit(1);
-    } finally {
-      if (process.cwd() !== originalCwd) {
-        process.chdir(originalCwd);
-      }
-    }
+    const { runInitCommand } = await import('../src/commands/init-command.js');
+    runInitCommand({
+      configPath: options.configPath,
+      force: options.force,
+      path: options.path,
+    });
   });
 
 program

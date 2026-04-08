@@ -1,6 +1,7 @@
 import figureSet from 'figures';
 import path from 'node:path';
 import { getStyles } from '../ai/planner/styles.js';
+import { getCliName } from '../utils/cli-name.ts';
 import type { Plan } from '../test-plan.js';
 import { jsonToTable } from '../utils/markdown-parser.js';
 import { tag } from '../utils/logger.js';
@@ -108,7 +109,7 @@ export class ExploreCommand extends BaseCommand {
 
     if (savedPath) {
       const relativePath = path.relative(process.cwd(), savedPath);
-      tag('info').log(`Re-run tests: explorbot test ${relativePath} <index>`);
+      tag('info').log(`Re-run tests: ${getCliName()} test ${relativePath} <index>`);
     }
   }
 

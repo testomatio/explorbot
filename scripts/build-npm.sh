@@ -7,7 +7,7 @@ rm -rf "$DIST_DIR"
 
 npx tsc -p tsconfig.build.json --noCheck
 
-for dir in rules assets/sample-files prompts; do
+for dir in rules assets/sample-files; do
   if [ -d "$dir" ]; then
     mkdir -p "$DIST_DIR/$dir"
     cp -r "$dir"/. "$DIST_DIR/$dir/"

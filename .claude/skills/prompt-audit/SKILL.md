@@ -1,74 +1,124 @@
 ---
 name: prompt-audit
-description: Audit AI prompts and rules for web navigation/testing. Use when checking for contradictions, ambiguity, or issues in src/ai/rules.ts, navigator.ts, and tools.ts
+description: Audit AI prompts and rules for web navigation and testing. Use when reviewing src/ai/rules.ts, navigator.ts, or tools.ts for contradictions, gaps, locator guidance, or tool/schema consistency.
 ---
 
-# Prompt Audit
+# Prompt and rules audit (Explorbot)
 
-Audit prompts and rules used for web navigation and testing in this codebase.
+Instructions for auditing navigation and testing prompts in this repository.
 
-## Files to Read
+## When to apply
 
-Read these files to perform the audit:
-- `src/ai/rules.ts` - Core rules and guidelines
-- `src/ai/navigator.ts` - Navigation prompts
-- `src/ai/tools.ts` - Tool definitions
+Use this workflow when asked to audit rules, navigation prompts, tool definitions, or when checking consistency across `rules.ts`, `navigator.ts`, and `tools.ts`.
 
-## Audit Checklist
+## Files to read
 
-### Rules Analysis (`rules.ts`)
+| File | Role |
+|------|------|
+| `src/ai/rules.ts` | Locator, action, and verification rules |
+| `src/ai/navigator.ts` | Prompts that consume those rules |
+| `src/ai/tools.ts` | Tool schemas, locator guidance, failure messages |
 
-Look for:
-- **Contradictions**: Rules that conflict (e.g., "prefer ARIA" vs "use text first")
-- **Ambiguity**: Vague guidance interpreted multiple ways
-- **Incomplete guidance**: Missing priority order, edge cases
-- **Locator priority**: Is ARIA → Text → CSS → XPath clearly defined?
-- **Unused rules**: Exported but never imported
+## 1. Rules (`rules.ts`)
 
-### Rule Usage (`navigator.ts`)
+- **Contradictions**: Conflicting guidance (e.g. ARIA-first vs text-first without ordering).
+- **Ambiguity**: Text that can be read multiple ways; missing definitions.
+- **Gaps**: No explicit priority, disambiguation, or edge cases where the model needs them.
+- **Locator priority**: ARIA → accessible name/text → CSS → XPath should be explicit if all are allowed.
+- **Context parameter**: When it is required or optional; which tools or Codecept calls use it.
+- **Short vs long locators**: What counts as "short" vs "long" and when each is appropriate.
+- **Dead exports**: Rules exported but never imported.
 
-Check:
-- **Imported but unused**: Rules imported but not in prompts
-- **Missing rules**: Prompts missing locatorRule or actionRule
-- **Duplication**: Inline rules duplicating rules.ts
-- **HTML tags**: Content wrapped in `<page_html>` tags?
+## 2. Navigator (`navigator.ts`)
 
-### Tools Analysis (`tools.ts`)
+- **Unused imports**: Rule strings imported but not embedded in prompts.
+- **Missing injections**: Prompts that need `locatorRule`, `actionRule`, or verification text but omit them.
+- **Duplication**: Inline guidance that repeats or diverges from `rules.ts`.
+- **Structure**: Comparable sections across similar prompts.
+- **HTML wrapping**: Page HTML wrapped in `<page_html>` (or the project's agreed tag) where required.
 
-Verify:
-- **locatorRule usage**: Tools accepting locators include locatorRule?
-- **Suggestions on failure**: Failed results provide helpful hints?
-- **Tool differentiation**: Clear when to use each tool?
+## 3. Tools (`tools.ts`)
 
-## Severity Levels
+- **locatorRule**: Present on tools that take locators, aligned with `rules.ts`.
+- **Schema copy**: Descriptions mention locator kinds the stack supports (e.g. ARIA, CSS, XPath) where relevant.
+- **Failures**: Unsuccessful tool results include actionable `suggestion` (or equivalent) text.
+- **Reachability**: No branches that cannot run (e.g. validation that makes a path impossible).
+- **Consistency**: Error and success shapes follow one pattern across tools.
+- **Differentiation**: Descriptions state when to prefer one tool over another (e.g. click vs text-based variants, type with vs without locator).
 
-| Severity | Description |
-|----------|-------------|
-| 🔴 Critical | Breaks functionality, contradictory rules |
-| 🟠 High | Significant confusion, misleading examples |
-| 🟡 Medium | Suboptimal but functional |
-| 🟢 Minor | Typos, formatting |
+## Severity
 
-## Output Format
+| Level | Meaning | Examples |
+|-------|---------|----------|
+| Critical | Wrong or unsafe model behavior | Contradictory rules, unreachable logic, required rules missing from prompts |
+| High | Major confusion or misleading examples | Ambiguous locator order, wrong formats, schema vs prompt mismatch |
+| Medium | Works but weak | Redundant prose, weak failure hints, uneven structure |
+| Minor | Polish | Typos, spacing, heading inconsistency |
+
+## Output format
+
+Use this structure in the audit reply:
 
 ```markdown
 ## Audit Results
 
-### Critical Issues 🔴
-1. **[File:Line]** Issue
-   - Impact: What goes wrong
-   - Fix: Suggested resolution
+### Critical issues
+1. **[path:line]** Summary
+   - Impact: …
+   - Fix: …
 
-### High Priority Issues 🟠
-...
+### High priority issues
+1. **[path:line]** Summary
+   - Impact: …
+   - Fix: …
 
-### Medium Priority Issues 🟡
-...
+### Medium priority issues
+1. **[path:line]** Summary
+   - Impact: …
+   - Fix: …
 
-### Minor Issues 🟢
-...
+### Minor issues
+1. **[path:line]** Summary
+   - Fix: …
 
 ### Observations
-- Patterns noticed
-- Recommendations
+- Patterns and recommendations
+- Open questions if anything is unclear
 ```
+
+## Deep checklist
+
+### Locator rules
+
+- [ ] Priority order documented (ARIA → text → CSS → XPath as applicable)
+- [ ] Context parameter explained (when and which tools)
+- [ ] Disambiguation (forms, ARIA state, proximity, multiple matches)
+- [ ] Short vs long locators defined
+- [ ] Examples match live conventions (quotes, JSON shapes)
+
+### Action rules
+
+- [ ] Codecept-style calls referenced where relevant (`I.click`, `I.fillField`, `I.see`, …)
+- [ ] Required parameters called out (including context for `I.see` if used)
+- [ ] Forbidden or discouraged patterns named (e.g. waits, `amOnPage` in wrong layer)
+- [ ] Examples match the documented format
+
+### Verification rules
+
+- [ ] `I.see` (or equivalents) and context requirements
+- [ ] `I.seeElement` (or equivalents) and locator preferences
+- [ ] Strictness to limit false positives
+- [ ] Examples show correct usage
+
+### Tool definitions
+
+- [ ] Each locator-aware tool carries the right rule text
+- [ ] Input schemas describe allowed locator types
+- [ ] Failed paths give useful suggestions
+- [ ] Descriptions distinguish alternatives clearly
+
+## Execution
+
+1. Read the three files above.
+2. Walk sections 1–3 and the deep checklist.
+3. Report findings in the output format, with file and line references.

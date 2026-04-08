@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
+import { getCliName } from './utils/cli-name.ts';
 import { createDebug } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
@@ -83,7 +84,7 @@ export class KnowledgeTracker {
     const configPath = configParser.getConfigPath();
 
     if (!configPath) {
-      throw new Error('No explorbot configuration found. Please run "explorbot init" first.');
+      throw new Error(`No explorbot configuration found. Please run "${getCliName()} init" first.`);
     }
 
     const projectRoot = dirname(configPath);
