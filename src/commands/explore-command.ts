@@ -78,7 +78,7 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private printResults(savedPath?: string | null): void {
-    const allTests = this.completedPlans.flatMap((plan) => plan.tests.filter((t) => t.status !== 'pending').map((test) => ({ test, planTitle: plan.title })));
+    const allTests = this.completedPlans.flatMap((plan) => plan.tests.filter((t) => t.startTime != null).map((test) => ({ test, planTitle: plan.title })));
 
     if (allTests.length === 0) return;
 

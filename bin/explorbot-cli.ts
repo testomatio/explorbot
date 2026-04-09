@@ -128,10 +128,11 @@ addCommonOptions(program.command('explore <path>').description('Start web explor
   }
 });
 
-addCommonOptions(program.command('plan <path> [feature]').description('Generate test plan for a page and exit'))
+addCommonOptions(program.command('plan <path>').description('Generate test plan for a page and exit'))
   .option('-a, --append', 'Add tests to existing plan file')
   .option('--style <style>', 'Planning style: normal, curious, psycho')
-  .action(async (planPath, feature, options) => {
+  .option('--focus <feature>', 'Focus area for test planning')
+  .action(async (planPath, options) => {
     try {
       const explorBot = new ExplorBot(buildExplorBotOptions(planPath, options));
       await explorBot.start();
@@ -146,7 +147,7 @@ addCommonOptions(program.command('plan <path> [feature]').description('Generate 
         }
       }
 
-      await explorBot.plan(feature || undefined, {
+      await explorBot.plan(options.focus || undefined, {
         fresh: !options.append,
         style: options.style,
       });

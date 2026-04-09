@@ -13,7 +13,7 @@ Some commands work in both modes. Where a CLI equivalent exists, it is noted bel
 |-------------|---------------|
 | `/explore [url]` | `explorbot explore [path]` |
 | `/research [url]` | `explorbot research <url>` |
-| `/plan [feature]` | `explorbot plan <path> [feature]` |
+| `/plan [--focus <feature>]` | `explorbot plan <path> [--focus <feature>]` |
 | `/drill` | `explorbot drill <url>` |
 | `/learn [note]` | `explorbot learn [url] [description]` |
 
@@ -87,7 +87,7 @@ explorbot browser start --show
 
 # Terminal 2: run commands — they reuse the same browser
 explorbot research /login
-explorbot plan /login authentication
+explorbot plan /login --focus authentication
 explorbot start /dashboard
 
 # Each command connects to the running browser instead of launching a new one.
@@ -134,19 +134,19 @@ Analyze the current page using the Researcher agent.
 
 **CLI equivalent:** `explorbot research <url>` — researches the page and exits.
 
-### `/plan [feature]`
+### `/plan [--focus <feature>]`
 
 Generate test scenarios for the current page using the Planner agent.
 
 ```
 /plan
-/plan login
-/plan checkout flow
+/plan --focus login
+/plan --focus "checkout flow"
 ```
 
-Optional feature focus narrows the scope of generated tests.
+The `--focus` flag narrows the scope of generated tests to a specific feature area.
 
-**CLI equivalent:** `explorbot plan <path> [feature]` — generates a plan and exits.
+**CLI equivalent:** `explorbot plan <path> [--focus <feature>]` — generates a plan and exits.
 
 ### `/test [scenario|number|*]`
 

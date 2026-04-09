@@ -18,7 +18,8 @@ import { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { getActiveStyle, getStyles } from './planner/styles.ts';
 import { WithSessionDedup } from './planner/session-dedup.ts';
-import { WithSubPages, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
+import { WithSubPages, getPlannedByStateHash, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
+import { findSimilarStateHash } from './researcher/cache.ts';
 import type { Provider } from './provider.js';
 import { hasFocusedSection } from './researcher/focus.ts';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
@@ -127,12 +128,24 @@ export class Planner extends PlannerBase implements Agent {
     debugLog('Planning:', state?.url);
     if (!state) throw new Error('No state found');
 
-    if (!this.freshStart && !feature && !this.currentPlan && state.url) {
+    if (!feature && !this.currentPlan && state.url) {
       const similar = this.findSimilarPlan(state.url);
       if (similar) {
         tag('info').log(`Similar page already planned: ${similar.url} (${similar.plan.tests.length} tests)`);
         this.registerPlanInSession(similar.plan);
         return similar.plan;
+      }
+
+      const actionResult = ActionResult.fromState(state);
+      const combinedHtml = await actionResult.combinedHtml();
+      const similarHash = await findSimilarStateHash(combinedHtml);
+      if (similarHash) {
+        const planned = getPlannedByStateHash(similarHash);
+        if (planned) {
+          tag('info').log(`Page content similar to already-planned: ${planned.url} — skipping`);
+          this.registerPlanInSession(planned.plan);
+          return planned.plan;
+        }
       }
     }
 
@@ -211,7 +224,7 @@ export class Planner extends PlannerBase implements Agent {
     tag('success').log(`Planning complete! ${this.currentPlan.tests.length} tests in plan: ${this.currentPlan.title}`);
     tag('info').log(`Planning style: ${this.lastStyleName} (available: ${availableStyles})`);
 
-    if (state.url) registerPlan(state.url, this.currentPlan, feature);
+    if (state.url) registerPlan(state.url, this.currentPlan, feature, state.hash);
 
     this.registerPlanInSession(this.currentPlan);
 

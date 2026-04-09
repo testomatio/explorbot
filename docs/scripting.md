@@ -83,6 +83,7 @@ Plan with focus:
 ```typescript
 // Focus on specific feature
 const plan = await bot.agentPlanner().plan('checkout flow');
+// Or from CLI: explorbot plan /checkout --focus "checkout flow"
 ```
 
 ## Creating Tests Manually

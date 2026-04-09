@@ -65,6 +65,7 @@ export class ResearchResult {
   }
 
   rebuildSectionInText(section: ResearchSection): void {
+    if (section.elements.length === 0) return;
     const newTable = rebuildSectionMarkdown(section);
     const escaped = section.name.replace(/"/g, '\\"');
     let sectionQuery = mdq(this.text).query(`section2(~"${escaped}")`);

@@ -19,6 +19,7 @@ import { Test } from './test-plan.ts';
 import { RequestStore } from './api/request-store.ts';
 import { XhrCapture } from './api/xhr-capture.ts';
 import { createDebug, log, tag } from './utils/logger.js';
+import { WebElement, extractElementData } from './utils/web-element.ts';
 
 declare global {
   namespace NodeJS {
@@ -308,35 +309,23 @@ class Explorer {
     return action;
   }
 
-  async annotateElements(): Promise<number> {
-    const page = this.playwrightHelper.page;
-    const roles = ['button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio', 'switch', 'combobox', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'treeitem'];
-    let idx = 1;
-    for (const role of roles) {
-      const elements = await page.getByRole(role).all();
-      for (const el of elements) {
-        await el.evaluate((node: Element, i: number) => {
-          node.setAttribute('data-explorbot-eidx', String(i));
-        }, idx);
-        idx++;
-      }
-    }
-    return idx - 1;
+  async annotateElements(): Promise<{ ariaSnapshot: string; elements: WebElement[] }> {
+    return annotatePageElements(this.playwrightHelper.page);
   }
 
   async visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number> {
     return visuallyAnnotateContainers(this.playwrightHelper.page, opts?.containers || []);
   }
 
-  async getEidxInContainer(containerCss: string | null): Promise<number[]> {
+  async getEidxInContainer(containerCss: string | null): Promise<string[]> {
     const page = this.playwrightHelper.page;
     try {
       const selector = containerCss ? `${containerCss} [data-explorbot-eidx]` : '[data-explorbot-eidx]';
       const elements = await page.locator(selector).all();
-      const result: number[] = [];
+      const result: string[] = [];
       for (const el of elements) {
         const attr = await el.getAttribute('data-explorbot-eidx');
-        if (attr) result.push(Number.parseInt(attr, 10));
+        if (attr) result.push(attr);
       }
       return result;
     } catch (error) {
@@ -348,13 +337,12 @@ class Explorer {
     }
   }
 
-  async getEidxByLocator(locator: string, container?: string | null): Promise<number | null> {
+  async getEidxByLocator(locator: string, container?: string | null): Promise<string | null> {
     try {
       const page = this.playwrightHelper.page;
       const base = container ? page.locator(container) : page;
       const el = locator.startsWith('//') ? base.locator(`xpath=${locator}`) : base.locator(locator);
-      const eidx = await el.first().getAttribute('data-explorbot-eidx');
-      return eidx ? Number.parseInt(eidx, 10) : null;
+      return await el.first().getAttribute('data-explorbot-eidx');
     } catch (error) {
       if (this.isFatalBrowserError(error)) {
         tag('warning').log(`getEidxByLocator: ${error instanceof Error ? error.message : error}`);
@@ -708,6 +696,65 @@ function toCodeceptjsTest(test: Test): any {
   codeceptjsTest.state = 'pending';
   codeceptjsTest.notes = test.getPrintableNotes();
   return codeceptjsTest;
+}
+
+const REF_LINE_PATTERN = /^(\s*)-\s+(\w+)\s*(?:"([^"]*)")?.*?\[ref=(e\d+)\]/;
+
+const ANNOTATABLE_ROLES = new Set(['button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio', 'switch', 'combobox', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'treeitem']);
+
+function parseAriaRefs(ariaSnapshot: string): Array<{ role: string; name: string; ref: string }> {
+  const entries: Array<{ role: string; name: string; ref: string }> = [];
+  for (const line of ariaSnapshot.split('\n')) {
+    const match = line.match(REF_LINE_PATTERN);
+    if (!match) continue;
+    if (!ANNOTATABLE_ROLES.has(match[2])) continue;
+    entries.push({ role: match[2], name: match[3] || '', ref: match[4] });
+  }
+  return entries;
+}
+
+export async function annotatePageElements(page: any): Promise<{ ariaSnapshot: string; elements: WebElement[] }> {
+  const ariaSnapshot: string = await page.locator('body').ariaSnapshot({ forAI: true });
+  const refEntries = parseAriaRefs(ariaSnapshot);
+
+  const byRole = new Map<string, Array<{ name: string; ref: string }>>();
+  for (const { role, name, ref } of refEntries) {
+    let list = byRole.get(role);
+    if (!list) {
+      list = [];
+      byRole.set(role, list);
+    }
+    list.push({ name, ref });
+  }
+
+  const elements: WebElement[] = [];
+  for (const [role, entries] of byRole) {
+    try {
+      const rawList = await page.getByRole(role).evaluateAll(
+        (domElements: Element[], [data, extractFnStr]: [Array<{ name: string; ref: string }>, string]) => {
+          const extract = new Function(`return ${extractFnStr}`)() as (el: Element) => any;
+          const results: any[] = [];
+          let ariaIdx = 0;
+          for (const el of domElements) {
+            if (ariaIdx >= data.length) break;
+            el.setAttribute('data-explorbot-eidx', data[ariaIdx].ref);
+            const elData = extract(el);
+            if (elData) results.push(elData);
+            ariaIdx++;
+          }
+          return results;
+        },
+        [entries, extractElementData.toString()]
+      );
+      for (const raw of rawList) {
+        elements.push(WebElement.fromRawData(raw, role));
+      }
+    } catch {
+      debugLog(`Failed to annotate role=${role}`);
+    }
+  }
+
+  return { ariaSnapshot, elements };
 }
 
 export default Explorer;

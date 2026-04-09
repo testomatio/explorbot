@@ -85,7 +85,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
     }
 
     private async _analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult> {
-      const elements = new Map<number, { coordinates: string | null; color: string | null; icon: string | null }>();
+      const elements = new Map<string, { coordinates: string | null; color: string | null; icon: string | null }>();
       const emptyResult: VisualAnalysisResult = { elements, pagePurpose: null, primaryActions: null, focusedSection: null };
       if (!this.actionResult) return emptyResult;
 
@@ -131,8 +131,9 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
         const text = aiResult.text || '';
         const rows = mdq(text).query('table').toJson();
         for (const row of rows) {
-          const eidx = Number.parseInt(row.eidx, 10);
-          if (Number.isNaN(eidx)) continue;
+          let eidx = (row.eidx || '').trim();
+          if (!eidx || eidx === '-') continue;
+          if (/^\d+$/.test(eidx)) eidx = `e${eidx}`;
           const val = (v: string) => (v && v !== '-' ? v : null);
           elements.set(eidx, {
             coordinates: val(row.Coordinates),
@@ -166,7 +167,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
       return emptyResult;
     }
 
-    async mergeVisualData(result: ResearchResult, visualData: Map<number, { coordinates: string | null; color: string | null; icon: string | null }>): Promise<void> {
+    async mergeVisualData(result: ResearchResult, visualData: Map<string, { coordinates: string | null; color: string | null; icon: string | null }>): Promise<void> {
       const sections = parseResearchSections(result.text);
       let merged = 0;
 
@@ -194,7 +195,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
     async backfillCoordinates(result: ResearchResult): Promise<void> {
       const page = this.explorer.playwrightHelper.page;
       const sections = parseResearchSections(result.text);
-      const eidxWithoutCoords: number[] = [];
+      const eidxWithoutCoords: string[] = [];
       for (const section of sections) {
         for (const el of section.elements) {
           if (el.eidx && !el.coordinates) eidxWithoutCoords.push(el.eidx);
@@ -224,7 +225,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
 }
 
 export interface VisualAnalysisResult {
-  elements: Map<number, { coordinates: string | null; color: string | null; icon: string | null }>;
+  elements: Map<string, { coordinates: string | null; color: string | null; icon: string | null }>;
   pagePurpose: string | null;
   primaryActions: string[] | null;
   focusedSection: string | null;
@@ -232,7 +233,7 @@ export interface VisualAnalysisResult {
 
 export interface CoordinateMethods {
   analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult>;
-  mergeVisualData(result: ResearchResult, visualData: Map<number, { coordinates: string | null; color: string | null; icon: string | null }>): Promise<void>;
+  mergeVisualData(result: ResearchResult, visualData: Map<string, { coordinates: string | null; color: string | null; icon: string | null }>): Promise<void>;
   backfillCoordinates(result: ResearchResult): Promise<void>;
   visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number>;
 }

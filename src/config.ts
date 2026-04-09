@@ -185,6 +185,7 @@ interface ExplorbotConfig {
   api?: ApiConfig;
   stepsFile?: string;
   files?: Record<string, string>;
+  dynamicPageRegex?: string;
 }
 
 const config: ExplorbotConfig = {

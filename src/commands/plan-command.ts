@@ -9,6 +9,7 @@ export class PlanCommand extends BaseCommand {
     { flags: '--fresh', description: 'Regenerate plan from scratch' },
     { flags: '--clear', description: 'Clear plan before regenerating' },
     { flags: '--style <name>', description: 'Planning style (normal, curious, psycho, performer)' },
+    { flags: '--focus <feature>', description: 'Focus area for test planning' },
   ];
 
   async execute(args: string): Promise<void> {
@@ -16,11 +17,15 @@ export class PlanCommand extends BaseCommand {
     const fresh = args.includes('--fresh') || clear;
     const styleMatch = args.match(/--style\s+(\S+)/);
     const style = styleMatch?.[1];
-    const focus = args
+    const focusMatch = args.match(/--focus\s+("[^"]+"|'[^']+'|\S+)/);
+    const focusFromFlag = focusMatch?.[1]?.replace(/^["']|["']$/g, '');
+    const focusFromText = args
       .replace('--clear', '')
       .replace('--fresh', '')
       .replace(/--style\s+\S+/, '')
+      .replace(/--focus\s+("[^"]+"|'[^']+'|\S+)/, '')
       .trim();
+    const focus = focusFromFlag || focusFromText;
 
     if (clear) {
       this.explorBot.clearPlan();

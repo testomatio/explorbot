@@ -77,7 +77,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     }
 
     private async _discoverExpandables(researchText: string): Promise<ExpandableElement[]> {
-      const allElements = new Map<number, ExpandableElement>();
+      const allElements = new Map<string, ExpandableElement>();
       for (const section of parseResearchSections(researchText)) {
         for (const el of section.elements) {
           if (el.eidx != null) allElements.set(el.eidx, { ...el, container: section.containerCss });
@@ -91,7 +91,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         From this UI research, identify elements that could reveal hidden UI when clicked
         (dropdown menus, popups, expandable panels, accordion sections, overflow menus, tab switches).
 
-        Available eidx numbers: ${eidxList}
+        Available eidx refs: ${eidxList}
 
         ${researchText}
 
@@ -99,7 +99,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         - Only pick elements that HIDE content until clicked (menus, dropdowns, accordions, tabs)
         - Skip regular links, data items, and navigation
         - For repeated elements (same expand button on every row), pick only the FIRST one
-        - Respond with comma-separated eidx numbers only, e.g.: 3, 7, 15
+        - Respond with comma-separated eidx refs only, e.g.: e3, e7, e15
       `;
 
       const model = this.provider.getModelForAgent('researcher');
@@ -112,7 +112,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       const screenshot = this.actionResult?.screenshot;
       if (screenshot && this.provider.hasVision()) {
         const visionPrompt = dedent`
-          This screenshot has interactive elements labeled with eidx numbers (solid bordered boxes with numbers).
+          This screenshot has interactive elements labeled with eidx refs (solid bordered boxes with labels).
           Identify elements that could reveal hidden UI when clicked.
 
           Look for: overflow/ellipsis menus, chevron dropdowns, hamburger menus,
@@ -121,33 +121,30 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           Rules:
           - For repeated icons (same icon on every list row), pick only the FIRST one
           - Skip regular text buttons, links, and navigation items
-          - Respond with comma-separated eidx numbers only, e.g.: 3, 7, 15
+          - Respond with comma-separated eidx refs only, e.g.: e3, e7, e15
         `;
         visionCall = this.provider.processImage(visionPrompt, screenshot.toString('base64'));
       }
 
       const [textRes, visionRes] = await Promise.all([textCall, visionCall]);
 
-      const eidxSet = new Set<number>();
+      const eidxSet = new Set<string>();
+      const parseRefs = (text: string | undefined) => {
+        if (!text) return [];
+        const matches = text.match(/e?\d+/g) || [];
+        const refs = matches.map((m) => (m.startsWith('e') ? m : `e${m}`));
+        return refs.filter((r) => allElements.has(r));
+      };
+
       for (const res of [textRes, visionRes]) {
-        if (!res?.text) continue;
-        const nums = res.text.match(/\d+/g)?.map(Number) || [];
-        for (const n of nums) {
-          if (allElements.has(n)) eidxSet.add(n);
+        for (const ref of parseRefs(res?.text)) {
+          eidxSet.add(ref);
         }
       }
 
-      const textNums =
-        textRes?.text
-          ?.match(/\d+/g)
-          ?.map(Number)
-          .filter((n) => allElements.has(n)) || [];
-      const visionNums =
-        visionRes?.text
-          ?.match(/\d+/g)
-          ?.map(Number)
-          .filter((n) => allElements.has(n)) || [];
-      debugLog(`Text model picked eidx: [${textNums.join(', ')}], Vision model picked eidx: [${visionNums.join(', ')}]`);
+      const textRefs = parseRefs(textRes?.text);
+      const visionRefs = parseRefs(visionRes?.text);
+      debugLog(`Text model picked eidx: [${textRefs.join(', ')}], Vision model picked eidx: [${visionRefs.join(', ')}]`);
 
       return [...eidxSet].map((eidx) => allElements.get(eidx)!);
     }

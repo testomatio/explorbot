@@ -77,7 +77,7 @@ See [Researcher Agent](./researcher.md) for detailed configuration and usage.
 - Fully customizable — add your own styles and page-specific rules
 
 **Commands that use Planner:**
-- `/plan [feature]`
+- `/plan [--focus <feature>]`
 - `/explore`
 
 See [Planner Agent](./planner.md) for detailed documentation on planning styles, customization, and configuration.

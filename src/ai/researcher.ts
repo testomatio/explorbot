@@ -131,9 +131,9 @@ export class Researcher extends ResearcherBase implements Agent {
       await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
-      const annotatedCount = await this.explorer.annotateElements();
-      debugLog(`Annotated ${annotatedCount} interactive elements with eidx`);
-      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot && this.provider.hasVision() });
+      const { ariaSnapshot, elements: annotatedElements } = await this.explorer.annotateElements();
+      debugLog(`Annotated ${annotatedElements.length} interactive elements with eidx`);
+      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot && this.provider.hasVision(), ariaSnapshot });
 
       if (isErrorPage(this.actionResult!)) {
         const recovered = await this.waitForPageLoad(screenshot);
@@ -154,7 +154,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       const combinedHtml = await this.actionResult!.combinedHtml();
 
-      if (!deep) {
+      if (!deep && !force) {
         const similar = await findSimilarResearch(combinedHtml);
         if (similar) {
           tag('info').log('Similar research found, reusing cached result');
@@ -385,9 +385,10 @@ export class Researcher extends ResearcherBase implements Agent {
     try {
       await withRetry(
         async () => {
-          await this.explorer.annotateElements();
+          const { ariaSnapshot } = await this.explorer.annotateElements();
           this.actionResult = await this.explorer.createAction().capturePageState({
             includeScreenshot: screenshot && this.provider.hasVision(),
+            ariaSnapshot,
           });
           if (isErrorPage(this.actionResult!)) throw new Error('Error page detected');
         },

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-04-09
+
+### New CLI Options
+- **`--focus <feature>`** — Focus test planning on a specific feature. Replaces the positional `[feature]` argument on the `plan` command.
+  ```bash
+  explorbot plan /login --focus authentication
+  explorbot plan /dashboard --focus "user profile"
+  ```
+
+### New TUI Commands
+- **`/plan --focus <feature>`** — Focus test planning on a specific feature area.
+  ```
+  /plan --focus authentication
+  /plan --focus "form validation"
+  ```
+
+### Configuration
+- **`dynamicPageRegex`** — Custom regex to identify dynamic URL segments (e.g., IDs) in your application. When set, URLs matching this pattern are treated as template parameters during plan deduplication. Default: none (built-in patterns for numeric IDs, UUIDs, ULIDs, and hex IDs are always active).
+
+### Changes
+- [Planner] Pages with similar content are now detected and skipped during planning, even when URLs differ — prevents duplicate plans for pages like `/users/123` and `/users/456`
+- [Planner] Dynamic URL segment detection expanded to recognize UUIDs, ULIDs, hex IDs, and short mixed alphanumeric segments
+- [Researcher] Element annotation now uses ARIA snapshot refs (`e3`, `e15`) instead of numeric indices for more stable element tracking
+- [Tester] Form tool now auto-recovers when a command accidentally navigates into an iframe — switches back to the main frame automatically
+
 ## 2026-04-07
 
 ### Configuration

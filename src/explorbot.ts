@@ -108,7 +108,7 @@ export class ExplorBot {
   }
 
   getCurrentState(): WebPageState | null {
-    return this.explorer.getStateManager().getCurrentState();
+    return this.explorer?.getStateManager().getCurrentState() ?? null;
   }
 
   getExplorer(): Explorer {

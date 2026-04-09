@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { log, tag } from '../utils/logger.js';
 import dedent from 'dedent';
+import chalk from 'chalk';
 import { getCliName } from '../utils/cli-name.ts';
 
 const DEFAULT_CONFIG_TEMPLATE = `import { createOpenRouter } from '@openrouter/ai-sdk-provider';
@@ -103,9 +104,11 @@ export function runInitCommand(options: InitCommandOptions): void {
     log('2. Set AI models config file');
     log('3. Set web application URL in the config file');
     log('4. Add initial knowledge (how to authorize to the application, etc.)');
-    tag('substep').log(`${getCliName()} learn * 'to aurhorize use these credentials: admin@example.com / secret123'`);
+    tag('substep').log(chalk.yellow(`${getCliName()} learn * 'to aurhorize use these credentials: admin@example.com / secret123'`));
+    tag('substep').log(`You can use \${env.LOGIN} and \${env.PASSWORD} to reference environment variables.`);
+
     log('5. Launch application on a relative URL');
-    tag('substep').log(`${getCliName()} start /dashboard`);
+    tag('substep').log(chalk.yellow(`${getCliName()} start /dashboard`));
 
     if (!existsSync('./output')) {
       mkdirSync('./output', { recursive: true });

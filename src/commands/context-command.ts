@@ -21,7 +21,7 @@ export class ContextCommand extends BaseCommand {
 
     const isVisual = args.includes('--visual') || args.includes('--screenshot');
 
-    await explorer.annotateElements();
+    const { ariaSnapshot } = await explorer.annotateElements();
 
     if (isVisual) {
       const cachedResearch = Researcher.getCachedResearch(state);
@@ -29,7 +29,7 @@ export class ContextCommand extends BaseCommand {
       await explorer.visuallyAnnotateElements({ containers });
     }
 
-    const actionResult = await explorer.createAction().capturePageState({ includeScreenshot: isVisual });
+    const actionResult = await explorer.createAction().capturePageState({ includeScreenshot: isVisual, ariaSnapshot });
     const experienceTracker = explorer.getStateManager().getExperienceTracker();
     const knowledgeTracker = this.explorBot.getKnowledgeTracker();
 

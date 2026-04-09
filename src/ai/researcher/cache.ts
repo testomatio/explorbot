@@ -64,7 +64,7 @@ export function saveResearch(hash: string, text: string, combinedHtml?: string):
   return researchFile;
 }
 
-export function findSimilarResearch(combinedHtml: string): Promise<string | null> {
+function findSimilarMatch(combinedHtml: string): Promise<{ hash: string; similarity: number } | null> {
   const statesDir = getStatesDir();
   if (!existsSync(statesDir)) return Promise.resolve(null);
 
@@ -84,13 +84,8 @@ export function findSimilarResearch(combinedHtml: string): Promise<string | null
         return;
       }
 
-      debugLog(`Similar research found: ${matchHash} (${similarity}% similar)`);
-      const research = getCachedResearch(matchHash);
-      if (research) {
-        resolve(research);
-        return;
-      }
-      resolve(null);
+      debugLog(`Similar fingerprint found: ${matchHash} (${similarity}% similar)`);
+      resolve({ hash: matchHash, similarity });
     };
 
     worker.postMessage({
@@ -100,4 +95,15 @@ export function findSimilarResearch(combinedHtml: string): Promise<string | null
       threshold: SIMILARITY_THRESHOLD,
     });
   });
+}
+
+export async function findSimilarResearch(combinedHtml: string): Promise<string | null> {
+  const match = await findSimilarMatch(combinedHtml);
+  if (!match) return null;
+  return getCachedResearch(match.hash) || null;
+}
+
+export async function findSimilarStateHash(combinedHtml: string): Promise<string | null> {
+  const match = await findSimilarMatch(combinedHtml);
+  return match?.hash || null;
 }

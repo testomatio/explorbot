@@ -146,7 +146,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
         for (const fixedSection of fixedSections) {
           const originalSections = parseResearchSections(result.text);
           const original = originalSections.find((s) => s.name === fixedSection.name);
-          if (!original) continue;
+          if (!original || original.elements.length === 0) continue;
 
           if (fixedSection.containerCss && fixedSection.containerCss !== original.containerCss) {
             debugLog(`Fixed container for "${fixedSection.name}": '${original.containerCss}' → '${fixedSection.containerCss}'`);
@@ -177,8 +177,8 @@ export function WithLocators<T extends Constructor>(Base: T) {
       const sections = parseResearchSections(result.text);
       const brokenCss = new Set(result.locators.filter((l) => l.type === 'css' && l.valid === false).map((l) => `${l.section}::${l.element}`));
 
-      const needsXpath: number[] = [];
-      const needsXpathEls = new Map<number, { section: (typeof sections)[0]; el: (typeof sections)[0]['elements'][0] }>();
+      const needsXpath: string[] = [];
+      const needsXpathEls = new Map<string, { section: (typeof sections)[0]; el: (typeof sections)[0]['elements'][0] }>();
 
       for (const section of sections) {
         for (const el of section.elements) {

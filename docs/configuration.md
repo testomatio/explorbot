@@ -436,6 +436,10 @@ export default {
     retries: 3,                    // Retry failed actions
   },
 
+  // Regex to detect dynamic URL segments (IDs, slugs) for plan deduplication
+  // Built-in patterns (numeric, UUID, ULID, hex) are always active
+  // dynamicPageRegex: 'your-custom-pattern',
+
   // Directory paths
   dirs: {
     knowledge: 'knowledge',        // Domain knowledge files

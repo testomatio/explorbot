@@ -64,7 +64,7 @@ class Action {
     }
   }
 
-  async capturePageState({ includeScreenshot = false }: { includeScreenshot?: boolean } = {}): Promise<ActionResult> {
+  async capturePageState({ includeScreenshot = false, ariaSnapshot: preCapuredAria }: { includeScreenshot?: boolean; ariaSnapshot?: string } = {}): Promise<ActionResult> {
     try {
       const currentState = this.stateManager.getCurrentState();
       const stateHash = currentState?.hash || 'screenshot';
@@ -111,19 +111,23 @@ class Action {
       // Capture iframe HTML snapshots
       const iframeSnapshots = await this.captureIframeSnapshots(html);
 
-      let ariaSnapshot: string | null = null;
+      let ariaSnapshot: string | null = preCapuredAria || null;
       let ariaSnapshotFile: string | undefined = undefined;
 
-      try {
-        const page = this.playwrightHelper.page;
-        const serializedSnapshot = await page.locator('body').ariaSnapshot();
+      if (!ariaSnapshot) {
+        try {
+          const page = this.playwrightHelper.page;
+          ariaSnapshot = await page.locator('body').ariaSnapshot();
+        } catch (err) {
+          debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
+        }
+      }
+
+      if (ariaSnapshot) {
         const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
         const ariaPath = join(statesDir, ariaFileName);
-        fs.writeFileSync(ariaPath, serializedSnapshot, 'utf8');
-        ariaSnapshot = serializedSnapshot;
+        fs.writeFileSync(ariaPath, ariaSnapshot, 'utf8');
         ariaSnapshotFile = ariaFileName;
-      } catch (err) {
-        debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
 
       const result = new ActionResult({
@@ -137,7 +141,7 @@ class Action {
         iframeSnapshots,
         ariaSnapshot,
         ariaSnapshotFile,
-        iframeURL: frame?.url?.() || undefined,
+        iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
       this.stateManager.updateState(result);
       return result;

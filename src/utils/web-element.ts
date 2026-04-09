@@ -7,6 +7,7 @@ type RawElementData = NonNullable<ReturnType<typeof extractElementData>>;
 
 export class WebElement {
   tag: string;
+  role: string;
   xpath: string;
   clickXPath: string;
   attrs: Record<string, string>;
@@ -14,8 +15,9 @@ export class WebElement {
   outerHTML: string;
   x: number;
   y: number;
-  constructor(data: { tag: string; xpath: string; clickXPath: string; attrs: Record<string, string>; text: string; outerHTML?: string; x: number; y: number }) {
+  constructor(data: { tag: string; role?: string; xpath: string; clickXPath: string; attrs: Record<string, string>; text: string; outerHTML?: string; x: number; y: number }) {
     this.tag = data.tag;
+    this.role = data.role || data.attrs.role || '';
     this.xpath = data.xpath;
     this.clickXPath = data.clickXPath;
     this.attrs = data.attrs;
@@ -40,9 +42,8 @@ export class WebElement {
     return `(${this.x}, ${this.y})`;
   }
 
-  get eidx(): number | null {
-    const val = this.attrs['data-explorbot-eidx'] || this.attrs.eidx;
-    return val ? Number.parseInt(val, 10) : null;
+  get eidx(): string | null {
+    return this.attrs['data-explorbot-eidx'] || this.attrs.eidx || null;
   }
 
   get isNavigationLink(): boolean {
@@ -56,9 +57,10 @@ export class WebElement {
     return cls.split(/\s+/).filter((c) => c.length > 2 && !isDynamicId(c) && !isGenericClass(c));
   }
 
-  private static fromRawData(d: RawElementData): WebElement {
+  static fromRawData(d: RawElementData, role?: string): WebElement {
     return new WebElement({
       tag: d.tag,
+      role,
       xpath: '',
       clickXPath: buildClickableXPath({ tag: d.tag, allAttrs: d.allAttrs, text: d.text } as XPathMatch),
       attrs: d.allAttrs,
@@ -93,15 +95,15 @@ export class WebElement {
     }
   }
 
-  static async fromEidx(page: any, eidx: number): Promise<WebElement | null> {
+  static async fromEidx(page: any, eidx: string): Promise<WebElement | null> {
     return WebElement.fromPlaywrightLocator(page.locator(`[data-explorbot-eidx="${eidx}"]`));
   }
 
-  static async fromEidxList(page: any, eidxList: number[]): Promise<WebElement[]> {
+  static async fromEidxList(page: any, eidxList: string[]): Promise<WebElement[]> {
     if (eidxList.length === 0) return [];
 
     const rawList: RawElementData[] = await page.evaluate(
-      ([list, extractFnStr]: [number[], string]) => {
+      ([list, extractFnStr]: [string[], string]) => {
         const extract = new Function(`return ${extractFnStr}`)() as (el: Element) => any;
         const results: any[] = [];
         for (const eidx of list) {
@@ -112,7 +114,7 @@ export class WebElement {
         }
         return results;
       },
-      [eidxList, extractElementData.toString()] as [number[], string]
+      [eidxList, extractElementData.toString()] as [string[], string]
     );
 
     return rawList.map((d) => WebElement.fromRawData(d));
@@ -125,7 +127,7 @@ export class WebElement {
   }
 }
 
-function extractElementData(el: Element) {
+export function extractElementData(el: Element) {
   const rect = el.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return null;
 

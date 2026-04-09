@@ -13,7 +13,7 @@ export interface ResearchElement {
   coordinates: string | null;
   color: string | null;
   icon: string | null;
-  eidx: number | null;
+  eidx: string | null;
 }
 
 export interface ResearchSection {
@@ -62,8 +62,8 @@ export function mapRowToElement(row: Record<string, string>): ResearchElement | 
   const name = stripQuotes(colMap.element || '');
   if (!name) return null;
 
-  const eidxRaw = (colMap.eidx || '').trim();
-  const eidxNum = eidxRaw ? Number.parseInt(eidxRaw, 10) : Number.NaN;
+  let eidxRaw = (colMap.eidx || '').trim();
+  if (eidxRaw && /^\d+$/.test(eidxRaw)) eidxRaw = `e${eidxRaw}`;
 
   const aria = parseAriaLocator(colMap.aria || '-');
 
@@ -76,7 +76,7 @@ export function mapRowToElement(row: Record<string, string>): ResearchElement | 
     coordinates: (colMap.coordinates || '-').trim() === '-' ? null : colMap.coordinates.trim(),
     color: (colMap.color || '-').trim() === '-' || (colMap.color || '').trim() === '' ? null : colMap.color.trim(),
     icon: (colMap.icon || '-').trim() === '-' || (colMap.icon || '').trim() === '' ? null : colMap.icon.trim(),
-    eidx: Number.isNaN(eidxNum) ? null : eidxNum,
+    eidx: eidxRaw && eidxRaw !== '-' ? eidxRaw : null,
   };
 }
 

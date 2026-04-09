@@ -340,7 +340,12 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
           const formLocator = codeLines[0] || 'form';
           const action = explorer.createAction();
+          const wasInIframe = await explorer.isInsideIframe();
           await action.attempt(codeBlock, explanation);
+
+          if (action.lastError && !wasInIframe && (await explorer.isInsideIframe())) {
+            await explorer.switchToMainFrame();
+          }
 
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, formLocator);
 

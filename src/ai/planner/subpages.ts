@@ -1,5 +1,6 @@
 import dedent from 'dedent';
 import { z } from 'zod';
+import { ConfigParser } from '../../config.ts';
 import { normalizeUrl } from '../../state-manager.ts';
 import type { StateManager } from '../../state-manager.ts';
 import type { Plan } from '../../test-plan.ts';
@@ -9,9 +10,9 @@ import type { Constructor } from '../researcher/mixin.ts';
 
 const planRegistry: Map<string, PlanRecord> = new Map();
 
-export function registerPlan(url: string, plan: Plan, feature?: string): void {
+export function registerPlan(url: string, plan: Plan, feature?: string, stateHash?: string): void {
   const key = buildKey(url, feature);
-  planRegistry.set(key, { plan, feature, url });
+  planRegistry.set(key, { plan, feature, url, stateHash });
 }
 
 export function getRegisteredPlan(url: string, feature?: string): PlanRecord | undefined {
@@ -37,7 +38,30 @@ function buildKey(url: string, feature?: string): string {
   return normalized;
 }
 
-function isTemplateMatch(urlA: string, urlB: string): boolean {
+export function isDynamicSegment(segment: string): boolean {
+  try {
+    const configRegex = ConfigParser.getInstance().getConfig().dynamicPageRegex;
+    if (configRegex) return new RegExp(configRegex, 'i').test(segment);
+  } catch {
+    /* config not loaded yet */
+  }
+
+  // numeric: /users/123
+  if (/^\d+$/.test(segment)) return true;
+  // UUID: /items/550e8400-e29b-41d4-a716-446655440000
+  if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(segment)) return true;
+  // ULID: /items/01ARZ3NDEKTSV4RRFFQ69G5FAV
+  if (/^[0-9A-HJKMNP-TV-Z]{26}$/.test(segment)) return true;
+  // hex ID (4+ chars): /suite/70dae98a
+  if (/^[a-f0-9]{4,}$/i.test(segment)) return true;
+  // hex-prefixed slug (8+ hex before dash): /suite/95ef0c94-mobile
+  if (/^[a-f0-9]{8,}-/i.test(segment)) return true;
+  // short mixed alphanumeric (digits + letters, ≤8 chars, no dash): /item/x7f2
+  if (segment.length <= 8 && !segment.includes('-') && /\d/.test(segment) && /[a-z]/i.test(segment)) return true;
+  return false;
+}
+
+export function isTemplateMatch(urlA: string, urlB: string): boolean {
   const partsA = normalizeUrl(urlA).split('/');
   const partsB = normalizeUrl(urlB).split('/');
   if (partsA.length !== partsB.length) return false;
@@ -47,10 +71,16 @@ function isTemplateMatch(urlA: string, urlB: string): boolean {
     if (partsA[i] === partsB[i]) continue;
     diffCount++;
     if (diffCount > 1) return false;
-    const isNumericOrShortId = /^\d+$|^[a-f0-9]{4,}$/i;
-    if (!isNumericOrShortId.test(partsA[i]) && !isNumericOrShortId.test(partsB[i])) return false;
+    if (!isDynamicSegment(partsA[i]) && !isDynamicSegment(partsB[i])) return false;
   }
   return diffCount === 1;
+}
+
+export function getPlannedByStateHash(hash: string): PlanRecord | null {
+  for (const record of planRegistry.values()) {
+    if (record.stateHash === hash) return record;
+  }
+  return null;
 }
 
 const SubPagePickSchema = z.object({
@@ -71,7 +101,7 @@ export function WithSubPages<T extends Constructor>(Base: T) {
       for (const page of visited) {
         const pagePath = normalizeUrl(page.url);
         if (!pagePath.startsWith(currentPath) || pagePath === currentPath) continue;
-        if (isPagePlanned(page.url)) continue;
+        if (this.findSimilarPlan(page.url)) continue;
         if (candidates.some((c) => normalizeUrl(c.url) === pagePath)) continue;
 
         candidates.push({
@@ -136,6 +166,6 @@ export function WithSubPages<T extends Constructor>(Base: T) {
   };
 }
 
-type PlanRecord = { plan: Plan; feature?: string; url: string };
+type PlanRecord = { plan: Plan; feature?: string; url: string; stateHash?: string };
 
 type SubPageCandidate = { url: string; title?: string; h1?: string; visitCount: number };
