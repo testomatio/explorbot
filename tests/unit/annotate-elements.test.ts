@@ -41,11 +41,7 @@ function createMockElement(tag: string, attrs: Record<string, string>, text = ''
 
 describe('annotatePageElements', () => {
   it('parses ARIA snapshot and returns elements with roles', async () => {
-    const ariaSnapshot = [
-      '- button "Submit" [ref=e1]',
-      '- link "Home" [ref=e2]',
-      '- textbox "Email" [ref=e3]',
-    ].join('\n');
+    const ariaSnapshot = ['- button "Submit" [ref=e1]', '- link "Home" [ref=e2]', '- textbox "Email" [ref=e3]'].join('\n');
 
     const page = createMockPage(ariaSnapshot, {
       button: [createMockElement('button', { type: 'submit' }, 'Submit')],
@@ -63,16 +59,10 @@ describe('annotatePageElements', () => {
   });
 
   it('handles multiple elements of the same role', async () => {
-    const ariaSnapshot = [
-      '- button "Save" [ref=e1]',
-      '- button "Cancel" [ref=e2]',
-    ].join('\n');
+    const ariaSnapshot = ['- button "Save" [ref=e1]', '- button "Cancel" [ref=e2]'].join('\n');
 
     const page = createMockPage(ariaSnapshot, {
-      button: [
-        createMockElement('button', {}, 'Save'),
-        createMockElement('button', {}, 'Cancel'),
-      ],
+      button: [createMockElement('button', {}, 'Save'), createMockElement('button', {}, 'Cancel')],
     });
 
     const result = await annotatePageElements(page);
@@ -83,11 +73,7 @@ describe('annotatePageElements', () => {
   });
 
   it('skips non-annotatable roles', async () => {
-    const ariaSnapshot = [
-      '- heading "Title" [ref=e1]',
-      '- button "OK" [ref=e2]',
-      '- paragraph "text" [ref=e3]',
-    ].join('\n');
+    const ariaSnapshot = ['- heading "Title" [ref=e1]', '- button "OK" [ref=e2]', '- paragraph "text" [ref=e3]'].join('\n');
 
     const page = createMockPage(ariaSnapshot, {
       button: [createMockElement('button', {}, 'OK')],
@@ -108,16 +94,7 @@ describe('annotatePageElements', () => {
   });
 
   it('handles all annotatable roles', async () => {
-    const ariaSnapshot = [
-      '- button "Btn" [ref=e1]',
-      '- link "Lnk" [ref=e2]',
-      '- checkbox "Chk" [ref=e3]',
-      '- radio "Rad" [ref=e4]',
-      '- combobox "Cmb" [ref=e5]',
-      '- tab "Tab1" [ref=e6]',
-      '- menuitem "Menu" [ref=e7]',
-      '- switch "Sw" [ref=e8]',
-    ].join('\n');
+    const ariaSnapshot = ['- button "Btn" [ref=e1]', '- link "Lnk" [ref=e2]', '- checkbox "Chk" [ref=e3]', '- radio "Rad" [ref=e4]', '- combobox "Cmb" [ref=e5]', '- tab "Tab1" [ref=e6]', '- menuitem "Menu" [ref=e7]', '- switch "Sw" [ref=e8]'].join('\n');
 
     const page = createMockPage(ariaSnapshot, {
       button: [createMockElement('button', {}, 'Btn')],
