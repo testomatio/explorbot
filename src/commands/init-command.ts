@@ -105,7 +105,7 @@ export function runInitCommand(options: InitCommandOptions): void {
     log('3. Set web application URL in the config file');
     log('4. Add initial knowledge (how to authorize to the application, etc.)');
     tag('substep').log(chalk.yellow(`${getCliName()} learn * 'to aurhorize use these credentials: admin@example.com / secret123'`));
-    tag('substep').log(`You can use \${env.LOGIN} and \${env.PASSWORD} to reference environment variables.`);
+    tag('substep').log('You can use ${env.LOGIN} and ${env.PASSWORD} to reference environment variables.');
 
     log('5. Launch application on a relative URL');
     tag('substep').log(chalk.yellow(`${getCliName()} start /dashboard`));
