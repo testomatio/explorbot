@@ -28,7 +28,7 @@ When implementing features or fixing bugs:
 
 ## Code Style
 
-**Do not write comments unless explicilty specified**
+**Do not write comments unless explicitly specified**
 
 Instead of if/else try to use premature exit from loop
 
@@ -53,7 +53,7 @@ Safely use ?. operator, instead of multiple && && checks
 Do not use try/catch inside try/catch
 
 When updating do the smallest change possible
-Avoid repetetive code patterns
+Avoid repetitive code patterns
 Avoid ternary operators!
 Never use `...(condition ? { key: value } : {})` spread pattern — use a plain `if` statement instead
 Avoid creating extra functions that were not explicitly set
@@ -62,8 +62,8 @@ Use `mdq()` from `src/utils/markdown-query.ts` for all markdown manipulation (fi
 Put types into the end of file
 Introduce new types and interfaces only for module-to-module collaboration, do not add types when dealing inside one module
 
-DUPLICATING CODE IS A SIN YOU WILL BURN IN ROBOT HELL FOR THAT! Always look if this code was already wirtten and doesn't need to be reintroduced again
-RUN code deduplicaiton agent after each major change
+DUPLICATING CODE IS A SIN YOU WILL BURN IN ROBOT HELL FOR THAT! Always look if this code was already written and doesn't need to be reintroduced again
+RUN code deduplication agent after each major change
 
 ## Separation of Concerns
 
@@ -231,7 +231,7 @@ Records successes and failures in `./experience/`:
 - `saveSessionExperience()` — records entire sessions
 - `getRelevantExperience()` — retrieves for current page
 
-Both use markdown files with YAML frontmatter and respect `noExperienceReading`/`noExperienceWriting` flags from knowledge.
+Both use markdown files with YAML formatter and respect `noExperienceReading`/`noExperienceWriting` flags from knowledge.
 
 ## Agents
 
@@ -399,7 +399,7 @@ There are application commands available in TUI
 * /navigate <uri_or_state> - move to other page. Use AI to complete navigation
 * /drill [--knowledge <path>] [--max <n>] - drill all components on page to learn interactions
 
-There are also CodeceptJS commands availble:
+There are also CodeceptJS commands available:
 
 * I.amOnPage() - navigate to expected page
 * I.click() - click a link on this page
