@@ -28,7 +28,7 @@ When implementing features or fixing bugs:
 
 ## Code Style
 
-**Do not write comments unless explicilty specified**
+**Do not write comments unless explicitly specified**
 
 Instead of if/else try to use premature exit from loop
 
@@ -37,7 +37,7 @@ Example:
 ```js
 // bad example
 if (!isValid()) {
-   //...
+  //...
 } else {
   // ...
 }
@@ -53,7 +53,7 @@ Safely use ?. operator, instead of multiple && && checks
 Do not use try/catch inside try/catch
 
 When updating do the smallest change possible
-Avoid repetetive code patterns
+Avoid repetitive code patterns
 Avoid ternary operators!
 Never use `...(condition ? { key: value } : {})` spread pattern — use a plain `if` statement instead
 Avoid creating extra functions that were not explicitly set
@@ -62,8 +62,8 @@ Use `mdq()` from `src/utils/markdown-query.ts` for all markdown manipulation (fi
 Put types into the end of file
 Introduce new types and interfaces only for module-to-module collaboration, do not add types when dealing inside one module
 
-DUPLICATING CODE IS A SIN YOU WILL BURN IN ROBOT HELL FOR THAT! Always look if this code was already wirtten and doesn't need to be reintroduced again
-RUN code deduplicaiton agent after each major change
+DUPLICATING CODE IS A SIN YOU WILL BURN IN ROBOT HELL FOR THAT! Always look if this code was already written and doesn't need to be reintroduced again
+RUN code deduplication agent after each major change
 
 ## Separation of Concerns
 
@@ -74,7 +74,7 @@ Follow separation of concerns principle when implementing new features:
 - TUI and tsx should contain only logic of TUI interaction, all business logic must be moved to corresponding agents
 - tools only contain tool definitions, result parsing, etc
 - CLI commands in `bin/explorbot-cli.ts` must delegate to command classes from `src/commands/` — never duplicate command logic inline in the CLI
-- avoid using `And` in a function name, if you use it probably you need 2 functions 
+- avoid using `And` in a function name, if you use it probably you need 2 functions
 
 ## Architecture Overview
 
@@ -103,14 +103,14 @@ ExplorBot (DI Container)
 
 ### Key Layers
 
-| Layer | Responsibility |
-|-------|----------------|
-| **ExplorBot** | DI container, TUI, user interaction |
-| **AIProvider** | AI model access via Vercel AI SDK |
-| **Explorer** | CodeceptJS/Playwright integration |
-| **StateManager** | Page state tracking, history |
-| **Knowledge/Experience** | Domain hints and learning |
-| **Agents** | AI-driven task execution |
+| Layer                    | Responsibility                      |
+| ------------------------ | ----------------------------------- |
+| **ExplorBot**            | DI container, TUI, user interaction |
+| **AIProvider**           | AI model access via Vercel AI SDK   |
+| **Explorer**             | CodeceptJS/Playwright integration   |
+| **StateManager**         | Page state tracking, history        |
+| **Knowledge/Experience** | Domain hints and learning           |
+| **Agents**               | AI-driven task execution            |
 
 ## Dependency Injection
 
@@ -177,7 +177,7 @@ Bridges ExplorBot with CodeceptJS:
 
 Executes CodeceptJS commands:
 
-- `execute(code)` — runs I.* commands
+- `execute(code)` — runs I.\* commands
 - Captures page state (HTML, ARIA, screenshot)
 - Updates StateManager with ActionResult
 - Records experience for learning
@@ -198,7 +198,7 @@ Tracks page state and navigation:
 ### State Change Events
 
 ```typescript
-stateManager.onStateChange((event) => {
+stateManager.onStateChange(event => {
   // React to navigation
 });
 ```
@@ -213,8 +213,9 @@ Loads domain knowledge from markdown files in `./knowledge/`:
 ---
 url: /login
 wait: 1000
-waitForElement: ".form-loaded"
+waitForElement: '.form-loaded'
 ---
+
 Credentials: admin@example.com / secret123
 ```
 
@@ -231,7 +232,7 @@ Records successes and failures in `./experience/`:
 - `saveSessionExperience()` — records entire sessions
 - `getRelevantExperience()` — retrieves for current page
 
-Both use markdown files with YAML frontmatter and respect `noExperienceReading`/`noExperienceWriting` flags from knowledge.
+Both use markdown files with YAML formatter and respect `noExperienceReading`/`noExperienceWriting` flags from knowledge.
 
 ## Agents
 
@@ -255,18 +256,21 @@ All agents implement the `Agent` interface. Task-executing agents (Tester, Capta
 Pilot supervises test execution. It maintains a separate conversation from Tester to analyze progress from a higher level.
 
 **Why separate conversations:**
+
 - Tester conversation is heavy — full HTML/ARIA context every iteration
 - Pilot conversation is light — only tool execution summaries
 - Pilot can use expensive models (Claude, GPT-4) without token cost explosion
 - Separation allows Pilot to see patterns without drowning in page details
 
 **What Pilot does:**
+
 - Detects stuck patterns (loops, repeated failures, no ariaDiff changes)
 - Decides what context Tester needs next (requests ATTACH_HTML, ATTACH_ARIA, ATTACH_UI_MAP)
 - Asks user for help when automated recovery fails (interactive mode)
 - Suggests alternative approaches, reset, or stop
 
 **Information flow:**
+
 - Tester calls Pilot every N iterations
 - Pilot receives: current URL, goal, recent tool executions (success/fail + ariaDiff)
 - Pilot returns: guidance text + attached context (HTML/ARIA/UI map if requested)
@@ -300,6 +304,7 @@ The `test()` method runs an AI-driven loop:
 ```
 
 Key behaviors:
+
 - Context is re-injected when URL changes (triggers research) or state changes
 - Progress is analyzed periodically to detect stuck tests
 - Dead loop detection stops tests cycling through same states
@@ -357,6 +362,7 @@ AI analyzes pageDiff, decides next action
 ```
 
 Each tool returns:
+
 - `success: boolean`
 - `pageDiff` — what changed (URL, ARIA, HTML)
 - `suggestion` — hint for next action
@@ -394,23 +400,24 @@ import React from 'react';
 
 There are application commands available in TUI
 
-* /research [uri] - performs research on a current page or navigate to [uri] if uri is provided
-* /plan <feature> - plan testing feature starting from current page
-* /navigate <uri_or_state> - move to other page. Use AI to complete navigation
-* /drill [--knowledge <path>] [--max <n>] - drill all components on page to learn interactions
+- /research [uri] - performs research on a current page or navigate to [uri] if uri is provided
+- /plan <feature> - plan testing feature starting from current page
+- /navigate <uri_or_state> - move to other page. Use AI to complete navigation
+- /drill [--knowledge <path>] [--max <n>] - drill all components on page to learn interactions
 
-There are also CodeceptJS commands availble:
+There are also CodeceptJS commands available:
 
-* I.amOnPage() - navigate to expected page
-* I.click() - click a link on this page
-* I.see - ...
-... etc (all codeceptjs commands)
+- I.amOnPage() - navigate to expected page
+- I.click() - click a link on this page
+- I.see - ...
+  ... etc (all codeceptjs commands)
 
 ## Command Line Usage
 
 Explorbot uses the `explorbot` CLI command (defined in `bin/explorbot-cli.ts`):
 
 ### Interactive exploration with TUI:
+
 ```bash
 explorbot start [path]           # start TUI, optionally at path (alias: sail)
 explorbot start /login           # start at /login path
@@ -422,6 +429,7 @@ explorbot start --session auth.json  # custom session file
 ```
 
 ### Generate test plan:
+
 ```bash
 explorbot plan <path> [feature]  # generate plan and exit
 explorbot plan /login            # plan tests for login page
@@ -429,6 +437,7 @@ explorbot plan /login authentication  # plan with focus on authentication
 ```
 
 ### Drill page components:
+
 ```bash
 explorbot drill <url>                    # drill all components on page
 explorbot drill /components --max 10     # limit to 10 components
@@ -436,6 +445,7 @@ explorbot drill /login --knowledge /login  # save to knowledge file
 ```
 
 ### Initialize project configuration:
+
 ```bash
 explorbot init
 explorbot init --config-path ./explorbot.config.js
@@ -443,12 +453,14 @@ explorbot init --force  # overwrite existing config
 ```
 
 ### Add domain knowledge:
+
 ```bash
 explorbot learn              # interactive mode
 explorbot learn /login "Use admin credentials"  # add directly
 ```
 
 ### Clean generated files:
+
 ```bash
 explorbot clean  # clean artifacts only
 explorbot clean --type experience
@@ -460,10 +472,11 @@ explorbot clean --type all
 Explorbot uses `explorbot.config.js` or `explorbot.config.ts` for configuration.
 
 Example configuration:
+
 ```javascript
 export default {
   ai: {
-    model: groq('gpt-oss-20b'),  // Vercel AI SDK model instance
+    model: groq('gpt-oss-20b'), // Vercel AI SDK model instance
     visionModel: groq('llama-scout-4'),
     agenticModel: groq('qwen3-32b'),
     langfuse: {
@@ -480,14 +493,14 @@ export default {
   playwright: {
     browser: 'chromium',
     show: false,
-    args: []
+    args: [],
   },
   dirs: {
     knowledge: 'knowledge',
     experience: 'experience',
     output: 'output',
-  }
-}
+  },
+};
 ```
 
 ## Build
