@@ -14,6 +14,7 @@ import { Planner } from './ai/planner.ts';
 import { AIProvider } from './ai/provider.ts';
 import { Quartermaster } from './ai/quartermaster.ts';
 import { Researcher } from './ai/researcher.ts';
+import { Rerunner } from './ai/rerunner.ts';
 import { Tester } from './ai/tester.ts';
 import { createAgentTools } from './ai/tools.ts';
 import type { ExplorbotConfig } from './config.js';
@@ -243,6 +244,21 @@ export class ExplorBot {
       const reporter = explorer.getReporter();
       return new Historian(ai, experienceTracker, reporter, explorer.getStateManager());
     }));
+  }
+
+  agentRerunner(): Rerunner {
+    if (!this.agents.rerunner) {
+      this.agents.rerunner = this.createAgent(({ ai, explorer }) => {
+        const researcher = this.agentResearcher();
+        const navigator = this.agentNavigator();
+        const tools = createAgentTools({ explorer, researcher, navigator });
+        return new Rerunner(explorer, ai, tools);
+      });
+      const qm = this.agentQuartermaster();
+      if (qm) this.agents.rerunner.setQuartermaster(qm);
+      this.agents.rerunner.setHistorian(this.agentHistorian());
+    }
+    return this.agents.rerunner;
   }
 
   agentBosun(): Bosun {

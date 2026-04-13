@@ -74,6 +74,7 @@ Follow separation of concerns principle when implementing new features:
 - TUI and tsx should contain only logic of TUI interaction, all business logic must be moved to corresponding agents
 - tools only contain tool definitions, result parsing, etc
 - CLI commands in `bin/explorbot-cli.ts` must delegate to command classes from `src/commands/` — never duplicate command logic inline in the CLI
+- All reusable command logic MUST live in a command class in `src/commands/` — the CLI handler should only do minimal setup (create ExplorBot, call command.execute(), stop) with zero business logic
 - avoid using `And` in a function name, if you use it probably you need 2 functions
 
 ## Architecture Overview
@@ -465,6 +466,21 @@ explorbot learn /login "Use admin credentials"  # add directly
 explorbot clean  # clean artifacts only
 explorbot clean --type experience
 explorbot clean --type all
+```
+
+### List generated tests:
+```bash
+explorbot runs                               # list all generated test files with indices
+explorbot runs output/tests/suite.js         # dry-run specific file (show steps)
+```
+
+### Re-run generated tests:
+```bash
+explorbot rerun output/tests/suite.js        # run all tests in file with AI healing
+explorbot rerun output/tests/suite.js 3      # run test #3 only
+explorbot rerun output/tests/suite.js 1-5    # run tests 1 through 5
+explorbot rerun output/tests/suite.js 1,3,7  # run specific tests
+explorbot rerun output/tests/suite.js --session  # with session persistence
 ```
 
 ## Configuration

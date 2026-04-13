@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-04-13
+
+### New CLI Commands
+- **`explorbot runs [file]`** — List generated test files or preview steps for a specific file.
+  ```bash
+  explorbot runs                                    # list all test files
+  explorbot runs output/tests/suite.js              # preview steps without executing
+  ```
+- **`explorbot rerun <file> [index]`** — Re-run generated tests with AI-powered auto-healing. When a step fails, the Rerunner agent diagnoses the issue and fixes it.
+  ```bash
+  explorbot rerun output/tests/suite.js             # run all tests in file
+  explorbot rerun output/tests/suite.js 3           # run test #3 only
+  explorbot rerun output/tests/suite.js 1-5         # run tests 1 through 5
+  explorbot rerun output/tests/suite.js 1,3,7       # run specific tests
+  ```
+
+### New TUI Commands
+- **`/runs [file]`** — List generated test files or preview steps for a specific file.
+  ```
+  /runs
+  /runs output/tests/suite.js
+  ```
+- **`/rerun <file> [index]`** — Re-run generated tests with AI auto-healing inside the TUI session.
+  ```
+  /rerun output/tests/suite.js
+  /rerun output/tests/suite.js 3
+  /rerun output/tests/suite.js 1-5
+  ```
+
+### Configuration
+- **`ai.agents.rerunner`** — Configure the Rerunner agent. Available options: `healLimit` (max heal attempts), `ariaSnapshotLimit`, `recipes` (custom heal recipes). Default: built-in defaults.
+
+### Changes
+- [Rerunner] New agent that re-runs generated test files, detects failures, and auto-heals broken steps using AI
+- [Planner] Now detects scenarios that already exist in generated test files and skips them — avoids duplicating tests across planning sessions
+- [Pilot] Smarter precondition handling — skips creating test data when the scenario itself creates items or when data already exists on the page
+- [Historian] Generated test files now include knowledge-based setup (wait times, waitForElement) in the Before hook
+- [Historian] Can rewrite test files with healed steps from the Rerunner
+- After exploration finishes, generated test file paths and rerun commands are printed
+
 ## 2026-04-09
 
 ### New CLI Options

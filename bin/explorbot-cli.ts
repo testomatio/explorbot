@@ -281,6 +281,42 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
   }
 });
 
+program
+  .command('runs [file]')
+  .description('List generated test files, or show steps for a specific file')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .action(async (file, options) => {
+    try {
+      await ConfigParser.getInstance().loadConfig({
+        config: options.config,
+        path: options.path || process.cwd(),
+      });
+      const explorBot = new ExplorBot({ path: options.path });
+      const { RunsCommand } = await import('../src/commands/runs-command.js');
+      await new RunsCommand(explorBot).execute(file || '');
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+addCommonOptions(program.command('rerun <filename> [index]').description('Re-run generated tests with AI auto-healing')).action(async (filename, index, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
+    await explorBot.start();
+    const { RerunCommand } = await import('../src/commands/rerun-command.js');
+    const cmd = new RerunCommand(explorBot);
+    const args = index ? `${filename} ${index}` : filename;
+    await cmd.execute(args);
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
+
 addCommonOptions(
   program
     .command('freesail [startUrl]')

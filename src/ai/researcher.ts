@@ -131,9 +131,9 @@ export class Researcher extends ResearcherBase implements Agent {
       await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
-      const { ariaSnapshot, elements: annotatedElements } = await this.explorer.annotateElements();
+      const annotatedElements = await this.explorer.annotateElements();
       debugLog(`Annotated ${annotatedElements.length} interactive elements with eidx`);
-      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot && this.provider.hasVision(), ariaSnapshot });
+      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot && this.provider.hasVision() });
 
       if (isErrorPage(this.actionResult!)) {
         const recovered = await this.waitForPageLoad(screenshot);
@@ -385,10 +385,9 @@ export class Researcher extends ResearcherBase implements Agent {
     try {
       await withRetry(
         async () => {
-          const { ariaSnapshot } = await this.explorer.annotateElements();
+          await this.explorer.annotateElements();
           this.actionResult = await this.explorer.createAction().capturePageState({
             includeScreenshot: screenshot && this.provider.hasVision(),
-            ariaSnapshot,
           });
           if (isErrorPage(this.actionResult!)) throw new Error('Error page detected');
         },

@@ -10,6 +10,12 @@ export class ContextCommand extends BaseCommand {
   name = 'context';
   description = 'Show page context summary (URL, headings, experience, knowledge, ARIA, HTML, research)';
   suggestions = ['context:aria', 'context:html', 'context:knowledge', 'context:experience', 'context:data'];
+  options = [
+    { flags: '--visual', description: 'Include annotated screenshot' },
+    { flags: '--screenshot', description: 'Include annotated screenshot' },
+    { flags: '--full', description: 'Show full context with HTML' },
+    { flags: '--attached', description: 'Show attached context mode' },
+  ];
 
   async execute(args: string): Promise<void> {
     const explorer = this.explorBot.getExplorer();
@@ -19,9 +25,10 @@ export class ContextCommand extends BaseCommand {
       throw new Error('No active page to show context for');
     }
 
-    const isVisual = args.includes('--visual') || args.includes('--screenshot');
+    const { opts } = this.parseArgs(args);
+    const isVisual = !!(opts.visual || opts.screenshot);
 
-    const { ariaSnapshot } = await explorer.annotateElements();
+    await explorer.annotateElements();
 
     if (isVisual) {
       const cachedResearch = Researcher.getCachedResearch(state);
@@ -29,14 +36,14 @@ export class ContextCommand extends BaseCommand {
       await explorer.visuallyAnnotateElements({ containers });
     }
 
-    const actionResult = await explorer.createAction().capturePageState({ includeScreenshot: isVisual, ariaSnapshot });
+    const actionResult = await explorer.createAction().capturePageState({ includeScreenshot: isVisual });
     const experienceTracker = explorer.getStateManager().getExperienceTracker();
     const knowledgeTracker = this.explorBot.getKnowledgeTracker();
 
     let mode: ContextMode = 'compact';
-    if (args.includes('--full')) {
+    if (opts.full) {
       mode = 'full';
-    } else if (args.includes('--attached')) {
+    } else if (opts.attached) {
       mode = 'attached';
     }
 

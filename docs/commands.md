@@ -16,6 +16,8 @@ Some commands work in both modes. Where a CLI equivalent exists, it is noted bel
 | `/plan [--focus <feature>]` | `explorbot plan <path> [--focus <feature>]` |
 | `/drill` | `explorbot drill <url>` |
 | `/learn [note]` | `explorbot learn [url] [description]` |
+| `/runs [file]` | `explorbot runs [file]` |
+| `/rerun <file> [index]` | `explorbot rerun <file> [index]` |
 
 CLI commands run headless by default, execute the task, and exit. TUI commands run inside an interactive session where you can chain multiple actions.
 
@@ -171,6 +173,38 @@ Navigate to a URI or state using AI assistance.
 ```
 
 The Navigator agent figures out how to reach the destination.
+
+## Test Rerun
+
+### `/runs [file]`
+
+List generated test files or dry-run a specific file to preview steps.
+
+```
+/runs                                    # list all test files with indices
+/runs output/tests/suite.js              # dry-run: show steps without executing
+```
+
+Each test is numbered so you can reference it with `/rerun`.
+
+**CLI equivalent:** `explorbot runs [file]` — lists tests without starting a browser.
+
+### `/rerun <file> [index]`
+
+Re-run generated tests with AI-powered auto-healing. When a step fails, the Rerunner agent diagnoses the issue and executes a fix.
+
+```
+/rerun output/tests/suite.js             # run all tests in file
+/rerun output/tests/suite.js 3           # run test #3 only
+/rerun output/tests/suite.js 1-5         # run tests 1 through 5
+/rerun output/tests/suite.js 1,3,7       # run specific tests
+```
+
+Tests without assertions (`I.see`, `I.seeElement`, etc.) are automatically skipped.
+
+**CLI equivalent:** `explorbot rerun <file> [index]` — runs with healing and exits.
+
+See [Rerunning Tests](./rerun.md) for the full workflow and healing configuration.
 
 ## Plan Management
 

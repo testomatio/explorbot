@@ -64,7 +64,7 @@ class Action {
     }
   }
 
-  async capturePageState({ includeScreenshot = false, ariaSnapshot: preCapuredAria }: { includeScreenshot?: boolean; ariaSnapshot?: string } = {}): Promise<ActionResult> {
+  async capturePageState({ includeScreenshot = false }: { includeScreenshot?: boolean } = {}): Promise<ActionResult> {
     try {
       const currentState = this.stateManager.getCurrentState();
       const stateHash = currentState?.hash || 'screenshot';
@@ -111,16 +111,14 @@ class Action {
       // Capture iframe HTML snapshots
       const iframeSnapshots = await this.captureIframeSnapshots(html);
 
-      let ariaSnapshot: string | null = preCapuredAria || null;
+      let ariaSnapshot: string | null = null;
       let ariaSnapshotFile: string | undefined = undefined;
 
-      if (!ariaSnapshot) {
-        try {
-          const page = this.playwrightHelper.page;
-          ariaSnapshot = await page.locator('body').ariaSnapshot();
-        } catch (err) {
-          debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
-        }
+      try {
+        const page = this.playwrightHelper.page;
+        ariaSnapshot = await page.locator('body').ariaSnapshot();
+      } catch (err) {
+        debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
 
       if (ariaSnapshot) {

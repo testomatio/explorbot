@@ -1,9 +1,10 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { ConfigParser } from '../config.ts';
+import { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { ExperienceTracker, type SessionExperienceEntry, type SessionStep } from '../experience-tracker.ts';
 import { type Reporter, type ReporterStep } from '../reporter.ts';
 import type { StateManager } from '../state-manager.ts';
@@ -397,6 +398,7 @@ export class Historian {
     if (startUrl) {
       lines.push('Before(({ I }) => {');
       lines.push(`  I.amOnPage('${this.escapeString(startUrl)}');`);
+      lines.push(...this.getKnowledgeLines(startUrl));
       lines.push('});');
       lines.push('');
     }
@@ -425,8 +427,7 @@ export class Historian {
       lines.push('');
     }
 
-    const outputDir = ConfigParser.getInstance().getOutputDir();
-    const testsDir = join(outputDir, 'tests');
+    const testsDir = ConfigParser.getInstance().getTestsDir();
     mkdirSync(testsDir, { recursive: true });
 
     const filename = plan.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
@@ -437,12 +438,45 @@ export class Historian {
     return filePath;
   }
 
+  rewriteScenarioInFile(filePath: string, healedSteps: Array<{ test: string; original: string; healed: string }>): void {
+    let content = readFileSync(filePath, 'utf-8');
+
+    for (const step of healedSteps) {
+      if (!content.includes(step.original)) continue;
+      content = content.replace(step.original, step.healed);
+    }
+
+    writeFileSync(filePath, content);
+    tag('substep').log(`Updated test file with healed steps: ${filePath}`);
+  }
+
   private getExecutionLabel(exec: ToolExecution, fallback?: string): string {
     return exec.input?.explanation || exec.input?.assertion || exec.input?.note || fallback || '';
   }
 
   private escapeString(str: string): string {
     return str.replace(/'/g, "\\'").replace(/\n/g, ' ');
+  }
+
+  private getKnowledgeLines(url: string, indent = '  '): string[] {
+    const knowledgeTracker = new KnowledgeTracker();
+    const state = new ActionResult({ url });
+    const { wait, waitForElement, code } = knowledgeTracker.getStateParameters(state, ['wait', 'waitForElement', 'code']);
+
+    const lines: string[] = [];
+    if (wait !== undefined) {
+      lines.push(`${indent}I.wait(${wait});`);
+    }
+    if (waitForElement) {
+      lines.push(`${indent}I.waitForElement(${JSON.stringify(waitForElement)});`);
+    }
+    if (code) {
+      for (const codeLine of code.split('\n')) {
+        const trimmed = codeLine.trim();
+        if (trimmed) lines.push(`${indent}${trimmed}`);
+      }
+    }
+    return lines;
   }
 
   private stripComments(code: string): string {

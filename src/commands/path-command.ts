@@ -14,7 +14,8 @@ export class PathCommand extends BaseCommand {
   options = [{ flags: '--links', description: 'Show outgoing links from each page' }];
 
   async execute(args: string): Promise<void> {
-    const showLinks = args.includes('--links');
+    const { opts } = this.parseArgs(args);
+    const showLinks = !!opts.links;
     const stateManager = this.explorBot.getExplorer().getStateManager();
     const history = stateManager.getStateHistory();
 

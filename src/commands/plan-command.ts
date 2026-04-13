@@ -13,21 +13,10 @@ export class PlanCommand extends BaseCommand {
   ];
 
   async execute(args: string): Promise<void> {
-    const clear = args.includes('--clear');
-    const fresh = args.includes('--fresh') || clear;
-    const styleMatch = args.match(/--style\s+(\S+)/);
-    const style = styleMatch?.[1];
-    const focusMatch = args.match(/--focus\s+("[^"]+"|'[^']+'|\S+)/);
-    const focusFromFlag = focusMatch?.[1]?.replace(/^["']|["']$/g, '');
-    const focusFromText = args
-      .replace('--clear', '')
-      .replace('--fresh', '')
-      .replace(/--style\s+\S+/, '')
-      .replace(/--focus\s+("[^"]+"|'[^']+'|\S+)/, '')
-      .trim();
-    const focus = focusFromFlag || focusFromText;
+    const { opts, args: remaining } = this.parseArgs(args);
+    const focus = (opts.focus as string) || remaining.join(' ') || undefined;
 
-    if (clear) {
+    if (opts.clear) {
       this.explorBot.clearPlan();
       tag('success').log('Plan cleared');
     }
@@ -36,7 +25,7 @@ export class PlanCommand extends BaseCommand {
       tag('info').log(`Planning focus: ${focus}`);
     }
 
-    await this.explorBot.plan(focus || undefined, { fresh, style });
+    await this.explorBot.plan(focus, { fresh: !!(opts.fresh || opts.clear), style: opts.style as string });
 
     const plan = this.explorBot.getCurrentPlan();
     if (!plan?.tests.length) {

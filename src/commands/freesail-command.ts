@@ -18,7 +18,12 @@ export class FreesailCommand extends BaseCommand {
   ];
 
   async execute(args: string): Promise<void> {
-    const { strategy, scope, maxTests } = parseArgs(args);
+    const { opts } = this.parseArgs(args);
+    let strategy: 'deep' | 'shallow' | undefined;
+    if (opts.deep) strategy = 'deep';
+    if (opts.shallow) strategy = 'shallow';
+    const scope = opts.scope as string | undefined;
+    const maxTests = opts.maxTests ? Number.parseInt(opts.maxTests as string, 10) : undefined;
 
     await this.explorBot.visitInitialState();
 
@@ -70,26 +75,4 @@ export class FreesailCommand extends BaseCommand {
       { maxAttempts: Number.POSITIVE_INFINITY }
     );
   }
-}
-
-function parseArgs(args: string): { strategy: 'deep' | 'shallow' | undefined; scope: string | undefined; maxTests: number | undefined } {
-  const parts = args.trim().split(/\s+/);
-  let strategy: 'deep' | 'shallow' | undefined;
-  let scope: string | undefined;
-  let maxTests: number | undefined;
-
-  for (let i = 0; i < parts.length; i++) {
-    if (parts[i] === '--deep') strategy = 'deep';
-    if (parts[i] === '--shallow') strategy = 'shallow';
-    if (parts[i] === '--scope' && parts[i + 1]) {
-      scope = parts[i + 1];
-      i++;
-    }
-    if (parts[i] === '--max-tests' && parts[i + 1]) {
-      maxTests = Number.parseInt(parts[i + 1], 10);
-      i++;
-    }
-  }
-
-  return { strategy, scope, maxTests };
 }

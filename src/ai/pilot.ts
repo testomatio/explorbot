@@ -256,9 +256,18 @@ export class Pilot implements Agent {
 
         Plan the test execution for this scenario.
 
-        FIRST: Call precondition() to create fresh data that this test will act on.
-        Ask: "What will this test edit/delete/use?" — create THAT item via precondition.
-        Do not describe what's already on the page — create new disposable items for the test.
+        FIRST: Decide if precondition() is needed.
+
+        Call precondition() WHEN:
+        - The scenario edits/deletes/modifies an item, and you want a DISPOSABLE item to act on safely
+        - The scenario needs specific data clearly NOT on the current page (e.g., items with specific statuses for filtering)
+
+        SKIP precondition() WHEN:
+        - The scenario is "Create X" — the test itself creates the item
+        - The current page already shows the item the test will act on (check <state> and <page_summary>)
+        - The scenario tests navigation, UI behavior, or viewing — no data mutation needed
+
+        If needed, call precondition() now. If not, proceed directly to planning.
 
         THEN: Based on the page elements and current state, outline:
         1. Which elements to interact with and in what order
@@ -701,6 +710,8 @@ export class Pilot implements Agent {
       - Click succeeded but ariaDiff shows elements unrelated to tester's intention (e.g., clicked "Edit" but dropdown appeared) → wrong button or unexpected behavior. Instruct Tester to Escape and try a different approach.
       - form(I.type()) succeeded → I.type() sends keys to whatever is focused, no guarantee it's the right field. Instruct Tester to verify with see() that text appeared in the correct field. If targetedHtml shows a button/link, text went to wrong element — click the correct field first and retry.
       - ariaDiff shows 5+ elements removed/added after clicking content → page entered a different mode (editor, panel, modal). Instruct Tester to call context() to see current state before guessing selectors.
+      - Dropdown/select opened but contains NO options, or a list/table is empty when items were expected → data doesn't exist yet. Call precondition() to create the missing items (labels, categories, etc.), then instruct Tester to retry.
+      - Tester tries to select/filter/assign something but the option list is empty or expected value is not present → missing auxiliary data. Call precondition() to create it.
 
       Detecting logically wrong successes — review "executed", "element", and "skipped" fields:
       - Click SUCCESS but "executed" command differs from "explanation" intent → wrong element was clicked. The intended element wasn't found and a different one was clicked instead.
@@ -750,23 +761,36 @@ export class Pilot implements Agent {
       YOUR tools (Pilot-only):
       - precondition(description) — create FRESH test data via API that the test will act on. Do NOT request users.
 
-      PRECONDITIONS — what to create:
+      PRECONDITIONS — when and what to create:
       Preconditions create NEW disposable items that the test will modify, delete, or interact with.
-      Do NOT describe what already exists on the page — describe what NEW data the test needs to act on.
 
       Ask yourself: "What object will this test change/delete/use? Create THAT."
 
-      Examples:
+      When to call precondition():
+      - Scenario edits/deletes/modifies an item → create a disposable target
+      - Scenario needs auxiliary data (labels, categories, statuses to filter by)
+      - Tester failed because required data is missing (empty dropdown, no items to select)
+
+      When to SKIP precondition():
+      - Scenario is "Create X" — the test itself creates the item, no precondition needed
+      - Current page already shows the exact data needed (check <state> h1/title and <page_summary>)
+      - Scenario tests navigation, search UI, or viewing — no data mutation involved
+
+      Examples — when to create:
       - "Edit test description" → precondition("1 test") — the test will edit this item
       - "Delete a comment" → precondition("1 comment") — the test will delete this item
       - "Assign a label to item" → precondition("1 item and 1 label named Bug") — test assigns the label
       - "Filter by status" → precondition("3 items: 2 with status Open, 1 with status Closed")
-      - "Move item between lists" → precondition("1 item in list A")
 
-      WRONG: precondition("1 test suite named Updated Suite with existing tests") — this describes the page, not what to create
+      Examples — when to skip:
+      - "Create a new blog post" → SKIP, the test creates it
+      - "Edit blog post" while on a blog post page → SKIP, data already exists
+      - "View dashboard" → SKIP, no data mutation
+
+      WRONG: precondition("1 test suite named Updated Suite with existing tests") — describes the page, not what to create
       RIGHT: precondition("1 test") — create a fresh test that the scenario will edit
 
-      Call precondition() for EVERY item the scenario will act on. Keep descriptions short and specific.
+      Keep descriptions short and specific.
 
       Response format:
       PROGRESS: <1 sentence assessment>

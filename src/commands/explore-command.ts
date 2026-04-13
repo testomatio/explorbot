@@ -1,6 +1,8 @@
+import { existsSync, readdirSync } from 'node:fs';
 import figureSet from 'figures';
 import path from 'node:path';
 import { getStyles } from '../ai/planner/styles.js';
+import { ConfigParser } from '../config.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import type { Plan } from '../test-plan.js';
 import { jsonToTable } from '../utils/markdown-parser.js';
@@ -18,13 +20,12 @@ export class ExploreCommand extends BaseCommand {
   private completedPlans: Plan[] = [];
 
   async execute(args: string): Promise<void> {
-    const maxTestsMatch = args.match(/--max-tests\s+(\d+)/);
-    if (maxTestsMatch) {
-      this.maxTests = Number.parseInt(maxTestsMatch[1], 10);
-      args = args.replace(/--max-tests\s+\d+/, '').trim();
+    const { opts, args: remaining } = this.parseArgs(args);
+    if (opts.maxTests) {
+      this.maxTests = Number.parseInt(opts.maxTests as string, 10);
     }
 
-    const feature = args.trim() || undefined;
+    const feature = remaining.join(' ') || undefined;
     const mainUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url;
 
     await this.runAllStyles(mainUrl, feature);
@@ -61,6 +62,7 @@ export class ExploreCommand extends BaseCommand {
     if (mainUrl) await this.explorBot.visit(mainUrl);
     const savedPath = this.explorBot.savePlans(this.completedPlans);
     this.printResults(savedPath);
+    this.printRerunSuggestions();
   }
 
   private async runAllStyles(pageUrl?: string, feature?: string, parentPlan?: Plan, completedPlans?: Plan[]): Promise<void> {
@@ -111,6 +113,20 @@ export class ExploreCommand extends BaseCommand {
       const relativePath = path.relative(process.cwd(), savedPath);
       tag('info').log(`Re-run tests: ${getCliName()} test ${relativePath} <index>`);
     }
+  }
+
+  private printRerunSuggestions(): void {
+    const testsDir = ConfigParser.getInstance().getTestsDir();
+    if (!existsSync(testsDir)) return;
+
+    const testFiles = readdirSync(testsDir).filter((f) => f.endsWith('.js'));
+    if (testFiles.length === 0) return;
+
+    for (const file of testFiles) {
+      tag('info').log(`Generated: ${file}`);
+    }
+    tag('info').log(`List tests: ${getCliName()} runs`);
+    tag('info').log(`Re-run with healing: ${getCliName()} rerun <filename> [index]`);
   }
 
   private isLimitReached(): boolean {

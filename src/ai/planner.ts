@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
@@ -23,6 +24,7 @@ import { findSimilarStateHash } from './researcher/cache.ts';
 import type { Provider } from './provider.js';
 import { hasFocusedSection } from './researcher/focus.ts';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
+import { loadTestSuites } from '../utils/test-files.ts';
 import { fileUploadRule, protectionRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
@@ -201,6 +203,8 @@ export class Planner extends PlannerBase implements Agent {
       this.currentPlan.url = state.url;
       if (parentPlan) this.currentPlan.parentPlan = parentPlan;
       const allPreviousScenarios = this.getPreviousSessionScenarios();
+      const existingTestScenarios = this.getExistingTestFileScenarios(state.url);
+      for (const s of existingTestScenarios) allPreviousScenarios.add(s);
       for (const t of tests) {
         if (allPreviousScenarios.has(t.scenario.toLowerCase())) continue;
         t.style = this.lastStyleName;
@@ -260,6 +264,31 @@ export class Planner extends PlannerBase implements Agent {
     }
 
     return added;
+  }
+
+  private getExistingTestFileScenarios(currentUrl?: string): Set<string> {
+    const scenarios = new Set<string>();
+    try {
+      const testsDir = ConfigParser.getInstance().getTestsDir();
+      if (!existsSync(testsDir)) return scenarios;
+
+      const suites = loadTestSuites(testsDir);
+
+      for (const suite of suites) {
+        for (const test of suite.tests) {
+          if (!test.pending) {
+            scenarios.add(test.title.toLowerCase());
+          }
+        }
+      }
+
+      if (scenarios.size > 0) {
+        tag('info').log(`Found ${scenarios.size} existing test scenarios. Use /rerun to re-run them.`);
+      }
+    } catch (err: any) {
+      debugLog('Failed to load existing test files: %s', err.message);
+    }
+    return scenarios;
   }
 
   private cleanExperienceFlows(text: string): string | null {

@@ -7,12 +7,18 @@ export class ResearchCommand extends BaseCommand {
   name = 'research';
   description = 'Research current page or navigate to URI and research. Use --deep to explore interactive elements by clicking them. Use --data to include page data.';
   suggestions = ['/navigate <page> - to go to another page', '/plan <feature> - to plan testing'];
+  options = [
+    { flags: '--data', description: 'Include page data' },
+    { flags: '--deep', description: 'Explore interactive elements by clicking them' },
+    { flags: '--no-fix', description: 'Skip fixing research issues' },
+  ];
 
   async execute(args: string): Promise<void> {
-    const includeData = args.includes('--data');
-    const enableDeep = args.includes('--deep');
-    const noFix = args.includes('--no-fix');
-    const target = args.replace('--data', '').replace('--deep', '').replace('--no-fix', '').trim();
+    const { opts, args: remaining } = this.parseArgs(args);
+    const includeData = !!opts.data;
+    const enableDeep = !!opts.deep;
+    const noFix = !!opts.noFix;
+    const target = remaining.join(' ');
 
     if (target) {
       await this.explorBot.agentNavigator().visit(target);

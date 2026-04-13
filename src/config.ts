@@ -85,6 +85,22 @@ interface NavigatorAgentConfig extends AgentConfig {
   maxAttempts?: number;
 }
 
+type HealFn = (ctx: { I: any }) => Promise<void> | void;
+
+interface HealRecipe {
+  priority?: number;
+  steps?: string[];
+  fn: (context: { step: any; error: Error; prevSteps?: any[] }) => HealFn | Promise<HealFn | null> | null;
+}
+
+interface RerunnerAgentConfig extends AgentConfig {
+  healLimit?: number;
+  ariaSnapshotLimit?: number;
+  retryFailedStep?: Record<string, any>;
+  screenshotOnFail?: Record<string, any>;
+  recipes?: Record<string, HealRecipe>;
+}
+
 interface PlannerAgentConfig extends AgentConfig {
   styles?: string[];
   stylesDir?: string;
@@ -103,6 +119,7 @@ interface AgentsConfig {
   fisherman?: AgentConfig;
   chief?: AgentConfig;
   curler?: AgentConfig;
+  rerunner?: RerunnerAgentConfig;
 }
 
 interface AIConfig {
@@ -214,6 +231,8 @@ export type {
   ResearcherAgentConfig,
   NavigatorAgentConfig,
   PlannerAgentConfig,
+  RerunnerAgentConfig,
+  HealRecipe,
   Hook,
   HookConfig,
   HooksConfig,
@@ -326,6 +345,10 @@ export class ConfigParser {
 
   public getPlansDir(): string {
     return outputPath('plans');
+  }
+
+  public getTestsDir(): string {
+    return outputPath('tests');
   }
 
   // For testing purposes only

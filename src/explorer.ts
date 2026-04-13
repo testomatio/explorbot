@@ -309,8 +309,9 @@ class Explorer {
     return action;
   }
 
-  async annotateElements(): Promise<{ ariaSnapshot: string; elements: WebElement[] }> {
-    return annotatePageElements(this.playwrightHelper.page);
+  async annotateElements(): Promise<WebElement[]> {
+    const { elements } = await annotatePageElements(this.playwrightHelper.page);
+    return elements;
   }
 
   async visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number> {
