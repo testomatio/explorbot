@@ -485,12 +485,7 @@ addCommonOptions(program.command('research <url>').description('Research a page 
 );
 
 addCommonOptions(
-  program
-    .command('drill <url>')
-    .alias('driller')
-    .description('Drill all components on a page to learn interactions')
-    .option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path')
-    .option('--max-components <count>', 'Maximum number of components to drill')
+  program.command('drill <url>').alias('driller').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
 ).action(async (url, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(url, options));

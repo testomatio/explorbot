@@ -219,9 +219,7 @@ export class Driller extends TaskAgent implements Agent {
     const primaryOther = primary.filter((element) => !isButtonLikeElement(element));
     const fallbackButtonLike = fallback.filter((element) => isButtonLikeElement(element));
     const fallbackOther = fallback.filter((element) => !isButtonLikeElement(element));
-    const prioritized = primaryButtonLike.length >= maxComponents
-      ? primaryButtonLike
-      : [...primaryButtonLike, ...fallbackButtonLike, ...primaryOther, ...fallbackOther];
+    const prioritized = primaryButtonLike.length >= maxComponents ? primaryButtonLike : [...primaryButtonLike, ...fallbackButtonLike, ...primaryOther, ...fallbackOther];
     const components: ComponentInfo[] = [];
     const seen = new Set<string>();
 
@@ -308,49 +306,52 @@ export class Driller extends TaskAgent implements Agent {
     const actionTools = this.createVerifiedActionTools(createCodeceptJSTools(this.explorer, test), component);
     const tools = { ...actionTools, ...this.createDrillFlowTools(originalState, test, interactive) };
 
-    await loop(async ({ stop, iteration }) => {
-      debugLog(`Drilling component ${component.name}, iteration ${iteration}`);
-      setActivity(`${this.emoji} Drilling ${component.name}...`, 'action');
+    await loop(
+      async ({ stop, iteration }) => {
+        debugLog(`Drilling component ${component.name}, iteration ${iteration}`);
+        setActivity(`${this.emoji} Drilling ${component.name}...`, 'action');
 
-      if (iteration > 1) {
-        const currentState = ActionResult.fromState(this.explorer.getStateManager().getCurrentState() || originalState);
-        conversation.addUserText(await this.buildContextUpdate(currentState, component));
-        if (this.pendingNestedContext) {
-          conversation.addUserText(this.pendingNestedContext);
-          this.pendingNestedContext = null;
+        if (iteration > 1) {
+          const currentState = ActionResult.fromState(this.explorer.getStateManager().getCurrentState() || originalState);
+          conversation.addUserText(await this.buildContextUpdate(currentState, component));
+          if (this.pendingNestedContext) {
+            conversation.addUserText(this.pendingNestedContext);
+            this.pendingNestedContext = null;
+          }
         }
-      }
 
-      const result = await this.provider.invokeConversation(conversation, tools, {
-        maxToolRoundtrips: 5,
-        toolChoice: 'required',
-        agentName: 'driller',
-      });
+        const result = await this.provider.invokeConversation(conversation, tools, {
+          maxToolRoundtrips: 5,
+          toolChoice: 'required',
+          agentName: 'driller',
+        });
 
-      if (!result) throw new Error('Failed to get response from provider');
+        if (!result) throw new Error('Failed to get response from provider');
 
-      const toolExecutions = result.toolExecutions || [];
-      this.trackToolExecutions(toolExecutions);
-      const failedActionCount = toolExecutions.filter((execution: any) => this.ACTION_TOOLS.includes(execution.toolName) && !execution.wasSuccessful).length;
-      if (failedActionCount >= 4) stop();
+        const toolExecutions = result.toolExecutions || [];
+        this.trackToolExecutions(toolExecutions);
+        const failedActionCount = toolExecutions.filter((execution: any) => this.ACTION_TOOLS.includes(execution.toolName) && !execution.wasSuccessful).length;
+        if (failedActionCount >= 4) stop();
 
-      const hasDone = toolExecutions.some((execution: any) => execution.toolName === 'drill_done' && execution.wasSuccessful);
-      const hasSkip = toolExecutions.some((execution: any) => execution.toolName === 'drill_skip' && execution.wasSuccessful);
-      if (hasDone || hasSkip) {
-        finished = true;
-        stop();
-      }
+        const hasDone = toolExecutions.some((execution: any) => execution.toolName === 'drill_done' && execution.wasSuccessful);
+        const hasSkip = toolExecutions.some((execution: any) => execution.toolName === 'drill_skip' && execution.wasSuccessful);
+        if (hasDone || hasSkip) {
+          finished = true;
+          stop();
+        }
 
-      if (iteration >= this.MAX_COMPONENT_ITERATIONS) stop();
-    }, {
-      maxAttempts: this.MAX_COMPONENT_ITERATIONS,
-      interruptPrompt: `Drill interrupted while testing "${component.name}". Enter instruction (or "stop" to end):`,
-      observability: { agent: 'driller', sessionId: `${test.id}_${component.eidx}` },
-      catch: async ({ error, stop }) => {
-        tag('error').log(`Drill error for ${component.name}: ${error}`);
-        stop();
+        if (iteration >= this.MAX_COMPONENT_ITERATIONS) stop();
       },
-    });
+      {
+        maxAttempts: this.MAX_COMPONENT_ITERATIONS,
+        interruptPrompt: `Drill interrupted while testing "${component.name}". Enter instruction (or "stop" to end):`,
+        observability: { agent: 'driller', sessionId: `${test.id}_${component.eidx}` },
+        catch: async ({ error, stop }) => {
+          tag('error').log(`Drill error for ${component.name}: ${error}`);
+          stop();
+        },
+      }
+    );
 
     if (finished || test.hasFinished) return;
     if ((test.interactions || []).some((interaction) => interaction.result === 'success')) {
@@ -896,7 +897,10 @@ function buildScopedFreestyleClickCode(component: ComponentInfo): string {
     const placeholder = component.placeholder;
     if (placeholder) return `I.click(${JSON.stringify(`${scope}//input[@placeholder=${xpathLiteral(placeholder)}]`)})`;
     if (component.classes.length > 0) {
-      const classConditions = component.classes.slice(0, 4).map((cls) => `contains(@class,${xpathLiteral(cls)})`).join(' and ');
+      const classConditions = component.classes
+        .slice(0, 4)
+        .map((cls) => `contains(@class,${xpathLiteral(cls)})`)
+        .join(' and ');
       return `I.click(${JSON.stringify(`${scope}//input[${classConditions}]`)})`;
     }
   }
@@ -925,12 +929,7 @@ function buildEmbeddedFrameCode(component: ComponentInfo): string {
     text = 'const value = "test";';
   }
 
-  return [
-    `I.switchTo(${JSON.stringify(iframeLocator)})`,
-    `I.click(${JSON.stringify(editorLocator)})`,
-    `I.type(${JSON.stringify(text)})`,
-    'I.switchTo()',
-  ].join('\n');
+  return [`I.switchTo(${JSON.stringify(iframeLocator)})`, `I.click(${JSON.stringify(editorLocator)})`, `I.type(${JSON.stringify(text)})`, 'I.switchTo()'].join('\n');
 }
 
 function buildTabVariantXPathCondition(component: ComponentInfo): string {
@@ -979,17 +978,7 @@ function normalizeInteractionResult(component: ComponentInfo, action: string, re
   if (!value) return fallbackInteractionResult(component, action);
 
   const normalizedValue = value.toLowerCase();
-  const weakPhrases = [
-    'button clicked',
-    'clicked button',
-    'button was clicked',
-    'component clicked',
-    'page remains same',
-    'page stayed the same',
-    'no visible change',
-    'action performed',
-    'clicked',
-  ];
+  const weakPhrases = ['button clicked', 'clicked button', 'button was clicked', 'component clicked', 'page remains same', 'page stayed the same', 'no visible change', 'action performed', 'clicked'];
 
   if (weakPhrases.some((phrase) => normalizedValue === phrase || normalizedValue.includes(phrase))) {
     return fallbackInteractionResult(component, action);
@@ -1010,7 +999,10 @@ function fallbackInteractionResult(component: ComponentInfo, action: string): st
 }
 
 function hasContainerLocator(code: string): boolean {
-  for (const line of code.split('\n').map((entry) => entry.trim()).filter(Boolean)) {
+  for (const line of code
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter(Boolean)) {
     const argCount = countTopLevelArgs(line);
     if (line.startsWith('I.click(') && argCount >= 2) return true;
     if (line.startsWith('I.fillField(') && argCount >= 3) return true;
@@ -1069,7 +1061,12 @@ function buildClassSelector(tag: string, classes: string[]): string {
 }
 
 function parseVariantHints(variant: string): Set<string> {
-  return new Set(variant.split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean));
+  return new Set(
+    variant
+      .split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean)
+  );
 }
 
 function xpathLiteral(value: string): string {
