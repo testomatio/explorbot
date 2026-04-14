@@ -95,7 +95,7 @@ ExplorBot (DI Container)
             ├── Planner
             ├── Pilot ←──────────┐
             ├── Tester ──────────┘ (Pilot supervises Tester)
-            ├── Bosun → Researcher, Navigator — drill components to learn interactions
+            ├── Driller -> Navigator - drill components to learn interactions
             ├── Captain
             ├── Historian
             ├── ExperienceCompactor
@@ -244,7 +244,7 @@ All agents implement the `Agent` interface. Task-executing agents (Tester, Capta
 - Planner — generate test scenarios
 - Pilot — supervise test execution, detect stuck patterns, request user help
 - Tester → Researcher, Navigator, Pilot, Historian*, Quartermaster* — execute tests with AI tools
-- Bosun → Researcher, Navigator — drill page components to learn interactions
+- Driller -> Navigator - drill page components to learn interactions
 - Captain → Historian*, Quartermaster* — handle user commands in TUI
 - Historian — save test sessions, generate code, report to Testomatio
 - ExperienceCompactor — compress experience files
@@ -401,10 +401,10 @@ import React from 'react';
 
 There are application commands available in TUI
 
-- /research [uri] - performs research on a current page or navigate to [uri] if uri is provided
-- /plan <feature> - plan testing feature starting from current page
-- /navigate <uri_or_state> - move to other page. Use AI to complete navigation
-- /drill [--knowledge <path>] [--max <n>] - drill all components on page to learn interactions
+* /research [uri] - performs research on a current page or navigate to [uri] if uri is provided
+* /plan <feature> - plan testing feature starting from current page
+* /navigate <uri_or_state> - move to other page. Use AI to complete navigation
+* /drill [--knowledge <path>] [--max-components <n>] - drill all components on page to learn interactions
 
 There are also CodeceptJS commands available:
 
@@ -441,7 +441,7 @@ explorbot plan /login authentication  # plan with focus on authentication
 
 ```bash
 explorbot drill <url>                    # drill all components on page
-explorbot drill /components --max 10     # limit to 10 components
+explorbot drill /components --max-components 10  # limit to 10 components
 explorbot drill /login --knowledge /login  # save to knowledge file
 ```
 

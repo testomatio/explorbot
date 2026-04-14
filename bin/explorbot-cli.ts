@@ -485,7 +485,12 @@ addCommonOptions(program.command('research <url>').description('Research a page 
 );
 
 addCommonOptions(
-  program.command('drill <url>').alias('bosun').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max <count>', 'Maximum number of components to drill', '20')
+  program
+    .command('drill <url>')
+    .alias('driller')
+    .description('Drill all components on a page to learn interactions')
+    .option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path')
+    .option('--max-components <count>', 'Maximum number of components to drill')
 ).action(async (url, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
@@ -493,9 +498,9 @@ addCommonOptions(
 
     await explorBot.visit(url);
 
-    const plan = await explorBot.agentBosun().drill({
+    const plan = await explorBot.agentDriller().drill({
       knowledgePath: options.knowledge,
-      maxComponents: Number.parseInt(options.max, 10),
+      maxComponents: Number.parseInt(options.maxComponents || '30', 10),
       interactive: false,
     });
 

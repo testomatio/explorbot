@@ -755,6 +755,32 @@ export async function annotatePageElements(page: any): Promise<{ ariaSnapshot: s
     }
   }
 
+  try {
+    const rawList = await page.locator('iframe').evaluateAll((domElements: Element[], extractFnStr: string) => {
+      const extract = new Function(`return ${extractFnStr}`)() as (el: Element) => any;
+      const results: any[] = [];
+      const sourceCounts: Record<string, number> = {};
+      let iframeIdx = 0;
+      for (const el of domElements) {
+        iframeIdx++;
+        const sourceKey = el.getAttribute('src') || '';
+        sourceCounts[sourceKey] ||= 0;
+        sourceCounts[sourceKey]++;
+        const existing = el.getAttribute('data-explorbot-eidx');
+        el.setAttribute('data-explorbot-eidx', existing || `iframe-${iframeIdx}`);
+        el.setAttribute('data-explorbot-frame-source-index', String(sourceCounts[sourceKey]));
+        const elData = extract(el);
+        if (elData) results.push(elData);
+      }
+      return results;
+    }, extractElementData.toString());
+    for (const raw of rawList) {
+      elements.push(WebElement.fromRawData(raw, 'iframe'));
+    }
+  } catch {
+    debugLog('Failed to annotate iframes');
+  }
+
   return { ariaSnapshot, elements };
 }
 

@@ -142,8 +142,8 @@ export class StateManager {
 
   /**
    * Extract state path from full URL
-   * Removes domain, port, protocol, and query params
-   * Keeps path and hash: /path/to/page#section
+   * Removes domain, port, protocol
+   * Keeps path, query, and hash: /path/to/page?tab=users#section
    */
   /**
    * Update current state from ActionResult and record transition if state changed
@@ -549,7 +549,8 @@ export class StateManager {
 export function normalizeUrl(url: string): string {
   try {
     const parsed = new URL(url, 'http://localhost');
-    return parsed.pathname.replace(/^\/+|\/+$/g, '');
+    const path = parsed.pathname.replace(/^\/+|\/+$/g, '');
+    return `${path}${parsed.search}${parsed.hash}`;
   } catch {
     return url.replace(/^\/+|\/+$/g, '');
   }

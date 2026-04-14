@@ -140,4 +140,47 @@ describe('annotatePageElements', () => {
     expect(result.ariaSnapshot).toBe(ariaSnapshot);
     expect(result.elements).toHaveLength(0);
   });
+
+  describe('component metadata', () => {
+    let page: Page;
+    let elements: WebElement[];
+
+    beforeAll(async () => {
+      page = await browser.newPage();
+      await page.setContent(`
+        <main>
+          <article class="FreestyleUsage">
+            <h2 class="FreestyleUsage-title">Toggle - off</h2>
+            <button role="switch" aria-label="Enable feature" aria-checked="false" class="flex-shrink-0 rounded-full h-5 w-10 cursor-pointer"></button>
+          </article>
+          <article class="FreestyleUsage">
+            <h2 class="FreestyleUsage-title">Code Input</h2>
+            <iframe src="/ember-monaco/frame.html"></iframe>
+          </article>
+        </main>
+      `);
+      const result = await annotatePageElements(page);
+      elements = result.elements;
+    });
+
+    afterAll(async () => {
+      await page?.close();
+    });
+
+    it('adds context and variant hints for drillable controls', () => {
+      const toggle = elements.find((el) => el.role === 'switch');
+      expect(toggle?.contextLabel).toBe('Toggle - off');
+      expect(toggle?.areaHints).toContain('role:switch');
+      expect(toggle?.areaHints).toContain('main');
+      expect(toggle?.outerHTML).toContain('aria-checked="false"');
+    });
+
+    it('annotates code editor iframes for driller discovery', () => {
+      const frame = elements.find((el) => el.role === 'iframe');
+      expect(frame?.contextLabel).toBe('Code Input');
+      expect(frame?.variantHints).toContain('iframe');
+      expect(frame?.variantHints).toContain('code-editor');
+      expect(frame?.attrs['data-explorbot-frame-source-index']).toBe('1');
+    });
+  });
 });

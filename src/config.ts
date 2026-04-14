@@ -112,6 +112,7 @@ interface AgentsConfig {
   researcher?: ResearcherAgentConfig;
   planner?: PlannerAgentConfig;
   pilot?: PilotAgentConfig;
+  driller?: AgentConfig;
   'experience-compactor'?: AgentConfig;
   captain?: AgentConfig;
   quartermaster?: AgentConfig;

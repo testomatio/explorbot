@@ -3,7 +3,7 @@ import { BaseCommand } from './base-command.js';
 export class DrillCommand extends BaseCommand {
   name = 'drill';
   description = 'Drill all components on current page to learn interactions';
-  aliases = ['bosun'];
+  aliases = ['driller'];
   suggestions = ['/research - to see UI map first', '/navigate <page> - to go to another page'];
 
   async execute(args: string): Promise<void> {
@@ -15,7 +15,7 @@ export class DrillCommand extends BaseCommand {
       throw new Error('No active page to drill');
     }
 
-    await this.explorBot.agentBosun().drill({
+    await this.explorBot.agentDriller().drill({
       knowledgePath,
       maxComponents,
       interactive: true,
@@ -28,7 +28,7 @@ export class DrillCommand extends BaseCommand {
   }
 
   private parseMaxArg(args: string): number | undefined {
-    const match = args.match(/--max\s+(\d+)/);
+    const match = args.match(/--max-components\s+(\d+)/);
     return match ? Number.parseInt(match[1], 10) : undefined;
   }
 }

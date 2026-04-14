@@ -57,6 +57,26 @@ export class WebElement {
     return cls.split(/\s+/).filter((c) => c.length > 2 && !isDynamicId(c) && !isGenericClass(c));
   }
 
+  get areaHints(): string[] {
+    const raw = this.attrs['data-explorbot-area'] || '';
+    return raw
+      .split('|')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  get contextLabel(): string {
+    return (this.attrs['data-explorbot-context'] || '').trim();
+  }
+
+  get variantHints(): string[] {
+    const raw = this.attrs['data-explorbot-variant'] || '';
+    return raw
+      .split('|')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
   static fromRawData(d: RawElementData, role?: string): WebElement {
     return new WebElement({
       tag: d.tag,
@@ -65,6 +85,7 @@ export class WebElement {
       clickXPath: buildClickableXPath({ tag: d.tag, allAttrs: d.allAttrs, text: d.text } as XPathMatch),
       attrs: d.allAttrs,
       text: d.text,
+      outerHTML: d.outerHTML,
       x: d.x,
       y: d.y,
     });
@@ -128,8 +149,143 @@ export class WebElement {
 }
 
 export function extractElementData(el: Element) {
+  function normalizeText(value: string): string {
+    return value.replace(/\s+/g, ' ').trim();
+  }
+
+  function readText(node: Element | null): string {
+    if (!node) return '';
+    return normalizeText(node.textContent || '').slice(0, 120);
+  }
+
+  function getLabelLikeText(node: Element | null): string {
+    if (!node) return '';
+    const direct = readText(node);
+    if (direct) return direct;
+    const labelLike = node.querySelector('h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"], [class*="title"], [class*="label"], [class*="header"], [class*="name"]');
+    return readText(labelLike);
+  }
+
+  function collectVariantHints(target: Element): string[] {
+    const tokens = new Set<string>();
+    const className = target.getAttribute('class') || '';
+    const tagName = target.tagName.toLowerCase();
+
+    for (const cls of className.split(/\s+/).filter(Boolean)) {
+      const lower = cls.toLowerCase();
+      if (/^(xs|sm|md|lg|xl|xxl)$/.test(lower)) tokens.add(lower);
+      if (/^(mini|small|medium|large|xlarge|xl|compact|dense)$/.test(lower)) tokens.add(lower);
+      if (/(^|[-_])(xs|sm|md|lg|xl|xxl|mini|small|medium|large|compact|dense)([-_]|$)/.test(lower)) tokens.add(lower);
+      if (/(selected|disabled|primary|secondary|tertiary|danger|success|warning|outline|ghost|icon|dropdown)/.test(lower)) tokens.add(lower);
+    }
+
+    const type = (target.getAttribute('type') || '').toLowerCase();
+    if (type) tokens.add(type);
+    if (target.hasAttribute('disabled') || target.getAttribute('aria-disabled') === 'true') tokens.add('disabled');
+    if (className.toLowerCase().includes('selected') || target.getAttribute('aria-pressed') === 'true') tokens.add('selected');
+    if (tagName === 'iframe') tokens.add('iframe');
+    if (tagName === 'iframe' && isEmbeddedCodeEditorFrame(target)) tokens.add('code-editor');
+
+    const svgCount = target.querySelectorAll('svg').length;
+    if (svgCount > 0) tokens.add('has-icon');
+    if (svgCount > 1) tokens.add('double-icon');
+
+    const normalizedText = normalizeText(target.textContent || '');
+    if (!normalizedText && svgCount > 0) tokens.add('icon-only');
+    if (normalizedText && svgCount > 0) {
+      const first = target.firstElementChild?.tagName.toLowerCase();
+      const last = target.lastElementChild?.tagName.toLowerCase();
+      if (first === 'svg') tokens.add('leading-icon');
+      if (last === 'svg') tokens.add('trailing-icon');
+    }
+
+    if (tagName === 'a' && target.getAttribute('href')) tokens.add('navigates');
+
+    return Array.from(tokens).slice(0, 8);
+  }
+
+  function isEmbeddedCodeEditorFrame(target: Element): boolean {
+    const src = (target.getAttribute('src') || '').toLowerCase();
+    const parentClasses = (target.parentElement?.getAttribute('class') || '').toLowerCase();
+    const ancestorClasses = (target.closest('[class*="monaco"], [class*="codemirror"], [class*="ace_editor"], [class*="code"]')?.getAttribute('class') || '').toLowerCase();
+    return src.includes('monaco') || src.includes('codemirror') || src.includes('ace') || parentClasses.includes('frame-container') || ancestorClasses.includes('monaco') || ancestorClasses.includes('codemirror') || ancestorClasses.includes('ace_editor');
+  }
+
+  function findContextLabel(target: Element): string {
+    const labelTags = 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"]';
+    const labelledby = target.getAttribute('aria-labelledby');
+    const candidates: string[] = [];
+    if (labelledby) {
+      for (const id of labelledby.split(/\s+/).filter(Boolean)) {
+        const ref = document.getElementById(id);
+        const text = readText(ref);
+        if (text) candidates.push(text);
+      }
+    }
+
+    const freestyleUsage = target.closest('[class*="FreestyleUsage"]');
+    if (freestyleUsage) {
+      const title = freestyleUsage.querySelector('[class*="FreestyleUsage-title"]');
+      const titleText = readText(title);
+      if (titleText) candidates.push(titleText);
+    }
+
+    const semanticContainer = target.closest('section, article, form, fieldset, li, tr, td, th, [role="group"], [role="tabpanel"], [role="region"], [class*="card"], [class*="panel"], [class*="item"], [class*="usage"], [class*="group"]');
+    if (semanticContainer) {
+      const ownHeading = semanticContainer.querySelector(labelTags);
+      const ownHeadingText = readText(ownHeading);
+      if (ownHeadingText) candidates.push(ownHeadingText);
+
+      let previous: Element | null = semanticContainer.previousElementSibling;
+      let hops = 0;
+      while (previous && hops < 3) {
+        const previousText = getLabelLikeText(previous);
+        if (previousText) {
+          candidates.push(previousText);
+          break;
+        }
+        previous = previous.previousElementSibling;
+        hops++;
+      }
+    }
+
+    let parent: Element | null = target.parentElement;
+    let depth = 0;
+    while (parent && depth < 4) {
+      let sibling: Element | null = parent.previousElementSibling;
+      let hops = 0;
+      while (sibling && hops < 2) {
+        const siblingText = getLabelLikeText(sibling);
+        if (siblingText) {
+          candidates.push(siblingText);
+          sibling = null;
+          break;
+        }
+        sibling = sibling.previousElementSibling;
+        hops++;
+      }
+      parent = parent.parentElement;
+      depth++;
+    }
+
+    const ownText = normalizeText(target.textContent || '');
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      if (candidate === ownText) continue;
+      if (candidate.toLowerCase().includes('title should not be empty')) continue;
+      return candidate.slice(0, 120);
+    }
+
+    return '';
+  }
+
   const rect = el.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return null;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden') return null;
+  if (Number.parseFloat(style.opacity || '1') < 0.1) return null;
+  if (el.getAttribute('aria-hidden') === 'true' || el.hasAttribute('hidden')) return null;
+  if ((el as HTMLElement).offsetParent === null && style.position !== 'fixed') return null;
 
   const allAttrs: Record<string, string> = {};
   for (let i = 0; i < el.attributes.length; i++) {
@@ -137,10 +293,39 @@ export function extractElementData(el: Element) {
     allAttrs[attr.name] = attr.value;
   }
 
+  const areaHints: string[] = [];
+  let current: Element | null = el;
+  let depth = 0;
+  while (current && depth < 5) {
+    const tag = current.tagName.toLowerCase();
+    areaHints.push(tag);
+
+    const role = current.getAttribute('role');
+    if (role) areaHints.push(`role:${role.toLowerCase()}`);
+
+    const id = current.getAttribute('id');
+    if (id) areaHints.push(`id:${id.toLowerCase()}`);
+
+    const className = current.getAttribute('class');
+    if (className) {
+      for (const cls of className.split(/\s+/).filter(Boolean)) {
+        areaHints.push(`class:${cls.toLowerCase()}`);
+      }
+    }
+
+    current = current.parentElement;
+    depth++;
+  }
+
+  allAttrs['data-explorbot-area'] = areaHints.join('|');
+  allAttrs['data-explorbot-context'] = findContextLabel(el);
+  allAttrs['data-explorbot-variant'] = collectVariantHints(el).join('|');
+
   return {
     tag: el.tagName.toLowerCase(),
-    text: (el.textContent || '').trim().slice(0, 80),
+    text: normalizeText(el.textContent || '').slice(0, 80),
     allAttrs,
+    outerHTML: el.outerHTML.slice(0, 2000),
     x: Math.round(rect.x + rect.width / 2),
     y: Math.round(rect.y + rect.height / 2),
   };
