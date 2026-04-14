@@ -28,10 +28,14 @@ function createMockElement(tag: string, attrs: Record<string, string>, text = ''
       allAttrs[name] = value;
     },
     extractData() {
+      const attrs = Object.entries(allAttrs)
+        .map(([name, value]) => `${name}="${value}"`)
+        .join(' ');
       return {
         tag,
         text,
         allAttrs: { ...allAttrs },
+        outerHTML: `<${tag} ${attrs}>${text}</${tag}>`,
         x: 100,
         y: 200,
       };
@@ -142,32 +146,25 @@ describe('annotatePageElements', () => {
   });
 
   describe('component metadata', () => {
-    let page: Page;
-    let elements: WebElement[];
+    it('adds context and variant hints for drillable controls', async () => {
+      const ariaSnapshot = '- switch "Enable feature" [ref=e1]';
+      const page = createMockPage(ariaSnapshot, {
+        switch: [
+          createMockElement(
+            'button',
+            {
+              role: 'switch',
+              'aria-checked': 'false',
+              'data-explorbot-context': 'Toggle - off',
+              'data-explorbot-area': 'button|role:switch|main',
+              'data-explorbot-variant': 'rounded-full',
+            },
+            'Enable feature'
+          ),
+        ],
+      });
 
-    beforeAll(async () => {
-      page = await browser.newPage();
-      await page.setContent(`
-        <main>
-          <article class="FreestyleUsage">
-            <h2 class="FreestyleUsage-title">Toggle - off</h2>
-            <button role="switch" aria-label="Enable feature" aria-checked="false" class="flex-shrink-0 rounded-full h-5 w-10 cursor-pointer"></button>
-          </article>
-          <article class="FreestyleUsage">
-            <h2 class="FreestyleUsage-title">Code Input</h2>
-            <iframe src="/ember-monaco/frame.html"></iframe>
-          </article>
-        </main>
-      `);
-      const result = await annotatePageElements(page);
-      elements = result.elements;
-    });
-
-    afterAll(async () => {
-      await page?.close();
-    });
-
-    it('adds context and variant hints for drillable controls', () => {
+      const { elements } = await annotatePageElements(page);
       const toggle = elements.find((el) => el.role === 'switch');
       expect(toggle?.contextLabel).toBe('Toggle - off');
       expect(toggle?.areaHints).toContain('role:switch');
@@ -175,7 +172,31 @@ describe('annotatePageElements', () => {
       expect(toggle?.outerHTML).toContain('aria-checked="false"');
     });
 
-    it('annotates code editor iframes for driller discovery', () => {
+    it('annotates code editor iframes for driller discovery', async () => {
+      const page = {
+        locator: (selector: string) => {
+          if (selector === 'body') {
+            return {
+              ariaSnapshot: async () => '',
+            };
+          }
+          return {
+            evaluateAll: async () => [
+              createMockElement('iframe', {
+                src: '/ember-monaco/frame.html',
+                'data-explorbot-context': 'Code Input',
+                'data-explorbot-variant': 'iframe|code-editor',
+                'data-explorbot-frame-source-index': '1',
+              }).extractData(),
+            ],
+          };
+        },
+        getByRole: () => ({
+          evaluateAll: async () => [],
+        }),
+      };
+
+      const { elements } = await annotatePageElements(page);
       const frame = elements.find((el) => el.role === 'iframe');
       expect(frame?.contextLabel).toBe('Code Input');
       expect(frame?.variantHints).toContain('iframe');
