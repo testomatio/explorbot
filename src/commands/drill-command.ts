@@ -3,7 +3,6 @@ import { BaseCommand } from './base-command.js';
 export class DrillCommand extends BaseCommand {
   name = 'drill';
   description = 'Drill all components on current page to learn interactions';
-  aliases = ['bosun'];
   suggestions = ['/research - to see UI map first', '/navigate <page> - to go to another page'];
 
   async execute(args: string): Promise<void> {

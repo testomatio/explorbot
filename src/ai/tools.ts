@@ -310,7 +310,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         I.selectOption({"role":"combobox","text":"Category"}, 'Technology')
 
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
-        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot
+        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot        
       `,
       inputSchema: z.object({
         codeBlock: z.string().describe('Valid CodeceptJS code starting with I. Can contain multiple commands separated by newlines.'),
@@ -385,7 +385,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             message: `Form completed successfully with ${lines.length} commands.`,
             commandsExecuted: lines.length,
             code: codeBlock,
-            suggestion: 'Verify the form was filled in correctly using see() tool. Submit if needed by using click() tool.',
+            suggestion: 'Verify the form was filled in correctly using see() tool. If needed to submit: try click() tool or form() with I.pressKey("Enter").',
           });
         } catch (error) {
           activeNote.commit(TestResult.FAILED);

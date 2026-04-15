@@ -20,6 +20,7 @@ import { createAgentTools } from './ai/tools.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import Explorer from './explorer.ts';
+import type { Suite } from './suite.ts';
 import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
 import { Plan } from './test-plan.ts';
@@ -305,6 +306,10 @@ export class ExplorBot {
 
   getCurrentPlan(): Plan | undefined {
     return this.currentPlan;
+  }
+
+  getSuite(): Suite | null {
+    return this.agentPlanner().getSuite();
   }
 
   getPlanFeature(): string | undefined {

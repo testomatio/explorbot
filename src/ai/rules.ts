@@ -266,7 +266,7 @@ export const actionRule = dedent`
     I.fillField('Username', 'John', '.login-form'); // fills Username inside .login-form
     I.fillField('Username', 'John'); // fills the field located by name or placeholder or label "Username" with the text "John"
     I.fillField('//user/input', 'John'); // fills the field located by XPath "//user/input" with the text "John"
-  </example>
+  </example>  
 
   ### I.type
 
@@ -303,7 +303,7 @@ export const actionRule = dedent`
   </example>
 
   IMPORTANT: Requires an active/focused element for most keys.
-  Commonly used after I.type() to submit forms or navigate dropdowns.
+  Commonly used after I.type() or I.fillField() to submit forms or navigate dropdowns.
 
   ### I.switchTo
 

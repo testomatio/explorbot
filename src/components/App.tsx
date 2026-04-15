@@ -242,6 +242,14 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         setShowPlanEditor(true);
         return;
       }
+      if (key.upArrow) {
+        setTaskScrollOffset((prev) => Math.max(0, prev - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setTaskScrollOffset((prev) => prev + 1);
+        return;
+      }
     }
 
     if (!showInput && !showPlanEditor) {

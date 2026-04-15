@@ -420,9 +420,8 @@ Explorbot uses the `explorbot` CLI command (defined in `bin/explorbot-cli.ts`):
 ### Interactive exploration with TUI:
 
 ```bash
-explorbot start [path]           # start TUI, optionally at path (alias: sail)
+explorbot start [path]           # start TUI, optionally at path
 explorbot start /login           # start at /login path
-explorbot sail /dashboard        # alias for start
 explorbot start --config ./custom-config.js
 explorbot start --verbose        # or --debug
 explorbot start --session        # persist session to output/session.json

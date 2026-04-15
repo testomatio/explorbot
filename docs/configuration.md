@@ -81,10 +81,10 @@ The Planner and Chief agents cycle through **styles** — different testing appr
 To customize styles, extract the built-in ones and edit them:
 
 ```bash
-explorbot extract-styles planner
+explorbot extract-rules planner
 ```
 
-This copies built-in style files to `rules/planner/styles/`. Edit them freely — Explorbot loads from your `rules/` directory first, falling back to built-in styles.
+This copies the planner's built-in rules — including the `styles/` subdirectory — to `rules/planner/`. Edit them freely; Explorbot loads from your `rules/` directory first, falling back to built-in styles.
 
 Override which styles to use and their order in config:
 

@@ -307,17 +307,17 @@ Exit the application gracefully.
 
 ## Rules & Styles
 
-### `explorbot extract-styles <agent>`
+### `explorbot extract-rules <agent>`
 
-Extract built-in planning styles to your `rules/` directory for customization.
+Extract built-in rules (including planning styles) for an agent to your `rules/` directory for customization. Planning styles live under the `styles/` subdirectory and are extracted together with the rest of the agent's rules.
 
 ```bash
-explorbot extract-styles planner        # extracts to rules/planner/styles/
-explorbot extract-styles chief          # extracts to rules/chief/styles/
-explorbot extract-styles planner -d ./my-styles  # custom directory
+explorbot extract-rules planner        # extracts to rules/planner/ (incl. styles/)
+explorbot extract-rules chief          # extracts to rules/chief/
+explorbot extract-rules planner -d ./my-rules  # custom directory
 ```
 
-After extraction, edit the markdown files to customize how the Planner or Chief generates test scenarios. See [Configuration: Rules](./configuration.md#rules) for details.
+After extraction, edit the markdown files to customize how the agent behaves. See [Configuration: Rules](./configuration.md#rules) for details.
 
 ## Direct Browser Control
 

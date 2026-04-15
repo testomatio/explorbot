@@ -6,8 +6,7 @@ import { tag } from '../utils/logger.js';
 import { BaseCommand } from './base-command.js';
 
 export class AddRuleCommand extends BaseCommand {
-  name = 'rules:add';
-  aliases = ['add-rule'];
+  name = 'add-rule';
   description = 'Create a rule file for an agent';
   suggestions = ['/add-rule researcher check-tooltips'];
 

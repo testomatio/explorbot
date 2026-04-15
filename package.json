@@ -52,6 +52,7 @@
     "@ai-sdk/groq": "^3.0",
     "@ai-sdk/openai": "^3.0",
     "@axe-core/playwright": "^4.11.0",
+    "@codeceptjs/reflection": "^0.5.2",
     "@inkjs/ui": "^2.0.0",
     "@langfuse/otel": "^4.5.1",
     "@openrouter/ai-sdk-provider": "^2.3.3",

@@ -77,7 +77,7 @@ You can force a specific style:
 Extract the built-in styles to your project:
 
 ```bash
-explorbot extract-styles planner
+explorbot extract-rules planner
 ```
 
 This creates:

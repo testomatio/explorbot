@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-04-15
+
+### CLI Changes
+- Removed redundant aliases: `sail`, `add-knowledge`, `bosun`, `rules:add`. Use `start`, `learn`, `drill`, `add-rule` instead (both on the CLI and inside the TUI).
+- **Replaced `extract-styles` with `extract-rules <agent>`** — extracts the full built-in rules tree for an agent, including any planning styles under the `styles/` subdirectory, into `./rules/<agent>/`. Styles are just rules in a subdirectory, so there is now a single extraction command.
+  ```bash
+  explorbot extract-rules planner              # extracts rules + styles to ./rules/planner/
+  explorbot extract-rules planner -d ./my-rules # custom target directory
+  ```
+- The `explore` command description no longer labels it as "legacy command".
+
+### TUI
+- Task pane can now be scrolled with **Ctrl+Up / Ctrl+Down** from anywhere, including while the input prompt is active.
+- `/test N` and `explorbot test N` now refer to the test's displayed index in the task pane (counted over all enabled tests, including finished ones), so `/test 1` always runs the test labeled "1." regardless of which tests have already completed.
+
+### Changes
+- [Planner] `explorbot plan` now prints a summary of already-implemented automated tests for the target URL and the new scenarios it generated, each with priority. Suggested next-step commands include `rerun` entries pointing at the existing test files so users can re-run automated coverage alongside running new tests.
+- [Planner] Existing automated tests for the current URL are now passed to the AI as an explicit `<existing_automated_tests>` block, so newly generated scenarios no longer duplicate tests that are already implemented.
+- [Planner] Automated test discovery now uses `@codeceptjs/reflection` to parse test files and match them to the current URL via the `Before` hook's `I.amOnPage(...)`, replacing the previous directory-wide scenario scan.
+- [Planner] Re-running `/plan` now preserves the displayed indices of existing tests. Previously, finished tests were moved to the end of the list and newly generated scenarios took over their numbers; tests now keep their original position and new ones are appended.
+- [Navigator] Added strict navigation constraints: must stay on the same origin, must never rewrite or spoof the URL via `executeScript`/history API/location tricks, and must treat redirects to `/login`, `/sign_in`, `/auth`, etc. as an authentication requirement — logging in with credentials from knowledge or asking the user — rather than an obstacle to bypass.
+- [Tester] The `form` tool now suggests `I.pressKey("Enter")` as an alternative submission path when a plain `click()` would otherwise be used.
+- [Rerunner] Automatically loads the Testomatio CodeceptJS reporter plugin during rerun sessions, so rerun results are reported to Testomatio when configured. Bash tool execution logs now include the trace directory for easier debugging.
+
 ## 2026-04-13
 
 ### New CLI Commands

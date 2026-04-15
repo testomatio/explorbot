@@ -292,6 +292,13 @@ export class Rerunner extends TaskAgent implements Agent {
 
     const aiTrace = aiTracePlugin.default || aiTracePlugin;
     aiTrace(this.rerunnerConfig.aiTrace || { output: this.traceDir });
+
+    import('@testomatio/reporter/codecept')
+      .then((mod) => {
+        const plugin = mod.default || mod;
+        plugin({ enabled: true });
+      })
+      .catch(() => debugLog('Testomatio reporter plugin not available'));
   }
 
   private teardownHealing(): void {
@@ -397,7 +404,7 @@ export class Rerunner extends TaskAgent implements Agent {
           for (const exec of result.toolExecutions) {
             const icon = exec.wasSuccessful ? chalk.green(figureSet.tick) : chalk.red(figureSet.cross);
             let label = toolExecutionLabel(exec.input) || exec.toolName;
-            if (exec.toolName === 'bash') label = `bash: ${(exec.input?.command || '').substring(0, 100)}`;
+            if (exec.toolName === 'bash') label = `bash [${this.traceDir}]: ${(exec.input?.command || '').substring(0, 100)}`;
             tag('substep').log(`${icon} ${label}`);
 
             if (exec.toolName === 'done') {

@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import fs from 'node:fs';
 import path from 'node:path';
+import chalk from 'chalk';
 import { Command } from 'commander';
+import figureSet from 'figures';
 import { render } from 'ink';
 import React from 'react';
 import { App } from '../src/components/App.js';
@@ -104,14 +106,14 @@ async function showStatsAndExit(code: number): Promise<never> {
   process.exit(code);
 }
 
-addCommonOptions(program.command('start [path]').alias('sail').description('Start web exploration')).action(async (startPath, options) => {
+addCommonOptions(program.command('start [path]').description('Start web exploration')).action(async (startPath, options) => {
   setPreserveConsoleLogs(false);
   const explorBot = new ExplorBot(buildExplorBotOptions(startPath, options));
   await explorBot.start();
   await startTUI(explorBot);
 });
 
-addCommonOptions(program.command('explore <path>').description('Start web exploration (legacy command)').option('--max-tests <count>', 'Maximum number of tests to run')).action(async (explorePath, options) => {
+addCommonOptions(program.command('explore <path>').description('Explore a page autonomously and run invented scenarios').option('--max-tests <count>', 'Maximum number of tests to run')).action(async (explorePath, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
     await explorBot.start();
@@ -159,6 +161,23 @@ addCommonOptions(program.command('plan <path>').description('Generate test plan 
         await showStatsAndExit(1);
       }
 
+      const suite = explorBot.getSuite();
+      if (suite && suite.automatedTestCount > 0) {
+        const names = suite.getAutomatedTestNames();
+        console.log(`\n${chalk.bold.cyan(`Already implemented (${names.length} tests)`)}`);
+        for (let i = 0; i < names.length; i++) {
+          console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.green(figureSet.pointer)} ${names[i]}`);
+        }
+      }
+
+      if (plan?.tests.length) {
+        console.log(`\n${chalk.bold.cyan(`New test scenarios (${plan.tests.length})`)}`);
+        for (let i = 0; i < plan.tests.length; i++) {
+          const t = plan.tests[i];
+          console.log(`  ${chalk.dim(`${i + 1}.`)} ${chalk.green(figureSet.pointer)} ${t.scenario} ${chalk.dim(`[${t.priority}]`)}`);
+        }
+      }
+
       const savedPath = explorBot.savePlan();
       const planFile = savedPath ? path.basename(savedPath) : 'plan.md';
 
@@ -166,10 +185,14 @@ addCommonOptions(program.command('plan <path>').description('Generate test plan 
       const cliSuffix = cliFlags ? ` ${cliFlags}` : '';
 
       const lines: string[] = [];
-      lines.push('Run tests:');
-      lines.push(`\`${cli} test ${planFile} 1${cliSuffix}\` → run first test`);
-      lines.push(`\`${cli} test ${planFile} 1-3${cliSuffix}\` → run tests 1 to 3`);
-      lines.push(`\`${cli} test ${planFile} *${cliSuffix}\` → run all tests`);
+      lines.push('Run commands:');
+      lines.push(`\`${cli} test ${planFile} 1${cliSuffix}\` → run first new test`);
+      lines.push(`\`${cli} test ${planFile} *${cliSuffix}\` → run all new tests`);
+      if (suite && suite.automatedTestCount > 0) {
+        for (const f of suite.getAutomatedTestFiles()) {
+          lines.push(`\`${cli} rerun ${path.relative(process.cwd(), f)}${cliSuffix}\` → re-run automated tests`);
+        }
+      }
 
       log(parseMarkdownToTerminal(lines.join('\n')));
 
@@ -413,7 +436,6 @@ program
 
 program
   .command('learn [url] [description]')
-  .alias('add-knowledge')
   .description('Add knowledge for URLs')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (url, description, options) => {
@@ -484,32 +506,32 @@ addCommonOptions(program.command('research <url>').description('Research a page 
   }
 );
 
-addCommonOptions(
-  program.command('drill <url>').alias('bosun').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max <count>', 'Maximum number of components to drill', '20')
-).action(async (url, options) => {
-  try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
-    await explorBot.start();
+addCommonOptions(program.command('drill <url>').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max <count>', 'Maximum number of components to drill', '20')).action(
+  async (url, options) => {
+    try {
+      const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+      await explorBot.start();
 
-    await explorBot.visit(url);
+      await explorBot.visit(url);
 
-    const plan = await explorBot.agentBosun().drill({
-      knowledgePath: options.knowledge,
-      maxComponents: Number.parseInt(options.max, 10),
-      interactive: false,
-    });
+      const plan = await explorBot.agentBosun().drill({
+        knowledgePath: options.knowledge,
+        maxComponents: Number.parseInt(options.max, 10),
+        interactive: false,
+      });
 
-    console.log(`\nDrill completed: ${plan.tests.length} components`);
-    console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
-    console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
+      console.log(`\nDrill completed: ${plan.tests.length} components`);
+      console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
+      console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
 
-    await explorBot.stop();
-    await showStatsAndExit(0);
-  } catch (error) {
-    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await showStatsAndExit(1);
+      await explorBot.stop();
+      await showStatsAndExit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      await showStatsAndExit(1);
+    }
   }
-});
+);
 
 program
   .command('context <url>')
@@ -661,18 +683,18 @@ browserCmd
   });
 
 program
-  .command('extract-styles <agent>')
-  .description('Extract built-in planning styles to a directory for customization')
-  .option('-d, --dir <path>', 'Target directory (default: ./rules/<agent>/styles)')
+  .command('extract-rules <agent>')
+  .description('Extract built-in rules (including planning styles) for an agent to a directory for customization')
+  .option('-d, --dir <path>', 'Target directory (default: ./rules/<agent>)')
   .action(async (agent, options) => {
     try {
       const { RulesLoader } = await import('../src/utils/rules-loader.js');
-      const targetDir = options.dir || path.resolve(`./rules/${agent}/styles`);
-      const extracted = RulesLoader.extractStyles(agent, targetDir);
+      const targetDir = options.dir || path.resolve(`./rules/${agent}`);
+      const extracted = RulesLoader.extractRules(agent, targetDir);
       if (extracted.length === 0) {
-        console.log('All style files already exist in target directory.');
+        console.log('All rule files already exist in target directory.');
       } else {
-        console.log(`\nExtracted ${extracted.length} style files to ${targetDir}`);
+        console.log(`\nExtracted ${extracted.length} rule files to ${targetDir}`);
       }
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
@@ -682,7 +704,6 @@ program
 
 program
   .command('add-rule [agent] [name]')
-  .alias('rules:add')
   .description('Create a rule file for an agent')
   .option('--url <pattern>', 'URL pattern for this rule')
   .option('-p, --path <path>', 'Working directory path')

@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
@@ -24,7 +23,7 @@ import { findSimilarStateHash } from './researcher/cache.ts';
 import type { Provider } from './provider.js';
 import { hasFocusedSection } from './researcher/focus.ts';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
-import { loadTestSuites } from '../utils/test-files.ts';
+import { Suite } from '../suite.ts';
 import { fileUploadRule, protectionRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
@@ -60,6 +59,7 @@ export class Planner extends PlannerBase implements Agent {
   currentPlan: Plan | null = null;
   freshStart = false;
   private lastStyleName = '';
+  private lastSuite: Suite | null = null;
   researcher: Researcher;
   private fisherman: Fisherman | null = null;
 
@@ -211,8 +211,6 @@ export class Planner extends PlannerBase implements Agent {
         t.startUrl = state.url;
         this.currentPlan.addTest(t);
       }
-      const summary = `Scenarios:\n${this.currentPlan.tests.map((t) => `- [${t.priority}] ${t.scenario}`).join('\n')}`;
-      tag('multiline').log(summary);
     } else {
       tag('step').log(`Expanding plan: "${this.currentPlan.title}"`);
       this.currentPlan.nextIteration();
@@ -223,7 +221,6 @@ export class Planner extends PlannerBase implements Agent {
       }
     }
 
-    this.moveExecutedTestsToEnd();
     const availableStyles = Object.keys(getStyles()).join(', ');
     tag('success').log(`Planning complete! ${this.currentPlan.tests.length} tests in plan: ${this.currentPlan.title}`);
     tag('info').log(`Planning style: ${this.lastStyleName} (available: ${availableStyles})`);
@@ -235,12 +232,8 @@ export class Planner extends PlannerBase implements Agent {
     return this.currentPlan;
   }
 
-  private moveExecutedTestsToEnd(): void {
-    if (!this.currentPlan) return;
-    const pending = this.currentPlan.tests.filter((t) => t.result === null);
-    const executed = this.currentPlan.tests.filter((t) => t.result !== null);
-    this.currentPlan.tests = [...pending, ...executed];
-    this.currentPlan.notifyChange();
+  getSuite(): Suite | null {
+    return this.lastSuite;
   }
 
   private addNewTests(tests: Test[], defaultStartUrl: string): Test[] {
@@ -267,28 +260,14 @@ export class Planner extends PlannerBase implements Agent {
   }
 
   private getExistingTestFileScenarios(currentUrl?: string): Set<string> {
-    const scenarios = new Set<string>();
+    if (!currentUrl) return new Set<string>();
     try {
-      const testsDir = ConfigParser.getInstance().getTestsDir();
-      if (!existsSync(testsDir)) return scenarios;
-
-      const suites = loadTestSuites(testsDir);
-
-      for (const suite of suites) {
-        for (const test of suite.tests) {
-          if (!test.pending) {
-            scenarios.add(test.title.toLowerCase());
-          }
-        }
-      }
-
-      if (scenarios.size > 0) {
-        tag('info').log(`Found ${scenarios.size} existing test scenarios. Use /rerun to re-run them.`);
-      }
+      this.lastSuite = new Suite(currentUrl);
+      return this.lastSuite.getActiveScenarioTitles();
     } catch (err: any) {
       debugLog('Failed to load existing test files: %s', err.message);
+      return new Set<string>();
     }
-    return scenarios;
   }
 
   private cleanExperienceFlows(text: string): string | null {
@@ -448,6 +427,17 @@ export class Planner extends PlannerBase implements Agent {
           </previously_tested_flows>
         `);
       }
+    }
+
+    if (this.lastSuite && this.lastSuite.automatedTestCount > 0) {
+      const automatedNames = this.lastSuite.getAutomatedTestNames();
+      conversation.addUserText(dedent`
+        <existing_automated_tests>
+        The following ${automatedNames.length} tests are already implemented and automated for this URL.
+        Do not propose tests that duplicate these:
+        ${automatedNames.map((n) => `- ${n}`).join('\n')}
+        </existing_automated_tests>
+      `);
     }
 
     if (this.currentPlan) {
