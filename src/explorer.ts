@@ -37,6 +37,7 @@ declare namespace CodeceptJS {
 
 const debugLog = createDebug('explorbot:explorer');
 const FATAL_BROWSER_ERRORS = /Frame was detached|Target closed|Execution context was destroyed|Protocol error|Session closed/i;
+const RECOVERABLE_NAVIGATION_ERRORS = /net::ERR_ABORTED|page\.screenshot.*Timeout|waiting for fonts to load/i;
 
 interface TabInfo {
   url: string;
@@ -289,7 +290,15 @@ class Explorer {
     if (statePush) {
       await action.execute(`I.executeScript(() => { window.history.pushState({}, '', ${serializedUrl}); window.dispatchEvent(new PopStateEvent('popstate')); })`);
     } else {
-      await action.execute(`I.amOnPage(${serializedUrl})`);
+      try {
+        await action.execute(`I.amOnPage(${serializedUrl})`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!RECOVERABLE_NAVIGATION_ERRORS.test(msg)) throw err;
+        tag('warning').log(`Navigation warning (continuing after load): ${msg.split('\n')[0]}`);
+        await this.playwrightHelper.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+        await action.capturePageState();
+      }
     }
 
     if (wait !== undefined) {

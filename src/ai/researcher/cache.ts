@@ -27,6 +27,11 @@ function getFingerprintWorker(): Worker {
   return fingerprintWorker;
 }
 
+export function clearResearchCache(): void {
+  for (const key of Object.keys(memoryCache)) delete memoryCache[key];
+  for (const key of Object.keys(memoryCacheTimestamps)) delete memoryCacheTimestamps[key];
+}
+
 export function getCachedResearch(hash: string): string {
   if (!hash) return '';
   const now = Date.now();
