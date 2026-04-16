@@ -15,6 +15,8 @@ You can also run research manually to inspect pages or debug locator issues.
 
 > [!IMPORTANT]
 > The Researcher processes large amounts of HTML and ARIA tokens on every call. Use a **fast, cheap model with low reasoning effort** — it does not need deep thinking, just accurate element extraction. Models like `gpt-oss-20b` via Groq/Cerebras at 100+ TPS are ideal. Set `providerOptions` to reduce reasoning effort if your model supports it.
+>
+> On reasoning models, reasoning tokens count against the output budget. If you hit `AI response empty: output truncated at maxTokens`, either switch the researcher to a non-reasoning model or disable reasoning via `providerOptions` — see [Low Reasoning Effort](#low-reasoning-effort) below.
 
 ```javascript
 ai: {
@@ -415,6 +417,42 @@ ai: {
 
         Look for data-testid attributes for reliable selectors.
       `,
+    },
+  },
+}
+```
+
+### Low Reasoning Effort
+
+Reasoning tokens count toward the model's output budget. On a heavy page the chain-of-thought can consume the whole `maxTokens` window before the UI map is emitted, which surfaces as `AI response empty: output truncated at maxTokens`.
+
+The Vercel AI SDK has **no universal reasoning-effort parameter** — each provider uses a different key under `providerOptions`. Explorbot forwards `providerOptions` directly to the SDK, so you can list every provider you might use at once; only the block matching the active provider is applied, the rest are ignored.
+
+```javascript
+ai: {
+  agents: {
+    researcher: {
+      providerOptions: {
+        groq:       { reasoningEffort: 'low' },             // or 'none'
+        openai:     { reasoningEffort: 'low' },             // gpt-5, o1, o3, o4-mini
+        anthropic:  { thinking: { type: 'disabled' } },     // or { type: 'enabled', budgetTokens: 1024 }
+        google:     { thinkingConfig: { thinkingBudget: 0 } }, // Gemini 2.5
+        openrouter: { reasoning: { effort: 'low' } },       // or { exclude: true }
+        xai:        { reasoningEffort: 'low' },
+      },
+    },
+  },
+}
+```
+
+If truncation persists, pin the researcher to a non-reasoning model — it is faster, cheaper, and has a larger effective output window for table generation:
+
+```javascript
+ai: {
+  model: groq('openai/gpt-oss-20b'), // default for other agents
+  agents: {
+    researcher: {
+      model: groq('llama-3.3-70b-versatile'), // non-reasoning, 32k output
     },
   },
 }

@@ -98,15 +98,11 @@ export class Researcher extends ResearcherBase implements Agent {
     You are senior QA focused on exploritary testig of web application.
     </role>
 
-    <wording>
-    In the UI map and all descriptions, name concrete UI parts (visible labels, headings, regions, ARIA roles). Do not use vague placeholders like "the page", "the element", "the button", "the input", "the link", "the form", "the table", "the list", or "the item". Do not use filler such as "comprehensive", "All required", "All elements", or "All necessary".
-    </wording>
-
     ${customPrompt || ''}
     `;
   }
 
-  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; _retriesLeft?: number; _skipErrorPageRetry?: boolean } = {}): Promise<string> {
+  async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; _retriesLeft?: number } = {}): Promise<string> {
     const { screenshot = false, force = false, deep = false, data = false, fix = true } = opts;
     const maxRetries = (this.explorer.getConfig().ai?.agents?.researcher as any)?.retries ?? 2;
     let retriesLeft = opts._retriesLeft ?? maxRetries;
@@ -175,6 +171,7 @@ export class Researcher extends ResearcherBase implements Agent {
       conversation.addUserText(prompt);
 
       let invocationResult: Awaited<ReturnType<typeof this.provider.invokeConversation>>;
+      let activeConversation = conversation;
       try {
         invocationResult = await this.provider.invokeConversation(conversation, undefined, { agentName: 'researcher' });
       } catch (error) {
@@ -184,29 +181,16 @@ export class Researcher extends ResearcherBase implements Agent {
           }
           throw error;
         }
-        tag('warning').log('Output truncated, retrying with focused instructions...');
+        tag('warning').log('Output truncated, retrying with fresh focused conversation (ARIA only)...');
         retriesLeft = 0;
-        conversation.addUserText(this.buildFocusedRetryPrompt());
-        invocationResult = await this.provider.invokeConversation(conversation, undefined, { agentName: 'researcher' });
+        activeConversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
+        activeConversation.addUserText(this.buildFocusedRetryPrompt());
+        invocationResult = await this.provider.invokeConversation(activeConversation, undefined, { agentName: 'researcher' });
       }
       if (!invocationResult) throw new Error('Failed to get response from provider');
 
       const result = new ResearchResult(invocationResult.response.text, state.url);
       debugLog(`Original research response length: ${result.text.length} chars`);
-
-      const errorSection = mdq(result.text).query('section("Error Page Detected")');
-      if (errorSection.count() > 0) {
-        if (result.text.length < 500) {
-          if (!opts._skipErrorPageRetry && (await this.waitForPageLoad(screenshot))) {
-            return this.research(state, { ...opts, force: true, _skipErrorPageRetry: true });
-          }
-          tag('warning').log(`AI detected error page at ${state.url}`);
-          if (stateHash) saveResearch(stateHash, result.text);
-          await this.hooksRunner.runAfterHook('researcher', state.url);
-          return result.text;
-        }
-        result.text = errorSection.replace('');
-      }
 
       const interrupted = () => executionController.isInterrupted();
 
@@ -251,7 +235,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       // Stage 3: Fix broken sections via AI conversation continuation
       if (!interrupted() && fix && result.locators.some((l) => l.valid === false)) {
-        await this.fixBrokenSections(result, conversation);
+        await this.fixBrokenSections(result, activeConversation);
       }
 
       // Focused section: parse AI declaration, then ARIA fallback
@@ -417,32 +401,29 @@ export class Researcher extends ResearcherBase implements Agent {
 
   private researchRules(): string {
     const sections = this.getConfiguredSections();
+    const currentUrl = this.stateManager.getCurrentState()?.url || '';
     return dedent`
       <task>
-      Examine the provided page and explain its main purpose from the user perspective.
-      Identify the main user actions of this page.
-      Break down the page by sections and identify structural patterns.
-      Provide a comprehensive UI map report in markdown format.
+      Examine the page and explain its main purpose from the user perspective.
+      Identify the primary user actions and break the page into sections.
+      Provide a UI map report in markdown.
       </task>
 
       <rules>
       - Explain what the user can achieve on this page.
       - Focus on primary user actions and interactive elements only.
       - Research all menus and navigational areas.
-      - Ignore purely decorative sidebars, footer-only links, and external links.
+      - Ignore decorative sidebars, footer-only links, and external links.
       - Detect layout patterns: list/detail split, 2-pane, or 3-pane layouts.
-      - If multiple elements match, pick the element inside the most relevant section and closest to recent UI context.
-      - UI map table must include ARIA and CSS for every element.
-      - Every element MUST have a CSS selector. NEVER leave CSS as "-".
-      - For icon-only buttons with empty aria-label, set ARIA to "-" but ALWAYS provide CSS.
-      - NEVER skip elements that have an eidx attribute. Every element with eidx MUST appear in the UI map table, even if it has no text or accessible name. Describe icon-only elements using their SVG class (e.g., md-icon-dots-horizontal → "More actions (ellipsis)") or their visual appearance.
-      - ARIA locator must be JSON with role and text keys (NOT "name").
-      - Note elements likely to have hover interactions (elements with title attribute, aria-describedby, navigation menu items with submenus) and mark them with "(hover)" in the UI map.
+      - Every element with an eidx attribute MUST appear in the UI map — describe icon-only buttons by their visual role.
+      - Every UI map row needs a CSS selector; ARIA may be "-" for icon-only buttons, CSS must never be "-".
+      - ARIA locator JSON uses keys "role" and "text" (NOT "name").
+      - Mark elements with likely hover interactions (title, aria-describedby, menu items with submenus) as "(hover)".
       </rules>
 
       ${generalLocatorRuleText}
 
-      ${RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element'], this.stateManager.getCurrentState()?.url || '')}
+      ${RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules'], currentUrl)}
 
       <section_identification>
       Identify page sections in this priority order:
@@ -450,22 +431,11 @@ export class Researcher extends ResearcherBase implements Agent {
         .map(([name, description]) => `* ${name}: ${description}`)
         .join('\n')}
 
-      - Sections can overlap, prefer more detailed sections over broader ones.
-      - Never name a section "Focus" or "Focused" — describe what the section actually contains (e.g., "Detail", "Modal", "Form", "Content", "List").
-      - If a proposed section is not relevant or not detected, do not include it.
-      - Each section must have a container CSS locator.
-      - UI map CSS locators must be relative to the section container.
+      - Sections can overlap; prefer more detailed sections over broader ones.
+      - Never name a section "Focus" or "Focused" — use what it contains (Detail, Modal, Form, Content, List).
+      - Omit sections that are not present or not relevant.
+      - Each section needs a container CSS locator; UI map CSS locators are relative to it.
       </section_identification>
-
-      <container_rules>
-      CRITICAL: Container CSS must be a SINGLE selector — one class, one ID, or one attribute.
-      No spaces, no >, no combinators, no nesting.
-      - INVALID: '.filterbar-filter-btn-div button', 'div.static nav', 'div > .content'
-      - INVALID: 'div', 'section', 'nav', 'div:first' (bare tags are not containers)
-      - INVALID: Tailwind/Bootstrap utility classes that describe layout or styling (e.g. flex-none, d-flex, col-md-6, items-center, mt-4, p-2, bg-white, text-sm, rounded-lg). These are visual, not semantic.
-      - VALID: Semantic class names that describe WHAT the section IS — e.g. '.product-list', '.sidebar-menu', '.user-profile', '[role="dialog"]', '.search-results'
-      Container must uniquely identify a semantic wrapper, not a path through the DOM.
-      </container_rules>
 
       <section_format>
       ## Section Name
@@ -476,40 +446,16 @@ export class Researcher extends ResearcherBase implements Agent {
 
       | Element | ARIA | CSS | eidx |
       </section_format>
-      <section_example>
-      ## List
-
-      Product catalog showing available items with sorting and filtering.
-
-      > Container: '.product-list'
-
-      | Element | ARIA | CSS | eidx |
-      | 'Sort by price' | { role: 'button', text: 'Sort by price' } | '.sort-btn' | 3 |
-      | 'Add to cart' | { role: 'button', text: 'Add to cart' } | '.add-btn' | 4 |
-      | 'Product name' | { role: 'link', text: 'Widget Pro' } | 'a.product-link' | 5 |
-      </section_example>
 
       <focused_section>
-      At the very end of your output, add a single line declaring which section is the user's primary focus area:
+      At the end of your output, declare the primary focus area on a single line:
 
       > Focused: <exact section name>
 
-      Rules for determining the focused section:
-      - If the page has a dialog, modal, drawer, or overlay — that section is focused
-      - If no overlay exists, pick the section where the user performs the main business action of this page (e.g., a list section for a catalog page, a detail section for an item page, a content section for an article page)
-      - Navigation is NEVER focused — it exists on every page
-      - Menu/toolbar is NEVER focused — it contains actions, not the main content
-      - The focused section is the one the user came to this page to interact with
+      - If a dialog/modal/drawer/overlay exists, it is focused.
+      - Otherwise pick the section where the main business action happens (list for catalog, detail for item page, content for article).
+      - Navigation and menu/toolbar are never focused.
       </focused_section>
-
-      <css_selector_rules>
-      CSS selectors MUST point to the actual interactive element (input, button, a, select), NOT to container divs.
-      - If a submit button is inside a wrapper div, target the input/button directly
-      - Bad: '#submit-wrapper' (div container)
-      - Good: '#submit-wrapper input[type="submit"]' or 'input[type="submit"][value="Submit"]'
-      - For buttons with similar text, include distinguishing attributes like type, value, or form context
-
-      </css_selector_rules>
     `;
   }
 
@@ -539,17 +485,6 @@ export class Researcher extends ResearcherBase implements Agent {
 
     return dedent`
       Analyze this web page and provide a comprehensive research report in markdown format.
-
-      <error_detection>
-      IMPORTANT: First check if this looks like an error page (404, 500, access denied,
-      not found, server error, forbidden, or similar). If so, respond ONLY with:
-
-      ## Error Page Detected
-      Type: [error type]
-      Reason: [what indicates this is an error page]
-
-      Then stop - do not provide normal research output for error pages.
-      </error_detection>
 
       ${this.researchRules()}
 
@@ -603,11 +538,40 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   private buildFocusedRetryPrompt(): string {
+    const currentUrl = this.stateManager.getCurrentState()?.url || '';
+    const example = RulesLoader.loadRules('researcher', ['section-example'], currentUrl);
+    const uiMapTable = RulesLoader.loadRules('researcher', ['ui-map-table'], currentUrl);
+    const url = this.actionResult?.url || 'Unknown';
+    const title = this.actionResult?.title || 'Unknown';
+    const aria = this.actionResult?.getCompactARIA() || '';
     return dedent`
-      Your previous response was truncated and could not be parsed.
+      Previous response was truncated. Restart with a minimal output.
 
-      Please retry with a shorter output. Focus ONLY on the main interactive section of the page.
-      Skip navigation, sidebar, and footer sections. Output ONE section only with max 15 elements.
+      <task>
+      Output a UI map for ONE section only — the main interactive area of this page.
+      Skip navigation, sidebar, and footer. Max 15 elements.
+      Every element with an eidx MUST appear. Every row needs CSS; ARIA may be "-" for icon-only.
+      End with a single line: \`> Focused: <section name>\`.
+      </task>
+
+      <section_format>
+      ## Section Name
+
+      > Container: '.container-css-selector'
+
+      | Element | ARIA | CSS | eidx |
+      </section_format>
+
+      ${example}
+
+      ${uiMapTable}
+
+      URL: ${url}
+      Title: ${title}
+
+      <aria>
+      ${aria}
+      </aria>
     `;
   }
 
