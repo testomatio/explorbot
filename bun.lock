@@ -57,6 +57,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^1.5.3",
+        "@copilotkit/aimock": "^1.14.0",
         "@testing-library/react": "^16.3.0",
         "@types/debug": "^4.1.12",
         "@types/jsdom": "^27.0.0",
@@ -286,6 +287,8 @@
     "@codeceptjs/reflection": ["@codeceptjs/reflection@0.5.2", "", { "dependencies": { "acorn": "^8.15.0", "acorn-walk": "^8.3.0", "diff": "^5.2.0", "glob": "^10.5.0", "magic-string": "^0.30.0" }, "peerDependencies": { "codeceptjs": ">=3.0.0", "typescript": ">=4.0.0" }, "optionalPeers": ["codeceptjs", "typescript"] }, "sha512-PfoPmbrRLeUBgeqXrULylPeqtpNRAO0ra26yEusrwiGwhYp5uNFqSgrTP8jVk2qW2mRScKQF51nJX2DOiw5iaA=="],
 
     "@colors/colors": ["@colors/colors@1.5.0", "", {}, "sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ=="],
+
+    "@copilotkit/aimock": ["@copilotkit/aimock@1.14.0", "", { "bin": { "aimock": "dist/aimock-cli.js", "llmock": "dist/cli.js" } }, "sha512-1NqwWEameArC7HWT7UHBlkq3pNlCA0eHBocaeL6mS5CULolT9XFL27tC9jJ+OSmREzLwkKbFYaAl2SssaXexVA=="],
 
     "@csstools/color-helpers": ["@csstools/color-helpers@6.0.1", "", {}, "sha512-NmXRccUJMk2AWA5A7e5a//3bCIMyOu2hAtdRYrhPPHjDxINuCwX1w6rnIZ4xjLcp0ayv6h8Pc3X0eJUGiAAXHQ=="],
 
