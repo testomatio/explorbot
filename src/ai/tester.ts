@@ -565,8 +565,15 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private finishTest(task: Test): void {
-    if (!task.hasFinished) {
-      task.finish(TestResult.FAILED);
+    if (!task.result) {
+      const checkedNotes = task.getCheckedNotes();
+      const hasPassedNotes = checkedNotes.some((note) => note.status === TestResult.PASSED);
+      const hasFailedNotes = checkedNotes.some((note) => note.status === TestResult.FAILED);
+      if ((task.hasAchievedAny() || hasPassedNotes) && !hasFailedNotes) {
+        task.finish(TestResult.PASSED);
+      } else {
+        task.finish(TestResult.FAILED);
+      }
     }
     tag('info').log(`Finished: ${task.scenario}`);
 

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ReporterConfig } from '../../src/config.ts';
 import { ConfigParser } from '../../src/config.ts';
@@ -317,5 +319,25 @@ describe('Reporter config', () => {
     const reporter = new Reporter({ enabled: true, html: true });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBe('1');
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
+  });
+
+  test('writes finished Explorbot test into HTML report', async () => {
+    const outputDir = ConfigParser.getInstance().getOutputDir();
+    rmSync(join(outputDir, 'reports'), { recursive: true, force: true });
+
+    const reporter = new Reporter({ enabled: true, html: true });
+    const test = new Test('Verify sign in page is visible', 'normal', ['Sign In is visible'], 'https://example.com/users/sign_in');
+    test.start();
+    test.addNote('Sign In is visible', TestResult.PASSED);
+    test.addStep('I.see("Sign In", "h2")', 10, 'passed');
+    test.finish(TestResult.PASSED);
+
+    await reporter.reportTestStart(test);
+    await reporter.reportTest(test);
+    await reporter.finishRun();
+
+    const reportFile = join(outputDir, 'reports', 'testomatio-report.html');
+    expect(existsSync(reportFile)).toBe(true);
+    expect(readFileSync(reportFile, 'utf8')).toContain('Verify sign in page is visible');
   });
 });

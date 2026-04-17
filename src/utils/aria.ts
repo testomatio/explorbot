@@ -421,7 +421,7 @@ export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
   if (result) return result;
 
   const fallback = findOverlayByCloseButton(nodes);
-  if (fallback && fallback.name) return fallback;
+  if (fallback?.name) return fallback;
 
   return { detected: false, type: null, name: null };
 };
