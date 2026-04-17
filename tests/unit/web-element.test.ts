@@ -6,8 +6,8 @@ describe('extractElementData', () => {
   it('adds context, area, and variant hints for component drilling', () => {
     const dom = new JSDOM(`
       <main>
-        <article class="FreestyleUsage">
-          <h2 class="FreestyleUsage-title">Toggle - off</h2>
+        <article>
+          <h2>Toggle - off</h2>
           <button role="switch" aria-label="Enable feature" aria-checked="false" class="primary-btn btn-md"></button>
         </article>
       </main>
@@ -29,9 +29,9 @@ describe('extractElementData', () => {
   it('marks embedded code editor iframes', () => {
     const dom = new JSDOM(`
       <main>
-        <article class="FreestyleUsage">
-          <h2 class="FreestyleUsage-title">Code Input</h2>
-          <div class="frame-container">
+        <article>
+          <h2>Code Input</h2>
+          <div class="editor-shell">
             <iframe src="/ember-monaco/frame.html" data-explorbot-frame-source-index="1"></iframe>
           </div>
         </article>

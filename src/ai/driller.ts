@@ -9,6 +9,7 @@ import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Observability } from '../observability.ts';
 import { Plan, Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
+import { EXPLORBOT_ATTRS, HTML_COMPOSITE_AREA_HINTS, HTML_COMPOSITE_TARGET_ROLES, HTML_EXTRACTION_LIMITS, HTML_FORM_CONTROL_ROLES, HTML_FORM_CONTROL_TAGS, HTML_INTERACTIVE_ROLES, HTML_SELECTORS, HTML_VISIBILITY_LIMITS, getComponentScopeHtmlExtractorSource, getVisibleOverlayHtmlExtractorSource, inferHtmlRole } from '../utils/html.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
@@ -35,6 +36,7 @@ interface ComponentInfo {
   text: string;
   tag: string;
   classes: string[];
+  attrs: Record<string, string>;
   context: string;
   variant: string;
   placeholder: string;
@@ -126,6 +128,11 @@ export class Driller extends TaskAgent implements Agent {
     - Never use data-explorbot-eidx in locators
     - Never use container locators in recorded code
     - Prefer one-argument locators or self-contained XPath/CSS locators
+    - Before choosing a locator, identify what makes the current component semantically different from its siblings
+    - If siblings look similar, use text, aria labels, icon clues, variant hints, role, navigation behavior, border/outline classes, or state to target the exact component
+    - Component size alone is not enough to choose a sibling instead of the current component, but if the current drilling target differs only by size, keep that exact size variant and record it
+    - When an icon is visible, infer its purpose from aria labels, title, class names, SVG names, or nearby text, and mention that purpose in drill_record
+    - If there is no meaningful difference between matching siblings, pick the first matching component and say that no semantic difference was found
     - If the component is decorative, duplicated beyond recovery, or not drillable, call drill_skip
     ${component ? `- Current component: ${component.name} (${component.role})` : ''}
     </rules>
@@ -269,6 +276,7 @@ export class Driller extends TaskAgent implements Agent {
       text,
       tag: element.tag,
       classes: element.filteredClasses,
+      attrs: element.attrs,
       context,
       variant,
       placeholder: element.attrs.placeholder || '',
@@ -392,6 +400,7 @@ export class Driller extends TaskAgent implements Agent {
       Text: ${component.text || '-'}
       Context: ${component.context || '-'}
       Variant: ${component.variant || '-'}
+      Differentiators: ${formatComponentDifferentiators(component)}
       Matching ARIA candidates:
       ${ariaMatches}
       </component>
@@ -422,6 +431,9 @@ export class Driller extends TaskAgent implements Agent {
       8. If the component is not drillable, call drill_skip
       9. If similar components exist, use Context and Variant to distinguish this exact variant instead of skipping immediately
       10. Do not switch to a sibling with the same text but different variant or size. Stay anchored to the current component's Preferred locator, Context, and Variant.
+      10a. If same-text components differ only by size, still record the current size variant instead of treating it as a duplicate.
+      11. In drill_record result, describe the component precisely: color/variant, border/outline, icon purpose, text, role, navigation behavior, state, and why this component was chosen over similar siblings.
+      12. Prefer results like "Clicked the red outlined button with a leading refresh icon." over generic results like "Button clicked."
       </instructions>
     `;
   }
@@ -433,6 +445,7 @@ export class Driller extends TaskAgent implements Agent {
       Continue drilling component: ${component.name}
       Context: ${component.context || '-'}
       Variant: ${component.variant || '-'}
+      Differentiators: ${formatComponentDifferentiators(component)}
       If the component moved or disappeared, reassess using the current ARIA tree.
       </context_update>
 
@@ -448,7 +461,7 @@ export class Driller extends TaskAgent implements Agent {
         description: 'Record a reusable interaction for the current component. Use only when the code is reusable and does not depend on a container locator.',
         inputSchema: z.object({
           action: z.string().describe('Action performed, for example click, fill, select, open, toggle'),
-          result: z.string().describe('What happened after the interaction'),
+          result: z.string().describe('What happened after the interaction, including the component differentiators used: icon purpose, color/variant, border/outline, text, role, navigation behavior, or state'),
           code: z.string().describe('Reusable CodeceptJS code that worked'),
         }),
         execute: async ({ action, result, code }) => {
@@ -587,7 +600,7 @@ export class Driller extends TaskAgent implements Agent {
     const successfulInteractions = results.filter((result) => result.result === 'success' && result.code);
 
     for (const interaction of successfulInteractions) {
-      await experienceTracker.saveSuccessfulResolution(state, `Drill ${interaction.action}: ${interaction.component}`, interaction.code!, interaction.description);
+      await experienceTracker.saveSuccessfulResolution(state, formatExperienceTitle(interaction), interaction.code!, interaction.description);
     }
 
     if (successfulInteractions.length > 0) {
@@ -655,68 +668,40 @@ export class Driller extends TaskAgent implements Agent {
 
   private async getVisibleOverlayHtml(): Promise<string> {
     const page = this.explorer.playwrightHelper.page;
-    return page.evaluate(() => {
-      const selectors = [
-        '.flatpickr-calendar.open',
-        '.flatpickr-calendar:not([style*="display: none"]):not([style*="visibility: hidden"])',
-        '.ember-attacher:not([style*="display: none"]):not([style*="visibility: hidden"])',
-        '[role="dialog"]',
-        '[role="listbox"]',
-        '[role="menu"]',
-        '[role="tooltip"]:not([style*="display: none"]):not([style*="visibility: hidden"])',
-        '[x-placement]:not([style*="display: none"]):not([style*="visibility: hidden"])',
-        '.dropdown-menu:not([style*="display: none"]):not([style*="visibility: hidden"])',
-        '.popover:not([style*="display: none"]):not([style*="visibility: hidden"])',
-      ];
-
-      function isVisible(element: Element): boolean {
-        const html = element as HTMLElement;
-        const style = window.getComputedStyle(html);
-        const rect = html.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return false;
-        if (style.display === 'none' || style.visibility === 'hidden') return false;
-        if (Number.parseFloat(style.opacity || '1') < 0.1) return false;
-        return true;
+    return page.evaluate(
+      ({ extractorSource, config }) => {
+        const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
+        return extract(config);
+      },
+      {
+        extractorSource: getVisibleOverlayHtmlExtractorSource(),
+        config: {
+          interactiveContentSelector: HTML_SELECTORS.interactiveContent,
+          limits: HTML_EXTRACTION_LIMITS,
+          overlaySelectors: HTML_SELECTORS.semanticOverlays,
+          visibilityLimits: HTML_VISIBILITY_LIMITS,
+        },
       }
-
-      const overlays: string[] = [];
-      const seen = new Set<Element>();
-      for (const selector of selectors) {
-        for (const element of Array.from(document.querySelectorAll(selector))) {
-          if (seen.has(element)) continue;
-          seen.add(element);
-          if (!isVisible(element)) continue;
-          const text = (element.textContent || '').replace(/\s+/g, ' ').trim();
-          const interactiveCount = element.querySelectorAll('button, a[href], input, select, textarea, [role="button"], [role="link"], [role="option"], [role="menuitem"], [role="switch"], [role="checkbox"], [role="radio"], [tabindex]').length;
-          if (interactiveCount === 0 && text.length === 0) continue;
-          overlays.push((element as HTMLElement).outerHTML.slice(0, 6000));
-        }
-      }
-
-      return overlays.slice(0, 3).join('\n\n--- overlay ---\n\n');
-    });
+    );
   }
 
   private async getComponentScopeHtml(component: ComponentInfo, originalState: ActionResult): Promise<string> {
     const page = this.explorer.playwrightHelper.page;
-    const scopedHtml = await page.evaluate((eidx: string) => {
-      const element = document.querySelector(`[data-explorbot-eidx="${eidx}"]`);
-      if (!element) return '';
-
-      function countInteractive(node: Element): number {
-        return node.querySelectorAll('button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"]').length;
+    const scopedHtml = await page.evaluate(
+      ({ eidx, extractorSource, config }) => {
+        const extract = new Function(`return ${extractorSource}`)() as (eidx: string, config: any) => string;
+        return extract(eidx, config);
+      },
+      {
+        eidx: component.eidx,
+        extractorSource: getComponentScopeHtmlExtractorSource(),
+        config: {
+          eidxAttr: EXPLORBOT_ATTRS.eidx,
+          interactiveControlSelector: HTML_SELECTORS.interactiveControl,
+          limits: HTML_EXTRACTION_LIMITS,
+        },
       }
-
-      let current = element.parentElement;
-      while (current) {
-        const count = countInteractive(current);
-        if (count > 0 && count <= 16) return current.outerHTML.slice(0, 8000);
-        current = current.parentElement;
-      }
-
-      if (element instanceof HTMLElement) return element.outerHTML.slice(0, 8000);
-      return '';
-    }, component.eidx);
+    );
 
     if (scopedHtml) return scopedHtml;
     return await originalState.combinedHtml();
@@ -800,22 +785,7 @@ function formatAriaNode(node: Record<string, unknown>): string {
 }
 
 function inferRole(element: WebElement): string {
-  if (element.tag === 'iframe' && element.variantHints.includes('code-editor')) return 'code-editor';
-  if (element.role) return element.role.toLowerCase();
-  const explicitRole = element.attrs.role;
-  if (explicitRole) return explicitRole.toLowerCase();
-  if (element.tag === 'a' && element.attrs.href) return 'link';
-  if (element.tag === 'button') return 'button';
-  if (element.tag === 'iframe') return 'iframe';
-  if (element.tag === 'select') return 'combobox';
-  if (element.tag === 'textarea') return 'textbox';
-  if (element.tag === 'input') {
-    const type = (element.attrs.type || 'text').toLowerCase();
-    if (type === 'checkbox') return 'checkbox';
-    if (type === 'radio') return 'radio';
-    return 'textbox';
-  }
-  return element.tag;
+  return inferHtmlRole(element);
 }
 
 function normalized(value: string): string {
@@ -847,8 +817,8 @@ function buildCanonicalClickCode(component: ComponentInfo): string {
   if (component.tag === 'a') return '';
   if (component.tag === 'iframe' || component.role === 'code-editor') return buildEmbeddedFrameCode(component);
 
-  const scopedCode = buildScopedFreestyleClickCode(component);
-  if (scopedCode) return scopedCode;
+  const semanticCode = buildSemanticClickCode(component);
+  if (semanticCode) return semanticCode;
 
   const variantHints = parseVariantHints(component.variant);
   const classSelector = buildClassSelector(component.tag, component.classes);
@@ -879,84 +849,71 @@ function buildCanonicalClickCode(component: ComponentInfo): string {
   return `I.click(${JSON.stringify(selector)})`;
 }
 
-function buildScopedFreestyleClickCode(component: ComponentInfo): string {
-  if (!component.context) return '';
+function buildSemanticClickCode(component: ComponentInfo): string {
+  const conditions: string[] = [];
+  const target = component.tag && /^[a-z][a-z0-9-]*$/i.test(component.tag) ? component.tag : '*';
+  conditions.push(`self::${target}`);
 
-  const scope = `//*[contains(concat(" ", normalize-space(@class), " "), " FreestyleUsage ") and .//*[contains(concat(" ", normalize-space(@class), " "), " FreestyleUsage-title ") and normalize-space(.)=${xpathLiteral(component.context)}]]`;
-  if (component.role === 'tab') {
-    const tabCondition = buildTabVariantXPathCondition(component);
-    return `I.click(${JSON.stringify(`${scope}//li[@role="tab"${tabCondition}]`)})`;
-  }
+  const role = component.attrs.role || '';
+  if (role) conditions.push(`@role=${xpathLiteral(role)}`);
 
-  if (component.role === 'switch') {
-    const enabled = component.classes.includes('cursor-not-allowed') ? '' : ' and not(contains(@class,"cursor-not-allowed"))';
-    return `I.click(${JSON.stringify(`${scope}//button[@role="switch"${enabled}]`)})`;
-  }
+  const labelledBy = component.attrs['aria-labelledby'] || '';
+  if (labelledBy) conditions.push(`@aria-labelledby=${xpathLiteral(labelledBy)}`);
 
-  if (component.tag === 'input' || component.role === 'textbox' || component.role === 'searchbox') {
-    const placeholder = component.placeholder;
-    if (placeholder) return `I.click(${JSON.stringify(`${scope}//input[@placeholder=${xpathLiteral(placeholder)}]`)})`;
-    if (component.classes.length > 0) {
-      const classConditions = component.classes
-        .slice(0, 4)
-        .map((cls) => `contains(@class,${xpathLiteral(cls)})`)
-        .join(' and ');
-      return `I.click(${JSON.stringify(`${scope}//input[${classConditions}]`)})`;
+  const label = component.attrs['aria-label'] || component.attrs.title || component.attrs.name || '';
+  if (label) conditions.push(`@${getLabelAttrName(component)}=${xpathLiteral(label)}`);
+
+  const placeholder = component.placeholder || component.attrs.placeholder || '';
+  if (placeholder) conditions.push(`@placeholder=${xpathLiteral(placeholder)}`);
+
+  const stateAttrs = ['aria-checked', 'aria-pressed', 'aria-expanded', 'aria-selected', 'checked'];
+  for (const attr of stateAttrs) {
+    const value = component.attrs[attr];
+    if (attr === 'checked') {
+      if (value === undefined) continue;
+      conditions.push('@checked');
+      continue;
     }
+    if (!value) continue;
+    conditions.push(`@${attr}=${xpathLiteral(value)}`);
   }
 
-  return '';
+  if (component.text && role && !label && !labelledBy) {
+    conditions.push(`normalize-space(.)=${xpathLiteral(component.text)}`);
+  }
+
+  if (conditions.length <= 1) return '';
+  if (!role && !label && !labelledBy && !placeholder) return '';
+
+  return `I.click(${JSON.stringify(`//*[${conditions.join(' and ')}]`)})`;
+}
+
+function getLabelAttrName(component: ComponentInfo): string {
+  if (component.attrs['aria-label']) return 'aria-label';
+  if (component.attrs.title) return 'title';
+  return 'name';
 }
 
 function buildEmbeddedFrameCode(component: ComponentInfo): string {
   const src = component.html.match(/\ssrc=["']([^"']+)["']/i)?.[1] || '';
-  const sourceIndex = component.html.match(/\sdata-explorbot-frame-source-index=["'](\d+)["']/i)?.[1] || '';
+  const sourceIndex = getHtmlAttrValue(component.html, EXPLORBOT_ATTRS.frameSourceIndex);
   const srcCondition = src ? `contains(@src,${xpathLiteral(src)})` : '';
-  let scope = '';
-  if (component.context) {
-    scope = `//*[contains(concat(" ", normalize-space(@class), " "), " FreestyleUsage ") and .//*[contains(concat(" ", normalize-space(@class), " "), " FreestyleUsage-title ") and normalize-space(.)=${xpathLiteral(component.context)}]]`;
-  }
 
   let iframeLocator = '//iframe';
-  if (scope && !sourceIndex) iframeLocator = `${scope}//iframe`;
   if (srcCondition) iframeLocator += `[${srcCondition}]`;
   if (sourceIndex) iframeLocator = `(${iframeLocator})[${sourceIndex}]`;
 
-  let editorLocator = 'body';
   let text = 'test';
   if (component.variant.includes('code-editor')) {
-    editorLocator = '.monaco-editor';
     text = 'const value = "test";';
   }
 
-  return [`I.switchTo(${JSON.stringify(iframeLocator)})`, `I.click(${JSON.stringify(editorLocator)})`, `I.type(${JSON.stringify(text)})`, 'I.switchTo()'].join('\n');
+  return [`I.switchTo(${JSON.stringify(iframeLocator)})`, 'I.click("body")', `I.type(${JSON.stringify(text)})`, 'I.switchTo()'].join('\n');
 }
 
-function buildTabVariantXPathCondition(component: ComponentInfo): string {
-  const html = component.html.toLowerCase();
-  const hasAutorenew = html.includes('md-icon-autorenew');
-  const hasPlay = html.includes('md-icon-play');
-  const hasCopyButton = html.includes('third-btn') || html.includes('md-icon-content-copy');
-  const hasCounter = html.includes('new-counter');
-  const hasStatus = html.includes('run-status');
-  const conditions: string[] = [];
-
-  if (hasStatus) conditions.push('.//*[contains(@class,"run-status")]');
-  else conditions.push('not(.//*[contains(@class,"run-status")])');
-
-  if (hasCounter) conditions.push('.//*[contains(@class,"new-counter")]');
-  else conditions.push('not(.//*[contains(@class,"new-counter")])');
-
-  if (hasCopyButton) conditions.push('.//button[contains(@class,"third-btn")]');
-  else conditions.push('not(.//button[contains(@class,"third-btn")])');
-
-  if (hasAutorenew) conditions.push('.//*[local-name()="svg" and contains(@class,"md-icon-autorenew")]');
-  else conditions.push('not(.//*[local-name()="svg" and contains(@class,"md-icon-autorenew")])');
-
-  if (hasPlay) conditions.push('.//*[local-name()="svg" and contains(@class,"md-icon-play")]');
-  else conditions.push('not(.//*[local-name()="svg" and contains(@class,"md-icon-play")])');
-
-  return conditions.length > 0 ? ` and ${conditions.join(' and ')}` : '';
+function getHtmlAttrValue(html: string, attr: string): string {
+  const escapedAttr = attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return html.match(new RegExp(`\\s${escapedAttr}=["']([^"']+)["']`, 'i'))?.[1] || '';
 }
 
 function formatVariant(variantHints: string[]): string {
@@ -971,6 +928,55 @@ function formatComponentName(role: string, label: string, context: string, varia
   if (context) parts.push(`[${context}]`);
   if (variant) parts.push(`(${variant})`);
   return parts.join(' ').trim();
+}
+
+function formatComponentDifferentiators(component: ComponentInfo): string {
+  const details: string[] = [];
+  const classes = component.classes.join(' ').toLowerCase();
+  const variantHints = parseVariantHints(component.variant);
+
+  if (component.text) details.push(`text "${truncate(component.text, 48)}"`);
+  if (component.context) details.push(`context "${truncate(component.context, 48)}"`);
+  if (component.placeholder) details.push(`placeholder "${truncate(component.placeholder, 48)}"`);
+  addAriaDifferentiators(component, details);
+  if (component.variant) details.push(`variant hints: ${component.variant}`);
+  if (component.role) details.push(`role ${component.role}`);
+  if (component.tag === 'a') details.push('navigates');
+  if (component.disabled) details.push('disabled state');
+  if (variantHints.has('has-icon') || variantHints.has('leading-icon') || variantHints.has('trailing-icon') || variantHints.has('icon-only') || variantHints.has('double-icon')) {
+    details.push(`icon clues: ${formatIconClues(component)}`);
+  }
+  if (classes.includes('border') || variantHints.has('outline')) details.push('border or outline styling');
+  if (classes.includes('red') || classes.includes('danger')) details.push('red/danger styling');
+  if (classes.includes('green') || classes.includes('success')) details.push('green/success styling');
+  if (classes.includes('primary')) details.push('primary styling');
+  if (classes.includes('secondary')) details.push('secondary styling');
+
+  return details.length > 0 ? details.join('; ') : 'No clear semantic difference from similar components.';
+}
+
+function addAriaDifferentiators(component: ComponentInfo, details: string[]): void {
+  const label = component.attrs['aria-label'] || component.attrs.title || component.attrs.name || '';
+  if (label) details.push(`accessible label "${truncate(label, 48)}"`);
+
+  const labelledBy = component.attrs['aria-labelledby'] || '';
+  if (labelledBy) details.push(`aria-labelledby ${labelledBy}`);
+
+  const stateAttrs = ['aria-checked', 'aria-pressed', 'aria-expanded', 'aria-selected'];
+  for (const attr of stateAttrs) {
+    const value = component.attrs[attr];
+    if (!value) continue;
+    details.push(`${attr} ${value}`);
+  }
+
+  if (component.attrs.checked !== undefined) details.push('checked state');
+}
+
+function formatIconClues(component: ComponentInfo): string {
+  const iconClasses = component.classes.filter((cls) => /(icon|svg|refresh|reload|renew|copy|play|pause|edit|delete|trash|search|plus|minus|close|check|arrow|calendar|date)/i.test(cls));
+  if (iconClasses.length > 0) return iconClasses.slice(0, 5).join(', ');
+  if (component.variant) return component.variant;
+  return 'icon present, purpose not explicit';
 }
 
 function normalizeInteractionResult(component: ComponentInfo, action: string, result: string): string {
@@ -988,14 +994,27 @@ function normalizeInteractionResult(component: ComponentInfo, action: string, re
   return value;
 }
 
+function formatExperienceTitle(interaction: InteractionResult): string {
+  const descriptionTitle = interaction.description
+    .split(/[.;]/)[0]
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (descriptionTitle.length > 0) return truncate(descriptionTitle, 90);
+
+  const action = interaction.action ? capitalize(interaction.action) : 'Interact with';
+  return truncate(`${action} ${interaction.component}`, 90);
+}
+
 function fallbackInteractionResult(component: ComponentInfo, action: string): string {
   const role = component.role || component.tag;
   const label = component.text ? `"${truncate(component.text, 40)}"` : `the ${role}`;
   const variant = component.variant ? ` (${component.variant})` : '';
-  if (action === 'click') return `Clicked ${label}${variant}.`;
-  if (action === 'pressKey') return `Pressed key on ${label}${variant}.`;
-  if (action === 'form') return `Submitted interaction for ${label}${variant}.`;
-  return `${capitalize(action)} executed for ${label}${variant}.`;
+  const details = formatComponentDifferentiators(component);
+  if (action === 'click') return `Clicked ${label}${variant}; differentiators: ${details}.`;
+  if (action === 'pressKey') return `Pressed key on ${label}${variant}; differentiators: ${details}.`;
+  if (action === 'form') return `Submitted interaction for ${label}${variant}; differentiators: ${details}.`;
+  return `${capitalize(action)} executed for ${label}${variant}; differentiators: ${details}.`;
 }
 
 function hasContainerLocator(code: string): boolean {
@@ -1118,15 +1137,15 @@ function isDrillableElement(element: WebElement): boolean {
 
 function isNestedCompositeControl(element: WebElement): boolean {
   const role = (element.role || element.attrs.role || element.tag).toLowerCase();
-  if (COMPOSITE_TARGET_ROLES.has(role)) return false;
+  if (HTML_COMPOSITE_TARGET_ROLES.has(role)) return false;
   if (!isInteractiveElement(element)) return false;
-  return element.areaHints.some((hint) => COMPOSITE_AREA_HINTS.has(hint));
+  return element.areaHints.some((hint) => HTML_COMPOSITE_AREA_HINTS.has(hint));
 }
 
 function isSemanticFormControl(element: WebElement): boolean {
   const role = (element.role || element.attrs.role || element.tag).toLowerCase();
-  if (element.tag === 'input' || element.tag === 'select' || element.tag === 'textarea') return true;
-  return FORM_CONTROL_ROLES.has(role);
+  if (HTML_FORM_CONTROL_TAGS.has(element.tag)) return true;
+  return HTML_FORM_CONTROL_ROLES.has(role);
 }
 
 function isButtonLikeElement(element: WebElement): boolean {
@@ -1140,18 +1159,13 @@ function isInteractiveElement(element: WebElement): boolean {
   if (element.tag === 'button') return true;
   if (element.tag === 'a' && element.attrs.href) return true;
   if (element.tag === 'iframe') return true;
-  if (element.tag === 'input' || element.tag === 'select' || element.tag === 'textarea') return true;
+  if (HTML_FORM_CONTROL_TAGS.has(element.tag)) return true;
   const role = (element.role || element.attrs.role || element.tag).toLowerCase();
-  if (INTERACTIVE_ROLES.has(role)) return true;
+  if (HTML_INTERACTIVE_ROLES.has(role)) return true;
   if (element.attrs.contenteditable === 'true') return true;
   if (element.attrs.tabindex && Number(element.attrs.tabindex) >= 0) return true;
   if (element.attrs['aria-haspopup'] || element.attrs['aria-expanded'] || element.attrs['aria-controls']) return true;
   return false;
 }
-
-const INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'combobox', 'iframe', 'code-editor', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'textbox', 'searchbox', 'treeitem']);
-const FORM_CONTROL_ROLES = new Set(['checkbox', 'radio', 'switch', 'combobox', 'option', 'slider', 'spinbutton', 'textbox', 'searchbox']);
-const COMPOSITE_TARGET_ROLES = new Set(['tab', 'option', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'treeitem']);
-const COMPOSITE_AREA_HINTS = new Set(['role:tab', 'role:option', 'role:menuitem', 'role:menuitemcheckbox', 'role:menuitemradio', 'role:treeitem']);
 
 const drillLocatorRule = locatorRule.replace(/<context_simplification>[\s\S]*?<\/context_simplification>/, '').trim();
