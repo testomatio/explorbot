@@ -9,7 +9,20 @@ import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Observability } from '../observability.ts';
 import { Plan, Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
-import { EXPLORBOT_ATTRS, HTML_COMPOSITE_AREA_HINTS, HTML_COMPOSITE_TARGET_ROLES, HTML_EXTRACTION_LIMITS, HTML_FORM_CONTROL_ROLES, HTML_FORM_CONTROL_TAGS, HTML_INTERACTIVE_ROLES, HTML_SELECTORS, HTML_VISIBILITY_LIMITS, getComponentScopeHtmlExtractorSource, getVisibleOverlayHtmlExtractorSource, inferHtmlRole } from '../utils/html.ts';
+import {
+  EXPLORBOT_ATTRS,
+  HTML_COMPOSITE_AREA_HINTS,
+  HTML_COMPOSITE_TARGET_ROLES,
+  HTML_EXTRACTION_LIMITS,
+  HTML_FORM_CONTROL_ROLES,
+  HTML_FORM_CONTROL_TAGS,
+  HTML_INTERACTIVE_ROLES,
+  HTML_SELECTORS,
+  HTML_VISIBILITY_LIMITS,
+  getComponentScopeHtmlExtractorSource,
+  getVisibleOverlayHtmlExtractorSource,
+  inferHtmlRole,
+} from '../utils/html.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
@@ -995,10 +1008,7 @@ function normalizeInteractionResult(component: ComponentInfo, action: string, re
 }
 
 function formatExperienceTitle(interaction: InteractionResult): string {
-  const descriptionTitle = interaction.description
-    .split(/[.;]/)[0]
-    .replace(/\s+/g, ' ')
-    .trim();
+  const descriptionTitle = interaction.description.split(/[.;]/)[0].replace(/\s+/g, ' ').trim();
 
   if (descriptionTitle.length > 0) return truncate(descriptionTitle, 90);
 

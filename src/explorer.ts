@@ -766,24 +766,27 @@ export async function annotatePageElements(page: any): Promise<{ ariaSnapshot: s
   }
 
   try {
-    const rawList = await page.locator('iframe').evaluateAll((domElements: Element[], [extractFnStr, config]: [string, typeof ELEMENT_EXTRACTION_CONFIG]) => {
-      const extract = new Function(`return ${extractFnStr}`)() as (el: Element) => any;
-      const results: any[] = [];
-      const sourceCounts: Record<string, number> = {};
-      let iframeIdx = 0;
-      for (const el of domElements) {
-        iframeIdx++;
-        const sourceKey = el.getAttribute('src') || '';
-        sourceCounts[sourceKey] ||= 0;
-        sourceCounts[sourceKey]++;
-        const existing = el.getAttribute(config.attrs.eidx);
-        el.setAttribute(config.attrs.eidx, existing || `iframe-${iframeIdx}`);
-        el.setAttribute(config.attrs.frameSourceIndex, String(sourceCounts[sourceKey]));
-        const elData = extract(el, config);
-        if (elData) results.push(elData);
-      }
-      return results;
-    }, [getElementDataExtractorSource(), ELEMENT_EXTRACTION_CONFIG]);
+    const rawList = await page.locator('iframe').evaluateAll(
+      (domElements: Element[], [extractFnStr, config]: [string, typeof ELEMENT_EXTRACTION_CONFIG]) => {
+        const extract = new Function(`return ${extractFnStr}`)() as (el: Element) => any;
+        const results: any[] = [];
+        const sourceCounts: Record<string, number> = {};
+        let iframeIdx = 0;
+        for (const el of domElements) {
+          iframeIdx++;
+          const sourceKey = el.getAttribute('src') || '';
+          sourceCounts[sourceKey] ||= 0;
+          sourceCounts[sourceKey]++;
+          const existing = el.getAttribute(config.attrs.eidx);
+          el.setAttribute(config.attrs.eidx, existing || `iframe-${iframeIdx}`);
+          el.setAttribute(config.attrs.frameSourceIndex, String(sourceCounts[sourceKey]));
+          const elData = extract(el, config);
+          if (elData) results.push(elData);
+        }
+        return results;
+      },
+      [getElementDataExtractorSource(), ELEMENT_EXTRACTION_CONFIG]
+    );
     for (const raw of rawList) {
       elements.push(WebElement.fromRawData(raw, 'iframe'));
     }

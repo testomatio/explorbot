@@ -93,8 +93,7 @@ export const EXPLORBOT_ATTRS = {
 
 export const HTML_SELECTORS = {
   headingLabel: 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"]',
-  interactiveContent:
-    'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="option"], [role="menuitem"], [role="switch"], [role="checkbox"], [role="radio"], [aria-label], [tabindex]',
+  interactiveContent: 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="option"], [role="menuitem"], [role="switch"], [role="checkbox"], [role="radio"], [aria-label], [tabindex]',
   interactiveControl: 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"]',
   labelLike: 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"], [class*="title"], [class*="label"], [class*="header"], [class*="name"]',
   semanticContextContainer: 'section, article, form, fieldset, li, tr, td, th, [role="group"], [role="tabpanel"], [role="region"], [class*="card"], [class*="panel"], [class*="item"], [class*="usage"], [class*="group"]',

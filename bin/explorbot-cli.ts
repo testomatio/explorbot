@@ -513,7 +513,7 @@ addCommonOptions(
     const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
     await explorBot.start();
 
-      await explorBot.visit(url);
+    await explorBot.visit(url);
 
     const plan = await explorBot.agentDriller().drill({
       knowledgePath: options.knowledge,
@@ -521,18 +521,17 @@ addCommonOptions(
       interactive: false,
     });
 
-      console.log(`\nDrill completed: ${plan.tests.length} components`);
-      console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
-      console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
+    console.log(`\nDrill completed: ${plan.tests.length} components`);
+    console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
+    console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
 
-      await explorBot.stop();
-      await showStatsAndExit(0);
-    } catch (error) {
-      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-      await showStatsAndExit(1);
-    }
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
   }
-);
+});
 
 program
   .command('context <url>')
