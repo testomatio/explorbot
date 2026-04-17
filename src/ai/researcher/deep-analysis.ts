@@ -3,10 +3,12 @@ import { ActionResult, type Diff } from '../../action-result.js';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
 import { WebPageState } from '../../state-manager.js';
-import { diffAriaSnapshots } from '../../utils/aria.ts';
+import { detectFocusArea, diffAriaSnapshots } from '../../utils/aria.ts';
 import { executionController } from '../../execution-controller.ts';
 import { tag } from '../../utils/logger.js';
+import { mdq } from '../../utils/markdown-query.ts';
 import type { Provider } from '../provider.js';
+import { getCachedResearch, saveResearch } from './cache.ts';
 import { type Constructor, debugLog } from './mixin.ts';
 import { type ResearchElement, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
@@ -74,6 +76,55 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         const links = navigationLinks.map((l) => `- \`${l.code}\` opens ${l.url}`).join('\n');
         result.text += `\n\n## Navigation Links\n\n${links}`;
       }
+    }
+
+    async researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null> {
+      const focusArea = detectFocusArea(current.ariaSnapshot);
+      if (!focusArea.detected || !focusArea.name) return null;
+      if (focusArea.type !== 'dialog' && focusArea.type !== 'modal') return null;
+
+      const cached = getCachedResearch(pageStateHash);
+      if (!cached) return null;
+
+      const escaped = focusArea.name.replace(/"/g, '\\"');
+      if (mdq(cached).query(`section3(~"${escaped}")`).count() > 0) {
+        debugLog(`Overlay "${focusArea.name}" already in cached research, skipping`);
+        return null;
+      }
+
+      const diff = await current.diff(previous);
+      await diff.calculate();
+
+      if (!diff.ariaChanged && diff.htmlParts.length === 0) {
+        debugLog(`No diff between current and previous state for overlay "${focusArea.name}"`);
+        return null;
+      }
+
+      const alreadyExpanded = this._summarizeExpanded(
+        parseResearchSections(cached)
+          .filter((s) => s.elements.length > 0)
+          .map((s) => s.rawMarkdown)
+      );
+
+      tag('substep').log(`Researching overlay: ${focusArea.name}`);
+      const sectionMarkdown = await this._analyzeExpandedAction('', focusArea.name, diff, alreadyExpanded);
+      if (!sectionMarkdown) {
+        debugLog(`Overlay "${focusArea.name}" produced no meaningful expansion`);
+        return null;
+      }
+
+      const extQuery = mdq(cached).query('section1(~"Extended Research")');
+      let updated: string;
+      if (extQuery.count() > 0) {
+        const existing = extQuery.text().trimEnd();
+        updated = extQuery.replace(`${existing}\n\n${sectionMarkdown}\n`);
+      } else {
+        updated = `${cached.trimEnd()}\n\n# Extended Research\n\n${sectionMarkdown}\n`;
+      }
+
+      saveResearch(pageStateHash, updated);
+      tag('substep').log(`Overlay research appended: ${focusArea.name}`);
+      return sectionMarkdown;
     }
 
     private async _discoverExpandables(researchText: string): Promise<ExpandableElement[]> {
@@ -314,8 +365,27 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     private async _analyzeExpandedAction(code: string, description: string, diff: Diff, alreadyExpanded: string[]): Promise<string | null> {
       const alreadyHint = alreadyExpanded.length > 0 ? `\nAlready expanded sections:\n${alreadyExpanded.join('\n')}` : '';
 
+      let intro: string;
+      if (code) {
+        intro = `An action on "${description}" (\`${code}\`) revealed new UI content.`;
+      } else {
+        intro = `An overlay "${description}" appeared on the page.`;
+      }
+
+      let actionBlock = '';
+      if (code) {
+        actionBlock = dedent`
+          Action:
+
+          \`\`\`js
+          ${code}
+          \`\`\`
+
+        `;
+      }
+
       const prompt = dedent`
-        An action on "${description}" (\`${code}\`) revealed new UI content.
+        ${intro}
         Analyze the changes and produce a UI map section.
 
         ARIA changes:
@@ -329,13 +399,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
         ### <Short descriptive name>
 
-        Action:
-
-        \`\`\`js
-        ${code}
-        \`\`\`
-
-        <One sentence: what appeared — dropdown menu, modal, tab content, expanded panel, etc.>
+        ${actionBlock}<One sentence: what appeared — dropdown menu, modal, tab content, expanded panel, etc.>
 
         | Element | ARIA | CSS |
         |---------|------|-----|
@@ -409,4 +473,5 @@ interface ExpandableElement extends ResearchElement {
 
 export interface DeepAnalysisMethods {
   performDeepAnalysis(state: WebPageState, result: ResearchResult): Promise<void>;
+  researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null>;
 }

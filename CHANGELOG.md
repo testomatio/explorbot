@@ -15,6 +15,9 @@
   ```
 
 ### Changes
+- [Tester] Detects modals and dialogs that appear mid-test and extends the page UI map with their controls — including overlays that don't expose `role="dialog"` (a "Close X" button is enough to recognize them), so the next tool call has selectors for the overlay.
+- [Researcher] New overlay analysis appends a section for each newly opened dialog/modal under the page's "Extended Research" heading and caches the result, so revisiting the same page skips the work.
+- ExploreCommand: The "Generated:" hints printed at the end of an explore session now list only the test files written during this run, not every file already sitting in `output/tests/`.
 - [Researcher] When the model's response gets truncated by context limits, the researcher now retries by splitting research into one request per section (focus, main, sidebar, etc.) and merging the results, instead of a single focused-retry prompt.
 - [Researcher] Honors the new `focusSections` config — if any configured CSS selector is present on the page, the researcher limits its UI map to that element rather than the full page.
 - [Tester] Past experience is no longer inlined into every tester turn. Instead, a compact table of contents (file tags plus section headings) is injected, and the agent fetches specific sections on demand via the new `learn_experience` tool. Cuts tester token usage on pages with accumulated experience.
