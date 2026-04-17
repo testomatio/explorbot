@@ -28,6 +28,7 @@ import { detectFocusFromAria, hasFocusedSection, markSectionAsFocused, pickDefau
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
 import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
+import { type SectionMethods, WithSections } from './researcher/sections.ts';
 import { locatorRule as generalLocatorRuleText } from './rules.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { TaskAgent } from './task-agent.ts';
@@ -46,9 +47,9 @@ export const POSSIBLE_SECTIONS = {
   navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
 
-const ResearcherBase = WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent)));
+const ResearcherBase = WithSections(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent))));
 
-export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods {}
+export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods {}
 
 export class Researcher extends ResearcherBase implements Agent {
   protected readonly ACTION_TOOLS = ['click'];
@@ -170,10 +171,12 @@ export class Researcher extends ResearcherBase implements Agent {
       const prompt = await this.buildResearchPrompt();
       conversation.addUserText(prompt);
 
-      let invocationResult: Awaited<ReturnType<typeof this.provider.invokeConversation>>;
+      let researchText: string;
       let activeConversation = conversation;
       try {
-        invocationResult = await this.provider.invokeConversation(conversation, undefined, { agentName: 'researcher' });
+        const invocationResult = await this.provider.invokeConversation(conversation, undefined, { agentName: 'researcher' });
+        if (!invocationResult) throw new Error('Failed to get response from provider');
+        researchText = invocationResult.response.text;
       } catch (error) {
         if (!(error instanceof ContextLengthError) || retriesLeft <= 0) {
           if (error instanceof ContextLengthError) {
@@ -181,15 +184,12 @@ export class Researcher extends ResearcherBase implements Agent {
           }
           throw error;
         }
-        tag('warning').log('Output truncated, retrying with fresh focused conversation (ARIA only)...');
         retriesLeft = 0;
+        researchText = await this.researchBySections();
         activeConversation = this.provider.startConversation(this.getSystemMessage(), 'researcher');
-        activeConversation.addUserText(this.buildFocusedRetryPrompt());
-        invocationResult = await this.provider.invokeConversation(activeConversation, undefined, { agentName: 'researcher' });
       }
-      if (!invocationResult) throw new Error('Failed to get response from provider');
 
-      const result = new ResearchResult(invocationResult.response.text, state.url);
+      const result = new ResearchResult(researchText, state.url);
       debugLog(`Original research response length: ${result.text.length} chars`);
 
       const interrupted = () => executionController.isInterrupted();
@@ -534,44 +534,6 @@ export class Researcher extends ResearcherBase implements Agent {
       </output_rules>
 
 
-    `;
-  }
-
-  private buildFocusedRetryPrompt(): string {
-    const currentUrl = this.stateManager.getCurrentState()?.url || '';
-    const example = RulesLoader.loadRules('researcher', ['section-example'], currentUrl);
-    const uiMapTable = RulesLoader.loadRules('researcher', ['ui-map-table'], currentUrl);
-    const url = this.actionResult?.url || 'Unknown';
-    const title = this.actionResult?.title || 'Unknown';
-    const aria = this.actionResult?.getCompactARIA() || '';
-    return dedent`
-      Previous response was truncated. Restart with a minimal output.
-
-      <task>
-      Output a UI map for ONE section only — the main interactive area of this page.
-      Skip navigation, sidebar, and footer. Max 15 elements.
-      Every element with an eidx MUST appear. Every row needs CSS; ARIA may be "-" for icon-only.
-      End with a single line: \`> Focused: <section name>\`.
-      </task>
-
-      <section_format>
-      ## Section Name
-
-      > Container: '.container-css-selector'
-
-      | Element | ARIA | CSS | eidx |
-      </section_format>
-
-      ${example}
-
-      ${uiMapTable}
-
-      URL: ${url}
-      Title: ${title}
-
-      <aria>
-      ${aria}
-      </aria>
     `;
   }
 

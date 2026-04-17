@@ -69,6 +69,7 @@ interface ResearcherAgentConfig extends AgentConfig {
   maxExpandableClicks?: number;
   retries?: number;
   sections?: string[];
+  focusSections?: string[];
   errorPageTimeout?: number;
 }
 

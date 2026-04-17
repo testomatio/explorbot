@@ -22,12 +22,17 @@ export class Historian {
   private experienceTracker: ExperienceTracker;
   private reporter?: Reporter;
   private stateManager?: StateManager;
+  private savedFiles = new Set<string>();
 
   constructor(provider: Provider, experienceTracker?: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager) {
     this.provider = provider;
     this.experienceTracker = experienceTracker || new ExperienceTracker();
     this.reporter = reporter;
     this.stateManager = stateManager;
+  }
+
+  getSavedFiles(): string[] {
+    return [...this.savedFiles];
   }
 
   async saveSession(task: Task, initialState: ActionResult, conversation: Conversation): Promise<void> {
@@ -433,6 +438,7 @@ export class Historian {
     const filename = plan.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
     const filePath = join(testsDir, `${filename}.js`);
     writeFileSync(filePath, lines.join('\n'));
+    this.savedFiles.add(filePath);
 
     tag('substep').log(`Saved plan tests to: ${filePath}`);
     return filePath;
@@ -447,6 +453,7 @@ export class Historian {
     }
 
     writeFileSync(filePath, content);
+    this.savedFiles.add(filePath);
     tag('substep').log(`Updated test file with healed steps: ${filePath}`);
   }
 

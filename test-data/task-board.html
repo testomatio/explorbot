@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Task Board - Task Tracker</title>
+</head>
+<body>
+  <nav class="sidebar-nav" aria-label="Main">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/tasks/board" class="active">Task Board</a>
+    <a href="/projects">Projects</a>
+    <a href="/reports">Reports</a>
+    <a href="/settings">Settings</a>
+  </nav>
+
+  <main>
+    <header class="board-header">
+      <button class="primary create-task-btn">Create Task</button>
+      <input type="search" class="search-input" placeholder="Search tasks" aria-label="Search tasks">
+      <select class="assignee-filter" aria-label="Filter by assignee">
+        <option>All assignees</option>
+        <option>Alice</option>
+        <option>Bob</option>
+      </select>
+      <select class="sort-select" aria-label="Sort by">
+        <option>Sort by date</option>
+        <option>Sort by priority</option>
+      </select>
+      <button class="view-board">Board</button>
+      <button class="view-list">List</button>
+    </header>
+
+    <section class="board-columns">
+      <div class="column column-todo">
+        <h2>To Do</h2>
+        <button class="add-task">Add task</button>
+        <article class="task-card">
+          <h3>Review design mockups</h3>
+          <span class="priority high">High</span>
+          <span class="due">Apr 20</span>
+        </article>
+        <article class="task-card">
+          <h3>Write documentation</h3>
+          <span class="priority normal">Normal</span>
+          <span class="due">Apr 22</span>
+        </article>
+      </div>
+      <div class="column column-progress">
+        <h2>In Progress</h2>
+        <button class="add-task">Add task</button>
+        <article class="task-card">
+          <h3>Implement auth flow</h3>
+          <span class="priority critical">Critical</span>
+          <span class="due">Apr 18</span>
+        </article>
+      </div>
+      <div class="column column-done">
+        <h2>Done</h2>
+        <button class="add-task">Add task</button>
+        <article class="task-card">
+          <h3>Set up CI pipeline</h3>
+          <span class="priority normal">Normal</span>
+          <span class="due">Apr 15</span>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,8 +1,6 @@
-import { existsSync, readdirSync } from 'node:fs';
 import figureSet from 'figures';
 import path from 'node:path';
 import { getStyles } from '../ai/planner/styles.js';
-import { ConfigParser } from '../config.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import type { Plan } from '../test-plan.js';
 import { jsonToTable } from '../utils/markdown-parser.js';
@@ -116,14 +114,11 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private printRerunSuggestions(): void {
-    const testsDir = ConfigParser.getInstance().getTestsDir();
-    if (!existsSync(testsDir)) return;
+    const savedFiles = this.explorBot.agentHistorian().getSavedFiles();
+    if (savedFiles.length === 0) return;
 
-    const testFiles = readdirSync(testsDir).filter((f) => f.endsWith('.js'));
-    if (testFiles.length === 0) return;
-
-    for (const file of testFiles) {
-      tag('info').log(`Generated: ${file}`);
+    for (const filePath of savedFiles) {
+      tag('info').log(`Generated: ${path.basename(filePath)}`);
     }
     tag('info').log(`List tests: ${getCliName()} runs`);
     tag('info').log(`Re-run with healing: ${getCliName()} rerun <filename> [index]`);

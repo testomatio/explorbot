@@ -11,7 +11,7 @@ import type Explorer from '../explorer.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
-import { extractFocusedElement } from '../utils/aria.ts';
+import { detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -59,6 +59,8 @@ export class Tester extends TaskAgent implements Agent {
   executionLogFile: string | null = null;
   private previousUrl: string | null = null;
   private previousStateHash: string | null = null;
+  private pageStateHash: string | null = null;
+  private pageActionResult: ActionResult | null = null;
   private hooksRunner: HooksRunner;
 
   constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
@@ -117,6 +119,8 @@ export class Tester extends TaskAgent implements Agent {
 
     this.previousUrl = null;
     this.previousStateHash = null;
+    this.pageStateHash = null;
+    this.pageActionResult = null;
     this.explorer.getStateManager().clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
@@ -441,7 +445,8 @@ export class Tester extends TaskAgent implements Agent {
 
     if (isNewUrl) {
       const research = await this.researcher.research(currentState);
-      const experience = this.getExperience(currentState);
+      this.pageStateHash = currentStateHash;
+      this.pageActionResult = currentState;
       let uiMapSection = '';
       if (research) {
         uiMapSection = dedent`
@@ -467,14 +472,25 @@ export class Tester extends TaskAgent implements Agent {
         </page_aria>
         ${uiMapSection}
 
-        ${experience}
-
         Use <page_ui_map> to understand the page structure and its main elements.
         However, <page_ui_map> is not always up to date, use <page_aria> and <page_html> to understand the ACTUAL state of the page
         Do not interact with elements that are not listed in <page_aria> and <page_html>
         Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
       `;
       return context;
+    }
+
+    const focusArea = detectFocusArea(currentState.ariaSnapshot);
+    if (focusArea.detected && focusArea.name && this.pageStateHash && this.pageActionResult) {
+      const overlaySection = await this.researcher.researchOverlay(currentState, this.pageActionResult, this.pageStateHash);
+      if (overlaySection) {
+        context += dedent`
+
+          <page_ui_map_overlay>
+          ${overlaySection}
+          </page_ui_map_overlay>
+        `;
+      }
     }
 
     // if (isStateChanged) {
