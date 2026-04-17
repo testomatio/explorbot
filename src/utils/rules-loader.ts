@@ -65,29 +65,47 @@ export class RulesLoader {
     return { name, approach: styles[name] };
   }
 
-  static extractStyles(agentName: string, targetDir: string): string[] {
-    const sourceDir = join(BUILT_IN_DIR, agentName, 'styles');
-    if (!existsSync(sourceDir)) throw new Error(`No built-in styles found for agent: ${agentName}`);
+  static extractRules(agentName: string, targetDir: string): string[] {
+    const sourceDir = join(BUILT_IN_DIR, agentName);
+    if (!existsSync(sourceDir)) throw new Error(`No built-in rules found for agent: ${agentName}`);
 
-    mkdirSync(targetDir, { recursive: true });
-
-    const files = readdirSync(sourceDir)
-      .filter((f) => f.endsWith('.md'))
-      .sort();
     const extracted: string[] = [];
+    copyMarkdownTree(sourceDir, targetDir, '', extracted);
+    return extracted;
+  }
+}
 
-    for (const file of files) {
-      const target = join(targetDir, file);
-      if (existsSync(target)) {
-        tag('info').log(`Skipping ${file} (already exists)`);
-        continue;
-      }
-      writeFileSync(target, readFileSync(join(sourceDir, file), 'utf8'));
-      extracted.push(file);
-      tag('success').log(`Extracted ${file}`);
+function copyMarkdownTree(sourceDir: string, targetDir: string, relative: string, extracted: string[]): void {
+  const entries = readdirSync(sourceDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+
+  let dirCreated = false;
+  const ensureTargetDir = () => {
+    if (dirCreated) return;
+    mkdirSync(targetDir, { recursive: true });
+    dirCreated = true;
+  };
+
+  for (const entry of entries) {
+    const sourcePath = join(sourceDir, entry.name);
+    const targetPath = join(targetDir, entry.name);
+    const relPath = relative ? `${relative}/${entry.name}` : entry.name;
+
+    if (entry.isDirectory()) {
+      copyMarkdownTree(sourcePath, targetPath, relPath, extracted);
+      continue;
     }
 
-    return extracted;
+    if (!entry.name.endsWith('.md')) continue;
+
+    if (existsSync(targetPath)) {
+      tag('info').log(`Skipping ${relPath} (already exists)`);
+      continue;
+    }
+
+    ensureTargetDir();
+    writeFileSync(targetPath, readFileSync(sourcePath, 'utf8'));
+    extracted.push(relPath);
+    tag('success').log(`Extracted ${relPath}`);
   }
 }
 

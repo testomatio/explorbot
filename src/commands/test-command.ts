@@ -25,10 +25,10 @@ export class TestCommand extends BaseCommand {
     } else if (args === '*' || args === 'all') {
       toExecute.push(...requirePlan().getPendingTests());
     } else if (args.match(/^[\d,\-\s]+$/)) {
-      const pending = requirePlan().getPendingTests();
-      const indices = parseTestIndices(args, pending.length);
+      const visible = requirePlan().tests.filter((t) => t.enabled);
+      const indices = parseTestIndices(args, visible.length);
       for (const idx of indices) {
-        toExecute.push(pending[idx]);
+        toExecute.push(visible[idx]);
       }
     } else {
       const matching = plan?.getPendingTests().filter((test) => test.scenario.toLowerCase().includes(args.toLowerCase())) || [];

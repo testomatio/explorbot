@@ -40,6 +40,18 @@ class Navigator implements Agent {
     You are given the web page and a message from user.
     You need to resolve the state of the page based on the message.
   </task>
+
+  ${locatorRule}
+
+  <constraints>
+    NEVER navigate away from the base URL domain. Stay on the same origin at all times.
+    NEVER attempt to rewrite, replace, mock, or spoof the URL via JavaScript, history API, location assignment, or any client-side trick.
+    NEVER use executeScript, executeAsyncScript, or any JS evaluation to change the URL, bypass redirects, or fake the page state.
+    If the target URL redirects to an authentication/login page, DO NOT try to force the original URL. Instead:
+      1. Look for credentials in the provided knowledge/hint context and perform a real login through the form.
+      2. If no credentials are available, ask the user for credentials or ask the user to log in manually.
+    A redirect to /login, /sign_in, /auth, or similar is a signal that authentication is required — treat it as such, never as an obstacle to bypass.
+  </constraints>
   `;
   private freeSailSystemPrompt = dedent`
   <role>
@@ -168,6 +180,14 @@ class Navigator implements Agent {
         ${message}
       </message>
 
+      <page>
+        ${actionResult.toAiContext()}
+
+        <page_html>
+        ${await actionResult.combinedHtml()}
+        </page_html>
+      </page>
+
       <task>
         Identify the actual request of the user.
         Identify what is expected by user.
@@ -178,25 +198,13 @@ class Navigator implements Agent {
         Try various ways to achieve the result
       </task>
 
-
-      <page>
-        ${actionResult.toAiContext()}
-
-        <page_html>
-        ${await actionResult.simplifiedHtml()}
-        </page_html>
-      </page>
-
-
-      ${knowledge}
-
       ${actionRule}
+
+      ${RulesLoader.loadRules('navigator', ['multiple-locator', 'output'], actionResult.url || '').replace('{{maxAttempts}}', String(this.MAX_ATTEMPTS))}
 
       ${experience}
 
-      ${locatorRule}
-
-      ${RulesLoader.loadRules('navigator', ['multiple-locator', 'output'], actionResult.url || '').replace('{{maxAttempts}}', String(this.MAX_ATTEMPTS))}
+      ${knowledge}
     `;
 
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
@@ -234,7 +242,7 @@ class Navigator implements Agent {
               Previous solutions did not work. Here is the full HTML context:
 
               <page_html>
-              ${await actionResult.simplifiedHtml()}
+              ${await actionResult.combinedHtml()}
               </page_html>
 
               Please suggest new solutions based on this additional context.
@@ -265,6 +273,7 @@ class Navigator implements Agent {
 
         if (resolved) {
           tag('success').log('Navigation resolved successfully');
+          await this.experienceTracker.saveSuccessfulResolution(actionResult, message, codeBlock);
           stop();
           return;
         }
@@ -479,6 +488,14 @@ class Navigator implements Agent {
         ${message}
       </message>
 
+      <page>
+        ${actionResult.toAiContext()}
+
+        <page_html>
+        ${await actionResult.combinedHtml()}
+        </page_html>
+      </page>
+
       <task>
         Identify what assertion the user wants to verify on the page.
         Propose different CodeceptJS assertion code blocks to verify the expected state.
@@ -492,21 +509,11 @@ class Navigator implements Agent {
         Do not generate assertions that would pass even if the specific claim is false.
       </task>
 
-      <page>
-        ${actionResult.toAiContext()}
-
-        <page_html>
-        ${await actionResult.simplifiedHtml()}
-        </page_html>
-      </page>
-
-      ${knowledge}
-
       ${RulesLoader.loadRules('navigator', ['verification-actions'], actionResult.url || '')}
 
-      ${locatorRule}
-
       ${experience}
+
+      ${knowledge}
     `;
 
     debugLog('Sending verification prompt to AI provider');

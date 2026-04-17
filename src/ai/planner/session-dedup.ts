@@ -33,3 +33,7 @@ export function WithSessionDedup<T extends Constructor>(Base: T) {
     }
   };
 }
+
+export function clearSessionDedup(): void {
+  previousPlans.length = 0;
+}

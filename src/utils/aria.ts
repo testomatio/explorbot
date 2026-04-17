@@ -355,8 +355,41 @@ export interface FocusAreaResult {
   name: string | null;
 }
 
+const CLOSE_OVERLAY_BUTTON_RE = /^close\s+(modal|dialog|popup|drawer|panel|sheet)\b/i;
+
+const findOverlayByCloseButton = (nodeList: AriaNode[]): FocusAreaResult | null => {
+  const closeIdx = nodeList.findIndex((n) => n.role === 'button' && CLOSE_OVERLAY_BUTTON_RE.test(n.name || ''));
+  if (closeIdx !== -1) {
+    let heading: AriaNode | undefined;
+    for (let i = closeIdx - 1; i >= 0; i--) {
+      if (nodeList[i].role === 'heading' && nodeList[i].name) {
+        heading = nodeList[i];
+        break;
+      }
+    }
+    if (!heading) {
+      for (let i = closeIdx + 1; i < nodeList.length; i++) {
+        if (nodeList[i].role === 'heading' && nodeList[i].name) {
+          heading = nodeList[i];
+          break;
+        }
+      }
+    }
+    return {
+      detected: true,
+      type: 'dialog',
+      name: heading?.name || null,
+    };
+  }
+  for (const node of nodeList) {
+    const inner = findOverlayByCloseButton(node.children);
+    if (inner) return inner;
+  }
+  return null;
+};
+
 export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
-  const nodes = parseAriaSnapshot(snapshot);
+  const nodes = parseAriaSnapshot(snapshot, true);
 
   const findFocusArea = (nodeList: AriaNode[]): FocusAreaResult | null => {
     for (const node of nodeList) {
@@ -385,7 +418,12 @@ export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
   };
 
   const result = findFocusArea(nodes);
-  return result || { detected: false, type: null, name: null };
+  if (result) return result;
+
+  const fallback = findOverlayByCloseButton(nodes);
+  if (fallback && fallback.name) return fallback;
+
+  return { detected: false, type: null, name: null };
 };
 
 export const collectInteractiveNodes = (snapshot: string | null): Array<Record<string, unknown>> => {

@@ -871,18 +871,14 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
       node.attrs = node.attrs.filter((attr) => {
         const { name, value } = attr;
         if (name === 'class') {
-          // Remove classes containing digits
           attr.value = value
             .split(' ')
-            // remove classes containing digits/
             .filter((className) => !/\d/.test(className))
-            // remove popular trash classes
             .filter((className) => !className.match(trashHtmlClasses))
-            // remove classes with : and __ in them
             .filter((className) => !className.match(/(:|__)/))
-            // remove tailwind utility classes
             .filter((className) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(className)))
             .join(' ');
+          if (attr.value === '') return false;
         }
 
         return allowedAttrs.includes(name) || name.startsWith('data-explorbot-');

@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult, type ToolResultMetadata } from '../action-result.ts';
+import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { extractFocusedElement } from '../utils/aria.ts';
@@ -310,7 +311,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         I.selectOption({"role":"combobox","text":"Category"}, 'Technology')
 
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
-        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot
+        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot        
       `,
       inputSchema: z.object({
         codeBlock: z.string().describe('Valid CodeceptJS code starting with I. Can contain multiple commands separated by newlines.'),
@@ -385,7 +386,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             message: `Form completed successfully with ${lines.length} commands.`,
             commandsExecuted: lines.length,
             code: codeBlock,
-            suggestion: 'Verify the form was filled in correctly using see() tool. Submit if needed by using click() tool.',
+            suggestion: 'Verify the form was filled in correctly using see() tool. If needed to submit: try click() tool or form() with I.pressKey("Enter").',
           });
         } catch (error) {
           activeNote.commit(TestResult.FAILED);
@@ -449,14 +450,18 @@ export function createAgentTools({
   explorer,
   researcher,
   navigator,
+  experienceTracker,
+  getState,
 }: {
   explorer: Explorer;
   researcher: Researcher;
   navigator: Navigator;
+  experienceTracker?: ExperienceTracker;
+  getState?: () => ActionResult | null;
 }): any {
   let visionDisabled = false;
 
-  return {
+  const tools: Record<string, any> = {
     see: tool({
       description: dedent`
         Check the page contents based on current page state and screenshot.
@@ -947,6 +952,33 @@ export function createAgentTools({
       },
     }),
   };
+
+  if (experienceTracker && getState) {
+    tools.learn_experience = tool({
+      description: dedent`
+        Read the full body of a specific experience section listed in <experience>.
+        The TOC shows entries like "A.1 ## Successful Flow: ...". Pass the fileTag and sectionIndex.
+        Only call when a TOC entry looks directly relevant to the current step.
+      `,
+      inputSchema: z.object({
+        fileTag: z.string().describe('File tag from the TOC, e.g. "A", "B", "AA"'),
+        sectionIndex: z.number().int().positive().describe('1-based section index within that file'),
+      }),
+      execute: async ({ fileTag, sectionIndex }) => {
+        const state = getState();
+        if (!state) {
+          return { error: 'No current page state available.' };
+        }
+        const section = experienceTracker.getExperienceSection(fileTag, sectionIndex, state);
+        if (!section) {
+          return { error: 'Section not found. Experience may have been updated; re-read the latest TOC.' };
+        }
+        return section;
+      },
+    });
+  }
+
+  return tools;
 }
 
 const PAGE_DIFF_SUGGESTION = 'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff.';

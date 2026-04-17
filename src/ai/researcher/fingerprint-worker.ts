@@ -1,8 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { parentPort } from 'node:worker_threads';
 import { computeHtmlFingerprint } from '../../utils/html-diff.ts';
-
-declare const self: Worker;
 
 function diceSimilarity(a: Set<string>, b: Set<string>): number {
   let intersection = 0;
@@ -14,22 +13,17 @@ function diceSimilarity(a: Set<string>, b: Set<string>): number {
   return Math.round(((2 * intersection) / total) * 100);
 }
 
-self.onmessage = (event: MessageEvent) => {
-  const { html, statesDir, maxAgeMs, threshold } = event.data as {
-    html: string;
-    statesDir: string;
-    maxAgeMs: number;
-    threshold: number;
-  };
+parentPort!.on('message', (data: { html: string; statesDir: string; maxAgeMs: number; threshold: number }) => {
+  const { html, statesDir, maxAgeMs, threshold } = data;
 
   if (!existsSync(statesDir)) {
-    self.postMessage({ matchHash: null, similarity: 0 });
+    parentPort!.postMessage({ matchHash: null, similarity: 0 });
     return;
   }
 
   const currentFingerprint = new Set(computeHtmlFingerprint(html));
   if (currentFingerprint.size === 0) {
-    self.postMessage({ matchHash: null, similarity: 0 });
+    parentPort!.postMessage({ matchHash: null, similarity: 0 });
     return;
   }
 
@@ -55,5 +49,5 @@ self.onmessage = (event: MessageEvent) => {
   }
 
   const matched = bestSimilarity >= threshold;
-  self.postMessage({ matchHash: matched ? bestHash : null, similarity: bestSimilarity });
-};
+  parentPort!.postMessage({ matchHash: matched ? bestHash : null, similarity: bestSimilarity });
+});

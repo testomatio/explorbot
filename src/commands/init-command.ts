@@ -23,11 +23,11 @@ const config = {
 
   ai: {
     // fast model with tool calling capabilities
-    model: openrouter('<your base model here>'),
+    model: openrouter('openai/gpt-oss-20b:nitro'),
     // vision model for screenshot analysis
-    visionModel: openrouter('<your vision model here>'),
+    visionModel: openrouter('meta-llama/llama-4-scout-17b-16e-instruct'),
     // agentic model for decision making
-    agenticModel: openrouter('<your agentic model here>'),
+    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
   },
 };
 

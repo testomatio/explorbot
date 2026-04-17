@@ -1,6 +1,6 @@
 import dedent from 'dedent';
 import type { ActionResult } from '../action-result.js';
-import type { ExperienceTracker } from '../experience-tracker.js';
+import { renderExperienceToc, type ExperienceTracker } from '../experience-tracker.js';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 
@@ -56,37 +56,13 @@ export abstract class TaskAgent {
 
   protected getExperience(actionResult: ActionResult): string {
     const tracker = this.getExperienceTracker();
-    const relevantExperience = tracker.getRelevantExperience(actionResult);
+    const toc = tracker.getExperienceTableOfContents(actionResult);
+    if (toc.length === 0) return '';
 
-    if (relevantExperience.length === 0) return '';
-
-    const allContent = relevantExperience
-      .map((e) => e.content)
-      .filter((e) => !!e)
-      .join('\n\n---\n\n');
-
-    const totalChars = allContent.length;
-    let experienceContent: string;
-
-    if (totalChars <= 10_000) {
-      debugLog(`injecting all experience (${Math.round(totalChars / 1000)}k chars)`);
-      experienceContent = allContent;
-    } else {
-      experienceContent = tracker.getSuccessfulExperience(actionResult).join('\n\n---\n\n');
-      debugLog(`injecting success-only experience (${Math.round(experienceContent.length / 1000)}k chars, filtered from ${Math.round(totalChars / 1000)}k)`);
-    }
-
-    if (!experienceContent) return '';
-
-    tag('substep').log(`Found ${relevantExperience.length} experience ${pluralize(relevantExperience.length, 'file')}`);
-    return dedent`
-      <experience>
-      Here is past experience of interacting with this page.
-      Use successful solutions first. Avoid repeating failed actions.
-
-      ${experienceContent}
-      </experience>
-    `;
+    const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
+    debugLog(`injecting experience TOC (${toc.length} files, ${totalSections} sections)`);
+    tag('substep').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections)`);
+    return renderExperienceToc(toc);
   }
 
   setHistorian(historian: Historian): void {

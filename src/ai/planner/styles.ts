@@ -15,3 +15,7 @@ export function getStyles(): Record<string, string> {
 export function getActiveStyle(iteration: number, override?: string): { name: string; approach: string } {
   return RulesLoader.getActiveStyle(getStyles(), iteration, override);
 }
+
+export function clearStyleCache(): void {
+  cache = null;
+}

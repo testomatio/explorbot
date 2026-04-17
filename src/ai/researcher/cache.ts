@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { outputPath } from '../../config.ts';
 import { computeHtmlFingerprint } from '../../utils/html-diff.ts';
 import { debugLog } from './mixin.ts';
@@ -21,9 +22,14 @@ function getStatesDir(): string {
 function getFingerprintWorker(): Worker {
   if (!fingerprintWorker) {
     const ext = import.meta.url.endsWith('.ts') ? '.ts' : '.js';
-    fingerprintWorker = new Worker(new URL(`./fingerprint-worker${ext}`, import.meta.url).href);
+    fingerprintWorker = new Worker(new URL(`./fingerprint-worker${ext}`, import.meta.url));
   }
   return fingerprintWorker;
+}
+
+export function clearResearchCache(): void {
+  for (const key of Object.keys(memoryCache)) delete memoryCache[key];
+  for (const key of Object.keys(memoryCacheTimestamps)) delete memoryCacheTimestamps[key];
 }
 
 export function getCachedResearch(hash: string): string {
@@ -76,9 +82,9 @@ function findSimilarMatch(combinedHtml: string): Promise<{ hash: string; similar
       resolve(null);
     }, FINGERPRINT_WORKER_TIMEOUT_MS);
 
-    worker.onmessage = (event: MessageEvent) => {
+    worker.on('message', (data: { matchHash: string | null; similarity: number }) => {
       clearTimeout(timeout);
-      const { matchHash, similarity } = event.data as { matchHash: string | null; similarity: number };
+      const { matchHash, similarity } = data;
       if (!matchHash) {
         resolve(null);
         return;
@@ -86,7 +92,7 @@ function findSimilarMatch(combinedHtml: string): Promise<{ hash: string; similar
 
       debugLog(`Similar fingerprint found: ${matchHash} (${similarity}% similar)`);
       resolve({ hash: matchHash, similarity });
-    };
+    });
 
     worker.postMessage({
       html: combinedHtml,
