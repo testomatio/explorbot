@@ -169,7 +169,7 @@ Agents share context through:
 
 1. **State Manager** — Tracks current page, URL, navigation history
 2. **Research Results** — Structured page analysis available to Planner and Tester
-3. **Experience Files** — Learned patterns shared across sessions
+3. **Experience Files** — Learned patterns shared across sessions. Injected as a compact table of contents (file tags + section headings) rather than full bodies; agents pull individual sections on demand via the `learn_experience` tool.
 4. **Knowledge Files** — Domain knowledge you provide
 
 Each agent maintains minimal context to keep costs down. They request specific information when needed rather than carrying full conversation history.

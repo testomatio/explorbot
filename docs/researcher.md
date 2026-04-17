@@ -43,6 +43,7 @@ ai: {
 | `model` | `string` | - | Override default model for Researcher |
 | `systemPrompt` | `string` | - | Additional instructions appended to the research prompt |
 | `sections` | `string[]` | all sections | Page sections to identify (order = priority) |
+| `focusSections` | `string[]` | `[]` | CSS selectors that narrow research to a matching element when present (first match wins). Useful for apps that open a modal, drawer, or detail panel on top of the main layout — the researcher will map only that element instead of the whole page. |
 | `excludeSelectors` | `string[]` | `[]` | CSS selectors to exclude from deep exploration |
 | `includeSelectors` | `string[]` | `[]` | CSS selectors to always explore (second pass) |
 | `stopWords` | `string[]` | defaults | Words to filter during deep exploration (replaces defaults) |
@@ -365,6 +366,35 @@ ai: {
   },
 }
 ```
+
+### Focus on a Single Element
+
+When your app opens a modal, drawer, or detail panel on top of the main layout, you usually want the researcher to map only that overlay, not the page behind it. `focusSections` is a list of CSS selectors — the first one that matches on the current page wins, and the researcher limits its UI map to that element:
+
+```javascript
+ai: {
+  agents: {
+    researcher: {
+      focusSections: [
+        '[role="dialog"]',   // open modal
+        '.drawer-open',      // expanded side drawer
+        '#focused-panel',    // your app's detail panel
+      ],
+    },
+  },
+}
+```
+
+When none of the selectors match, the researcher falls back to mapping the whole page as usual.
+
+### Handling Truncated Responses
+
+The researcher produces a lot of output for busy pages. If the model's response gets cut off at `maxTokens`, Explorbot automatically retries by splitting the work into one request per section (focus, main, sidebar, etc.) and merging the results. You will usually see this transparently in the logs; no configuration needed.
+
+If you see this happening often, consider:
+- lowering reasoning effort (see [Low Reasoning Effort](#low-reasoning-effort) below),
+- pinning the researcher to a non-reasoning model with a larger output window,
+- or narrowing the scope with `focusSections`.
 
 ### Custom Stop Words
 

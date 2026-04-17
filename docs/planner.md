@@ -45,11 +45,19 @@ Each time the Planner generates scenarios, it applies a **style** — a testing 
 
 ### Built-in Styles
 
+All three built-in styles rank scenarios by **outcome strength**, from strongest to weakest:
+
+1. **Data change** — a record is created, edited, deleted; a setting is persisted; a message is sent; a job is triggered.
+2. **State change** — a route change, a filter or sort actually applied to real data, a mode or auth change the app remembers.
+3. **UI-only change** — something opens, closes, is cancelled, is hovered, is toggled for display. The application never registers anything new.
+
+Scenarios ending in category 1 or 2 are preferred. Category 3 is only proposed when the UI-only behaviour itself has a verifiable side effect (a warning prompt, a persisted draft, a badge appearing).
+
 | Style | Focus | What it generates |
 |-------|-------|-------------------|
-| **normal** | Complete user workflows | CRUD operations, form submissions, filter+verify flows. Each test changes application state. Distributes tests across all feature areas. |
-| **psycho** | Invalid and extreme inputs | Empty submissions, 10000-character strings, special characters, SQL injection, wrong formats, boundary values, incompatible combinations. Finds what breaks. |
-| **curious** | Coverage gaps | Cross-references previous test results with page research to find untested controls. Exercises every select option, checkbox state, and skipped form field. Fills gaps, not repeats. |
+| **normal** | Complete user workflows | CRUD operations, full commit flows, filter+verify flows — each test ends in a data change or state change. UI-only tests (tab switching, pagination, view toggles) come last and only when data- and state-changing coverage is done. Distributes tests across feature areas. |
+| **psycho** | Invalid and extreme inputs | Attacks **every reachable control in the same scenario** with a different strange value — empty, 10000 chars, unicode, SQL, script tags, invalid formats, conflicting toggles, out-of-range dates — then commits. Scenarios that enter bad data and cancel are rejected: the application never received the payload. |
+| **curious** | Coverage gaps | Cross-references previous test results with page research to find untested controls. An untested control is only considered covered when the scenario built around it reaches a data or state change. Variation scenarios and dismissal/UI-only scenarios are kept separate — the planner will not merge them by appending a cancel at the end. |
 
 ### How Cycling Works
 

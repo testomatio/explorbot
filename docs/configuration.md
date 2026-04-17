@@ -211,6 +211,7 @@ The researcher agent supports all standard agent options plus additional options
 |--------|------|-------------|
 | `excludeSelectors` | `string[]` | CSS selectors for containers to exclude |
 | `includeSelectors` | `string[]` | CSS selectors for containers to always explore |
+| `focusSections` | `string[]` | CSS selectors that narrow research to a matching element when present (e.g. an open modal or drawer). First match wins. |
 | `stopWords` | `string[]` | Words to filter out (replaces defaults if provided) |
 | `maxElementsToExplore` | `number` | Maximum elements to explore per page (default: 10) |
 
