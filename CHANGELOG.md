@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-04-17
+
+### Configuration
+- **`ai.agents.researcher.focusSections`** — List of CSS selectors that narrow research to a specific element when present on the page. If any selector matches, the researcher maps only that element instead of the whole page — useful for apps that open a focused panel (modal, drawer, detail view) on top of the main layout.
+  ```javascript
+  ai: {
+    agents: {
+      researcher: {
+        focusSections: ['[role="dialog"]', '.drawer-open', '#focused-panel'],
+      },
+    },
+  }
+  ```
+
+### Changes
+- [Researcher] When the model's response gets truncated by context limits, the researcher now retries by splitting research into one request per section (focus, main, sidebar, etc.) and merging the results, instead of a single focused-retry prompt.
+- [Researcher] Honors the new `focusSections` config — if any configured CSS selector is present on the page, the researcher limits its UI map to that element rather than the full page.
+- [Tester] Past experience is no longer inlined into every tester turn. Instead, a compact table of contents (file tags plus section headings) is injected, and the agent fetches specific sections on demand via the new `learn_experience` tool. Cuts tester token usage on pages with accumulated experience.
+- [Pilot] Receives the same experience table of contents when tools are enabled and can pull full sections via `learn_experience`.
+- [Captain] The interactive web mode now exposes the `learn_experience` tool alongside `see`, `context`, and `visualClick`, so TUI-driven sessions can read past experience on demand.
+- [Planner] Rewrote the `normal`, `curious`, and `psycho` planning styles to rank scenarios by outcome strength: **data change > state change > UI-only**. Normal style now asks for complete commit flows over "form appears" checks, curious style treats an untested control as covered only when the scenario built around it reaches a data or state change (and refuses to merge a variation with a dismissal ending), and psycho style now attacks every reachable control in the same scenario with a different strange value instead of isolating one control per scenario.
+- Experience Tracker: New `getExperienceTableOfContents` / `getExperienceSection` API backs the TOC-based experience flow; sections are addressed by a short file tag (A, B, ...) and a 1-based section index.
+
 ## 2026-04-15
 
 ### CLI Changes

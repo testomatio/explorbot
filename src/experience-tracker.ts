@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import matter from 'gray-matter';
+import { marked, type Tokens } from 'marked';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
@@ -332,6 +333,133 @@ ${filteredCode}
 
     return results;
   }
+
+  getExperienceTableOfContents(state: ActionResult, options?: { includeDescendantExperience?: boolean }): ExperienceTocEntry[] {
+    const records = this.getRelevantExperience(state, options);
+    if (records.length === 0) return [];
+
+    const sorted = [...records].sort((a, b) => {
+      const aHash = basename(a.filePath, '.md');
+      const bHash = basename(b.filePath, '.md');
+      return aHash.localeCompare(bHash);
+    });
+
+    const toc: ExperienceTocEntry[] = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const record = sorted[i];
+      const fileHash = basename(record.filePath, '.md');
+      const url = (record.data as WebPageState)?.url || '';
+      const sections = listTocHeadings(record.content);
+      if (sections.length === 0) continue;
+      toc.push({
+        fileTag: indexToLetters(i),
+        fileHash,
+        url,
+        sections,
+      });
+    }
+    return toc;
+  }
+
+  getExperienceSection(fileTag: string, sectionIndex: number, state: ActionResult, options?: { includeDescendantExperience?: boolean }): { title: string; url: string; content: string } | null {
+    const toc = this.getExperienceTableOfContents(state, options);
+    const entry = toc.find((e) => e.fileTag === fileTag);
+    if (!entry) return null;
+
+    const filePath = this.findExperienceFileByHash(entry.fileHash);
+    if (!filePath) return null;
+
+    const { content } = this.readExperienceFile(entry.fileHash);
+    const extracted = extractHeadingSection(content, sectionIndex);
+    if (!extracted) return null;
+
+    return { title: extracted.title, url: entry.url, content: extracted.body };
+  }
+
+  private findExperienceFileByHash(fileHash: string): string | null {
+    for (const dir of this.getExperienceDirectories()) {
+      const candidate = join(dir, `${fileHash}.md`);
+      if (existsSync(candidate)) return candidate;
+    }
+    return null;
+  }
+}
+
+function listTocHeadings(content: string): { index: number; level: 2 | 3; title: string }[] {
+  const tokens = marked.lexer(content);
+  const result: { index: number; level: 2 | 3; title: string }[] = [];
+  let index = 0;
+  for (const token of tokens) {
+    if (token.type !== 'heading') continue;
+    const heading = token as Tokens.Heading;
+    if (heading.depth !== 2 && heading.depth !== 3) continue;
+    index++;
+    result.push({ index, level: heading.depth as 2 | 3, title: heading.text });
+  }
+  return result;
+}
+
+function extractHeadingSection(content: string, sectionIndex: number): { title: string; body: string } | null {
+  const tokens = marked.lexer(content);
+  const matching: { tokenIdx: number; depth: number; text: string }[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type !== 'heading') continue;
+    const heading = token as Tokens.Heading;
+    if (heading.depth !== 2 && heading.depth !== 3) continue;
+    matching.push({ tokenIdx: i, depth: heading.depth, text: heading.text });
+  }
+
+  if (sectionIndex < 1 || sectionIndex > matching.length) return null;
+
+  const target = matching[sectionIndex - 1];
+  let endTokenIdx = tokens.length;
+  for (let j = target.tokenIdx + 1; j < tokens.length; j++) {
+    const token = tokens[j];
+    if (token.type !== 'heading') continue;
+    if ((token as Tokens.Heading).depth <= target.depth) {
+      endTokenIdx = j;
+      break;
+    }
+  }
+
+  const body = tokens
+    .slice(target.tokenIdx, endTokenIdx)
+    .map((t) => (t as any).raw || '')
+    .join('');
+  return { title: target.text, body };
+}
+
+function indexToLetters(index: number): string {
+  let n = index;
+  let result = '';
+  while (true) {
+    result = String.fromCharCode(65 + (n % 26)) + result;
+    n = Math.floor(n / 26);
+    if (n === 0) break;
+    n -= 1;
+  }
+  return result;
+}
+
+export function renderExperienceToc(toc: ExperienceTocEntry[]): string {
+  if (toc.length === 0) return '';
+
+  const lines: string[] = [];
+  lines.push('<experience>');
+  lines.push('Past experience for this page. Call learn_experience({ fileTag, sectionIndex }) to read a section.');
+  lines.push('');
+  for (const entry of toc) {
+    lines.push(`File ${entry.fileTag} ${entry.url}:`);
+    for (const section of entry.sections) {
+      const prefix = '#'.repeat(section.level);
+      lines.push(`  ${entry.fileTag}.${section.index} ${prefix} ${section.title}`);
+    }
+    lines.push('');
+  }
+  lines.push('</experience>');
+  return lines.join('\n');
 }
 
 export interface SessionStep {
@@ -347,4 +475,11 @@ export interface SessionExperienceEntry {
   result: 'success' | 'partial' | 'failed';
   steps: SessionStep[];
   relatedUrls?: string[];
+}
+
+export interface ExperienceTocEntry {
+  fileTag: string;
+  fileHash: string;
+  url: string;
+  sections: { index: number; level: 2 | 3; title: string }[];
 }

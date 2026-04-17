@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
+import { ActionResult } from '../../action-result.ts';
 import { actionRule, locatorRule, sectionContextRule } from '../rules.ts';
 import { createAgentTools, createCodeceptJSTools } from '../tools.ts';
 import { type Constructor, type ModeContext, debugLog } from './mixin.ts';
@@ -9,13 +10,19 @@ export function WithWebMode<T extends Constructor>(Base: T) {
   return class extends Base {
     webModeTools(ctx: ModeContext): Record<string, any> {
       const explorer = ctx.explorBot.getExplorer();
+      const stateManager = explorer.getStateManager();
       const codeceptTools = createCodeceptJSTools(explorer, ctx.task);
       const agentTools = createAgentTools({
         explorer,
         researcher: ctx.explorBot.agentResearcher(),
         navigator: ctx.explorBot.agentNavigator(),
+        experienceTracker: stateManager.getExperienceTracker(),
+        getState: () => {
+          const state = stateManager.getCurrentState();
+          return state ? ActionResult.fromState(state) : null;
+        },
       });
-      const { see, context, visualClick } = agentTools;
+      const { see, context, visualClick, learn_experience } = agentTools;
 
       return {
         navigate: tool({
@@ -96,6 +103,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
         see,
         context,
         visualClick,
+        learn_experience,
       };
     }
 

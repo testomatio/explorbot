@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { ActionResult } from './action-result.ts';
 import { ApiClient } from './api/api-client.ts';
 import { RequestStore } from './api/request-store.ts';
 import { loadSpec } from './api/spec-reader.ts';
@@ -182,8 +183,14 @@ export class ExplorBot {
     return (this.agents.pilot ||= this.createAgent(({ ai, explorer }) => {
       const researcher = this.agentResearcher();
       const navigator = this.agentNavigator();
-      const tools = createAgentTools({ explorer, researcher, navigator });
-      return new Pilot(ai, tools, researcher, explorer);
+      const stateManager = explorer.getStateManager();
+      const experienceTracker = stateManager.getExperienceTracker();
+      const getState = () => {
+        const state = stateManager.getCurrentState();
+        return state ? ActionResult.fromState(state) : null;
+      };
+      const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState });
+      return new Pilot(ai, tools, researcher, explorer, experienceTracker);
     }));
   }
 

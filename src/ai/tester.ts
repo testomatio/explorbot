@@ -441,7 +441,6 @@ export class Tester extends TaskAgent implements Agent {
 
     if (isNewUrl) {
       const research = await this.researcher.research(currentState);
-      const experience = this.getExperience(currentState);
       let uiMapSection = '';
       if (research) {
         uiMapSection = dedent`
@@ -466,8 +465,6 @@ export class Tester extends TaskAgent implements Agent {
         ${currentState.getInteractiveARIA()}
         </page_aria>
         ${uiMapSection}
-
-        ${experience}
 
         Use <page_ui_map> to understand the page structure and its main elements.
         However, <page_ui_map> is not always up to date, use <page_aria> and <page_html> to understand the ACTUAL state of the page
