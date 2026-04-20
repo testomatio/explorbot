@@ -48,7 +48,7 @@ function getAbsoluteXPath(el: Element): string {
 }
 
 export const isDynamicId = (id: string) => /^(ember|react|__next)\d|^\d+$/.test(id);
-export const isGenericClass = (cls: string) => /^ember-view$|^ember\d|^react-|^__next/.test(cls);
+export const isGenericClass = (cls: string) => /^ember-view$|^ember\d|^ember-|^react-|^__next/.test(cls);
 
 export function buildClickableXPath(el: XPathMatch): string {
   const a = el.allAttrs;

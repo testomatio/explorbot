@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { AddRuleCommand } from '../commands/add-rule-command.js';
 import InputReadline from './InputReadline.js';
 
-const KNOWN_AGENTS = ['researcher', 'tester', 'planner', 'pilot', 'captain', 'bosun', 'navigator'];
+const KNOWN_AGENTS = ['researcher', 'tester', 'planner', 'pilot', 'captain', 'driller', 'navigator'];
 
 interface AddRuleProps {
   initialAgent?: string;

@@ -4,7 +4,7 @@ import { ActionResult } from './action-result.ts';
 import { ApiClient } from './api/api-client.ts';
 import { RequestStore } from './api/request-store.ts';
 import { loadSpec } from './api/spec-reader.ts';
-import { Bosun } from './ai/bosun.ts';
+import { Driller } from './ai/driller.ts';
 import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
 import { Fisherman } from './ai/fisherman.ts';
@@ -269,12 +269,10 @@ export class ExplorBot {
     return this.agents.rerunner;
   }
 
-  agentBosun(): Bosun {
-    return (this.agents.bosun ||= this.createAgent(({ ai, explorer }) => {
-      const researcher = this.agentResearcher();
+  agentDriller(): Driller {
+    return (this.agents.driller ||= this.createAgent(({ ai, explorer }) => {
       const navigator = this.agentNavigator();
-      const tools = createAgentTools({ explorer, researcher, navigator });
-      return new Bosun(explorer, ai, researcher, navigator, tools);
+      return new Driller(explorer, ai, navigator);
     }));
   }
 

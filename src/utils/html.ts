@@ -83,6 +83,390 @@ const INTERACTIVE_EVENT_ATTRIBUTES = new Set(['onclick', 'onchange', 'onblur', '
 
 const HIDDEN_CLASSES = new Set(['hidden', 'invisible', 'd-none', 'hide', 'dn', 'u-hidden', 'is-hidden', 'visually-hidden', 'sr-only', 'screen-reader-only', 'visuallyhidden', 'opacity-0']);
 
+export const EXPLORBOT_ATTRS = {
+  area: 'data-explorbot-area',
+  context: 'data-explorbot-context',
+  eidx: 'data-explorbot-eidx',
+  frameSourceIndex: 'data-explorbot-frame-source-index',
+  variant: 'data-explorbot-variant',
+} as const;
+
+export const HTML_SELECTORS = {
+  headingLabel: 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"]',
+  interactiveContent: 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="option"], [role="menuitem"], [role="switch"], [role="checkbox"], [role="radio"], [aria-label], [tabindex]',
+  interactiveControl: 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"]',
+  labelLike: 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"], [class*="title"], [class*="label"], [class*="header"], [class*="name"]',
+  semanticContextContainer: 'section, article, form, fieldset, li, tr, td, th, [role="group"], [role="tabpanel"], [role="region"], [class*="card"], [class*="panel"], [class*="item"], [class*="usage"], [class*="group"]',
+  semanticOverlays: ['[role="dialog"]', '[role="listbox"]', '[role="menu"]', '[role="tooltip"]:not([style*="display: none"]):not([style*="visibility: hidden"])'],
+} as const;
+
+export const HTML_VISIBILITY_LIMITS = {
+  maxViewportOverlayRatio: 0.95,
+  minOpacity: 0.1,
+  minOverlayHeight: 40,
+  minOverlayWidth: 80,
+} as const;
+
+export const HTML_EXTRACTION_LIMITS = {
+  componentScopeHtmlLength: 8000,
+  maxOverlayCount: 3,
+  maxScopeInteractiveCount: 16,
+  overlayHtmlLength: 6000,
+} as const;
+
+export const CODE_EDITOR_MARKERS = ['monaco', 'codemirror', 'ace', 'ace_editor', 'code'] as const;
+
+export const HTML_INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'combobox', 'iframe', 'code-editor', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'textbox', 'searchbox', 'treeitem']);
+export const HTML_FORM_CONTROL_ROLES = new Set(['checkbox', 'radio', 'switch', 'combobox', 'option', 'slider', 'spinbutton', 'textbox', 'searchbox']);
+export const HTML_COMPOSITE_TARGET_ROLES = new Set(['tab', 'option', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'treeitem']);
+export const HTML_COMPOSITE_AREA_HINTS = new Set(['role:tab', 'role:option', 'role:menuitem', 'role:menuitemcheckbox', 'role:menuitemradio', 'role:treeitem']);
+export const HTML_FORM_CONTROL_TAGS = new Set(['input', 'select', 'textarea']);
+
+export function inferHtmlRole(data: { attrs: Record<string, string>; role?: string; tag: string; variantHints?: string[] }): string {
+  if (data.tag === 'iframe' && data.variantHints?.includes('code-editor')) return 'code-editor';
+  if (data.role) return data.role.toLowerCase();
+  const explicitRole = data.attrs.role;
+  if (explicitRole) return explicitRole.toLowerCase();
+  if (data.tag === 'a' && data.attrs.href) return 'link';
+  if (data.tag === 'button') return 'button';
+  if (data.tag === 'iframe') return 'iframe';
+  if (data.tag === 'select') return 'combobox';
+  if (data.tag === 'textarea') return 'textbox';
+  if (data.tag === 'input') {
+    const type = (data.attrs.type || 'text').toLowerCase();
+    if (type === 'checkbox') return 'checkbox';
+    if (type === 'radio') return 'radio';
+    return 'textbox';
+  }
+  return data.tag;
+}
+
+export const ELEMENT_EXTRACTION_CONFIG = {
+  attrs: EXPLORBOT_ATTRS,
+  codeEditorMarkers: CODE_EDITOR_MARKERS,
+  maxAreaDepth: 5,
+  maxContextLength: 120,
+  maxOuterHTMLLength: 2000,
+  maxTextLength: 80,
+  minOpacity: HTML_VISIBILITY_LIMITS.minOpacity,
+  selectors: {
+    headingLabel: HTML_SELECTORS.headingLabel,
+    labelLike: HTML_SELECTORS.labelLike,
+    semanticContextContainer: HTML_SELECTORS.semanticContextContainer,
+  },
+} as const;
+
+export type ElementExtractionConfig = typeof ELEMENT_EXTRACTION_CONFIG;
+export type RawElementData = NonNullable<ReturnType<typeof extractElementData>>;
+export type VisibleOverlayExtractionConfig = {
+  interactiveContentSelector: string;
+  limits: typeof HTML_EXTRACTION_LIMITS;
+  overlaySelectors: readonly string[];
+  visibilityLimits: typeof HTML_VISIBILITY_LIMITS;
+};
+export type ComponentScopeExtractionConfig = {
+  eidxAttr: string;
+  interactiveControlSelector: string;
+  limits: typeof HTML_EXTRACTION_LIMITS;
+};
+
+export function extractElementData(el: Element, config?: ElementExtractionConfig) {
+  const cfg =
+    config ||
+    ({
+      attrs: {
+        area: 'data-explorbot-area',
+        context: 'data-explorbot-context',
+        eidx: 'data-explorbot-eidx',
+        frameSourceIndex: 'data-explorbot-frame-source-index',
+        variant: 'data-explorbot-variant',
+      },
+      codeEditorMarkers: ['monaco', 'codemirror', 'ace', 'ace_editor', 'code'],
+      maxAreaDepth: 5,
+      maxContextLength: 120,
+      maxOuterHTMLLength: 2000,
+      maxTextLength: 80,
+      minOpacity: 0.1,
+      selectors: {
+        headingLabel: 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"]',
+        labelLike: 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"], [class*="title"], [class*="label"], [class*="header"], [class*="name"]',
+        semanticContextContainer: 'section, article, form, fieldset, li, tr, td, th, [role="group"], [role="tabpanel"], [role="region"], [class*="card"], [class*="panel"], [class*="item"], [class*="usage"], [class*="group"]',
+      },
+    } as ElementExtractionConfig);
+
+  function normalizeText(value: string): string {
+    return value.replace(/\s+/g, ' ').trim();
+  }
+
+  function readText(node: Element | null): string {
+    if (!node) return '';
+    return normalizeText(node.textContent || '').slice(0, cfg.maxContextLength);
+  }
+
+  function getLabelLikeText(node: Element | null): string {
+    if (!node) return '';
+    const direct = readText(node);
+    if (direct) return direct;
+    const labelLike = node.querySelector(cfg.selectors.labelLike);
+    return readText(labelLike);
+  }
+
+  function collectVariantHints(target: Element): string[] {
+    const tokens = new Set<string>();
+    const className = target.getAttribute('class') || '';
+    const tagName = target.tagName.toLowerCase();
+
+    for (const cls of className.split(/\s+/).filter(Boolean)) {
+      const lower = cls.toLowerCase();
+      if (/^(xs|sm|md|lg|xl|xxl)$/.test(lower)) tokens.add(lower);
+      if (/^(mini|small|medium|large|xlarge|xl|compact|dense)$/.test(lower)) tokens.add(lower);
+      if (/(^|[-_])(xs|sm|md|lg|xl|xxl|mini|small|medium|large|compact|dense)([-_]|$)/.test(lower)) tokens.add(lower);
+      if (/(selected|disabled|primary|secondary|tertiary|danger|success|warning|outline|ghost|icon|dropdown)/.test(lower)) tokens.add(lower);
+    }
+
+    const type = (target.getAttribute('type') || '').toLowerCase();
+    if (type) tokens.add(type);
+    if (target.hasAttribute('disabled') || target.getAttribute('aria-disabled') === 'true') tokens.add('disabled');
+    if (className.toLowerCase().includes('selected') || target.getAttribute('aria-pressed') === 'true') tokens.add('selected');
+    if (tagName === 'iframe') tokens.add('iframe');
+    if (tagName === 'iframe' && isEmbeddedCodeEditorFrame(target)) tokens.add('code-editor');
+
+    const svgCount = target.querySelectorAll('svg').length;
+    if (svgCount > 0) tokens.add('has-icon');
+    if (svgCount > 1) tokens.add('double-icon');
+
+    const normalizedText = normalizeText(target.textContent || '');
+    if (!normalizedText && svgCount > 0) tokens.add('icon-only');
+    if (normalizedText && svgCount > 0) {
+      const first = target.firstElementChild?.tagName.toLowerCase();
+      const last = target.lastElementChild?.tagName.toLowerCase();
+      if (first === 'svg') tokens.add('leading-icon');
+      if (last === 'svg') tokens.add('trailing-icon');
+    }
+
+    if (tagName === 'a' && target.getAttribute('href')) tokens.add('navigates');
+
+    return Array.from(tokens).slice(0, 8);
+  }
+
+  function isEmbeddedCodeEditorFrame(target: Element): boolean {
+    const src = (target.getAttribute('src') || '').toLowerCase();
+    const markerSelector = cfg.codeEditorMarkers.map((marker) => `[class*="${marker}"]`).join(', ');
+    const ancestorClasses = (target.closest(markerSelector)?.getAttribute('class') || '').toLowerCase();
+    return cfg.codeEditorMarkers.some((marker) => src.includes(marker) || ancestorClasses.includes(marker));
+  }
+
+  function findContextLabel(target: Element): string {
+    const labelledby = target.getAttribute('aria-labelledby');
+    const candidates: string[] = [];
+    if (labelledby) {
+      for (const id of labelledby.split(/\s+/).filter(Boolean)) {
+        const ref = document.getElementById(id);
+        const text = readText(ref);
+        if (text) candidates.push(text);
+      }
+    }
+
+    const semanticContainer = target.closest(cfg.selectors.semanticContextContainer);
+    if (semanticContainer) {
+      const ownHeading = semanticContainer.querySelector(cfg.selectors.headingLabel);
+      const ownHeadingText = readText(ownHeading);
+      if (ownHeadingText) candidates.push(ownHeadingText);
+
+      let previous: Element | null = semanticContainer.previousElementSibling;
+      let hops = 0;
+      while (previous && hops < 3) {
+        const previousText = getLabelLikeText(previous);
+        if (previousText) {
+          candidates.push(previousText);
+          break;
+        }
+        previous = previous.previousElementSibling;
+        hops++;
+      }
+    }
+
+    let parent: Element | null = target.parentElement;
+    let depth = 0;
+    while (parent && depth < 4) {
+      let sibling: Element | null = parent.previousElementSibling;
+      let hops = 0;
+      while (sibling && hops < 2) {
+        const siblingText = getLabelLikeText(sibling);
+        if (siblingText) {
+          candidates.push(siblingText);
+          sibling = null;
+          break;
+        }
+        sibling = sibling.previousElementSibling;
+        hops++;
+      }
+      parent = parent.parentElement;
+      depth++;
+    }
+
+    const ownText = normalizeText(target.textContent || '');
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      if (candidate === ownText) continue;
+      if (candidate.toLowerCase().includes('title should not be empty')) continue;
+      return candidate.slice(0, cfg.maxContextLength);
+    }
+
+    return '';
+  }
+
+  const rect = el.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return null;
+  const style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden') return null;
+  if (Number.parseFloat(style.opacity || '1') < cfg.minOpacity) return null;
+  if (el.getAttribute('aria-hidden') === 'true' || el.hasAttribute('hidden')) return null;
+  if ((el as HTMLElement).offsetParent === null && style.position !== 'fixed') return null;
+
+  const allAttrs: Record<string, string> = {};
+  for (let i = 0; i < el.attributes.length; i++) {
+    const attr = el.attributes[i];
+    allAttrs[attr.name] = attr.value;
+  }
+
+  const areaHints: string[] = [];
+  let current: Element | null = el;
+  let depth = 0;
+  while (current && depth < cfg.maxAreaDepth) {
+    const tag = current.tagName.toLowerCase();
+    areaHints.push(tag);
+
+    const role = current.getAttribute('role');
+    if (role) areaHints.push(`role:${role.toLowerCase()}`);
+
+    const id = current.getAttribute('id');
+    if (id) areaHints.push(`id:${id.toLowerCase()}`);
+
+    const className = current.getAttribute('class');
+    if (className) {
+      for (const cls of className.split(/\s+/).filter(Boolean)) {
+        areaHints.push(`class:${cls.toLowerCase()}`);
+      }
+    }
+
+    current = current.parentElement;
+    depth++;
+  }
+
+  allAttrs[cfg.attrs.area] = areaHints.join('|');
+  allAttrs[cfg.attrs.context] = findContextLabel(el);
+  allAttrs[cfg.attrs.variant] = collectVariantHints(el).join('|');
+
+  return {
+    tag: el.tagName.toLowerCase(),
+    text: normalizeText(el.textContent || '').slice(0, cfg.maxTextLength),
+    allAttrs,
+    outerHTML: el.outerHTML.slice(0, cfg.maxOuterHTMLLength),
+    x: Math.round(rect.x + rect.width / 2),
+    y: Math.round(rect.y + rect.height / 2),
+  };
+}
+
+export function getElementDataExtractorSource(): string {
+  return extractElementData.toString();
+}
+
+export function extractVisibleOverlayHtml(config: VisibleOverlayExtractionConfig): string {
+  function isVisible(element: Element): boolean {
+    const html = element as HTMLElement;
+    const style = window.getComputedStyle(html);
+    const rect = html.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return false;
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    if (Number.parseFloat(style.opacity || '1') < config.visibilityLimits.minOpacity) return false;
+    return true;
+  }
+
+  function getUsefulContent(element: Element): { interactiveCount: number; text: string } {
+    const text = (element.textContent || '').replace(/\s+/g, ' ').trim();
+    const interactiveCount = element.querySelectorAll(config.interactiveContentSelector).length;
+    return { interactiveCount, text };
+  }
+
+  function isLikelyFloatingOverlay(element: Element): boolean {
+    const html = element as HTMLElement;
+    const style = window.getComputedStyle(html);
+    const rect = html.getBoundingClientRect();
+    const zIndex = Number.parseInt(style.zIndex || '0', 10);
+    const isFloating = style.position === 'fixed' || style.position === 'absolute' || style.position === 'sticky' || zIndex > 0;
+    if (!isFloating) return false;
+    if (rect.width < config.visibilityLimits.minOverlayWidth || rect.height < config.visibilityLimits.minOverlayHeight) return false;
+    if (rect.bottom < 0 || rect.right < 0 || rect.top > window.innerHeight || rect.left > window.innerWidth) return false;
+    if (rect.width >= window.innerWidth * config.visibilityLimits.maxViewportOverlayRatio && rect.height >= window.innerHeight * config.visibilityLimits.maxViewportOverlayRatio) return false;
+    const { interactiveCount, text } = getUsefulContent(element);
+    return interactiveCount > 0 || text.length > 0;
+  }
+
+  const overlays: string[] = [];
+  const seen = new Set<Element>();
+  for (const selector of config.overlaySelectors) {
+    for (const element of Array.from(document.querySelectorAll(selector))) {
+      if (seen.has(element)) continue;
+      seen.add(element);
+      if (!isVisible(element)) continue;
+      const { interactiveCount, text } = getUsefulContent(element);
+      if (interactiveCount === 0 && text.length === 0) continue;
+      overlays.push((element as HTMLElement).outerHTML.slice(0, config.limits.overlayHtmlLength));
+    }
+  }
+
+  if (overlays.length === 0) {
+    const floatingCandidates = Array.from(document.body.querySelectorAll('*'))
+      .filter((element) => !seen.has(element) && isVisible(element) && isLikelyFloatingOverlay(element))
+      .sort((left, right) => {
+        const leftStyle = window.getComputedStyle(left as HTMLElement);
+        const rightStyle = window.getComputedStyle(right as HTMLElement);
+        const leftZ = Number.parseInt(leftStyle.zIndex || '0', 10) || 0;
+        const rightZ = Number.parseInt(rightStyle.zIndex || '0', 10) || 0;
+        if (leftZ !== rightZ) return rightZ - leftZ;
+        const leftRect = (left as HTMLElement).getBoundingClientRect();
+        const rightRect = (right as HTMLElement).getBoundingClientRect();
+        return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
+      });
+
+    for (const element of floatingCandidates.slice(0, config.limits.maxOverlayCount)) {
+      overlays.push((element as HTMLElement).outerHTML.slice(0, config.limits.overlayHtmlLength));
+    }
+  }
+
+  return overlays.slice(0, config.limits.maxOverlayCount).join('\n\n--- overlay ---\n\n');
+}
+
+export function extractComponentScopeHtml(eidx: string, config: ComponentScopeExtractionConfig): string {
+  const element = document.querySelector(`[${config.eidxAttr}="${eidx}"]`);
+  if (!element) return '';
+
+  function countInteractive(node: Element): number {
+    return node.querySelectorAll(config.interactiveControlSelector).length;
+  }
+
+  let current = element.parentElement;
+  while (current) {
+    const count = countInteractive(current);
+    if (count > 0 && count <= config.limits.maxScopeInteractiveCount) {
+      return current.outerHTML.slice(0, config.limits.componentScopeHtmlLength);
+    }
+    current = current.parentElement;
+  }
+
+  if (element instanceof HTMLElement) return element.outerHTML.slice(0, config.limits.componentScopeHtmlLength);
+  return '';
+}
+
+export function getVisibleOverlayHtmlExtractorSource(): string {
+  return extractVisibleOverlayHtml.toString();
+}
+
+export function getComponentScopeHtmlExtractorSource(): string {
+  return extractComponentScopeHtml.toString();
+}
+
 export const TRASH_HTML_CLASSES = /^(text-|color-|flex-|float-|v-|ember-|d-|border-)/;
 
 export const TAILWIND_CLASS_PATTERNS: RegExp[] = [

@@ -28,10 +28,14 @@ function createMockElement(tag: string, attrs: Record<string, string>, text = ''
       allAttrs[name] = value;
     },
     extractData() {
+      const attrs = Object.entries(allAttrs)
+        .map(([name, value]) => `${name}="${value}"`)
+        .join(' ');
       return {
         tag,
         text,
         allAttrs: { ...allAttrs },
+        outerHTML: `<${tag} ${attrs}>${text}</${tag}>`,
         x: 100,
         y: 200,
       };
@@ -139,5 +143,65 @@ describe('annotatePageElements', () => {
 
     expect(result.ariaSnapshot).toBe(ariaSnapshot);
     expect(result.elements).toHaveLength(0);
+  });
+
+  describe('component metadata', () => {
+    it('adds context and variant hints for drillable controls', async () => {
+      const ariaSnapshot = '- switch "Enable feature" [ref=e1]';
+      const page = createMockPage(ariaSnapshot, {
+        switch: [
+          createMockElement(
+            'button',
+            {
+              role: 'switch',
+              'aria-checked': 'false',
+              'data-explorbot-context': 'Toggle - off',
+              'data-explorbot-area': 'button|role:switch|main',
+              'data-explorbot-variant': 'rounded-full',
+            },
+            'Enable feature'
+          ),
+        ],
+      });
+
+      const { elements } = await annotatePageElements(page);
+      const toggle = elements.find((el) => el.role === 'switch');
+      expect(toggle?.contextLabel).toBe('Toggle - off');
+      expect(toggle?.areaHints).toContain('role:switch');
+      expect(toggle?.areaHints).toContain('main');
+      expect(toggle?.outerHTML).toContain('aria-checked="false"');
+    });
+
+    it('annotates code editor iframes for driller discovery', async () => {
+      const page = {
+        locator: (selector: string) => {
+          if (selector === 'body') {
+            return {
+              ariaSnapshot: async () => '',
+            };
+          }
+          return {
+            evaluateAll: async () => [
+              createMockElement('iframe', {
+                src: '/ember-monaco/frame.html',
+                'data-explorbot-context': 'Code Input',
+                'data-explorbot-variant': 'iframe|code-editor',
+                'data-explorbot-frame-source-index': '1',
+              }).extractData(),
+            ],
+          };
+        },
+        getByRole: () => ({
+          evaluateAll: async () => [],
+        }),
+      };
+
+      const { elements } = await annotatePageElements(page);
+      const frame = elements.find((el) => el.role === 'iframe');
+      expect(frame?.contextLabel).toBe('Code Input');
+      expect(frame?.variantHints).toContain('iframe');
+      expect(frame?.variantHints).toContain('code-editor');
+      expect(frame?.attrs['data-explorbot-frame-source-index']).toBe('1');
+    });
   });
 });
