@@ -17,13 +17,13 @@ import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
+import type { Captain } from './captain.ts';
 import type { Conversation } from './conversation.ts';
 import { Navigator } from './navigator.ts';
-import type { Captain } from './captain.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
+import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createSpecialContextTools } from './tools.ts';
 
@@ -124,6 +124,23 @@ export class Tester extends TaskAgent implements Agent {
     this.explorer.getStateManager().clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
+
+    const requestStore = this.explorer.getRequestStore();
+    requestStore?.clear();
+    const offFailedRequest = requestStore?.onFailedRequest((r) => {
+      task.addNote(`Network error: ${r.method} ${r.path} → ${r.status}`, TestResult.FAILED);
+    });
+
+    const page = this.explorer.playwrightHelper?.page;
+    const onPageError = (err: Error) => {
+      task.addNote(`Console error: ${err.message}`, TestResult.FAILED);
+    };
+    const onConsoleMessage = (msg: any) => {
+      if (msg.type() !== 'error') return;
+      task.addNote(`Console error: ${msg.text()}`, TestResult.FAILED);
+    };
+    page?.on('pageerror', onPageError);
+    page?.on('console', onConsoleMessage);
 
     const initialState = ActionResult.fromState(state);
 
@@ -355,6 +372,9 @@ export class Tester extends TaskAgent implements Agent {
     await this.getQuartermaster().analyzeSession(task, initialState, conversation);
 
     offStateChange();
+    offFailedRequest?.();
+    page?.off('pageerror', onPageError);
+    page?.off('console', onConsoleMessage);
     await this.finishTest(task);
     await this.explorer.stopTest(task, {
       startUrl: task.startUrl,
@@ -690,6 +710,8 @@ export class Tester extends TaskAgent implements Agent {
       Do not hallucinate that goal was achieved when it was not.
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
+
+      ${protectionRule}
 
       ${this.buildDeletionScope(task)}
 

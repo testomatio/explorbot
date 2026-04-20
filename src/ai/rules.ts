@@ -135,7 +135,15 @@ export const fileUploadRule = dedent`
 export const protectionRule = dedent`
   <important>
   Do not sign out current user of the application.
-  Do not change current user account settings
+  Do not change current user account settings.
+
+  Pre-existing data on the page belongs to the application, not the test.
+  Items that were not created inside the current test scenario must not be deleted, removed, emptied, reset, archived, or otherwise destroyed.
+  If a scenario needs to verify destructive behaviour, the same scenario must first create a disposable target and then destroy that specific target — never operate on data that was already there when the test started.
+
+  The resource that the current page URL represents is "under test".
+  The test must not destroy the resource it is running against — doing so invalidates every subsequent scenario that starts on the same URL.
+  Do not propose or perform delete/remove/archive actions on the entity that owns the current URL; propose such actions only on disposable children created within the scenario itself.
   </important>
 `;
 

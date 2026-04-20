@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-04-20
+
+### Changes
+- [Planner] No longer proposes scenarios that delete, remove, or archive data the test did not itself create. Destructive scenarios must now create a disposable target first and then act on that target. The resource represented by the current page URL is treated as "under test" and is never proposed for deletion — preventing cascades where deleting the focal item breaks every later scenario that starts on the same URL.
+- [Tester] Honors the same data-protection rule at execution time: refuses to delete pre-existing items and never destroys the resource owned by the current URL, in addition to the existing session-name allowlist.
+
+## 2026-04-18
+
+### New CLI Options
+- **`explorbot compact [target]`** — Compact stored experience files. With no target, sweeps all files (merging similar URLs first, then compacting). Pass a filename or URL substring to narrow the scope. Large files run through the AI compactor; recent files get a quality-review pass that drops low-value sections.
+  ```bash
+  explorbot compact                                 # full sweep (merge + compact)
+  explorbot compact /login                          # only files for URLs matching /login
+  explorbot compact abc123.md                       # one specific file
+  explorbot compact --dry-run                       # preview without running AI or writing
+  explorbot compact --no-merge                      # skip the cross-URL merge step
+  ```
+- **`explorbot experience [filter] [index]`** — List stored experiences grouped by URL, with a short tag per file (A, B, …) and a numbered section list. Pass a URL substring to filter, or a tag like `A1` to print that section's content. Add `--recent`/`--old` to restrict to files modified within / older than 30 days.
+  ```bash
+  explorbot experience                              # list everything
+  explorbot experience /login                       # only URLs matching /login
+  explorbot experience A1                           # print section 1 of file A
+  explorbot experience --recent                     # only files modified in the last 30 days
+  explorbot experience --old                        # only files older than 30 days
+  ```
+- **`explorbot explore --focus <feature>`** — Pass a focus area up-front instead of relying on the trailing positional argument. When set, explore skips the follow-up auto-planning loop and only runs the focused plan.
+  ```bash
+  explorbot explore --focus checkout                # focused run only
+  ```
+
+### New TUI Commands
+- **`/compact [target]`** — Same behavior as the CLI command, inside the TUI.
+  ```
+  /compact
+  /compact /login
+  /compact --dry-run
+  /compact --no-merge
+  ```
+- **`/experience [filter] [index]`** — List or expand stored experiences inside the TUI.
+  ```
+  /experience
+  /experience /login
+  /experience A1
+  /experience --recent
+  ```
+
+### Changes
+- Suggested next-step output from every command is now rendered as a clearly labeled `Suggested:` block, with each item shown on its own line prefixed by `/` (TUI) or `explorbot ` (CLI). Replaces the previous one-line-per-suggestion hint format.
+- [Tester] Console errors and failed network requests (HTTP 4xx/5xx responses to XHR/fetch) are now captured automatically during a test run and attached as failure notes on the task. Previously these were not surfaced.
+- [Pilot] The stuck-check briefing the pilot receives now includes a count and sample of console errors and recent failed network requests, so the pilot can reason about backend/JS failures when deciding whether to reset, retry, or stop.
+- Experience Tracker: Experience files now use `## FLOW: <title>` for multi-step recipes and `## ACTION: <title>` for single-step snippets. Titles are normalized to lowercase-first imperative phrases. When read for AI prompts, sections are rendered as `## HOW to <title> (multi-step|single-step)` so the model sees natural instructional phrasing. Previous formats (`SUCCEEDED:` / `Successful Flow:`) are no longer written.
+- Experience Tracker: New table-of-contents API lets callers list stored experience grouped by file tag and expand any section by tag + index, without having to read raw files.
+- Experience Compactor: The compaction flow now runs three passes — strip non-useful sections (empty, dynamic-locator, verification-only titles), AI quality review for files modified within the last 30 days, and AI compaction for anything still over the size threshold. Cross-URL merging across similar URLs is part of the default full sweep and can be skipped with `--no-merge`. Progress is logged per file.
+
 ## 2026-04-17
 
 ### Configuration
