@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
 import { Command } from 'commander';
 import figureSet from 'figures';
@@ -20,7 +21,7 @@ import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 const program = new Command();
 const cli = getCliName();
 
-const pkgPath = path.resolve(import.meta.dir, '../package.json');
+const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../package.json');
 const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as string;
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
