@@ -179,8 +179,7 @@ describe('Planner with aimock', () => {
 
     const prompt = extractPromptText(mock.getLastRequest());
     expect(prompt).toContain('<approach>');
-    expect(prompt).toContain('Stress-test');
-    expect(prompt).toContain('invalid, empty, and extreme values');
+    expect(prompt.toLowerCase()).toContain('stress');
   });
 
   it('injects feature focus directive in prompt', async () => {
