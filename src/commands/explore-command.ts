@@ -10,7 +10,10 @@ import { BaseCommand } from './base-command.js';
 export class ExploreCommand extends BaseCommand {
   name = 'explore';
   description = 'Start web exploration';
-  options = [{ flags: '--max-tests <number>', description: 'Maximum number of tests to run' }];
+  options = [
+    { flags: '--max-tests <number>', description: 'Maximum number of tests to run' },
+    { flags: '--focus <feature>', description: 'Focus area for exploration' },
+  ];
   suggestions = ['/navigate <page> - to go to another page', '/research - to analyze', '/plan <feature> - to plan testing'];
 
   maxTests?: number;
@@ -23,7 +26,7 @@ export class ExploreCommand extends BaseCommand {
       this.maxTests = Number.parseInt(opts.maxTests as string, 10);
     }
 
-    const feature = remaining.join(' ') || undefined;
+    const feature = (opts.focus as string) || remaining.join(' ') || undefined;
     const mainUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url;
 
     await this.runAllStyles(mainUrl, feature);
