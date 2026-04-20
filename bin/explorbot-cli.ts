@@ -20,7 +20,13 @@ import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 const program = new Command();
 const cli = getCliName();
 
-program.name(cli).description('AI-powered web exploration tool');
+const pkgPath = path.resolve(import.meta.dir, '../package.json');
+const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as string;
+
+program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
+program.hook('preAction', () => {
+  console.log(chalk.dim(`${cli} v${pkgVersion}`));
+});
 
 interface CLIOptions {
   verbose?: boolean;
