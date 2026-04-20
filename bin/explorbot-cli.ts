@@ -113,7 +113,7 @@ addCommonOptions(program.command('start [path]').description('Start web explorat
   await startTUI(explorBot);
 });
 
-addCommonOptions(program.command('explore <path>').description('Explore a page autonomously and run invented scenarios').option('--max-tests <count>', 'Maximum number of tests to run')).action(async (explorePath, options) => {
+addCommonOptions(program.command('explore <path>').description('Explore a page autonomously and run invented scenarios').option('--max-tests <count>', 'Maximum number of tests to run').option('--focus <feature>', 'Focus area for exploration')).action(async (explorePath, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
     await explorBot.start();
@@ -121,7 +121,9 @@ addCommonOptions(program.command('explore <path>').description('Explore a page a
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
     const cmd = new ExploreCommand(explorBot);
     if (options.maxTests) cmd.maxTests = Number.parseInt(options.maxTests, 10);
-    await cmd.execute('');
+    const execArgs: string[] = [];
+    if (options.focus) execArgs.push('--focus', `"${options.focus}"`);
+    await cmd.execute(execArgs.join(' '));
     await explorBot.stop();
     await showStatsAndExit(0);
   } catch (error) {
