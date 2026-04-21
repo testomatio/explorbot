@@ -245,7 +245,7 @@ export class ExperienceCompactor implements Agent {
     const usedFiles = new Set<string>();
 
     for (const decision of mergeDecisions) {
-      const matchingFiles = filesWithUrl.filter((f) => decision.urls.includes(f.data.url as string) && !usedFiles.has(f.filePath));
+      const matchingFiles = decision.urls.map((url) => filesWithUrl.find((f) => f.data.url === url && !usedFiles.has(f.filePath))).filter((f): f is ExperienceFile => Boolean(f));
 
       if (matchingFiles.length >= 2) {
         groups.push({

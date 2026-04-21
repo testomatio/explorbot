@@ -26,7 +26,7 @@ const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as stri
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
 program.hook('preAction', () => {
-	console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
+  console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
 });
 
 interface CLIOptions {
