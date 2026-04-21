@@ -21,3 +21,13 @@ export function isErrorPage(actionResult: ActionResult): boolean {
 
   return false;
 }
+
+export class ErrorPageError extends Error {
+  constructor(
+    public readonly url: string,
+    public readonly title?: string
+  ) {
+    super(`Error page detected at ${url}${title ? ` (${title})` : ''}`);
+    this.name = 'ErrorPageError';
+  }
+}

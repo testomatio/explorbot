@@ -1,21 +1,23 @@
 import type { ExplorBot } from '../explorbot.js';
+import { AddRuleCommand } from './add-rule-command.js';
 import type { BaseCommand } from './base-command.js';
 import { CleanCommand } from './clean-command.js';
-import { DebugCommand } from './debug-command.js';
+import { CompactCommand } from './compact-command.js';
 import { ContextAriaCommand } from './context-aria-command.js';
 import { ContextCommand } from './context-command.js';
 import { ContextDataCommand } from './context-data-command.js';
 import { ContextExperienceCommand } from './context-experience-command.js';
 import { ContextHtmlCommand } from './context-html-command.js';
 import { ContextKnowledgeCommand } from './context-knowledge-command.js';
+import { DebugCommand } from './debug-command.js';
 import { DrillCommand } from './drill-command.js';
 import { ExitCommand } from './exit-command.js';
+import { ExperienceCommand } from './experience-command.js';
 import { ExploreCommand } from './explore-command.js';
 import { FreesailCommand } from './freesail-command.js';
 import { HelpCommand } from './help-command.js';
-import { AddRuleCommand } from './add-rule-command.js';
-import { LearnCommand } from './learn-command.js';
 import { KnowsCommand } from './knows-command.js';
+import { LearnCommand } from './learn-command.js';
 import { NavigateCommand } from './navigate-command.js';
 import { PathCommand } from './path-command.js';
 import { PlanClearCommand } from './plan-clear-command.js';
@@ -53,6 +55,8 @@ const commandClasses: CommandClass[] = [
   PathCommand,
   LearnCommand,
   KnowsCommand,
+  ExperienceCommand,
+  CompactCommand,
   AddRuleCommand,
   ContextCommand,
   ContextAriaCommand,

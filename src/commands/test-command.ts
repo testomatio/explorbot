@@ -1,14 +1,20 @@
+import { Stats } from '../stats.js';
 import { Test } from '../test-plan.js';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class TestCommand extends BaseCommand {
   name = 'test';
   description = 'Launch tester agent to execute test scenarios';
-  suggestions = ['/test - to run next test', '/plan - to create new plan'];
+  suggestions: Suggestion[] = [
+    { command: 'test', hint: 'run next test' },
+    { command: 'plan', hint: 'create new plan' },
+  ];
 
   async execute(args: string): Promise<void> {
     const plan = this.explorBot.getCurrentPlan();
+    Stats.mode = 'test';
+    Stats.focus = plan?.title;
     const toExecute: Test[] = [];
 
     const requirePlan = () => {

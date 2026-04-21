@@ -4,15 +4,15 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { ConfigParser } from '../config.ts';
+import { ExperienceTracker, type SessionStep } from '../experience-tracker.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.ts';
-import { ExperienceTracker, type SessionExperienceEntry, type SessionStep } from '../experience-tracker.ts';
 import { type Reporter, type ReporterStep } from '../reporter.ts';
 import type { StateManager } from '../state-manager.ts';
 import { type Plan, type Task, Test } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.ts';
+import { extractStatePath } from '../utils/url-matcher.ts';
 import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
-import { extractStatePath } from '../utils/url-matcher.ts';
 import { ASSERTION_TOOLS, CODECEPT_TOOLS } from './tools.ts';
 
 const debugLog = createDebug('explorbot:historian');
@@ -51,13 +51,11 @@ export class Historian {
 
     if (verifiedSteps.length > 0) {
       const relatedUrls = this.extractVisitedUrls(toolExecutions, initialState.url || '');
-      const entry: SessionExperienceEntry = {
+      this.experienceTracker.writeFlow(initialState, {
         scenario: task.description,
-        result,
         steps: verifiedSteps,
         relatedUrls,
-      };
-      this.experienceTracker.saveSessionExperience(initialState, entry);
+      });
     }
 
     if (task instanceof Test && result !== 'failed') {
@@ -87,6 +85,7 @@ export class Historian {
       if (!CODECEPT_TOOLS.includes(exec.toolName as any)) continue;
       if (!exec.output?.code) continue;
       if (!exec.wasSuccessful) continue;
+      if (isNonReusableCode(exec.output.code)) continue;
 
       const message = this.getExecutionLabel(exec, `Executed ${exec.toolName}`);
       const ariaDiff = exec.output?.pageDiff?.ariaChanges || null;
@@ -252,7 +251,8 @@ export class Historian {
           }
         }
 
-        await this.experienceTracker.saveSuccessfulResolution(state, pattern.intent, candidate.success.output.code, pattern.explanation);
+        if (isNonReusableCode(candidate.success.output.code)) continue;
+        this.experienceTracker.writeAction(state, { title: pattern.intent, code: candidate.success.output.code, explanation: pattern.explanation });
       }
 
       debugLog('Detected %d retry patterns', response?.object?.retryPatterns?.length || 0);
@@ -372,6 +372,7 @@ export class Historian {
     lines.push(`Scenario('${this.escapeString(scenario)}', ({ I }) => {`);
 
     for (const exec of successfulSteps) {
+      if (isNonReusableCode(exec.output.code)) continue;
       const explanation = this.getExecutionLabel(exec);
       if (explanation) {
         lines.push('');
@@ -495,4 +496,8 @@ export class Historian {
       })
       .join('\n');
   }
+}
+
+export function isNonReusableCode(code: string): boolean {
+  return /\bI\.clickXY\s*\(/.test(code);
 }

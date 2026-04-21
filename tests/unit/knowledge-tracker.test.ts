@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import matter from 'gray-matter';
 import { ConfigParser } from '../../src/config';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
-import matter from 'gray-matter';
-import { writeFileSync, mkdirSync } from 'node:fs';
 
 const knowledgeDir = '/tmp/explorbot-test-knowledge';
 

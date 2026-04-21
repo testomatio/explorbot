@@ -4,11 +4,15 @@ interface TokenUsage {
   total: number;
 }
 
+export type ExplorbotMode = 'explore' | 'test' | 'freesail' | 'tui';
+
 export class Stats {
   static startTime = Date.now();
   static researches = 0;
   static tests = 0;
   static plans = 0;
+  static mode?: ExplorbotMode;
+  static focus?: string;
   static models: Record<string, TokenUsage> = {};
 
   static recordTokens(_agent: string, model: string, usage: TokenUsage): void {

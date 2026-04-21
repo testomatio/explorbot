@@ -3,9 +3,9 @@ import path from 'node:path';
 import chalk from 'chalk';
 import { highlight } from 'cli-highlight';
 import * as codeceptjs from 'codeceptjs';
-import store from 'codeceptjs/lib/store';
 import stepsListener from 'codeceptjs/lib/listener/steps';
 import storeListener from 'codeceptjs/lib/listener/store';
+import store from 'codeceptjs/lib/store';
 import figureSet from 'figures';
 import { ConfigParser } from '../config.ts';
 

@@ -155,7 +155,7 @@ export class CommandHandler implements InputManager {
         this.runningCommands.add(command.name);
         try {
           await command.execute(argsString);
-          command.suggestions.forEach((s) => tag('step').log(s));
+          command.printSuggestions();
         } catch (error: any) {
           if (error?.name === 'AbortError') throw error;
           tag('error').log(`/${command.name} failed: ${error instanceof Error ? error.message : String(error)}`);

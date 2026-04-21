@@ -1,20 +1,18 @@
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { unlinkSync } from 'node:fs';
 import dedent from 'dedent';
-import matter from 'gray-matter';
+import { type Tokens, marked } from 'marked';
 import { z } from 'zod';
-import type { ExperienceTracker } from '../experience-tracker.js';
+import { type ExperienceFile, type ExperienceTracker, RECENT_WINDOW_DAYS } from '../experience-tracker.js';
 import { Observability } from '../observability.js';
 import { createDebug, log, tag } from '../utils/logger.js';
+import { mdq } from '../utils/markdown-query.js';
+import { generalizeUrl, hasDynamicUrlSegment } from '../utils/url-matcher.js';
 import type { Agent } from './agent.js';
 import type { Provider } from './provider.js';
 
 const debugLog = createDebug('explorbot:experience-compactor');
 
-interface ExperienceFile {
-  filePath: string;
-  data: { url?: string; title?: string; [key: string]: any };
-  content: string;
-}
+export type { ExperienceFile };
 
 interface MergeGroup {
   pattern: string;
@@ -33,11 +31,12 @@ export class ExperienceCompactor implements Agent {
   }
 
   async compactExperience(experience: string): Promise<string> {
-    if (experience.length < this.MAX_LENGTH) {
-      return experience;
+    const stripped = this.stripNonUsefulEntries(experience);
+    if (stripped.length < this.MAX_LENGTH) {
+      return stripped;
     }
 
-    const prompt = this.buildCompactionPrompt(experience);
+    const prompt = this.buildCompactionPrompt(stripped);
     const model = this.provider.getModelForAgent('experience-compactor');
     const response = await this.provider.chat(
       [
@@ -50,38 +49,174 @@ export class ExperienceCompactor implements Agent {
     return response.text;
   }
 
-  async compactAllExperiences(): Promise<number> {
-    return Observability.run('experience-compactor.compactAll', { tags: ['experience-compactor'] }, async () => {
-      await this.mergeSimilarExperiences();
+  stripNonUsefulEntries(content: string): string {
+    let result = dropNonReusableSections(content);
+    result = dropEmptySections(result);
+    return result;
+  }
 
-      const experienceFiles = this.experienceTracker.getAllExperience();
-      let compactedCount = 0;
+  isRecent(file: ExperienceFile): boolean {
+    const ageDays = (Date.now() - file.mtime.getTime()) / (1000 * 60 * 60 * 24);
+    return ageDays <= RECENT_WINDOW_DAYS;
+  }
 
-      for (const experience of experienceFiles) {
-        const prevContent = experience.content;
-        const frontmatter = experience.data;
-        const compactedContent = await this.compactExperienceFile(experience.filePath);
+  async reviewExperienceQuality(content: string, context: { url?: string; title?: string }): Promise<string> {
+    const sections = listSections(content);
+    if (sections.length === 0) return content;
 
-        if (prevContent !== compactedContent) {
-          const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
-          this.experienceTracker.writeExperienceFile(stateHash, compactedContent, frontmatter);
-          debugLog('Experience file compacted:', experience.filePath);
-          compactedCount++;
-        }
+    const prompt = this.buildReviewPrompt(sections, context);
+    const schema = z.object({
+      sections: z.array(
+        z.object({
+          index: z.number().int(),
+          keep: z.boolean(),
+          reason: z.string(),
+        })
+      ),
+    });
+
+    try {
+      const model = this.provider.getModelForAgent('experience-compactor');
+      const response = await this.provider.generateObject(
+        [
+          { role: 'user', content: this.getSystemPrompt() },
+          { role: 'user', content: prompt },
+        ],
+        schema,
+        model,
+        { telemetryFunctionId: 'experience.reviewQuality' }
+      );
+
+      const decisions = response?.object?.sections || [];
+      let result = content;
+      for (const decision of decisions) {
+        if (decision.keep) continue;
+        const target = sections[decision.index];
+        if (!target) continue;
+        debugLog('Dropping section: %s (reason: %s)', target.title, decision.reason);
+        result = result.replace(target.raw, '');
       }
+      return result;
+    } catch (error) {
+      debugLog('AI quality review failed, keeping content unchanged: %s', error);
+      return content;
+    }
+  }
 
-      return compactedCount;
+  async compactAllExperiences(): Promise<{ merged: number; compacted: number }> {
+    return Observability.run('experience-compactor.compactAll', { tags: ['experience-compactor'] }, async () => {
+      const aiMerged = await this.mergeSimilarExperiences();
+      const generalized = this.generalizeDynamicUrls();
+      const compacted = await this.compactFiles(this.experienceTracker.getAllExperience());
+      return { merged: aiMerged + generalized, compacted };
     });
   }
 
-  async mergeSimilarExperiences(): Promise<number> {
+  async autocompact(): Promise<{ merged: number; compacted: number }> {
+    return Observability.run('experience-compactor.autocompact', { tags: ['experience-compactor'] }, async () => {
+      const aiMerged = await this.mergeSimilarExperiences({ onlyDynamic: true });
+      const generalized = this.generalizeDynamicUrls();
+      const compacted = await this.compactFiles(this.experienceTracker.getAllExperience(), { skipSmall: true });
+      return { merged: aiMerged + generalized, compacted };
+    });
+  }
+
+  generalizeDynamicUrls(): number {
+    const files = this.experienceTracker.getAllExperience();
+    let count = 0;
+    for (const file of files) {
+      const url = file.data.url as string | undefined;
+      if (!url || url.startsWith('~')) continue;
+      const generalized = generalizeUrl(url);
+      if (generalized === url) continue;
+      const stateHash = file.filePath.split('/').pop()?.replace('.md', '') || '';
+      const newData = { ...file.data, url: `~${generalized}~`, mergedFrom: [url] };
+      this.experienceTracker.writeExperienceFile(stateHash, file.content, newData);
+      tag('substep').log(`Generalized URL: ${url} → ~${generalized}~`);
+      count++;
+    }
+    return count;
+  }
+
+  async compactFiles(files: ExperienceFile[], options?: { skipSmall?: boolean }): Promise<number> {
+    const workingSet = options?.skipSmall ? files.filter((f) => f.content.length >= this.MAX_LENGTH) : files;
+
+    let compactedCount = 0;
+    const total = workingSet.length;
+    const aiReviewCount = workingSet.filter((f) => this.isRecent(f)).length;
+
+    if (total > 1) {
+      tag('info').log(`Processing ${total} experience file${total === 1 ? '' : 's'} (${aiReviewCount} will get AI review — ~${aiReviewCount * 3}s minimum)…`);
+    }
+
+    for (let i = 0; i < workingSet.length; i++) {
+      const experience = workingSet[i];
+      const shortName = experience.filePath.split('/').pop() || experience.filePath;
+      const willReview = this.isRecent(experience);
+
+      if (total > 1 && willReview) {
+        tag('substep').log(`[${i + 1}/${total}] reviewing ${shortName}`);
+      }
+
+      let content = this.stripNonUsefulEntries(experience.content);
+
+      if (willReview) {
+        content = await this.reviewExperienceQuality(content, experience.data);
+      }
+
+      if (content.length >= this.MAX_LENGTH) {
+        if (total > 1) tag('substep').log(`[${i + 1}/${total}] compacting ${shortName} (over ${this.MAX_LENGTH} chars)`);
+        const prompt = this.buildCompactionPrompt(content);
+        const model = this.provider.getModelForAgent('experience-compactor');
+        const response = await this.provider.chat(
+          [
+            { role: 'user', content: this.getSystemPrompt() },
+            { role: 'user', content: prompt },
+          ],
+          model,
+          { telemetryFunctionId: 'experience.compact' }
+        );
+        content = response.text;
+      }
+
+      if (content === experience.content) continue;
+
+      const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
+      this.experienceTracker.writeExperienceFile(stateHash, content, experience.data);
+      debugLog('Experience file compacted:', experience.filePath);
+      compactedCount++;
+    }
+
+    return compactedCount;
+  }
+
+  async mergeSimilarExperiences(options?: { onlyDynamic?: boolean }): Promise<number> {
     return Observability.run('experience-compactor.merge', { tags: ['experience-compactor'] }, async () => {
       const experienceFiles = this.experienceTracker.getAllExperience();
       if (experienceFiles.length < 2) {
         return 0;
       }
 
-      const mergeGroups = await this.identifyMergeGroups(experienceFiles);
+      let candidates = experienceFiles.filter((f) => f.data.url && !f.data.url.startsWith('~'));
+      if (options?.onlyDynamic) {
+        candidates = candidates.filter((f) => hasDynamicUrlSegment(f.data.url as string));
+      }
+
+      if (candidates.length < 2) {
+        debugLog('No mergeable URL patterns — skipping merge.');
+        return 0;
+      }
+
+      tag('info').log(`Experience compaction: checking ${candidates.length} file${candidates.length === 1 ? '' : 's'} for mergeable URL patterns…`);
+
+      const mergeGroups = await this.identifyMergeGroups(candidates);
+
+      if (mergeGroups.length === 0) {
+        tag('info').log('No URL groups to merge.');
+        return 0;
+      }
+
+      tag('info').log(`Merging ${mergeGroups.length} URL group${mergeGroups.length === 1 ? '' : 's'}…`);
       let mergedCount = 0;
 
       for (const group of mergeGroups) {
@@ -200,28 +335,6 @@ export class ExperienceCompactor implements Agent {
     }
   }
 
-  async compactExperienceFile(filePath: string): Promise<string> {
-    try {
-      const fileContent = readFileSync(filePath, 'utf8');
-      const parsed = matter(fileContent);
-
-      if (parsed.content.length < this.MAX_LENGTH) {
-        return parsed.content;
-      }
-      debugLog('Experience file to compact:', filePath);
-
-      const text = await this.compactExperience(parsed.content);
-
-      tag('substep').log('Experience file compacted:', filePath);
-      debugLog('Experience file compacted:', text);
-
-      return text;
-    } catch (error) {
-      debugLog('Error compacting experience file:', error);
-      return '';
-    }
-  }
-
   private getSystemPrompt(): string {
     const customPrompt = this.provider.getSystemPromptForAgent('experience-compactor', '*');
     return dedent`
@@ -235,7 +348,7 @@ export class ExperienceCompactor implements Agent {
   private buildCompactionPrompt(content: string): string {
     return dedent`
       <rules>
-      - Use markdown headers only (##, ###) - NO XML tags or wrappers in output
+      - Use markdown h2 headers only (##) - NO XML tags or wrappers in output
       - Merge similar flows to remove duplicates
       - Keep output under ${this.MAX_LENGTH} characters
       - Be explicit and short - no proposals or explanations
@@ -255,20 +368,18 @@ export class ExperienceCompactor implements Agent {
       </rules>
 
       <output_format>
-      Use this markdown structure:
+      Use this markdown structure. Titles must be imperative verb phrases, lowercase-first (e.g. "create a new user"):
 
-      ## Flows
+      ## FLOW: <multi-step imperative title>
 
-      For each unique positive flow (merge duplicates):
-      - Purpose: what was accomplished
+      * <step message>
       \`\`\`js
       // working code
       \`\`\`
+      ---
 
-      ## Reusable Actions
+      ## ACTION: <single-step imperative title>
 
-      For each reusable interaction pattern not covered by flows:
-      - Purpose: what was accomplished
       \`\`\`js
       // working code
       \`\`\`
@@ -278,7 +389,103 @@ export class ExperienceCompactor implements Agent {
       ${content}
       </context>
 
-      Compact this experience data following the format above.
+      Compact this experience data following the format above. Every section must be either a multi-step FLOW or a single-step ACTION.
     `;
   }
+
+  private buildReviewPrompt(sections: Array<{ title: string; raw: string }>, context: { url?: string; title?: string }): string {
+    const url = context.url || 'unknown';
+    const title = context.title || 'unknown';
+    const sectionsList = sections
+      .map((s, i) => {
+        return `Section ${i}: ${s.title}\n${s.raw.trim()}`;
+      })
+      .join('\n\n---\n\n');
+
+    return dedent`
+      Review each experience section stored for the page below. For each, decide whether to keep it for future test automation use.
+
+      <page>
+      url: ${url}
+      title: ${title}
+      </page>
+
+      <mental_model>
+      Every section answers the question "HOW to <title>?". If the title does not complete that question naturally, the section has no value. A FLOW teaches a multi-step procedure; an ACTION teaches a single atomic step. Verifications and one-off recoveries are out of scope.
+      </mental_model>
+
+      <drop_if>
+      - Title does not read as a reusable instruction — it describes a transient recovery, retry, or navigation step. Any title starting with "attempt", "try", "retry", "need to", "ensure", "go back", "return (to)", or ending with "(RESET)" is not a teaching.
+      - Title is a verification / assertion rather than an action. Any "verify", "verification", "see that", "check that", "expect", "assert", or "and verify" phrasing means the teaching is about asserting state, not doing something — drop.
+      - ACTION describes more than one atomic step. Multiple verb phrases, "and", "then", or comma-joined actions mean it is actually a FLOW, not an ACTION — drop so the flow gets re-captured correctly.
+      - Locator is dynamic / brittle: ember IDs, random UUIDs, numeric data-testid, positional XPaths like div[3].
+      - Too generic to reuse: "click button", "fill input" with no specific target.
+      - Duplicates another section on this same page.
+      - Body has no executable CodeceptJS code block.
+      </drop_if>
+
+      <keep_if>
+      Everything else. Prefer keeping sections — only drop when clearly low value.
+      </keep_if>
+
+      <sections>
+      ${sectionsList}
+      </sections>
+
+      Return a decision per section: { index, keep (boolean), reason (short) }.
+    `;
+  }
+}
+
+function listSections(content: string): { title: string; raw: string }[] {
+  const tokens = marked.lexer(content);
+  const sections: { title: string; raw: string }[] = [];
+
+  let currentHeading: string | null = null;
+  let currentRaw = '';
+
+  const flush = () => {
+    if (currentHeading !== null) sections.push({ title: currentHeading, raw: currentRaw });
+  };
+
+  for (const token of tokens) {
+    const raw = (token as any).raw || '';
+    if (token.type === 'heading' && (token as Tokens.Heading).depth === 2) {
+      flush();
+      currentHeading = (token as Tokens.Heading).text.trim();
+      currentRaw = raw;
+      continue;
+    }
+    if (currentHeading !== null) currentRaw += raw;
+  }
+  flush();
+  return sections;
+}
+
+function dropEmptySections(content: string): string {
+  let result = content;
+  const sections = [...mdq(result).query('section2(~"FLOW:")').each(), ...mdq(result).query('section2(~"ACTION:")').each()];
+
+  for (const section of sections) {
+    const raw = section.text();
+    const hasCode = mdq(raw).query('code').count() > 0;
+    const hasList = mdq(raw).query('list').count() > 0;
+    if (hasCode || hasList) continue;
+    result = result.replace(raw, '');
+  }
+
+  return result;
+}
+
+function dropNonReusableSections(content: string): string {
+  let result = content;
+  const sections = [...mdq(result).query('section2(~"FLOW:")').each(), ...mdq(result).query('section2(~"ACTION:")').each()];
+
+  for (const section of sections) {
+    const raw = section.text();
+    if (!/\bI\.clickXY\s*\(/.test(raw)) continue;
+    result = result.replace(raw, '');
+  }
+
+  return result;
 }

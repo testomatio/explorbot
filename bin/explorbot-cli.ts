@@ -26,7 +26,7 @@ const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as stri
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
 program.hook('preAction', () => {
-  console.log(chalk.dim(`${cli} v${pkgVersion}`));
+	console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
 });
 
 interface CLIOptions {
@@ -193,17 +193,21 @@ addCommonOptions(program.command('plan <path>').description('Generate test plan 
       const cliFlags = [options.path ? `--path ${options.path}` : '', options.session ? '--session' : ''].filter(Boolean).join(' ');
       const cliSuffix = cliFlags ? ` ${cliFlags}` : '';
 
-      const lines: string[] = [];
-      lines.push('Run commands:');
-      lines.push(`\`${cli} test ${planFile} 1${cliSuffix}\` → run first new test`);
-      lines.push(`\`${cli} test ${planFile} *${cliSuffix}\` → run all new tests`);
+      const { PlanCommand } = await import('../src/commands/plan-command.js');
+      const planCommand = new PlanCommand(explorBot);
+      planCommand.suggestions = [
+        { command: `test ${planFile} 1${cliSuffix}`, hint: 'run first new test' },
+        { command: `test ${planFile} *${cliSuffix}`, hint: 'run all new tests' },
+      ];
       if (suite && suite.automatedTestCount > 0) {
         for (const f of suite.getAutomatedTestFiles()) {
-          lines.push(`\`${cli} rerun ${path.relative(process.cwd(), f)}${cliSuffix}\` → re-run automated tests`);
+          planCommand.suggestions.push({
+            command: `rerun ${path.relative(process.cwd(), f)}${cliSuffix}`,
+            hint: 're-run automated tests',
+          });
         }
       }
-
-      log(parseMarkdownToTerminal(lines.join('\n')));
+      planCommand.printSuggestions();
 
       await explorBot.stop();
       await showStatsAndExit(0);
@@ -486,6 +490,64 @@ program
       const explorBot = new ExplorBot({ path: options.path });
       const command = new KnowsCommand(explorBot);
       await command.execute(url || '');
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('compact [target]')
+  .description('Compact stored experience files; pass filename or URL substring to limit scope')
+  .option('--dry-run', 'Preview without running AI or writing files')
+  .option('--no-merge', 'Skip the cross-URL merge step when compacting all')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('-v, --verbose', 'Enable verbose logging')
+  .action(async (target, options) => {
+    try {
+      const explorBot = new ExplorBot({
+        path: options.path,
+        config: options.config,
+        verbose: options.verbose,
+      });
+      await explorBot.startProviderOnly();
+
+      const { CompactCommand } = await import('../src/commands/compact-command.js');
+      const argParts = [target, options.dryRun && '--dry-run', options.merge === false && '--no-merge'].filter(Boolean).join(' ');
+      const command = new CompactCommand(explorBot);
+      await command.execute(argParts);
+      command.printSuggestions();
+
+      await showStatsAndExit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      await showStatsAndExit(1);
+    }
+  });
+
+program
+  .command('experience [filter] [index]')
+  .description('List stored experiences grouped by URL; pass URL substring to filter; pass tag (A.1) or index to expand a section')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('--recent', 'Only files modified within the last 30 days')
+  .option('--old', 'Only files modified more than 30 days ago')
+  .action(async (filter, index, options) => {
+    try {
+      await ConfigParser.getInstance().loadConfig({
+        config: options.config,
+        path: options.path || process.cwd(),
+      });
+      const { ExperienceCommand } = await import('../src/commands/experience-command.js');
+      const explorBot = new ExplorBot({ path: options.path });
+      const command = new ExperienceCommand(explorBot);
+      const flags: string[] = [];
+      if (options.recent) flags.push('--recent');
+      if (options.old) flags.push('--old');
+      const args = [...flags, filter, index].filter(Boolean).join(' ');
+      await command.execute(args);
+      command.printSuggestions();
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);

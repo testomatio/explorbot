@@ -1,10 +1,10 @@
 import dedent from 'dedent';
 import { z } from 'zod';
-import { ConfigParser } from '../../config.ts';
 import { normalizeUrl } from '../../state-manager.ts';
 import type { StateManager } from '../../state-manager.ts';
 import type { Plan } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
+import { isDynamicSegment } from '../../utils/url-matcher.ts';
 import type { Provider } from '../provider.ts';
 import type { Constructor } from '../researcher/mixin.ts';
 
@@ -36,29 +36,6 @@ function buildKey(url: string, feature?: string): string {
   const normalized = normalizeUrl(url);
   if (feature) return `${normalized}::${feature}`;
   return normalized;
-}
-
-export function isDynamicSegment(segment: string): boolean {
-  try {
-    const configRegex = ConfigParser.getInstance().getConfig().dynamicPageRegex;
-    if (configRegex) return new RegExp(configRegex, 'i').test(segment);
-  } catch {
-    /* config not loaded yet */
-  }
-
-  // numeric: /users/123
-  if (/^\d+$/.test(segment)) return true;
-  // UUID: /items/550e8400-e29b-41d4-a716-446655440000
-  if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(segment)) return true;
-  // ULID: /items/01ARZ3NDEKTSV4RRFFQ69G5FAV
-  if (/^[0-9A-HJKMNP-TV-Z]{26}$/.test(segment)) return true;
-  // hex ID (4+ chars): /suite/70dae98a
-  if (/^[a-f0-9]{4,}$/i.test(segment)) return true;
-  // hex-prefixed slug (8+ hex before dash): /suite/95ef0c94-mobile
-  if (/^[a-f0-9]{8,}-/i.test(segment)) return true;
-  // short mixed alphanumeric (digits + letters, ≤8 chars, no dash): /item/x7f2
-  if (segment.length <= 8 && !segment.includes('-') && /\d/.test(segment) && /[a-z]/i.test(segment)) return true;
-  return false;
 }
 
 export function isTemplateMatch(urlA: string, urlB: string): boolean {

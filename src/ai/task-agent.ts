@@ -1,6 +1,6 @@
 import dedent from 'dedent';
 import type { ActionResult } from '../action-result.js';
-import { renderExperienceToc, type ExperienceTracker } from '../experience-tracker.js';
+import { type ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 

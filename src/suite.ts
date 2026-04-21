@@ -3,8 +3,8 @@ import path from 'node:path';
 import { Reflection } from '@codeceptjs/reflection';
 import { ConfigParser } from './config.ts';
 import { normalizeUrl } from './state-manager.ts';
-import { parsePlanFromMarkdown } from './utils/test-plan-markdown.ts';
 import { createDebug } from './utils/logger.ts';
+import { parsePlanFromMarkdown } from './utils/test-plan-markdown.ts';
 
 const debugLog = createDebug('explorbot:suite');
 

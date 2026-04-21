@@ -1,9 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ActionResult } from './action-result.ts';
-import { ApiClient } from './api/api-client.ts';
-import { RequestStore } from './api/request-store.ts';
-import { loadSpec } from './api/spec-reader.ts';
 import { Bosun } from './ai/bosun.ts';
 import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
@@ -14,16 +11,20 @@ import { Pilot } from './ai/pilot.ts';
 import { Planner } from './ai/planner.ts';
 import { AIProvider } from './ai/provider.ts';
 import { Quartermaster } from './ai/quartermaster.ts';
-import { Researcher } from './ai/researcher.ts';
 import { Rerunner } from './ai/rerunner.ts';
+import { Researcher } from './ai/researcher.ts';
 import { Tester } from './ai/tester.ts';
 import { createAgentTools } from './ai/tools.ts';
+import { ApiClient } from './api/api-client.ts';
+import { RequestStore } from './api/request-store.ts';
+import { loadSpec } from './api/spec-reader.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
+import { ExperienceTracker } from './experience-tracker.ts';
 import Explorer from './explorer.ts';
-import type { Suite } from './suite.ts';
 import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
+import type { Suite } from './suite.ts';
 import { Plan } from './test-plan.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
 import { sanitizeFilename } from './utils/strings.ts';
@@ -51,6 +52,7 @@ export class ExplorBot {
   public needsInput = false;
   private currentPlan?: Plan;
   private planFeature?: string;
+  lastPlanError: Error | null = null;
   private agents: Record<string, any> = {};
 
   constructor(options: ExplorBotOptions = {}) {
@@ -76,13 +78,11 @@ export class ExplorBot {
     }
 
     try {
-      this.config = await this.configParser.loadConfig(this.options);
-      this.provider = new AIProvider(this.config.ai);
-      await this.provider.validateConnection();
+      await this.startProviderOnly();
       this.explorer = new Explorer(this.config, this.provider, this.options);
       await this.explorer.start();
       if (!this.options.incognito) {
-        await this.agentExperienceCompactor().compactAllExperiences();
+        await this.agentExperienceCompactor().autocompact();
       }
       if (this.userResolveFn) this.explorer.setUserResolve(this.userResolveFn);
     } catch (error) {
@@ -92,9 +92,16 @@ export class ExplorBot {
     }
   }
 
+  async startProviderOnly(): Promise<void> {
+    if (this.provider) return;
+    this.config = await this.configParser.loadConfig(this.options);
+    this.provider = new AIProvider(this.config.ai);
+    await this.provider.validateConnection();
+  }
+
   async stop(): Promise<void> {
     this.agents.quartermaster?.stop();
-    await this.explorer.stop();
+    await this.explorer?.stop();
   }
 
   async visitInitialState(): Promise<void> {
@@ -123,6 +130,13 @@ export class ExplorBot {
       return this.explorer.getKnowledgeTracker();
     }
     return new KnowledgeTracker();
+  }
+
+  getExperienceTracker(): ExperienceTracker {
+    if (this.explorer) {
+      return this.explorer.getStateManager().getExperienceTracker();
+    }
+    return new ExperienceTracker();
   }
 
   getConfig(): ExplorbotConfig {
@@ -227,10 +241,7 @@ export class ExplorBot {
   }
 
   agentExperienceCompactor(): ExperienceCompactor {
-    return (this.agents.experienceCompactor ||= this.createAgent(({ ai, explorer }) => {
-      const experienceTracker = explorer.getStateManager().getExperienceTracker();
-      return new ExperienceCompactor(ai, experienceTracker);
-    }));
+    return (this.agents.experienceCompactor ||= new ExperienceCompactor(this.provider, this.getExperienceTracker()));
   }
 
   agentQuartermaster(): Quartermaster | null {
@@ -348,10 +359,12 @@ export class ExplorBot {
     if (this.currentPlan) {
       planner.setPlan(this.currentPlan);
     }
+    this.lastPlanError = null;
     try {
       this.currentPlan = await planner.plan(feature, opts.style, opts.extend, opts.completedPlans);
     } catch (err) {
-      tag('warning').log(`Planning failed: ${err instanceof Error ? err.message : err}`);
+      this.lastPlanError = err instanceof Error ? err : new Error(String(err));
+      tag('warning').log(`Planning failed: ${this.lastPlanError.message}`);
       if (!this.currentPlan) return undefined;
       return this.currentPlan;
     }

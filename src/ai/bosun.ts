@@ -473,7 +473,11 @@ export class Bosun extends TaskAgent implements Agent {
     const successfulInteractions = results.filter((r) => r.result === 'success' && r.code);
 
     for (const interaction of successfulInteractions) {
-      await experienceTracker.saveSuccessfulResolution(actionResult, `Drill ${interaction.action}: ${interaction.component}`, interaction.code!, interaction.description);
+      experienceTracker.writeAction(actionResult, {
+        title: `Drill ${interaction.action}: ${interaction.component}`,
+        code: interaction.code!,
+        explanation: interaction.description,
+      });
     }
 
     if (successfulInteractions.length > 0) {

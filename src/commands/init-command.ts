@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
-import { log, tag } from '../utils/logger.js';
-import dedent from 'dedent';
 import chalk from 'chalk';
+import dedent from 'dedent';
 import { getCliName } from '../utils/cli-name.ts';
+import { log, tag } from '../utils/logger.js';
 
 const DEFAULT_CONFIG_TEMPLATE = `import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 // import { '<your provider here>' } from '<your provider package here>';

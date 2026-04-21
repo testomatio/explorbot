@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parentPort } from 'node:worker_threads';
 import { computeHtmlFingerprint } from '../../utils/html-diff.ts';

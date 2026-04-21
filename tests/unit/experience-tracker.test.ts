@@ -44,42 +44,44 @@ describe('ExperienceTracker', () => {
     });
   });
 
-  describe('saveSuccessfulResolution', () => {
-    it('should save successful resolution to experience file', async () => {
+  describe('writeAction', () => {
+    it('should save action to experience file', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Dashboard</body></html>',
         url: 'https://example.com/dashboard',
         title: 'Dashboard',
       });
 
-      await experienceTracker.saveSuccessfulResolution(actionResult, 'Navigate to dashboard', 'I.click("Dashboard")');
+      experienceTracker.writeAction(actionResult, { title: 'Navigate to dashboard', code: 'I.click("Dashboard")' });
 
       const stateHash = actionResult.getStateHash();
       const { content } = experienceTracker.readExperienceFile(stateHash);
 
-      expect(content).toContain('### SUCCEEDED: Navigate to dashboard');
+      expect(content).toContain('## ACTION: navigate to dashboard');
       expect(content).toContain('I.click("Dashboard")');
     });
 
-    it('should prepend successful resolution before existing content', async () => {
+    it('should prepend new action before existing content', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
         title: 'Test',
       });
 
-      await experienceTracker.saveSuccessfulResolution(actionResult, 'Click first', 'I.click("#first")');
-      await experienceTracker.saveSuccessfulResolution(actionResult, 'Click second', 'I.click("#second")');
+      experienceTracker.writeAction(actionResult, { title: 'Click first', code: 'I.click("#first")' });
+      experienceTracker.writeAction(actionResult, { title: 'Click second', code: 'I.click("#second")' });
 
       const stateHash = actionResult.getStateHash();
       const { content } = experienceTracker.readExperienceFile(stateHash);
 
-      const firstIndex = content.indexOf('Click second');
-      const secondIndex = content.indexOf('Click first');
+      const firstIndex = content.indexOf('click second');
+      const secondIndex = content.indexOf('click first');
+      expect(firstIndex).toBeGreaterThanOrEqual(0);
+      expect(secondIndex).toBeGreaterThanOrEqual(0);
       expect(firstIndex).toBeLessThan(secondIndex);
     });
 
-    it('should skip duplicate successful resolutions', async () => {
+    it('should skip duplicate actions', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
@@ -88,8 +90,8 @@ describe('ExperienceTracker', () => {
 
       const code = 'I.click("#submit")';
 
-      await experienceTracker.saveSuccessfulResolution(actionResult, 'Submit form', code);
-      await experienceTracker.saveSuccessfulResolution(actionResult, 'Submit form again', code);
+      experienceTracker.writeAction(actionResult, { title: 'Submit form', code });
+      experienceTracker.writeAction(actionResult, { title: 'Submit form again', code });
 
       const stateHash = actionResult.getStateHash();
       const { content } = experienceTracker.readExperienceFile(stateHash);
@@ -112,8 +114,8 @@ describe('ExperienceTracker', () => {
         title: 'Child',
       });
 
-      await experienceTracker.saveSuccessfulResolution(parent, 'p', 'I.click("p")');
-      await experienceTracker.saveSuccessfulResolution(child, 'c', 'I.click("c")');
+      experienceTracker.writeAction(parent, { title: 'p', code: 'I.click("p")' });
+      experienceTracker.writeAction(child, { title: 'c', code: 'I.click("c")' });
 
       const exactOnly = experienceTracker.getRelevantExperience(parent);
       expect(exactOnly).toHaveLength(1);
@@ -124,19 +126,19 @@ describe('ExperienceTracker', () => {
   });
 
   describe('readExperienceFile', () => {
-    it('should read existing experience file with frontmatter and content', async () => {
+    it('should read existing experience file with frontmatter and content', () => {
       const actionResult = new ActionResult({
         html: '<html><body>Test</body></html>',
         url: 'https://example.com/test',
         title: 'Test Page',
       });
 
-      await experienceTracker.saveSuccessfulResolution(actionResult, 'Test action', 'I.click("Test")');
+      experienceTracker.writeAction(actionResult, { title: 'Test action', code: 'I.click("Test")' });
 
       const stateHash = actionResult.getStateHash();
       const { content, data } = experienceTracker.readExperienceFile(stateHash);
 
-      expect(content).toContain('### SUCCEEDED: Test action');
+      expect(content).toContain('## ACTION: test action');
       expect(content).toContain('I.click("Test")');
       expect(data.url).toBe('/test');
       expect(data.title).toBe('Test Page');
@@ -187,7 +189,7 @@ describe('ExperienceTracker', () => {
         title: 'Page 2',
       });
 
-      await experienceTracker.saveSuccessfulResolution(actionResult1, 'Action 1', 'I.click("Link1")');
+      experienceTracker.writeAction(actionResult1, { title: 'Action 1', code: 'I.click("Link1")' });
       experienceTracker.writeExperienceFile(actionResult2.getStateHash(), '### Test content with I.click("Link2")', {
         url: '/page2',
         title: 'Page 2',
@@ -212,7 +214,7 @@ describe('ExperienceTracker', () => {
     });
   });
 
-  describe('saveSessionExperience trimming', () => {
+  describe('writeFlow trimming', () => {
     function makeState() {
       return new ActionResult({
         html: '<html><body>Test</body></html>',
@@ -221,23 +223,21 @@ describe('ExperienceTracker', () => {
       });
     }
 
-    it('should save valid session with heading and code', () => {
+    it('should save valid flow with heading and code', () => {
       const state = makeState();
-      experienceTracker.saveSessionExperience(state, {
+      experienceTracker.writeFlow(state, {
         scenario: 'Create a test',
-        result: 'success',
         steps: [{ message: 'Click create', status: 'passed', code: 'I.click("Create")' }],
       });
       const { content } = experienceTracker.readExperienceFile(state.getStateHash());
-      expect(content).toContain('## Successful Flow: Create a test');
+      expect(content).toContain('## FLOW: create a test');
       expect(content).toContain('I.click("Create")');
     });
 
-    it('should reject session with no code blocks', () => {
+    it('should reject flow with no code blocks', () => {
       const state = makeState();
-      experienceTracker.saveSessionExperience(state, {
+      experienceTracker.writeFlow(state, {
         scenario: 'Empty flow',
-        result: 'success',
         steps: [{ message: 'Did nothing useful', status: 'passed' }],
       });
       const stateHash = state.getStateHash();
@@ -250,9 +250,8 @@ describe('ExperienceTracker', () => {
 
     it('should trim code blocks to max 2', () => {
       const state = makeState();
-      experienceTracker.saveSessionExperience(state, {
+      experienceTracker.writeFlow(state, {
         scenario: 'Many steps',
-        result: 'success',
         steps: [
           { message: 'Step 1', status: 'passed', code: 'I.click("A")' },
           { message: 'Step 2', status: 'passed', code: 'I.click("B")' },
@@ -268,9 +267,8 @@ describe('ExperienceTracker', () => {
     it('should trim blockquotes to max 5', () => {
       const state = makeState();
       const discoveries = Array.from({ length: 10 }, (_, i) => `A new button appeared: Btn${i}`).join('\n');
-      experienceTracker.saveSessionExperience(state, {
+      experienceTracker.writeFlow(state, {
         scenario: 'Many discoveries',
-        result: 'success',
         steps: [{ message: 'Click something', status: 'passed', code: 'I.click("X")', discovery: discoveries }],
       });
       const { content } = experienceTracker.readExperienceFile(state.getStateHash());
@@ -286,9 +284,8 @@ describe('ExperienceTracker', () => {
         code: `I.click("Btn${i}")`,
         discovery: Array.from({ length: 5 }, (_, j) => `A new element appeared: El${i}_${j}`).join('\n'),
       }));
-      experienceTracker.saveSessionExperience(state, {
+      experienceTracker.writeFlow(state, {
         scenario: 'Long flow',
-        result: 'success',
         steps,
       });
       const { content } = experienceTracker.readExperienceFile(state.getStateHash());
@@ -321,7 +318,7 @@ describe('ExperienceTracker', () => {
           title: 'Test',
         });
 
-        await experienceTracker.saveSuccessfulResolution(actionResult, 'Test action', 'I.click("test")');
+        experienceTracker.writeAction(actionResult, { title: 'Test action', code: 'I.click("test")' });
 
         const stateHash = actionResult.getStateHash();
         const { data } = experienceTracker.readExperienceFile(stateHash);

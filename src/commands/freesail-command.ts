@@ -1,5 +1,6 @@
 import { Planner } from '../ai/planner.js';
 import { Researcher } from '../ai/researcher.js';
+import { Stats } from '../stats.js';
 import { tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import { BaseCommand } from './base-command.js';
@@ -18,6 +19,7 @@ export class FreesailCommand extends BaseCommand {
   ];
 
   async execute(args: string): Promise<void> {
+    Stats.mode = 'freesail';
     const { opts } = this.parseArgs(args);
     let strategy: 'deep' | 'shallow' | undefined;
     if (opts.deep) strategy = 'deep';

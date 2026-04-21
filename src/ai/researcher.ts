@@ -3,6 +3,7 @@ import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { setActivity } from '../activity.ts';
 import { ConfigParser, outputPath } from '../config.ts';
+import { executionController } from '../execution-controller.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.ts';
@@ -11,13 +12,13 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
-import { isErrorPage } from '../utils/error-page.ts';
+import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
 import { withRetry } from '../utils/retry.ts';
-import { executionController } from '../execution-controller.ts';
+import { RulesLoader } from '../utils/rules-loader.ts';
 import type { Agent } from './agent.js';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
@@ -30,7 +31,6 @@ import { extractValidContainers, formatResearchSummary, parseResearchSections } 
 import { ResearchResult } from './researcher/research-result.ts';
 import { type SectionMethods, WithSections } from './researcher/sections.ts';
 import { locatorRule as generalLocatorRuleText } from './rules.js';
-import { RulesLoader } from '../utils/rules-loader.ts';
 import { TaskAgent } from './task-agent.ts';
 
 export type { Locator } from './researcher/locators.ts';
@@ -136,14 +136,7 @@ export class Researcher extends ResearcherBase implements Agent {
         const recovered = await this.waitForPageLoad(screenshot);
         if (!recovered) {
           tag('warning').log(`Detected error page at ${state.url}`);
-          return dedent`
-            ## Error Page Detected
-
-            URL: ${state.url}
-            Title: ${this.actionResult!.title || 'N/A'}
-
-            Research skipped. Navigate to a valid page to continue.
-          `;
+          throw new ErrorPageError(state.url, this.actionResult!.title);
         }
       }
 

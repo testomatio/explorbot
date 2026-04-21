@@ -9,6 +9,8 @@ import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
 import { visuallyAnnotateContainers } from './ai/researcher/coordinates.ts';
+import { RequestStore } from './api/request-store.ts';
+import { XhrCapture } from './api/xhr-capture.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser, outputPath } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
@@ -16,8 +18,6 @@ import { KnowledgeTracker } from './knowledge-tracker.js';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
 import { Test } from './test-plan.ts';
-import { RequestStore } from './api/request-store.ts';
-import { XhrCapture } from './api/xhr-capture.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 import { WebElement, extractElementData } from './utils/web-element.ts';
 
@@ -68,7 +68,7 @@ class Explorer {
     this.initializeContainer();
     this.stateManager = new StateManager({ incognito: this.options?.incognito });
     this.knowledgeTracker = new KnowledgeTracker();
-    this.reporter = new Reporter(config.reporter);
+    this.reporter = new Reporter(config.reporter, this.stateManager);
   }
 
   private initializeContainer() {

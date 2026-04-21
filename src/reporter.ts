@@ -3,6 +3,8 @@ import { Client } from '@testomatio/reporter';
 import type { Step } from '@testomatio/reporter/types/types.js';
 import { ConfigParser, outputPath } from './config.js';
 import type { ReporterConfig } from './config.js';
+import type { StateManager } from './state-manager.js';
+import { Stats } from './stats.js';
 import { Test } from './test-plan.js';
 import { createDebug } from './utils/logger.js';
 
@@ -18,20 +20,31 @@ export interface ReporterStep {
 }
 
 export class Reporter {
-  private client: Client;
+  private client!: Client;
   private isRunStarted = false;
   private reporterEnabled: boolean;
+  private stateManager?: StateManager;
 
-  constructor(config?: ReporterConfig) {
+  constructor(config?: ReporterConfig, stateManager?: StateManager) {
     this.reporterEnabled = Reporter.resolveEnabled(config);
+    this.stateManager = stateManager;
 
     if (this.reporterEnabled && (!process.env.TESTOMATIO || config?.html)) {
       this.configureHtmlPipe();
     }
 
-    this.client = new Client({ apiKey: process.env.TESTOMATIO || '' });
     const pipe = process.env.TESTOMATIO && config?.html ? 'both' : process.env.TESTOMATIO ? 'testomatio' : 'html';
     debugLog('Reporter initialized', { enabled: this.reporterEnabled, pipe });
+  }
+
+  private buildTitle(): string {
+    if (process.env.TESTOMATIO_TITLE) return process.env.TESTOMATIO_TITLE;
+    const url = this.stateManager?.getCurrentState()?.url;
+    const parts = ['Explorbot session'];
+    if (url) parts.push(url);
+    if (Stats.focus) parts.push(`focus: "${Stats.focus}"`);
+    parts.push(`at ${new Date().toISOString().slice(0, 16)}`);
+    return parts.join(' ');
   }
 
   static resolveEnabled(config?: ReporterConfig): boolean {
@@ -56,6 +69,7 @@ export class Reporter {
     }
 
     try {
+      this.client = new Client({ apiKey: process.env.TESTOMATIO || '', title: this.buildTitle() });
       const timeoutMs = Number(process.env.TESTOMATIO_TIMEOUT_MS || '15000');
       const timeoutPromise = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), timeoutMs));
 

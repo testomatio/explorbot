@@ -1,10 +1,13 @@
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanLoadCommand extends BaseCommand {
   name = 'plan:load';
   description = 'Load plan from file';
-  suggestions = ['/test - to launch first test', '/test * - to launch all tests'];
+  suggestions: Suggestion[] = [
+    { command: 'test', hint: 'launch first test' },
+    { command: 'test *', hint: 'launch all tests' },
+  ];
 
   async execute(args: string): Promise<void> {
     const filename = args.trim();

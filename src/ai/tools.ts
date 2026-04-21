@@ -10,9 +10,9 @@ import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
 import { Navigator } from './navigator.ts';
+import type { AIProvider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
-import type { AIProvider } from './provider.ts';
 import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
@@ -289,14 +289,16 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
     form: tool({
       description: dedent`
         Execute raw CodeceptJS code block with multiple commands.
-        USE THIS TOOL for all keyboard interactions: I.fillField, I.type, I.pressKey
+        USE THIS TOOL for typing text into fields: I.fillField, I.type
 
         Follow <actions> from system prompt for available commands.
         Follow <locator_priority> from system prompt for locator selection.
 
+        I.type(text) types the literal characters of its argument into the focused element.
+        To press key combination or special keys (Ctrl, Meta, Esc) use I.pressKey instead.
+
         Use cases:
         - Typing into input fields (I.fillField, I.type)
-        - Pressing keyboard keys (I.pressKey)
         - Working with iframes (switch context with I.switchTo)
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
@@ -957,7 +959,7 @@ export function createAgentTools({
     tools.learn_experience = tool({
       description: dedent`
         Read the full body of a specific experience section listed in <experience>.
-        The TOC shows entries like "A.1 ## Successful Flow: ...". Pass the fileTag and sectionIndex.
+        The TOC shows entries like "A.1 ## FLOW: ..." or "A.2 ## ACTION: ...". Pass the fileTag and sectionIndex.
         Only call when a TOC entry looks directly relevant to the current step.
       `,
       inputSchema: z.object({

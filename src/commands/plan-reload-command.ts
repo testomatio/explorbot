@@ -1,10 +1,13 @@
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanReloadCommand extends BaseCommand {
   name = 'plan:reload';
   description = 'Clear current plan and regenerate';
-  suggestions = ['/test - to launch first test', '/test * - to launch all tests'];
+  suggestions: Suggestion[] = [
+    { command: 'test', hint: 'launch first test' },
+    { command: 'test *', hint: 'launch all tests' },
+  ];
 
   async execute(args: string): Promise<void> {
     const currentPlan = this.explorBot.getCurrentPlan();

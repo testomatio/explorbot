@@ -1,12 +1,12 @@
 import { render } from 'ink';
 import React from 'react';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class LearnCommand extends BaseCommand {
   name = 'learn';
   description = 'Store knowledge for current page';
-  suggestions = ['/knows - to view all knowledge'];
+  suggestions: Suggestion[] = [{ command: 'knows', hint: 'view all knowledge' }];
 
   async execute(args: string): Promise<void> {
     const note = args.trim();

@@ -1,11 +1,11 @@
 import path from 'node:path';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanSaveCommand extends BaseCommand {
   name = 'plan:save';
   description = 'Save current plan to file';
-  suggestions = ['/test - to launch first test'];
+  suggestions: Suggestion[] = [{ command: 'test', hint: 'launch first test' }];
 
   async execute(args: string): Promise<void> {
     const plan = this.explorBot.getCurrentPlan();

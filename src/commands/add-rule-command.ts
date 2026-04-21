@@ -3,12 +3,12 @@ import { join } from 'node:path';
 import { render } from 'ink';
 import React from 'react';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class AddRuleCommand extends BaseCommand {
   name = 'add-rule';
   description = 'Create a rule file for an agent';
-  suggestions = ['/add-rule researcher check-tooltips'];
+  suggestions: Suggestion[] = [{ command: 'add-rule researcher check-tooltips', hint: 'example — add a rule for the researcher agent' }];
 
   async execute(args: string): Promise<void> {
     const parts = args.trim().split(/\s+/);

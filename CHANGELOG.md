@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-04-21
+
+### Changes
+- Reporter: Testomatio run titles now describe the session instead of being empty — e.g. `Explorbot session https://app.example.com/settings focus: "billing" at 2026-04-21T09:15`. Override with the `TESTOMATIO_TITLE` env var.
+- [ExploreCommand] When a planning style fails mid-run, explore now re-visits the starting page and retries the planner once before skipping that style. If the failure is an error page (404/500) exploration stops immediately instead of retrying against a broken page.
+- [Researcher] When a page resolves to an error page that cannot be recovered, the researcher throws `ErrorPageError` so callers (explore, plan) halt instead of silently continuing on a dead page.
+- [Researcher] If a single section (sidebar, form, header, etc.) fails during multi-section research, the researcher logs a warning and continues with the remaining sections instead of failing the whole page.
+- [Historian] Generated CodeceptJS scenarios and recorded experience no longer include `I.clickXY(x, y)` steps. Coordinate clicks are not reusable across runs, so they're dropped when persisting the session.
+- Fixed a crash at the start of every test (`requestStore?.onFailedRequest is not a function`) introduced by the prior release; the tester's failed-network-request listener now attaches correctly.
+
 ## 2026-04-20
 
 ### Changes

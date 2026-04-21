@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMock } from '@copilotkit/aimock';
 import { ActionResult } from '../../src/action-result.ts';
-import { clearResearchCache, getCachedResearch, saveResearch } from '../../src/ai/researcher/cache.ts';
-import { Researcher } from '../../src/ai/researcher.ts';
 import { Provider } from '../../src/ai/provider.ts';
+import { Researcher } from '../../src/ai/researcher.ts';
+import { clearResearchCache, getCachedResearch, saveResearch } from '../../src/ai/researcher/cache.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');

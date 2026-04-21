@@ -65,6 +65,17 @@ Introduce new types and interfaces only for module-to-module collaboration, do n
 DUPLICATING CODE IS A SIN YOU WILL BURN IN ROBOT HELL FOR THAT! Always look if this code was already written and doesn't need to be reintroduced again
 RUN code deduplication agent after each major change
 
+## Prompts & Rules — General, Not Example-Driven
+
+Prompts, tool descriptions, and rules must be GENERAL. They describe how things work, not what just went wrong.
+
+- **NEVER hardcode examples from a debug session, user message, or recent bug into a prompt, tool description, or rule.** If the user reports "the AI did X with input Y", the fix is never to add Y as a counter-example in the prompt. Describe the underlying principle instead.
+- **NEVER add programmatic validators that target a specific failure the user just reported.** Do not bypass AI judgment with hardcoded regexes, keyword lists, or pattern matchers derived from the bug. Fix the prompt so the model understands the distinction generally.
+- Examples in prompts must illustrate the general shape of correct usage (taken from the tool's purpose), never the specific wrong input a user mentioned.
+- When a user reports model confusion between two tools/commands, sharpen each tool's description to state its purpose and boundaries in general terms — do not enumerate the user's failing example.
+
+Applies to: `src/ai/rules.ts`, every `tool({ description })` / `inputSchema` describe text, system prompts in agent files, any dedent-block feeding an AI call.
+
 ## Separation of Concerns
 
 Follow separation of concerns principle when implementing new features:

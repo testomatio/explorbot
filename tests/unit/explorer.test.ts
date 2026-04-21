@@ -205,11 +205,12 @@ mock.module('codeceptjs/lib/listener/store.js', () => ({
   default: () => {},
 }));
 
-import { isDynamicSegment, isTemplateMatch } from '../../src/ai/planner/subpages.ts';
+import { isTemplateMatch } from '../../src/ai/planner/subpages.ts';
 import { AIProvider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
 import Explorer from '../../src/explorer.ts';
 import { Reporter } from '../../src/reporter.ts';
+import { isDynamicSegment } from '../../src/utils/url-matcher.ts';
 
 describe('isDynamicSegment', () => {
   it('detects numeric IDs', () => {

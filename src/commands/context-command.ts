@@ -4,12 +4,18 @@ import { outputPath } from '../config.js';
 import { type ContextData, type ContextMode, formatContextSummary } from '../utils/context-formatter.js';
 import { tag } from '../utils/logger.js';
 import { extractValidContainers } from '../utils/research-parser.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class ContextCommand extends BaseCommand {
   name = 'context';
   description = 'Show page context summary (URL, headings, experience, knowledge, ARIA, HTML, research)';
-  suggestions = ['context:aria', 'context:html', 'context:knowledge', 'context:experience', 'context:data'];
+  suggestions: Suggestion[] = [
+    { command: 'context:aria', hint: 'show page ARIA snapshot' },
+    { command: 'context:html', hint: 'show page HTML' },
+    { command: 'context:knowledge', hint: 'show relevant knowledge' },
+    { command: 'context:experience', hint: 'show relevant experience' },
+    { command: 'context:data', hint: 'show captured page data' },
+  ];
   options = [
     { flags: '--visual', description: 'Include annotated screenshot' },
     { flags: '--screenshot', description: 'Include annotated screenshot' },

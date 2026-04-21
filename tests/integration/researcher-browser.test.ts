@@ -2,13 +2,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { join } from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMock } from '@copilotkit/aimock';
-import { type Browser, chromium, type Page } from 'playwright';
+import { type Browser, type Page, chromium } from 'playwright';
 import { ActionResult } from '../../src/action-result.ts';
-import { annotatePageElements } from '../../src/explorer.ts';
-import { clearResearchCache } from '../../src/ai/researcher/cache.ts';
-import { Researcher } from '../../src/ai/researcher.ts';
 import { Provider } from '../../src/ai/provider.ts';
+import { Researcher } from '../../src/ai/researcher.ts';
+import { clearResearchCache } from '../../src/ai/researcher/cache.ts';
 import { ConfigParser } from '../../src/config.ts';
+import { annotatePageElements } from '../../src/explorer.ts';
 
 const TASK_BOARD_URL = `file://${join(process.cwd(), 'test-data', 'task-board.html')}`;
 

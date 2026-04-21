@@ -1,13 +1,13 @@
-import { tool } from 'ai';
-import { expect } from 'expect';
 import { readFileSync } from 'node:fs';
+import { tool } from 'ai';
 import dedent from 'dedent';
+import { expect } from 'expect';
 import { z } from 'zod';
+import type { RequestStore } from '../../../../src/api/request-store.ts';
 import type { Test, TestResultType } from '../../../../src/test-plan.ts';
 import { TestResult } from '../../../../src/test-plan.ts';
 import { tag } from '../../../../src/utils/logger.ts';
 import type { ApiClient } from '../api-client.ts';
-import type { RequestStore } from '../../../../src/api/request-store.ts';
 
 const readResponseData = (responseFile: string) => {
   return JSON.parse(readFileSync(responseFile, 'utf8'));

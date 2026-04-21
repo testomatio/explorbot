@@ -1,10 +1,10 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMock } from '@copilotkit/aimock';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { Provider } from '../../src/ai/provider.ts';
-import { clearResearchCache } from '../../src/ai/researcher/cache.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
+import { clearResearchCache } from '../../src/ai/researcher/cache.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 const fakeState = {

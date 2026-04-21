@@ -1,10 +1,13 @@
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class NavigateCommand extends BaseCommand {
   name = 'navigate';
   description = 'Navigate to URI or state using AI';
-  suggestions = ['/research - to analyze current page', '/plan <feature> - to plan testing'];
+  suggestions: Suggestion[] = [
+    { command: 'research', hint: 'analyze current page' },
+    { command: 'plan <feature>', hint: 'plan testing' },
+  ];
 
   async execute(args: string): Promise<void> {
     const destination = args.trim();

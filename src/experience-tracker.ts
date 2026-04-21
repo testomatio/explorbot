@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import matter from 'gray-matter';
-import { marked, type Tokens } from 'marked';
+import { type Tokens, marked } from 'marked';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
@@ -13,6 +13,23 @@ import { extractStatePath } from './utils/url-matcher.js';
 const debugLog = createDebug('explorbot:experience');
 const DEFAULT_MAX_EXPERIENCE_LINES = 100;
 
+export const RECENT_WINDOW_DAYS = 30;
+
+/**
+ * Stores and reads per-page experience files (`./experience/<stateHash>.md`).
+ *
+ * Format rules (enforced by writeFlow/writeAction — the only supported writers):
+ *
+ *   ## FLOW: <imperative title>        multi-step, `*` bullets + optional ```js``` + `>` discovery, ends with `---`
+ *   ## ACTION: <imperative title>      single-step, optional `Solution:` line + one ```js``` code block
+ *
+ * - Always h2. Never h3 for FLOW/ACTION.
+ * - Title is an imperative verb phrase, lowercase-first, no trailing punctuation.
+ *   Writers normalize automatically (strip own `FLOW:` / `ACTION:` prefix if the caller included it,
+ *   lowercase first char, trim trailing `.!?,;:`).
+ * - On read (getSuccessfulExperience), headings are rendered as
+ *   `## HOW to <title> (multi-step|single-step)` so prompts get natural phrasing.
+ */
 export class ExperienceTracker {
   private experienceDir: string;
   private disabled: boolean;
@@ -144,35 +161,57 @@ export class ExperienceTracker {
     return this.knowledgeTracker.getRelevantKnowledge(state).some((k) => k.noExperienceWriting === true || k.noExperienceWriting === 'true');
   }
 
-  async saveSuccessfulResolution(state: ActionResult, originalMessage: string, code: string, explanation?: string): Promise<void> {
+  writeAction(state: ActionResult, action: ActionInput): void {
     if (this.disabled || this.isWritingDisabled(state)) return;
+    if (!action.code?.trim()) return;
 
     this.ensureExperienceFile(state);
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
-    if (content.includes(code)) {
-      debugLog('Skipping duplicate successful resolution', code);
+    if (content.includes(action.code)) {
+      debugLog('Skipping duplicate action', action.code);
       return;
     }
 
-    const filteredCode = code.replace(/I\.amOnPage\s*\([^)]*\)/gs, '');
-    const newEntryContent = `### SUCCEEDED: ${originalMessage.split('\n')[0]}
+    const title = normalizeTitle(action.title.split('\n')[0]);
+    if (!title) return;
 
-${explanation ? `Solution: ${explanation}` : ''}
-
-\`\`\`javascript
-${filteredCode}
-\`\`\`
-`;
-
-    const updatedContent = `${newEntryContent}\n\n${content}`;
+    const filteredCode = action.code.replace(/I\.amOnPage\s*\([^)]*\)/gs, '');
+    const newEntry = generateActionContent(title, filteredCode, action.explanation);
+    const updatedContent = `${newEntry}\n\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
-    tag('substep').log(` Added successful resolution to: ${stateHash}.md`);
+    tag('substep').log(` Added ACTION to: ${stateHash}.md`);
   }
 
-  getAllExperience(): { filePath: string; data: any; content: string }[] {
-    const allFiles: { filePath: string; data: any; content: string }[] = [];
+  writeFlow(state: ActionResult, flow: FlowInput): void {
+    if (this.disabled || this.isWritingDisabled(state)) return;
+    if (!flow.steps?.length) return;
+
+    this.ensureExperienceFile(state);
+    const stateHash = state.getStateHash();
+    const { content, data } = this.readExperienceFile(stateHash);
+
+    if (flow.relatedUrls?.length) {
+      const currentPath = extractStatePath(state.url || '');
+      const existingRelated = Array.isArray(data.related) ? data.related : [];
+      const allRelated = [...new Set([...existingRelated, ...flow.relatedUrls])];
+      data.related = allRelated.filter((url) => url !== currentPath);
+    }
+
+    const title = normalizeTitle(flow.scenario);
+    if (!title) return;
+
+    const sessionContent = this.trimSessionContent(generateFlowContent(title, flow.steps));
+    if (!sessionContent) return;
+    const updatedContent = `${sessionContent}\n${content}`;
+    this.writeExperienceFile(stateHash, updatedContent, data);
+
+    tag('substep').log(`Added FLOW to: ${stateHash}.md`);
+  }
+
+  getAllExperience(): ExperienceFile[] {
+    const allFiles: ExperienceFile[] = [];
 
     for (const experienceDir of this.getExperienceDirectories()) {
       if (!existsSync(experienceDir)) {
@@ -188,10 +227,12 @@ ${filteredCode}
           try {
             const content = readFileSync(file, 'utf8');
             const parsed = matter(content);
+            const mtime = statSync(file).mtime;
             allFiles.push({
               filePath: file,
               data: parsed.data,
               content: parsed.content,
+              mtime,
             });
           } catch (error) {
             debugLog(`Failed to read experience file ${file}:`, error);
@@ -205,7 +246,7 @@ ${filteredCode}
     return allFiles;
   }
 
-  getRelevantExperience(state: ActionResult, options?: { includeDescendantExperience?: boolean }): { filePath: string; data: any; content: string }[] {
+  getRelevantExperience(state: ActionResult, options?: { includeDescendantExperience?: boolean }): ExperienceFile[] {
     const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(state);
     const readingDisabled = relevantKnowledge.some((knowledge) => knowledge.noExperienceReading === true || knowledge.noExperienceReading === 'true');
     if (readingDisabled) {
@@ -234,50 +275,6 @@ ${filteredCode}
   cleanup(): void {
     // Clear any in-memory state if needed
     // The actual files will be cleaned up by test cleanup
-  }
-
-  saveSessionExperience(state: ActionResult, entry: SessionExperienceEntry): void {
-    if (this.disabled || this.isWritingDisabled(state)) return;
-
-    this.ensureExperienceFile(state);
-    const stateHash = state.getStateHash();
-    const { content, data } = this.readExperienceFile(stateHash);
-
-    if (entry.relatedUrls?.length) {
-      const currentPath = extractStatePath(state.url || '');
-      const existingRelated = Array.isArray(data.related) ? data.related : [];
-      const allRelated = [...new Set([...existingRelated, ...entry.relatedUrls])];
-      data.related = allRelated.filter((url) => url !== currentPath);
-    }
-
-    const sessionContent = this.trimSessionContent(this.generateSessionContent(entry));
-    if (!sessionContent) return;
-    const updatedContent = `${sessionContent}\n${content}`;
-    this.writeExperienceFile(stateHash, updatedContent, data);
-
-    tag('substep').log(`Added session experience to: ${stateHash}.md`);
-  }
-
-  private generateSessionContent(entry: SessionExperienceEntry): string {
-    let content = `## Successful Flow: ${entry.scenario}\n\n`;
-
-    for (const step of entry.steps) {
-      content += `* ${step.message}\n\n`;
-      if (step.code) {
-        content += '```js\n';
-        content += `${step.code}\n`;
-        content += '```\n\n';
-      }
-      if (step.discovery) {
-        const discoveries = step.discovery.split('\n').filter((d) => d.trim());
-        for (const discovery of discoveries) {
-          content += `> ${discovery.trim()}\n\n`;
-        }
-      }
-    }
-
-    content += '---\n';
-    return content;
   }
 
   private trimSessionContent(content: string): string | null {
@@ -318,11 +315,13 @@ ${filteredCode}
     for (const record of records) {
       if (!record.content) continue;
 
-      const successFlows = mdq(record.content).query('section(~"Successful Flow")').text();
-      const succeeded = mdq(record.content).query('section(~"SUCCEEDED")').text();
-      let combined = [successFlows, succeeded].filter(Boolean).join('\n\n');
+      const flows = mdq(record.content).query('section(~"FLOW:")').text();
+      const actions = mdq(record.content).query('section(~"ACTION:")').text();
+      let combined = [flows, actions].filter(Boolean).join('\n\n');
 
       if (!combined.trim()) continue;
+
+      combined = renderAsHowTo(combined);
 
       if (options?.stripCode) {
         combined = mdq(combined).query('code').replace('');
@@ -382,6 +381,72 @@ ${filteredCode}
       if (existsSync(candidate)) return candidate;
     }
     return null;
+  }
+
+  listAllExperienceToc(filter?: string, options?: { recency?: 'recent' | 'old' }): ExperienceTocEntry[] {
+    const records = this.getAllExperience();
+    if (records.length === 0) return [];
+
+    const trimmed = filter?.trim();
+    let matching = records;
+
+    if (trimmed) {
+      if (trimmed.endsWith('.md')) {
+        const bare = trimmed.slice(0, -3);
+        const byFilename = records.find((record) => basename(record.filePath, '.md') === bare);
+        matching = byFilename ? [byFilename] : [];
+      } else {
+        const lower = trimmed.toLowerCase();
+        matching = records.filter((record) => {
+          const url = ((record.data as WebPageState)?.url || '').toLowerCase();
+          if (!url) return false;
+          return url.includes(lower);
+        });
+      }
+    }
+
+    if (options?.recency) {
+      const cutoff = Date.now() - RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      matching = matching.filter((record) => {
+        const isRecent = record.mtime.getTime() >= cutoff;
+        return options.recency === 'recent' ? isRecent : !isRecent;
+      });
+    }
+
+    const sorted = matching.sort((a, b) => {
+      const aUrl = (a.data as WebPageState)?.url || '';
+      const bUrl = (b.data as WebPageState)?.url || '';
+      return aUrl.localeCompare(bUrl);
+    });
+
+    const toc: ExperienceTocEntry[] = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const record = sorted[i];
+      const sections = listTocHeadings(record.content);
+      if (sections.length === 0) continue;
+      toc.push({
+        fileTag: indexToLetters(toc.length),
+        fileHash: basename(record.filePath, '.md'),
+        url: (record.data as WebPageState)?.url || '',
+        sections,
+      });
+    }
+    return toc;
+  }
+
+  getExperienceSectionByTag(fileTag: string, sectionIndex: number, filter?: string): { title: string; url: string; content: string; fileHash: string } | null {
+    const toc = this.listAllExperienceToc(filter);
+    const entry = toc.find((e) => e.fileTag === fileTag);
+    if (!entry) return null;
+
+    const filePath = this.findExperienceFileByHash(entry.fileHash);
+    if (!filePath) return null;
+
+    const { content } = this.readExperienceFile(entry.fileHash);
+    const extracted = extractHeadingSection(content, sectionIndex);
+    if (!extracted) return null;
+
+    return { title: extracted.title, url: entry.url, content: extracted.body, fileHash: entry.fileHash };
   }
 }
 
@@ -448,7 +513,9 @@ export function renderExperienceToc(toc: ExperienceTocEntry[]): string {
 
   const lines: string[] = [];
   lines.push('<experience>');
-  lines.push('Past experience for this page. Call learn_experience({ fileTag, sectionIndex }) to read a section.');
+  lines.push('Past experience for this page — reusable recipes recorded from prior successful runs.');
+  lines.push('FLOW: = multi-step recipe (bullets + code + discovery). ACTION: = single-step snippet (one code block).');
+  lines.push('Call learn_experience({ fileTag, sectionIndex }) to read a section when it looks relevant to the current step.');
   lines.push('');
   for (const entry of toc) {
     lines.push(`File ${entry.fileTag} ${entry.url}:`);
@@ -462,19 +529,101 @@ export function renderExperienceToc(toc: ExperienceTocEntry[]): string {
   return lines.join('\n');
 }
 
+function normalizeTitle(raw: string): string {
+  let t = (raw || '').trim();
+  for (const p of ['FLOW:', 'ACTION:']) {
+    if (t.toLowerCase().startsWith(p.toLowerCase())) {
+      t = t.slice(p.length).trim();
+      break;
+    }
+  }
+  while (t.length > 0 && '.!?,;:'.includes(t[t.length - 1])) {
+    t = t.slice(0, -1);
+  }
+  if (t.length > 0) t = t[0].toLowerCase() + t.slice(1);
+  return t;
+}
+
+function generateActionContent(title: string, code: string, explanation?: string): string {
+  const lines: string[] = [];
+  lines.push(`## ACTION: ${title}`);
+  lines.push('');
+  if (explanation) {
+    lines.push(`Solution: ${explanation}`);
+    lines.push('');
+  }
+  lines.push('```javascript');
+  lines.push(code);
+  lines.push('```');
+  lines.push('');
+  return lines.join('\n');
+}
+
+function generateFlowContent(title: string, steps: SessionStep[]): string {
+  let content = `## FLOW: ${title}\n\n`;
+  for (const step of steps) {
+    content += `* ${step.message}\n\n`;
+    if (step.code) {
+      content += '```js\n';
+      content += `${step.code}\n`;
+      content += '```\n\n';
+    }
+    if (step.discovery) {
+      const discoveries = step.discovery.split('\n').filter((d) => d.trim());
+      for (const discovery of discoveries) {
+        content += `> ${discovery.trim()}\n\n`;
+      }
+    }
+  }
+  content += '---\n';
+  return content;
+}
+
+function renderAsHowTo(content: string): string {
+  const tokens = marked.lexer(content);
+  let result = '';
+  for (const token of tokens) {
+    if (token.type === 'heading' && (token as Tokens.Heading).depth === 2) {
+      const text = (token as Tokens.Heading).text.trim();
+      if (text.startsWith('FLOW:')) {
+        result += `## HOW to ${text.slice(5).trim()} (multi-step)\n\n`;
+        continue;
+      }
+      if (text.startsWith('ACTION:')) {
+        result += `## HOW to ${text.slice(7).trim()} (single-step)\n\n`;
+        continue;
+      }
+    }
+    result += (token as any).raw || '';
+  }
+  return result;
+}
+
+export interface ExperienceFile {
+  filePath: string;
+  data: { url?: string; title?: string; [key: string]: any };
+  content: string;
+  mtime: Date;
+}
+
+export interface FlowInput {
+  scenario: string;
+  steps: SessionStep[];
+  relatedUrls?: string[];
+}
+
+export interface ActionInput {
+  title: string;
+  code: string;
+  explanation?: string;
+}
+
 export interface SessionStep {
   message: string;
   status: 'passed' | 'failed' | 'neutral';
   tool?: string;
   code?: string;
   discovery?: string;
-}
-
-export interface SessionExperienceEntry {
-  scenario: string;
-  result: 'success' | 'partial' | 'failed';
-  steps: SessionStep[];
-  relatedUrls?: string[];
 }
 
 export interface ExperienceTocEntry {

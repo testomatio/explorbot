@@ -4,12 +4,12 @@ import { generateObject, generateText } from 'ai';
 import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
-import { RulesLoader } from '../utils/rules-loader.ts';
 import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { Stats } from '../stats.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
+import { RulesLoader } from '../utils/rules-loader.ts';
 import { Conversation } from './conversation.js';
 
 const debugLog = createDebug('explorbot:provider');

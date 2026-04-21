@@ -487,6 +487,28 @@ export class Pilot implements Agent {
       lines.push(`verifications: ${verifyLines.join(', ')}`);
     }
 
+    const consoleErrors = (state.browserLogs ?? []).filter((l: any) => (l.type || l.level) === 'error');
+    if (consoleErrors.length > 0) {
+      const sample = consoleErrors
+        .slice(0, 3)
+        .map((e: any) => e.text || e.message || String(e))
+        .join(' | ');
+      lines.push(`console errors: ${consoleErrors.length} (${sample})`);
+    } else {
+      lines.push('console errors: none');
+    }
+
+    const failedRequests = this.explorer.getRequestStore()?.getFailedRequests() ?? [];
+    if (failedRequests.length > 0) {
+      const sample = failedRequests
+        .slice(-5)
+        .map((r) => `${r.method} ${r.path} → ${r.status}`)
+        .join(', ');
+      lines.push(`network errors: ${sample}`);
+    } else {
+      lines.push('network errors: none');
+    }
+
     const interactiveNodes = collectInteractiveNodes(state.ariaSnapshot);
     const disabledButtons = interactiveNodes.filter((n) => n.role === 'button' && n.disabled === true && n.name).map((n) => n.name);
     lines.push(`disabled buttons: ${disabledButtons.length > 0 ? disabledButtons.join(', ') : 'none'}`);

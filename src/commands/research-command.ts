@@ -1,12 +1,15 @@
 import { join } from 'node:path';
 import { ConfigParser } from '../config.ts';
 import { tag } from '../utils/logger.ts';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class ResearchCommand extends BaseCommand {
   name = 'research';
   description = 'Research current page or navigate to URI and research. Use --deep to explore interactive elements by clicking them. Use --data to include page data.';
-  suggestions = ['/navigate <page> - to go to another page', '/plan <feature> - to plan testing'];
+  suggestions: Suggestion[] = [
+    { command: 'navigate <page>', hint: 'go to another page' },
+    { command: 'plan <feature>', hint: 'plan testing' },
+  ];
   options = [
     { flags: '--data', description: 'Include page data' },
     { flags: '--deep', description: 'Explore interactive elements by clicking them' },
@@ -45,7 +48,7 @@ export class ResearchCommand extends BaseCommand {
     }
 
     if (!enableDeep) {
-      this.suggestions = ['/research <page> --deep - analyze page for all expandable elements and interactions'];
+      this.suggestions = [{ command: 'research <page> --deep', hint: 'analyze page for all expandable elements and interactions' }];
     }
   }
 }

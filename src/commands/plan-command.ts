@@ -2,12 +2,16 @@ import path from 'node:path';
 import chalk from 'chalk';
 import figureSet from 'figures';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanCommand extends BaseCommand {
   name = 'plan';
   description = 'Plan testing for a feature';
-  suggestions = ['/test - to launch first test', '/test * - to launch all tests', 'Edit the plan in file and call /plan:reload to update it'];
+  suggestions: Suggestion[] = [
+    { command: 'test', hint: 'launch first test' },
+    { command: 'test *', hint: 'launch all tests' },
+    { command: 'plan:reload', hint: 'after editing the plan file, reload it' },
+  ];
   options = [
     { flags: '--fresh', description: 'Regenerate plan from scratch' },
     { flags: '--clear', description: 'Clear plan before regenerating' },
@@ -61,15 +65,18 @@ export class PlanCommand extends BaseCommand {
   }
 
   private updateSuggestions(): void {
-    this.suggestions = ['/test - to launch first test', '/test * - to launch all tests'];
+    this.suggestions = [
+      { command: 'test', hint: 'launch first test' },
+      { command: 'test *', hint: 'launch all tests' },
+    ];
 
     const suite = this.explorBot.getSuite();
     if (suite && suite.automatedTestCount > 0) {
       for (const f of suite.getAutomatedTestFiles()) {
-        this.suggestions.push(`/rerun ${path.relative(process.cwd(), f)} - re-run automated tests`);
+        this.suggestions.push({ command: `rerun ${path.relative(process.cwd(), f)}`, hint: 're-run automated tests' });
       }
     }
 
-    this.suggestions.push('Edit the plan in file and call /plan:reload to update it');
+    this.suggestions.push({ command: 'plan:reload', hint: 'after editing the plan file, reload it' });
   }
 }

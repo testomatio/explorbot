@@ -1,11 +1,13 @@
-import figureSet from 'figures';
 import path from 'node:path';
+import figureSet from 'figures';
 import { getStyles } from '../ai/planner/styles.js';
-import { getCliName } from '../utils/cli-name.ts';
+import { Stats } from '../stats.js';
 import type { Plan } from '../test-plan.js';
-import { jsonToTable } from '../utils/markdown-parser.js';
+import { getCliName } from '../utils/cli-name.ts';
+import { ErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { jsonToTable } from '../utils/markdown-parser.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class ExploreCommand extends BaseCommand {
   name = 'explore';
@@ -14,7 +16,11 @@ export class ExploreCommand extends BaseCommand {
     { flags: '--max-tests <number>', description: 'Maximum number of tests to run' },
     { flags: '--focus <feature>', description: 'Focus area for exploration' },
   ];
-  suggestions = ['/navigate <page> - to go to another page', '/research - to analyze', '/plan <feature> - to plan testing'];
+  suggestions: Suggestion[] = [
+    { command: 'navigate <page>', hint: 'go to another page' },
+    { command: 'research', hint: 'analyze current page' },
+    { command: 'plan <feature>', hint: 'plan testing' },
+  ];
 
   maxTests?: number;
   private testsRun = 0;
@@ -27,6 +33,8 @@ export class ExploreCommand extends BaseCommand {
     }
 
     const feature = (opts.focus as string) || remaining.join(' ') || undefined;
+    Stats.mode ??= 'explore';
+    Stats.focus ??= feature;
     const mainUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url;
 
     await this.runAllStyles(mainUrl, feature);
@@ -34,7 +42,7 @@ export class ExploreCommand extends BaseCommand {
     if (!mainPlan) return;
     this.completedPlans.push(mainPlan);
 
-    if (!this.isLimitReached()) {
+    if (!feature && !this.isLimitReached()) {
       const planner = this.explorBot.agentPlanner();
       while (true) {
         if (this.isLimitReached()) break;
@@ -74,9 +82,24 @@ export class ExploreCommand extends BaseCommand {
       }
       const opts: { fresh: boolean; style: string; extend?: Plan; completedPlans?: Plan[] } = { fresh, style, completedPlans };
       if (fresh && parentPlan) opts.extend = parentPlan;
-      await this.explorBot.plan(feature, opts);
+      await this.planWithRetry(feature, opts, pageUrl);
       await this.runPendingTests();
       fresh = false;
+    }
+  }
+
+  private async planWithRetry(feature: string | undefined, opts: { fresh: boolean; style: string; extend?: Plan; completedPlans?: Plan[] }, pageUrl?: string): Promise<void> {
+    await this.explorBot.plan(feature, opts);
+    if (!this.explorBot.lastPlanError) return;
+    if (this.explorBot.lastPlanError instanceof ErrorPageError) {
+      throw this.explorBot.lastPlanError;
+    }
+
+    tag('info').log(`Retrying planning style '${opts.style}'...`);
+    if (pageUrl) await this.explorBot.visit(pageUrl);
+    await this.explorBot.plan(feature, opts);
+    if (this.explorBot.lastPlanError) {
+      tag('warning').log(`Planning style '${opts.style}' failed after retry, skipping`);
     }
   }
 
