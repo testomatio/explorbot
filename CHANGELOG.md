@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-04-24
+
+### New CLI Options
+- **`explorbot clean tests`** — Added a `tests` target that wipes the generated test files under `output/tests/` without touching experience or state caches.
+  ```bash
+  explorbot clean tests
+  ```
+- **`EXPLORBOT_NO_BANNER`** — Environment variable that suppresses the `⛵ Explorbot v…` banner printed before every command. Useful when piping CLI output into another process.
+  ```bash
+  EXPLORBOT_NO_BANNER=1 explorbot plan /login
+  ```
+
+### New TUI Commands
+- **`/clean tests`** — Inside the TUI, clean the generated test directory without touching other artifacts.
+  ```
+  /clean tests
+  ```
+
+### Configuration
+- **`ai.agents.historian.framework`** — Selects the output format for generated test files. Set to `'playwright'` to emit real `@playwright/test` `.spec.ts` files (with `test.describe`, `test.beforeEach`, `expect()` assertions) recorded from actual Playwright calls at runtime. Default: `'codeceptjs'`.
+
+### Changes
+- **`explorbot rerun`** — Running rerun on a Playwright spec (`.spec.ts` / `.spec.js`) now exits with a clear message pointing at `npx playwright test <file>` instead of attempting to execute the file through the CodeceptJS rerunner.
+- [Historian] Generated scenarios can now be emitted as Playwright tests. When `historian.framework` is `'playwright'`, each test run records real Playwright method calls (clicks, fills, presses, navigations) through the browser's tracing API and renders them as native `page.locator(...).click()` / `expect(page)...` code, instead of translating CodeceptJS steps.
+- [Historian] Experience files are no longer written for failed or skipped tests. Previously every run appended steps regardless of outcome, which polluted pages with broken recipes.
+- [Historian] Flow recipes are now written through an AI curation pass that drops noise steps, negative/error-verifying scenarios, and duplicates of recipes already present for the same page. Previously every session's steps were saved after a per-step usefulness filter.
+- [Pilot] When deciding `pass`, the Pilot must now propose a concrete CodeceptJS assertion that proves the scenario goal. The system runs the assertion, refuses to pass if it does not match the page, and bakes the resulting `expect(...)` straight into the generated Playwright spec so generated tests always ship with real verifications.
+- [Pilot] Now reviews every `reset()` call from the tester. The Pilot can veto resets that would wastefully restart after a flow already succeeded (creating duplicates) and can fail the test outright when it detects a reset loop (same failure mode after two resets). The `reset` tool description itself now warns the AI that reset is destructive and a last resort.
+- [Pilot] Added detection for UI-thrashing: consecutive successful actions that only toggle layout/filters/tabs without advancing the scenario's data now trigger guidance to move toward the actual mutation or verification.
+- [Navigator] Dismisses unexpected popups automatically when a click is intercepted or an element becomes unexpectedly hidden/disabled. Tries clicking outside the dialog, pressing Escape, and Cancel/Close buttons before giving up.
+- [Navigator] When every proposed code block fails, Navigator now loops once more with all failures fed back to the model (and full HTML on the retry), instead of stopping after the first unsuccessful batch. Successful navigation now waits for the load state and URL transition before declaring success, which removes false positives on slow apps.
+- [Navigator] Saves successful multi-step navigations as `## FLOW:` recipes in the experience file (e.g. "reach /settings/billing from /settings"), with `I.amOnPage` lines stripped, so they can be reused by later runs.
+- [Navigator] Added output rules that forbid appending `I.amOnPage` after a form submission (it cancels the in-flight navigation), forbid `:has-text(...)` inside `seeElement`/`dontSeeElement` locators, and forbid emitting the same assertion in two different shapes (`I.see(text, locator)` + `seeElement(locator:has-text(text))`).
+- [Navigator] Replaced the "use `I.type` for Monaco/rich text editors" guidance with the opposite rule: `I.fillField` handles plain inputs, textareas, contenteditable, and rich/code editors (Monaco, ProseMirror, CodeMirror, TipTap, Quill, Draft, Slate) transparently. `I.type` is reserved for cases with no locator at all.
+- [Researcher] Loading pages are now detected and waited for instead of being classified as errors. If an ARIA progressbar/`[busy]` is visible, or the heading mentions "loading", or the body is tiny, the researcher waits up to the configured timeout (retrying up to 3 extra seconds) before continuing with a best-effort snapshot. Only real HTTP error titles (404, 500, …) still throw `ErrorPageError`.
+- [Planner] When a run was started with a focus area (`--focus`/trailing positional arg), subsequent planning rounds now stay inside that feature and generate more scenarios for it, instead of switching to whichever unrelated feature had the least coverage.
+- [Tester] Reset, finish, and completion reviews now run the Pilot's follow-up assertion against the page before committing the verdict, so a `pass` verdict always has an assertion attached to the generated test.
+- Experience Tracker: `## FLOW` recipes are now supplied pre-formatted by the caller (Historian, Navigator). Duplicate flow bodies are skipped on write, so repeated runs no longer append identical recipes.
+- State/context size: tool results stored in the conversation are now progressively compacted — older tool results drop their `htmlParts` diff, trim their ARIA diff, and remove iframe HTML, keeping only the last few raw. Large sibling runs (>50 elements of the same role) in the ARIA snapshot are collapsed to 5-at-each-side with a "N similar items omitted" placeholder, and diff html parts are capped per part and collapsed when the whole diff exceeds the budget.
+- Browser: Default Playwright action timeout raised from 1 s to 3 s, reducing spurious timeouts on mid-speed apps.
+- AI Provider: When a model returns an empty response because output was truncated at `maxTokens`, the provider now raises a clear context-length error naming the fix ("Increase maxTokens or use a model with higher output capacity") instead of silently returning nothing.
+
 ## 2026-04-21
 
 ### Changes

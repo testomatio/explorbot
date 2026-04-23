@@ -3,9 +3,11 @@ import { join } from 'node:path';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
+import type { ExplorbotConfig } from '../config.ts';
 import { ConfigParser } from '../config.ts';
 import { ExperienceTracker, type SessionStep } from '../experience-tracker.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.ts';
+import { PlaywrightRecorder, renderAssertion, renderCall, type TraceCall } from '../playwright-recorder.ts';
 import { type Reporter, type ReporterStep } from '../reporter.ts';
 import type { StateManager } from '../state-manager.ts';
 import { type Plan, type Task, Test } from '../test-plan.ts';
@@ -15,6 +17,8 @@ import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
 import { ASSERTION_TOOLS, CODECEPT_TOOLS } from './tools.ts';
 
+const PLAYWRIGHT_EMITTED_TOOLS = [...CODECEPT_TOOLS, ...ASSERTION_TOOLS] as const;
+
 const debugLog = createDebug('explorbot:historian');
 
 export class Historian {
@@ -23,12 +27,20 @@ export class Historian {
   private reporter?: Reporter;
   private stateManager?: StateManager;
   private savedFiles = new Set<string>();
+  private config?: ExplorbotConfig;
+  private recorder?: PlaywrightRecorder;
 
-  constructor(provider: Provider, experienceTracker?: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager) {
+  constructor(provider: Provider, experienceTracker?: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager, config?: ExplorbotConfig, recorder?: PlaywrightRecorder) {
     this.provider = provider;
     this.experienceTracker = experienceTracker || new ExperienceTracker();
     this.reporter = reporter;
     this.stateManager = stateManager;
+    this.config = config;
+    this.recorder = recorder;
+  }
+
+  private isPlaywrightFramework(): boolean {
+    return this.config?.ai?.agents?.historian?.framework === 'playwright';
   }
 
   getSavedFiles(): string[] {
@@ -42,20 +54,19 @@ export class Historian {
     const toolExecutions = conversation.getToolExecutions();
 
     if (task instanceof Test) {
-      task.generatedCode = this.toCode(conversation, task.description);
+      task.generatedCode = this.isPlaywrightFramework() ? await this.toPlaywrightCode(conversation, task.description) : this.toCode(conversation, task.description);
     }
 
     const steps = await this.extractSteps(toolExecutions);
-    await this.detectRetryPatterns(toolExecutions, initialState);
-    const verifiedSteps = await this.verifySteps(steps, initialState);
 
-    if (verifiedSteps.length > 0) {
-      const relatedUrls = this.extractVisitedUrls(toolExecutions, initialState.url || '');
-      this.experienceTracker.writeFlow(initialState, {
-        scenario: task.description,
-        steps: verifiedSteps,
-        relatedUrls,
-      });
+    const skipExperience = result === 'failed' || (task instanceof Test && (task.hasFailed || task.isSkipped));
+    if (!skipExperience) {
+      await this.detectRetryPatterns(toolExecutions, initialState);
+      const body = await this.curateFlow(steps, task, initialState);
+      if (body.trim()) {
+        const relatedUrls = this.extractVisitedUrls(toolExecutions, initialState.url || '');
+        this.experienceTracker.writeFlow(initialState, body, relatedUrls);
+      }
     }
 
     if (task instanceof Test && result !== 'failed') {
@@ -106,65 +117,114 @@ export class Historian {
     return stepsWithDiffs.map((s) => s.step);
   }
 
-  private async verifySteps(steps: SessionStep[], initialState: ActionResult): Promise<SessionStep[]> {
-    if (steps.length === 0) return [];
+  private async curateFlow(steps: SessionStep[], task: Task, initialState: ActionResult): Promise<string> {
+    if (steps.length === 0) return '';
 
     const existingExperience = this.experienceTracker
       .getRelevantExperience(initialState)
       .map((e) => e.content)
       .filter(Boolean)
       .join('\n');
-
     const existingSummary = existingExperience.length > 2000 ? existingExperience.substring(0, 2000) : existingExperience;
 
-    const stepsList = steps.map((s, i) => `${i}. ${s.message}\n   Code: ${s.code || 'none'}`).join('\n');
+    const stepsBlock = steps
+      .map((s, i) => {
+        const lines = [`Step ${i + 1}: ${s.message}`];
+        if (s.code) {
+          lines.push('```js');
+          lines.push(s.code);
+          lines.push('```');
+        }
+        if (s.discovery) {
+          for (const d of s.discovery.split('\n').filter((line) => line.trim())) {
+            lines.push(`> ${d.trim()}`);
+          }
+        }
+        return lines.join('\n');
+      })
+      .join('\n\n');
+
+    const expected = task instanceof Test && task.expected.length > 0 ? task.expected.map((e) => `- ${e}`).join('\n') : '';
+    const notes = task.notesToString();
+
     const prompt = dedent`
-      Review these test steps and determine which are valuable to save as experience
-      for future test executions on this page.
+      You are curating a how-to recipe from a recorded test run. Decide whether the run produced
+      anything reusable, and if so, output a single \`## FLOW: ...\` markdown block. Otherwise output
+      an empty response (no text at all).
 
-      <steps>
-      ${stepsList}
-      </steps>
+      <original_scenario>
+      ${task.description}
+      </original_scenario>
 
-      ${existingSummary ? `<existing_experience>\n${existingSummary}\n</existing_experience>` : ''}
+      ${expected ? `<expected_outcomes>\n${expected}\n</expected_outcomes>` : ''}
 
-      For each step, determine if it is useful:
-      - NOT useful if it uses auto-generated or unstable locators (ember IDs, numeric data-testid, random IDs)
-      - NOT useful if it is already documented in existing experience
-      - NOT useful if it requires an unclear precondition that would not be reproducible
-      - NOT useful if it is trivial navigation (I.amOnPage) without meaningful context
-      - USEFUL if it demonstrates how to interact with a specific UI component (expand dropdown, fill form, etc)
-      - USEFUL if it shows a working approach for a common task on this page
+      ${notes ? `<run_notes>\n${notes}\n</run_notes>` : ''}
+
+      <recorded_steps>
+      ${stepsBlock}
+      </recorded_steps>
+
+      ${existingSummary ? `<existing_experience_for_this_page>\n${existingSummary}\n</existing_experience_for_this_page>` : ''}
+
+      Output a FLOW block in EXACTLY this format:
+
+      ## FLOW: <imperative how-to that matches what the steps actually accomplished>
+
+      * <action description>
+
+      \`\`\`js
+      <code from input>
+      \`\`\`
+
+      > <relevant element or observation worth remembering>
+
+      * <next action>
+
+      \`\`\`js
+      <code from input>
+      \`\`\`
+
+      ---
+
+      Rules:
+      - Title is an imperative phrase answering "how do I X". It must describe what the steps
+        ACTUALLY accomplished, not the original scenario if the run drifted off course.
+      - Drop steps that wandered onto unrelated pages or did not contribute to a reusable recipe.
+      - Drop discoveries that are noise (loading states, timestamps, repeated buttons).
+      - Code blocks may only contain code that appears verbatim in <recorded_steps>. Do not invent
+        CodeceptJS calls.
+      - Lowercase the first letter of the title. No trailing punctuation.
+
+      Return an EMPTY response (no markdown, no explanation) if any of:
+      - The original scenario is a negative test (verifying an error, validation rejection, blocked
+        or forbidden action, "should fail" expectation).
+      - The surviving steps do not accomplish anything reusable.
+      - The recipe duplicates a recipe already present in <existing_experience_for_this_page>.
     `;
 
-    const schema = z.object({
-      steps: z.array(
-        z.object({
-          stepIndex: z.number(),
-          useful: z.boolean(),
-        })
-      ),
-    });
-
     try {
-      const response = await this.provider.generateObject(
+      const response = await this.provider.chat(
         [
-          { role: 'system', content: 'Evaluate test steps for experience value. Be selective — only keep steps that teach something reusable.' },
+          { role: 'system', content: 'Curate reusable how-to recipes from recorded test runs. Be selective — only emit a FLOW when the steps demonstrate a coherent, reusable, positive recipe. Otherwise return nothing.' },
           { role: 'user', content: prompt },
         ],
-        schema,
-        undefined,
-        { telemetryFunctionId: 'historian.verifySteps' }
+        this.provider.getModelForAgent('historian'),
+        { agentName: 'historian', telemetryFunctionId: 'historian.curateFlow' }
       );
 
-      const usefulIndices = new Set((response?.object?.steps || []).filter((s) => s.useful).map((s) => s.stepIndex));
-
-      const verified = steps.filter((_, i) => usefulIndices.has(i));
-      debugLog('Verified %d/%d steps as useful', verified.length, steps.length);
-      return verified;
+      const body = (response?.text || '').trim();
+      if (!body) {
+        debugLog('curateFlow returned empty — skipping flow write');
+        return '';
+      }
+      if (!body.includes('## FLOW:')) {
+        debugLog('curateFlow output missing ## FLOW: heading — skipping');
+        return '';
+      }
+      return `${body}\n`;
     } catch (error: any) {
-      debugLog('Step verification failed, keeping all steps: %s', error.message);
-      return steps;
+      debugLog('curateFlow failed, skipping flow write: %s', error.message);
+      return '';
     }
   }
 
@@ -392,7 +452,59 @@ export class Historian {
     return lines.join('\n');
   }
 
+  async toPlaywrightCode(conversation: Conversation, scenario: string): Promise<string> {
+    const toolExecutions = conversation.getToolExecutions();
+    const successfulSteps = toolExecutions.filter((exec) => exec.wasSuccessful && PLAYWRIGHT_EMITTED_TOOLS.includes(exec.toolName as any));
+
+    const callsByGroup = this.recorder ? await this.recorder.exportChunk() : new Map<string, TraceCall[]>();
+
+    const stepLines: string[] = [];
+    for (const exec of successfulSteps) {
+      const explanation = this.getExecutionLabel(exec);
+      const execLines: string[] = [];
+      const groupId: string | undefined = exec.output?.playwrightGroupId;
+      const calls = groupId ? callsByGroup.get(groupId) || [] : [];
+      for (const call of calls) {
+        execLines.push(`  ${renderCall(call)}`);
+      }
+      const assertions: Array<{ name: string; args: any[] }> = exec.output?.assertionSteps || [];
+      for (const assertion of assertions) {
+        const line = renderAssertion(assertion);
+        if (line) execLines.push(`  ${line}`);
+      }
+      if (execLines.length === 0) continue;
+      if (explanation) {
+        stepLines.push('');
+        stepLines.push(`  // ${this.escapeString(explanation)}`);
+      }
+      stepLines.push(...execLines);
+    }
+
+    const pilotVerifications = this.recorder ? this.recorder.drainVerifications() : [];
+    if (pilotVerifications.length > 0) {
+      stepLines.push('');
+      stepLines.push('  // Verification');
+      for (const step of pilotVerifications) {
+        const line = renderAssertion(step);
+        if (line) stepLines.push(`  ${line}`);
+      }
+    }
+
+    if (stepLines.length === 0) {
+      return '';
+    }
+
+    const lines: string[] = [];
+    lines.push(`test('${this.escapeString(scenario)}', async ({ page }) => {`);
+    lines.push(...stepLines);
+    lines.push('});');
+    return lines.join('\n');
+  }
+
   savePlanToFile(plan: Plan): string {
+    if (this.isPlaywrightFramework()) {
+      return this.savePlaywrightPlanToFile(plan);
+    }
     const lines: string[] = [];
 
     lines.push(`import step, { Section } from 'codeceptjs/steps';`);
@@ -445,6 +557,63 @@ export class Historian {
     return filePath;
   }
 
+  savePlaywrightPlanToFile(plan: Plan): string {
+    const lines: string[] = [];
+
+    lines.push(`import { test, expect } from '@playwright/test';`);
+    lines.push('');
+    lines.push(`test.describe('${this.escapeString(plan.title)}', () => {`);
+
+    const startUrl = plan.url || plan.tests[0]?.startUrl;
+    if (startUrl) {
+      lines.push('  test.beforeEach(async ({ page }) => {');
+      lines.push(`    await page.goto('${this.escapeString(startUrl)}');`);
+      for (const line of this.getPlaywrightKnowledgeLines(startUrl, '    ')) {
+        lines.push(line);
+      }
+      lines.push('  });');
+      lines.push('');
+    }
+
+    for (const test of plan.tests) {
+      if (test.generatedCode) {
+        const indented = indentBlock(test.generatedCode, '  ');
+        if (test.isSuccessful) {
+          lines.push(indented);
+        } else {
+          lines.push(`  // FAILED: ${this.escapeString(test.scenario)}`);
+          lines.push(indented.replace(/test\(/, 'test.skip('));
+        }
+        lines.push('');
+        continue;
+      }
+
+      lines.push(`  test.fixme('${this.escapeString(test.scenario)}', async ({ page }) => {`);
+      if (test.plannedSteps.length > 0) {
+        for (const step of test.plannedSteps) {
+          lines.push(`    // ${step}`);
+        }
+      } else {
+        lines.push(`    // ${test.scenario}`);
+      }
+      lines.push('  });');
+      lines.push('');
+    }
+
+    lines.push('});');
+
+    const testsDir = ConfigParser.getInstance().getTestsDir();
+    mkdirSync(testsDir, { recursive: true });
+
+    const filename = plan.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+    const filePath = join(testsDir, `${filename}.spec.ts`);
+    writeFileSync(filePath, lines.join('\n'));
+    this.savedFiles.add(filePath);
+
+    tag('substep').log(`Saved plan tests to: ${filePath}`);
+    return filePath;
+  }
+
   rewriteScenarioInFile(filePath: string, healedSteps: Array<{ test: string; original: string; healed: string }>): void {
     let content = readFileSync(filePath, 'utf-8');
 
@@ -487,6 +656,21 @@ export class Historian {
     return lines;
   }
 
+  private getPlaywrightKnowledgeLines(url: string, indent = '    '): string[] {
+    const knowledgeTracker = new KnowledgeTracker();
+    const state = new ActionResult({ url });
+    const { wait, waitForElement } = knowledgeTracker.getStateParameters(state, ['wait', 'waitForElement']);
+
+    const lines: string[] = [];
+    if (wait !== undefined) {
+      lines.push(`${indent}await page.waitForTimeout(${Number(wait) * 1000});`);
+    }
+    if (waitForElement) {
+      lines.push(`${indent}await page.locator(${JSON.stringify(waitForElement)}).waitFor();`);
+    }
+    return lines;
+  }
+
   private stripComments(code: string): string {
     return code
       .split('\n')
@@ -500,4 +684,11 @@ export class Historian {
 
 export function isNonReusableCode(code: string): boolean {
   return /\bI\.clickXY\s*\(/.test(code);
+}
+
+function indentBlock(block: string, indent: string): string {
+  return block
+    .split('\n')
+    .map((line) => (line ? indent + line : line))
+    .join('\n');
 }

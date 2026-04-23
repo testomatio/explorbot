@@ -179,6 +179,7 @@ export class Test extends Task {
   enabled = true;
   startTime?: number;
   endTime?: number;
+  resetCount = 0;
 
   constructor(scenario: string, priority: 'critical' | 'important' | 'high' | 'normal' | 'low', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);

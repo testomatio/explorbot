@@ -11,6 +11,9 @@ export function toolExecutionLabel(input: Record<string, any> | undefined): stri
   return input?.explanation || input?.assertion || input?.reason || input?.request || '';
 }
 
+const AUTO_COMPACT_ARIA_CHANGES_CUTOFF = 500;
+const AUTO_COMPACT_TARGETED_HTML_CUTOFF = 500;
+
 export class Conversation {
   id: string;
   messages: ModelMessage[];
@@ -130,6 +133,40 @@ export class Conversation {
 
   autoTrimTag(tagName: string, maxLength: number): void {
     this.autoTrimRules.set(tagName, maxLength);
+  }
+
+  compactToolResults(keepLastN: number): void {
+    const toolMessageIndexes: number[] = [];
+    for (let i = 0; i < this.messages.length; i++) {
+      if (this.messages[i].role === 'tool') toolMessageIndexes.push(i);
+    }
+    const compactUpTo = toolMessageIndexes.length - Math.max(0, keepLastN);
+    for (let k = 0; k < compactUpTo; k++) {
+      const message = this.messages[toolMessageIndexes[k]];
+      if (!Array.isArray(message.content)) continue;
+      for (const part of message.content) {
+        if (part.type !== 'tool-result') continue;
+        const rawOutput = part.output as Record<string, any> | undefined;
+        if (!rawOutput || rawOutput.type !== 'json' || !rawOutput.value || typeof rawOutput.value !== 'object') continue;
+        const value = rawOutput.value as Record<string, any>;
+        if (value.pageDiff && typeof value.pageDiff === 'object') {
+          const pageDiff = value.pageDiff as Record<string, any>;
+          if (Array.isArray(pageDiff.htmlParts)) {
+            pageDiff.htmlParts = undefined;
+            pageDiff.compacted = true;
+          }
+          if (typeof pageDiff.ariaChanges === 'string' && pageDiff.ariaChanges.length > AUTO_COMPACT_ARIA_CHANGES_CUTOFF) {
+            pageDiff.ariaChanges = `${pageDiff.ariaChanges.slice(0, AUTO_COMPACT_ARIA_CHANGES_CUTOFF)}...`;
+          }
+          if (typeof pageDiff.iframes === 'string') {
+            pageDiff.iframes = undefined;
+          }
+        }
+        if (typeof value.targetedHtml === 'string' && value.targetedHtml.length > AUTO_COMPACT_TARGETED_HTML_CUTOFF) {
+          value.targetedHtml = `${value.targetedHtml.slice(0, AUTO_COMPACT_TARGETED_HTML_CUTOFF)}...`;
+        }
+      }
+    }
   }
 
   hasTag(tagName: string, lastN?: number): boolean {

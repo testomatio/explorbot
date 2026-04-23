@@ -25,9 +25,10 @@ const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../p
 const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as string;
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
-program.hook('preAction', () => {
+
+if (!process.env.EXPLORBOT_NO_BANNER) {
   console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
-});
+}
 
 interface CLIOptions {
   verbose?: boolean;
@@ -387,7 +388,7 @@ program
 
 program
   .command('clean [target]')
-  .description('Clean files: states, research, plans, experiences, output (default: output + experiences)')
+  .description('Clean files: states, research, plans, tests, experiences, output (default: output + experiences)')
   .option('-p, --path <path>', 'Custom path to clean')
   .action(async (target, options) => {
     const customPath = options.path;
@@ -398,6 +399,7 @@ program
       states: { description: 'page states', dir: path.join(basePath, 'output', 'states') },
       research: { description: 'research cache', dir: path.join(basePath, 'output', 'research') },
       plans: { description: 'test plans', dir: path.join(basePath, 'output', 'plans') },
+      tests: { description: 'generated tests', dir: path.join(basePath, 'output', 'tests') },
       experiences: { description: 'experience files', dir: path.join(basePath, 'experience') },
       output: { description: 'all output files', dir: path.join(basePath, 'output') },
     };

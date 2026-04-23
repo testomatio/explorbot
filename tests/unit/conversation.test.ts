@@ -329,4 +329,80 @@ describe('Conversation', () => {
       expect(conversation.hasTag('response')).toBe(true);
     });
   });
+
+  describe('compactToolResults', () => {
+    const buildToolMessage = (toolCallId: string, value: Record<string, any>) => ({
+      role: 'tool' as const,
+      content: [
+        {
+          type: 'tool-result' as const,
+          toolCallId,
+          toolName: 'click',
+          output: { type: 'json', value },
+        },
+      ],
+    });
+
+    it('strips pageDiff.htmlParts and trims targetedHtml from older tool messages', () => {
+      const conversation = new Conversation();
+      const big = 'x'.repeat(30000);
+      conversation.messages.push(
+        buildToolMessage('old', {
+          success: true,
+          action: 'click',
+          url: '/one',
+          code: 'I.click("A")',
+          locator: 'A',
+          targetedHtml: big,
+          pageDiff: {
+            urlChanged: false,
+            currentUrl: '/one',
+            htmlParts: [{ container: 'body', subtree: big, added: [], removed: [] }],
+            ariaChanges: big,
+          },
+        }),
+        buildToolMessage('new', {
+          success: true,
+          action: 'click',
+          url: '/two',
+          code: 'I.click("B")',
+          pageDiff: {
+            urlChanged: true,
+            currentUrl: '/two',
+            htmlParts: [{ container: 'body', subtree: 'still here', added: [], removed: [] }],
+          },
+        })
+      );
+
+      conversation.compactToolResults(1);
+
+      const oldOutput: any = (conversation.messages[0].content as any)[0].output.value;
+      expect(oldOutput.pageDiff.htmlParts).toBeUndefined();
+      expect(oldOutput.pageDiff.compacted).toBe(true);
+      expect(oldOutput.pageDiff.ariaChanges.length).toBeLessThan(1000);
+      expect(oldOutput.targetedHtml.length).toBeLessThan(1000);
+      expect(oldOutput.success).toBe(true);
+      expect(oldOutput.code).toBe('I.click("A")');
+
+      const newOutput: any = (conversation.messages[1].content as any)[0].output.value;
+      expect(newOutput.pageDiff.htmlParts).toBeDefined();
+      expect(newOutput.pageDiff.htmlParts[0].subtree).toBe('still here');
+    });
+
+    it('is a no-op when there are fewer tool messages than keepLastN', () => {
+      const conversation = new Conversation();
+      conversation.messages.push(
+        buildToolMessage('only', {
+          success: true,
+          action: 'click',
+          pageDiff: { urlChanged: false, currentUrl: '/x', htmlParts: [{ container: 'body', subtree: 'keep', added: [], removed: [] }] },
+        })
+      );
+
+      conversation.compactToolResults(3);
+
+      const output: any = (conversation.messages[0].content as any)[0].output.value;
+      expect(output.pageDiff.htmlParts).toBeDefined();
+    });
+  });
 });

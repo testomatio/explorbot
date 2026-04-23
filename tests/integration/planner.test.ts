@@ -221,6 +221,24 @@ describe('Planner with aimock', () => {
     const prompt = extractPromptText(mock.getLastRequest());
     expect(prompt).toContain('CRITICAL: This plan already has tests');
     expect(prompt).toContain('Create a new task via the Create Task modal');
+    expect(prompt).toContain('Find a feature area in the research that has NO or minimal test coverage');
+  });
+
+  it('keeps feature focus when expanding existing plan', async () => {
+    const existingPlan = new Plan('Search Testing');
+    existingPlan.url = '/tasks/board';
+    existingPlan.addTest(new Test('Search for a task by exact keyword', 'important', ['Results'], '/tasks/board', ['Type keyword']));
+
+    planner.currentPlan = existingPlan;
+
+    await planner.plan('search');
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('CRITICAL: This plan already has tests');
+    expect(prompt).toContain('Stay strictly inside the "search" feature area');
+    expect(prompt).toContain('additional scenarios for "search"');
+    expect(prompt).not.toContain('Find a feature area in the research that has NO or minimal test coverage');
+    expect(prompt).not.toContain('Prioritize testing features from Extended Research that have no coverage yet');
   });
 
   it('returns cached plan without AI call', async () => {

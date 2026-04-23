@@ -258,10 +258,10 @@ export class ExplorBot {
   }
 
   agentHistorian(): Historian {
-    return (this.agents.historian ||= this.createAgent(({ ai, explorer }) => {
+    return (this.agents.historian ||= this.createAgent(({ ai, explorer, config }) => {
       const experienceTracker = explorer.getStateManager().getExperienceTracker();
       const reporter = explorer.getReporter();
-      return new Historian(ai, experienceTracker, reporter, explorer.getStateManager());
+      return new Historian(ai, experienceTracker, reporter, explorer.getStateManager(), config, explorer.getPlaywrightRecorder());
     }));
   }
 

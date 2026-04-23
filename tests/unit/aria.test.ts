@@ -66,4 +66,30 @@ describe('aria', () => {
     expect(result).toContain('    - button "Edit"');
     expect(result).toContain('    - button "Delete"');
   });
+
+  it('collapses long runs of same-role sibling nodes', () => {
+    const items = Array.from({ length: 120 }, (_, i) => `  - listitem:\n    - link "Item ${i}"`).join('\n');
+    const snapshot = `- list:\n${items}`;
+
+    const result = compactAriaSnapshot(snapshot, false);
+
+    expect(result).toContain('link "Item 0"');
+    expect(result).toContain('link "Item 4"');
+    expect(result).toContain('link "Item 115"');
+    expect(result).toContain('link "Item 119"');
+    expect(result).not.toContain('link "Item 60"');
+    expect(result).toContain('- ...110 similar "listitem" items omitted...');
+  });
+
+  it('keeps sibling runs below threshold intact', () => {
+    const items = Array.from({ length: 10 }, (_, i) => `  - listitem:\n    - link "Keep ${i}"`).join('\n');
+    const snapshot = `- list:\n${items}`;
+
+    const result = compactAriaSnapshot(snapshot, false);
+
+    expect(result).toContain('link "Keep 0"');
+    expect(result).toContain('link "Keep 5"');
+    expect(result).toContain('link "Keep 9"');
+    expect(result).not.toContain('omitted');
+  });
 });

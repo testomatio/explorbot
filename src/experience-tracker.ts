@@ -18,15 +18,17 @@ export const RECENT_WINDOW_DAYS = 30;
 /**
  * Stores and reads per-page experience files (`./experience/<stateHash>.md`).
  *
- * Format rules (enforced by writeFlow/writeAction — the only supported writers):
+ * Two writers, two contracts:
  *
- *   ## FLOW: <imperative title>        multi-step, `*` bullets + optional ```js``` + `>` discovery, ends with `---`
- *   ## ACTION: <imperative title>      single-step, optional `Solution:` line + one ```js``` code block
+ *   writeFlow(state, body, relatedUrls?)  — caller hands in a fully-formatted
+ *                                            `## FLOW: <imperative title>` block (multi-step,
+ *                                            `*` bullets + optional ```js``` + `>` discovery,
+ *                                            ends with `---`). Tracker dedups + prepends.
+ *   writeAction(state, ActionInput)        — `## ACTION: <imperative title>`, single-step,
+ *                                            optional `Solution:` line + one ```js``` code block.
+ *                                            Title normalized via normalizeTitle().
  *
  * - Always h2. Never h3 for FLOW/ACTION.
- * - Title is an imperative verb phrase, lowercase-first, no trailing punctuation.
- *   Writers normalize automatically (strip own `FLOW:` / `ACTION:` prefix if the caller included it,
- *   lowercase first char, trim trailing `.!?,;:`).
  * - On read (getSuccessfulExperience), headings are rendered as
  *   `## HOW to <title> (multi-step|single-step)` so prompts get natural phrasing.
  */
@@ -184,27 +186,27 @@ export class ExperienceTracker {
     tag('substep').log(` Added ACTION to: ${stateHash}.md`);
   }
 
-  writeFlow(state: ActionResult, flow: FlowInput): void {
+  writeFlow(state: ActionResult, body: string, relatedUrls?: string[]): void {
     if (this.disabled || this.isWritingDisabled(state)) return;
-    if (!flow.steps?.length) return;
+    if (!body?.trim()) return;
 
     this.ensureExperienceFile(state);
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
 
-    if (flow.relatedUrls?.length) {
+    if (content.includes(body)) {
+      debugLog('Skipping duplicate flow body');
+      return;
+    }
+
+    if (relatedUrls?.length) {
       const currentPath = extractStatePath(state.url || '');
       const existingRelated = Array.isArray(data.related) ? data.related : [];
-      const allRelated = [...new Set([...existingRelated, ...flow.relatedUrls])];
+      const allRelated = [...new Set([...existingRelated, ...relatedUrls])];
       data.related = allRelated.filter((url) => url !== currentPath);
     }
 
-    const title = normalizeTitle(flow.scenario);
-    if (!title) return;
-
-    const sessionContent = this.trimSessionContent(generateFlowContent(title, flow.steps));
-    if (!sessionContent) return;
-    const updatedContent = `${sessionContent}\n${content}`;
+    const updatedContent = `${body}\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
     tag('substep').log(`Added FLOW to: ${stateHash}.md`);
@@ -275,35 +277,6 @@ export class ExperienceTracker {
   cleanup(): void {
     // Clear any in-memory state if needed
     // The actual files will be cleaned up by test cleanup
-  }
-
-  private trimSessionContent(content: string): string | null {
-    const q = mdq(content);
-    if (q.query('heading').count() === 0) return null;
-    if (q.query('code').count() === 0) return null;
-
-    let result = content;
-    const codeBlocks = q.query('code').each();
-    if (codeBlocks.length > 2) {
-      for (const block of codeBlocks.slice(2)) {
-        result = result.replace(block.text(), '');
-      }
-    }
-
-    const blockquotes = mdq(result).query('blockquote').each();
-    if (blockquotes.length > 5) {
-      for (const bq of blockquotes.slice(5)) {
-        result = result.replace(bq.text(), '');
-      }
-    }
-
-    const lines = result.split('\n');
-    if (lines.length > 40) {
-      result = lines.slice(0, 40).join('\n');
-    }
-
-    if (!result.trim()) return null;
-    return result;
   }
 
   getSuccessfulExperience(state: ActionResult, options?: { includeDescendants?: boolean; stripCode?: boolean }): string[] {
@@ -559,26 +532,6 @@ function generateActionContent(title: string, code: string, explanation?: string
   return lines.join('\n');
 }
 
-function generateFlowContent(title: string, steps: SessionStep[]): string {
-  let content = `## FLOW: ${title}\n\n`;
-  for (const step of steps) {
-    content += `* ${step.message}\n\n`;
-    if (step.code) {
-      content += '```js\n';
-      content += `${step.code}\n`;
-      content += '```\n\n';
-    }
-    if (step.discovery) {
-      const discoveries = step.discovery.split('\n').filter((d) => d.trim());
-      for (const discovery of discoveries) {
-        content += `> ${discovery.trim()}\n\n`;
-      }
-    }
-  }
-  content += '---\n';
-  return content;
-}
-
 function renderAsHowTo(content: string): string {
   const tokens = marked.lexer(content);
   let result = '';
@@ -604,12 +557,6 @@ export interface ExperienceFile {
   data: { url?: string; title?: string; [key: string]: any };
   content: string;
   mtime: Date;
-}
-
-export interface FlowInput {
-  scenario: string;
-  steps: SessionStep[];
-  relatedUrls?: string[];
 }
 
 export interface ActionInput {

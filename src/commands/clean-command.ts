@@ -8,6 +8,7 @@ export const CLEAN_TARGETS: Record<string, { description: string; getDir: () => 
   states: { description: 'page states', getDir: () => outputPath('states') },
   research: { description: 'research cache', getDir: () => outputPath('research') },
   plans: { description: 'test plans', getDir: () => outputPath('plans') },
+  tests: { description: 'generated tests', getDir: () => outputPath('tests') },
   experiences: { description: 'experience files', getDir: () => getExperienceDir() },
   output: { description: 'all output files', getDir: () => outputPath() },
 };
@@ -40,7 +41,7 @@ function cleanDirectoryContents(dirPath: string): number {
 
 export class CleanCommand extends BaseCommand {
   name = 'clean';
-  description = 'Clean files: clean [states|research|plans|experiences|output]';
+  description = 'Clean files: clean [states|research|plans|tests|experiences|output]';
   suggestions: Suggestion[] = Object.entries(CLEAN_TARGETS).map(([name, target]) => ({ command: `clean ${name}`, hint: `clean ${target.description}` }));
 
   async execute(args: string): Promise<void> {

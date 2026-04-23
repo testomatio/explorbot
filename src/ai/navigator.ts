@@ -10,12 +10,13 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
+import { extractStatePath } from '../utils/url-matcher.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import { actionRule, locatorRule } from './rules.js';
+import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
 import { isInteractive } from './task-agent.js';
 import { createAgentTools } from './tools.ts';
 
@@ -153,11 +154,10 @@ class Navigator implements Agent {
     }
 
     if (!actionResult.isInsideIframe) {
-      const toc = this.experienceTracker.getExperienceTableOfContents(actionResult);
-      if (toc.length > 0) {
-        const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
-        tag('substep').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections) for: ${actionResult.url}`);
-        experience = renderExperienceToc(toc);
+      const successful = this.experienceTracker.getSuccessfulExperience(actionResult);
+      if (successful.length > 0) {
+        tag('substep').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${actionResult.url}`);
+        experience = `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${successful.join('\n\n')}\n</experience>`;
       }
     }
 
@@ -186,6 +186,8 @@ class Navigator implements Agent {
 
       ${actionRule}
 
+      ${unexpectedPopupRule}
+
       ${RulesLoader.loadRules('navigator', ['multiple-locator', 'output'], actionResult.url || '').replace('{{maxAttempts}}', String(this.MAX_ATTEMPTS))}
 
       ${experience}
@@ -196,12 +198,14 @@ class Navigator implements Agent {
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
-    const tools = this.buildExperienceTools();
+    const tools = undefined;
 
     let codeBlocks: string[] = [];
     let htmlContextAdded = false;
     let codeBlockIndex = 0;
     let totalAttempts = 0;
+    const progressBlocks: string[] = [];
+    const batchFailures: Array<{ code: string; error: string }> = [];
 
     let resolved = false;
     await loop(
@@ -223,22 +227,24 @@ class Navigator implements Agent {
 
         const codeBlock = codeBlocks[codeBlockIndex];
         if (!codeBlock) {
-          if (!htmlContextAdded) {
-            htmlContextAdded = true;
-            tag('substep').log('Adding HTML context for better resolution...');
-            conversation.addUserText(dedent`
-              Previous solutions did not work. Here is the full HTML context:
-
-              <page_html>
-              ${await actionResult.combinedHtml()}
-              </page_html>
-
-              Please suggest new solutions based on this additional context.
-            `);
-            codeBlocks = [];
+          if (batchFailures.length === 0 && htmlContextAdded) {
+            stop();
             return;
           }
-          stop();
+          tag('substep').log('Feeding failures back to AI for a new batch...');
+          let contextMsg = 'Previous solutions did not work. Analyze the failures and try DIFFERENT strategies (not syntactic variants of the same locator).\n\n';
+          if (batchFailures.length > 0) {
+            const lines = batchFailures.map((f) => `- \`${f.code.split('\n')[0]}\` → ${f.error}`).join('\n');
+            contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
+          }
+          if (!htmlContextAdded) {
+            htmlContextAdded = true;
+            contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;
+          }
+          contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
+          conversation.addUserText(contextMsg);
+          codeBlocks = [];
+          batchFailures.length = 0;
           return;
         }
         codeBlockIndex++;
@@ -246,24 +252,69 @@ class Navigator implements Agent {
 
         await this.explorer.switchToMainFrame();
 
+        const prevHash = action.actionResult?.getStateHash() ?? actionResult.getStateHash();
+
         debugLog(`Attempting resolution: ${codeBlock}`);
-        resolved = await action.attempt(codeBlock, message);
+        const attemptOk = await action.attempt(codeBlock, message);
+
+        const page = action.playwrightHelper?.page;
+        if (page) {
+          try {
+            await page.waitForLoadState('load', { timeout: 5000 });
+          } catch {
+            // Navigation did not reach 'load' state within timeout; continue and verify URL
+          }
+        }
+
+        if (!attemptOk) {
+          const raw = action.lastError?.message || 'attempt failed';
+          const firstMeaningful = raw.split('\n').find((l) => l.trim() && !l.trim().startsWith('at ')) || raw;
+          const shortErr = firstMeaningful.replace(/\s+/g, ' ').trim().slice(0, 220);
+          batchFailures.push({ code: codeBlock, error: shortErr });
+        }
 
         if (expectedUrl) {
-          await (action.getActor() as any).wait(2);
-          const freshState = await action.capturePageState();
-
-          if (normalizeUrl(freshState.url || '') === normalizeUrl(expectedUrl)) {
-            resolved = true;
-          } else if (resolved) {
-            tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${freshState.url}`);
-            resolved = false;
+          if (page) {
+            try {
+              await page.waitForURL((url: URL) => normalizeUrl(url.pathname) === normalizeUrl(expectedUrl), { timeout: 5000 });
+            } catch {
+              // URL did not transition to expectedUrl within timeout
+            }
           }
+          const freshState = await action.capturePageState();
+          const urlMatches = normalizeUrl(freshState.url || '') === normalizeUrl(expectedUrl);
+          const stateChanged = freshState.getStateHash() !== actionResult.getStateHash();
+          resolved = urlMatches && stateChanged;
+
+          if (!resolved && attemptOk) {
+            tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${freshState.url}`);
+          }
+          if (freshState.getStateHash() !== prevHash && (attemptOk || urlMatches)) {
+            progressBlocks.push(codeBlock);
+          }
+        } else {
+          resolved = attemptOk;
+          if (attemptOk) progressBlocks.push(codeBlock);
         }
 
         if (resolved) {
           tag('success').log('Navigation resolved successfully');
-          this.experienceTracker.writeAction(actionResult, { title: message, code: codeBlock });
+          let scenario = message.split('\n')[0];
+          if (expectedUrl) {
+            const fromPath = extractStatePath(actionResult.url || '');
+            const toPath = extractStatePath(expectedUrl);
+            scenario = `reach ${toPath} from ${fromPath}`;
+          }
+          const recipe = progressBlocks
+            .join('\n')
+            .split('\n')
+            .filter((line) => !/^\s*I\.amOnPage\s*\(/.test(line))
+            .join('\n')
+            .trim();
+          if (recipe) {
+            const body = `## FLOW: ${scenario}\n\n* ${scenario}\n\n\`\`\`js\n${recipe}\n\`\`\`\n\n---\n`;
+            this.experienceTracker.writeFlow(actionResult, body);
+          }
           stop();
           return;
         }
@@ -455,7 +506,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; successfulCodes: string[]; totalAttempted: number }> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -524,6 +575,7 @@ class Navigator implements Agent {
 
     let codeBlocks: string[] = [];
     const successfulCodes: string[] = [];
+    const assertionSteps: Array<{ name: string; args: any[] }> = [];
 
     const action = this.explorer.createAction();
 
@@ -555,6 +607,7 @@ class Navigator implements Agent {
         if (verified) {
           tag('success').log('Verification passed');
           successfulCodes.push(codeBlock);
+          assertionSteps.push(...action.assertionSteps);
         }
       },
       {
@@ -574,7 +627,7 @@ class Navigator implements Agent {
     actionResult.addVerification(message, verified);
     this.explorer.getStateManager().updateState(actionResult);
 
-    return { verified, successfulCodes, totalAttempted };
+    return { verified, successfulCodes, assertionSteps, totalAttempted };
   }
 }
 

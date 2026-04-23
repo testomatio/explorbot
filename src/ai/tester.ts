@@ -12,6 +12,7 @@ import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
+import { ErrorPageError } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -224,6 +225,9 @@ export class Tester extends TaskAgent implements Agent {
           conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);
           conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
           conversation.cleanupTag('experience', '...cleaned experience...', 1);
+          conversation.cleanupTag('page_ui_map', '...cleaned UI map...', 1);
+          conversation.cleanupTag('page_ui_map_overlay', '...cleaned UI overlay...', 1);
+          conversation.compactToolResults(3);
 
           if (iteration > 1) {
             const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
@@ -352,13 +356,19 @@ export class Tester extends TaskAgent implements Agent {
       if (task.hasFinished) break;
 
       const finalState = this.getCurrentState();
-      const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation);
+      const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation, this.navigator);
 
       if (!wantsContinue || task.hasFinished) break;
       if (extensions >= this.MAX_EXTENSIONS) break;
 
       extensions++;
       tag('info').log(`Pilot extending test (${extensions}/${this.MAX_EXTENSIONS})`);
+      conversation.cleanupTag('page_aria', '...trimmed...', 1);
+      conversation.cleanupTag('page_html', '...trimmed...', 0);
+      conversation.cleanupTag('experience', '...trimmed...', 0);
+      conversation.cleanupTag('page_ui_map', '...trimmed...', 0);
+      conversation.cleanupTag('page_ui_map_overlay', '...trimmed...', 0);
+      conversation.compactToolResults(1);
       shouldContinue = true;
     }
 
@@ -464,7 +474,13 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (isNewUrl) {
-      const research = await this.researcher.research(currentState);
+      let research = '';
+      try {
+        research = await this.researcher.research(currentState);
+      } catch (err) {
+        if (!(err instanceof ErrorPageError)) throw err;
+        tag('warning').log(`Research skipped: ${err.message}`);
+      }
       this.pageStateHash = currentStateHash;
       this.pageActionResult = currentState;
       let uiMapSection = '';
@@ -646,7 +662,7 @@ export class Tester extends TaskAgent implements Agent {
     - Use finish() to complete the test, not record(). record() is for intermediate notes.
     - Call finish(verify) when all goals are achieved — provide an assertion to verify
     - ONLY call stop() if the scenario itself is completely irrelevant to this page and no expectations can be achieved
-    - Use reset() to navigate back to the initial page if needed. Do not call it if you are already on the initial page
+    - Use reset() ONLY as a last resort when the current page cannot host the scenario. Never reset after a successful flow just because an assertion or milestone did not match — verify differently or record() the finding instead. Reset is destructive and does not undo server-side side effects.
     - Be precise with locators (CSS or XPath)
     - Each click/type call returns the new page state automatically
     - Check for success messages from tool calls to verify if expected outcomes are achieved
@@ -769,13 +785,25 @@ export class Tester extends TaskAgent implements Agent {
     return {
       reset: tool({
         description: dedent`
-          Reset the testing flow by navigating back to the original page.
-          Use this when navigated too far from the desired state and
-          there's no clear path to achieve the expected result. This restarts the
-          testing flow from a known good state.
+          Navigate back to the start URL and discard progress in this iteration.
+          Reset is a LAST RESORT. It is destructive — any side effects already produced on the
+          server (records created, forms submitted) persist and cannot be undone by resetting.
+
+          Use reset ONLY for:
+          - navigation dead-ends where the current page cannot host the scenario
+          - irrecoverable errors that leave no actionable path forward
+
+          Do NOT use reset when:
+          - the previous action already succeeded (URL changed, record visible, confirmation shown)
+            and an assertion did not match — verify differently, record(), or finish() instead
+          - an expectation/milestone does not match app behavior but the flow worked — the work is
+            done; resetting just creates duplicates
+          - you want to "try again" after submitting a form — submitting again creates a duplicate
+
+          Pilot will review every reset and may veto it.
         `,
         inputSchema: z.object({
-          reason: z.string().optional().describe('Explanation why you need to navigate'),
+          reason: z.string().optional().describe('Explanation why reset is the only option'),
         }),
         execute: async ({ reason }) => {
           if (this.getCurrentState().isInsideIframe) {
@@ -789,6 +817,20 @@ export class Tester extends TaskAgent implements Agent {
               suggestion: 'Try different approach or use stop() if the scenario is fundamentally incompatible with the page.',
               action: 'reset',
             };
+          }
+
+          task.resetCount += 1;
+
+          if (this.pilot) {
+            const currentStateForReview = this.getCurrentState();
+            const allowed = await this.pilot.reviewReset(task, currentStateForReview, reason ?? '', conversation);
+            if (!allowed) {
+              return {
+                success: false,
+                action: 'reset',
+                message: 'Reset rejected by Pilot; Continue execution',
+              };
+            }
           }
 
           const explanation = reason ? `${reason} (RESET)` : 'Resetting to initial page';
@@ -878,7 +920,7 @@ export class Tester extends TaskAgent implements Agent {
 
           if (this.pilot) {
             const currentState = this.getCurrentState();
-            await this.pilot.reviewFinish(task, currentState, conversation);
+            await this.pilot.reviewFinish(task, currentState, conversation, this.navigator);
             if (!task.hasFinished) {
               return {
                 success: false,
@@ -953,7 +995,7 @@ export class Tester extends TaskAgent implements Agent {
           if (input.status !== null && task.isComplete()) {
             if (this.pilot) {
               const currentState = this.getCurrentState();
-              await this.pilot.reviewCompletion(task, currentState, conversation);
+              await this.pilot.reviewCompletion(task, currentState, conversation, this.navigator);
             } else {
               const hasPassed = task.hasAchievedAny();
               task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);

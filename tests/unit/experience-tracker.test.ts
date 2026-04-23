@@ -214,32 +214,29 @@ describe('ExperienceTracker', () => {
     });
   });
 
-  describe('writeFlow trimming', () => {
-    function makeState() {
+  describe('writeFlow', () => {
+    function makeState(url = 'https://example.com/suite/abc') {
       return new ActionResult({
         html: '<html><body>Test</body></html>',
-        url: 'https://example.com/suite/abc',
+        url,
         title: 'Suite',
       });
     }
 
-    it('should save valid flow with heading and code', () => {
+    const sampleBody = '## FLOW: create a test\n\n* Click create\n\n```js\nI.click("Create")\n```\n\n---\n';
+
+    it('writes opaque body verbatim', () => {
       const state = makeState();
-      experienceTracker.writeFlow(state, {
-        scenario: 'Create a test',
-        steps: [{ message: 'Click create', status: 'passed', code: 'I.click("Create")' }],
-      });
+      experienceTracker.writeFlow(state, sampleBody);
       const { content } = experienceTracker.readExperienceFile(state.getStateHash());
       expect(content).toContain('## FLOW: create a test');
       expect(content).toContain('I.click("Create")');
     });
 
-    it('should reject flow with no code blocks', () => {
+    it('skips empty or whitespace-only body', () => {
       const state = makeState();
-      experienceTracker.writeFlow(state, {
-        scenario: 'Empty flow',
-        steps: [{ message: 'Did nothing useful', status: 'passed' }],
-      });
+      experienceTracker.writeFlow(state, '');
+      experienceTracker.writeFlow(state, '   \n  ');
       const stateHash = state.getStateHash();
       const filePath = `/tmp/experience/${stateHash}.md`;
       if (existsSync(filePath)) {
@@ -248,49 +245,29 @@ describe('ExperienceTracker', () => {
       }
     });
 
-    it('should trim code blocks to max 2', () => {
+    it('dedups identical body on second write', () => {
       const state = makeState();
-      experienceTracker.writeFlow(state, {
-        scenario: 'Many steps',
-        steps: [
-          { message: 'Step 1', status: 'passed', code: 'I.click("A")' },
-          { message: 'Step 2', status: 'passed', code: 'I.click("B")' },
-          { message: 'Step 3', status: 'passed', code: 'I.click("C")' },
-          { message: 'Step 4', status: 'passed', code: 'I.click("D")' },
-        ],
-      });
+      experienceTracker.writeFlow(state, sampleBody);
+      experienceTracker.writeFlow(state, sampleBody);
       const { content } = experienceTracker.readExperienceFile(state.getStateHash());
-      const codeMatches = content.match(/```js/g) || [];
-      expect(codeMatches.length).toBeLessThanOrEqual(2);
+      const matches = content.match(/## FLOW: create a test/g) || [];
+      expect(matches.length).toBe(1);
     });
 
-    it('should trim blockquotes to max 5', () => {
-      const state = makeState();
-      const discoveries = Array.from({ length: 10 }, (_, i) => `A new button appeared: Btn${i}`).join('\n');
-      experienceTracker.writeFlow(state, {
-        scenario: 'Many discoveries',
-        steps: [{ message: 'Click something', status: 'passed', code: 'I.click("X")', discovery: discoveries }],
-      });
-      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
-      const bqMatches = content.match(/^>/gm) || [];
-      expect(bqMatches.length).toBeLessThanOrEqual(5);
+    it('merges relatedUrls into frontmatter, excluding the current path', () => {
+      const state = makeState('https://example.com/suite/abc');
+      experienceTracker.writeFlow(state, sampleBody, ['/other/page', '/suite/abc', '/another']);
+      const { data } = experienceTracker.readExperienceFile(state.getStateHash());
+      expect(data.related).toEqual(['/other/page', '/another']);
     });
 
-    it('should trim content to max 40 lines', () => {
+    it('respects disabled flag', () => {
+      const disabledTracker = new ExperienceTracker({ disabled: true });
       const state = makeState();
-      const steps = Array.from({ length: 2 }, (_, i) => ({
-        message: `Step ${i}`,
-        status: 'passed' as const,
-        code: `I.click("Btn${i}")`,
-        discovery: Array.from({ length: 5 }, (_, j) => `A new element appeared: El${i}_${j}`).join('\n'),
-      }));
-      experienceTracker.writeFlow(state, {
-        scenario: 'Long flow',
-        steps,
-      });
-      const { content } = experienceTracker.readExperienceFile(state.getStateHash());
-      const lines = content.split('\n');
-      expect(lines.length).toBeLessThanOrEqual(40);
+      disabledTracker.writeFlow(state, sampleBody);
+      const stateHash = state.getStateHash();
+      const filePath = `/tmp/experience/${stateHash}.md`;
+      expect(existsSync(filePath)).toBe(false);
     });
   });
 

@@ -12,12 +12,11 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
-import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
+import { detectPageCondition, ErrorPageError } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
-import { withRetry } from '../utils/retry.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import type { Agent } from './agent.js';
 import type { Navigator } from './navigator.ts';
@@ -132,11 +131,15 @@ export class Researcher extends ResearcherBase implements Agent {
       debugLog(`Annotated ${annotatedElements.length} interactive elements with eidx`);
       this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot && this.provider.hasVision() });
 
-      if (isErrorPage(this.actionResult!)) {
-        const recovered = await this.waitForPageLoad(screenshot);
-        if (!recovered) {
-          tag('warning').log(`Detected error page at ${state.url}`);
-          throw new ErrorPageError(state.url, this.actionResult!.title);
+      const condition = detectPageCondition(this.actionResult!);
+      if (condition === 'error') {
+        tag('warning').log(`Detected error page at ${state.url}`);
+        throw new ErrorPageError(state.url, this.actionResult!.title);
+      }
+      if (condition === 'loading') {
+        const settled = await this.waitUntilSettled(screenshot);
+        if (!settled) {
+          tag('warning').log(`Page at ${state.url} did not finish loading within timeout, continuing with best-effort research`);
         }
       }
 
@@ -355,31 +358,38 @@ export class Researcher extends ResearcherBase implements Agent {
     this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot ?? false });
   }
 
-  private async waitForPageLoad(screenshot: boolean): Promise<boolean> {
+  private async waitUntilSettled(screenshot: boolean): Promise<boolean> {
     const errorPageTimeout = (this.explorer.getConfig().ai?.agents?.researcher as any)?.errorPageTimeout ?? 10;
     if (errorPageTimeout <= 0) return false;
 
+    const page = this.explorer.playwrightHelper.page;
+    const includeScreenshot = screenshot && this.provider.hasVision();
+
     try {
-      await withRetry(
-        async () => {
-          await this.explorer.annotateElements();
-          this.actionResult = await this.explorer.createAction().capturePageState({
-            includeScreenshot: screenshot && this.provider.hasVision(),
-          });
-          if (isErrorPage(this.actionResult!)) throw new Error('Error page detected');
-        },
-        {
-          maxAttempts: Math.ceil(errorPageTimeout / 3) + 1,
-          baseDelay: 1000,
-          maxDelay: 5000,
-          backoffMultiplier: 2,
-          retryCondition: (e) => e.message === 'Error page detected',
-        }
-      );
-      return true;
-    } catch {
-      return false;
+      await page?.waitForLoadState('networkidle', { timeout: errorPageTimeout * 1000 });
+    } catch {}
+
+    await this.explorer.annotateElements();
+    this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot });
+
+    let condition = detectPageCondition(this.actionResult!);
+    if (condition === 'error') {
+      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title);
     }
+    if (condition === 'ok') return true;
+
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      await this.explorer.annotateElements();
+      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot });
+      condition = detectPageCondition(this.actionResult!);
+      if (condition === 'error') {
+        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title);
+      }
+      if (condition === 'ok') return true;
+    }
+
+    return false;
   }
 
   private getConfiguredSections(): Record<string, string> {

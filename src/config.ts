@@ -107,6 +107,10 @@ interface PlannerAgentConfig extends AgentConfig {
   stylesDir?: string;
 }
 
+interface HistorianAgentConfig extends AgentConfig {
+  framework?: 'codeceptjs' | 'playwright';
+}
+
 interface AgentsConfig {
   tester?: TesterAgentConfig;
   navigator?: NavigatorAgentConfig;
@@ -116,7 +120,7 @@ interface AgentsConfig {
   'experience-compactor'?: AgentConfig;
   captain?: AgentConfig;
   quartermaster?: AgentConfig;
-  historian?: AgentConfig;
+  historian?: HistorianAgentConfig;
   fisherman?: AgentConfig;
   chief?: AgentConfig;
   curler?: AgentConfig;
@@ -229,6 +233,7 @@ export type {
   ActionConfig,
   AgentConfig,
   AgentsConfig,
+  HistorianAgentConfig,
   ResearcherAgentConfig,
   NavigatorAgentConfig,
   PlannerAgentConfig,

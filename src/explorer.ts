@@ -17,6 +17,7 @@ import type { UserResolveFunction } from './explorbot.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
+import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Test } from './test-plan.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 import { WebElement, extractElementData } from './utils/web-element.ts';
@@ -60,6 +61,7 @@ class Explorer {
   private _activeTest: Test | null = null;
   private xhrCapture: XhrCapture | null = null;
   private requestStore: RequestStore | null = null;
+  private playwrightRecorder: PlaywrightRecorder = new PlaywrightRecorder();
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string }) {
     this.config = config;
@@ -123,7 +125,7 @@ class Explorer {
       tag('substep').log(debugInfo);
     }
     const PlaywrightConfig = {
-      timeout: 1000,
+      timeout: 3000,
       highlightElement: true,
       waitForAction: 500,
       ...playwrightConfig,
@@ -237,6 +239,7 @@ class Explorer {
     const hasSession = this.options?.session && existsSync(this.options.session);
     const contextOptions = hasSession ? { storageState: this.options!.session } : undefined;
     await this.playwrightHelper._createContextPage(contextOptions);
+    await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
     this.setupXhrCapture();
     if (hasSession) {
       tag('info').log(`Session restored from ${path.relative(process.cwd(), this.options!.session!)}`);
@@ -273,7 +276,11 @@ class Explorer {
   }
 
   createAction() {
-    return new Action(this.actor, this.stateManager);
+    return new Action(this.actor, this.stateManager, this.playwrightRecorder);
+  }
+
+  getPlaywrightRecorder(): PlaywrightRecorder {
+    return this.playwrightRecorder;
   }
 
   async visit(url: string) {
@@ -488,6 +495,8 @@ class Explorer {
     if (this.xhrCapture && this.playwrightHelper?.page) {
       this.xhrCapture.detach(this.playwrightHelper.page);
     }
+
+    await this.playwrightRecorder.stop();
 
     if (this.options?.session && this.playwrightHelper?.browserContext) {
       const dir = path.dirname(this.options.session);

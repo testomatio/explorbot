@@ -611,7 +611,7 @@ export class ActionResult implements ActionResultData {
         }
       }
       if (processedParts.length > 0) {
-        pageDiff.htmlParts = processedParts;
+        pageDiff.htmlParts = collapseHtmlParts(processedParts);
       }
     }
 
@@ -627,6 +627,31 @@ export class ActionResult implements ActionResultData {
     result.pageDiff = pageDiff;
     return result;
   }
+}
+
+const HTML_PARTS_TOTAL_BUDGET = 8000;
+const HTML_PARTS_COUNT_LIMIT = 8;
+const HTML_PART_SUBTREE_BUDGET = 2000;
+
+function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
+  const total = parts.reduce((sum, p) => sum + p.subtree.length, 0);
+  const fullPageReRender = total > HTML_PARTS_TOTAL_BUDGET || parts.length > HTML_PARTS_COUNT_LIMIT;
+
+  if (fullPageReRender) {
+    return parts.map((part) => ({
+      ...part,
+      subtree: `<html><head></head><body>...collapsed (${part.subtree.length} chars, ${part.added.length} added, ${part.removed.length} removed)...</body></html>`,
+    }));
+  }
+
+  return parts.map((part) => {
+    if (part.subtree.length <= HTML_PART_SUBTREE_BUDGET) return part;
+    const head = part.subtree.slice(0, HTML_PART_SUBTREE_BUDGET);
+    return {
+      ...part,
+      subtree: `${head}...<!-- truncated ${part.subtree.length - HTML_PART_SUBTREE_BUDGET} chars -->`,
+    };
+  });
 }
 
 export class Diff {

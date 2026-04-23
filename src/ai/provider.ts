@@ -1,6 +1,6 @@
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { generateObject, generateText } from 'ai';
+import { generateObject, generateText, stepCountIs } from 'ai';
 import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
@@ -286,11 +286,12 @@ export class Provider {
     promptLog(messages[messages.length - 1].content);
 
     const telemetry = this.getTelemetry(options);
+    const maxRoundtrips = options.maxToolRoundtrips ?? 5;
     const config = this.mergeProviderOptions(
       {
         tools,
         maxTokens: 16384,
-        maxToolRoundtrips: options.maxToolRoundtrips ?? 5,
+        stopWhen: stepCountIs(maxRoundtrips),
         toolChoice: 'auto',
         ...(this.config.config || {}),
         ...options,
@@ -303,13 +304,18 @@ export class Provider {
     try {
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
-        return (await Promise.race([
+        const result = (await Promise.race([
           generateText({
             messages,
             ...config,
           }),
           new Promise((_, reject) => setTimeout(() => reject(new Error('AI request timeout')), timeout)),
         ])) as any;
+        const hasToolCall = (result.toolCalls?.length || 0) > 0;
+        if (!result.text && !hasToolCall && result.finishReason === 'length') {
+          throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxTokens in config or use a model with higher output capacity.');
+        }
+        return result;
       }, this.getRetryOptions(options));
 
       clearActivity();

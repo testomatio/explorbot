@@ -100,7 +100,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               activeNote.screenshot = await action.saveScreenshot();
             }
             activeNote.commit(TestResult.PASSED);
-            return successToolResult('click', { ...toolResult, attempts, code: command });
+            return successToolResult('click', { ...toolResult, attempts, code: command }, action);
           }
         }
 
@@ -128,7 +128,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               activeNote.screenshot = await action.saveScreenshot();
             }
             activeNote.commit(TestResult.PASSED);
-            return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true });
+            return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true }, action);
           }
         }
 
@@ -208,12 +208,16 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
                 activeNote.screenshot = await action.saveScreenshot();
               }
               activeNote.commit(TestResult.PASSED);
-              return successToolResult('pressKey', {
-                ...toolResult,
-                message: `Automatically used type() for "${key}" (not a standard key press)`,
-                code: typeCommand,
-                fallback: true,
-              });
+              return successToolResult(
+                'pressKey',
+                {
+                  ...toolResult,
+                  message: `Automatically used type() for "${key}" (not a standard key press)`,
+                  code: typeCommand,
+                  fallback: true,
+                },
+                action
+              );
             }
 
             const errorMsg = `pressKey fallback to type() failed: ${action.lastError?.toString()}`;
@@ -261,11 +265,15 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               activeNote.screenshot = await action.saveScreenshot();
             }
             activeNote.commit(TestResult.PASSED);
-            return successToolResult('pressKey', {
-              ...toolResult,
-              message: `Pressed key: ${key}${modifier ? ` with modifier(s): ${Array.isArray(modifier) ? modifier.join('+') : modifier}` : ''}`,
-              code: pressKeyCommand,
-            });
+            return successToolResult(
+              'pressKey',
+              {
+                ...toolResult,
+                message: `Pressed key: ${key}${modifier ? ` with modifier(s): ${Array.isArray(modifier) ? modifier.join('+') : modifier}` : ''}`,
+                code: pressKeyCommand,
+              },
+              action
+            );
           }
 
           const errorMsg = `pressKey() failed: ${action.lastError?.toString()}`;
@@ -383,13 +391,17 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             activeNote.screenshot = await action.saveScreenshot();
           }
           activeNote.commit(TestResult.PASSED);
-          return successToolResult('form', {
-            ...toolResult,
-            message: `Form completed successfully with ${lines.length} commands.`,
-            commandsExecuted: lines.length,
-            code: codeBlock,
-            suggestion: 'Verify the form was filled in correctly using see() tool. If needed to submit: try click() tool or form() with I.pressKey("Enter").',
-          });
+          return successToolResult(
+            'form',
+            {
+              ...toolResult,
+              message: `Form completed successfully with ${lines.length} commands.`,
+              commandsExecuted: lines.length,
+              code: codeBlock,
+              suggestion: 'Verify the form was filled in correctly using see() tool. If needed to submit: try click() tool or form() with I.pressKey("Enter").',
+            },
+            action
+          );
         } catch (error) {
           activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
@@ -589,10 +601,14 @@ export function createAgentTools({
           const result = await navigator.verifyState(assertion, actionResult);
 
           if (result.verified) {
-            return successToolResult('verify', {
-              message: `Verification passed: ${assertion}`,
-              code: result.successfulCodes.join('\n'),
-            });
+            return successToolResult(
+              'verify',
+              {
+                message: `Verification passed: ${assertion}`,
+                code: result.successfulCodes.join('\n'),
+              },
+              { assertionSteps: result.assertionSteps }
+            );
           }
 
           return failedToolResult('verify', `Verification failed: ${assertion}`, {
@@ -1017,8 +1033,14 @@ function countAriaChanges(ariaChanges: string): number {
   return addedCount + removedCount;
 }
 
-function successToolResult(action: string, data?: Record<string, any>) {
+function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
   const result: Record<string, any> = { success: true, action, ...data };
+  if (source?.playwrightGroupId) {
+    result.playwrightGroupId = source.playwrightGroupId;
+  }
+  if (source?.assertionSteps?.length) {
+    result.assertionSteps = source.assertionSteps;
+  }
   if (data?.pageDiff) {
     let suggestion = PAGE_DIFF_SUGGESTION;
     const ariaChanges = data.pageDiff.ariaChanges || '';

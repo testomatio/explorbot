@@ -16,6 +16,7 @@ import { ConfigParser, outputPath } from './config.js';
 import type { ExplorbotConfig } from './config.js';
 import type { UserResolveFunction } from './explorbot.ts';
 import { Observability } from './observability.ts';
+import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
@@ -36,12 +37,16 @@ class Action {
   private expectation: string | null = null;
   public lastError: Error | null = null;
   public playwrightHelper: any;
+  public playwrightGroupId: string | null = null;
+  public assertionSteps: Array<{ name: string; args: any[] }> = [];
+  private recorder?: PlaywrightRecorder;
 
-  constructor(actor: CodeceptJS.I, stateManager: StateManager) {
+  constructor(actor: CodeceptJS.I, stateManager: StateManager, recorder?: PlaywrightRecorder) {
     this.actor = actor;
     this.stateManager = stateManager;
     this.config = ConfigParser.getInstance().getConfig();
     this.playwrightHelper = container.helpers('Playwright');
+    this.recorder = recorder;
   }
 
   async caputrePageWithScreenshot(): Promise<ActionResult> {
@@ -218,7 +223,10 @@ class Action {
     let codeString = code.replace(/^\(I\) => /, '').trim();
 
     const executedSteps: string[] = [];
-    registerStepLogger(executedSteps);
+    const assertionSteps: Array<{ name: string; args: any[] }> = [];
+    registerStepLogger(executedSteps, assertionSteps);
+    const groupId = this.recorder ? await this.recorder.beginAction(codeString) : null;
+    this.playwrightGroupId = groupId;
     const activeSpan = Observability.getSpan();
     const tracer = trace.getTracer('ai');
     const stepSpan = activeSpan ? tracer.startSpan('codeceptjs.step', undefined, trace.setSpan(context.active(), activeSpan)) : null;
@@ -253,6 +261,7 @@ class Action {
       this.stateManager.updateState(pageState, codeString);
 
       this.actionResult = pageState;
+      this.assertionSteps = assertionSteps;
     } catch (err) {
       debugLog('Action error', errorToString(err));
       error = err as Error;
@@ -260,8 +269,10 @@ class Action {
         await recorder.reset();
         await recorder.start();
       }
+      this.assertionSteps = [];
       throw err;
     } finally {
+      if (groupId) await this.recorder!.endAction();
       unregisterStepLogger();
       if (stepSpan) {
         stepSpan.end();
@@ -407,8 +418,11 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const ASSERTION_STEP_NAMES = new Set(['see', 'dontSee', 'seeElement', 'dontSeeElement', 'seeInField', 'dontSeeInField', 'seeInCurrentUrl', 'dontSeeInCurrentUrl']);
+
 let stepLoggerRegistered = false;
 let stepLoggerTarget: string[] | null = null;
+let assertionStepsTarget: Array<{ name: string; args: any[] }> | null = null;
 
 const stepLogger = (step: any, error?: any) => {
   if (!step?.toCode) {
@@ -419,6 +433,9 @@ const stepLogger = (step: any, error?: any) => {
   if (stepLoggerTarget) {
     stepLoggerTarget.push(stepCode);
   }
+  if (assertionStepsTarget && ASSERTION_STEP_NAMES.has(step.name)) {
+    assertionStepsTarget.push({ name: step.name, args: step.args || [] });
+  }
   if (error) {
     tag('step').log(step, error);
     return;
@@ -426,8 +443,9 @@ const stepLogger = (step: any, error?: any) => {
   tag('step').log(step);
 };
 
-const registerStepLogger = (target: string[]) => {
+const registerStepLogger = (target: string[], assertionsTarget?: Array<{ name: string; args: any[] }>) => {
   stepLoggerTarget = target;
+  assertionStepsTarget = assertionsTarget || null;
   if (stepLoggerRegistered) {
     return;
   }
@@ -438,6 +456,7 @@ const registerStepLogger = (target: string[]) => {
 
 const unregisterStepLogger = () => {
   stepLoggerTarget = null;
+  assertionStepsTarget = null;
   if (!stepLoggerRegistered) {
     return;
   }

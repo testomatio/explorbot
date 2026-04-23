@@ -24,6 +24,11 @@ export class RerunCommand extends BaseCommand {
       filePath = resolve(ConfigParser.getInstance().getTestsDir(), filename);
     }
 
+    if (filePath.endsWith('.spec.ts') || filePath.endsWith('.spec.js')) {
+      tag('error').log(`Rerun does not support Playwright tests. Run them with: npx playwright test ${filePath}`);
+      return;
+    }
+
     const testIndices = indexArg ? parseTestIndices(indexArg) : undefined;
     await this.explorBot.agentRerunner().rerun(filePath, { testIndices });
   }
