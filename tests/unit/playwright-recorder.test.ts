@@ -5,34 +5,34 @@ function ndjson(...events: any[]): string {
   return events.map((e) => JSON.stringify(e)).join('\n');
 }
 
-function before(callId: string, cls: string, method: string, params: any, parentId?: string, title?: string) {
+function beforeEvt(callId: string, cls: string, method: string, params: any, parentId?: string, title?: string) {
   const evt: any = { type: 'before', callId, class: cls, method, params };
   if (parentId) evt.parentId = parentId;
   if (title !== undefined) evt.title = title;
   return evt;
 }
 
-function after(callId: string, error?: any) {
+function afterEvt(callId: string, error?: any) {
   const evt: any = { type: 'after', callId };
   if (error) evt.error = error;
   return evt;
 }
 
 function group(callId: string, title: string) {
-  return before(callId, 'Tracing', 'tracingGroup', {}, undefined, title);
+  return beforeEvt(callId, 'Tracing', 'tracingGroup', {}, undefined, title);
 }
 
 describe('parseTrace', () => {
   it('buckets calls by group title', () => {
     const trace = ndjson(
       group('g1', 'explorbot#1:click save'),
-      before('c1', 'Frame', 'click', { selector: 'internal:role=button[name="Save"i]' }, 'g1'),
-      after('c1'),
-      after('g1'),
+      beforeEvt('c1', 'Frame', 'click', { selector: 'internal:role=button[name="Save"i]' }, 'g1'),
+      afterEvt('c1'),
+      afterEvt('g1'),
       group('g2', 'explorbot#2:fill email'),
-      before('c2', 'Frame', 'fill', { selector: 'input[name="email"]', value: 'a@b.c' }, 'g2'),
-      after('c2'),
-      after('g2')
+      beforeEvt('c2', 'Frame', 'fill', { selector: 'input[name="email"]', value: 'a@b.c' }, 'g2'),
+      afterEvt('c2'),
+      afterEvt('g2')
     );
     const groups = parseTrace(trace);
     expect(groups.get('explorbot#1:click save')).toHaveLength(1);
@@ -44,38 +44,38 @@ describe('parseTrace', () => {
   it('filters noise methods (queryCount, isVisible, textContent, evaluateExpression, waitForSelector)', () => {
     const trace = ndjson(
       group('g1', 'noise-test'),
-      before('c1', 'Frame', 'queryCount', { selector: 'button' }, 'g1'),
-      after('c1'),
-      before('c2', 'Frame', 'isVisible', { selector: 'button' }, 'g1'),
-      after('c2'),
-      before('c3', 'Frame', 'textContent', { selector: 'h1' }, 'g1'),
-      after('c3'),
-      before('c4', 'Frame', 'evaluateExpression', { expression: '() => 1' }, 'g1'),
-      after('c4'),
-      before('c5', 'Frame', 'waitForSelector', { selector: 'button' }, 'g1'),
-      after('c5'),
-      after('g1')
+      beforeEvt('c1', 'Frame', 'queryCount', { selector: 'button' }, 'g1'),
+      afterEvt('c1'),
+      beforeEvt('c2', 'Frame', 'isVisible', { selector: 'button' }, 'g1'),
+      afterEvt('c2'),
+      beforeEvt('c3', 'Frame', 'textContent', { selector: 'h1' }, 'g1'),
+      afterEvt('c3'),
+      beforeEvt('c4', 'Frame', 'evaluateExpression', { expression: '() => 1' }, 'g1'),
+      afterEvt('c4'),
+      beforeEvt('c5', 'Frame', 'waitForSelector', { selector: 'button' }, 'g1'),
+      afterEvt('c5'),
+      afterEvt('g1')
     );
     const groups = parseTrace(trace);
     expect(groups.get('noise-test')).toEqual([]);
   });
 
   it('excludes failed calls', () => {
-    const trace = ndjson(group('g1', 'failed-call'), before('c1', 'Frame', 'click', { selector: 'button' }, 'g1'), after('c1', { message: 'Timeout', name: 'TimeoutError' }), before('c2', 'Frame', 'click', { selector: 'a' }, 'g1'), after('c2'), after('g1'));
+    const trace = ndjson(group('g1', 'failed-call'), beforeEvt('c1', 'Frame', 'click', { selector: 'button' }, 'g1'), afterEvt('c1', { message: 'Timeout', name: 'TimeoutError' }), beforeEvt('c2', 'Frame', 'click', { selector: 'a' }, 'g1'), afterEvt('c2'), afterEvt('g1'));
     const groups = parseTrace(trace);
     expect(groups.get('failed-call')).toHaveLength(1);
     expect(groups.get('failed-call')![0].params.selector).toBe('a');
   });
 
   it('ignores calls without a parentId (not in any group)', () => {
-    const trace = ndjson(before('c0', 'Frame', 'click', { selector: 'button' }), after('c0'), group('g1', 'in-group'), before('c1', 'Frame', 'click', { selector: 'a' }, 'g1'), after('c1'), after('g1'));
+    const trace = ndjson(beforeEvt('c0', 'Frame', 'click', { selector: 'button' }), afterEvt('c0'), group('g1', 'in-group'), beforeEvt('c1', 'Frame', 'click', { selector: 'a' }, 'g1'), afterEvt('c1'), afterEvt('g1'));
     const groups = parseTrace(trace);
     expect(groups.size).toBe(1);
     expect(groups.get('in-group')).toHaveLength(1);
   });
 
   it('ignores malformed NDJSON lines', () => {
-    const lines = [JSON.stringify(group('g1', 'malformed')), 'this is not json', '', JSON.stringify(before('c1', 'Frame', 'click', { selector: 'button' }, 'g1')), JSON.stringify(after('c1')), JSON.stringify(after('g1'))];
+    const lines = [JSON.stringify(group('g1', 'malformed')), 'this is not json', '', JSON.stringify(beforeEvt('c1', 'Frame', 'click', { selector: 'button' }, 'g1')), JSON.stringify(afterEvt('c1')), JSON.stringify(afterEvt('g1'))];
     const groups = parseTrace(lines.join('\n'));
     expect(groups.get('malformed')).toHaveLength(1);
   });
@@ -129,7 +129,7 @@ describe('renderCall', () => {
   });
 
   it('renders Page.mouseClick with coordinates', () => {
-    expect(renderCall(call('Page', 'mouseClick', { x: 100, y: 200 }))).toBe(`await page.mouse.click(100, 200);`);
+    expect(renderCall(call('Page', 'mouseClick', { x: 100, y: 200 }))).toBe('await page.mouse.click(100, 200);');
   });
 
   it('falls back to TODO comment for unknown event', () => {

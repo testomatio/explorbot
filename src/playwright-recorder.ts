@@ -233,9 +233,9 @@ export function renderCall(call: TraceCall): string {
   }
 
   if (cls === 'Page') {
-    if (method === 'goBack') return `await page.goBack();`;
-    if (method === 'goForward') return `await page.goForward();`;
-    if (method === 'reload') return `await page.reload();`;
+    if (method === 'goBack') return 'await page.goBack();';
+    if (method === 'goForward') return 'await page.goForward();';
+    if (method === 'reload') return 'await page.reload();';
     if (method === 'keyboardPress') return `await page.keyboard.press(${quote(params.key ?? '')});`;
     if (method === 'keyboardType') return `await page.keyboard.type(${quote(params.text ?? '')});`;
     if (method === 'keyboardDown') return `await page.keyboard.down(${quote(params.key ?? '')});`;
@@ -244,8 +244,8 @@ export function renderCall(call: TraceCall): string {
     if (method === 'mouseClick') return `await page.mouse.click(${params.x ?? 0}, ${params.y ?? 0});`;
     if (method === 'mouseDblclick') return `await page.mouse.dblclick(${params.x ?? 0}, ${params.y ?? 0});`;
     if (method === 'mouseMove') return `await page.mouse.move(${params.x ?? 0}, ${params.y ?? 0});`;
-    if (method === 'mouseDown') return `await page.mouse.down();`;
-    if (method === 'mouseUp') return `await page.mouse.up();`;
+    if (method === 'mouseDown') return 'await page.mouse.down();';
+    if (method === 'mouseUp') return 'await page.mouse.up();';
     if (method === 'mouseWheel') return `await page.mouse.wheel(${params.deltaX ?? 0}, ${params.deltaY ?? 0});`;
   }
 
