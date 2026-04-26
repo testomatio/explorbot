@@ -8,6 +8,7 @@ import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
+import { Observability } from '../observability.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
@@ -155,10 +156,39 @@ export class Tester extends TaskAgent implements Agent {
     const initialPrompt = await this.buildTestPrompt(task, initialState);
     conversation.addUserText(initialPrompt);
 
+    return await Observability.run(
+      `test: ${task.scenario}`,
+      {
+        sessionId: task.sessionName,
+        tags: ['tester'],
+        input: {
+          scenario: task.scenario,
+          startUrl: task.startUrl,
+          expected: task.expected,
+        },
+      },
+      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest, page, onPageError, onConsoleMessage })
+    );
+  }
+
+  private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: { offFailedRequest?: () => void; page: any; onPageError: (err: Error) => void; onConsoleMessage: (msg: any) => void }): Promise<{ success: boolean }> {
+    const { offFailedRequest, page, onPageError, onConsoleMessage } = handlers;
+
     if (this.pilot) {
-      const plan = await this.pilot.planTest(task, initialState);
-      if (plan) {
-        conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
+      try {
+        const plan = await this.pilot.planTest(task, initialState);
+        if (plan) {
+          conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        tag('error').log(`Pilot planning failed: ${message}`);
+        task.addNote(`Planning failed: ${message}`, TestResult.FAILED);
+        task.finish(TestResult.FAILED);
+        offFailedRequest?.();
+        page?.off('pageerror', onPageError);
+        page?.off('console', onConsoleMessage);
+        return { success: false };
       }
     }
 
@@ -174,6 +204,7 @@ export class Tester extends TaskAgent implements Agent {
     await this.hooksRunner.runBeforeHook('tester', currentUrl);
 
     const offStateChange = this.explorer.getStateManager().onStateChange((event: StateTransition) => {
+      if (task.hasFinished) return;
       if (event.toState?.url === event.fromState?.url) return;
       task.addNote(`Navigated to ${event.toState?.url}`, TestResult.PASSED);
       task.states.push(event.toState);
@@ -225,6 +256,7 @@ export class Tester extends TaskAgent implements Agent {
           conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);
           conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
           conversation.cleanupTag('experience', '...cleaned experience...', 1);
+          conversation.cleanupTag('applied_experience', '...cleaned past experience...', 1);
           conversation.cleanupTag('page_ui_map', '...cleaned UI map...', 1);
           conversation.cleanupTag('page_ui_map_overlay', '...cleaned UI overlay...', 1);
           conversation.compactToolResults(3);
@@ -249,6 +281,7 @@ export class Tester extends TaskAgent implements Agent {
           const result = await this.provider.invokeConversation(conversation, tools, {
             maxToolRoundtrips: 5,
             toolChoice: 'required',
+            stopWhen: () => task.hasFinished,
           });
 
           if (!result) throw new Error('Failed to get response from provider');
@@ -333,21 +366,11 @@ export class Tester extends TaskAgent implements Agent {
                 context.setUserInput(result.message);
               }
             : undefined,
-          observability: {
-            name: `test: ${task.scenario}`,
-            agent: 'tester',
-            sessionId: task.sessionName,
-            metadata: {
-              input: {
-                scenario: task.scenario,
-                startUrl: task.startUrl,
-                expected: task.expected,
-              },
-            },
-          },
           catch: async ({ error, stop }) => {
             tag('error').log(`Test execution error: ${error}`);
-            task.addNote(`Execution error: ${error instanceof Error ? error.message : String(error)}`);
+            if (!task.hasFinished) {
+              task.addNote(`Execution error: ${error instanceof Error ? error.message : String(error)}`);
+            }
             stop();
           },
         }
@@ -916,6 +939,9 @@ export class Tester extends TaskAgent implements Agent {
           verify: z.string().describe('Specific assertion to verify on the page before finishing (e.g., "New item appears in the list")'),
         }),
         execute: async ({ verify }) => {
+          if (task.hasFinished) {
+            return { success: true, action: 'finish', message: 'already finished' };
+          }
           task.addNote(`Finish requested: ${verify}`);
 
           if (this.pilot) {

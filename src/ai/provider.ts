@@ -19,6 +19,20 @@ const responseLog = createDebug('explorbot:provider:in');
 class AiError extends Error {}
 export class ContextLengthError extends Error {}
 
+function rejectAfterIdle(ms: number, signal: { cancelled: boolean }): Promise<never> {
+  return new Promise((_, reject) => {
+    const tick = () => {
+      if (signal.cancelled) return;
+      if (executionController.isAwaitingInput()) {
+        setTimeout(tick, ms);
+        return;
+      }
+      reject(new Error('AI request timeout'));
+    };
+    setTimeout(tick, ms);
+  });
+}
+
 export class Provider {
   private config: AIConfig;
   private telemetryEnabled = false;
@@ -287,14 +301,18 @@ export class Provider {
 
     const telemetry = this.getTelemetry(options);
     const maxRoundtrips = options.maxToolRoundtrips ?? 5;
+    const extraStop = options.stopWhen;
+    const stopConditions: any[] = [stepCountIs(maxRoundtrips)];
+    if (extraStop) stopConditions.push(extraStop);
+    const { stopWhen: _ignoredStopWhen, ...optionsWithoutStop } = options;
     const config = this.mergeProviderOptions(
       {
         tools,
         maxTokens: 16384,
-        stopWhen: stepCountIs(maxRoundtrips),
         toolChoice: 'auto',
         ...(this.config.config || {}),
-        ...options,
+        ...optionsWithoutStop,
+        stopWhen: stopConditions,
         ...(telemetry ? { experimental_telemetry: telemetry } : {}),
         model,
         abortSignal: executionController.getAbortSignal(),
@@ -304,18 +322,23 @@ export class Provider {
     try {
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
-        const result = (await Promise.race([
-          generateText({
-            messages,
-            ...config,
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('AI request timeout')), timeout)),
-        ])) as any;
-        const hasToolCall = (result.toolCalls?.length || 0) > 0;
-        if (!result.text && !hasToolCall && result.finishReason === 'length') {
-          throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxTokens in config or use a model with higher output capacity.');
+        const cancel = { cancelled: false };
+        try {
+          const result = (await Promise.race([
+            generateText({
+              messages,
+              ...config,
+            }),
+            rejectAfterIdle(timeout, cancel),
+          ])) as any;
+          const hasToolCall = (result.toolCalls?.length || 0) > 0;
+          if (!result.text && !hasToolCall && result.finishReason === 'length') {
+            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxTokens in config or use a model with higher output capacity.');
+          }
+          return result;
+        } finally {
+          cancel.cancelled = true;
         }
-        return result;
       }, this.getRetryOptions(options));
 
       clearActivity();
@@ -386,13 +409,18 @@ export class Provider {
       promptLog(messages[messages.length - 1].content);
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
-        return (await Promise.race([
-          generateObject({
-            messages,
-            ...config,
-          }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('AI request timeout')), timeout)),
-        ])) as any;
+        const cancel = { cancelled: false };
+        try {
+          return (await Promise.race([
+            generateObject({
+              messages,
+              ...config,
+            }),
+            rejectAfterIdle(timeout, cancel),
+          ])) as any;
+        } finally {
+          cancel.cancelled = true;
+        }
       }, this.getRetryOptions(options));
 
       clearActivity();

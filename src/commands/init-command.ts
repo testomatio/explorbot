@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import dedent from 'dedent';
 import { getCliName } from '../utils/cli-name.ts';
 import { log, tag } from '../utils/logger.js';
+import { relativeToCwd } from '../utils/next-steps.ts';
 
 const DEFAULT_CONFIG_TEMPLATE = `import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 // import { '<your provider here>' } from '<your provider package here>';
@@ -61,10 +62,10 @@ export function runInitCommand(options: InitCommandOptions): void {
     const dir = resolve(customPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
-      log(`Created directory: ${dir}`);
+      log(`Created directory: ${relativeToCwd(dir)}`);
     }
     process.chdir(dir);
-    log(`Working in directory: ${dir}`);
+    log(`Working in directory: ${relativeToCwd(dir)}`);
   }
 
   try {
@@ -78,24 +79,24 @@ export function runInitCommand(options: InitCommandOptions): void {
     const dir = dirname(outPath);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
-      log(`Created directory: ${dir}`);
+      log(`Created directory: ${relativeToCwd(dir)}`);
     }
 
     if (existsSync(outPath) && !force) {
-      log(`Config file already exists: ${outPath}`);
+      log(`Config file already exists: ${relativeToCwd(outPath)}`);
       log('Use --force to overwrite existing file');
       process.exit(1);
     }
 
     writeFileSync(outPath, DEFAULT_CONFIG_TEMPLATE, 'utf8');
-    log(`Created config file: ${outPath}`);
+    log(`Created config file: ${relativeToCwd(outPath)}`);
 
     const envPath = resolve(process.cwd(), '.env');
     if (!existsSync(envPath)) {
       writeFileSync(envPath, `${DEFAULT_ENV_TEMPLATE}\n`, 'utf8');
-      log(`Created env file: ${envPath}`);
+      log(`Created env file: ${relativeToCwd(envPath)}`);
     } else {
-      log(`Env file already exists: ${envPath}`);
+      log(`Env file already exists: ${relativeToCwd(envPath)}`);
     }
 
     log('');
@@ -112,7 +113,7 @@ export function runInitCommand(options: InitCommandOptions): void {
 
     if (!existsSync('./output')) {
       mkdirSync('./output', { recursive: true });
-      log('Created directory: ./output');
+      log('Created directory: output');
     }
   } catch (error) {
     log('Failed to create config file:', error);

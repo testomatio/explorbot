@@ -1,7 +1,9 @@
 import path from 'node:path';
 import chalk from 'chalk';
 import figureSet from 'figures';
+import { getCliName } from '../utils/cli-name.ts';
 import { tag } from '../utils/logger.js';
+import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanCommand extends BaseCommand {
@@ -41,6 +43,39 @@ export class PlanCommand extends BaseCommand {
 
     this.printPlanSummary();
     this.updateSuggestions();
+    this.printNextSteps();
+  }
+
+  private printNextSteps(): void {
+    const savedPath = this.explorBot.lastSavedPlanPath;
+    if (!savedPath) return;
+
+    const cli = getCliName();
+    const relPlan = relativeToCwd(savedPath);
+    const sections: NextStepSection[] = [
+      {
+        label: 'Plan',
+        path: savedPath,
+        commands: [
+          { label: 'Re-run', command: `${cli} test ${relPlan} 1` },
+          { label: 'Run all', command: `${cli} test ${relPlan} *` },
+          { label: 'Run range', command: `${cli} test ${relPlan} 1-3` },
+          { label: 'Reload', command: `/plan:load ${relPlan}` },
+        ],
+      },
+    ];
+
+    const suite = this.explorBot.getSuite();
+    const files = suite && suite.automatedTestCount > 0 ? suite.getAutomatedTestFiles() : [];
+    if (files.length > 0) {
+      const commands = files.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}` }));
+      sections.push({
+        label: `Automated tests (${files.length})`,
+        commands,
+      });
+    }
+
+    printNextSteps(sections);
   }
 
   private printPlanSummary(): void {

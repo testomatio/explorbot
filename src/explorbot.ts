@@ -53,6 +53,7 @@ export class ExplorBot {
   private currentPlan?: Plan;
   private planFeature?: string;
   lastPlanError: Error | null = null;
+  lastSavedPlanPath: string | null = null;
   private agents: Record<string, any> = {};
 
   constructor(options: ExplorBotOptions = {}) {
@@ -369,12 +370,7 @@ export class ExplorBot {
       return this.currentPlan;
     }
 
-    const savedPath = this.savePlan();
-    if (savedPath) {
-      const relativePath = path.relative(process.cwd(), savedPath);
-      tag('info').log(`Plan saved to: ${relativePath}`);
-      tag('info').log(`Edit the plan file and run /plan:load ${relativePath} to reload it`);
-    }
+    this.savePlan();
 
     return this.currentPlan;
   }
@@ -400,6 +396,7 @@ export class ExplorBot {
     const planFilename = filename || this.generatePlanFilename();
     const planPath = path.join(plansDir, planFilename);
     Plan.saveMultipleToMarkdown(plans, planPath);
+    this.lastSavedPlanPath = planPath;
     return planPath;
   }
 

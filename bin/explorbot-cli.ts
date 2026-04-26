@@ -17,6 +17,7 @@ import { getCliName } from '../src/utils/cli-name.ts';
 import { log, setPreserveConsoleLogs } from '../src/utils/logger.js';
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
+import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
 
 const program = new Command();
 const cli = getCliName();
@@ -189,26 +190,32 @@ addCommonOptions(program.command('plan <path>').description('Generate test plan 
       }
 
       const savedPath = explorBot.savePlan();
-      const planFile = savedPath ? path.basename(savedPath) : 'plan.md';
 
       const cliFlags = [options.path ? `--path ${options.path}` : '', options.session ? '--session' : ''].filter(Boolean).join(' ');
       const cliSuffix = cliFlags ? ` ${cliFlags}` : '';
 
-      const { PlanCommand } = await import('../src/commands/plan-command.js');
-      const planCommand = new PlanCommand(explorBot);
-      planCommand.suggestions = [
-        { command: `test ${planFile} 1${cliSuffix}`, hint: 'run first new test' },
-        { command: `test ${planFile} *${cliSuffix}`, hint: 'run all new tests' },
-      ];
-      if (suite && suite.automatedTestCount > 0) {
-        for (const f of suite.getAutomatedTestFiles()) {
-          planCommand.suggestions.push({
-            command: `rerun ${path.relative(process.cwd(), f)}${cliSuffix}`,
-            hint: 're-run automated tests',
-          });
-        }
+      const sections: NextStepSection[] = [];
+      if (savedPath) {
+        const relPlan = relativeToCwd(savedPath);
+        sections.push({
+          label: 'Plan',
+          path: savedPath,
+          commands: [
+            { label: 'Re-run', command: `${cli} test ${relPlan} 1${cliSuffix}` },
+            { label: 'Run all', command: `${cli} test ${relPlan} *${cliSuffix}` },
+            { label: 'Run range', command: `${cli} test ${relPlan} 1-3${cliSuffix}` },
+          ],
+        });
       }
-      planCommand.printSuggestions();
+      const automatedFiles = suite && suite.automatedTestCount > 0 ? suite.getAutomatedTestFiles() : [];
+      if (automatedFiles.length > 0) {
+        const commands = automatedFiles.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}${cliSuffix}` }));
+        sections.push({
+          label: `Automated tests (${automatedFiles.length})`,
+          commands,
+        });
+      }
+      printNextSteps(sections);
 
       await explorBot.stop();
       await showStatsAndExit(0);

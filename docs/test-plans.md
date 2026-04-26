@@ -72,6 +72,7 @@ The Tester marks a test as passing only when every expected outcome has been ver
 
 ## See Also
 
+- [Automated Tests](./automated-tests.md) — the runnable Playwright or CodeceptJS files Explorbot writes after executing a plan
 - [Planner](./planner.md) — how plans are generated
 - [Commands](./commands.md) — `/plan`, `/explore`, `explorbot plan`
 - [Rerun](./rerun.md) — re-executing generated tests

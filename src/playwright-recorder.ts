@@ -38,7 +38,13 @@ export class PlaywrightRecorder {
 
   recordVerification(steps: VerificationStep[]): void {
     if (!steps?.length) return;
-    this.verifications.push(...steps);
+    const seen = new Set(this.verifications.map((s) => `${s.name}:${JSON.stringify(s.args)}`));
+    for (const step of steps) {
+      const key = `${step.name}:${JSON.stringify(step.args)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      this.verifications.push(step);
+    }
   }
 
   drainVerifications(): VerificationStep[] {

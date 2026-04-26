@@ -169,9 +169,35 @@ See [docs/commands.md](docs/commands.md) for all commands.
 
 | Output | Location | Description |
 |--------|----------|-------------|
-| Test files | `output/tests/*.js` | CodeceptJS tests you can run independently |
+| Test files | `output/tests/*.spec.ts` or `*.js` | Runnable Playwright or CodeceptJS tests |
 | Test plans | `output/plans/*.md` | Markdown documentation of scenarios |
 | Experience | `./experience/` | What Explorbot learned about your app |
+
+Every run is saved as a real Playwright or CodeceptJS test you can commit and run from CI. Choose the framework in your config:
+
+```js
+ai: { agents: { historian: { framework: 'playwright' } } }  // or 'codeceptjs' (default)
+```
+
+Playwright output uses the actual `page.locator(...)` calls executed during the run, with each action wrapped in `test.step` so failures land on a labelled step:
+
+```ts
+test('Create a new manual plan', async ({ page }) => {
+  await test.step("Click the 'New plan' button in toolbar", async () => {
+    await page.getByRole('button', { name: 'New plan' }).first().click();
+  });
+
+  await test.step('Select Manual plan type in modal', async () => {
+    await page.locator('#portal-container').getByRole('button', { name: 'Manual' }).click();
+  });
+
+  await test.step('Verification', async () => {
+    await expect(page).toContainText('Test Plan UI Creation 001');
+  });
+});
+```
+
+See [Automated Tests](docs/automated-tests.md) for the CodeceptJS version and how failed or unfinished scenarios are handled.
 
 ## Two Ways to Run
 

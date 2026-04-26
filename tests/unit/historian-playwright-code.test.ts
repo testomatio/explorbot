@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { Historian } from '../../src/ai/historian.ts';
 import type { Conversation, ToolExecution } from '../../src/ai/conversation.ts';
+import { Historian } from '../../src/ai/historian.ts';
 
 function fakeConversation(execs: ToolExecution[]): Conversation {
   return { getToolExecutions: () => execs } as unknown as Conversation;
@@ -37,7 +37,9 @@ describe('Historian.toPlaywrightCode — assertion propagation', () => {
     ]);
 
     const code = await makeHistorian().toPlaywrightCode(conversation, 'Save a new run');
-    expect(code).toContain(`await expect(page.locator("button[aria-label=\\"Edit\\"]")).toBeVisible();`);
+    expect(code).toContain(`await test.step('Edit button is visible', async () => {`);
+    expect(code).toContain(`    await expect(page.locator("button[aria-label=\\"Edit\\"]")).toBeVisible();`);
+    expect(code).toContain('  });');
   });
 
   it('emits multiple assertions when verify ran several successful checks', async () => {
@@ -58,8 +60,9 @@ describe('Historian.toPlaywrightCode — assertion propagation', () => {
     ]);
 
     const code = await makeHistorian().toPlaywrightCode(conversation, 'Finish');
-    expect(code).toContain(`await expect(page).toContainText("New Run");`);
-    expect(code).toContain(`await expect(page.locator(".status-badge.new")).toBeVisible();`);
+    expect(code).toContain(`await test.step('Run status badge shows \\'New Run\\'', async () => {`);
+    expect(code).toContain(`    await expect(page).toContainText("New Run");`);
+    expect(code).toContain(`    await expect(page.locator(".status-badge.new")).toBeVisible();`);
   });
 
   it('skips failed verify executions', async () => {
@@ -97,9 +100,8 @@ describe('Historian.toPlaywrightCode — assertion propagation', () => {
     ]);
 
     const code = await makeHistorian().toPlaywrightCode(conversation, 'Save & verify');
-    // verify contributes the only emitted line since the click exec had no groupId → no calls
-    const saveIdx = code.indexOf(`await expect(page).toContainText("Saved");`);
-    expect(saveIdx).toBeGreaterThan(-1);
+    expect(code).toContain(`await test.step('Saved message shown', async () => {`);
+    expect(code).toContain(`    await expect(page).toContainText("Saved");`);
     expect(code).toContain(`test('Save & verify'`);
   });
 
@@ -128,10 +130,12 @@ describe('Historian.toPlaywrightCode — assertion propagation', () => {
     ]);
 
     const code = await historian.toPlaywrightCode(conversationWithStep, 'Pilot verifies');
-    expect(code).toContain('// Verification');
-    expect(code).toContain(`await expect(page).toContainText("Suite saved");`);
-    expect(code).toContain(`await expect(page.locator(".suites .row")).toBeVisible();`);
-    // baseline (verify-tool) still appears too
-    expect(code).toContain(`await expect(page).toContainText("baseline");`);
+    expect(code).toContain(`await test.step('Verification', async () => {`);
+    expect(code).toContain(`    await expect(page).toContainText("Suite saved");`);
+    expect(code).toContain(`    await expect(page.locator(".suites .row")).toBeVisible();`);
+    expect(code).toContain('  });');
+    // baseline (verify-tool) is wrapped in its own test.step (4-space indented body)
+    expect(code).toContain(`await test.step('baseline', async () => {`);
+    expect(code).toContain(`    await expect(page).toContainText("baseline");`);
   });
 });

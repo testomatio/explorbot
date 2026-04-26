@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseTrace, renderAssertion, renderCall, type TraceCall } from '../../src/playwright-recorder.ts';
+import { PlaywrightRecorder, type TraceCall, parseTrace, renderAssertion, renderCall } from '../../src/playwright-recorder.ts';
 
 function ndjson(...events: any[]): string {
   return events.map((e) => JSON.stringify(e)).join('\n');
@@ -188,5 +188,45 @@ describe('renderAssertion', () => {
 
   it('falls back to TODO when seeInField is missing the value', () => {
     expect(renderAssertion(assertion('seeInField', 'input'))).toMatch(/^\/\/ TODO\(playwright\)/);
+  });
+});
+
+describe('PlaywrightRecorder.recordVerification', () => {
+  it('drops duplicate steps (same name + args) from a single call', () => {
+    const rec = new PlaywrightRecorder();
+    rec.recordVerification([
+      { name: 'see', args: ['New Run'] },
+      { name: 'see', args: ['New Run'] },
+      { name: 'seeElement', args: ['.status-badge'] },
+    ]);
+    expect(rec.drainVerifications()).toEqual([
+      { name: 'see', args: ['New Run'] },
+      { name: 'seeElement', args: ['.status-badge'] },
+    ]);
+  });
+
+  it('drops duplicates across multiple recordVerification calls in one drain cycle', () => {
+    const rec = new PlaywrightRecorder();
+    rec.recordVerification([{ name: 'see', args: ['John Doe'] }]);
+    rec.recordVerification([
+      { name: 'see', args: ['John Doe'] },
+      { name: 'see', args: ['STAGING SERVER'] },
+    ]);
+    rec.recordVerification([{ name: 'see', args: ['STAGING SERVER'] }]);
+    expect(rec.drainVerifications()).toEqual([
+      { name: 'see', args: ['John Doe'] },
+      { name: 'see', args: ['STAGING SERVER'] },
+    ]);
+  });
+
+  it('keeps different arg values distinct', () => {
+    const rec = new PlaywrightRecorder();
+    rec.recordVerification([
+      { name: 'see', args: ['A'] },
+      { name: 'see', args: ['B'] },
+      { name: 'seeInField', args: ['#title', 'A'] },
+      { name: 'seeInField', args: ['#title', 'B'] },
+    ]);
+    expect(rec.drainVerifications()).toHaveLength(4);
   });
 });

@@ -486,7 +486,9 @@ export function renderExperienceToc(toc: ExperienceTocEntry[]): string {
 
   const lines: string[] = [];
   lines.push('<experience>');
-  lines.push('Past experience for this page — reusable recipes recorded from prior successful runs.');
+  lines.push('Past experience for this page — recipes recorded from prior successful runs.');
+  lines.push('Locators and step ordering worked then; the page may have changed since.');
+  lines.push('Treat as a starting hypothesis, not ground truth. If a step fails, fall back to ARIA/UI-map.');
   lines.push('FLOW: = multi-step recipe (bullets + code + discovery). ACTION: = single-step snippet (one code block).');
   lines.push('Call learn_experience({ fileTag, sectionIndex }) to read a section when it looks relevant to the current step.');
   lines.push('');

@@ -10,8 +10,10 @@ import { Observability } from '../observability.ts';
 import { Plan, Task, Test, TestResult } from '../test-plan.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
+import { getCliName } from '../utils/cli-name.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
+import { type NextStepSection, printNextSteps } from '../utils/next-steps.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
@@ -497,7 +499,15 @@ export class Bosun extends TaskAgent implements Agent {
     const content = this.generateKnowledgeContent(state, successfulInteractions);
     const result = knowledgeTracker.addKnowledge(knowledgePath, content);
 
-    tag('success').log(`Knowledge saved to: ${result.filePath}`);
+    const cli = getCliName();
+    const sections: NextStepSection[] = [
+      {
+        label: 'Knowledge',
+        path: result.filePath,
+        commands: [{ label: 'View matches', command: `${cli} knows ${knowledgePath}` }],
+      },
+    ];
+    printNextSteps(sections);
   }
 
   private generateKnowledgeContent(state: any, interactions: InteractionResult[]): string {

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-04-26
+
+### Changes
+- **Generates Playwright tests.** Every run is now saved as a runnable test — Playwright (`.spec.ts`) or CodeceptJS (`.js`). Set `ai.agents.historian.framework: 'playwright'` to get Playwright output. The spec uses the actual `page.locator(...)` calls executed during the run, each action wrapped in `test.step`, with `expect(...)` assertions for what the Pilot verified. Run it with `npx playwright test`. See [Automated Tests](docs/automated-tests.md).
+- [Historian] Each step in the generated test is wrapped in `await test.step('<explanation>', …)` (or `Section('<explanation>')` for CodeceptJS), labelled with the AI's own description.
+- [Historian] `test.beforeEach` / `Before` calls `goto(startUrl)` and replays the `wait` / `waitForElement` knowledge declared for that URL.
+- [Historian] Failed scenarios become `test.skip(...)` / `Scenario.skip(...)` with a `// FAILED:` comment; unfinished ones become `test.fixme(...)` / `Scenario.todo(...)` stubs. The file always runs.
+- [Historian] Duplicate `expect(...)` assertions are dropped when the Pilot re-verifies the same condition.
+- [Provider] AI request timeout no longer fires while Explorbot is paused on user input (e.g. `askUser`). The 30 s timer pauses while the controller reports awaiting input and resumes after the user replies.
+- [Tester] Tests that have already finished ignore late state changes, tool calls, and Pilot reviews, so the final report no longer collects post-verdict notes.
+- [Pilot] Verification failures and reset allow/veto decisions are logged at substep level instead of being added to test notes.
+- Next-step suggestions: every command (`plan`, `explore`, `learn`, `/plan:save`, `/add-rule`) closes with a consistent labeled block listing the artifact path and `re-run` / `run all` / `run range` / `reload` commands. Paths are printed relative to the working directory.
+- Telemetry: each test run is wrapped in a single root span so all tool calls, Pilot reviews, and Historian writes group under one Langfuse trace.
+
 ## 2026-04-24
 
 ### New CLI Options

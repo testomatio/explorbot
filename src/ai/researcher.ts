@@ -12,7 +12,7 @@ import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
-import { detectPageCondition, ErrorPageError } from '../utils/error-page.ts';
+import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
@@ -346,13 +346,15 @@ export class Researcher extends ResearcherBase implements Agent {
       return;
     }
 
-    if (isEmpty) {
-      debugLog('HTML body is empty, refreshing page');
-      tag('step').log('Page body is empty, refreshing...');
-    } else {
-      debugLog('Not on current state, navigating to URL');
-      tag('step').log('Navigating to URL...');
+    if (isEmpty && isOnCurrentState) {
+      debugLog('HTML body empty on current URL, waiting for content');
+      tag('step').log('Page body is empty, waiting for content...');
+      await this.waitUntilSettled(screenshot ?? false);
+      return;
     }
+
+    debugLog('Not on current state, navigating to URL');
+    tag('step').log('Navigating to URL...');
 
     await this.explorer.visit(url);
     this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot ?? false });

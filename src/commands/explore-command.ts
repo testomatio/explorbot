@@ -1,4 +1,3 @@
-import path from 'node:path';
 import figureSet from 'figures';
 import { getStyles } from '../ai/planner/styles.js';
 import { Stats } from '../stats.js';
@@ -7,6 +6,7 @@ import { getCliName } from '../utils/cli-name.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { jsonToTable } from '../utils/markdown-parser.js';
+import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class ExploreCommand extends BaseCommand {
@@ -70,8 +70,8 @@ export class ExploreCommand extends BaseCommand {
     this.explorBot.setCurrentPlan(mainPlan);
     if (mainUrl) await this.explorBot.visit(mainUrl);
     const savedPath = this.explorBot.savePlans(this.completedPlans);
-    this.printResults(savedPath);
-    this.printRerunSuggestions();
+    this.printResults();
+    this.printNextSteps(savedPath);
   }
 
   private async runAllStyles(pageUrl?: string, feature?: string, parentPlan?: Plan, completedPlans?: Plan[]): Promise<void> {
@@ -103,7 +103,7 @@ export class ExploreCommand extends BaseCommand {
     }
   }
 
-  private printResults(savedPath?: string | null): void {
+  private printResults(): void {
     const allTests = this.completedPlans.flatMap((plan) => plan.tests.filter((t) => t.startTime != null).map((test) => ({ test, planTitle: plan.title })));
 
     if (allTests.length === 0) return;
@@ -132,22 +132,36 @@ export class ExploreCommand extends BaseCommand {
     if (hasSubPages) columns.push('Plan');
     tag('multiline').log(jsonToTable(rows, columns));
     tag('info').log(`${figureSet.tick} ${allTests.length} tests completed`);
-
-    if (savedPath) {
-      const relativePath = path.relative(process.cwd(), savedPath);
-      tag('info').log(`Re-run tests: ${getCliName()} test ${relativePath} <index>`);
-    }
   }
 
-  private printRerunSuggestions(): void {
-    const savedFiles = this.explorBot.agentHistorian().getSavedFiles();
-    if (savedFiles.length === 0) return;
+  private printNextSteps(savedPlanPath?: string | null): void {
+    const cli = getCliName();
+    const sections: NextStepSection[] = [];
 
-    for (const filePath of savedFiles) {
-      tag('info').log(`Generated: ${path.basename(filePath)}`);
+    if (savedPlanPath) {
+      const relPlan = relativeToCwd(savedPlanPath);
+      sections.push({
+        label: 'Plan',
+        path: savedPlanPath,
+        commands: [
+          { label: 'Re-run', command: `${cli} test ${relPlan} 1` },
+          { label: 'Run all', command: `${cli} test ${relPlan} *` },
+          { label: 'Run range', command: `${cli} test ${relPlan} 1-3` },
+        ],
+      });
     }
-    tag('info').log(`List tests: ${getCliName()} runs`);
-    tag('info').log(`Re-run with healing: ${getCliName()} rerun <filename> [index]`);
+
+    const savedFiles = this.explorBot.agentHistorian().getSavedFiles();
+    if (savedFiles.length > 0) {
+      const commands = savedFiles.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}` }));
+      commands.push({ label: 'List tests', command: `${cli} runs` });
+      sections.push({
+        label: `Generated tests (${savedFiles.length})`,
+        commands,
+      });
+    }
+
+    printNextSteps(sections);
   }
 
   private isLimitReached(): boolean {
