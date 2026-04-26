@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ActionResult } from '../../src/action-result.ts';
-import { isErrorPage } from '../../src/utils/error-page.ts';
+import { detectPageCondition, isErrorPage } from '../../src/utils/error-page.ts';
 
 function createActionResult(data: { title?: string; h1?: string; h2?: string; html?: string; url?: string }): ActionResult {
   const html = data.html ?? `<html><body><h1>${data.h1 ?? ''}</h1><h2>${data.h2 ?? ''}</h2></body></html>`;
@@ -63,27 +63,28 @@ describe('isErrorPage', () => {
     });
   });
 
-  describe('empty page detection', () => {
-    it('should detect empty html', () => {
-      expect(isErrorPage(createActionResult({ html: '' }))).toBe(true);
+  describe('empty page detection (classified as loading, not error)', () => {
+    it('should classify empty html as loading', () => {
+      expect(detectPageCondition(createActionResult({ html: '' }))).toBe('loading');
+      expect(isErrorPage(createActionResult({ html: '' }))).toBe(false);
     });
 
-    it('should detect empty body', () => {
-      expect(isErrorPage(createActionResult({ html: '<html><body></body></html>' }))).toBe(true);
+    it('should classify empty body as loading', () => {
+      expect(detectPageCondition(createActionResult({ html: '<html><body></body></html>' }))).toBe('loading');
     });
 
-    it('should detect body with only whitespace', () => {
-      expect(isErrorPage(createActionResult({ html: '<html><body>   \n\t   </body></html>' }))).toBe(true);
+    it('should classify whitespace-only body as loading', () => {
+      expect(detectPageCondition(createActionResult({ html: '<html><body>   \n\t   </body></html>' }))).toBe('loading');
     });
 
-    it('should detect very small page (< 500 chars)', () => {
+    it('should classify very small page (< 500 chars) as loading', () => {
       const smallContent = 'x'.repeat(100);
-      expect(isErrorPage(createActionResult({ html: `<html><body>${smallContent}</body></html>` }))).toBe(true);
+      expect(detectPageCondition(createActionResult({ html: `<html><body>${smallContent}</body></html>` }))).toBe('loading');
     });
 
-    it('should NOT detect page with 500+ chars as empty', () => {
+    it('should NOT classify page with 500+ chars as empty', () => {
       const content = 'x'.repeat(600);
-      expect(isErrorPage(createActionResult({ html: `<html><body>${content}</body></html>` }))).toBe(false);
+      expect(detectPageCondition(createActionResult({ html: `<html><body>${content}</body></html>` }))).toBe('ok');
     });
   });
 
@@ -151,9 +152,10 @@ describe('isErrorPage', () => {
       expect(result).toBe(false);
     });
 
-    it('should handle null/undefined html gracefully', () => {
+    it('should handle null/undefined html gracefully (classified as loading)', () => {
       const actionResult = new ActionResult({ url: '/test', title: '' });
-      expect(isErrorPage(actionResult)).toBe(true);
+      expect(detectPageCondition(actionResult)).toBe('loading');
+      expect(isErrorPage(actionResult)).toBe(false);
     });
   });
 });
