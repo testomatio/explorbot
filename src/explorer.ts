@@ -714,6 +714,7 @@ function toCodeceptjsTest(test: Test): any {
   codeceptjsTest.fullTitle = () => `${parent.title} ${test.scenario}`;
   codeceptjsTest.state = 'pending';
   codeceptjsTest.notes = test.getPrintableNotes();
+  codeceptjsTest._explorbotTest = test;
   return codeceptjsTest;
 }
 
@@ -733,7 +734,7 @@ function parseAriaRefs(ariaSnapshot: string): Array<{ role: string; name: string
 }
 
 export async function annotatePageElements(page: any): Promise<{ ariaSnapshot: string; elements: WebElement[] }> {
-  const ariaSnapshot: string = await page.locator('body').ariaSnapshot({ forAI: true });
+  const ariaSnapshot: string = await page.locator('body').ariaSnapshot({ mode: 'ai' });
   const refEntries = parseAriaRefs(ariaSnapshot);
 
   const byRole = new Map<string, Array<{ name: string; ref: string }>>();

@@ -90,7 +90,7 @@
     "micromatch": "^4.0.8",
     "ora-classic": "^5.4.2",
     "parse5": "^8.0.0",
-    "playwright": "^1.40.0",
+    "playwright": "^1.59.0",
     "react": "^19.1.1",
     "strip-ansi": "^7.1.2",
     "turndown": "^7.2.1",

@@ -71,7 +71,7 @@ describe('Researcher with real browser + aimock', () => {
   async function captureRealState() {
     const html = await page.content();
     const title = await page.title();
-    const ariaSnapshot = await page.locator('body').ariaSnapshot({ forAI: true });
+    const ariaSnapshot = await page.locator('body').ariaSnapshot({ mode: 'ai' });
     return {
       url: '/tasks/board',
       title,

@@ -2,7 +2,6 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../../action-result.ts';
 import { ExperienceTracker, type SessionStep } from '../../experience-tracker.ts';
-import type { PlaywrightRecorder } from '../../playwright-recorder.ts';
 import type { Reporter, ReporterStep } from '../../reporter.ts';
 import type { StateManager } from '../../state-manager.ts';
 import { type Task, Test } from '../../test-plan.ts';
@@ -24,10 +23,10 @@ export function WithExperience<T extends Constructor>(Base: T) {
     declare experienceTracker: ExperienceTracker;
     declare reporter: Reporter | undefined;
     declare stateManager: StateManager | undefined;
-    declare recorder: PlaywrightRecorder | undefined;
     declare isPlaywrightFramework: () => boolean;
     declare toCode: (conversation: Conversation, scenario: string) => string;
     declare toPlaywrightCode: (conversation: Conversation, scenario: string) => Promise<string>;
+    declare stopScreencast: () => Promise<void>;
 
     async saveSession(task: Task, initialState: ActionResult, conversation: Conversation): Promise<void> {
       debugLog('Saving session experience');
@@ -54,6 +53,8 @@ export function WithExperience<T extends Constructor>(Base: T) {
       if (task instanceof Test && result !== 'failed') {
         await this.reportSession(task, steps);
       }
+
+      await this.stopScreencast();
 
       tag('substep').log(`Historian saved session for: ${task.description}`);
     }

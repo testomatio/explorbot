@@ -107,8 +107,14 @@ interface PlannerAgentConfig extends AgentConfig {
   stylesDir?: string;
 }
 
+interface ScreencastConfig {
+  size?: { width: number; height: number };
+  quality?: number;
+}
+
 interface HistorianAgentConfig extends AgentConfig {
   framework?: 'codeceptjs' | 'playwright';
+  screencast?: boolean | ScreencastConfig;
 }
 
 interface AgentsConfig {

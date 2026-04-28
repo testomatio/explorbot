@@ -7,6 +7,7 @@ import { type PlaywrightRecorder, type TraceCall, renderAssertion, renderCall } 
 import type { Plan } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
 import { relativeToCwd } from '../../utils/next-steps.ts';
+import { safeFilename } from '../../utils/strings.ts';
 import type { Conversation } from '../conversation.ts';
 import { ASSERTION_TOOLS, CODECEPT_TOOLS } from '../tools.ts';
 import type { Constructor } from './mixin.ts';
@@ -21,14 +22,14 @@ export interface PlaywrightMethods {
 
 export function WithPlaywright<T extends Constructor>(Base: T) {
   return class extends Base {
-    declare recorder: PlaywrightRecorder | undefined;
+    declare playwright: { recorder: PlaywrightRecorder; helper: any } | undefined;
     declare savedFiles: Set<string>;
 
     async toPlaywrightCode(conversation: Conversation, scenario: string): Promise<string> {
       const toolExecutions = conversation.getToolExecutions();
       const successfulSteps = toolExecutions.filter((exec) => exec.wasSuccessful && PLAYWRIGHT_EMITTED_TOOLS.includes(exec.toolName as any));
 
-      const callsByGroup = this.recorder ? await this.recorder.exportChunk() : new Map<string, TraceCall[]>();
+      const callsByGroup = this.playwright?.recorder ? await this.playwright.recorder.exportChunk() : new Map<string, TraceCall[]>();
 
       const stepLines: string[] = [];
       for (const exec of successfulSteps) {
@@ -59,7 +60,7 @@ export function WithPlaywright<T extends Constructor>(Base: T) {
         }
       }
 
-      const pilotVerifications = this.recorder ? this.recorder.drainVerifications() : [];
+      const pilotVerifications = this.playwright?.recorder ? this.playwright.recorder.drainVerifications() : [];
       if (pilotVerifications.length > 0) {
         const assertionLines: string[] = [];
         for (const step of pilotVerifications) {
@@ -135,8 +136,7 @@ export function WithPlaywright<T extends Constructor>(Base: T) {
       const testsDir = ConfigParser.getInstance().getTestsDir();
       mkdirSync(testsDir, { recursive: true });
 
-      const filename = plan.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-      const filePath = join(testsDir, `${filename}.spec.ts`);
+      const filePath = join(testsDir, safeFilename(plan.title, '.spec.ts'));
       writeFileSync(filePath, lines.join('\n'));
       this.savedFiles.add(filePath);
 

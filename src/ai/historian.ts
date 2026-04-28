@@ -10,13 +10,14 @@ import { relativeToCwd } from '../utils/next-steps.ts';
 import { type CodeceptJSMethods, WithCodeceptJS } from './historian/codeceptjs.ts';
 import { type ExperienceMethods, WithExperience } from './historian/experience.ts';
 import { type PlaywrightMethods, WithPlaywright } from './historian/playwright.ts';
+import { type ScreencastMethods, WithScreencast } from './historian/screencast.ts';
 import type { Provider } from './provider.ts';
 
 export { isNonReusableCode } from './historian/utils.ts';
 
-const HistorianBase = WithPlaywright(WithCodeceptJS(WithExperience(Object as unknown as new (...args: any[]) => object)));
+const HistorianBase = WithScreencast(WithPlaywright(WithCodeceptJS(WithExperience(Object as unknown as new (...args: any[]) => object))));
 
-export interface Historian extends ExperienceMethods, CodeceptJSMethods, PlaywrightMethods {}
+export interface Historian extends ExperienceMethods, CodeceptJSMethods, PlaywrightMethods, ScreencastMethods {}
 
 export class Historian extends HistorianBase {
   declare provider: Provider;
@@ -24,18 +25,19 @@ export class Historian extends HistorianBase {
   declare reporter: Reporter | undefined;
   declare stateManager: StateManager | undefined;
   declare config: ExplorbotConfig | undefined;
-  declare recorder: PlaywrightRecorder | undefined;
+  declare playwright: { recorder: PlaywrightRecorder; helper: any } | undefined;
   declare savedFiles: Set<string>;
 
-  constructor(provider: Provider, experienceTracker?: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager, config?: ExplorbotConfig, recorder?: PlaywrightRecorder) {
+  constructor(provider: Provider, experienceTracker?: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager, config?: ExplorbotConfig, playwright?: { recorder: PlaywrightRecorder; helper: any }) {
     super();
     this.provider = provider;
     this.experienceTracker = experienceTracker || new ExperienceTracker();
     this.reporter = reporter;
     this.stateManager = stateManager;
     this.config = config;
-    this.recorder = recorder;
+    this.playwright = playwright;
     this.savedFiles = new Set();
+    this.attachScreencast();
   }
 
   isPlaywrightFramework(): boolean {

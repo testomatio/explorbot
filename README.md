@@ -173,11 +173,21 @@ See [docs/commands.md](docs/commands.md) for all commands.
 | Test plans | `output/plans/*.md` | Markdown documentation of scenarios |
 | Experience | `./experience/` | What Explorbot learned about your app |
 
-Every run is saved as a real Playwright or CodeceptJS test you can commit and run from CI. Choose the framework in your config:
+Every run is saved as a real Playwright or CodeceptJS test you can commit and run from CI. Configure the Historian to choose the output framework, record screencasts of every run, or both:
 
 ```js
-ai: { agents: { historian: { framework: 'playwright' } } }  // or 'codeceptjs' (default)
+ai: {
+  agents: {
+    historian: {
+      framework: 'playwright',          // or 'codeceptjs' (default)
+      screencast: true,                 // record .webm video per scenario, chapters labelled with each step
+      // screencast: { size: { width: 1280, height: 720 }, quality: 95 }
+    },
+  },
+}
 ```
+
+Screencasts land in `output/screencasts/<plan>-<n>-<scenario>.webm` and are listed alongside generated tests at the end of every run.
 
 Playwright output uses the actual `page.locator(...)` calls executed during the run, with each action wrapped in `test.step` so failures land on a labelled step:
 

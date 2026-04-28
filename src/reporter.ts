@@ -104,6 +104,7 @@ export class Reporter {
     const noteEntries = Object.entries(test.notes)
       .map(([timestampKey, note]) => ({
         startTime: note.startTime,
+        endTime: note.endTime,
         message: note.message,
         status: note.status,
         screenshot: note.screenshot,
@@ -135,7 +136,7 @@ export class Reporter {
       const step: Step = {
         category: 'user',
         title: noteEntry.message,
-        duration: 0,
+        duration: Math.max(0, Math.round(noteEntry.endTime - noteEntry.startTime)),
         status: noteEntry.status || 'none',
         steps: noteSteps.length > 0 ? noteSteps : undefined,
       };
@@ -182,6 +183,7 @@ export class Reporter {
       }
 
       const steps = this.combineStepsAndNotes(test, screenshotFile);
+      const durationMs = test.getDurationMs();
 
       const testData = {
         rid: test.id,
@@ -197,6 +199,7 @@ export class Reporter {
         files: Object.values(test.artifacts) || [],
         message: test.summary || this.extractLastNoteMessage(test) || '',
         meta,
+        time: durationMs != null ? Math.round(durationMs) : 0,
       };
 
       debugLog(testData);

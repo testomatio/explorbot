@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-04-29
+
+### Configuration
+- **`ai.agents.historian.screencast`** — Record a `.webm` screencast for every scenario the Historian saves. Set to `true` for defaults, or pass `{ size: { width, height }, quality }` to control resolution and encoding quality. Default: `false`.
+
+### Changes
+- [Historian] Records a screencast per scenario when `historian.screencast` is enabled. Videos are saved to `output/screencasts/<plan>-<n>-<scenario>.webm` with chapter markers that show the AI's per-step explanation as the run plays back. The end-of-run output lists the screencast files alongside generated tests so users can open them directly.
+- [Reporter] Test entries now carry the real wall-clock duration (`time`) and per-note durations instead of always reporting `0`. Testomat.io runs and JSON reports show actual timings.
+- Long plan, scenario, or state names no longer crash file writes. Generated test files, screencasts, and state captures are now truncated with a stable hash suffix (`my_very_long_title_a1b2c3d4.spec.ts`) so they always fit within filesystem name limits.
+- Playwright upgraded to 1.59. The `ariaSnapshot({ forAI: true })` call has been replaced with `ariaSnapshot({ mode: 'ai' })` to match the new API.
+
 ## 2026-04-26
 
 ### Changes

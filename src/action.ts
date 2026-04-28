@@ -21,6 +21,7 @@ import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
+import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
 
 const debugLog = createDebug('explorbot:action');
@@ -89,7 +90,7 @@ class Action {
       let screenshotFile: string | undefined = undefined;
 
       if (includeScreenshot) {
-        const filename = `${stateHash}_${timestamp}.png`;
+        const filename = safeFilename(`${stateHash}_${timestamp}`, '.png');
         screenshotFile = await (this.actor as any)
           .saveScreenshot(filename)
           .then(() => filename)
@@ -102,13 +103,13 @@ class Action {
       // Save HTML to file
       const statesDir = outputPath('states');
       fs.mkdirSync(statesDir, { recursive: true });
-      const htmlFile = `${stateHash}_${timestamp}.html`;
+      const htmlFile = safeFilename(`${stateHash}_${timestamp}`, '.html');
       const htmlPath = join(statesDir, htmlFile);
       fs.writeFileSync(htmlPath, html, 'utf8');
 
       debugLog('Captured page state');
       // Save logs to file
-      const logFile = `${stateHash}_${timestamp}.log`;
+      const logFile = safeFilename(`${stateHash}_${timestamp}`, '.log');
       const logPath = join(statesDir, logFile);
       const formattedLogs = browserLogs.map((log: any) => {
         const logTimestamp = new Date().toISOString();
@@ -134,7 +135,7 @@ class Action {
       }
 
       if (ariaSnapshot) {
-        const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
+        const ariaFileName = safeFilename(`${stateHash}_${timestamp}`, '.aria.yaml');
         const ariaPath = join(statesDir, ariaFileName);
         fs.writeFileSync(ariaPath, ariaSnapshot, 'utf8');
         ariaSnapshotFile = ariaFileName;

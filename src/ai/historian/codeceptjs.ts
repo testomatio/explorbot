@@ -6,6 +6,7 @@ import { KnowledgeTracker } from '../../knowledge-tracker.ts';
 import type { Plan } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
 import { relativeToCwd } from '../../utils/next-steps.ts';
+import { safeFilename } from '../../utils/strings.ts';
 import type { Conversation } from '../conversation.ts';
 import { ASSERTION_TOOLS, CODECEPT_TOOLS } from '../tools.ts';
 import type { Constructor } from './mixin.ts';
@@ -97,8 +98,7 @@ export function WithCodeceptJS<T extends Constructor>(Base: T) {
       const testsDir = ConfigParser.getInstance().getTestsDir();
       mkdirSync(testsDir, { recursive: true });
 
-      const filename = plan.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-      const filePath = join(testsDir, `${filename}.js`);
+      const filePath = join(testsDir, safeFilename(plan.title, '.js'));
       writeFileSync(filePath, lines.join('\n'));
       this.savedFiles.add(filePath);
 

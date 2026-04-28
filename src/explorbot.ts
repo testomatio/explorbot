@@ -262,7 +262,10 @@ export class ExplorBot {
     return (this.agents.historian ||= this.createAgent(({ ai, explorer, config }) => {
       const experienceTracker = explorer.getStateManager().getExperienceTracker();
       const reporter = explorer.getReporter();
-      return new Historian(ai, experienceTracker, reporter, explorer.getStateManager(), config, explorer.getPlaywrightRecorder());
+      return new Historian(ai, experienceTracker, reporter, explorer.getStateManager(), config, {
+        recorder: explorer.getPlaywrightRecorder(),
+        helper: explorer.playwrightHelper,
+      });
     }));
   }
 

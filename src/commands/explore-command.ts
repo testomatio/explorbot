@@ -1,5 +1,6 @@
 import figureSet from 'figures';
 import { getStyles } from '../ai/planner/styles.js';
+import { outputPath } from '../config.js';
 import { Stats } from '../stats.js';
 import type { Plan } from '../test-plan.js';
 import { getCliName } from '../utils/cli-name.ts';
@@ -7,6 +8,7 @@ import { ErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { jsonToTable } from '../utils/markdown-parser.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
+import { safeFilename } from '../utils/strings.ts';
 import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class ExploreCommand extends BaseCommand {
@@ -152,11 +154,27 @@ export class ExploreCommand extends BaseCommand {
     }
 
     const savedFiles = this.explorBot.agentHistorian().getSavedFiles();
-    if (savedFiles.length > 0) {
-      const commands = savedFiles.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}` }));
+    const screencasts = savedFiles.filter((f) => f.endsWith('.webm'));
+    const testFiles = savedFiles.filter((f) => !f.endsWith('.webm'));
+
+    if (testFiles.length > 0) {
+      const commands = testFiles.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}` }));
       commands.push({ label: 'List tests', command: `${cli} runs` });
       sections.push({
-        label: `Generated tests (${savedFiles.length})`,
+        label: `Generated tests (${testFiles.length})`,
+        commands,
+      });
+    }
+
+    if (screencasts.length > 0) {
+      const commands = screencasts.map((f) => ({ label: '', command: relativeToCwd(f) }));
+      const screencastDir = relativeToCwd(outputPath('screencasts'));
+      const planSlugs = [...new Set(this.completedPlans.map((p) => safeFilename(p.title)).filter(Boolean))];
+      for (const slug of planSlugs) {
+        commands.push({ label: 'Browse plan', command: `ls ${screencastDir}/${slug}-*` });
+      }
+      sections.push({
+        label: `Screencasts (${screencasts.length})`,
         commands,
       });
     }
