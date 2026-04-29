@@ -141,6 +141,9 @@ export class Driller extends TaskAgent implements Agent {
     - Never use data-explorbot-eidx in locators
     - Never use container locators in recorded code
     - Prefer one-argument locators or self-contained XPath/CSS locators
+    - Prefer aria-* attributes first when they uniquely identify the component: aria-label, aria-labelledby, aria-checked, aria-pressed, aria-expanded, aria-selected
+    - Prefer semantic attributes next: role, checked, name, placeholder, title, href, and other stable state-bearing attributes
+    - Prefer semantic/state locators over raw classes whenever they are available and specific enough
     - Before choosing a locator, identify what makes the current component semantically different from its siblings
     - If siblings look similar, use text, aria labels, icon clues, variant hints, role, navigation behavior, border/outline classes, or state to target the exact component
     - Component size alone is not enough to choose a sibling instead of the current component, but if the current drilling target differs only by size, keep that exact size variant and record it
@@ -436,17 +439,19 @@ export class Driller extends TaskAgent implements Agent {
       <instructions>
       1. Work only with this component
       2. Use Preferred click code first unless it clearly fails, then try other self-contained locators from page HTML
-      3. Never use container locators in code
-      4. Never use data-explorbot-eidx in code
-      5. If the page changes, use drill_restore before continuing
-      6. Call drill_record for each reusable interaction you discover
-      7. When you are done exploring the component, call drill_done
-      8. If the component is not drillable, call drill_skip
-      9. If similar components exist, use Context and Variant to distinguish this exact variant instead of skipping immediately
-      10. Do not switch to a sibling with the same text but different variant or size. Stay anchored to the current component's Preferred locator, Context, and Variant.
-      10a. If same-text components differ only by size, still record the current size variant instead of treating it as a duplicate.
-      11. In drill_record result, describe the component precisely: color/variant, border/outline, icon purpose, text, role, navigation behavior, state, and why this component was chosen over similar siblings.
-      12. Prefer results like "Clicked the red outlined button with a leading refresh icon." over generic results like "Button clicked."
+      3. When you need a new locator, prefer aria-* attributes first, then semantic/state attributes like role, checked, name, placeholder, title, href
+      4. Only fall back to classes or text-heavy XPath when aria/semantic attributes are not sufficient to target the exact component
+      5. Never use container locators in code
+      6. Never use data-explorbot-eidx in code
+      7. If the page changes, use drill_restore before continuing
+      8. Call drill_record for each reusable interaction you discover
+      9. When you are done exploring the component, call drill_done
+      10. If the component is not drillable, call drill_skip
+      11. If similar components exist, use Context and Variant to distinguish this exact variant instead of skipping immediately
+      12. Do not switch to a sibling with the same text but different variant or size. Stay anchored to the current component's Preferred locator, Context, and Variant.
+      12a. If same-text components differ only by size, still record the current size variant instead of treating it as a duplicate.
+      13. In drill_record result, describe the component precisely: color/variant, border/outline, icon purpose, text, role, navigation behavior, state, and why this component was chosen over similar siblings.
+      14. Prefer results like "Clicked the red outlined button with a leading refresh icon." over generic results like "Button clicked."
       </instructions>
     `;
   }
@@ -613,7 +618,11 @@ export class Driller extends TaskAgent implements Agent {
     const successfulInteractions = results.filter((result) => result.result === 'success' && result.code);
 
     for (const interaction of successfulInteractions) {
-      await experienceTracker.saveSuccessfulResolution(state, formatExperienceTitle(interaction), interaction.code!, interaction.description);
+      experienceTracker.writeAction(state, {
+        title: formatExperienceTitle(interaction),
+        code: interaction.code!,
+        explanation: interaction.description,
+      });
     }
 
     if (successfulInteractions.length > 0) {
@@ -826,9 +835,8 @@ function canonicalizeRecordedClick(component: ComponentInfo, fallbackCode: strin
   return fallbackCode;
 }
 
-function buildCanonicalClickCode(component: ComponentInfo): string {
+export function buildCanonicalClickCode(component: ComponentInfo): string {
   if (component.tag === 'a') return '';
-  if (component.tag === 'iframe' || component.role === 'code-editor') return buildEmbeddedFrameCode(component);
 
   const semanticCode = buildSemanticClickCode(component);
   if (semanticCode) return semanticCode;
@@ -905,28 +913,6 @@ function getLabelAttrName(component: ComponentInfo): string {
   if (component.attrs['aria-label']) return 'aria-label';
   if (component.attrs.title) return 'title';
   return 'name';
-}
-
-function buildEmbeddedFrameCode(component: ComponentInfo): string {
-  const src = component.html.match(/\ssrc=["']([^"']+)["']/i)?.[1] || '';
-  const sourceIndex = getHtmlAttrValue(component.html, EXPLORBOT_ATTRS.frameSourceIndex);
-  const srcCondition = src ? `contains(@src,${xpathLiteral(src)})` : '';
-
-  let iframeLocator = '//iframe';
-  if (srcCondition) iframeLocator += `[${srcCondition}]`;
-  if (sourceIndex) iframeLocator = `(${iframeLocator})[${sourceIndex}]`;
-
-  let text = 'test';
-  if (component.variant.includes('code-editor')) {
-    text = 'const value = "test";';
-  }
-
-  return [`I.switchTo(${JSON.stringify(iframeLocator)})`, 'I.click("body")', `I.type(${JSON.stringify(text)})`, 'I.switchTo()'].join('\n');
-}
-
-function getHtmlAttrValue(html: string, attr: string): string {
-  const escapedAttr = attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return html.match(new RegExp(`\\s${escapedAttr}=["']([^"']+)["']`, 'i'))?.[1] || '';
 }
 
 function formatVariant(variantHints: string[]): string {
@@ -1007,13 +993,12 @@ function normalizeInteractionResult(component: ComponentInfo, action: string, re
   return value;
 }
 
-function formatExperienceTitle(interaction: InteractionResult): string {
-  const descriptionTitle = interaction.description.split(/[.;]/)[0].replace(/\s+/g, ' ').trim();
-
-  if (descriptionTitle.length > 0) return truncate(descriptionTitle, 90);
-
-  const action = interaction.action ? capitalize(interaction.action) : 'Interact with';
-  return truncate(`${action} ${interaction.component}`, 90);
+export function formatExperienceTitle(interaction: InteractionResult): string {
+  const verb = normalizeHowToVerb(interaction.action);
+  const target = extractHowToTarget(interaction.component);
+  if (target) return truncate(`${verb} ${target}`, 90);
+  if (interaction.component.trim()) return truncate(`${verb} ${interaction.component.trim().toLowerCase()}`, 90);
+  return truncate(`${verb} component`, 90);
 }
 
 function fallbackInteractionResult(component: ComponentInfo, action: string): string {
@@ -1027,12 +1012,42 @@ function fallbackInteractionResult(component: ComponentInfo, action: string): st
   return `${capitalize(action)} executed for ${label}${variant}; differentiators: ${details}.`;
 }
 
+function normalizeHowToVerb(action: string): string {
+  const normalizedAction = action.trim().toLowerCase();
+  if (normalizedAction === 'click') return 'click';
+  if (normalizedAction === 'presskey') return 'press key on';
+  if (normalizedAction === 'form') return 'submit';
+  if (normalizedAction === 'type') return 'type into';
+  if (normalizedAction === 'select') return 'select';
+  if (normalizedAction === 'open') return 'open';
+  if (normalizedAction === 'toggle') return 'toggle';
+  if (normalizedAction) return normalizedAction;
+  return 'use';
+}
+
+function extractHowToTarget(component: string): string {
+  const roleMatch = component.match(/^([A-Za-z-]+)/);
+  const quotedMatch = component.match(/"([^"]+)"/);
+  const role = roleMatch?.[1]?.trim().toLowerCase() || '';
+  const label = quotedMatch?.[1]?.trim().toLowerCase() || '';
+
+  if (label && role) return `${label} ${role}`;
+  if (label) return label;
+  if (role) return role;
+  return component
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 function hasContainerLocator(code: string): boolean {
   for (const line of code
     .split('\n')
     .map((entry) => entry.trim())
     .filter(Boolean)) {
-    const argCount = countTopLevelArgs(line);
+    const argCount = countTopLevelArgCount(line);
     if (line.startsWith('I.click(') && argCount >= 2) return true;
     if (line.startsWith('I.fillField(') && argCount >= 3) return true;
     if (line.startsWith('I.selectOption(') && argCount >= 3) return true;
@@ -1043,7 +1058,9 @@ function hasContainerLocator(code: string): boolean {
   return false;
 }
 
-function countTopLevelArgs(line: string): number {
+// Lightweight scanner for a single JS call expression line.
+// It counts commas only at top level and ignores nested (), [], {}, and quoted strings.
+function countTopLevelArgCount(line: string): number {
   const start = line.indexOf('(');
   const end = line.lastIndexOf(')');
   if (start === -1 || end === -1 || end <= start + 1) return 0;
@@ -1117,8 +1134,6 @@ function scoreComponentPriority(element: WebElement): number {
   if (hints.some((hint) => hint.includes('content'))) score += 20;
   if (role === 'tab') score += 35;
   if (isSemanticFormControl(element)) score += 35;
-  if (element.tag === 'iframe') score += 35;
-  if (element.variantHints.includes('code-editor')) score += 60;
   if (element.tag === 'button') score += 20;
   if (element.tag === 'input' || element.tag === 'textarea' || element.tag === 'select') score += 18;
   if (element.tag === 'a') score -= 40;
@@ -1136,7 +1151,6 @@ function isDrillableElement(element: WebElement): boolean {
   const text = normalized(element.text);
   if (attrs.includes('tooltip') || attrs.includes('attacher')) return false;
   if (isNestedCompositeControl(element)) return false;
-  if (element.tag === 'iframe') return true;
   if (text === '') {
     if (!isInteractiveElement(element)) return false;
     if (isSemanticFormControl(element)) return true;
@@ -1168,7 +1182,6 @@ function isButtonLikeElement(element: WebElement): boolean {
 function isInteractiveElement(element: WebElement): boolean {
   if (element.tag === 'button') return true;
   if (element.tag === 'a' && element.attrs.href) return true;
-  if (element.tag === 'iframe') return true;
   if (HTML_FORM_CONTROL_TAGS.has(element.tag)) return true;
   const role = (element.role || element.attrs.role || element.tag).toLowerCase();
   if (HTML_INTERACTIVE_ROLES.has(role)) return true;
