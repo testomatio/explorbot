@@ -135,7 +135,15 @@ export const fileUploadRule = dedent`
 export const protectionRule = dedent`
   <important>
   Do not sign out current user of the application.
-  Do not change current user account settings
+  Do not change current user account settings.
+
+  Pre-existing data on the page belongs to the application, not the test.
+  Items that were not created inside the current test scenario must not be deleted, removed, emptied, reset, archived, or otherwise destroyed.
+  If a scenario needs to verify destructive behaviour, the same scenario must first create a disposable target and then destroy that specific target — never operate on data that was already there when the test started.
+
+  The resource that the current page URL represents is "under test".
+  The test must not destroy the resource it is running against — doing so invalidates every subsequent scenario that starts on the same URL.
+  Do not propose or perform delete/remove/archive actions on the entity that owns the current URL; propose such actions only on disposable children created within the scenario itself.
   </important>
 `;
 
@@ -157,6 +165,21 @@ export const focusedElementRule = dedent`
   IMPORTANT: type() works WITHOUT a locator when element is already focused.
   If focus is on wrong element, click the correct field first.
   </focused_element_actions>
+`;
+
+export const unexpectedPopupRule = dedent`
+  <unexpected_popup_rule>
+  If a modal/popup appeared that you didn't expect, dismiss it first before continuing with original task.
+  If elements become hidden or unclickable (timeout errors on visible elements), a dialog or overlay may have appeared on top.
+  If a click error mentions "intercepts pointer events", another element is covering the target — dismiss it first.
+  If buttons are disabled unexpectedly, check if a popup is blocking interaction or if required form fields are empty.
+
+  Dismiss strategy (try in order):
+  1. I.clickXY(0, 0) — click outside the popup to close it
+  2. I.pressKey('Escape') — press Escape to dismiss
+  3. I.click('Cancel') — click Cancel button if present
+  4. I.click({ role: 'button', text: 'Close' }) — click X/close button if present
+  </unexpected_popup_rule>
 `;
 
 export const sectionContextRule = dedent`
@@ -184,17 +207,7 @@ export const sectionContextRule = dedent`
   - Locator is a unique ID (#specific-element)
   </section_context_rule>
 
-  <unexpected_popup_rule>
-  If a modal/popup appeared that you didn't expect, dismiss it first before continuing with original task.
-  If elements become hidden or unclickable (timeout errors on visible elements), a dialog or overlay may have appeared on top.
-  If buttons are disabled unexpectedly, check if a popup is blocking interaction or if required form fields are empty.
-
-  Dismiss strategy (try in order):
-  1. I.clickXY(0, 0) — click outside the popup to close it
-  2. I.pressKey('Escape') — press Escape to dismiss
-  3. I.click('Cancel') — click Cancel button if present
-  4. I.click({ role: 'button', text: 'Close' }) — click X/close button if present
-  </unexpected_popup_rule>
+  ${unexpectedPopupRule}
 `;
 
 export function multipleTabsRule(tabs: Array<{ url: string; title: string }>): string {
@@ -266,12 +279,19 @@ export const actionRule = dedent`
     I.fillField('Username', 'John', '.login-form'); // fills Username inside .login-form
     I.fillField('Username', 'John'); // fills the field located by name or placeholder or label "Username" with the text "John"
     I.fillField('//user/input', 'John'); // fills the field located by XPath "//user/input" with the text "John"
-  </example>  
+    I.fillField('Description', 'Hello world', '.editor'); // works for rich text / code editors too
+  </example>
+
+  I.fillField handles plain inputs, textareas, contenteditable regions, and rich text / code editors
+  (Monaco, ProseMirror, CodeMirror, TipTap, Quill, Draft.js, Slate, etc.) transparently.
+  ALWAYS use I.fillField for rich editors — target the editor container or its nearest label/heading with a normal locator.
+  Do NOT open the editor with raw JS (executeScript, page.evaluate), do NOT dispatch synthetic events,
+  do NOT call the editor's own API (monaco.editor.setValue, view.dispatch, etc.) to write text.
 
   ### I.type
 
-  Types text into the currently focused element. Use when fillField doesn't work,
-  for instance, for highly customized input fields like Monaco editors or rich text editors.
+  Types text into the currently focused element. Use only when there is no locator you can pass to I.fillField —
+  e.g. the target is implicit (a just-opened command palette, an autocomplete that steals focus, a canvas-based surface).
 
   I.type(<text>)
 
@@ -283,6 +303,7 @@ export const actionRule = dedent`
   DOES NOT receive any locator, just text to type.
   NEVER write: I.type('text', locator) or I.type('text', {locator: '...'}) — this is INVALID.
   To type into a specific field: use I.fillField(locator, text) or I.click(locator) then I.type(text).
+  Do NOT reach for I.type just because the target looks like a rich editor — I.fillField handles those.
 
   ### I.pressKey
 

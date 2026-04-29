@@ -9,15 +9,16 @@ import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
 import { visuallyAnnotateContainers } from './ai/researcher/coordinates.ts';
+import { RequestStore } from './api/request-store.ts';
+import { XhrCapture } from './api/xhr-capture.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser, outputPath } from './config.js';
 import type { UserResolveFunction } from './explorbot.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
+import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
 import { Test } from './test-plan.ts';
-import { RequestStore } from './api/request-store.ts';
-import { XhrCapture } from './api/xhr-capture.ts';
 import { ELEMENT_EXTRACTION_CONFIG, getElementDataExtractorSource } from './utils/html.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 import { WebElement } from './utils/web-element.ts';
@@ -61,6 +62,7 @@ class Explorer {
   private _activeTest: Test | null = null;
   private xhrCapture: XhrCapture | null = null;
   private requestStore: RequestStore | null = null;
+  private playwrightRecorder: PlaywrightRecorder = new PlaywrightRecorder();
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string }) {
     this.config = config;
@@ -69,7 +71,7 @@ class Explorer {
     this.initializeContainer();
     this.stateManager = new StateManager({ incognito: this.options?.incognito });
     this.knowledgeTracker = new KnowledgeTracker();
-    this.reporter = new Reporter(config.reporter);
+    this.reporter = new Reporter(config.reporter, this.stateManager);
   }
 
   private initializeContainer() {
@@ -124,7 +126,7 @@ class Explorer {
       tag('substep').log(debugInfo);
     }
     const PlaywrightConfig = {
-      timeout: 1000,
+      timeout: 3000,
       highlightElement: true,
       waitForAction: 500,
       ...playwrightConfig,
@@ -238,6 +240,7 @@ class Explorer {
     const hasSession = this.options?.session && existsSync(this.options.session);
     const contextOptions = hasSession ? { storageState: this.options!.session } : undefined;
     await this.playwrightHelper._createContextPage(contextOptions);
+    await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
     this.setupXhrCapture();
     if (hasSession) {
       tag('info').log(`Session restored from ${path.relative(process.cwd(), this.options!.session!)}`);
@@ -274,7 +277,11 @@ class Explorer {
   }
 
   createAction() {
-    return new Action(this.actor, this.stateManager);
+    return new Action(this.actor, this.stateManager, this.playwrightRecorder);
+  }
+
+  getPlaywrightRecorder(): PlaywrightRecorder {
+    return this.playwrightRecorder;
   }
 
   async visit(url: string) {
@@ -489,6 +496,8 @@ class Explorer {
     if (this.xhrCapture && this.playwrightHelper?.page) {
       this.xhrCapture.detach(this.playwrightHelper.page);
     }
+
+    await this.playwrightRecorder.stop();
 
     if (this.options?.session && this.playwrightHelper?.browserContext) {
       const dir = path.dirname(this.options.session);
@@ -706,6 +715,7 @@ function toCodeceptjsTest(test: Test): any {
   codeceptjsTest.fullTitle = () => `${parent.title} ${test.scenario}`;
   codeceptjsTest.state = 'pending';
   codeceptjsTest.notes = test.getPrintableNotes();
+  codeceptjsTest._explorbotTest = test;
   return codeceptjsTest;
 }
 
@@ -725,7 +735,7 @@ function parseAriaRefs(ariaSnapshot: string): Array<{ role: string; name: string
 }
 
 export async function annotatePageElements(page: any): Promise<{ ariaSnapshot: string; elements: WebElement[] }> {
-  const ariaSnapshot: string = await page.locator('body').ariaSnapshot({ forAI: true });
+  const ariaSnapshot: string = await page.locator('body').ariaSnapshot({ mode: 'ai' });
   const refEntries = parseAriaRefs(ariaSnapshot);
 
   const byRole = new Map<string, Array<{ name: string; ref: string }>>();

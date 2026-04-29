@@ -1,9 +1,18 @@
+import chalk from 'chalk';
 import { Command } from 'commander';
+import { isInteractive } from '../ai/task-agent.js';
 import type { ExplorBot } from '../explorbot.js';
+import { getCliName } from '../utils/cli-name.js';
+import { tag } from '../utils/logger.js';
 
 export interface CommandOption {
   flags: string;
   description: string;
+}
+
+export interface Suggestion {
+  command?: string;
+  hint: string;
 }
 
 export abstract class BaseCommand {
@@ -12,7 +21,7 @@ export abstract class BaseCommand {
   aliases: string[] = [];
   options: CommandOption[] = [];
   tuiEnabled = true;
-  suggestions: string[] = [];
+  suggestions: Suggestion[] = [];
 
   protected explorBot: ExplorBot;
 
@@ -24,6 +33,22 @@ export abstract class BaseCommand {
 
   matches(commandName: string): boolean {
     return this.name === commandName || this.aliases.includes(commandName);
+  }
+
+  printSuggestions(): void {
+    if (this.suggestions.length === 0) return;
+    const prefix = isInteractive() ? '/' : `${getCliName()} `;
+    tag('info').log('');
+    tag('info').log(chalk.bold('Suggested:'));
+    for (const { command, hint } of this.suggestions) {
+      tag('info').log('');
+      if (!command) {
+        tag('info').log(chalk.dim(hint));
+        continue;
+      }
+      tag('info').log(chalk.dim(`${hint}:`));
+      tag('info').log(`  ${chalk.yellow(`${prefix}${command}`)}`);
+    }
   }
 
   protected parseArgs(args: string): { opts: Record<string, string | boolean>; args: string[] } {

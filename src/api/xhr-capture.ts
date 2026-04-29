@@ -38,15 +38,33 @@ export class XhrCapture {
     if (resourceType !== 'xhr' && resourceType !== 'fetch') return;
 
     const method = request.method();
-    if (!WRITE_METHODS.has(method)) return;
-
     const url = request.url();
     if (!url.startsWith(this.baseOrigin)) return;
+
+    const status = response.status();
+
+    if (status >= 400) {
+      const failedUrl = new URL(url);
+      const failure = new RequestResult({
+        id: generateRequestId(method, failedUrl.pathname, 'fail_'),
+        method,
+        path: failedUrl.pathname,
+        fullUrl: failedUrl.pathname + failedUrl.search,
+        requestHeaders: {},
+        status,
+        statusText: response.statusText(),
+        responseHeaders: {},
+        timing: 0,
+        timestamp: new Date(),
+      });
+      this.store.addFailedRequest(failure);
+    }
+
+    if (!WRITE_METHODS.has(method)) return;
 
     const contentType = response.headers()['content-type'] || '';
     if (!JSON_CONTENT_TYPES.test(contentType)) return;
 
-    const status = response.status();
     if (status === 304) return;
 
     const parsedUrl = new URL(url);

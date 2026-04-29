@@ -2,12 +2,13 @@ import { existsSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ConfigParser, outputPath } from '../config.js';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export const CLEAN_TARGETS: Record<string, { description: string; getDir: () => string }> = {
   states: { description: 'page states', getDir: () => outputPath('states') },
   research: { description: 'research cache', getDir: () => outputPath('research') },
   plans: { description: 'test plans', getDir: () => outputPath('plans') },
+  tests: { description: 'generated tests', getDir: () => outputPath('tests') },
   experiences: { description: 'experience files', getDir: () => getExperienceDir() },
   output: { description: 'all output files', getDir: () => outputPath() },
 };
@@ -40,8 +41,8 @@ function cleanDirectoryContents(dirPath: string): number {
 
 export class CleanCommand extends BaseCommand {
   name = 'clean';
-  description = 'Clean files: clean [states|research|plans|experiences|output]';
-  suggestions = Object.keys(CLEAN_TARGETS).map((t) => `/clean ${t}`);
+  description = 'Clean files: clean [states|research|plans|tests|experiences|output]';
+  suggestions: Suggestion[] = Object.entries(CLEAN_TARGETS).map(([name, target]) => ({ command: `clean ${name}`, hint: `clean ${target.description}` }));
 
   async execute(args: string): Promise<void> {
     const target = args.trim().toLowerCase();

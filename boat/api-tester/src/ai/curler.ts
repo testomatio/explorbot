@@ -1,12 +1,12 @@
 import dedent from 'dedent';
 import { z } from 'zod';
 import type { AIProvider } from '../../../../src/ai/provider.ts';
+import type { RequestStore } from '../../../../src/api/request-store.ts';
 import type { Reporter } from '../../../../src/reporter.ts';
 import { type Test, TestResult } from '../../../../src/test-plan.ts';
 import { createDebug, tag } from '../../../../src/utils/logger.ts';
 import { loop } from '../../../../src/utils/loop.ts';
 import type { ApiClient } from '../api-client.ts';
-import type { RequestStore } from '../../../../src/api/request-store.ts';
 import { createCurlerTools } from './curler-tools.ts';
 
 const debugLog = createDebug('explorbot:curler');

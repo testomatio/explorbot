@@ -10,9 +10,9 @@ import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
 import { Navigator } from './navigator.ts';
+import type { AIProvider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
-import type { AIProvider } from './provider.ts';
 import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
@@ -100,7 +100,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               activeNote.screenshot = await action.saveScreenshot();
             }
             activeNote.commit(TestResult.PASSED);
-            return successToolResult('click', { ...toolResult, attempts, code: command });
+            return successToolResult('click', { ...toolResult, attempts, code: command }, action);
           }
         }
 
@@ -128,7 +128,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               activeNote.screenshot = await action.saveScreenshot();
             }
             activeNote.commit(TestResult.PASSED);
-            return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true });
+            return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true }, action);
           }
         }
 
@@ -208,12 +208,16 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
                 activeNote.screenshot = await action.saveScreenshot();
               }
               activeNote.commit(TestResult.PASSED);
-              return successToolResult('pressKey', {
-                ...toolResult,
-                message: `Automatically used type() for "${key}" (not a standard key press)`,
-                code: typeCommand,
-                fallback: true,
-              });
+              return successToolResult(
+                'pressKey',
+                {
+                  ...toolResult,
+                  message: `Automatically used type() for "${key}" (not a standard key press)`,
+                  code: typeCommand,
+                  fallback: true,
+                },
+                action
+              );
             }
 
             const errorMsg = `pressKey fallback to type() failed: ${action.lastError?.toString()}`;
@@ -261,11 +265,15 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               activeNote.screenshot = await action.saveScreenshot();
             }
             activeNote.commit(TestResult.PASSED);
-            return successToolResult('pressKey', {
-              ...toolResult,
-              message: `Pressed key: ${key}${modifier ? ` with modifier(s): ${Array.isArray(modifier) ? modifier.join('+') : modifier}` : ''}`,
-              code: pressKeyCommand,
-            });
+            return successToolResult(
+              'pressKey',
+              {
+                ...toolResult,
+                message: `Pressed key: ${key}${modifier ? ` with modifier(s): ${Array.isArray(modifier) ? modifier.join('+') : modifier}` : ''}`,
+                code: pressKeyCommand,
+              },
+              action
+            );
           }
 
           const errorMsg = `pressKey() failed: ${action.lastError?.toString()}`;
@@ -289,14 +297,16 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
     form: tool({
       description: dedent`
         Execute raw CodeceptJS code block with multiple commands.
-        USE THIS TOOL for all keyboard interactions: I.fillField, I.type, I.pressKey
+        USE THIS TOOL for typing text into fields: I.fillField, I.type
 
         Follow <actions> from system prompt for available commands.
         Follow <locator_priority> from system prompt for locator selection.
 
+        I.type(text) types the literal characters of its argument into the focused element.
+        To press key combination or special keys (Ctrl, Meta, Esc) use I.pressKey instead.
+
         Use cases:
         - Typing into input fields (I.fillField, I.type)
-        - Pressing keyboard keys (I.pressKey)
         - Working with iframes (switch context with I.switchTo)
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
@@ -381,13 +391,17 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             activeNote.screenshot = await action.saveScreenshot();
           }
           activeNote.commit(TestResult.PASSED);
-          return successToolResult('form', {
-            ...toolResult,
-            message: `Form completed successfully with ${lines.length} commands.`,
-            commandsExecuted: lines.length,
-            code: codeBlock,
-            suggestion: 'Verify the form was filled in correctly using see() tool. If needed to submit: try click() tool or form() with I.pressKey("Enter").',
-          });
+          return successToolResult(
+            'form',
+            {
+              ...toolResult,
+              message: `Form completed successfully with ${lines.length} commands.`,
+              commandsExecuted: lines.length,
+              code: codeBlock,
+              suggestion: 'Verify the form was filled in correctly using see() tool. If needed to submit: try click() tool or form() with I.pressKey("Enter").',
+            },
+            action
+          );
         } catch (error) {
           activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
@@ -587,10 +601,14 @@ export function createAgentTools({
           const result = await navigator.verifyState(assertion, actionResult);
 
           if (result.verified) {
-            return successToolResult('verify', {
-              message: `Verification passed: ${assertion}`,
-              code: result.successfulCodes.join('\n'),
-            });
+            return successToolResult(
+              'verify',
+              {
+                message: `Verification passed: ${assertion}`,
+                code: result.successfulCodes.join('\n'),
+              },
+              { assertionSteps: result.assertionSteps }
+            );
           }
 
           return failedToolResult('verify', `Verification failed: ${assertion}`, {
@@ -957,7 +975,7 @@ export function createAgentTools({
     tools.learn_experience = tool({
       description: dedent`
         Read the full body of a specific experience section listed in <experience>.
-        The TOC shows entries like "A.1 ## Successful Flow: ...". Pass the fileTag and sectionIndex.
+        The TOC shows entries like "A.1 ## FLOW: ..." or "A.2 ## ACTION: ...". Pass the fileTag and sectionIndex.
         Only call when a TOC entry looks directly relevant to the current step.
       `,
       inputSchema: z.object({
@@ -1015,8 +1033,14 @@ function countAriaChanges(ariaChanges: string): number {
   return addedCount + removedCount;
 }
 
-function successToolResult(action: string, data?: Record<string, any>) {
+function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
   const result: Record<string, any> = { success: true, action, ...data };
+  if (source?.playwrightGroupId) {
+    result.playwrightGroupId = source.playwrightGroupId;
+  }
+  if (source?.assertionSteps?.length) {
+    result.assertionSteps = source.assertionSteps;
+  }
   if (data?.pageDiff) {
     let suggestion = PAGE_DIFF_SUGGESTION;
     const ariaChanges = data.pageDiff.ariaChanges || '';

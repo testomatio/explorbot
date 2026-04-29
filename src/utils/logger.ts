@@ -5,9 +5,9 @@ import chalk from 'chalk';
 import debug from 'debug';
 import dedent from 'dedent';
 import { marked } from 'marked';
+import stripAnsi from 'strip-ansi';
 import { ConfigParser } from '../config.js';
 import { Observability } from '../observability.ts';
-import stripAnsi from 'strip-ansi';
 import { parseMarkdownToTerminal } from './markdown-terminal.ts';
 
 export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'step' | 'multiline' | 'html' | 'input';

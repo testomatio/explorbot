@@ -1,13 +1,19 @@
 import path from 'node:path';
 import chalk from 'chalk';
 import figureSet from 'figures';
+import { getCliName } from '../utils/cli-name.ts';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanCommand extends BaseCommand {
   name = 'plan';
   description = 'Plan testing for a feature';
-  suggestions = ['/test - to launch first test', '/test * - to launch all tests', 'Edit the plan in file and call /plan:reload to update it'];
+  suggestions: Suggestion[] = [
+    { command: 'test', hint: 'launch first test' },
+    { command: 'test *', hint: 'launch all tests' },
+    { command: 'plan:reload', hint: 'after editing the plan file, reload it' },
+  ];
   options = [
     { flags: '--fresh', description: 'Regenerate plan from scratch' },
     { flags: '--clear', description: 'Clear plan before regenerating' },
@@ -37,6 +43,39 @@ export class PlanCommand extends BaseCommand {
 
     this.printPlanSummary();
     this.updateSuggestions();
+    this.printNextSteps();
+  }
+
+  private printNextSteps(): void {
+    const savedPath = this.explorBot.lastSavedPlanPath;
+    if (!savedPath) return;
+
+    const cli = getCliName();
+    const relPlan = relativeToCwd(savedPath);
+    const sections: NextStepSection[] = [
+      {
+        label: 'Plan',
+        path: savedPath,
+        commands: [
+          { label: 'Re-run', command: `${cli} test ${relPlan} 1` },
+          { label: 'Run all', command: `${cli} test ${relPlan} *` },
+          { label: 'Run range', command: `${cli} test ${relPlan} 1-3` },
+          { label: 'Reload', command: `/plan:load ${relPlan}` },
+        ],
+      },
+    ];
+
+    const suite = this.explorBot.getSuite();
+    const files = suite && suite.automatedTestCount > 0 ? suite.getAutomatedTestFiles() : [];
+    if (files.length > 0) {
+      const commands = files.map((f) => ({ label: '', command: `${cli} rerun ${relativeToCwd(f)}` }));
+      sections.push({
+        label: `Automated tests (${files.length})`,
+        commands,
+      });
+    }
+
+    printNextSteps(sections);
   }
 
   private printPlanSummary(): void {
@@ -61,15 +100,18 @@ export class PlanCommand extends BaseCommand {
   }
 
   private updateSuggestions(): void {
-    this.suggestions = ['/test - to launch first test', '/test * - to launch all tests'];
+    this.suggestions = [
+      { command: 'test', hint: 'launch first test' },
+      { command: 'test *', hint: 'launch all tests' },
+    ];
 
     const suite = this.explorBot.getSuite();
     if (suite && suite.automatedTestCount > 0) {
       for (const f of suite.getAutomatedTestFiles()) {
-        this.suggestions.push(`/rerun ${path.relative(process.cwd(), f)} - re-run automated tests`);
+        this.suggestions.push({ command: `rerun ${path.relative(process.cwd(), f)}`, hint: 're-run automated tests' });
       }
     }
 
-    this.suggestions.push('Edit the plan in file and call /plan:reload to update it');
+    this.suggestions.push({ command: 'plan:reload', hint: 'after editing the plan file, reload it' });
   }
 }

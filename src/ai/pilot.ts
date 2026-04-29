@@ -7,6 +7,7 @@ import { type ExperienceTracker, renderExperienceToc } from '../experience-track
 import type Explorer from '../explorer.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
+import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 
 const debugLog = createDebug('explorbot:pilot');
@@ -14,6 +15,7 @@ import { truncateJson } from '../utils/strings.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
+import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { isInteractive } from './task-agent.ts';
@@ -56,25 +58,30 @@ export class Pilot implements Agent {
     return this.conversation.getLastMessage() || null;
   }
 
-  async reviewStop(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
-    return this.reviewDecision('stop', task, currentState, testerConversation);
+  async reviewStop(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
+    return this.reviewDecision('stop', task, currentState, testerConversation, navigator);
   }
 
-  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
-    return this.reviewDecision('finish', task, currentState, testerConversation);
+  async reviewFinish(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
+    return this.reviewDecision('finish', task, currentState, testerConversation, navigator);
   }
 
-  async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
+  async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
     const verdictType = task.hasAchievedAny() ? 'finish' : 'stop';
-    return this.reviewDecision(verdictType, task, currentState, testerConversation);
+    return this.reviewDecision(verdictType, task, currentState, testerConversation, navigator);
   }
 
-  async finalReview(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
+  async finalReview(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
     if (task.hasFinished) return false;
-    return this.reviewCompletion(task, currentState, testerConversation);
+    return this.reviewCompletion(task, currentState, testerConversation, navigator);
   }
 
-  private async reviewDecision(type: 'finish' | 'stop', task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<boolean> {
+  async reviewReset(task: Test, currentState: ActionResult, reason: string, testerConversation: Conversation): Promise<boolean> {
+    return this.reviewResetDecision(task, currentState, reason, testerConversation);
+  }
+
+  private async reviewDecision(type: 'finish' | 'stop', task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
+    if (task.hasFinished) return false;
     tag('substep').log(`Pilot reviewing ${type} verdict...`);
 
     const sessionLog = this.formatSessionLog(testerConversation);
@@ -98,6 +105,12 @@ export class Pilot implements Agent {
       decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
       reason: z.string().describe('What happened and why (1-2 sentences). Do NOT repeat the decision status (e.g. "scenario goal achieved/not achieved") — just explain the evidence. For continue: explain why rejected and suggest alternatives.'),
       guidance: z.string().nullable().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
+      requestVerification: z
+        .string()
+        .nullable()
+        .describe(
+          'REQUIRED whenever decision is "pass" — provide a specific assertion that proves the scenario goal on the current page (e.g., "New test suite \\"Foo\\" is visible in the suites list"). The system runs it and bakes the resulting assertion into the generated test file; without it the test file has no verifiable expect(). Also use when evidence is insufficient before deciding pass/fail. Leave null for "continue", "fail", or "skipped".'
+        ),
     });
 
     const userContent = dedent`
@@ -126,6 +139,12 @@ export class Pilot implements Agent {
       - "continue" if tester hasn't completed the scenario goal yet — even if milestones were checked
       - If evidence is mixed, but final state indicates goal completion, choose "pass"
       - If evidence is mixed and final state is unclear, prefer "continue" over "fail"
+
+      When deciding "pass", you MUST also set requestVerification to a CodeceptJS assertion that
+      proves the scenario goal on the current page. Choose the strongest single evidence (a unique
+      element/text that exists ONLY because the scenario succeeded). The assertion is executed and
+      then converted into the spec file's expect() — without it the generated test has nothing to
+      assert and is worthless.
     `;
 
     const messages = [
@@ -146,6 +165,29 @@ export class Pilot implements Agent {
       if (!result) {
         task.finish(TestResult.FAILED);
         return false;
+      }
+
+      if (result.requestVerification && navigator) {
+        tag('substep').log(`Pilot requesting verification: ${result.requestVerification}`);
+        try {
+          const verifyResult = await navigator.verifyState(result.requestVerification, currentState);
+          if (verifyResult.verified) {
+            if (verifyResult.assertionSteps?.length) {
+              this.explorer.getPlaywrightRecorder().recordVerification(verifyResult.assertionSteps);
+            }
+            tag('substep').log(`Pilot verified: ${result.requestVerification}`);
+          } else {
+            tag('substep').log(`Pilot verification failed: ${result.requestVerification}`);
+            if (result.decision === 'pass') {
+              const flipMessage = `Verification "${result.requestVerification}" did not match the page. Adjust approach and re-verify before finishing.`;
+              result.decision = 'continue';
+              result.reason = flipMessage;
+              result.guidance = result.guidance ?? flipMessage;
+            }
+          }
+        } catch (verifyErr: any) {
+          tag('warning').log(`Pilot verification errored: ${verifyErr.message}`);
+        }
       }
 
       tag('info').log(`Pilot: ${result.decision} — ${result.reason}`);
@@ -178,6 +220,142 @@ export class Pilot implements Agent {
       task.finish(TestResult.FAILED);
       return false;
     }
+  }
+
+  private async reviewResetDecision(task: Test, currentState: ActionResult, reason: string, testerConversation: Conversation): Promise<boolean> {
+    if (task.hasFinished) return false;
+    tag('substep').log(`Pilot reviewing reset (count=${task.resetCount})...`);
+
+    const sessionLog = this.formatSessionLog(testerConversation);
+    const stateContext = this.buildStateContext(currentState);
+    const notes = task.notesToString() || 'No notes recorded.';
+
+    const schema = z.object({
+      decision: z.enum(['allow', 'fail', 'continue', 'skipped']).describe('allow = reset proceeds, fail = test failed (stop looping), continue = veto reset, tester should act on current page instead, skipped = scenario is irrelevant or cannot be executed'),
+      reason: z.string().describe('What evidence justifies this decision (1-2 sentences). Do not restate the decision.'),
+      guidance: z.string().nullable().describe('Required for "continue": concrete instruction for what the tester should do instead of resetting (e.g. which tool to call, what to verify).'),
+    });
+
+    const userContent = dedent`
+      Tester requested reset. Previous reset count: ${task.resetCount - 1}.
+
+      Reason given by tester: ${reason || '(none)'}
+
+      <state>
+      ${stateContext}
+      </state>
+
+      ${this.formatExpectations(task)}
+
+      <notes>
+      ${notes}
+      </notes>
+
+      <session_log>
+      ${sessionLog || 'No actions recorded'}
+      </session_log>
+
+      Decide:
+      - "allow" — the reset is legitimate (navigation dead-end, wrong page, irrecoverable error on current page).
+      - "continue" — veto the reset; something on the current page can still be used to progress or verify. Provide guidance.
+      - "fail" — reset-looping: tester has already reset and the underlying obstacle will not change. Stop the test as failed.
+      - "skipped" — the scenario is inapplicable to this application or cannot be executed here.
+    `;
+
+    const messages = [
+      {
+        role: 'system' as const,
+        content: this.buildResetSystemPrompt(task),
+      },
+      { role: 'user' as const, content: userContent },
+    ];
+
+    try {
+      const response = await this.provider.generateObject(messages, schema, this.provider.getAgenticModel('pilot'), {
+        agentName: 'pilot',
+        experimental_telemetry: { functionId: 'pilot.reviewReset' },
+      });
+
+      const result = response?.object;
+      if (!result) {
+        return true;
+      }
+
+      tag('info').log(`Pilot reset verdict: ${result.decision} — ${result.reason}`);
+
+      if (result.decision === 'allow') {
+        tag('substep').log(`Pilot allowed reset: ${result.reason}`);
+        return true;
+      }
+
+      if (result.decision === 'fail') {
+        task.addNote(`Pilot: reset refused — ${result.reason}`, TestResult.FAILED);
+        task.finish(TestResult.FAILED);
+        return false;
+      }
+
+      if (result.decision === 'skipped') {
+        task.addNote(`Pilot: skipped — ${result.reason}`, TestResult.SKIPPED);
+        task.finish(TestResult.SKIPPED);
+        return false;
+      }
+
+      tag('substep').log(`Pilot vetoed reset: ${result.reason}`);
+      const guidanceText = result.guidance ? `\n\nWhat to do instead: ${result.guidance}` : '';
+      testerConversation.addUserText(`Pilot vetoed reset: ${result.reason}${guidanceText}`);
+      return false;
+    } catch (error: any) {
+      tag('warning').log(`Pilot reset review failed: ${error.message}`);
+      return true;
+    }
+  }
+
+  private buildResetSystemPrompt(task: Test): string {
+    return dedent`
+      You are Pilot — the supervisor that decides whether a reset is legitimate.
+      Tester wants to reset (navigate back to the start URL and discard progress).
+
+      SCENARIO: ${task.scenario}
+
+      Reset is DESTRUCTIVE. It abandons all work done in this iteration. In stateful apps, any
+      side effects (records created, forms submitted) persist on the server — resetting does not
+      undo them. Unnecessary resets create duplicate data and loop forever.
+
+      LEGITIMATE RESET (decide "allow"):
+      - The current page is unrelated to the scenario and no path leads back.
+      - Navigation is stuck in an error state with no recoverable action.
+      - The tester arrived on a page that cannot host the scenario at all.
+
+      ILLEGITIMATE RESET (decide "continue"):
+      - The previous action already succeeded (URL changed to a success/detail page, record visible,
+        confirmation shown) and tester wants to redo it because an assertion did not match.
+        The work is done — verify, record, or finish instead of restarting.
+      - A single expectation / milestone does not match app reality but the scenario goal may still
+        have been achieved. Do not redo — instruct the tester to verify the actual outcome.
+      - Tester wants to "try again with different input" after a form was submitted. Submitting
+        again creates a duplicate; guide toward editing the existing record or accepting the state.
+
+      RESET-LOOP (decide "fail"):
+      - resetCount >= 2 and the previous resets did not change the underlying situation.
+      - The same flow has been attempted twice with the same failure mode.
+      - Repeating the reset cannot produce new information.
+
+      SCENARIO INAPPLICABLE (decide "skipped"):
+      - The feature the scenario targets does not exist on this app, or prerequisites cannot be met.
+
+      PRIORITY:
+      1) Evidence of successful side effects in session_log (URL transition, new record visible).
+         If present, almost never allow the reset — the work is done.
+      2) resetCount. Each prior reset raises the bar for allowing another.
+      3) Tester's stated reason. Weigh it against the observed evidence, do not trust it blindly.
+
+      GUIDANCE FIELD (required when decision is "continue"):
+      Give a specific next action on the current page: which tool to call, what to verify, or how to
+      record the outcome. Do not suggest repeating actions that already succeeded.
+
+      EXPECTED RESULTS (milestones, not the goal):
+      ${task.expected.map((e) => `- ${e}`).join('\n')}
+    `;
   }
 
   private buildVerdictSystemPrompt(type: string, task: Test): string {
@@ -281,10 +459,14 @@ export class Pilot implements Agent {
         the elements needed for the scenario. The page summary does not list every element.
         Prefer interacting with the current page over navigating away.
 
+        If you load a recipe via learn_experience, do NOT rewrite its code in your plan — the
+        raw recipe is forwarded to Tester automatically. Reference it by step ("apply recipe
+        steps 1–3, then…") and call out anywhere your scenario diverges from it.
+
         Be concise and specific. Tester will follow your plan.
       `,
       'pilot.planTest',
-      { tools: true, maxToolRoundtrips: 3, task }
+      { tools: true, planningOnly: true, maxToolRoundtrips: 3, task }
     );
   }
 
@@ -377,7 +559,7 @@ export class Pilot implements Agent {
     return `CHECKED: ${checked.length > 0 ? checked.join(', ') : 'none'}\nREMAINING: ${remaining.length > 0 ? remaining.join(', ') : 'none'}`;
   }
 
-  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
+  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; planningOnly?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
     debugLog(`sendToPilot: ${functionId}, tools: ${!!opts.tools}, roundtrips: ${opts.maxToolRoundtrips ?? 0}`);
 
     let finalUserText = userText;
@@ -388,7 +570,10 @@ export class Pilot implements Agent {
       }
     }
     this.conversation!.addUserText(finalUserText);
-    let tools = opts.tools ? this.agentTools : undefined;
+    let tools: any;
+    if (opts.tools) {
+      tools = opts.planningOnly ? this.pickPlanningTools() : this.agentTools;
+    }
 
     if (opts.tools && opts.task) {
       tools = { ...tools, ...this.buildPreconditionTool(opts.task) };
@@ -399,7 +584,19 @@ export class Pilot implements Agent {
       agentName: 'pilot',
       experimental_telemetry: { functionId },
     });
-    return result?.response?.text || '';
+    const text = result?.response?.text || '';
+    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learn_experience' && e.output?.content).map((e: any) => e.output.content);
+    if (learned.length === 0) return text;
+    return dedent`
+      ${text}
+
+      <applied_experience>
+      Recipes from prior successful runs that Pilot judged relevant. Locators worked then; the page may have changed since.
+      Treat code blocks below as a starting hypothesis. If a locator misses, fall back to ARIA/UI-map.
+
+      ${learned.join('\n\n')}
+      </applied_experience>
+    `;
   }
 
   private getExperienceToc(): string {
@@ -409,6 +606,19 @@ export class Pilot implements Agent {
     const actionResult = ActionResult.fromState(state);
     const toc = this.experienceTracker.getExperienceTableOfContents(actionResult);
     return renderExperienceToc(toc);
+  }
+
+  private pickPlanningTools() {
+    const { see, context, verify, research, getVisitedStates, xpathCheck, learn_experience } = this.agentTools ?? {};
+    const planning: Record<string, unknown> = {};
+    if (see) planning.see = see;
+    if (context) planning.context = context;
+    if (verify) planning.verify = verify;
+    if (research) planning.research = research;
+    if (getVisitedStates) planning.getVisitedStates = getVisitedStates;
+    if (xpathCheck) planning.xpathCheck = xpathCheck;
+    if (learn_experience) planning.learn_experience = learn_experience;
+    return planning;
   }
 
   private buildPreconditionTool(task: Test) {
@@ -487,6 +697,28 @@ export class Pilot implements Agent {
       lines.push(`verifications: ${verifyLines.join(', ')}`);
     }
 
+    const consoleErrors = (state.browserLogs ?? []).filter((l: any) => (l.type || l.level) === 'error');
+    if (consoleErrors.length > 0) {
+      const sample = consoleErrors
+        .slice(0, 3)
+        .map((e: any) => e.text || e.message || String(e))
+        .join(' | ');
+      lines.push(`console errors: ${consoleErrors.length} (${sample})`);
+    } else {
+      lines.push('console errors: none');
+    }
+
+    const failedRequests = this.explorer.getRequestStore()?.getFailedRequests() ?? [];
+    if (failedRequests.length > 0) {
+      const sample = failedRequests
+        .slice(-5)
+        .map((r) => `${r.method} ${r.path} → ${r.status}`)
+        .join(', ');
+      lines.push(`network errors: ${sample}`);
+    } else {
+      lines.push('network errors: none');
+    }
+
     const interactiveNodes = collectInteractiveNodes(state.ariaSnapshot);
     const disabledButtons = interactiveNodes.filter((n) => n.role === 'button' && n.disabled === true && n.name).map((n) => n.name);
     lines.push(`disabled buttons: ${disabledButtons.length > 0 ? disabledButtons.join(', ') : 'none'}`);
@@ -536,7 +768,13 @@ export class Pilot implements Agent {
     }
 
     if (text.includes('ATTACH_UI_MAP')) {
-      const uiMap = await this.researcher.research(currentState);
+      let uiMap = '';
+      try {
+        uiMap = await this.researcher.research(currentState);
+      } catch (err) {
+        if (!(err instanceof ErrorPageError)) throw err;
+        tag('warning').log(`Pilot UI map skipped: ${err.message}`);
+      }
       if (uiMap) {
         parts.push(dedent`
           <page_ui_map>
@@ -704,6 +942,13 @@ export class Pilot implements Agent {
       - If the goal appears already achieved at start: adapt the scenario — suggest different input values or data to make the test meaningful.
       - If the goal was achieved by a previous action (SUCCESS in recent_actions with confirming ariaDiff): instruct Tester to verify() the result and finish(). Do NOT repeat the same action.
       - If Tester keeps re-opening the same panel and re-submitting the same data — STOP. The action was already completed.
+
+      Action-goal alignment — classify every recent successful action:
+      - GOAL-ADVANCING: creates, edits, removes, submits, or verifies the scenario's subject data (the object the scenario actually changes).
+      - VIEW-ONLY: toggles layout, filters, tabs, segment controls, sort orders, collapse/expand — changes which data is shown without modifying it.
+      - A single VIEW-ONLY action is legitimate when needed to reveal a target element for the next GOAL-ADVANCING action.
+      - A run of two or more consecutive successful VIEW-ONLY actions with no interleaved GOAL-ADVANCING action is thrashing — Tester is exploring UI instead of executing the scenario. Redirect Tester to the specific mutation or verification the scenario requires.
+      - VIEW-ONLY actions also tend to produce large page diffs with many htmlParts; if you see that pattern repeatedly in recent_actions, treat it as evidence of thrashing.
 
       Navigation awareness — always compare current page url to START URL:
       - subpage navigation (deeper path from START URL) — OK, scenario may need sub-pages

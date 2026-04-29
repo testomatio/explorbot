@@ -1,5 +1,136 @@
 # Changelog
 
+## 2026-04-29
+
+### Configuration
+- **`ai.agents.historian.screencast`** — Record a `.webm` screencast for every scenario the Historian saves. Set to `true` for defaults, or pass `{ size: { width, height }, quality }` to control resolution and encoding quality. Default: `false`.
+
+### Changes
+- [Historian] Records a screencast per scenario when `historian.screencast` is enabled. Videos are saved to `output/screencasts/<plan>-<n>-<scenario>.webm` with chapter markers that show the AI's per-step explanation as the run plays back. The end-of-run output lists the screencast files alongside generated tests so users can open them directly.
+- [Reporter] Test entries now carry the real wall-clock duration (`time`) and per-note durations instead of always reporting `0`. Testomat.io runs and JSON reports show actual timings.
+- Long plan, scenario, or state names no longer crash file writes. Generated test files, screencasts, and state captures are now truncated with a stable hash suffix (`my_very_long_title_a1b2c3d4.spec.ts`) so they always fit within filesystem name limits.
+- Playwright upgraded to 1.59. The `ariaSnapshot({ forAI: true })` call has been replaced with `ariaSnapshot({ mode: 'ai' })` to match the new API.
+
+## 2026-04-26
+
+### Changes
+- **Generates Playwright tests.** Every run is now saved as a runnable test — Playwright (`.spec.ts`) or CodeceptJS (`.js`). Set `ai.agents.historian.framework: 'playwright'` to get Playwright output. The spec uses the actual `page.locator(...)` calls executed during the run, each action wrapped in `test.step`, with `expect(...)` assertions for what the Pilot verified. Run it with `npx playwright test`. See [Automated Tests](docs/automated-tests.md).
+- [Historian] Each step in the generated test is wrapped in `await test.step('<explanation>', …)` (or `Section('<explanation>')` for CodeceptJS), labelled with the AI's own description.
+- [Historian] `test.beforeEach` / `Before` calls `goto(startUrl)` and replays the `wait` / `waitForElement` knowledge declared for that URL.
+- [Historian] Failed scenarios become `test.skip(...)` / `Scenario.skip(...)` with a `// FAILED:` comment; unfinished ones become `test.fixme(...)` / `Scenario.todo(...)` stubs. The file always runs.
+- [Historian] Duplicate `expect(...)` assertions are dropped when the Pilot re-verifies the same condition.
+- [Provider] AI request timeout no longer fires while Explorbot is paused on user input (e.g. `askUser`). The 30 s timer pauses while the controller reports awaiting input and resumes after the user replies.
+- [Tester] Tests that have already finished ignore late state changes, tool calls, and Pilot reviews, so the final report no longer collects post-verdict notes.
+- [Pilot] Verification failures and reset allow/veto decisions are logged at substep level instead of being added to test notes.
+- Next-step suggestions: every command (`plan`, `explore`, `learn`, `/plan:save`, `/add-rule`) closes with a consistent labeled block listing the artifact path and `re-run` / `run all` / `run range` / `reload` commands. Paths are printed relative to the working directory.
+- Telemetry: each test run is wrapped in a single root span so all tool calls, Pilot reviews, and Historian writes group under one Langfuse trace.
+
+## 2026-04-24
+
+### New CLI Options
+- **`explorbot clean tests`** — Added a `tests` target that wipes the generated test files under `output/tests/` without touching experience or state caches.
+  ```bash
+  explorbot clean tests
+  ```
+- **`EXPLORBOT_NO_BANNER`** — Environment variable that suppresses the `⛵ Explorbot v…` banner printed before every command. Useful when piping CLI output into another process.
+  ```bash
+  EXPLORBOT_NO_BANNER=1 explorbot plan /login
+  ```
+
+### New TUI Commands
+- **`/clean tests`** — Inside the TUI, clean the generated test directory without touching other artifacts.
+  ```
+  /clean tests
+  ```
+
+### Configuration
+- **`ai.agents.historian.framework`** — Selects the output format for generated test files. Set to `'playwright'` to emit real `@playwright/test` `.spec.ts` files (with `test.describe`, `test.beforeEach`, `expect()` assertions) recorded from actual Playwright calls at runtime. Default: `'codeceptjs'`.
+
+### Changes
+- **`explorbot rerun`** — Running rerun on a Playwright spec (`.spec.ts` / `.spec.js`) now exits with a clear message pointing at `npx playwright test <file>` instead of attempting to execute the file through the CodeceptJS rerunner.
+- [Historian] Generated scenarios can now be emitted as Playwright tests. When `historian.framework` is `'playwright'`, each test run records real Playwright method calls (clicks, fills, presses, navigations) through the browser's tracing API and renders them as native `page.locator(...).click()` / `expect(page)...` code, instead of translating CodeceptJS steps.
+- [Historian] Experience files are no longer written for failed or skipped tests. Previously every run appended steps regardless of outcome, which polluted pages with broken recipes.
+- [Historian] Flow recipes are now written through an AI curation pass that drops noise steps, negative/error-verifying scenarios, and duplicates of recipes already present for the same page. Previously every session's steps were saved after a per-step usefulness filter.
+- [Pilot] When deciding `pass`, the Pilot must now propose a concrete CodeceptJS assertion that proves the scenario goal. The system runs the assertion, refuses to pass if it does not match the page, and bakes the resulting `expect(...)` straight into the generated Playwright spec so generated tests always ship with real verifications.
+- [Pilot] Now reviews every `reset()` call from the tester. The Pilot can veto resets that would wastefully restart after a flow already succeeded (creating duplicates) and can fail the test outright when it detects a reset loop (same failure mode after two resets). The `reset` tool description itself now warns the AI that reset is destructive and a last resort.
+- [Pilot] Added detection for UI-thrashing: consecutive successful actions that only toggle layout/filters/tabs without advancing the scenario's data now trigger guidance to move toward the actual mutation or verification.
+- [Navigator] Dismisses unexpected popups automatically when a click is intercepted or an element becomes unexpectedly hidden/disabled. Tries clicking outside the dialog, pressing Escape, and Cancel/Close buttons before giving up.
+- [Navigator] When every proposed code block fails, Navigator now loops once more with all failures fed back to the model (and full HTML on the retry), instead of stopping after the first unsuccessful batch. Successful navigation now waits for the load state and URL transition before declaring success, which removes false positives on slow apps.
+- [Navigator] Saves successful multi-step navigations as `## FLOW:` recipes in the experience file (e.g. "reach /settings/billing from /settings"), with `I.amOnPage` lines stripped, so they can be reused by later runs.
+- [Navigator] Added output rules that forbid appending `I.amOnPage` after a form submission (it cancels the in-flight navigation), forbid `:has-text(...)` inside `seeElement`/`dontSeeElement` locators, and forbid emitting the same assertion in two different shapes (`I.see(text, locator)` + `seeElement(locator:has-text(text))`).
+- [Navigator] Replaced the "use `I.type` for Monaco/rich text editors" guidance with the opposite rule: `I.fillField` handles plain inputs, textareas, contenteditable, and rich/code editors (Monaco, ProseMirror, CodeMirror, TipTap, Quill, Draft, Slate) transparently. `I.type` is reserved for cases with no locator at all.
+- [Researcher] Loading pages are now detected and waited for instead of being classified as errors. If an ARIA progressbar/`[busy]` is visible, or the heading mentions "loading", or the body is tiny, the researcher waits up to the configured timeout (retrying up to 3 extra seconds) before continuing with a best-effort snapshot. Only real HTTP error titles (404, 500, …) still throw `ErrorPageError`.
+- [Planner] When a run was started with a focus area (`--focus`/trailing positional arg), subsequent planning rounds now stay inside that feature and generate more scenarios for it, instead of switching to whichever unrelated feature had the least coverage.
+- [Tester] Reset, finish, and completion reviews now run the Pilot's follow-up assertion against the page before committing the verdict, so a `pass` verdict always has an assertion attached to the generated test.
+- Experience Tracker: `## FLOW` recipes are now supplied pre-formatted by the caller (Historian, Navigator). Duplicate flow bodies are skipped on write, so repeated runs no longer append identical recipes.
+- State/context size: tool results stored in the conversation are now progressively compacted — older tool results drop their `htmlParts` diff, trim their ARIA diff, and remove iframe HTML, keeping only the last few raw. Large sibling runs (>50 elements of the same role) in the ARIA snapshot are collapsed to 5-at-each-side with a "N similar items omitted" placeholder, and diff html parts are capped per part and collapsed when the whole diff exceeds the budget.
+- Browser: Default Playwright action timeout raised from 1 s to 3 s, reducing spurious timeouts on mid-speed apps.
+- AI Provider: When a model returns an empty response because output was truncated at `maxTokens`, the provider now raises a clear context-length error naming the fix ("Increase maxTokens or use a model with higher output capacity") instead of silently returning nothing.
+
+## 2026-04-21
+
+### Changes
+- Reporter: Testomatio run titles now describe the session instead of being empty — e.g. `Explorbot session https://app.example.com/settings focus: "billing" at 2026-04-21T09:15`. Override with the `TESTOMATIO_TITLE` env var.
+- [ExploreCommand] When a planning style fails mid-run, explore now re-visits the starting page and retries the planner once before skipping that style. If the failure is an error page (404/500) exploration stops immediately instead of retrying against a broken page.
+- [Researcher] When a page resolves to an error page that cannot be recovered, the researcher throws `ErrorPageError` so callers (explore, plan) halt instead of silently continuing on a dead page.
+- [Researcher] If a single section (sidebar, form, header, etc.) fails during multi-section research, the researcher logs a warning and continues with the remaining sections instead of failing the whole page.
+- [Historian] Generated CodeceptJS scenarios and recorded experience no longer include `I.clickXY(x, y)` steps. Coordinate clicks are not reusable across runs, so they're dropped when persisting the session.
+- Fixed a crash at the start of every test (`requestStore?.onFailedRequest is not a function`) introduced by the prior release; the tester's failed-network-request listener now attaches correctly.
+
+## 2026-04-20
+
+### Changes
+- [Planner] No longer proposes scenarios that delete, remove, or archive data the test did not itself create. Destructive scenarios must now create a disposable target first and then act on that target. The resource represented by the current page URL is treated as "under test" and is never proposed for deletion — preventing cascades where deleting the focal item breaks every later scenario that starts on the same URL.
+- [Tester] Honors the same data-protection rule at execution time: refuses to delete pre-existing items and never destroys the resource owned by the current URL, in addition to the existing session-name allowlist.
+
+## 2026-04-18
+
+### New CLI Options
+- **`explorbot compact [target]`** — Compact stored experience files. With no target, sweeps all files (merging similar URLs first, then compacting). Pass a filename or URL substring to narrow the scope. Large files run through the AI compactor; recent files get a quality-review pass that drops low-value sections.
+  ```bash
+  explorbot compact                                 # full sweep (merge + compact)
+  explorbot compact /login                          # only files for URLs matching /login
+  explorbot compact abc123.md                       # one specific file
+  explorbot compact --dry-run                       # preview without running AI or writing
+  explorbot compact --no-merge                      # skip the cross-URL merge step
+  ```
+- **`explorbot experience [filter] [index]`** — List stored experiences grouped by URL, with a short tag per file (A, B, …) and a numbered section list. Pass a URL substring to filter, or a tag like `A1` to print that section's content. Add `--recent`/`--old` to restrict to files modified within / older than 30 days.
+  ```bash
+  explorbot experience                              # list everything
+  explorbot experience /login                       # only URLs matching /login
+  explorbot experience A1                           # print section 1 of file A
+  explorbot experience --recent                     # only files modified in the last 30 days
+  explorbot experience --old                        # only files older than 30 days
+  ```
+- **`explorbot explore --focus <feature>`** — Pass a focus area up-front instead of relying on the trailing positional argument. When set, explore skips the follow-up auto-planning loop and only runs the focused plan.
+  ```bash
+  explorbot explore --focus checkout                # focused run only
+  ```
+
+### New TUI Commands
+- **`/compact [target]`** — Same behavior as the CLI command, inside the TUI.
+  ```
+  /compact
+  /compact /login
+  /compact --dry-run
+  /compact --no-merge
+  ```
+- **`/experience [filter] [index]`** — List or expand stored experiences inside the TUI.
+  ```
+  /experience
+  /experience /login
+  /experience A1
+  /experience --recent
+  ```
+
+### Changes
+- Suggested next-step output from every command is now rendered as a clearly labeled `Suggested:` block, with each item shown on its own line prefixed by `/` (TUI) or `explorbot ` (CLI). Replaces the previous one-line-per-suggestion hint format.
+- [Tester] Console errors and failed network requests (HTTP 4xx/5xx responses to XHR/fetch) are now captured automatically during a test run and attached as failure notes on the task. Previously these were not surfaced.
+- [Pilot] The stuck-check briefing the pilot receives now includes a count and sample of console errors and recent failed network requests, so the pilot can reason about backend/JS failures when deciding whether to reset, retry, or stop.
+- Experience Tracker: Experience files now use `## FLOW: <title>` for multi-step recipes and `## ACTION: <title>` for single-step snippets. Titles are normalized to lowercase-first imperative phrases. When read for AI prompts, sections are rendered as `## HOW to <title> (multi-step|single-step)` so the model sees natural instructional phrasing. Previous formats (`SUCCEEDED:` / `Successful Flow:`) are no longer written.
+- Experience Tracker: New table-of-contents API lets callers list stored experience grouped by file tag and expand any section by tag + index, without having to read raw files.
+- Experience Compactor: The compaction flow now runs three passes — strip non-useful sections (empty, dynamic-locator, verification-only titles), AI quality review for files modified within the last 30 days, and AI compaction for anything still over the size threshold. Cross-URL merging across similar URLs is part of the default full sweep and can be skipped with `--no-merge`. Progress is logged per file.
+
 ## 2026-04-17
 
 ### Configuration

@@ -7,6 +7,8 @@ const AUTH_HEADERS = ['authorization', 'cookie', 'x-api-key', 'x-csrf-token'];
 export class RequestStore {
   private capturedRequests: RequestResult[] = [];
   private madeRequests: RequestResult[] = [];
+  private failedRequests: RequestResult[] = [];
+  private onFailedListeners: Array<(r: RequestResult) => void> = [];
   private outputDir: string;
 
   constructor(outputDir: string) {
@@ -16,6 +18,25 @@ export class RequestStore {
   addCapturedRequest(result: RequestResult): void {
     this.capturedRequests.push(result);
     result.save(this.outputDir);
+  }
+
+  addFailedRequest(result: RequestResult): void {
+    this.failedRequests.push(result);
+    for (const cb of this.onFailedListeners) {
+      cb(result);
+    }
+  }
+
+  getFailedRequests(): RequestResult[] {
+    return this.failedRequests;
+  }
+
+  onFailedRequest(cb: (r: RequestResult) => void): () => void {
+    this.onFailedListeners.push(cb);
+    return () => {
+      const idx = this.onFailedListeners.indexOf(cb);
+      if (idx !== -1) this.onFailedListeners.splice(idx, 1);
+    };
   }
 
   addMadeRequest(result: RequestResult): void {
@@ -122,6 +143,7 @@ export class RequestStore {
   clear(): void {
     this.capturedRequests = [];
     this.madeRequests = [];
+    this.failedRequests = [];
   }
 }
 

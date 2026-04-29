@@ -160,6 +160,11 @@ export class Task {
       .map((item) => `${item.type === 'step' ? '  ' : ''}${item.content}`)
       .join('\n');
   }
+
+  getRunResult(): 'success' | 'partial' | 'failed' {
+    const hasPassedNotes = Object.values(this.notes).some((n) => n.status === TestResult.PASSED);
+    return hasPassedNotes ? 'partial' : 'failed';
+  }
 }
 
 export class Test extends Task {
@@ -179,6 +184,7 @@ export class Test extends Task {
   enabled = true;
   startTime?: number;
   endTime?: number;
+  resetCount = 0;
 
   constructor(scenario: string, priority: 'critical' | 'important' | 'high' | 'normal' | 'low', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);
@@ -236,6 +242,12 @@ export class Test extends Task {
     return this.expected.some((expectation) => {
       return Object.values(this.notes).some((note) => note.message === expectation && note.status === TestResult.PASSED);
     });
+  }
+
+  getRunResult(): 'success' | 'partial' | 'failed' {
+    if (this.isSuccessful) return 'success';
+    if (this.hasAchievedAny()) return 'partial';
+    return super.getRunResult();
   }
 
   hasAchievedAll(): boolean {

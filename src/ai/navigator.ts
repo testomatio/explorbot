@@ -1,6 +1,7 @@
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
-import { ExperienceTracker } from '../experience-tracker.js';
+import type Action from '../action.ts';
+import { ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
 import { type WebPageState, normalizeUrl } from '../state-manager.js';
@@ -8,14 +9,16 @@ import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
+import { RulesLoader } from '../utils/rules-loader.ts';
+import { extractStatePath } from '../utils/url-matcher.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
 import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import { actionRule, locatorRule } from './rules.js';
-import { RulesLoader } from '../utils/rules-loader.ts';
+import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
 import { isInteractive } from './task-agent.js';
+import { createAgentTools } from './tools.ts';
 
 const debugLog = createDebug('explorbot:navigator');
 
@@ -25,8 +28,6 @@ class Navigator implements Agent {
   private experienceCompactor: ExperienceCompactor;
   private knowledgeTracker: KnowledgeTracker;
   private experienceTracker: ExperienceTracker;
-  private currentAction: any = null;
-  private currentUrl: string | null = null;
   private hooksRunner: HooksRunner;
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
@@ -102,9 +103,7 @@ class Navigator implements Agent {
         const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
         const originalMessage = `Navigate to: ${url}. Current page: ${actualPath}`;
 
-        this.currentAction = action;
-        this.currentUrl = url;
-        const resolved = await this.resolveState(originalMessage, actionResult);
+        const resolved = await this.resolveState(originalMessage, actionResult, { action, expectedUrl: url });
         if (!resolved) {
           throw new Error(`Navigation to ${url} failed: redirected to ${actualPath} and could not resolve`);
         }
@@ -116,9 +115,7 @@ class Navigator implements Agent {
           But I got error: ${action.lastError?.message || 'Navigation failed'}.
         `.trim();
 
-        this.currentAction = action;
-        this.currentUrl = url;
-        const resolved = await this.resolveState(originalMessage, actionResult);
+        const resolved = await this.resolveState(originalMessage, actionResult, { action, expectedUrl: url });
         if (!resolved) {
           throw new Error(`Navigation to ${url} failed: ${action.lastError?.message}`);
         }
@@ -136,9 +133,12 @@ class Navigator implements Agent {
     }
   }
 
-  async resolveState(message: string, actionResult: ActionResult): Promise<boolean> {
+  async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string }): Promise<boolean> {
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
+
+    const action = opts?.action ?? this.explorer.createAction();
+    const expectedUrl = opts?.expectedUrl;
 
     let knowledge = '';
     let experience = '';
@@ -153,26 +153,12 @@ class Navigator implements Agent {
       </hint>`;
     }
 
-    const relevantExperience = this.experienceTracker.getRelevantExperience(actionResult).map((experience) => experience.content);
-
-    if (relevantExperience.length > 0) {
-      const experienceContent = relevantExperience.join('\n\n---\n\n');
-      experience = await this.experienceCompactor.compactExperience(experienceContent);
-      tag('substep').log(`Found ${relevantExperience.length} experience ${pluralize(relevantExperience.length, 'file')} for: ${actionResult.url}`);
-
-      experience = dedent`
-      <experience>
-      Here is the experience of interacting with the page.
-      Learn from it AND DO NOT REPEAT THE SAME MISTAKES.
-      If there was found successful solution to an issue, propose it as a first solution.
-      If there are no successful solutions, analyze failed intentions and actions to avoid them.
-      Do not try again same failed solutions
-
-      Focus on successful solutions and avoid actions and locators that caused errors in past.
-
-      ${experienceContent}
-
-      </experience>`;
+    if (!actionResult.isInsideIframe) {
+      const successful = this.experienceTracker.getSuccessfulExperience(actionResult);
+      if (successful.length > 0) {
+        tag('substep').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${actionResult.url}`);
+        experience = `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${successful.join('\n\n')}\n</experience>`;
+      }
     }
 
     const prompt = dedent`
@@ -200,6 +186,8 @@ class Navigator implements Agent {
 
       ${actionRule}
 
+      ${unexpectedPopupRule}
+
       ${RulesLoader.loadRules('navigator', ['multiple-locator', 'output'], actionResult.url || '').replace('{{maxAttempts}}', String(this.MAX_ATTEMPTS))}
 
       ${experience}
@@ -210,20 +198,24 @@ class Navigator implements Agent {
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
+    const tools = undefined;
+
     let codeBlocks: string[] = [];
     let htmlContextAdded = false;
     let codeBlockIndex = 0;
     let totalAttempts = 0;
+    const progressBlocks: string[] = [];
+    const batchFailures: Array<{ code: string; error: string }> = [];
 
     let resolved = false;
     await loop(
       async ({ stop }) => {
         if (codeBlocks.length === 0) {
-          const result = await this.provider.invokeConversation(conversation);
+          const result = await this.provider.invokeConversation(conversation, tools);
           if (!result) return;
           const aiResponse = result?.response?.text;
           debugLog('AI:', aiResponse?.split('\n')[0]);
-          debugLog('Received AI response:', aiResponse.length, 'characters');
+          debugLog('Received AI response:', aiResponse?.length ?? 0, 'characters');
           codeBlocks = extractCodeBlocks(aiResponse ?? '');
           codeBlockIndex = 0;
         }
@@ -235,45 +227,94 @@ class Navigator implements Agent {
 
         const codeBlock = codeBlocks[codeBlockIndex];
         if (!codeBlock) {
-          if (!htmlContextAdded) {
-            htmlContextAdded = true;
-            tag('substep').log('Adding HTML context for better resolution...');
-            conversation.addUserText(dedent`
-              Previous solutions did not work. Here is the full HTML context:
-
-              <page_html>
-              ${await actionResult.combinedHtml()}
-              </page_html>
-
-              Please suggest new solutions based on this additional context.
-            `);
-            codeBlocks = [];
+          if (batchFailures.length === 0 && htmlContextAdded) {
+            stop();
             return;
           }
-          stop();
+          tag('substep').log('Feeding failures back to AI for a new batch...');
+          let contextMsg = 'Previous solutions did not work. Analyze the failures and try DIFFERENT strategies (not syntactic variants of the same locator).\n\n';
+          if (batchFailures.length > 0) {
+            const lines = batchFailures.map((f) => `- \`${f.code.split('\n')[0]}\` → ${f.error}`).join('\n');
+            contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
+          }
+          if (!htmlContextAdded) {
+            htmlContextAdded = true;
+            contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;
+          }
+          contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
+          conversation.addUserText(contextMsg);
+          codeBlocks = [];
+          batchFailures.length = 0;
           return;
         }
         codeBlockIndex++;
         totalAttempts++;
 
+        await this.explorer.switchToMainFrame();
+
+        const prevHash = action.actionResult?.getStateHash() ?? actionResult.getStateHash();
+
         debugLog(`Attempting resolution: ${codeBlock}`);
-        resolved = await this.currentAction.attempt(codeBlock, message);
+        const attemptOk = await action.attempt(codeBlock, message);
 
-        if (this.currentUrl) {
-          await this.currentAction.getActor().wait(2);
-          const freshState = await this.currentAction.capturePageState();
-
-          if (normalizeUrl(freshState.url || '') === normalizeUrl(this.currentUrl)) {
-            resolved = true;
-          } else if (resolved) {
-            tag('warning').log(`URL verification failed: expected ${this.currentUrl}, got ${freshState.url}`);
-            resolved = false;
+        const page = action.playwrightHelper?.page;
+        if (page) {
+          try {
+            await page.waitForLoadState('load', { timeout: 5000 });
+          } catch {
+            // Navigation did not reach 'load' state within timeout; continue and verify URL
           }
+        }
+
+        if (!attemptOk) {
+          const raw = action.lastError?.message || 'attempt failed';
+          const firstMeaningful = raw.split('\n').find((l) => l.trim() && !l.trim().startsWith('at ')) || raw;
+          const shortErr = firstMeaningful.replace(/\s+/g, ' ').trim().slice(0, 220);
+          batchFailures.push({ code: codeBlock, error: shortErr });
+        }
+
+        if (expectedUrl) {
+          if (page) {
+            try {
+              await page.waitForURL((url: URL) => normalizeUrl(url.pathname) === normalizeUrl(expectedUrl), { timeout: 5000 });
+            } catch {
+              // URL did not transition to expectedUrl within timeout
+            }
+          }
+          const freshState = await action.capturePageState();
+          const urlMatches = normalizeUrl(freshState.url || '') === normalizeUrl(expectedUrl);
+          const stateChanged = freshState.getStateHash() !== actionResult.getStateHash();
+          resolved = urlMatches && stateChanged;
+
+          if (!resolved && attemptOk) {
+            tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${freshState.url}`);
+          }
+          if (freshState.getStateHash() !== prevHash && (attemptOk || urlMatches)) {
+            progressBlocks.push(codeBlock);
+          }
+        } else {
+          resolved = attemptOk;
+          if (attemptOk) progressBlocks.push(codeBlock);
         }
 
         if (resolved) {
           tag('success').log('Navigation resolved successfully');
-          await this.experienceTracker.saveSuccessfulResolution(actionResult, message, codeBlock);
+          let scenario = message.split('\n')[0];
+          if (expectedUrl) {
+            const fromPath = extractStatePath(actionResult.url || '');
+            const toPath = extractStatePath(expectedUrl);
+            scenario = `reach ${toPath} from ${fromPath}`;
+          }
+          const recipe = progressBlocks
+            .join('\n')
+            .split('\n')
+            .filter((line) => !/^\s*I\.amOnPage\s*\(/.test(line))
+            .join('\n')
+            .trim();
+          if (recipe) {
+            const body = `## FLOW: ${scenario}\n\n* ${scenario}\n\n\`\`\`js\n${recipe}\n\`\`\`\n\n---\n`;
+            this.experienceTracker.writeFlow(actionResult, body);
+          }
           stop();
           return;
         }
@@ -290,9 +331,9 @@ class Navigator implements Agent {
       }
     );
 
-    if (!resolved && this.currentUrl) {
-      await this.currentAction.getActor().wait(1);
-      if (this.isOnExpectedPage(this.currentUrl, this.currentAction.stateManager)) {
+    if (!resolved && expectedUrl) {
+      await (action.getActor() as any).wait(1);
+      if (this.isOnExpectedPage(expectedUrl, action.stateManager)) {
         resolved = true;
         tag('success').log('Navigation resolved after delayed redirect');
       }
@@ -303,13 +344,13 @@ class Navigator implements Agent {
     }
 
     if (!resolved && isInteractive()) {
-      const userInput = await pause(`Navigator failed to resolve. Current: ${this.currentAction.stateManager.getCurrentState()?.url}\n` + `Target: ${this.currentUrl}\nEnter CodeceptJS commands (or press Enter to skip):`);
+      const userInput = await pause(`Navigator failed to resolve. Current: ${action.stateManager.getCurrentState()?.url}\n` + `Target: ${expectedUrl ?? '(none)'}\nEnter CodeceptJS commands (or press Enter to skip):`);
 
       if (userInput?.trim()) {
-        resolved = await this.currentAction.attempt(userInput, message);
-        if (resolved && this.currentUrl) {
-          await this.currentAction.getActor().wait(1);
-          if (!this.isOnExpectedPage(this.currentUrl, this.currentAction.stateManager)) {
+        resolved = await action.attempt(userInput, message);
+        if (resolved && expectedUrl) {
+          await (action.getActor() as any).wait(1);
+          if (!this.isOnExpectedPage(expectedUrl, action.stateManager)) {
             resolved = false;
           }
         }
@@ -317,6 +358,23 @@ class Navigator implements Agent {
     }
 
     return resolved;
+  }
+
+  private buildExperienceTools(): { learn_experience: unknown } | undefined {
+    const stateManager = this.explorer.getStateManager();
+    const getState = () => {
+      const s = stateManager.getCurrentState();
+      return s ? ActionResult.fromState(s) : null;
+    };
+    const { learn_experience } = createAgentTools({
+      explorer: this.explorer,
+      researcher: null as unknown as Researcher,
+      navigator: this,
+      experienceTracker: this.experienceTracker,
+      getState,
+    });
+    if (!learn_experience) return undefined;
+    return { learn_experience };
   }
 
   async freeSail(opts?: { strategy?: 'deep' | 'shallow'; scope?: string; visitedUrls?: Set<string> }, actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
@@ -448,7 +506,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; successfulCodes: string[]; totalAttempted: number }> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -465,22 +523,13 @@ class Navigator implements Agent {
       </hint>`;
     }
 
-    const relevantExperience = this.experienceTracker.getRelevantExperience(actionResult).map((exp) => exp.content);
-
-    if (relevantExperience.length > 0) {
-      const experienceContent = relevantExperience.join('\n\n---\n\n');
-      experience = await this.experienceCompactor.compactExperience(experienceContent);
-      tag('substep').log(`Found ${relevantExperience.length} experience ${pluralize(relevantExperience.length, 'file')} for: ${actionResult.url}`);
-
-      experience = dedent`
-      <experience>
-      Here is the experience of interacting with the page.
-      Learn from it AND DO NOT REPEAT THE SAME MISTAKES.
-      If there was found successful solution to an issue, propose it as a first solution.
-
-      ${experienceContent}
-
-      </experience>`;
+    if (!actionResult.isInsideIframe) {
+      const toc = this.experienceTracker.getExperienceTableOfContents(actionResult);
+      if (toc.length > 0) {
+        const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
+        tag('substep').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections) for: ${actionResult.url}`);
+        experience = renderExperienceToc(toc);
+      }
     }
 
     const prompt = dedent`
@@ -522,18 +571,21 @@ class Navigator implements Agent {
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
+    const tools = this.buildExperienceTools();
+
     let codeBlocks: string[] = [];
     const successfulCodes: string[] = [];
+    const assertionSteps: Array<{ name: string; args: any[] }> = [];
 
     const action = this.explorer.createAction();
 
     await loop(
       async ({ stop, iteration }) => {
         if (codeBlocks.length === 0) {
-          const result = await this.provider.invokeConversation(conversation);
+          const result = await this.provider.invokeConversation(conversation, tools);
           if (!result) return;
           const aiResponse = result?.response?.text;
-          debugLog('Received AI response:', aiResponse.length, 'characters');
+          debugLog('Received AI response:', aiResponse?.length ?? 0, 'characters');
           tag('step').log('Verifying assertion...');
           codeBlocks = extractCodeBlocks(aiResponse ?? '');
         }
@@ -548,11 +600,14 @@ class Navigator implements Agent {
           return;
         }
 
+        await this.explorer.switchToMainFrame();
+
         const verified = await action.attempt(codeBlock, message, false);
 
         if (verified) {
           tag('success').log('Verification passed');
           successfulCodes.push(codeBlock);
+          assertionSteps.push(...action.assertionSteps);
         }
       },
       {
@@ -572,7 +627,7 @@ class Navigator implements Agent {
     actionResult.addVerification(message, verified);
     this.explorer.getStateManager().updateState(actionResult);
 
-    return { verified, successfulCodes, totalAttempted };
+    return { verified, successfulCodes, assertionSteps, totalAttempted };
   }
 }
 

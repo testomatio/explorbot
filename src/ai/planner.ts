@@ -8,22 +8,22 @@ import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { Stats } from '../stats.ts';
+import { Suite } from '../suite.ts';
 import { Plan, Test } from '../test-plan.ts';
-import { planToCompactAiContext } from '../utils/test-plan-markdown.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
+import { planToCompactAiContext } from '../utils/test-plan-markdown.ts';
 import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
-import { getActiveStyle, getStyles } from './planner/styles.ts';
 import { WithSessionDedup } from './planner/session-dedup.ts';
+import { getActiveStyle, getStyles } from './planner/styles.ts';
 import { WithSubPages, getPlannedByStateHash, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
-import { findSimilarStateHash } from './researcher/cache.ts';
 import type { Provider } from './provider.js';
-import { hasFocusedSection } from './researcher/focus.ts';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
-import { Suite } from '../suite.ts';
+import { findSimilarStateHash } from './researcher/cache.ts';
+import { hasFocusedSection } from './researcher/focus.ts';
 import { fileUploadRule, protectionRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
@@ -447,6 +447,34 @@ export class Planner extends PlannerBase implements Agent {
       const titleListing = allTests.map((t) => `- "${t.scenario}" [${t.result || 'pending'}]`).join('\n');
       const compactContext = planToCompactAiContext(this.currentPlan);
 
+      let planningStrategy: string;
+      if (feature) {
+        planningStrategy = dedent`
+          <planning_strategy>
+          Stay strictly inside the "${feature}" feature area. Do NOT switch to a different, unrelated feature even if it has no coverage.
+          Propose ${this.MIN_TASKS}-${this.MAX_TASKS} additional scenarios for "${feature}" that are not already in the tested list.
+          Use the <approach> above to decide which new angles to explore — different controls, inputs, states, outcome categories, or combinations — all within "${feature}".
+          Return an empty scenarios array only when no genuinely new scenario for "${feature}" remains.
+          </planning_strategy>
+        `;
+      } else {
+        let extendedResearchHint = '';
+        if (mdq(plannerResearch).query('section("Extended Research")').count() > 0) {
+          extendedResearchHint = 'IMPORTANT: The research contains "Extended Research" sections with dropdowns, modals, and panels. Prioritize testing features from Extended Research that have no coverage yet.';
+        }
+        planningStrategy = dedent`
+          <planning_strategy>
+          Find a feature area in the research that has NO or minimal test coverage.
+          Pick that ONE feature and propose ${this.MIN_TASKS}-${this.MAX_TASKS} tests for it.
+          ${extendedResearchHint}
+
+          Follow the <approach> described above when proposing tests for this feature.
+
+          If ALL features across ALL research sections are covered, return empty scenarios array.
+          </planning_strategy>
+        `;
+      }
+
       conversation.addUserText(dedent`
         CRITICAL: This plan already has tests.
 
@@ -466,15 +494,7 @@ export class Planner extends PlannerBase implements Agent {
         ${compactContext}
         </tested_scenarios>
 
-        <planning_strategy>
-        Find a feature area in the research that has NO or minimal test coverage.
-        Pick that ONE feature and propose ${this.MIN_TASKS}-${this.MAX_TASKS} tests for it.
-        ${mdq(plannerResearch).query('section("Extended Research")').count() > 0 ? 'IMPORTANT: The research contains "Extended Research" sections with dropdowns, modals, and panels. Prioritize testing features from Extended Research that have no coverage yet.' : ''}
-
-        Follow the <approach> described above when proposing tests for this feature.
-
-        If ALL features across ALL research sections are covered, return empty scenarios array.
-        </planning_strategy>
+        ${planningStrategy}
 
         <context_from_previous_tests>
         During testing, the following pages were visited:

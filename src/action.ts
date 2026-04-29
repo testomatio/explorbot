@@ -16,10 +16,12 @@ import { ConfigParser, outputPath } from './config.js';
 import type { ExplorbotConfig } from './config.js';
 import type { UserResolveFunction } from './explorbot.ts';
 import { Observability } from './observability.ts';
+import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
+import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
 
 const debugLog = createDebug('explorbot:action');
@@ -36,12 +38,16 @@ class Action {
   private expectation: string | null = null;
   public lastError: Error | null = null;
   public playwrightHelper: any;
+  public playwrightGroupId: string | null = null;
+  public assertionSteps: Array<{ name: string; args: any[] }> = [];
+  private recorder?: PlaywrightRecorder;
 
-  constructor(actor: CodeceptJS.I, stateManager: StateManager) {
+  constructor(actor: CodeceptJS.I, stateManager: StateManager, recorder?: PlaywrightRecorder) {
     this.actor = actor;
     this.stateManager = stateManager;
     this.config = ConfigParser.getInstance().getConfig();
     this.playwrightHelper = container.helpers('Playwright');
+    this.recorder = recorder;
   }
 
   async caputrePageWithScreenshot(): Promise<ActionResult> {
@@ -71,13 +77,20 @@ class Action {
       const timestamp = Date.now();
       const page = this.playwrightHelper.page;
       const frame = this.playwrightHelper.frame;
-      const [html, title, browserLogs] = await Promise.all([(this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
+      await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
+      const grabAll = () => Promise.all([(this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
+      const [html, title, browserLogs] = await grabAll().catch(async (err: Error) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/navigating and changing the content/i.test(msg)) throw err;
+        await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
+        return grabAll();
+      });
       const url = page?.url() || (await (this.actor as any).grabCurrentUrl?.());
 
       let screenshotFile: string | undefined = undefined;
 
       if (includeScreenshot) {
-        const filename = `${stateHash}_${timestamp}.png`;
+        const filename = safeFilename(`${stateHash}_${timestamp}`, '.png');
         screenshotFile = await (this.actor as any)
           .saveScreenshot(filename)
           .then(() => filename)
@@ -90,13 +103,13 @@ class Action {
       // Save HTML to file
       const statesDir = outputPath('states');
       fs.mkdirSync(statesDir, { recursive: true });
-      const htmlFile = `${stateHash}_${timestamp}.html`;
+      const htmlFile = safeFilename(`${stateHash}_${timestamp}`, '.html');
       const htmlPath = join(statesDir, htmlFile);
       fs.writeFileSync(htmlPath, html, 'utf8');
 
       debugLog('Captured page state');
       // Save logs to file
-      const logFile = `${stateHash}_${timestamp}.log`;
+      const logFile = safeFilename(`${stateHash}_${timestamp}`, '.log');
       const logPath = join(statesDir, logFile);
       const formattedLogs = browserLogs.map((log: any) => {
         const logTimestamp = new Date().toISOString();
@@ -122,7 +135,7 @@ class Action {
       }
 
       if (ariaSnapshot) {
-        const ariaFileName = `${stateHash}_${timestamp}.aria.yaml`;
+        const ariaFileName = safeFilename(`${stateHash}_${timestamp}`, '.aria.yaml');
         const ariaPath = join(statesDir, ariaFileName);
         fs.writeFileSync(ariaPath, ariaSnapshot, 'utf8');
         ariaSnapshotFile = ariaFileName;
@@ -218,7 +231,10 @@ class Action {
     let codeString = code.replace(/^\(I\) => /, '').trim();
 
     const executedSteps: string[] = [];
-    registerStepLogger(executedSteps);
+    const assertionSteps: Array<{ name: string; args: any[] }> = [];
+    const stepListener = attachStepLogger(executedSteps, assertionSteps);
+    const groupId = this.recorder ? await this.recorder.beginAction(codeString) : null;
+    this.playwrightGroupId = groupId;
     const activeSpan = Observability.getSpan();
     const tracer = trace.getTracer('ai');
     const stepSpan = activeSpan ? tracer.startSpan('codeceptjs.step', undefined, trace.setSpan(context.active(), activeSpan)) : null;
@@ -253,6 +269,7 @@ class Action {
       this.stateManager.updateState(pageState, codeString);
 
       this.actionResult = pageState;
+      this.assertionSteps = assertionSteps;
     } catch (err) {
       debugLog('Action error', errorToString(err));
       error = err as Error;
@@ -260,9 +277,11 @@ class Action {
         await recorder.reset();
         await recorder.start();
       }
+      this.assertionSteps = [];
       throw err;
     } finally {
-      unregisterStepLogger();
+      if (groupId) await this.recorder!.endAction();
+      detachStepLogger(stepListener);
       if (stepSpan) {
         stepSpan.end();
       }
@@ -407,41 +426,30 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-let stepLoggerRegistered = false;
-let stepLoggerTarget: string[] | null = null;
+const ASSERTION_STEP_NAMES = new Set(['see', 'dontSee', 'seeElement', 'dontSeeElement', 'seeInField', 'dontSeeInField', 'seeInCurrentUrl', 'dontSeeInCurrentUrl']);
 
-const stepLogger = (step: any, error?: any) => {
-  if (!step?.toCode) {
-    return;
-  }
-  if (step.name?.startsWith('grab')) return;
-  const stepCode = step.toCode();
-  if (stepLoggerTarget) {
-    stepLoggerTarget.push(stepCode);
-  }
-  if (error) {
-    tag('step').log(step, error);
-    return;
-  }
-  tag('step').log(step);
+type StepListener = (step: any, error?: any) => void;
+
+const attachStepLogger = (target: string[], assertionsTarget?: Array<{ name: string; args: any[] }>): StepListener => {
+  const listener: StepListener = (step, error) => {
+    if (!step?.toCode) return;
+    if (step.name?.startsWith('grab')) return;
+    target.push(step.toCode());
+    if (assertionsTarget && ASSERTION_STEP_NAMES.has(step.name)) {
+      assertionsTarget.push({ name: step.name, args: step.args || [] });
+    }
+    if (error) {
+      tag('step').log(step, error);
+      return;
+    }
+    tag('step').log(step);
+  };
+  codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, listener);
+  codeceptjs.event.dispatcher.on(codeceptjs.event.step.failed, listener);
+  return listener;
 };
 
-const registerStepLogger = (target: string[]) => {
-  stepLoggerTarget = target;
-  if (stepLoggerRegistered) {
-    return;
-  }
-  stepLoggerRegistered = true;
-  codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, stepLogger);
-  codeceptjs.event.dispatcher.on(codeceptjs.event.step.failed, stepLogger);
-};
-
-const unregisterStepLogger = () => {
-  stepLoggerTarget = null;
-  if (!stepLoggerRegistered) {
-    return;
-  }
-  stepLoggerRegistered = false;
-  codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, stepLogger);
-  codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, stepLogger);
+const detachStepLogger = (listener: StepListener) => {
+  codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, listener);
+  codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, listener);
 };

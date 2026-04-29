@@ -10,6 +10,7 @@ export class ExecutionController extends EventEmitter {
   private inputCallback: InputCallback | null = null;
   private interruptResolvers: Array<() => void> = [];
   private abortController: AbortController | null = null;
+  private awaitingInput = false;
 
   private constructor() {
     super();
@@ -48,6 +49,10 @@ export class ExecutionController extends EventEmitter {
     this.emit('idle');
   }
 
+  isAwaitingInput(): boolean {
+    return this.awaitingInput;
+  }
+
   isInterrupted(): boolean {
     return this.interrupted;
   }
@@ -77,11 +82,16 @@ export class ExecutionController extends EventEmitter {
   }
 
   async requestInput(prompt: string): Promise<string | null> {
-    if (this.inputCallback) {
-      return await this.inputCallback(prompt);
+    if (!this.inputCallback) {
+      return await this.readlineInput(prompt);
     }
 
-    return await this.readlineInput(prompt);
+    this.awaitingInput = true;
+    try {
+      return await this.inputCallback(prompt);
+    } finally {
+      this.awaitingInput = false;
+    }
   }
 
   private async readlineInput(prompt: string): Promise<string | null> {
@@ -103,6 +113,7 @@ export class ExecutionController extends EventEmitter {
     this.interrupted = false;
     this.interruptResolvers = [];
     this.abortController = null;
+    this.awaitingInput = false;
   }
 }
 

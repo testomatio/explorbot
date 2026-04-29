@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
-import { EXPLORBOT_CONFIG_PATHS, type AIConfig, type ApiConfig as BaseApiConfig, type ApiHookFn } from '../../../src/config.ts';
+import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, EXPLORBOT_CONFIG_PATHS } from '../../../src/config.ts';
 
 export type { AIConfig };
 

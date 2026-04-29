@@ -173,7 +173,7 @@ Each agent can be individually configured with its own model and custom system p
 | `captain` | Orchestrates user commands |
 | `experience-compactor` | Compresses experience data |
 | `quartermaster` | Accessibility analysis |
-| `historian` | Session recording |
+| `historian` | Session recording, generates CodeceptJS or Playwright test files |
 | `chief` | API test planning |
 | `curler` | API test execution |
 
@@ -227,6 +227,24 @@ ai: {
 ```
 
 See [Researcher Agent](./researcher.md) for detailed documentation and examples.
+
+### Historian Agent Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `framework` | `'codeceptjs' \| 'playwright'` | Output format for generated test files. Default: `'codeceptjs'`. |
+
+```javascript
+ai: {
+  agents: {
+    historian: {
+      framework: 'playwright',
+    },
+  },
+}
+```
+
+With `'playwright'`, runs are saved as `@playwright/test` `.spec.ts` files using the actual Playwright calls captured at runtime. See [Automated Tests](./automated-tests.md).
 
 See [AI Providers](./providers.md) for recommended models and provider setup.
 

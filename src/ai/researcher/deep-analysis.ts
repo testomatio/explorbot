@@ -1,10 +1,10 @@
 import dedent from 'dedent';
 import { ActionResult, type Diff } from '../../action-result.js';
+import { executionController } from '../../execution-controller.ts';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
 import { WebPageState } from '../../state-manager.js';
 import { detectFocusArea, diffAriaSnapshots } from '../../utils/aria.ts';
-import { executionController } from '../../execution-controller.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
 import type { Provider } from '../provider.js';

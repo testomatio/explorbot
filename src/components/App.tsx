@@ -99,7 +99,11 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       setShowInput(true);
 
       return new Promise<string | null>((resolve) => {
-        interruptResolveRef.current = resolve;
+        interruptResolveRef.current = (value) => {
+          interruptResolveRef.current = null;
+          setInterruptPrompt(null);
+          resolve(value);
+        };
       });
     });
 
@@ -107,11 +111,19 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       setShowInput(true);
     };
 
+    const handleInterrupt = () => {
+      if (interruptResolveRef.current) {
+        interruptResolveRef.current(null);
+      }
+    };
+
     executionController.on('idle', handleIdle);
+    executionController.on('interrupt', handleInterrupt);
     setInputCallbackReady(true);
 
     return () => {
       executionController.off('idle', handleIdle);
+      executionController.off('interrupt', handleInterrupt);
       executionController.reset();
     };
   }, []);
@@ -284,9 +296,10 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       }
 
       if (isCommand) {
-        setInterruptPrompt(null);
+        if (interruptResolveRef.current) {
+          interruptResolveRef.current(null);
+        }
         setShowInput(false);
-        interruptResolveRef.current = null;
         executionController.startExecution();
         try {
           await commandHandler.executeCommand(trimmed);
@@ -303,8 +316,6 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
 
       if (interruptResolveRef.current) {
         interruptResolveRef.current(input);
-        interruptResolveRef.current = null;
-        setInterruptPrompt(null);
         setShowInput(false);
         return;
       }

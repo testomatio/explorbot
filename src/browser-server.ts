@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import path from 'node:path';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { ConfigParser } from './config.js';
-import { log, tag } from './utils/logger.js';
+import { getCliName } from './utils/cli-name.ts';
+import { log } from './utils/logger.js';
+import { type NextStepSection, printNextSteps } from './utils/next-steps.ts';
 
 const ENDPOINT_FILENAME = '.browser-endpoint';
 
@@ -57,8 +59,20 @@ async function launchServer(opts: { browser?: string; show?: boolean }): Promise
   writeEndpoint(wsEndpoint);
 
   log(`Browser server started: ${browserName} (${opts.show ? 'headed' : 'headless'})`);
-  tag('info').log(`WebSocket endpoint: ${wsEndpoint}`);
-  tag('info').log(`Endpoint saved to: ${getEndpointFilePath()}`);
+
+  const cli = getCliName();
+  const sections: NextStepSection[] = [
+    {
+      label: 'Browser server',
+      path: getEndpointFilePath(),
+      commands: [
+        { label: 'Endpoint', command: wsEndpoint },
+        { label: 'Status', command: `${cli} browser status` },
+        { label: 'Stop', command: `${cli} browser stop` },
+      ],
+    },
+  ];
+  printNextSteps(sections);
 
   return server;
 }

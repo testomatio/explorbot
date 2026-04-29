@@ -107,6 +107,16 @@ interface PlannerAgentConfig extends AgentConfig {
   stylesDir?: string;
 }
 
+interface ScreencastConfig {
+  size?: { width: number; height: number };
+  quality?: number;
+}
+
+interface HistorianAgentConfig extends AgentConfig {
+  framework?: 'codeceptjs' | 'playwright';
+  screencast?: boolean | ScreencastConfig;
+}
+
 interface AgentsConfig {
   tester?: TesterAgentConfig;
   navigator?: NavigatorAgentConfig;
@@ -117,7 +127,7 @@ interface AgentsConfig {
   'experience-compactor'?: AgentConfig;
   captain?: AgentConfig;
   quartermaster?: AgentConfig;
-  historian?: AgentConfig;
+  historian?: HistorianAgentConfig;
   fisherman?: AgentConfig;
   chief?: AgentConfig;
   curler?: AgentConfig;
@@ -230,6 +240,7 @@ export type {
   ActionConfig,
   AgentConfig,
   AgentsConfig,
+  HistorianAgentConfig,
   ResearcherAgentConfig,
   NavigatorAgentConfig,
   PlannerAgentConfig,

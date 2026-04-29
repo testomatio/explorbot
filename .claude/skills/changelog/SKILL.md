@@ -14,27 +14,51 @@ Generate a structured changelog entry for Explorbot by analyzing git changes.
 - `/changelog HEAD~5` — generate from last N commits
 - `/changelog v1.0..HEAD` — generate from a ref range
 
-## Step 1: Gather Changes
+## Step 1: Gather Changes — DO THIS FIRST, NO EXCEPTIONS
 
-Determine the diff source from arguments:
+> **STOP. Before writing a single line of changelog, you MUST run `git diff` over the full scope this skill requires. Do not infer changes from recent commits, from the conversation history, or from memory of what you just edited. The working tree is the source of truth. Skipping this step produces wrong, incomplete changelogs — every time.**
 
-- **No arguments**: Run `git diff` (unstaged) and `git diff --cached` (staged), plus `git status` for untracked files
-- **With ref argument**: Run `git diff <ref>` using the provided reference
+**This applies even if you just committed:** a fresh commit is a strict subset of the working tree when unstaged changes exist. Always run the full scope below.
 
-Run `git diff --stat` (or `git diff <ref> --stat`) to see which files changed.
+### Commands to run (no argument — the default)
 
-Then read the actual diffs for these key paths:
-- `bin/explorbot-cli.ts`
-- `src/commands/`
-- `src/config.ts`
-- `src/ai/tools.ts`
-- `src/ai/rules.ts`
-- `src/ai/*.ts` (agent files)
-- `src/explorer.ts`
-- `src/explorbot.ts`
-- `src/state-manager.ts`
-- `src/experience-tracker.ts`
-- `docs/`
+Run ALL of these, in parallel, every time:
+
+1. `git status --short` — see what's modified, staged, and untracked
+2. `git diff --stat HEAD` — combined stat for every tracked file vs HEAD (staged + unstaged)
+3. `git diff HEAD <file> <file> …` — the actual diff for every file that appeared in step 2, batched across the key paths listed below
+4. For each untracked file from step 1, `Read` its full contents (they have no diff)
+
+### Commands to run (ref argument — `/changelog <ref>`)
+
+1. `git diff <ref> --stat` — stat across the ref range
+2. `git diff <ref> <file> <file> …` — the actual diffs
+
+### Key paths you MUST cover
+
+If any of these paths appears in the stat, you MUST read its diff before writing the entry:
+
+- `bin/explorbot-cli.ts` — CLI entry point
+- `src/commands/` — every file (new TUI commands, new flags)
+- `src/config.ts` — config surface
+- `src/ai/tools.ts` — tool descriptions the AI sees
+- `src/ai/rules.ts` — rules injected into prompts
+- `src/ai/*.ts` — agent behavior
+- `src/explorer.ts`, `src/explorbot.ts` — container + orchestration
+- `src/reporter.ts` — reporter output users see
+- `src/state-manager.ts` — state + transitions
+- `src/experience-tracker.ts` — experience file format
+- `src/stats.ts` — user-visible stats
+- `docs/` — docs changes
+
+### Sanity check before proceeding
+
+Before you start writing, answer (internally) these two questions:
+
+1. Did I run `git status --short` AND `git diff --stat HEAD` in this turn?
+2. Is the list of files I'm about to describe exactly the list from step 2 (minus skipped internal-only files from Step 3)?
+
+If either answer is no, go back and run the commands. Do not continue.
 
 ## Step 2: Classify Changes Into Sections
 

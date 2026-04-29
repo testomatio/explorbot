@@ -1,15 +1,15 @@
 import dedent from 'dedent';
 import type { ActionResult } from '../../action-result.js';
-import type Explorer from '../../explorer.ts';
 import { executionController } from '../../execution-controller.ts';
+import type Explorer from '../../explorer.ts';
 import { parseAriaLocator } from '../../utils/aria.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
 import { WebElement } from '../../utils/web-element.ts';
-import { FOCUSED_MARKER } from './focus.ts';
 import type { Conversation } from '../conversation.ts';
 import type { Provider } from '../provider.js';
 import { locatorRule as generalLocatorRuleText } from '../rules.js';
+import { FOCUSED_MARKER } from './focus.ts';
 import { type Constructor, debugLog } from './mixin.ts';
 import { parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';

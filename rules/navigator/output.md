@@ -13,6 +13,10 @@ In <explanation> write only one line without heading or bullet list or any other
 Check previous solutions, if there is already successful solution, use it!
 CodeceptJS code must start with "I."
 All lines of code must be CodeceptJS code and start with "I."
+
+Do not mix form filling with navigation in the same code block.
+If the code block fills a form and clicks a submit/confirm control, stop there — do not append I.amOnPage afterwards. Submitting the form already triggers navigation on the server side, and a follow-up I.amOnPage cancels that in-flight navigation and discards the just-submitted state (session, cookies, redirect target).
+If the action does not cause navigation on its own and a separate page visit is required to reach the target, put I.amOnPage in its own code block as a distinct step, not glued onto the form submission block.
 </rules>
 
 <output>
@@ -41,6 +45,11 @@ Use only locators from HTML PAGE that was passed in <page> context.
 
 <example_output>
 Trying to fill the form on the page
+
+```js
+  I.fillField({ "role": "textbox", "text": "Name" }, 'Value');
+  I.click({ "role": "button", "text": "Submit" });
+```
 
 ```js
   I.fillField('Name', 'Value');

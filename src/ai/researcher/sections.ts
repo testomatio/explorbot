@@ -37,7 +37,13 @@ export function WithSections<T extends Constructor>(Base: T) {
       const parts: string[] = [];
       for (const [name, description] of targets) {
         if (executionController.isInterrupted()) break;
-        const text = await this._researchSingleSection(name, description, ariaSnapshot, focusCss);
+        let text = '';
+        try {
+          text = await this._researchSingleSection(name, description, ariaSnapshot, focusCss);
+        } catch (err) {
+          tag('warning').log(`Section "${name}" research failed, skipping: ${err instanceof Error ? err.message : err}`);
+          continue;
+        }
         if (!text) continue;
         const trimmed = text.trim();
         if (trimmed === 'NOT_PRESENT' || trimmed.startsWith('NOT_PRESENT')) continue;

@@ -351,9 +351,9 @@ describe('ExperienceCompactor', () => {
 
       mockProvider.setResponses([{ object: { mergeGroups: [] } }]);
 
-      const compactedCount = await compactor.compactAllExperiences();
+      const result = await compactor.compactAllExperiences();
 
-      expect(compactedCount).toBe(0);
+      expect(result.compacted).toBe(0);
 
       const experiences = experienceTracker.getAllExperience();
       expect(experiences[0].content.trim()).toBe(shortContent);
@@ -394,6 +394,50 @@ describe('ExperienceCompactor', () => {
       expect(promptContent).toContain('/test/1');
       expect(promptContent).toContain('/test/2');
       expect(promptContent).toContain('/other/path');
+    });
+  });
+
+  describe('stripNonUsefulEntries', () => {
+    it('drops h2 FLOW/ACTION sections with empty body', () => {
+      const input = ['## ACTION: do something', '', '', '## ACTION: click button', '```js', 'I.click("btn")', '```'].join('\n');
+
+      const result = compactor.stripNonUsefulEntries(input);
+      expect(result).not.toContain('## ACTION: do something');
+      expect(result).toContain('## ACTION: click button');
+    });
+  });
+
+  describe('reviewExperienceQuality', () => {
+    it('drops sections the AI marks keep=false', async () => {
+      const content = ['## ACTION: click submit', '```js', 'I.click("Submit")', '```', '', '## ACTION: click ember123', '```js', 'I.click("#ember123")', '```'].join('\n');
+
+      mockProvider.setResponses([
+        {
+          object: {
+            sections: [
+              { index: 0, keep: true, reason: 'good' },
+              { index: 1, keep: false, reason: 'dynamic id' },
+            ],
+          },
+        },
+      ]);
+
+      const result = await compactor.reviewExperienceQuality(content, { url: '/login', title: 'Login' });
+      expect(result).toContain('## ACTION: click submit');
+      expect(result).not.toContain('ember123');
+    });
+  });
+
+  describe('isRecent', () => {
+    it('returns true for files newer than 30 days', () => {
+      const file = { filePath: '/tmp/x.md', data: {}, content: '', mtime: new Date() };
+      expect(compactor.isRecent(file)).toBe(true);
+    });
+
+    it('returns false for files older than 30 days', () => {
+      const old = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+      const file = { filePath: '/tmp/x.md', data: {}, content: '', mtime: old };
+      expect(compactor.isRecent(file)).toBe(false);
     });
   });
 });

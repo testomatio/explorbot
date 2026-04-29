@@ -644,9 +644,18 @@ const resolveDisplayName = (node: AriaNode): string | undefined => {
   return undefined;
 };
 
+const SIBLING_COLLAPSE_THRESHOLD = 50;
+const SIBLING_COLLAPSE_KEEP_EACH_SIDE = 5;
+
 const serializeAriaNodes = (nodes: AriaNode[], depth = 0): string => {
   const lines: string[] = [];
-  for (const node of nodes) {
+  const collapsed = collapseSimilarSiblingRuns(nodes, depth);
+  for (const entry of collapsed) {
+    if (entry.placeholder) {
+      lines.push(entry.placeholder);
+      continue;
+    }
+    const node = entry.node!;
     const indent = '  '.repeat(depth);
     let line = `${indent}- ${renderNodeLine(node.role, resolveDisplayName(node), node.attributes, node.value)}`;
     if (node.children.length > 0) {
@@ -658,6 +667,34 @@ const serializeAriaNodes = (nodes: AriaNode[], depth = 0): string => {
     }
   }
   return lines.join('\n');
+};
+
+type SerializeEntry = { node?: AriaNode; placeholder?: string };
+
+const collapseSimilarSiblingRuns = (nodes: AriaNode[], depth: number): SerializeEntry[] => {
+  const result: SerializeEntry[] = [];
+  let i = 0;
+  while (i < nodes.length) {
+    const role = nodes[i].role;
+    let j = i;
+    while (j < nodes.length && nodes[j].role === role) j++;
+    const runLength = j - i;
+    if (runLength > SIBLING_COLLAPSE_THRESHOLD) {
+      for (let k = i; k < i + SIBLING_COLLAPSE_KEEP_EACH_SIDE; k++) {
+        result.push({ node: nodes[k] });
+      }
+      const omitted = runLength - SIBLING_COLLAPSE_KEEP_EACH_SIDE * 2;
+      const indent = '  '.repeat(depth);
+      result.push({ placeholder: `${indent}- ...${omitted} similar "${role}" items omitted...` });
+      for (let k = j - SIBLING_COLLAPSE_KEEP_EACH_SIDE; k < j; k++) {
+        result.push({ node: nodes[k] });
+      }
+    } else {
+      for (let k = i; k < j; k++) result.push({ node: nodes[k] });
+    }
+    i = j;
+  }
+  return result;
 };
 
 export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false): string => {

@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { AIProvider } from '../../../src/ai/provider.ts';
+import { RequestStore } from '../../../src/api/request-store.ts';
+import { extractEndpointDefinition, loadSpec, searchEndpoints, validateSpecs } from '../../../src/api/spec-reader.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import { Plan } from '../../../src/test-plan.ts';
 import { setVerboseMode, tag } from '../../../src/utils/logger.ts';
@@ -8,8 +10,6 @@ import { Chief } from './ai/chief.ts';
 import { Curler } from './ai/curler.ts';
 import { ApiClient } from './api-client.ts';
 import { type ApibotConfig, ApibotConfigParser } from './config.ts';
-import { RequestStore } from '../../../src/api/request-store.ts';
-import { extractEndpointDefinition, loadSpec, searchEndpoints, validateSpecs } from '../../../src/api/spec-reader.ts';
 
 export class ApiBot {
   private configParser: ApibotConfigParser;

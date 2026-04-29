@@ -8,22 +8,24 @@ import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
+import { Observability } from '../observability.ts';
 import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
+import { ErrorPageError } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
+import type { Captain } from './captain.ts';
 import type { Conversation } from './conversation.ts';
 import { Navigator } from './navigator.ts';
-import type { Captain } from './captain.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
+import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createSpecialContextTools } from './tools.ts';
 
@@ -125,6 +127,23 @@ export class Tester extends TaskAgent implements Agent {
     this.resetFailureCount();
     this.pilot?.reset();
 
+    const requestStore = this.explorer.getRequestStore();
+    requestStore?.clear();
+    const offFailedRequest = requestStore?.onFailedRequest((r) => {
+      task.addNote(`Network error: ${r.method} ${r.path} → ${r.status}`, TestResult.FAILED);
+    });
+
+    const page = this.explorer.playwrightHelper?.page;
+    const onPageError = (err: Error) => {
+      task.addNote(`Console error: ${err.message}`, TestResult.FAILED);
+    };
+    const onConsoleMessage = (msg: any) => {
+      if (msg.type() !== 'error') return;
+      task.addNote(`Console error: ${msg.text()}`, TestResult.FAILED);
+    };
+    page?.on('pageerror', onPageError);
+    page?.on('console', onConsoleMessage);
+
     const initialState = ActionResult.fromState(state);
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
@@ -137,10 +156,39 @@ export class Tester extends TaskAgent implements Agent {
     const initialPrompt = await this.buildTestPrompt(task, initialState);
     conversation.addUserText(initialPrompt);
 
+    return await Observability.run(
+      `test: ${task.scenario}`,
+      {
+        sessionId: task.sessionName,
+        tags: ['tester'],
+        input: {
+          scenario: task.scenario,
+          startUrl: task.startUrl,
+          expected: task.expected,
+        },
+      },
+      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest, page, onPageError, onConsoleMessage })
+    );
+  }
+
+  private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: { offFailedRequest?: () => void; page: any; onPageError: (err: Error) => void; onConsoleMessage: (msg: any) => void }): Promise<{ success: boolean }> {
+    const { offFailedRequest, page, onPageError, onConsoleMessage } = handlers;
+
     if (this.pilot) {
-      const plan = await this.pilot.planTest(task, initialState);
-      if (plan) {
-        conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
+      try {
+        const plan = await this.pilot.planTest(task, initialState);
+        if (plan) {
+          conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        tag('error').log(`Pilot planning failed: ${message}`);
+        task.addNote(`Planning failed: ${message}`, TestResult.FAILED);
+        task.finish(TestResult.FAILED);
+        offFailedRequest?.();
+        page?.off('pageerror', onPageError);
+        page?.off('console', onConsoleMessage);
+        return { success: false };
       }
     }
 
@@ -156,6 +204,7 @@ export class Tester extends TaskAgent implements Agent {
     await this.hooksRunner.runBeforeHook('tester', currentUrl);
 
     const offStateChange = this.explorer.getStateManager().onStateChange((event: StateTransition) => {
+      if (task.hasFinished) return;
       if (event.toState?.url === event.fromState?.url) return;
       task.addNote(`Navigated to ${event.toState?.url}`, TestResult.PASSED);
       task.states.push(event.toState);
@@ -207,6 +256,10 @@ export class Tester extends TaskAgent implements Agent {
           conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);
           conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
           conversation.cleanupTag('experience', '...cleaned experience...', 1);
+          conversation.cleanupTag('applied_experience', '...cleaned past experience...', 1);
+          conversation.cleanupTag('page_ui_map', '...cleaned UI map...', 1);
+          conversation.cleanupTag('page_ui_map_overlay', '...cleaned UI overlay...', 1);
+          conversation.compactToolResults(3);
 
           if (iteration > 1) {
             const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
@@ -228,6 +281,7 @@ export class Tester extends TaskAgent implements Agent {
           const result = await this.provider.invokeConversation(conversation, tools, {
             maxToolRoundtrips: 5,
             toolChoice: 'required',
+            stopWhen: () => task.hasFinished,
           });
 
           if (!result) throw new Error('Failed to get response from provider');
@@ -312,21 +366,11 @@ export class Tester extends TaskAgent implements Agent {
                 context.setUserInput(result.message);
               }
             : undefined,
-          observability: {
-            name: `test: ${task.scenario}`,
-            agent: 'tester',
-            sessionId: task.sessionName,
-            metadata: {
-              input: {
-                scenario: task.scenario,
-                startUrl: task.startUrl,
-                expected: task.expected,
-              },
-            },
-          },
           catch: async ({ error, stop }) => {
             tag('error').log(`Test execution error: ${error}`);
-            task.addNote(`Execution error: ${error instanceof Error ? error.message : String(error)}`);
+            if (!task.hasFinished) {
+              task.addNote(`Execution error: ${error instanceof Error ? error.message : String(error)}`);
+            }
             stop();
           },
         }
@@ -335,13 +379,19 @@ export class Tester extends TaskAgent implements Agent {
       if (task.hasFinished) break;
 
       const finalState = this.getCurrentState();
-      const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation);
+      const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation, this.navigator);
 
       if (!wantsContinue || task.hasFinished) break;
       if (extensions >= this.MAX_EXTENSIONS) break;
 
       extensions++;
       tag('info').log(`Pilot extending test (${extensions}/${this.MAX_EXTENSIONS})`);
+      conversation.cleanupTag('page_aria', '...trimmed...', 1);
+      conversation.cleanupTag('page_html', '...trimmed...', 0);
+      conversation.cleanupTag('experience', '...trimmed...', 0);
+      conversation.cleanupTag('page_ui_map', '...trimmed...', 0);
+      conversation.cleanupTag('page_ui_map_overlay', '...trimmed...', 0);
+      conversation.compactToolResults(1);
       shouldContinue = true;
     }
 
@@ -355,6 +405,9 @@ export class Tester extends TaskAgent implements Agent {
     await this.getQuartermaster().analyzeSession(task, initialState, conversation);
 
     offStateChange();
+    offFailedRequest?.();
+    page?.off('pageerror', onPageError);
+    page?.off('console', onConsoleMessage);
     await this.finishTest(task);
     await this.explorer.stopTest(task, {
       startUrl: task.startUrl,
@@ -444,7 +497,13 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (isNewUrl) {
-      const research = await this.researcher.research(currentState);
+      let research = '';
+      try {
+        research = await this.researcher.research(currentState);
+      } catch (err) {
+        if (!(err instanceof ErrorPageError)) throw err;
+        tag('warning').log(`Research skipped: ${err.message}`);
+      }
       this.pageStateHash = currentStateHash;
       this.pageActionResult = currentState;
       let uiMapSection = '';
@@ -633,7 +692,7 @@ export class Tester extends TaskAgent implements Agent {
     - Use finish() to complete the test, not record(). record() is for intermediate notes.
     - Call finish(verify) when all goals are achieved — provide an assertion to verify
     - ONLY call stop() if the scenario itself is completely irrelevant to this page and no expectations can be achieved
-    - Use reset() to navigate back to the initial page if needed. Do not call it if you are already on the initial page
+    - Use reset() ONLY as a last resort when the current page cannot host the scenario. Never reset after a successful flow just because an assertion or milestone did not match — verify differently or record() the finding instead. Reset is destructive and does not undo server-side side effects.
     - Be precise with locators (CSS or XPath)
     - Each click/type call returns the new page state automatically
     - Check for success messages from tool calls to verify if expected outcomes are achieved
@@ -698,6 +757,8 @@ export class Tester extends TaskAgent implements Agent {
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
 
+      ${protectionRule}
+
       ${this.buildDeletionScope(task)}
 
       ${this.buildAvailableFiles()}
@@ -754,13 +815,25 @@ export class Tester extends TaskAgent implements Agent {
     return {
       reset: tool({
         description: dedent`
-          Reset the testing flow by navigating back to the original page.
-          Use this when navigated too far from the desired state and
-          there's no clear path to achieve the expected result. This restarts the
-          testing flow from a known good state.
+          Navigate back to the start URL and discard progress in this iteration.
+          Reset is a LAST RESORT. It is destructive — any side effects already produced on the
+          server (records created, forms submitted) persist and cannot be undone by resetting.
+
+          Use reset ONLY for:
+          - navigation dead-ends where the current page cannot host the scenario
+          - irrecoverable errors that leave no actionable path forward
+
+          Do NOT use reset when:
+          - the previous action already succeeded (URL changed, record visible, confirmation shown)
+            and an assertion did not match — verify differently, record(), or finish() instead
+          - an expectation/milestone does not match app behavior but the flow worked — the work is
+            done; resetting just creates duplicates
+          - you want to "try again" after submitting a form — submitting again creates a duplicate
+
+          Pilot will review every reset and may veto it.
         `,
         inputSchema: z.object({
-          reason: z.string().optional().describe('Explanation why you need to navigate'),
+          reason: z.string().optional().describe('Explanation why reset is the only option'),
         }),
         execute: async ({ reason }) => {
           if (this.getCurrentState().isInsideIframe) {
@@ -774,6 +847,20 @@ export class Tester extends TaskAgent implements Agent {
               suggestion: 'Try different approach or use stop() if the scenario is fundamentally incompatible with the page.',
               action: 'reset',
             };
+          }
+
+          task.resetCount += 1;
+
+          if (this.pilot) {
+            const currentStateForReview = this.getCurrentState();
+            const allowed = await this.pilot.reviewReset(task, currentStateForReview, reason ?? '', conversation);
+            if (!allowed) {
+              return {
+                success: false,
+                action: 'reset',
+                message: 'Reset rejected by Pilot; Continue execution',
+              };
+            }
           }
 
           const explanation = reason ? `${reason} (RESET)` : 'Resetting to initial page';
@@ -859,11 +946,14 @@ export class Tester extends TaskAgent implements Agent {
           verify: z.string().describe('Specific assertion to verify on the page before finishing (e.g., "New item appears in the list")'),
         }),
         execute: async ({ verify }) => {
+          if (task.hasFinished) {
+            return { success: true, action: 'finish', message: 'already finished' };
+          }
           task.addNote(`Finish requested: ${verify}`);
 
           if (this.pilot) {
             const currentState = this.getCurrentState();
-            await this.pilot.reviewFinish(task, currentState, conversation);
+            await this.pilot.reviewFinish(task, currentState, conversation, this.navigator);
             if (!task.hasFinished) {
               return {
                 success: false,
@@ -938,7 +1028,7 @@ export class Tester extends TaskAgent implements Agent {
           if (input.status !== null && task.isComplete()) {
             if (this.pilot) {
               const currentState = this.getCurrentState();
-              await this.pilot.reviewCompletion(task, currentState, conversation);
+              await this.pilot.reviewCompletion(task, currentState, conversation, this.navigator);
             } else {
               const hasPassed = task.hasAchievedAny();
               task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);

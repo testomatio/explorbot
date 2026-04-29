@@ -3,12 +3,13 @@ import { join } from 'node:path';
 import { render } from 'ink';
 import React from 'react';
 import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class AddRuleCommand extends BaseCommand {
   name = 'add-rule';
   description = 'Create a rule file for an agent';
-  suggestions = ['/add-rule researcher check-tooltips'];
+  suggestions: Suggestion[] = [{ command: 'add-rule researcher check-tooltips', hint: 'example — add a rule for the researcher agent' }];
 
   async execute(args: string): Promise<void> {
     const parts = args.trim().split(/\s+/);
@@ -43,19 +44,22 @@ export class AddRuleCommand extends BaseCommand {
 
     const filePath = join(rulesDir, `${ruleName}.md`);
     if (existsSync(filePath)) {
-      tag('warning').log(`Rule file already exists: ${filePath}`);
+      tag('warning').log(`Rule file already exists: ${relativeToCwd(filePath)}`);
       return null;
     }
 
     const content = opts?.content || `Instructions for ${agentName} agent.`;
     writeFileSync(filePath, `${content.trim()}\n`);
-    tag('success').log(`Rule created: ${filePath}`);
 
-    if (opts?.urlPattern) {
-      tag('info').log(`Add to config: ai.agents.${agentName}.rules: [{ '${opts.urlPattern}': '${ruleName}' }]`);
-    } else {
-      tag('info').log(`Add to config: ai.agents.${agentName}.rules: ['${ruleName}']`);
-    }
+    const configLine = opts?.urlPattern ? `ai.agents.${agentName}.rules: [{ '${opts.urlPattern}': '${ruleName}' }]` : `ai.agents.${agentName}.rules: ['${ruleName}']`;
+    const sections: NextStepSection[] = [
+      {
+        label: 'Rule',
+        path: filePath,
+        commands: [{ label: 'Add to config', command: configLine }],
+      },
+    ];
+    printNextSteps(sections);
 
     return filePath;
   }

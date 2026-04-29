@@ -1,11 +1,11 @@
-import path from 'node:path';
-import { tag } from '../utils/logger.js';
-import { BaseCommand } from './base-command.js';
+import { getCliName } from '../utils/cli-name.ts';
+import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
+import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class PlanSaveCommand extends BaseCommand {
   name = 'plan:save';
   description = 'Save current plan to file';
-  suggestions = ['/test - to launch first test'];
+  suggestions: Suggestion[] = [{ command: 'test', hint: 'launch first test' }];
 
   async execute(args: string): Promise<void> {
     const plan = this.explorBot.getCurrentPlan();
@@ -15,11 +15,22 @@ export class PlanSaveCommand extends BaseCommand {
 
     const filename = args.trim() || undefined;
     const savedPath = this.explorBot.savePlan(filename);
+    if (!savedPath) return;
 
-    if (savedPath) {
-      const relativePath = path.relative(process.cwd(), savedPath);
-      tag('success').log(`Plan saved to: ${relativePath}`);
-      tag('info').log(`Run /plan:load ${relativePath} to reload it`);
-    }
+    const cli = getCliName();
+    const relPlan = relativeToCwd(savedPath);
+    const sections: NextStepSection[] = [
+      {
+        label: 'Plan',
+        path: savedPath,
+        commands: [
+          { label: 'Re-run', command: `${cli} test ${relPlan} 1` },
+          { label: 'Run all', command: `${cli} test ${relPlan} *` },
+          { label: 'Run range', command: `${cli} test ${relPlan} 1-3` },
+          { label: 'Reload', command: `/plan:load ${relPlan}` },
+        ],
+      },
+    ];
+    printNextSteps(sections);
   }
 }

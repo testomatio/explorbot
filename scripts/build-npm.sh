@@ -14,6 +14,8 @@ for dir in rules assets/sample-files; do
   fi
 done
 
+cp package.json "$DIST_DIR/package.json"
+
 CLI="$DIST_DIR/bin/explorbot-cli.js"
 if [ -f "$CLI" ]; then
   sed -i '1s|^#!.*|#!/usr/bin/env node|' "$CLI"
