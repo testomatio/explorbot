@@ -1,7 +1,10 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ActionResult } from './action-result.ts';
-import { Bosun } from './ai/bosun.ts';
+import { ApiClient } from './api/api-client.ts';
+import { RequestStore } from './api/request-store.ts';
+import { loadSpec } from './api/spec-reader.ts';
+import { Driller } from './ai/driller.ts';
 import { Captain } from './ai/captain.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
 import { Fisherman } from './ai/fisherman.ts';
@@ -15,9 +18,6 @@ import { Rerunner } from './ai/rerunner.ts';
 import { Researcher } from './ai/researcher.ts';
 import { Tester } from './ai/tester.ts';
 import { createAgentTools } from './ai/tools.ts';
-import { ApiClient } from './api/api-client.ts';
-import { RequestStore } from './api/request-store.ts';
-import { loadSpec } from './api/spec-reader.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import { ExperienceTracker } from './experience-tracker.ts';
@@ -284,12 +284,10 @@ export class ExplorBot {
     return this.agents.rerunner;
   }
 
-  agentBosun(): Bosun {
-    return (this.agents.bosun ||= this.createAgent(({ ai, explorer }) => {
-      const researcher = this.agentResearcher();
+  agentDriller(): Driller {
+    return (this.agents.driller ||= this.createAgent(({ ai, explorer }) => {
       const navigator = this.agentNavigator();
-      const tools = createAgentTools({ explorer, researcher, navigator });
-      return new Bosun(explorer, ai, researcher, navigator, tools);
+      return new Driller(explorer, ai, navigator);
     }));
   }
 

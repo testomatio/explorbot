@@ -586,32 +586,32 @@ addCommonOptions(program.command('research <url>').description('Research a page 
   }
 );
 
-addCommonOptions(program.command('drill <url>').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max <count>', 'Maximum number of components to drill', '20')).action(
-  async (url, options) => {
-    try {
-      const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
-      await explorBot.start();
+addCommonOptions(
+  program.command('drill <url>').alias('driller').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
+).action(async (url, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+    await explorBot.start();
 
-      await explorBot.visit(url);
+    await explorBot.visit(url);
 
-      const plan = await explorBot.agentBosun().drill({
-        knowledgePath: options.knowledge,
-        maxComponents: Number.parseInt(options.max, 10),
-        interactive: false,
-      });
+    const plan = await explorBot.agentDriller().drill({
+      knowledgePath: options.knowledge,
+      maxComponents: Number.parseInt(options.maxComponents || '30', 10),
+      interactive: false,
+    });
 
-      console.log(`\nDrill completed: ${plan.tests.length} components`);
-      console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
-      console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
+    console.log(`\nDrill completed: ${plan.tests.length} components`);
+    console.log(`Successful: ${plan.tests.filter((t) => t.isSuccessful).length}`);
+    console.log(`Failed: ${plan.tests.filter((t) => t.hasFailed).length}`);
 
-      await explorBot.stop();
-      await showStatsAndExit(0);
-    } catch (error) {
-      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-      await showStatsAndExit(1);
-    }
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
   }
-);
+});
 
 program
   .command('context <url>')

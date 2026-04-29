@@ -1,9 +1,10 @@
+import { ELEMENT_EXTRACTION_CONFIG, EXPLORBOT_ATTRS, type ElementExtractionConfig, type RawElementData, extractElementData, getElementDataExtractorSource } from './html.ts';
 import { type XPathMatch, buildClickableXPath, evaluateXPath, isDynamicId, isGenericClass } from './xpath.ts';
+
+export { extractElementData } from './html.ts';
 
 const KEY_DISPLAY_ATTRS = ['role', 'id', 'class', 'aria-label'];
 const KEY_ATTRS = ['role', 'aria-label', 'id', 'name', 'type', 'href'];
-
-type RawElementData = NonNullable<ReturnType<typeof extractElementData>>;
 
 export class WebElement {
   tag: string;
@@ -43,7 +44,7 @@ export class WebElement {
   }
 
   get eidx(): string | null {
-    return this.attrs['data-explorbot-eidx'] || this.attrs.eidx || null;
+    return this.attrs[EXPLORBOT_ATTRS.eidx] || this.attrs.eidx || null;
   }
 
   get isNavigationLink(): boolean {
@@ -57,6 +58,26 @@ export class WebElement {
     return cls.split(/\s+/).filter((c) => c.length > 2 && !isDynamicId(c) && !isGenericClass(c));
   }
 
+  get areaHints(): string[] {
+    const raw = this.attrs[EXPLORBOT_ATTRS.area] || '';
+    return raw
+      .split('|')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  get contextLabel(): string {
+    return (this.attrs[EXPLORBOT_ATTRS.context] || '').trim();
+  }
+
+  get variantHints(): string[] {
+    const raw = this.attrs[EXPLORBOT_ATTRS.variant] || '';
+    return raw
+      .split('|')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
   static fromRawData(d: RawElementData, role?: string): WebElement {
     return new WebElement({
       tag: d.tag,
@@ -65,6 +86,7 @@ export class WebElement {
       clickXPath: buildClickableXPath({ tag: d.tag, allAttrs: d.allAttrs, text: d.text } as XPathMatch),
       attrs: d.allAttrs,
       text: d.text,
+      outerHTML: d.outerHTML,
       x: d.x,
       y: d.y,
     });
@@ -87,7 +109,7 @@ export class WebElement {
     try {
       const count = await locator.count();
       if (count === 0) return null;
-      const data = await locator.first().evaluate(extractElementData);
+      const data = await locator.first().evaluate(extractElementData, ELEMENT_EXTRACTION_CONFIG);
       if (!data) return null;
       return WebElement.fromRawData(data);
     } catch {
@@ -96,25 +118,25 @@ export class WebElement {
   }
 
   static async fromEidx(page: any, eidx: string): Promise<WebElement | null> {
-    return WebElement.fromPlaywrightLocator(page.locator(`[data-explorbot-eidx="${eidx}"]`));
+    return WebElement.fromPlaywrightLocator(page.locator(`[${EXPLORBOT_ATTRS.eidx}="${eidx}"]`));
   }
 
   static async fromEidxList(page: any, eidxList: string[]): Promise<WebElement[]> {
     if (eidxList.length === 0) return [];
 
     const rawList: RawElementData[] = await page.evaluate(
-      ([list, extractFnStr]: [string[], string]) => {
+      ([list, extractFnStr, config]: [string[], string, ElementExtractionConfig]) => {
         const extract = new Function(`return ${extractFnStr}`)() as (el: Element) => any;
         const results: any[] = [];
         for (const eidx of list) {
-          const el = document.querySelector(`[data-explorbot-eidx="${eidx}"]`);
+          const el = document.querySelector(`[${config.attrs.eidx}="${eidx}"]`);
           if (!el) continue;
-          const data = extract(el);
+          const data = extract(el, config);
           if (data) results.push(data);
         }
         return results;
       },
-      [eidxList, extractElementData.toString()] as [string[], string]
+      [eidxList, getElementDataExtractorSource(), ELEMENT_EXTRACTION_CONFIG] as [string[], string, ElementExtractionConfig]
     );
 
     return rawList.map((d) => WebElement.fromRawData(d));
@@ -125,23 +147,4 @@ export class WebElement {
     if (result.error) return { totalFound: 0, elements: [], error: result.error };
     return { totalFound: result.totalFound, elements: result.matches.map((m) => WebElement.fromXPathMatch(m)) };
   }
-}
-
-export function extractElementData(el: Element) {
-  const rect = el.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return null;
-
-  const allAttrs: Record<string, string> = {};
-  for (let i = 0; i < el.attributes.length; i++) {
-    const attr = el.attributes[i];
-    allAttrs[attr.name] = attr.value;
-  }
-
-  return {
-    tag: el.tagName.toLowerCase(),
-    text: (el.textContent || '').trim().slice(0, 80),
-    allAttrs,
-    x: Math.round(rect.x + rect.width / 2),
-    y: Math.round(rect.y + rect.height / 2),
-  };
 }

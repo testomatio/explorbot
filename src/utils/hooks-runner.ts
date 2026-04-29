@@ -1,6 +1,7 @@
 import type { ExplorbotConfig, Hook, HookConfig } from '../config.ts';
 import type Explorer from '../explorer.ts';
 import { createDebug } from './logger.ts';
+import { extractStatePath } from './url-matcher.ts';
 import { matchesUrl } from './url-matcher.ts';
 
 const debugLog = createDebug('explorbot:hooks');
@@ -69,11 +70,6 @@ export class HooksRunner {
   }
 
   private extractPath(url: string): string {
-    if (url.startsWith('/')) return url;
-    try {
-      return new URL(url).pathname;
-    } catch {
-      return url;
-    }
+    return extractStatePath(url);
   }
 }

@@ -19,8 +19,9 @@ import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
 import { Test } from './test-plan.ts';
+import { ELEMENT_EXTRACTION_CONFIG, getElementDataExtractorSource } from './utils/html.ts';
 import { createDebug, log, tag } from './utils/logger.js';
-import { WebElement, extractElementData } from './utils/web-element.ts';
+import { WebElement } from './utils/web-element.ts';
 
 declare global {
   namespace NodeJS {
@@ -337,11 +338,11 @@ class Explorer {
   async getEidxInContainer(containerCss: string | null): Promise<string[]> {
     const page = this.playwrightHelper.page;
     try {
-      const selector = containerCss ? `${containerCss} [data-explorbot-eidx]` : '[data-explorbot-eidx]';
+      const selector = containerCss ? `${containerCss} [${ELEMENT_EXTRACTION_CONFIG.attrs.eidx}]` : `[${ELEMENT_EXTRACTION_CONFIG.attrs.eidx}]`;
       const elements = await page.locator(selector).all();
       const result: string[] = [];
       for (const el of elements) {
-        const attr = await el.getAttribute('data-explorbot-eidx');
+        const attr = await el.getAttribute(ELEMENT_EXTRACTION_CONFIG.attrs.eidx);
         if (attr) result.push(attr);
       }
       return result;
@@ -359,7 +360,7 @@ class Explorer {
       const page = this.playwrightHelper.page;
       const base = container ? page.locator(container) : page;
       const el = locator.startsWith('//') ? base.locator(`xpath=${locator}`) : base.locator(locator);
-      return await el.first().getAttribute('data-explorbot-eidx');
+      return await el.first().getAttribute(ELEMENT_EXTRACTION_CONFIG.attrs.eidx);
     } catch (error) {
       if (this.isFatalBrowserError(error)) {
         tag('warning').log(`getEidxByLocator: ${error instanceof Error ? error.message : error}`);
@@ -751,20 +752,20 @@ export async function annotatePageElements(page: any): Promise<{ ariaSnapshot: s
   for (const [role, entries] of byRole) {
     try {
       const rawList = await page.getByRole(role).evaluateAll(
-        (domElements: Element[], [data, extractFnStr]: [Array<{ name: string; ref: string }>, string]) => {
+        (domElements: Element[], [data, extractFnStr, config]: [Array<{ name: string; ref: string }>, string, typeof ELEMENT_EXTRACTION_CONFIG]) => {
           const extract = new Function(`return ${extractFnStr}`)() as (el: Element) => any;
           const results: any[] = [];
           let ariaIdx = 0;
           for (const el of domElements) {
             if (ariaIdx >= data.length) break;
-            el.setAttribute('data-explorbot-eidx', data[ariaIdx].ref);
-            const elData = extract(el);
+            el.setAttribute(config.attrs.eidx, data[ariaIdx].ref);
+            const elData = extract(el, config);
             if (elData) results.push(elData);
             ariaIdx++;
           }
           return results;
         },
-        [entries, extractElementData.toString()]
+        [entries, getElementDataExtractorSource(), ELEMENT_EXTRACTION_CONFIG]
       );
       for (const raw of rawList) {
         elements.push(WebElement.fromRawData(raw, role));

@@ -81,7 +81,7 @@ export function extractStatePath(url: string): string {
   if (url.startsWith('/')) return url;
   try {
     const urlObj = new URL(url);
-    return urlObj.pathname + urlObj.hash;
+    return `${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
   } catch {
     return url;
   }

@@ -457,8 +457,9 @@ export class ActionResult implements ActionResultData {
     try {
       const urlObj = new URL(this.url);
       const path = urlObj.pathname.replace(/\/$/, '') || '/';
+      const search = urlObj.search || '';
       const hash = urlObj.hash || '';
-      return path + hash;
+      return path + search + hash;
     } catch {
       // If URL parsing fails, assume it's already a relative URL
       return this.url;
