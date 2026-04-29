@@ -75,7 +75,7 @@ function matchesAnySelector(element: parse5TreeAdapter.Element, selectors: strin
 
 const TEXT_ELEMENT_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'td', 'th', 'label', 'div', 'span']);
 
-const INTERACTIVE_TAGS = new Set(['a', 'button', 'details', 'input', 'option', 'select', 'summary', 'textarea']);
+const INTERACTIVE_TAGS = new Set(['a', 'button', 'details', 'input', 'option', 'select', 'summary', 'textarea', 'iframe']);
 
 const INTERACTIVE_ROLES = new Set(['button', 'checkbox', 'combobox', 'link', 'listbox', 'radio', 'search', 'switch', 'tab', 'textbox']);
 
@@ -115,18 +115,20 @@ export const HTML_EXTRACTION_LIMITS = {
 
 export const CODE_EDITOR_MARKERS = ['monaco', 'codemirror', 'ace', 'ace_editor', 'code'] as const;
 
-export const HTML_INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'combobox', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'textbox', 'searchbox', 'treeitem']);
+export const HTML_INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'combobox', 'iframe', 'code-editor', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'textbox', 'searchbox', 'treeitem']);
 export const HTML_FORM_CONTROL_ROLES = new Set(['checkbox', 'radio', 'switch', 'combobox', 'option', 'slider', 'spinbutton', 'textbox', 'searchbox']);
 export const HTML_COMPOSITE_TARGET_ROLES = new Set(['tab', 'option', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'treeitem']);
 export const HTML_COMPOSITE_AREA_HINTS = new Set(['role:tab', 'role:option', 'role:menuitem', 'role:menuitemcheckbox', 'role:menuitemradio', 'role:treeitem']);
 export const HTML_FORM_CONTROL_TAGS = new Set(['input', 'select', 'textarea']);
 
 export function inferHtmlRole(data: { attrs: Record<string, string>; role?: string; tag: string; variantHints?: string[] }): string {
+  if (data.tag === 'iframe' && data.variantHints?.includes('code-editor')) return 'code-editor';
   if (data.role) return data.role.toLowerCase();
   const explicitRole = data.attrs.role;
   if (explicitRole) return explicitRole.toLowerCase();
   if (data.tag === 'a' && data.attrs.href) return 'link';
   if (data.tag === 'button') return 'button';
+  if (data.tag === 'iframe') return 'iframe';
   if (data.tag === 'select') return 'combobox';
   if (data.tag === 'textarea') return 'textbox';
   if (data.tag === 'input') {
@@ -224,6 +226,8 @@ export function extractElementData(el: Element, config?: ElementExtractionConfig
     if (type) tokens.add(type);
     if (target.hasAttribute('disabled') || target.getAttribute('aria-disabled') === 'true') tokens.add('disabled');
     if (className.toLowerCase().includes('selected') || target.getAttribute('aria-pressed') === 'true') tokens.add('selected');
+    if (tagName === 'iframe') tokens.add('iframe');
+    if (tagName === 'iframe' && isEmbeddedCodeEditorFrame(target)) tokens.add('code-editor');
     const svgCount = target.querySelectorAll('svg').length;
     if (svgCount > 0) tokens.add('has-icon');
     if (svgCount > 1) tokens.add('double-icon');
@@ -774,7 +778,7 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
   }
 
   // Define default interactive elements
-  const interactiveElements = ['a', 'input', 'button', 'select', 'textarea', 'option'];
+  const interactiveElements = ['a', 'input', 'button', 'select', 'textarea', 'option', 'iframe'];
   const textElements = ['label', 'h1', 'h2'];
   const allowedRoles = ['button', 'checkbox', 'search', 'textbox', 'tab'];
   const allowedAttrs = ['id', 'for', 'class', 'name', 'type', 'value', 'tabindex', 'aria-labelledby', 'aria-label', 'label', 'placeholder', 'title', 'alt', 'src', 'width', 'height', 'role'];
