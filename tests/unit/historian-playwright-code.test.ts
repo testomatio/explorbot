@@ -16,7 +16,7 @@ function makeHistorian(recorderSteps?: Array<{ name: string; args: any[] }>) {
     exportChunk: async () => new Map(),
     drainVerifications: () => recorderSteps ?? [],
   } as any;
-  return new Historian({} as any, fakeExperienceTracker, undefined, undefined, undefined, fakeRecorder);
+  return new Historian({} as any, fakeExperienceTracker, undefined, undefined, undefined, { recorder: fakeRecorder, helper: undefined });
 }
 
 describe('Historian.toPlaywrightCode — assertion propagation', () => {
