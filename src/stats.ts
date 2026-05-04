@@ -1,3 +1,5 @@
+import { uniqExplorationName } from './utils/unique-names.ts';
+
 interface TokenUsage {
   input: number;
   output: number;
@@ -8,6 +10,7 @@ export type ExplorbotMode = 'explore' | 'test' | 'freesail' | 'tui';
 
 export class Stats {
   static startTime = Date.now();
+  static sessionName = uniqExplorationName();
   static researches = 0;
   static tests = 0;
   static plans = 0;
@@ -53,5 +56,9 @@ export class Stats {
     if (Stats.tests > 0 || Stats.plans > 0 || Stats.researches > 0) return true;
     const totalTokens = Object.values(Stats.models).reduce((sum, m) => sum + m.total, 0);
     return totalTokens > 0;
+  }
+
+  static sessionLabel(): string {
+    return `${Stats.mode || 'session'}-${Stats.sessionName}`;
   }
 }

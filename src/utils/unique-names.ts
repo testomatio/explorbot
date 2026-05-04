@@ -7,8 +7,21 @@ const nameConfig = {
   style: 'capital',
 };
 
+const explorationConfig = {
+  dictionaries: [adjectives, animals],
+  separator: '',
+  length: 2,
+  style: 'capital',
+};
+
 export function uniqSessionName(): string {
   const name = uniqueNamesGenerator(nameConfig);
+  const randomNum = Math.floor(Math.random() * 999);
+  return `${name}${randomNum}`;
+}
+
+export function uniqExplorationName(): string {
+  const name = uniqueNamesGenerator(explorationConfig);
   const randomNum = Math.floor(Math.random() * 999);
   return `${name}${randomNum}`;
 }

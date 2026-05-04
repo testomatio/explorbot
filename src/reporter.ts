@@ -229,6 +229,30 @@ export class Reporter {
     return this.isRunStarted;
   }
 
+  async setRunDescription(text: string): Promise<void> {
+    if (!this.isRunStarted) return;
+    if (!process.env.TESTOMATIO) return;
+    const runId = this.client.runId;
+    if (!runId) return;
+
+    const baseUrl = process.env.TESTOMATIO_URL || 'https://app.testomat.io';
+    const url = `${baseUrl}/api/reporter/${runId}`;
+    try {
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: process.env.TESTOMATIO, description: text }),
+      });
+      if (!response.ok) {
+        debugLog('Run description update failed:', response.status, response.statusText);
+        return;
+      }
+      debugLog('Run description updated');
+    } catch (error) {
+      debugLog('Failed to update run description:', error);
+    }
+  }
+
   private extractLastNoteMessage(test: Test): string {
     const notes = Object.values(test.notes);
     if (notes.length === 0) return '';

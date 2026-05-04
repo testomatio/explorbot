@@ -1,6 +1,6 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ReporterConfig } from '../../src/config.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { Reporter } from '../../src/reporter.ts';

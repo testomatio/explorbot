@@ -369,14 +369,6 @@ class Action {
       return true;
     } catch (error) {
       this.lastError = error as Error;
-
-      if (error && typeof error === 'object') {
-        const errorObj = error as { fetchDetails?: () => Promise<void> };
-        if (typeof errorObj.fetchDetails === 'function') {
-          await errorObj.fetchDetails();
-        }
-      }
-
       debugLog(`Attempt failed: ${codeBlock}: ${errorToString(error) || this.lastError?.toString()}`);
       return false;
     }

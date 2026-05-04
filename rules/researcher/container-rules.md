@@ -5,6 +5,8 @@ Container CSS must be a SINGLE semantic selector — one class, one id, or one a
 - VALID: semantic class names that describe what the section IS (`.product-list`, `.sidebar-menu`, `.user-profile`, `.search-results`), semantic roles (`[role="dialog"]`), semantic ids (`#main-content`)
 
 The container must uniquely identify a semantic wrapper, not a path through the DOM.
+
+Iframes are not sections — list each iframe as a single row of type `iframe` inside the section that contains it. Never use an iframe selector as a section's `> Container:`.
 </container_rules>
 
 <css_selector_rules>

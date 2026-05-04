@@ -282,11 +282,9 @@ export const actionRule = dedent`
     I.fillField('Description', 'Hello world', '.editor'); // works for rich text / code editors too
   </example>
 
-  I.fillField handles plain inputs, textareas, contenteditable regions, and rich text / code editors
-  (Monaco, ProseMirror, CodeMirror, TipTap, Quill, Draft.js, Slate, etc.) transparently.
-  ALWAYS use I.fillField for rich editors — target the editor container or its nearest label/heading with a normal locator.
-  Do NOT open the editor with raw JS (executeScript, page.evaluate), do NOT dispatch synthetic events,
-  do NOT call the editor's own API (monaco.editor.setValue, view.dispatch, etc.) to write text.
+  I.fillField handles plain inputs, textareas, contenteditable regions, and rich text / code editors transparently.
+  ALWAYS use I.fillField for rich text / code editors — target the editor container or its nearest label/heading with a normal locator.
+  If I.fillField does not work, I.type into the focused element is the fallback.
 
   ### I.type
 

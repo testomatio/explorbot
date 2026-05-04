@@ -16,7 +16,7 @@ describe('aria', () => {
 
     const diff = diffAriaSnapshots(before, after);
 
-    expect(diff).toBe(['ariaDiff:', '  added:', '    - option "Three" (x2)', '  removed: 2 interactive elements'].join('\n'));
+    expect(diff).toBe(['ariaDiff:', '  added:', '    - option "Three" (x2)', '  removed:', '    - option "One"', '    - option "Two"'].join('\n'));
   });
 
   it('marks modified nodes as added', () => {
@@ -25,7 +25,22 @@ describe('aria', () => {
 
     const diff = diffAriaSnapshots(before, after);
 
-    expect(diff).toBe(['ariaDiff:', '  added:', '    - button "Submit" [disabled]', '  removed: 1 interactive elements'].join('\n'));
+    expect(diff).toBe(['ariaDiff:', '  added:', '    - button "Submit" [disabled]', '  removed:', '    - button "Submit"'].join('\n'));
+  });
+
+  it('truncates added/removed sections to top 10 with overflow summary', () => {
+    const before = Array.from({ length: 12 }, (_, i) => `- button "Old${i}"`).join('\n');
+    const after = Array.from({ length: 12 }, (_, i) => `- button "New${i}"`).join('\n');
+
+    const diff = diffAriaSnapshots(before, after);
+
+    expect(diff).not.toBeNull();
+    const dashLines = (diff!.match(/^ {4}- /gm) || []).length;
+    expect(dashLines).toBe(20);
+    const overflowLines = diff!.match(/^ {4}\+ 2 more interactive elements$/gm) || [];
+    expect(overflowLines.length).toBe(2);
+    expect(diff).toContain('  added:');
+    expect(diff).toContain('  removed:');
   });
 
   it('ignores purely reordered nodes', () => {

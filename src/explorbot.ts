@@ -1,11 +1,8 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { ActionResult } from './action-result.ts';
-import { ApiClient } from './api/api-client.ts';
-import { RequestStore } from './api/request-store.ts';
-import { loadSpec } from './api/spec-reader.ts';
-import { Driller } from './ai/driller.ts';
 import { Captain } from './ai/captain.ts';
+import { Driller } from './ai/driller.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
 import { Fisherman } from './ai/fisherman.ts';
 import { Historian } from './ai/historian.ts';
@@ -16,8 +13,12 @@ import { AIProvider } from './ai/provider.ts';
 import { Quartermaster } from './ai/quartermaster.ts';
 import { Rerunner } from './ai/rerunner.ts';
 import { Researcher } from './ai/researcher.ts';
+import { SessionAnalyst } from './ai/session-analyst.ts';
 import { Tester } from './ai/tester.ts';
 import { createAgentTools } from './ai/tools.ts';
+import { ApiClient } from './api/api-client.ts';
+import { RequestStore } from './api/request-store.ts';
+import { loadSpec } from './api/spec-reader.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import { ExperienceTracker } from './experience-tracker.ts';
@@ -25,7 +26,8 @@ import Explorer from './explorer.ts';
 import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
 import type { Suite } from './suite.ts';
-import { Plan } from './test-plan.ts';
+import { Plan, type Test } from './test-plan.ts';
+import { relativeToCwd } from './utils/next-steps.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
 import { sanitizeFilename } from './utils/strings.ts';
 
@@ -55,6 +57,8 @@ export class ExplorBot {
   lastPlanError: Error | null = null;
   lastSavedPlanPath: string | null = null;
   private agents: Record<string, any> = {};
+  private sessionPlans: Plan[] = [];
+  private lastReportedTestCount = 0;
 
   constructor(options: ExplorBotOptions = {}) {
     this.options = options;
@@ -291,6 +295,10 @@ export class ExplorBot {
     }));
   }
 
+  agentSessionAnalyst(): SessionAnalyst {
+    return (this.agents.sessionAnalyst ||= this.createAgent(({ ai }) => new SessionAnalyst(ai)));
+  }
+
   agentFisherman(): Fisherman | null {
     const fishermanConfig = this.config.ai?.agents?.fisherman;
     const hasApiConfig = !!this.config.api;
@@ -363,7 +371,7 @@ export class ExplorBot {
     }
     this.lastPlanError = null;
     try {
-      this.currentPlan = await planner.plan(feature, opts.style, opts.extend, opts.completedPlans);
+      this.setCurrentPlan(await planner.plan(feature, opts.style, opts.extend, opts.completedPlans));
     } catch (err) {
       this.lastPlanError = err instanceof Error ? err : new Error(String(err));
       tag('warning').log(`Planning failed: ${this.lastPlanError.message}`);
@@ -434,11 +442,50 @@ export class ExplorBot {
       throw new Error(`Plan file not found: ${planPath}`);
     }
 
-    this.currentPlan = Plan.fromMarkdown(planPath);
-    return this.currentPlan;
+    this.setCurrentPlan(Plan.fromMarkdown(planPath));
+    return this.currentPlan!;
   }
 
   setCurrentPlan(plan?: Plan): void {
     this.currentPlan = plan;
+    if (plan && !this.sessionPlans.includes(plan)) {
+      this.sessionPlans.push(plan);
+    }
+  }
+
+  getSessionTests(): Test[] {
+    return this.sessionPlans.flatMap((p) => p.tests.filter((t) => t.startTime != null));
+  }
+
+  async printSessionAnalysis(): Promise<void> {
+    const analystConfig = this.config.ai?.agents?.analyst;
+    if (analystConfig?.enabled === false) return;
+
+    const tests = this.getSessionTests();
+    if (tests.length === 0) return;
+    if (tests.length === this.lastReportedTestCount) return;
+
+    try {
+      const markdown = await this.agentSessionAnalyst().analyze(tests);
+      if (!markdown) {
+        this.lastReportedTestCount = tests.length;
+        return;
+      }
+
+      tag('multiline').log(markdown);
+
+      const filePath = this.agentSessionAnalyst().writeReport(markdown);
+      tag('info').log(`Session report saved: ${relativeToCwd(filePath)}`);
+
+      const reporter = this.explorer?.getReporter();
+      if (reporter?.isEnabled()) {
+        await reporter.setRunDescription(markdown);
+      }
+
+      this.lastReportedTestCount = tests.length;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      tag('warning').log(`Session analysis failed: ${message}`);
+    }
   }
 }

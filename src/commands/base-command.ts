@@ -38,17 +38,17 @@ export abstract class BaseCommand {
   printSuggestions(): void {
     if (this.suggestions.length === 0) return;
     const prefix = isInteractive() ? '/' : `${getCliName()} `;
-    tag('info').log('');
-    tag('info').log(chalk.bold('Suggested:'));
+    const commandWidth = this.suggestions.reduce((max, s) => (s.command ? Math.max(max, prefix.length + s.command.length) : max), 0);
+    const lines = [chalk.bold('Suggested:')];
     for (const { command, hint } of this.suggestions) {
-      tag('info').log('');
       if (!command) {
-        tag('info').log(chalk.dim(hint));
+        lines.push(`  ${chalk.dim(hint)}`);
         continue;
       }
-      tag('info').log(chalk.dim(`${hint}:`));
-      tag('info').log(`  ${chalk.yellow(`${prefix}${command}`)}`);
+      const cmd = `${prefix}${command}`.padEnd(commandWidth);
+      lines.push(`  ${chalk.yellow(cmd)}  ${chalk.dim(hint)}`);
     }
+    tag('info').log(lines.join('\n'));
   }
 
   protected parseArgs(args: string): { opts: Record<string, string | boolean>; args: string[] } {

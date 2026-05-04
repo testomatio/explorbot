@@ -10,6 +10,7 @@ export class ExitCommand extends BaseCommand {
   aliases = ['quit'];
 
   async execute(_args: string): Promise<void> {
+    await this.explorBot.printSessionAnalysis();
     await this.explorBot.getExplorer().stop();
 
     if (Stats.hasActivity()) {

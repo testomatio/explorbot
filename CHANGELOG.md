@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-05-04
+
+### Configuration
+- **`ai.agents.analyst`** — Configures the end-of-session analyst that summarises a finished exploration into a markdown report. Set `enabled: false` to skip the report. Default: enabled.
+
+### Changes
+- **Session analysis report.** When an exploration finishes (and on TUI exit) Explorbot now prints a markdown summary clustered by root cause, with severity emoji for defects, a UX issues section, and an execution-issues section that explains in plain English why a verdict was unreliable. The same report is saved to `output/reports/<mode>-<session>.md` and, when Testomatio reporting is on, attached as the run description through the Testomatio reporter API.
+- [Pilot] When a `pass` verdict has a verification assertion attached and the DOM check fails, the Pilot now asks the vision model whether the screenshot confirms the assertion. If neither the DOM nor the screenshot confirm it, the test is marked failed instead of silently continuing as before.
+- [Pilot] Now told to pick verification assertions the DOM can actually express. For content the DOM can't reach (iframe text, canvas, custom widgets, Monaco/CodeMirror editors) it must target a stable landmark — the wrapping container, an ARIA role, the parent element — rather than literal text inside the widget.
+- [Pilot] New-page reviews now include the last few successful tool calls so the Pilot's first reaction to a freshly loaded page is grounded in what the tester just did.
+- [Researcher] Iframes are no longer treated as sections of a page. Each iframe is listed as a single row of type `iframe` inside the section that contains it, never used as a section's own container selector.
+- [Captain] Dropped the always-on hint suggesting the user run `/research` after every command.
+- [Navigator] Rules around `I.fillField` no longer enumerate specific editor frameworks. The guidance is now: `I.fillField` works for plain inputs, textareas, contenteditable, and rich/code editors transparently; if it doesn't, fall back to `I.type` into the focused element.
+- Action: Failed CodeceptJS attempts no longer call the error's `fetchDetails()` callback before being reported. Errors propagate immediately, removing a hidden retry round-trip on every failure.
+- Suggested-commands footer: Suggestions are now rendered as a column-aligned two-column block (`/command   description`) instead of stacked dim+yellow lines, so multi-suggestion blocks fit on far fewer terminal rows.
+- ARIA diff output: The `removed:` section now lists each removed element by name, the same way `added:` does, with the top 10 entries shown and any overflow summarised as `+ N more interactive elements`. Previously the diff just printed a count like `removed: 2 interactive elements`, which hid which controls vanished.
+
 ## 2026-04-29
 
 ### Configuration

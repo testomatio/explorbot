@@ -9,6 +9,7 @@ import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Observability } from '../observability.ts';
 import { Plan, Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
+import { HooksRunner } from '../utils/hooks-runner.ts';
 import {
   EXPLORBOT_ATTRS,
   HTML_COMPOSITE_AREA_HINTS,
@@ -23,7 +24,6 @@ import {
   getVisibleOverlayHtmlExtractorSource,
   inferHtmlRole,
 } from '../utils/html.ts';
-import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
 import { WebElement } from '../utils/web-element.ts';

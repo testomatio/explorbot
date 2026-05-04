@@ -132,6 +132,7 @@ interface AgentsConfig {
   chief?: AgentConfig;
   curler?: AgentConfig;
   rerunner?: RerunnerAgentConfig;
+  analyst?: AgentConfig;
 }
 
 interface AIConfig {

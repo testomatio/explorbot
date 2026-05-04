@@ -196,8 +196,6 @@ export class Captain extends CaptainBase implements Agent {
     ${knowledge}
 
     ${experience}
-
-    Use runCommand("/research") if you need deeper page understanding or UI element mapping.
     `;
   }
 

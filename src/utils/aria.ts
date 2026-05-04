@@ -1,3 +1,9 @@
+import { parse as parseYaml } from 'yaml';
+
+// ─────────────────────────────────────────────────────────────────
+// Roles
+// ─────────────────────────────────────────────────────────────────
+
 const INTERACTIVE_ROLES = new Set(
   [
     'button',
@@ -37,75 +43,18 @@ const INTERACTIVE_ROLES = new Set(
   ].map((role) => role.toLowerCase())
 );
 
-const IGNORED_CONTAINER_ROLES = new Set(['navigation']);
+const IGNORED_ROLES = new Set(['navigation']);
 
-type AriaNode = {
-  role: string;
-  name?: string;
-  value?: string | boolean | null;
-  attributes: Record<string, string | boolean | null>;
-  children: AriaNode[];
-  rawChildren?: AriaNode[];
-};
+// ─────────────────────────────────────────────────────────────────
+// Tunables (knobs that change pipeline behavior)
+// ─────────────────────────────────────────────────────────────────
 
-const serializeChildContent = (node: AriaNode): string => {
-  const children = node.rawChildren || node.children;
-  const parts: string[] = [];
-  for (const child of children) {
-    let part = child.role;
-    if (child.name) part += ` "${child.name}"`;
-    const nested = serializeChildContent(child);
-    if (nested) part += ` > ${nested}`;
-    parts.push(part);
-  }
-  return parts.join(', ');
-};
+const SIBLING_COLLAPSE_THRESHOLD = 50;
+const SIBLING_COLLAPSE_KEEP_EACH_SIDE = 5;
 
-const buildInteractiveEntry = (node: AriaNode): Record<string, unknown> | null => {
-  if (!INTERACTIVE_ROLES.has(node.role)) {
-    return null;
-  }
-  const entry: Record<string, unknown> = { role: node.role };
-  if (node.name && node.name.trim() !== '') {
-    entry.name = node.name.trim();
-  }
-  if (node.value !== undefined && node.value !== null) {
-    const valueText = `${node.value}`.trim();
-    if (valueText !== '') {
-      entry.value = node.value;
-    }
-  }
-  for (const [key, value] of Object.entries(node.attributes)) {
-    if (value === undefined || value === null) {
-      continue;
-    }
-    if (value === '') {
-      continue;
-    }
-    entry[key] = value;
-  }
-  const hasData = Object.keys(entry).some((key) => key !== 'role');
-  const entryName = typeof entry.name === 'string' ? entry.name : '';
-  const hasValue = Object.prototype.hasOwnProperty.call(entry, 'value');
-  const isButtonOrLink = node.role === 'button' || node.role === 'link';
-  let shouldInclude = hasData;
-  if (!shouldInclude && hasValue) {
-    shouldInclude = true;
-  }
-  if (isButtonOrLink && !entryName && !hasValue) {
-    const resolved = resolveDisplayName(node);
-    if (resolved) {
-      entry.name = resolved;
-    } else {
-      entry.unnamed = true;
-    }
-    shouldInclude = true;
-  }
-  if (!shouldInclude) {
-    return null;
-  }
-  return entry;
-};
+// ─────────────────────────────────────────────────────────────────
+// STEP 1 · Parse: YAML text → AriaNode[]
+// ─────────────────────────────────────────────────────────────────
 
 const normalizeScalar = (input: string): string | boolean | null => {
   let value = input.trim();
@@ -113,241 +62,310 @@ const normalizeScalar = (input: string): string | boolean | null => {
     value = value.slice(1, -1);
   }
   const lower = value.toLowerCase();
-  if (lower === 'true') {
-    return true;
-  }
-  if (lower === 'false') {
-    return false;
-  }
-  if (lower === 'null') {
-    return null;
-  }
+  if (lower === 'true') return true;
+  if (lower === 'false') return false;
+  if (lower === 'null') return null;
   return value;
 };
 
-const tokenizeAttributes = (input: string): string[] => {
-  const tokens: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  let quoteChar = '';
-  for (let i = 0; i < input.length; i += 1) {
-    const char = input[i];
-    if ((char === '"' || char === "'") && input[i - 1] !== '\\') {
-      if (inQuotes && quoteChar === char) {
-        inQuotes = false;
-        quoteChar = '';
-      } else if (!inQuotes) {
-        inQuotes = true;
-        quoteChar = char;
-      }
-      current += char;
-      continue;
-    }
-    if (!inQuotes && (char === ' ' || char === ',')) {
-      if (current.trim() !== '') {
-        tokens.push(current.trim());
-      }
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  if (current.trim() !== '') {
-    tokens.push(current.trim());
-  }
-  return tokens;
-};
+// Parse one YAML node label like:  `button "Save"`,  `textbox "Email" [focused]`,  `heading "Title" [level=2]`
+const parseLabel = (label: string): { role: string; name?: string; attributes: Record<string, string | boolean | null> } | null => {
+  if (!label) return null;
+  const trimmed = label.trim();
+  const roleMatch = trimmed.match(/^(\w+)/);
+  if (!roleMatch) return null;
+  const role = roleMatch[1].toLowerCase();
+  let rest = trimmed.slice(roleMatch[0].length);
 
-const parseAttributes = (input: string): Record<string, string | boolean | null> => {
-  const attributes: Record<string, string | boolean | null> = {};
-  const tokens = tokenizeAttributes(input);
-  for (const token of tokens) {
-    if (token === '') {
-      continue;
-    }
-    const separatorIndex = token.indexOf('=');
-    if (separatorIndex === -1) {
-      attributes[token.toLowerCase()] = true;
-      continue;
-    }
-    const key = token.slice(0, separatorIndex).trim().toLowerCase();
-    const valueRaw = token.slice(separatorIndex + 1).trim();
-    attributes[key] = normalizeScalar(valueRaw);
-  }
-  return attributes;
-};
-
-const parseHeader = (header: string): { role: string; name?: string; attributes: Record<string, string | boolean | null> } | null => {
-  if (!header) {
-    return null;
-  }
-  let index = 0;
-  const length = header.length;
-  while (index < length && header[index] === ' ') {
-    index += 1;
-  }
-  let roleEnd = index;
-  while (roleEnd < length) {
-    const char = header[roleEnd];
-    if (char === ' ' || char === '[' || char === '"' || char === "'") {
-      break;
-    }
-    roleEnd += 1;
-  }
-  const role = header.slice(index, roleEnd).trim().toLowerCase();
-  if (!role) {
-    return null;
-  }
   let name: string | undefined;
-  const attributes: Record<string, string | boolean | null> = {};
-  index = roleEnd;
-  while (index < length) {
-    const char = header[index];
-    if (char === ' ') {
-      index += 1;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      const quoteChar = char;
-      index += 1;
-      let value = '';
-      while (index < length) {
-        const currentChar = header[index];
-        if (currentChar === quoteChar && header[index - 1] !== '\\') {
-          index += 1;
-          break;
-        }
-        value += currentChar;
-        index += 1;
-      }
-      if (!name) {
-        name = value;
-      }
-      continue;
-    }
-    if (char === '[') {
-      const end = header.indexOf(']', index);
-      const content = end === -1 ? header.slice(index + 1) : header.slice(index + 1, end);
-      const parsed = parseAttributes(content);
-      for (const [key, value] of Object.entries(parsed)) {
-        attributes[key] = value;
-      }
-      index = end === -1 ? length : end + 1;
-      continue;
-    }
-    break;
+  const nameMatch = rest.match(/^\s*"((?:[^"\\]|\\.)*)"/) || rest.match(/^\s*'((?:[^'\\]|\\.)*)'/);
+  if (nameMatch) {
+    name = nameMatch[1];
+    rest = rest.slice(nameMatch[0].length);
   }
+
+  const attributes: Record<string, string | boolean | null> = {};
+  const attrMatch = rest.match(/\[([^\]]*)\]/);
+  if (attrMatch) {
+    for (const tok of attrMatch[1].split(/[\s,]+/).filter(Boolean)) {
+      const eq = tok.indexOf('=');
+      if (eq === -1) {
+        attributes[tok.toLowerCase()] = true;
+        continue;
+      }
+      attributes[tok.slice(0, eq).trim().toLowerCase()] = normalizeScalar(tok.slice(eq + 1));
+    }
+  }
+
   return { role, name, attributes };
 };
 
-const splitHeaderValue = (content: string): { header: string; value: string | null } => {
-  let activeQuote: string | null = null;
-  let bracketDepth = 0;
-  for (let i = 0; i < content.length; i += 1) {
-    const char = content[i];
-    if ((char === '"' || char === "'") && content[i - 1] !== '\\') {
-      if (activeQuote === char) {
-        activeQuote = null;
-      } else if (!activeQuote) {
-        activeQuote = char;
-      }
-      continue;
-    }
-    if (!activeQuote) {
-      if (char === '[') {
-        bracketDepth += 1;
-        continue;
-      }
-      if (char === ']') {
-        if (bracketDepth > 0) {
-          bracketDepth -= 1;
-        }
-        continue;
-      }
-      if (char === ':') {
-        if (bracketDepth === 0) {
-          const header = content.slice(0, i).trimEnd();
-          const value = content.slice(i + 1).trimStart();
-          return { header, value: value === '' ? null : value };
-        }
-      }
-    }
+const yamlItemToNode = (item: unknown): AriaNode | null => {
+  if (typeof item === 'string') {
+    const label = parseLabel(item);
+    if (!label) return null;
+    const node: AriaNode = { role: label.role, attributes: label.attributes, children: [] };
+    if (label.name && label.name.trim() !== '') node.name = label.name.trim();
+    return node;
   }
-  return { header: content.trim(), value: null };
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+
+  const entries = Object.entries(item as Record<string, unknown>);
+  if (entries.length === 0) return null;
+  const [key, value] = entries[0];
+  const label = parseLabel(key);
+  if (!label) return null;
+  const node: AriaNode = { role: label.role, attributes: label.attributes, children: [] };
+  if (label.name && label.name.trim() !== '') node.name = label.name.trim();
+
+  if (Array.isArray(value)) {
+    node.children = value.map(yamlItemToNode).filter((n): n is AriaNode => n !== null);
+    return node;
+  }
+  if (value === null || value === undefined) return node;
+  const normalized = normalizeScalar(String(value));
+  if (normalized !== '' && normalized !== undefined) node.value = normalized;
+  return node;
 };
 
-const pruneNodes = (nodes: AriaNode[], keepNamed = false): AriaNode[] => {
-  const result: AriaNode[] = [];
-  for (const node of nodes) {
-    const children = pruneNodes(node.children, keepNamed);
-    if (IGNORED_CONTAINER_ROLES.has(node.role)) {
-      result.push(...children);
-      continue;
-    }
-    const interactive = INTERACTIVE_ROLES.has(node.role);
-    if (!interactive && children.length === 0) {
-      if (!keepNamed || (!node.name && node.value === undefined)) {
-        continue;
-      }
-    }
-    result.push({ ...node, children, rawChildren: node.children });
-  }
-  return result;
-};
-
-const parseAriaSnapshot = (snapshot: string | null, keepNamed = false): AriaNode[] => {
-  if (!snapshot) {
+const parseSnapshot = (snapshot: string | null): AriaNode[] => {
+  if (!snapshot) return [];
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(snapshot);
+  } catch {
     return [];
   }
-  const roots: AriaNode[] = [];
-  const stack: Array<{ depth: number; node: AriaNode }> = [];
-  const lines = snapshot.split(/\r?\n/);
-  for (const line of lines) {
-    if (!line.trim()) {
-      continue;
-    }
-    const indentMatch = line.match(/^\s*/);
-    const indent = indentMatch ? indentMatch[0].length : 0;
-    const trimmed = line.slice(indent);
-    if (!trimmed.startsWith('-')) {
-      continue;
-    }
-    const content = trimmed.slice(1).trim();
-    if (content === '') {
-      continue;
-    }
-    const { header, value } = splitHeaderValue(content);
-    const parsedHeader = parseHeader(header);
-    if (!parsedHeader) {
-      continue;
-    }
-    const node: AriaNode = {
-      role: parsedHeader.role,
-      attributes: { ...parsedHeader.attributes },
-      children: [],
-    };
-    if (parsedHeader.name && parsedHeader.name.trim() !== '') {
-      node.name = parsedHeader.name.trim();
-    }
-    if (value !== null) {
-      const normalizedValue = normalizeScalar(value);
-      if (normalizedValue !== '' && normalizedValue !== undefined) {
-        node.value = normalizedValue;
-      }
-    }
-    const depth = Math.floor(indent / 2);
-    while (stack.length > 0 && stack[stack.length - 1].depth >= depth) {
-      stack.pop();
-    }
-    if (stack.length === 0) {
-      roots.push(node);
-    } else {
-      stack[stack.length - 1].node.children.push(node);
-    }
-    stack.push({ depth, node });
-  }
-  return pruneNodes(roots, keepNamed);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.map(yamlItemToNode).filter((n): n is AriaNode => n !== null);
 };
+
+// ─────────────────────────────────────────────────────────────────
+// STEP 2 · Transforms: AriaNode[] → AriaNode[]
+//   Each is a pure function. Compose by stacking calls in the public API.
+// ─────────────────────────────────────────────────────────────────
+
+// Dissolve <navigation> wrappers into their children.
+const unwrapIgnored = (nodes: AriaNode[]): AriaNode[] =>
+  nodes.flatMap((node) => {
+    const children = unwrapIgnored(node.children);
+    if (IGNORED_ROLES.has(node.role)) return children;
+    return [{ ...node, children }];
+  });
+
+// Walk children to produce a synthetic label for naming icon-only buttons.
+const summarizeChildren = (children: AriaNode[]): string =>
+  children
+    .map((child) => {
+      let part = child.role;
+      if (child.name) part += ` "${child.name}"`;
+      const nested = summarizeChildren(child.children);
+      if (nested) part += ` > ${nested}`;
+      return part;
+    })
+    .join(', ');
+
+// Set node.name = "{img "icon"}" for buttons/links that have no name but do have children.
+// Recurses so nested buttons get named too. Uses ORIGINAL children for the summary, before pruning.
+const nameIconButtons = (nodes: AriaNode[]): AriaNode[] =>
+  nodes.map((node) => {
+    const namedChildren = nameIconButtons(node.children);
+    if (node.name) return { ...node, children: namedChildren };
+    if (node.role !== 'button' && node.role !== 'link') return { ...node, children: namedChildren };
+    if (node.children.length === 0) return { ...node, children: namedChildren };
+    return { ...node, name: `{${summarizeChildren(node.children)}}`, children: namedChildren };
+  });
+
+// Drop containers that contribute nothing.
+//   keepNamed=true → also keep named non-interactive nodes (e.g. headings, named text).
+const dropEmpty = (nodes: AriaNode[], opts: { keepNamed?: boolean } = {}): AriaNode[] =>
+  nodes.flatMap((node) => {
+    const children = dropEmpty(node.children, opts);
+    if (INTERACTIVE_ROLES.has(node.role)) return [{ ...node, children }];
+    if (children.length > 0) return [{ ...node, children }];
+    if (opts.keepNamed && (node.name || node.value !== undefined)) return [{ ...node, children }];
+    return [];
+  });
+
+// ─────────────────────────────────────────────────────────────────
+// STEP 3 · Render: AriaNode[] → text or flat entries
+// ─────────────────────────────────────────────────────────────────
+
+// One-line representation of a node. Stable attr order so diff comparisons are deterministic.
+const formatNode = (node: AriaNode): string => {
+  let line = node.role;
+  if (node.name?.trim()) line += ` "${node.name.trim()}"`;
+  const attrStr = Object.keys(node.attributes)
+    .sort()
+    .map((k) => {
+      const v = node.attributes[k];
+      if (v === undefined || v === null || v === '') return '';
+      if (v === true) return k;
+      return `${k}=${v}`;
+    })
+    .filter(Boolean)
+    .join(' ');
+  if (attrStr) line += ` [${attrStr}]`;
+  if (node.value !== undefined && node.value !== null) {
+    const text = String(node.value).trim();
+    if (text) line += `: ${text}`;
+  }
+  return line;
+};
+
+// Group consecutive same-role siblings.  [a,a,b,a,a,a] → [[a,a],[b],[a,a,a]]
+const groupByConsecutiveRole = (nodes: AriaNode[]): AriaNode[][] =>
+  nodes.reduce<AriaNode[][]>((groups, node) => {
+    const last = groups[groups.length - 1];
+    if (last && last[0].role === node.role) {
+      last.push(node);
+      return groups;
+    }
+    groups.push([node]);
+    return groups;
+  }, []);
+
+// Large group of same-role siblings → first N + "...M omitted..." marker + last N.
+const collapseGroup = (group: AriaNode[], depth: number): RenderEntry[] => {
+  if (group.length <= SIBLING_COLLAPSE_THRESHOLD) {
+    return group.map((node) => ({ node }));
+  }
+  const keep = SIBLING_COLLAPSE_KEEP_EACH_SIDE;
+  const omitted = group.length - keep * 2;
+  const indent = '  '.repeat(depth);
+  return [...group.slice(0, keep).map((node) => ({ node })), { placeholder: `${indent}- ...${omitted} similar "${group[0].role}" items omitted...` }, ...group.slice(-keep).map((node) => ({ node }))];
+};
+
+const collapseSiblingGroups = (nodes: AriaNode[], depth: number): RenderEntry[] => groupByConsecutiveRole(nodes).flatMap((group) => collapseGroup(group, depth));
+
+// Tree → indented YAML text.
+const renderTree = (nodes: AriaNode[], depth = 0): string =>
+  collapseSiblingGroups(nodes, depth)
+    .map((entry) => {
+      if ('placeholder' in entry) return entry.placeholder;
+      const { node } = entry;
+      const indent = '  '.repeat(depth);
+      const head = `${indent}- ${formatNode(node)}`;
+      if (node.children.length === 0) return head;
+      return `${head}:\n${renderTree(node.children, depth + 1)}`;
+    })
+    .join('\n');
+
+// Build the structured "entry" object for an interactive node, or null if not worth keeping.
+const nodeToEntry = (node: AriaNode): Record<string, unknown> | null => {
+  if (!INTERACTIVE_ROLES.has(node.role)) return null;
+  const entry: Record<string, unknown> = { role: node.role };
+  if (node.name?.trim()) entry.name = node.name.trim();
+  if (node.value !== undefined && node.value !== null) {
+    const text = String(node.value).trim();
+    if (text) entry.value = node.value;
+  }
+  for (const [key, value] of Object.entries(node.attributes)) {
+    if (value === undefined || value === null || value === '') continue;
+    entry[key] = value;
+  }
+  const isButtonOrLink = node.role === 'button' || node.role === 'link';
+  const hasContent = Object.keys(entry).length > 1;
+  if (isButtonOrLink && !hasContent) {
+    entry.unnamed = true;
+    return entry;
+  }
+  if (!hasContent) return null;
+  return entry;
+};
+
+// Walk tree, emit one FlatEntry per interactive node. Path is dotted index from root.
+const flatten = (nodes: AriaNode[]): FlatEntry[] => {
+  const collect = (node: AriaNode, path: string): FlatEntry[] => {
+    const entry = nodeToEntry(node);
+    const here: FlatEntry[] = entry ? [{ path, summary: formatNode(node), entry }] : [];
+    const fromChildren = node.children.flatMap((child, i) => collect(child, `${path}.${i}`));
+    return [...here, ...fromChildren];
+  };
+  return nodes.flatMap((node, i) => collect(node, String(i)));
+};
+
+// ─────────────────────────────────────────────────────────────────
+// STEP 4 · Diff: FlatEntry[] × FlatEntry[] → text
+// ─────────────────────────────────────────────────────────────────
+
+const countBy = (items: string[]): Map<string, number> =>
+  items.reduce((map, item) => {
+    if (item === '') return map;
+    map.set(item, (map.get(item) ?? 0) + 1);
+    return map;
+  }, new Map<string, number>());
+
+// Bag-style diff: any summary appearing more in one bag than the other becomes added/removed.
+const diffByCount = (before: Map<string, number>, after: Map<string, number>): { added: string[]; removed: string[] } => {
+  const added: string[] = [];
+  const removed: string[] = [];
+  const all = new Set<string>([...before.keys(), ...after.keys()]);
+  for (const summary of all) {
+    const b = before.get(summary) ?? 0;
+    const a = after.get(summary) ?? 0;
+    for (let i = 0; i < a - b; i += 1) added.push(summary);
+    for (let i = 0; i < b - a; i += 1) removed.push(summary);
+  }
+  return { added, removed };
+};
+
+// When the same path has a different summary AND the per-summary totals haven't shifted,
+// treat it as a rename (one add + one remove). Catches "button text changed" cases that
+// the count-based diff would miss.
+const detectRenames = (prev: FlatEntry[], curr: FlatEntry[], prevTotals: Map<string, number>, currTotals: Map<string, number>): { added: string[]; removed: string[] } => {
+  const added: string[] = [];
+  const removed: string[] = [];
+  const prevByPath = new Map(prev.map((e) => [e.path, e.summary]));
+  const currByPath = new Map(curr.map((e) => [e.path, e.summary]));
+
+  for (const [path, beforeSummary] of prevByPath) {
+    const afterSummary = currByPath.get(path);
+    if (!afterSummary || afterSummary === beforeSummary) continue;
+    const totalsAfter = (currTotals.get(afterSummary) ?? 0) === (prevTotals.get(afterSummary) ?? 0);
+    const totalsBefore = (currTotals.get(beforeSummary) ?? 0) === (prevTotals.get(beforeSummary) ?? 0);
+    if (!totalsAfter || !totalsBefore) continue;
+    const beforeElsewhere = curr.some((e) => e.path !== path && e.summary === beforeSummary);
+    const afterElsewhere = prev.some((e) => e.path !== path && e.summary === afterSummary);
+    if (beforeElsewhere && afterElsewhere) continue;
+    added.push(afterSummary);
+    removed.push(beforeSummary);
+  }
+  return { added, removed };
+};
+
+const TOP_DIFF_ITEMS = 10;
+
+const formatDiffSection = (label: string, items: string[]): string[] => {
+  const summary = countBy(items);
+  if (summary.size === 0) return [`  ${label}: []`];
+
+  const sorted = Array.from(summary.entries()).sort(([aItem, aCount], [bItem, bCount]) => bCount - aCount || aItem.localeCompare(bItem));
+  const top = sorted.slice(0, TOP_DIFF_ITEMS);
+  const rest = sorted.slice(TOP_DIFF_ITEMS);
+
+  const lines = [`  ${label}:`];
+  for (const [item, count] of top) {
+    let suffix = '';
+    if (count > 1) suffix = ` (x${count})`;
+    lines.push(`    - ${item}${suffix}`);
+  }
+  if (rest.length > 0) {
+    let restTotal = 0;
+    for (const [, count] of rest) restTotal += count;
+    lines.push(`    + ${restTotal} more interactive elements`);
+  }
+  return lines;
+};
+
+const formatDiff = (added: string[], removed: string[]): string | null => {
+  if (added.length === 0 && removed.length === 0) return null;
+  return ['ariaDiff:', ...formatDiffSection('added', added), ...formatDiffSection('removed', removed)].join('\n');
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Focus area detection (separate concern; consumes pipeline output)
+// ─────────────────────────────────────────────────────────────────
 
 export interface FocusAreaResult {
   detected: boolean;
@@ -375,11 +393,7 @@ const findOverlayByCloseButton = (nodeList: AriaNode[]): FocusAreaResult | null 
         }
       }
     }
-    return {
-      detected: true,
-      type: 'dialog',
-      name: heading?.name || null,
-    };
+    return { detected: true, type: 'dialog', name: heading?.name || null };
   }
   for (const node of nodeList) {
     const inner = findOverlayByCloseButton(node.children);
@@ -388,138 +402,75 @@ const findOverlayByCloseButton = (nodeList: AriaNode[]): FocusAreaResult | null 
   return null;
 };
 
-export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
-  const nodes = parseAriaSnapshot(snapshot, true);
-
-  const findFocusArea = (nodeList: AriaNode[]): FocusAreaResult | null => {
-    for (const node of nodeList) {
-      if (node.role === 'dialog' || node.role === 'alertdialog') {
-        return {
-          detected: true,
-          type: 'dialog',
-          name: node.name || null,
-        };
-      }
-
-      if (node.attributes.modal === true || node.attributes.modal === 'true') {
-        return {
-          detected: true,
-          type: 'modal',
-          name: node.name || null,
-        };
-      }
-
-      const childResult = findFocusArea(node.children);
-      if (childResult) {
-        return childResult;
-      }
+const findDialogOrModal = (nodes: AriaNode[]): FocusAreaResult | null => {
+  for (const node of nodes) {
+    if (node.role === 'dialog' || node.role === 'alertdialog') {
+      return { detected: true, type: 'dialog', name: node.name || null };
     }
-    return null;
+    if (node.attributes.modal === true || node.attributes.modal === 'true') {
+      return { detected: true, type: 'modal', name: node.name || null };
+    }
+    const child = findDialogOrModal(node.children);
+    if (child) return child;
+  }
+  return null;
+};
+
+// ─────────────────────────────────────────────────────────────────
+// Public API — pipelines composed visibly, top-to-bottom
+// ─────────────────────────────────────────────────────────────────
+
+export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false): string => {
+  if (!snapshot) return '';
+  let tree = parseSnapshot(snapshot);
+  tree = unwrapIgnored(tree);
+  tree = nameIconButtons(tree);
+  tree = dropEmpty(tree, { keepNamed });
+  return renderTree(tree);
+};
+
+export const diffAriaSnapshots = (previous: string | null, current: string | null): string | null => {
+  const flat = (snap: string | null): FlatEntry[] => {
+    let tree = parseSnapshot(snap);
+    tree = unwrapIgnored(tree);
+    tree = nameIconButtons(tree);
+    tree = dropEmpty(tree);
+    return flatten(tree);
   };
+  const prev = flat(previous);
+  const curr = flat(current);
+  const prevTotals = countBy(prev.map((e) => e.summary));
+  const currTotals = countBy(curr.map((e) => e.summary));
+  const byCount = diffByCount(prevTotals, currTotals);
+  const renames = detectRenames(prev, curr, prevTotals, currTotals);
+  return formatDiff([...byCount.added, ...renames.added], [...byCount.removed, ...renames.removed]);
+};
 
-  const result = findFocusArea(nodes);
-  if (result) return result;
+export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
+  let tree = parseSnapshot(snapshot);
+  tree = unwrapIgnored(tree);
+  tree = dropEmpty(tree, { keepNamed: true });
 
-  const fallback = findOverlayByCloseButton(nodes);
+  const direct = findDialogOrModal(tree);
+  if (direct) return direct;
+
+  const fallback = findOverlayByCloseButton(tree);
   if (fallback?.name) return fallback;
 
   return { detected: false, type: null, name: null };
 };
 
 export const collectInteractiveNodes = (snapshot: string | null): Array<Record<string, unknown>> => {
-  const nodes = parseAriaSnapshot(snapshot);
-  const result: Array<Record<string, unknown>> = [];
-  const visit = (node: AriaNode) => {
-    if (IGNORED_CONTAINER_ROLES.has(node.role)) {
-      node.children.forEach(visit);
-      return;
-    }
-    const entry = buildInteractiveEntry(node);
-    if (entry) {
-      result.push(entry);
-    }
-    node.children.forEach(visit);
-  };
-  nodes.forEach(visit);
-  return result;
+  let tree = parseSnapshot(snapshot);
+  tree = unwrapIgnored(tree);
+  tree = nameIconButtons(tree);
+  tree = dropEmpty(tree);
+  return flatten(tree).map((e) => e.entry);
 };
 
-const renderNodeLine = (role: string, name: string | undefined, attrs: Record<string, string | boolean | null>, value: string | boolean | null | undefined): string => {
-  let line = role;
-  const displayName = name?.trim();
-  if (displayName) line += ` "${displayName}"`;
-  const attrStr = Object.entries(attrs)
-    .filter(([, v]) => v !== undefined && v !== null && v !== '')
-    .map(([k, v]) => (v === true ? k : `${k}=${v}`))
-    .join(' ');
-  if (attrStr) line += ` [${attrStr}]`;
-  if (value !== undefined && value !== null) {
-    const text = `${value}`.trim();
-    if (text) line += `: ${text}`;
-  }
-  return line;
-};
-
-const formatSummary = (node: Record<string, unknown>): string => {
-  const role = typeof node.role === 'string' ? node.role : '';
-  if (!role) return '';
-  const name = typeof node.name === 'string' ? node.name : undefined;
-  const attrs: Record<string, string | boolean | null> = {};
-  for (const key of Object.keys(node)
-    .filter((k) => k !== 'role' && k !== 'name' && k !== 'value')
-    .sort()) {
-    attrs[key] = node[key] as string | boolean | null;
-  }
-  const value = Object.prototype.hasOwnProperty.call(node, 'value') ? (node.value as string | boolean | null) : undefined;
-  return renderNodeLine(role, name, attrs, value);
-};
-
-type FlatInteractiveNode = {
-  path: string;
-  summary: string;
-};
-
-const flattenInteractiveNodes = (snapshot: string | null): FlatInteractiveNode[] => {
-  const nodes = parseAriaSnapshot(snapshot);
-  const result: FlatInteractiveNode[] = [];
-  const visit = (node: AriaNode, path: string) => {
-    if (!IGNORED_CONTAINER_ROLES.has(node.role)) {
-      const entry = buildInteractiveEntry(node);
-      if (entry) {
-        const summary = formatSummary(entry);
-        if (summary !== '') {
-          result.push({ path, summary });
-        }
-      }
-    }
-    node.children.forEach((child, index) => {
-      const childPath = path === '' ? `${index}` : `${path}.${index}`;
-      visit(child, childPath);
-    });
-  };
-  nodes.forEach((node, index) => {
-    visit(node, `${index}`);
-  });
-  return result;
-};
-
-const buildCountMap = (items: string[]): Map<string, number> => {
-  const map = new Map<string, number>();
-  for (const item of items) {
-    if (item === '') {
-      continue;
-    }
-    map.set(item, (map.get(item) ?? 0) + 1);
-  }
-  return map;
-};
-
-const formatDiffItem = (item: string, count: number): string => {
-  if (count > 1) {
-    return `${item} (x${count})`;
-  }
-  return item;
-};
+// ─────────────────────────────────────────────────────────────────
+// Standalone helpers (regex on raw strings — not part of the pipeline)
+// ─────────────────────────────────────────────────────────────────
 
 export interface FocusedElementInfo {
   role: string;
@@ -546,12 +497,10 @@ export function extractFocusedElement(ariaSnapshot: string | null): FocusedEleme
     }
   }
 
-  return {
-    role,
-    name,
-    ...(value && { value: value.trim() }),
-    ...(attributes.length > 0 && { attributes }),
-  };
+  const result: FocusedElementInfo = { role, name };
+  if (value) result.value = value.trim();
+  if (attributes.length > 0) result.attributes = attributes;
+  return result;
 }
 
 export function parseAriaLocator(ariaStr: string): { role: string; text: string } | null {
@@ -564,141 +513,22 @@ export function parseAriaLocator(ariaStr: string): { role: string; text: string 
   return { role: match[1], text: match[2] };
 }
 
-export const diffAriaSnapshots = (previous: string | null, current: string | null): string | null => {
-  const previousEntries = flattenInteractiveNodes(previous);
-  const currentEntries = flattenInteractiveNodes(current);
-  const previousTotals = buildCountMap(previousEntries.map((entry) => entry.summary));
-  const currentTotals = buildCountMap(currentEntries.map((entry) => entry.summary));
-  const added: string[] = [];
-  const removed: string[] = [];
-  const allSummaries = new Set<string>([...previousTotals.keys(), ...currentTotals.keys()]);
-  for (const summary of allSummaries) {
-    const before = previousTotals.get(summary) ?? 0;
-    const after = currentTotals.get(summary) ?? 0;
-    if (after > before) {
-      for (let i = 0; i < after - before; i += 1) {
-        added.push(summary);
-      }
-    }
-    if (before > after) {
-      for (let i = 0; i < before - after; i += 1) {
-        removed.push(summary);
-      }
-    }
-  }
-  const previousByPath = new Map<string, string>();
-  for (const entry of previousEntries) {
-    previousByPath.set(entry.path, entry.summary);
-  }
-  const currentByPath = new Map<string, string>();
-  for (const entry of currentEntries) {
-    currentByPath.set(entry.path, entry.summary);
-  }
-  for (const [path, beforeSummary] of previousByPath.entries()) {
-    const afterSummary = currentByPath.get(path);
-    if (!afterSummary || afterSummary === beforeSummary) {
-      continue;
-    }
-    const totalsEqualAfter = (currentTotals.get(afterSummary) ?? 0) === (previousTotals.get(afterSummary) ?? 0);
-    const totalsEqualBefore = (currentTotals.get(beforeSummary) ?? 0) === (previousTotals.get(beforeSummary) ?? 0);
-    if (!totalsEqualAfter || !totalsEqualBefore) {
-      continue;
-    }
-    const beforeExistsElsewhere = currentEntries.some((entry) => entry.path !== path && entry.summary === beforeSummary);
-    const afterExistsElsewhere = previousEntries.some((entry) => entry.path !== path && entry.summary === afterSummary);
-    if (beforeExistsElsewhere && afterExistsElsewhere) {
-      continue;
-    }
-    added.push(afterSummary);
-    removed.push(beforeSummary);
-  }
-  if (added.length === 0 && removed.length === 0) {
-    return null;
-  }
-  const lines: string[] = ['ariaDiff:'];
-  const addedSummary = buildCountMap(added);
-  if (addedSummary.size === 0) {
-    lines.push('  added: []');
-  } else {
-    lines.push('  added:');
-    Array.from(addedSummary.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .forEach(([item, count]) => {
-        lines.push(`    - ${formatDiffItem(item, count)}`);
-      });
-  }
-  if (removed.length === 0) {
-    lines.push('  removed: []');
-  } else {
-    lines.push(`  removed: ${removed.length} interactive elements`);
-  }
-  return lines.join('\n');
+// ─────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────
+
+type AriaNode = {
+  role: string;
+  name?: string;
+  value?: string | boolean | null;
+  attributes: Record<string, string | boolean | null>;
+  children: AriaNode[];
 };
 
-const resolveDisplayName = (node: AriaNode): string | undefined => {
-  if (node.name) return node.name;
-  const isButtonOrLink = node.role === 'button' || node.role === 'link';
-  if (!isButtonOrLink) return undefined;
-  const childContent = serializeChildContent(node);
-  if (childContent) return `{${childContent}}`;
-  return undefined;
-};
+type RenderEntry = { node: AriaNode } | { placeholder: string };
 
-const SIBLING_COLLAPSE_THRESHOLD = 50;
-const SIBLING_COLLAPSE_KEEP_EACH_SIDE = 5;
-
-const serializeAriaNodes = (nodes: AriaNode[], depth = 0): string => {
-  const lines: string[] = [];
-  const collapsed = collapseSimilarSiblingRuns(nodes, depth);
-  for (const entry of collapsed) {
-    if (entry.placeholder) {
-      lines.push(entry.placeholder);
-      continue;
-    }
-    const node = entry.node!;
-    const indent = '  '.repeat(depth);
-    let line = `${indent}- ${renderNodeLine(node.role, resolveDisplayName(node), node.attributes, node.value)}`;
-    if (node.children.length > 0) {
-      line += ':';
-    }
-    lines.push(line);
-    if (node.children.length > 0) {
-      lines.push(serializeAriaNodes(node.children, depth + 1));
-    }
-  }
-  return lines.join('\n');
-};
-
-type SerializeEntry = { node?: AriaNode; placeholder?: string };
-
-const collapseSimilarSiblingRuns = (nodes: AriaNode[], depth: number): SerializeEntry[] => {
-  const result: SerializeEntry[] = [];
-  let i = 0;
-  while (i < nodes.length) {
-    const role = nodes[i].role;
-    let j = i;
-    while (j < nodes.length && nodes[j].role === role) j++;
-    const runLength = j - i;
-    if (runLength > SIBLING_COLLAPSE_THRESHOLD) {
-      for (let k = i; k < i + SIBLING_COLLAPSE_KEEP_EACH_SIDE; k++) {
-        result.push({ node: nodes[k] });
-      }
-      const omitted = runLength - SIBLING_COLLAPSE_KEEP_EACH_SIDE * 2;
-      const indent = '  '.repeat(depth);
-      result.push({ placeholder: `${indent}- ...${omitted} similar "${role}" items omitted...` });
-      for (let k = j - SIBLING_COLLAPSE_KEEP_EACH_SIDE; k < j; k++) {
-        result.push({ node: nodes[k] });
-      }
-    } else {
-      for (let k = i; k < j; k++) result.push({ node: nodes[k] });
-    }
-    i = j;
-  }
-  return result;
-};
-
-export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false): string => {
-  if (!snapshot) return '';
-  const nodes = parseAriaSnapshot(snapshot, keepNamed);
-  return serializeAriaNodes(nodes);
+type FlatEntry = {
+  path: string;
+  summary: string;
+  entry: Record<string, unknown>;
 };

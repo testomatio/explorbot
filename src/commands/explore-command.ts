@@ -73,6 +73,7 @@ export class ExploreCommand extends BaseCommand {
     if (mainUrl) await this.explorBot.visit(mainUrl);
     const savedPath = this.explorBot.savePlans(this.completedPlans);
     this.printResults();
+    await this.explorBot.printSessionAnalysis();
     this.printNextSteps(savedPath);
   }
 

@@ -89,15 +89,16 @@ export class Pilot implements Agent {
     const notes = task.notesToString() || 'No notes recorded.';
 
     let visualAnalysis = '';
+    let screenshotState: ActionResult | null = null;
     if (this.provider.hasVision()) {
       try {
         const action = this.explorer.createAction();
-        const screenshotState = await action.caputrePageWithScreenshot();
+        screenshotState = await action.caputrePageWithScreenshot();
         if (screenshotState.screenshot) {
           visualAnalysis = (await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Describe current page state relevant to: ${task.scenario}`)) || '';
         }
       } catch {
-        // vision not available, continue without
+        screenshotState = null;
       }
     }
 
@@ -167,26 +168,23 @@ export class Pilot implements Agent {
         return false;
       }
 
-      if (result.requestVerification && navigator) {
+      if (result.decision === 'pass' && result.requestVerification && navigator) {
         tag('substep').log(`Pilot requesting verification: ${result.requestVerification}`);
-        try {
-          const verifyResult = await navigator.verifyState(result.requestVerification, currentState);
-          if (verifyResult.verified) {
-            if (verifyResult.assertionSteps?.length) {
-              this.explorer.getPlaywrightRecorder().recordVerification(verifyResult.assertionSteps);
-            }
-            tag('substep').log(`Pilot verified: ${result.requestVerification}`);
-          } else {
-            tag('substep').log(`Pilot verification failed: ${result.requestVerification}`);
-            if (result.decision === 'pass') {
-              const flipMessage = `Verification "${result.requestVerification}" did not match the page. Adjust approach and re-verify before finishing.`;
-              result.decision = 'continue';
-              result.reason = flipMessage;
-              result.guidance = result.guidance ?? flipMessage;
-            }
+        const verifyResult = await navigator.verifyState(result.requestVerification, currentState).catch(() => null);
+        if (verifyResult?.verified) {
+          if (verifyResult.assertionSteps?.length) {
+            this.explorer.getPlaywrightRecorder().recordVerification(verifyResult.assertionSteps);
           }
-        } catch (verifyErr: any) {
-          tag('warning').log(`Pilot verification errored: ${verifyErr.message}`);
+        } else {
+          let answer: string | null = null;
+          if (screenshotState?.screenshot) {
+            answer = await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Does the screen confirm: "${result.requestVerification}"? Answer YES or NO only.`);
+          }
+          if (!(answer || '').trim().toUpperCase().startsWith('YES')) {
+            task.addNote(`Pilot: verification failed — ${result.requestVerification}`, TestResult.FAILED);
+            task.finish(TestResult.FAILED);
+            return false;
+          }
         }
       }
 
@@ -389,6 +387,8 @@ export class Pilot implements Agent {
       - If no verification was done → prefer "continue" with guidance telling tester what to verify.
       - If verify assertion describes a state that was ALREADY TRUE before the test started, the verification proves nothing — reject with "continue".
 
+      requestVerification — pick assertions DOM can actually express. Some content is not assertable via DOM (iframe text, canvas, custom widgets, Monaco/CodeMirror editors). When the scenario goal lives in such a region, target a STABLE LANDMARK (container element, ARIA role, the parent that wraps the widget) rather than literal text inside it. Your "pass" verdict is honored even if the DOM assertion can't be made — pick the strongest landmark you can.
+
       GUIDANCE FIELD: When decision is "continue", you MUST provide "guidance" — a specific actionable instruction:
       - If evidence is insufficient: tell tester to verify with see()/verify(), specify WHAT to check
       - If approach was wrong: tell tester to try a different method, suggest which one
@@ -470,7 +470,7 @@ export class Pilot implements Agent {
     );
   }
 
-  async reviewNewPage(task: Test, currentState: ActionResult): Promise<string> {
+  async reviewNewPage(task: Test, currentState: ActionResult, testerConversation: Conversation): Promise<string> {
     if (!this.conversation) return '';
 
     tag('substep').log('Pilot reviewing new page...');
@@ -481,8 +481,14 @@ export class Pilot implements Agent {
     if (!pageSummary) return '';
 
     const stateContext = this.buildStateContext(currentState);
+    const toolCalls = testerConversation
+      .getToolExecutions()
+      .filter((t: any) => t.wasSuccessful)
+      .slice(-this.stepsToReview);
+    const actionsContext = this.formatActions(toolCalls);
 
     this.conversation.cleanupTag('page_summary', '...trimmed...', 1);
+    this.conversation.cleanupTag('recent_actions', '...trimmed...', 2);
 
     return this.sendToPilot(
       dedent`
@@ -496,6 +502,10 @@ export class Pilot implements Agent {
         <page_summary>
         ${pageSummary}
         </page_summary>
+
+        <recent_actions>
+        ${actionsContext || 'None'}
+        </recent_actions>
 
         ${this.formatExpectations(task)}
 
