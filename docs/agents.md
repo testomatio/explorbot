@@ -123,6 +123,79 @@ See [Planner Agent](./planner.md) for detailed documentation on planning styles,
 - Same locator keeps failing (need alternative approach)
 - Only research/context calls, no action tools (not progressing)
 
+## Analyst Agent
+
+**Purpose:** Produces a human-readable session report after `/explore` and `/freesail` runs.
+
+**What it does:**
+- Reads every test executed in the session — scenario, expected outcome, final result, notes, step log
+- Clusters tests by **root cause**: three tests failing for the same dropdown become one defect with three test refs, not three rows
+- Buckets findings into Defects, UX issues, and Execution issues
+- Writes concrete reproduce steps and one-line evidence drawn from the test log
+- Outputs markdown directly (no schema → render layer); same text goes to console, file, and the Testomat.io run description
+
+**When it runs:**
+- Automatically at the end of `/explore` (per-run)
+- Automatically on app exit (session-wide consolidation across multiple `/explore` or `/freesail` runs)
+
+**Output:**
+- Console: same markdown printed under the test results table
+- File: `output/reports/<mode>-<sessionName>.md` — e.g. `explore-WiseFox42.md`, `freesail-CleverOwl91.md`. Each session gets a unique name (different naming format from per-test sessions, so the two are distinguishable on disk)
+- Testomat.io: when the reporter is enabled, the markdown is set as the run description on the cloud dashboard
+
+**Report shape:**
+
+```markdown
+# Session Analysis
+
+5 tests executed, 1 defect identified — pagination button does not navigate to the next page.
+
+## Defects
+
+### 🔴 Pagination button does not navigate to second page
+Affects: #3
+Reproduce:
+  1. Open /projects/runs
+  2. Click the page-2 pagination control
+Evidence: URL did not change and the listed run IDs stayed identical
+
+## UX issues
+
+- **Filter panel "Apply" button is hidden behind a sticky footer** — #4
+  scroll required before the button is interactable
+
+## Execution Issues
+
+- **Search runs by name** — typed query but list never re-rendered, so the test could not verify whether the filter applied
+- **Export run as PDF** — clicked Export but no download dialog or feedback appeared, so success could not be confirmed
+```
+
+**Severity emoji** (defects only): 🔴 critical/high, 🟡 medium, 🟢 low.
+
+**Why you'll love it:**
+- Skim a 50-test run in 30 seconds — defects are at the top with reproduce steps already written
+- Real clustering: stops drowning the report in N near-identical rows
+- Execution Issues explain *what was unreliable* in plain words ("modal trapped focus", "no accessible label", "page reloaded before the assertion ran") instead of dumping log lines
+- Same markdown lands in the cloud report — engineers see the analysis next to the test list in Testomat.io
+
+**Configuration:**
+
+```javascript
+export default {
+  ai: {
+    agents: {
+      analyst: {
+        // model: openai('gpt-4o'),       // override the default model
+        // systemPrompt: 'Focus on...',   // append guidance to the prompt
+        // enabled: false,                // disable the analyst entirely
+      },
+    },
+  },
+};
+```
+
+The agent uses the default model unless overridden. The report file is always written to `output/reports/`; there is no opt-out for the file itself, but `enabled: false` disables the agent so nothing runs.
+
 ## Captain Agent *(coming soon)*
 
 **Purpose:** Orchestrates the whole testing session.

@@ -4,6 +4,18 @@ Explorbot generates test reports using [@testomatio/reporter](https://github.com
 
 Reports include test steps, screenshots, and result messages for every test run.
 
+## Session Analysis
+
+After `/explore` and `/freesail` runs, the [Analyst agent](./agents.md#analyst-agent) writes a human-readable summary that clusters findings by root cause.
+
+The same markdown is printed to the console, written to disk, and (when the cloud reporter is enabled) set as the run description on Testomat.io.
+
+**On disk:** `output/reports/<mode>-<sessionName>.md` — for example `explore-WiseFox42.md` or `freesail-CleverOwl91.md`. Each app run gets a unique name; nothing is overwritten.
+
+**On Testomat.io:** the markdown lands as the run description, so the analysis sits next to the test list in the cloud dashboard without any extra setup.
+
+See [Analyst Agent](./agents.md#analyst-agent) for the report format and configuration options.
+
 ## HTML Report (Local)
 
 An HTML report is created automatically after each test run in `output/reports/`. Open it in your browser to review results — no configuration needed.

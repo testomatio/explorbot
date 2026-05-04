@@ -109,6 +109,7 @@ ExplorBot (DI Container)
             ├── Driller -> Navigator - drill components to learn interactions
             ├── Captain
             ├── Historian
+            ├── Analyst — end-of-session report (markdown)
             ├── ExperienceCompactor
             └── Quartermaster (optional)
 ```
@@ -258,6 +259,7 @@ All agents implement the `Agent` interface. Task-executing agents (Tester, Capta
 - Driller -> Navigator - drill page components to learn interactions
 - Captain → Historian*, Quartermaster* — handle user commands in TUI
 - Historian — save test sessions, generate code, report to Testomatio
+- Analyst — end-of-session markdown report; clusters defects/UX/execution issues, writes `output/reports/<mode>-<sessionName>.md`, sets the Testomatio run description
 - ExperienceCompactor — compress experience files
 - Quartermaster — a11y testing (optional)
 
