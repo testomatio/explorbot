@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ReporterConfig } from '../../src/config.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { Reporter } from '../../src/reporter.ts';
+import { Stats } from '../../src/stats.ts';
 import { ActiveNote, Plan, Task, Test, TestResult } from '../../src/test-plan.ts';
 
 class TestableReporter extends Reporter {
@@ -249,6 +250,11 @@ describe('Reporter config', () => {
   let savedTestomatio: string | undefined;
   let savedHtmlSave: string | undefined;
   let savedHtmlFolder: string | undefined;
+  let savedHtmlFilename: string | undefined;
+  let savedMarkdownSave: string | undefined;
+  let savedMarkdownFolder: string | undefined;
+  let savedMarkdownFilename: string | undefined;
+  let savedRunGroup: string | undefined;
 
   function clearEnv(key: string) {
     delete process.env[key];
@@ -269,21 +275,37 @@ describe('Reporter config', () => {
     savedTestomatio = process.env.TESTOMATIO;
     savedHtmlSave = process.env.TESTOMATIO_HTML_REPORT_SAVE;
     savedHtmlFolder = process.env.TESTOMATIO_HTML_REPORT_FOLDER;
+    savedHtmlFilename = process.env.TESTOMATIO_HTML_FILENAME;
+    savedMarkdownSave = process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE;
+    savedMarkdownFolder = process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER;
+    savedMarkdownFilename = process.env.TESTOMATIO_MARKDOWN_FILENAME;
+    savedRunGroup = process.env.TESTOMATIO_RUNGROUP_TITLE;
     clearEnv('TESTOMATIO');
     clearEnv('TESTOMATIO_HTML_REPORT_SAVE');
     clearEnv('TESTOMATIO_HTML_REPORT_FOLDER');
+    clearEnv('TESTOMATIO_HTML_FILENAME');
+    clearEnv('TESTOMATIO_MARKDOWN_REPORT_SAVE');
+    clearEnv('TESTOMATIO_MARKDOWN_REPORT_FOLDER');
+    clearEnv('TESTOMATIO_MARKDOWN_FILENAME');
+    clearEnv('TESTOMATIO_RUNGROUP_TITLE');
   });
 
   afterEach(() => {
     restoreEnv('TESTOMATIO', savedTestomatio);
     restoreEnv('TESTOMATIO_HTML_REPORT_SAVE', savedHtmlSave);
     restoreEnv('TESTOMATIO_HTML_REPORT_FOLDER', savedHtmlFolder);
+    restoreEnv('TESTOMATIO_HTML_FILENAME', savedHtmlFilename);
+    restoreEnv('TESTOMATIO_MARKDOWN_REPORT_SAVE', savedMarkdownSave);
+    restoreEnv('TESTOMATIO_MARKDOWN_REPORT_FOLDER', savedMarkdownFolder);
+    restoreEnv('TESTOMATIO_MARKDOWN_FILENAME', savedMarkdownFilename);
+    restoreEnv('TESTOMATIO_RUNGROUP_TITLE', savedRunGroup);
   });
 
   test('enabled: true without TESTOMATIO sets HTML report env vars', () => {
     const reporter = new Reporter({ enabled: true });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBe('1');
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
+    expect(process.env.TESTOMATIO_HTML_FILENAME).toBe(`${Stats.sessionLabel()}.html`);
   });
 
   test('enabled: true with TESTOMATIO does not set HTML env vars', () => {
@@ -321,6 +343,57 @@ describe('Reporter config', () => {
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
   });
 
+  test('markdown: true sets markdown env vars', () => {
+    const reporter = new Reporter({ enabled: true, markdown: true });
+    expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBe('1');
+    expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toContain('reports');
+    expect(process.env.TESTOMATIO_MARKDOWN_FILENAME).toBe(`${Stats.sessionLabel()}-tests.md`);
+  });
+
+  test('markdown: true with TESTOMATIO also sets markdown env vars', () => {
+    process.env.TESTOMATIO = 'tstmt_test_key';
+    const reporter = new Reporter({ enabled: true, markdown: true });
+    expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBe('1');
+    expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toContain('reports');
+  });
+
+  test('markdown unset does not set markdown env vars', () => {
+    const reporter = new Reporter({ enabled: true });
+    expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBeUndefined();
+  });
+
+  test('enabled: false with markdown: true does not set markdown env vars', () => {
+    const reporter = new Reporter({ enabled: false, markdown: true });
+    expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBeUndefined();
+  });
+
+  test('runGroup defaults to "Explorbot YYYY-MM-DD" when enabled', () => {
+    const reporter = new Reporter({ enabled: true });
+    const today = new Date().toISOString().slice(0, 10);
+    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBe(`Explorbot ${today}`);
+  });
+
+  test('runGroup string overrides default', () => {
+    const reporter = new Reporter({ enabled: true, runGroup: 'Smoke Suite' });
+    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBe('Smoke Suite');
+  });
+
+  test('runGroup: null disables the run group', () => {
+    const reporter = new Reporter({ enabled: true, runGroup: null });
+    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBeUndefined();
+  });
+
+  test('pre-set TESTOMATIO_RUNGROUP_TITLE env wins over default', () => {
+    process.env.TESTOMATIO_RUNGROUP_TITLE = 'Nightly';
+    const reporter = new Reporter({ enabled: true });
+    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBe('Nightly');
+  });
+
+  test('runGroup not set when reporter disabled', () => {
+    const reporter = new Reporter({ enabled: false });
+    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBeUndefined();
+  });
+
   test('writes finished Explorbot test into HTML report', async () => {
     const outputDir = ConfigParser.getInstance().getOutputDir();
     rmSync(join(outputDir, 'reports'), { recursive: true, force: true });
@@ -336,7 +409,7 @@ describe('Reporter config', () => {
     await reporter.reportTest(test);
     await reporter.finishRun();
 
-    const reportFile = join(outputDir, 'reports', 'testomatio-report.html');
+    const reportFile = join(outputDir, 'reports', `${Stats.sessionLabel()}.html`);
     expect(existsSync(reportFile)).toBe(true);
     expect(readFileSync(reportFile, 'utf8')).toContain('Verify sign in page is visible');
   });

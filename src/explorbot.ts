@@ -27,8 +27,8 @@ import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
 import type { Suite } from './suite.ts';
 import { Plan, type Test } from './test-plan.ts';
-import { relativeToCwd } from './utils/next-steps.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
+import { relativeToCwd } from './utils/next-steps.ts';
 import { sanitizeFilename } from './utils/strings.ts';
 
 export interface ExplorBotOptions {

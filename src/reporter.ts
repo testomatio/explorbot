@@ -33,8 +33,21 @@ export class Reporter {
       this.configureHtmlPipe();
     }
 
-    const pipe = process.env.TESTOMATIO && config?.html ? 'both' : process.env.TESTOMATIO ? 'testomatio' : 'html';
-    debugLog('Reporter initialized', { enabled: this.reporterEnabled, pipe });
+    if (this.reporterEnabled && config?.markdown) {
+      this.configureMarkdownPipe();
+    }
+
+    if (this.reporterEnabled) {
+      this.configureRunGroup(config?.runGroup);
+    }
+
+    debugLog('Reporter initialized', {
+      enabled: this.reporterEnabled,
+      testomatio: Boolean(process.env.TESTOMATIO),
+      html: Boolean(process.env.TESTOMATIO_HTML_REPORT_SAVE),
+      markdown: Boolean(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE),
+      runGroup: process.env.TESTOMATIO_RUNGROUP_TITLE || null,
+    });
   }
 
   private buildTitle(): string {
@@ -56,7 +69,31 @@ export class Reporter {
   private configureHtmlPipe(): void {
     process.env.TESTOMATIO_HTML_REPORT_SAVE = '1';
     process.env.TESTOMATIO_HTML_REPORT_FOLDER = outputPath('reports');
-    debugLog('HTML report pipe configured', { folder: process.env.TESTOMATIO_HTML_REPORT_FOLDER });
+    process.env.TESTOMATIO_HTML_FILENAME = `${Stats.sessionLabel()}.html`;
+    debugLog('HTML report pipe configured', {
+      folder: process.env.TESTOMATIO_HTML_REPORT_FOLDER,
+      filename: process.env.TESTOMATIO_HTML_FILENAME,
+    });
+  }
+
+  private configureMarkdownPipe(): void {
+    process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE = '1';
+    process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER = outputPath('reports');
+    process.env.TESTOMATIO_MARKDOWN_FILENAME = `${Stats.sessionLabel()}-tests.md`;
+    debugLog('Markdown report pipe configured', {
+      folder: process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER,
+      filename: process.env.TESTOMATIO_MARKDOWN_FILENAME,
+    });
+  }
+
+  private configureRunGroup(runGroup: string | null | undefined): void {
+    if (process.env.TESTOMATIO_RUNGROUP_TITLE) return;
+    if (runGroup === null) return;
+    if (runGroup) {
+      process.env.TESTOMATIO_RUNGROUP_TITLE = runGroup;
+      return;
+    }
+    process.env.TESTOMATIO_RUNGROUP_TITLE = `Explorbot ${new Date().toISOString().slice(0, 10)}`;
   }
 
   async startRun(): Promise<void> {

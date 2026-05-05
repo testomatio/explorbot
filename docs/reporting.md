@@ -18,11 +18,31 @@ See [Analyst Agent](./agents.md#analyst-agent) for the report format and configu
 
 ## HTML Report (Local)
 
-An HTML report is created automatically after each test run in `output/reports/`. Open it in your browser to review results — no configuration needed.
+An HTML report is created automatically after each test run in `output/reports/<mode>-<sessionName>.html` (for example `explore-WiseFox42.html`). Each session gets its own file — nothing is overwritten across runs. Open it in a browser to review results, no configuration needed.
 
 ![HTML report](https://github.com/testomatio/explorbot/blob/main/docs/assets/html-report.png)
 
 To get cloud reporting with history and team features, see the next section.
+
+## Markdown Report (Local)
+
+A markdown report can be written next to the HTML one. It's plain text — easy to paste into a PR description, a chat thread, or a CI summary.
+
+Opt-in via `explorbot.config.js`:
+
+```js
+export default {
+  reporter: {
+    enabled: true,
+    html: true,
+    markdown: true,
+  },
+};
+```
+
+Output: `output/reports/<mode>-<sessionName>-tests.md` (for example `explore-WiseFox42-tests.md`). Like the HTML report, the filename is session-scoped so successive runs don't overwrite each other. The `-tests` suffix keeps it distinct from the [Analyst report](#session-analysis), which writes `<mode>-<sessionName>.md` in the same folder.
+
+Unlike the HTML report, markdown is opt-in — it isn't generated unless `markdown: true` is set.
 
 ## Testomat.io Cloud Report
 
@@ -52,8 +72,27 @@ Set the key in your shell profile or CI environment so it's always active.
 | `TESTOMATIO_TITLE` | Custom name for the test run |
 | `TESTOMATIO_ENV` | Environment label (e.g. `staging`, `production`) |
 | `TESTOMATIO_SHARED_RUN` | Merge parallel executions into one run |
+| `TESTOMATIO_RUNGROUP_TITLE` | Group successive runs under one heading (overrides `reporter.runGroup`) |
 
 See [@testomatio/reporter docs](https://github.com/testomatio/reporter/blob/2.x/docs/pipes/testomatio.md) for the full list.
+
+### Run group
+
+Explorbot groups runs by day on Testomat.io. By default every run is filed under `Explorbot YYYY-MM-DD` (today's date), so all sessions from one day appear together in the dashboard.
+
+Override per project via `explorbot.config.js`:
+
+```js
+export default {
+  reporter: {
+    enabled: true,
+    runGroup: 'Smoke Suite',  // any string
+    // runGroup: null,         // disable grouping entirely
+  },
+};
+```
+
+`TESTOMATIO_RUNGROUP_TITLE` from the environment, if set, takes precedence over the config.
 
 ## Screenshots in Cloud Reports
 

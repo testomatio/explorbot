@@ -154,6 +154,11 @@ describe('url-matcher', () => {
       expect(matchesUrl('/{foo,bar}', '/foo')).toBe(true);
       expect(matchesUrl('/{foo,bar}', '/baz')).toBe(false);
     });
+
+    it('ignores query string on path when pattern has no query', () => {
+      expect(matchesUrl('/users/sign_in', '/users/sign_in?info=You+must+be+logged+in')).toBe(true);
+      expect(matchesUrl('/users/*', '/users/123?tab=profile')).toBe(true);
+    });
   });
 
   describe('extractStatePath', () => {

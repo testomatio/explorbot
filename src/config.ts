@@ -181,6 +181,8 @@ interface ActionConfig {
 interface ReporterConfig {
   enabled?: boolean;
   html?: boolean;
+  markdown?: boolean;
+  runGroup?: string | null;
 }
 
 type ApiHookFn = (ctx: { headers: Record<string, string>; baseEndpoint: string }) => Promise<Record<string, string> | undefined> | Record<string, string> | undefined;

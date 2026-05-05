@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-05-06
+
+### Configuration
+- **`reporter.markdown`** — Write a plain-text markdown report alongside the HTML report. Output goes to `output/reports/<mode>-<sessionName>-tests.md` (for example `explore-WiseFox42-tests.md`). Easy to paste into a PR description, chat thread, or CI summary. Default: `false` (opt-in).
+- **`reporter.runGroup`** — Group successive Testomat.io runs under one heading. Default: `Explorbot YYYY-MM-DD` (today's date), so all sessions from one day appear together in the dashboard. Set to a string to override (e.g. `'Smoke Suite'`), or `null` to disable grouping. `TESTOMATIO_RUNGROUP_TITLE` from the environment, if set, takes precedence.
+
+### Changes
+- [Reporter] HTML reports are now written to a session-scoped filename (`<mode>-<sessionName>.html`, e.g. `explore-WiseFox42.html`) so successive runs no longer overwrite each other in `output/reports/`.
+- [Tester] When a modal, dialog, or overlay is open above the page, the AI is told to scope all clicks, types, and locator lookups to elements inside it. Page navigation, filters, and tabs that share names with elements inside the overlay are no longer treated as actionable while it's open.
+- URL matcher: Knowledge file URL patterns without a `?` now match the path even when the visited URL carries a query string. For example, the pattern `/login` now matches `/login?next=/dashboard`. Patterns that include `?` still match against the full URL with query.
+
 ## 2026-05-04
 
 ### Configuration

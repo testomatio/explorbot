@@ -45,6 +45,10 @@ export function generalizeUrl(url: string): string {
 
 export function matchesUrl(pattern: string, path: string): boolean {
   if (pattern === '*') return true;
+  if (!pattern.includes('?')) {
+    const queryIndex = path.indexOf('?');
+    if (queryIndex >= 0) path = path.slice(0, queryIndex);
+  }
   const norm = (s: string) => s?.replace(/\/+$/, '').toLowerCase();
   if (norm(pattern) === norm(path)) return true;
 

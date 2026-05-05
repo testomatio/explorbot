@@ -463,6 +463,8 @@ export class Tester extends TaskAgent implements Agent {
 
     let context = '';
 
+    const focusArea = detectFocusArea(currentState.ariaSnapshot);
+
     const focusedElement = extractFocusedElement(currentState.ariaSnapshot);
     if (focusedElement) {
       const isTextInput = ['textbox', 'combobox', 'searchbox'].includes(focusedElement.role);
@@ -477,6 +479,18 @@ export class Tester extends TaskAgent implements Agent {
         <no_focus>
         No element is focused
         </no_focus>
+      `;
+    }
+
+    if (focusArea.detected) {
+      const areaName = focusArea.name ? ` "${focusArea.name}"` : '';
+      context += dedent`
+        <focus_scope>
+        A ${focusArea.type}${areaName} is currently open above the page.
+        Scope all interactions to elements inside this ${focusArea.type}.
+        Page navigation, filters, and tabs that exist outside it are not actionable while it is open and may share names or roles with elements inside it — prefer the locator inside the ${focusArea.type}.
+        Use <page_aria> to confirm the element you target is actually inside the ${focusArea.type}.
+        </focus_scope>
       `;
     }
 
@@ -539,7 +553,6 @@ export class Tester extends TaskAgent implements Agent {
       return context;
     }
 
-    const focusArea = detectFocusArea(currentState.ariaSnapshot);
     if (focusArea.detected && focusArea.name && this.pageStateHash && this.pageActionResult) {
       const overlaySection = await this.researcher.researchOverlay(currentState, this.pageActionResult, this.pageStateHash);
       if (overlaySection) {
