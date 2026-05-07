@@ -52,9 +52,12 @@ export const StatusPane: React.FC<{ onComplete?: () => void }> = ({ onComplete }
             <Text bold>Usage</Text>
           </Box>
           <Row label="Time" value={Stats.getElapsedTime()} />
-          {tokenRows.map(([model, tokens]) => (
-            <Row key={model} label={model} value={`${Stats.humanizeTokens(tokens.total)} tokens`} />
-          ))}
+          {tokenRows.map(([model, tokens]) => {
+            const cached = tokens.cached ?? 0;
+            const cachePct = tokens.input > 0 ? Math.round((cached / tokens.input) * 100) : 0;
+            const suffix = cached > 0 ? ` (${Stats.humanizeTokens(cached)} cached, ${cachePct}%)` : '';
+            return <Row key={model} label={model} value={`${Stats.humanizeTokens(tokens.total)} tokens${suffix}`} />;
+          })}
         </>
       )}
     </Box>

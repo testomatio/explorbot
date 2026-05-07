@@ -241,6 +241,8 @@ export function multipleTabsRule(tabs: Array<{ url: string; title: string }>): s
 
 export const actionRule = dedent`
   <actions>
+  \`faker\` (from @faker-js/faker) is available inside I.* calls for generating data, e.g. I.fillField('Bio', faker.lorem.paragraphs(5)).
+
   ### I.click
 
   clicks on the element by its locator

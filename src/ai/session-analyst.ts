@@ -19,69 +19,71 @@ export class SessionAnalyst implements Agent {
     const eligible = tests.filter((t) => t.startTime != null);
     if (eligible.length === 0) return '';
 
-    const model = this.provider.getModelForAgent('analyst');
+    const model = this.provider.getAgenticModel('analyst');
     const customPrompt = this.provider.getSystemPromptForAgent('analyst', undefined);
 
     const systemPrompt = dedent`
-      You write a brief end-of-session report after autonomous exploratory testing. Your reader is a developer who needs to know in seconds: what is broken, how to reproduce it, and which results were inconclusive.
+      You write a TERSE end-of-session report. Reader is a developer who wants to UNDERSTAND THE FEATURE — what works, what is broken, what is unclear. Every word must earn its place.
 
-      Output MARKDOWN. No JSON, no preamble, no closing remarks. Start with the heading.
+      Output MARKDOWN. No JSON, no preamble, no closing summary.
 
-      ## Clustering
-      Group by ROOT CAUSE, not by scenario. If three tests fail for the same dropdown, that is ONE defect listing all three test refs (#3, #5, #7). Do not produce one cluster per test.
+      NO EMOJI. No 🔴 🟡 🟢 ✅, no escape sequences like \\u2705. Use plain text severity tags: [High], [Medium], [Low] for defects.
 
-      ## Bucketing
-      Use the FINAL verdict (the test's \`result\` field) as the starting point. Mid-test errors that the automation recovered from do NOT make a passed test unreliable.
+      ## Reporting unit
 
-      - **Defect** — real product bug. \`result: failed\` AND the failure reflects the app misbehaving (not the automation). The automation completed its interactions, the app contradicted the expected outcome. Severity required.
-      - **UX issue** — app works but the UI is ambiguous, controls are hidden, or labels are unclear. Worth flagging to design.
-      - **Execution issue** — the FINAL verdict is unreliable. Only two cases:
-        1. \`result: failed\` AND the failure was automation, environment, or UI/UX (locator missing, timeout, AI loop, navigation stuck, modal trapped focus, no accessible label) — i.e. the test could not conclude whether the app works.
-        2. \`result: passed\` AND clear evidence in the log shows the user-visible goal was NOT achieved (no confirmation visible, no state change verified, the assertion was vacuous).
+      Report at the level of FEATURES / FLOWS / PAGES. Tests are evidence, not the unit. Several tests covering the same flow → ONE entry citing all of them.
 
-      A test that passed and shows no contrary evidence belongs in NO section. Do not list passed tests just because the log contains intermediate retries or recovered failures.
+      ## Walk every test
 
-      ## Severity emoji (defects only)
-      - 🔴 critical or high — core flow blocked, data loss, security
-      - 🟡 medium — partial breakage with workaround
-      - 🟢 low — cosmetic
+      PASSED test: did all steps run, was the goal actually verified, did the user-visible goal happen? All yes → contributes to What works. Any no → Execution issue (false positive).
 
-      ## Required format
+      FAILED test, first match wins: (1) goal achieved but mis-verified → Execution. (2) automation failure (locator/timeout/loop/modal/a11y) → Execution. (3) bad preconditions or data → Execution. (4) wrong URL/environment → Execution. (5) app contradicted expected outcome → Defect.
+
+      Crucial distinction: "the app misbehaved" vs "the automation could not interact with the app". ONLY the first is a Defect. If the automation gives up before the app responds — timeout, retries exhausted, dead loop / loop detected, could not click or find an element — that is an Execution issue regardless of what the log calls it. Failure inside the automation ≠ failure inside the product.
+
+      A solitary failure where adjacent tests on the same feature passed → Execution, not Defect.
+
+      ## Severity (defects only)
+      [High] blocks a core flow · [Medium] degrades a flow but workaround exists · [Low] cosmetic / edge case
+
+      ## Format
 
       # Session Analysis
 
-      <one sentence: total tests, defect count, headline finding>
+      <ONE or TWO sentences describing the FEATURE STATE — what was explored, whether the core flow holds, what the standout problem is. NO test counts, NO "N tests run". Talk about the product, not the run.>
+
+      ## Coverage
+      - Pages: <paths>
+      - Features: <capabilities>
+
+      ## What works
+      - **<feature>** — #2, #7, #8
 
       ## Defects
 
-      ### 🔴 <plain-English title of the BUG, not the scenario name>
-      Affects: #3, #5, #7
+      ### [Medium] <plain-English bug title>
+      Affects: #3, #5
       Reproduce:
-        1. <concrete UI step a person can replay>
-        2. <next step>
-      Evidence: <one short observation from the test log>
-
-      ### 🟡 <next defect>
-      ...
+        1. <concrete UI step>
+        2. <next>
+      Evidence: <one short observation>
 
       ## UX issues
-
-      - **<title>** — #4
-        <one short evidence line>
+      - **<feature>** — <what's confusing> (#7)
 
       ## Execution Issues
+      - **#2 <scenario>** — <≤10 words, what was unreliable>
 
-      - **<short test name or scenario phrase>** — <plain-English one-liner: what made the result unreliable>
-      - **<…>** — <…>
+      ## Brevity rules
 
-      ## Rules
-      - Defects first, sorted by severity descending. Omit any section that has zero entries.
-      - Defect title describes the BUG ("Run-type dropdown does not filter"), never the scenario name.
-      - Reproduce steps are concrete UI actions derived from the log: URL + clicks + inputs. Imperative, one short line each.
-      - Evidence is the smallest factual observation from notes/steps that supports the claim — what was OBSERVED in the page (HTML, message, missing element). Never quote the test's \`result\` field as evidence; that is a tautology.
-      - **Execution Issues** entries must explain what actually went wrong in concrete terms a human understands: "could not find a Submit button after navigation", "page reloaded before the assertion ran", "passed without ever seeing a confirmation message", "marked failed but the new item appears in the list", "modal trapped focus and tests could not click outside", "ARIA tree had no labelled controls". Avoid jargon like "locator failed" without context. Never write category prefixes ("execution:", "false-positive:") — the section header already says it. No emoji on these entries.
-      - Do NOT include a passed test in any section unless evidence proves its goal was not achieved. Intermediate retries or recovered errors in the log are not grounds for listing a passed test.
-      - No editorialising, no restating the scenario verbatim, no closing summary.
+      - Headline: 2 sentences MAX. About the FEATURE, not the run. No counts, no "N tests", no "this session". Banned words: "exercised", "comprehensive", "notably", "this session", "module", "targeted", "covered creation".
+      - What works: feature name + test refs. NO parentheticals, NO caveats. If there's a caveat, the entry doesn't belong here.
+      - Defect title is the BUG ("Search returns non-matching results"), never the scenario name.
+      - Reproduce steps are imperative one-liners drawn from the log.
+      - Evidence is one short factual observation. Never quote the \`result\` field.
+      - Execution Issues: ONE line per test, ≤10 words, plain. Examples: "passed vacuously, no list assertion", "no file upload step in log", "dead loop on Save click". No prefixes, no nested explanation.
+      - Omit any empty section.
+      - Section order: Coverage → What works → Defects (severity desc) → UX issues → Execution Issues.
 
       ${customPrompt || ''}
     `;
@@ -101,7 +103,7 @@ export class SessionAnalyst implements Agent {
       { agentName: 'analyst' }
     );
 
-    return (response?.text || '').trim();
+    return decodeEscapes((response?.text || '').trim());
   }
 
   writeReport(markdown: string): string {
@@ -130,4 +132,8 @@ export class SessionAnalyst implements Agent {
       </test>
     `;
   }
+}
+
+function decodeEscapes(text: string): string {
+  return text.replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16))).replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)));
 }

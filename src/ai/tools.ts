@@ -510,7 +510,7 @@ export function createAgentTools({
           }
 
           return successToolResult('see', {
-            analysis: analysisResult,
+            analysis: cap(analysisResult, ANALYSIS_OUTPUT_CAP),
             message: `Successfully analyzed screenshot for: ${request}`,
             suggestion: 'Visual confirmation is valid evidence for test results. Use record() to note the visual findings.',
           });
@@ -559,8 +559,8 @@ export function createAgentTools({
             url: currentState.url,
             title: currentState.title,
             suggestion: 'If not enough context received, call see() to visually identify elements in page contents',
-            aria,
-            html,
+            aria: cap(aria, ARIA_OUTPUT_CAP),
+            html: cap(html, HTML_OUTPUT_CAP),
             reminder: 'Context provided. Do not call context() again until you perform actions or suspect page changed.',
           });
         } catch (error) {
@@ -656,8 +656,8 @@ export function createAgentTools({
           const researchResult = await researcher.research(currentState, { screenshot: true, data: true });
 
           return successToolResult('research', {
-            analysis: researchResult,
-            aria: ActionResult.fromState(currentState).getInteractiveARIA(),
+            analysis: cap(researchResult, TOOL_OUTPUT_CAP),
+            aria: cap(ActionResult.fromState(currentState).getInteractiveARIA(), ARIA_OUTPUT_CAP),
             message: `Successfully researched page: ${currentState.url}.`,
             suggestion: dedent`
               You received comprehensive UI map report. Use it to understand the page structure and navigate to the elements. 
@@ -1001,6 +1001,17 @@ export function createAgentTools({
 
 const PAGE_DIFF_SUGGESTION = 'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff.';
 
+const TOOL_OUTPUT_CAP = 4000;
+const ARIA_OUTPUT_CAP = 4000;
+const HTML_OUTPUT_CAP = 6000;
+const ANALYSIS_OUTPUT_CAP = 2000;
+
+function cap(text: string | undefined | null, max: number): string {
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n[...truncated; ${text.length - max} chars omitted...]`;
+}
+
 function transformContainsCommand(command: string): string {
   if (!command.includes(':contains(')) return command;
 
@@ -1044,8 +1055,12 @@ function successToolResult(action: string, data?: Record<string, any>, source?: 
   if (data?.pageDiff) {
     let suggestion = PAGE_DIFF_SUGGESTION;
     const ariaChanges = data.pageDiff.ariaChanges || '';
+    const urlChanged = data.pageDiff.urlChanged === true;
+    const hasHtmlParts = Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
     if (countAriaChanges(ariaChanges) >= 50) {
       suggestion = `MAJOR PAGE CHANGE. Page entered a different mode. Check htmlParts and iframes in pageDiff before next action. ${suggestion}`;
+    } else if (!urlChanged && !ariaChanges && !hasHtmlParts) {
+      suggestion = 'Action ran without error but produced no observable change (URL, ARIA and HTML all unchanged). The locator likely matched a non-interactive ancestor or an element outside the intended control. Re-locate via xpathCheck() or verify with see() before treating this as success.';
     } else if (ariaChanges.includes('heading') && ariaChanges.includes('added')) {
       suggestion += ' WARNING: A new panel or modal may have appeared. If this was not the intended action, close it and try a different element.';
     }

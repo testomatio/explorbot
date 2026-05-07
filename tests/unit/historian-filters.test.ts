@@ -19,4 +19,19 @@ describe('isNonReusableCode', () => {
     expect(isNonReusableCode('// no clickXY here')).toBe(false);
     expect(isNonReusableCode('I.say("clickXY is bad")')).toBe(false);
   });
+
+  it('flags code containing dynamic framework IDs', () => {
+    expect(isNonReusableCode("I.fillField('#ember63Input', 'x')")).toBe(true);
+    expect(isNonReusableCode("I.click('#ember42')")).toBe(true);
+    expect(isNonReusableCode("I.click('#__next2')")).toBe(true);
+  });
+
+  it('does not flag stable selectors', () => {
+    expect(isNonReusableCode("I.click('Add Requirement', '.main-app')")).toBe(false);
+    expect(isNonReusableCode("I.click('Save', '.side-tabs-content')")).toBe(false);
+    expect(isNonReusableCode("I.click('Save', '.ember-view')")).toBe(false);
+    expect(isNonReusableCode("I.click('.react-select-2-input')")).toBe(false);
+    expect(isNonReusableCode('I.fillField(\'li[aria-labelledby="tab-file"] input[name="requirement[title]"]\', \'x\')')).toBe(false);
+    expect(isNonReusableCode("I.attachFile('input[type=\"file\"]', '../assets/sample-files/sample.pdf')")).toBe(false);
+  });
 });

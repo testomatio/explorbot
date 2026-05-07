@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
+import { faker } from '@faker-js/faker';
 import { context, trace } from '@opentelemetry/api';
 import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
@@ -255,8 +256,8 @@ class Action {
         await asyncFn(page);
         await sleep(this.config.action?.delay || 500);
       } else {
-        const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', sanitizedCode);
-        codeFunction(this.actor, tryTo, retryTo, within, hopeThat, step);
+        const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', 'faker', sanitizedCode);
+        codeFunction(this.actor, tryTo, retryTo, within, hopeThat, step, faker);
         await recorder.add(() => sleep(this.config.action?.delay || 500));
         await recorder.promise();
       }

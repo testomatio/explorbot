@@ -1,6 +1,7 @@
 import figureSet from 'figures';
 import { getStyles } from '../ai/planner/styles.js';
 import { outputPath } from '../config.js';
+import { normalizeUrl } from '../state-manager.js';
 import { Stats } from '../stats.js';
 import type { Plan } from '../test-plan.js';
 import { getCliName } from '../utils/cli-name.ts';
@@ -10,6 +11,8 @@ import { jsonToTable } from '../utils/markdown-parser.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { safeFilename } from '../utils/strings.ts';
 import { BaseCommand, type Suggestion } from './base-command.js';
+
+const MAX_SUB_PAGE_ATTEMPTS = 30;
 
 export class ExploreCommand extends BaseCommand {
   name = 'explore';
@@ -27,6 +30,7 @@ export class ExploreCommand extends BaseCommand {
   maxTests?: number;
   private testsRun = 0;
   private completedPlans: Plan[] = [];
+  private failedSubPages = new Set<string>();
 
   async execute(args: string): Promise<void> {
     const { opts, args: remaining } = this.parseArgs(args);
@@ -46,10 +50,12 @@ export class ExploreCommand extends BaseCommand {
 
     if (!feature && !this.isLimitReached()) {
       const planner = this.explorBot.agentPlanner();
-      while (true) {
+      let attempts = 0;
+      while (attempts < MAX_SUB_PAGE_ATTEMPTS) {
+        attempts++;
         if (this.isLimitReached()) break;
 
-        const candidates = planner.collectSubPageCandidates(mainPlan, mainUrl || '/');
+        const candidates = planner.collectSubPageCandidates(mainPlan, mainUrl || '/').filter((c) => !this.failedSubPages.has(normalizeUrl(c.url)));
         if (candidates.length === 0) break;
 
         const pick = await planner.pickNextSubPage(candidates);
@@ -64,6 +70,7 @@ export class ExploreCommand extends BaseCommand {
             this.completedPlans.push(subPlan);
           }
         } catch (err) {
+          this.failedSubPages.add(normalizeUrl(pick.url));
           tag('warning').log(`Sub-page exploration failed: ${err instanceof Error ? err.message : err}`);
         }
       }

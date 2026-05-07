@@ -64,6 +64,8 @@ export class Tester extends TaskAgent implements Agent {
   private pageStateHash: string | null = null;
   private pageActionResult: ActionResult | null = null;
   private hooksRunner: HooksRunner;
+  private seenUiMapUrls = new Set<string>();
+  private lastAnalyzedStateHash: string | null = null;
 
   constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
     super();
@@ -104,7 +106,7 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private get progressCheckInterval(): number {
-    return (this.explorer.getConfig().ai?.agents?.tester as any)?.progressCheckInterval ?? 5;
+    return (this.explorer.getConfig().ai?.agents?.tester as any)?.progressCheckInterval ?? 3;
   }
 
   getConversation(): Conversation | null {
@@ -123,6 +125,8 @@ export class Tester extends TaskAgent implements Agent {
     this.previousStateHash = null;
     this.pageStateHash = null;
     this.pageActionResult = null;
+    this.seenUiMapUrls.clear();
+    this.lastAnalyzedStateHash = null;
     this.explorer.getStateManager().clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
@@ -147,14 +151,20 @@ export class Tester extends TaskAgent implements Agent {
     const initialState = ActionResult.fromState(state);
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
+    conversation.markLastMessageCacheable();
     this.currentConversation = conversation;
 
     const outputDir = ConfigParser.getInstance().getOutputDir();
     this.executionLogFile = join(outputDir, `tester_${task.sessionName}.md`);
     // Note: Markdown saving functionality removed from Conversation class
 
-    const initialPrompt = await this.buildTestPrompt(task, initialState);
-    conversation.addUserText(initialPrompt);
+    const scenarioBlock = this.buildScenarioBlock(task, initialState);
+    conversation.addUserText(scenarioBlock);
+    conversation.markLastMessageCacheable();
+    conversation.protectPrefix(conversation.messages.length);
+
+    const pageContext = await this.reinjectContextIfNeeded(1, initialState);
+    if (pageContext) conversation.addUserText(pageContext);
 
     return await Observability.run(
       `test: ${task.scenario}`,
@@ -177,6 +187,12 @@ export class Tester extends TaskAgent implements Agent {
     if (this.pilot) {
       try {
         const plan = await this.pilot.planTest(task, initialState);
+        if (task.hasFinished) {
+          offFailedRequest?.();
+          page?.off('pageerror', onPageError);
+          page?.off('console', onConsoleMessage);
+          return { success: task.isSuccessful };
+        }
         if (plan) {
           conversation.addUserText(`Pilot's test plan:\n${plan}\n\nFollow this plan while executing the test.`);
         }
@@ -200,13 +216,15 @@ export class Tester extends TaskAgent implements Agent {
     debugLog(`Navigating to ${task.startUrl}`);
     await this.explorer.visit(task.startUrl!);
 
-    const currentUrl = this.explorer.getStateManager().getCurrentState()?.url || task.startUrl || '';
+    const startState = this.explorer.getStateManager().getCurrentState();
+    if (startState) task.addUrlNote(startState);
+    const currentUrl = startState?.url || task.startUrl || '';
     await this.hooksRunner.runBeforeHook('tester', currentUrl);
 
     const offStateChange = this.explorer.getStateManager().onStateChange((event: StateTransition) => {
       if (task.hasFinished) return;
       if (event.toState?.url === event.fromState?.url) return;
-      task.addNote(`Navigated to ${event.toState?.url}`, TestResult.PASSED);
+      if (event.toState) task.addUrlNote(event.toState, event.fromState || undefined);
       task.states.push(event.toState);
     });
 
@@ -253,13 +271,13 @@ export class Tester extends TaskAgent implements Agent {
           `);
           }
 
-          conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 2);
+          conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 1);
           conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
           conversation.cleanupTag('experience', '...cleaned experience...', 1);
           conversation.cleanupTag('applied_experience', '...cleaned past experience...', 1);
           conversation.cleanupTag('page_ui_map', '...cleaned UI map...', 1);
           conversation.cleanupTag('page_ui_map_overlay', '...cleaned UI overlay...', 1);
-          conversation.compactToolResults(3);
+          conversation.compactToolResults(2);
 
           if (iteration > 1) {
             const isNewPage = this.previousUrl !== null && this.previousUrl !== currentState.url;
@@ -270,16 +288,17 @@ export class Tester extends TaskAgent implements Agent {
             if (isNewPage && this.pilot) {
               const guidance = await this.pilot.reviewNewPage(task, currentState, conversation);
               if (guidance) nextStep += `\n\n${guidance}`;
-            } else if ((iteration % this.progressCheckInterval === 0 || this.consecutiveFailures >= 3 || this.consecutiveEmptyResults >= 2) && this.pilot) {
+            } else if (this.shouldAnalyzeProgress(iteration, currentState) && this.pilot) {
               const guidance = await this.pilot.analyzeProgress(task, currentState, conversation);
               if (guidance) nextStep += `\n\n${guidance}`;
               this.consecutiveFailures = 0;
+              this.lastAnalyzedStateHash = currentState.hash;
             }
             conversation.addUserText(nextStep);
           }
 
           const result = await this.provider.invokeConversation(conversation, tools, {
-            maxToolRoundtrips: 5,
+            maxToolRoundtrips: 3,
             toolChoice: 'required',
             stopWhen: () => task.hasFinished,
           });
@@ -421,6 +440,14 @@ export class Tester extends TaskAgent implements Agent {
     };
   }
 
+  private shouldAnalyzeProgress(iteration: number, currentState: ActionResult): boolean {
+    if (this.consecutiveFailures >= 3) return true;
+    if (this.consecutiveEmptyResults >= 2) return true;
+    if (iteration % this.progressCheckInterval !== 0) return false;
+    if (this.lastAnalyzedStateHash === currentState.hash) return false;
+    return true;
+  }
+
   private async prepareInstructionsForNextStep(task: Test): Promise<string> {
     let outcomeStatus = dedent`
       <task>
@@ -511,17 +538,21 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (isNewUrl) {
+      const alreadySeenUiMap = this.seenUiMapUrls.has(currentUrl);
       let research = '';
-      try {
-        research = await this.researcher.research(currentState);
-      } catch (err) {
-        if (!(err instanceof ErrorPageError)) throw err;
-        tag('warning').log(`Research skipped: ${err.message}`);
+      if (!alreadySeenUiMap) {
+        try {
+          research = await this.researcher.research(currentState);
+        } catch (err) {
+          if (!(err instanceof ErrorPageError)) throw err;
+          tag('warning').log(`Research skipped: ${err.message}`);
+        }
       }
       this.pageStateHash = currentStateHash;
       this.pageActionResult = currentState;
       let uiMapSection = '';
       if (research) {
+        this.seenUiMapUrls.add(currentUrl);
         uiMapSection = dedent`
 
           Page UI Map
@@ -530,6 +561,8 @@ export class Tester extends TaskAgent implements Agent {
           ${research}
           </page_ui_map>
         `;
+      } else if (alreadySeenUiMap) {
+        uiMapSection = `\n\n<page_ui_map>UI map for ${currentUrl} was shown earlier in this session — refer to it above.</page_ui_map>`;
       }
 
       context += dedent`
@@ -740,9 +773,8 @@ export class Tester extends TaskAgent implements Agent {
     `;
   }
 
-  private async buildTestPrompt(task: Test, actionResult: ActionResult): Promise<string> {
+  private buildScenarioBlock(task: Test, actionResult: ActionResult): string {
     const knowledge = this.getKnowledge(actionResult);
-    const pageContext = await this.reinjectContextIfNeeded(1, actionResult);
 
     return dedent`
       <task>
@@ -770,8 +802,6 @@ export class Tester extends TaskAgent implements Agent {
       ${this.buildAvailableFiles()}
 
       ${knowledge}
-
-      ${pageContext}
     `;
   }
 

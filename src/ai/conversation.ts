@@ -19,6 +19,7 @@ export class Conversation {
   messages: ModelMessage[];
   model: any;
   telemetryFunctionId?: string;
+  protectedPrefixCount = 0;
   private autoTrimRules: Map<string, number>;
 
   constructor(messages: ModelMessage[] = [], model?: any, telemetryFunctionId?: string) {
@@ -27,6 +28,10 @@ export class Conversation {
     this.model = model || '';
     this.telemetryFunctionId = telemetryFunctionId;
     this.autoTrimRules = new Map();
+  }
+
+  protectPrefix(count: number): void {
+    this.protectedPrefixCount = count;
   }
 
   addUserText(text: string): void {
@@ -85,9 +90,11 @@ export class Conversation {
     const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(`<${escapedTag}>[\\s\\S]*?<\\/${escapedTag}>`, 'g');
     const replacementText = `<${tagName}>${replacement}</${tagName}>`;
+    const start = this.protectedPrefixCount;
 
     if (keepLast === 0) {
-      for (const message of this.messages) {
+      for (let i = start; i < this.messages.length; i++) {
+        const message = this.messages[i];
         if (typeof message.content === 'string') {
           message.content = message.content.replace(regex, replacementText);
         }
@@ -96,7 +103,7 @@ export class Conversation {
     }
 
     const allMatches: Array<{ messageIndex: number; startIndex: number; endIndex: number }> = [];
-    for (let i = 0; i < this.messages.length; i++) {
+    for (let i = start; i < this.messages.length; i++) {
       const message = this.messages[i];
       if (typeof message.content === 'string') {
         const matches = [...message.content.matchAll(new RegExp(`<${escapedTag}>[\\s\\S]*?<\\/${escapedTag}>`, 'g'))];
@@ -112,7 +119,7 @@ export class Conversation {
     const keepMatches = allMatches.slice(-keepCount);
     const keepSet = new Set(keepMatches.map((m) => `${m.messageIndex}:${m.startIndex}`));
 
-    for (let i = 0; i < this.messages.length; i++) {
+    for (let i = start; i < this.messages.length; i++) {
       const message = this.messages[i];
       if (typeof message.content === 'string') {
         const matches = [...message.content.matchAll(new RegExp(`<${escapedTag}>[\\s\\S]*?<\\/${escapedTag}>`, 'g'))];
@@ -137,7 +144,7 @@ export class Conversation {
 
   compactToolResults(keepLastN: number): void {
     const toolMessageIndexes: number[] = [];
-    for (let i = 0; i < this.messages.length; i++) {
+    for (let i = this.protectedPrefixCount; i < this.messages.length; i++) {
       if (this.messages[i].role === 'tool') toolMessageIndexes.push(i);
     }
     const compactUpTo = toolMessageIndexes.length - Math.max(0, keepLastN);
@@ -167,6 +174,16 @@ export class Conversation {
         }
       }
     }
+  }
+
+  markLastMessageCacheable(): void {
+    const last = this.messages[this.messages.length - 1];
+    if (!last) return;
+    (last as any).providerOptions = {
+      ...(last as any).providerOptions,
+      anthropic: { cacheControl: { type: 'ephemeral' } },
+      bedrock: { cachePoint: { type: 'default' } },
+    };
   }
 
   hasTag(tagName: string, lastN?: number): boolean {

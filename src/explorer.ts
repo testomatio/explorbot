@@ -549,10 +549,7 @@ class Explorer {
       if (!this.stateManager.getCurrentState()) return;
 
       const lastScreenshot = ActionResult.fromState(this.stateManager.getCurrentState()!).screenshotFile;
-      if (!lastScreenshot) return;
-
-      const screenshotPath = outputPath('states', lastScreenshot);
-      test.addArtifact(screenshotPath);
+      test.setActiveNoteScreenshot(lastScreenshot);
     };
 
     const dialogHandler = (dialog: any) => {

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-05-07
+
+### Configuration
+- **`ai.agents.tester.progressCheckInterval`** — How often (in iterations) the Pilot reviews tester progress. Default lowered from `5` to `3`, so stuck patterns are caught sooner.
+
+### Changes
+- [Reporter] Tests now end with a dedicated **Verification** step that bundles the Pilot's verdict line, the final URL, the final screenshot, and any A11Y / UX findings. Previously these were spliced into mid-test notes, making it hard to tell the verdict from incidental observations.
+- [Reporter] Navigation notes now read `Navigated to <page title>` (falling back to `h1`/`h2` when the title hasn't changed) with the URL placed in the step log, so report rows are scannable instead of long URL strings.
+- [Reporter] Testomat.io runs are now created with `configuration.exploratory = true` so they're tagged as exploratory in the dashboard.
+- [Tester] System prompt and initial scenario block are now sent with Anthropic prompt-caching markers. The Usage panel in the TUI shows `(N cached, X%)` next to each model's token count so cache hit rate is visible at a glance.
+- [Tester] When the tester returns to a URL whose UI map was already produced earlier in the session, the research call is skipped and a one-line reminder is injected instead — saves tokens and time on multi-page scenarios.
+- [Pilot] When data the test needs to act on cannot be created automatically (Fisherman unavailable or precondition failed), the Pilot now uses the vision model to check whether the current page exposes a way to create that data. If it doesn't, the scenario is **skipped** with an explanation instead of being recorded as a failure.
+- [Pilot] `requestVerification` on a `pass` verdict is now an English claim about the page (e.g. `New test suite "Foo" is visible in the suites list`), not CodeceptJS code. The Navigator translates the claim into assertions before they're baked into the generated spec.
+- [Pilot] Recent-action history sent to the Pilot is now capped at 25 lines per page group; older lines are summarised as `[...N earlier action(s) omitted...]` so very long sessions no longer blow up the supervisor prompt.
+- [Analyst] Session report rewritten: now feature-focused with `Coverage`, `What works`, `Defects`, `UX issues`, `Execution Issues` sections. Severity uses plain text tags `[High]` / `[Medium]` / `[Low]` (no emoji). The Analyst now runs on the agentic model.
+- [Historian] Generated tests no longer include selectors that contain framework-generated dynamic IDs (`#ember42`, `#__next2`, etc.) — those IDs change every page load and would never match on rerun.
+- [Explorer] The explore command now keeps a set of sub-pages whose exploration failed and skips them on subsequent picks, and stops after at most 30 sub-page attempts. Previously it could loop indefinitely on a candidate that kept failing.
+- Experience Tracker: Skips writing actions and flows whose code uses dynamic framework IDs or `I.clickXY(...)` — captured experience is now restricted to selectors that have a chance of replaying.
+- AI tools (`see`, `context`, `research`): tool outputs are now capped (4 KB ARIA, 6 KB HTML, 2 KB analysis, 4 KB research) with a `[...truncated; N chars omitted...]` marker. Stops large pages from eating the tester's context budget.
+- AI tool feedback: When a click/action returns success but the URL, ARIA, and HTML are all unchanged, the tester is now told the locator likely matched a non-interactive ancestor and is instructed to re-locate (`xpathCheck`) or visually verify (`see`) before treating the call as a real success.
+- I.* commands: The `faker` library (from `@faker-js/faker`) is now available inside `I.*` calls for generating test data, e.g. `I.fillField('Bio', faker.lorem.paragraphs(5))`.
+
 ## 2026-05-06
 
 ### Configuration

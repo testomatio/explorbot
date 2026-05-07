@@ -1,7 +1,14 @@
+import { isDynamicId } from '../../utils/xpath.ts';
 import type { ToolExecution } from '../conversation.ts';
 
 export function isNonReusableCode(code: string): boolean {
-  return /\bI\.clickXY\s*\(/.test(code);
+  if (/\bI\.clickXY\s*\(/.test(code)) return true;
+
+  for (const m of code.matchAll(/#([A-Za-z_][\w-]*)/g)) {
+    if (isDynamicId(m[1])) return true;
+  }
+
+  return false;
 }
 
 export function escapeString(str: string): string {

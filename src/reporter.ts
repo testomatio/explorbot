@@ -110,7 +110,7 @@ export class Reporter {
       const timeoutMs = Number(process.env.TESTOMATIO_TIMEOUT_MS || '15000');
       const timeoutPromise = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), timeoutMs));
 
-      const result = await Promise.race([this.client.createRun().then(() => 'success' as const), timeoutPromise]);
+      const result = await Promise.race([this.client.createRun({ configuration: { exploratory: true } }).then(() => 'success' as const), timeoutPromise]);
 
       if (result === 'timeout') {
         debugLog('Reporter run creation timed out');
@@ -145,6 +145,7 @@ export class Reporter {
         message: note.message,
         status: note.status,
         screenshot: note.screenshot,
+        log: note.log,
       }))
       .sort((a, b) => a.startTime - b.startTime);
 
@@ -180,7 +181,16 @@ export class Reporter {
       if (noteEntry.screenshot) {
         step.artifacts = [outputPath('states', noteEntry.screenshot)];
       }
+      if (noteEntry.log) {
+        step.log = noteEntry.log;
+      }
       steps.push(step);
+    }
+
+    const verificationStep = this.buildVerificationStep(test, lastScreenshotFile);
+    if (verificationStep) {
+      steps.push(verificationStep);
+      return steps;
     }
 
     if (lastScreenshotFile && steps.length > 0) {
@@ -194,6 +204,39 @@ export class Reporter {
     }
 
     return steps;
+  }
+
+  private buildVerificationStep(test: Test, lastScreenshotFile?: string): Step | undefined {
+    const v = test.verification;
+    if (!v) return undefined;
+
+    const subSteps: Step[] = [];
+    if (v.message) subSteps.push({ category: 'framework', title: v.message, duration: 0 });
+    if (v.url) {
+      subSteps.push({
+        category: 'framework',
+        title: v.pageLabel ? `Navigated to ${v.pageLabel}` : 'Final page',
+        log: v.url,
+        duration: 0,
+      });
+    }
+    for (const detail of v.details) {
+      subSteps.push({ category: 'framework', title: detail, duration: 0 });
+    }
+
+    const screenshotFile = v.screenshot || lastScreenshotFile;
+
+    const step: Step = {
+      category: 'user',
+      title: 'Verification',
+      duration: 0,
+      status: v.status || 'none',
+      steps: subSteps.length > 0 ? subSteps : undefined,
+    };
+    if (screenshotFile) {
+      step.artifacts = [outputPath('states', screenshotFile)];
+    }
+    return step;
   }
 
   async reportTest(test: Test, meta?: ReporterMeta): Promise<void> {

@@ -110,7 +110,7 @@ export class Pilot implements Agent {
         .string()
         .nullable()
         .describe(
-          'REQUIRED whenever decision is "pass" — provide a specific assertion that proves the scenario goal on the current page (e.g., "New test suite \\"Foo\\" is visible in the suites list"). The system runs it and bakes the resulting assertion into the generated test file; without it the test file has no verifiable expect(). Also use when evidence is insufficient before deciding pass/fail. Leave null for "continue", "fail", or "skipped".'
+          'REQUIRED whenever decision is "pass" — a one-sentence natural-language claim about the current page that, if true, proves the scenario goal (e.g., "New test suite \\"Foo\\" is visible in the suites list"). NOT code: do not write I.*, expect(), .then(), grabTitle, or any JavaScript. Navigator translates the claim into CodeceptJS assertions and runs them; passing assertions are saved to the generated test file. Also use when evidence is insufficient before deciding pass/fail. Leave null for "continue", "fail", or "skipped".'
         ),
     });
 
@@ -133,19 +133,20 @@ export class Pilot implements Agent {
       ${sessionLog || 'No actions recorded'}
       </session_log>
 
-      Decide:
-      - "pass" ONLY if the SCENARIO GOAL is fully accomplished (not just milestones)
-      - "fail" if the scenario was attempted but failed
-      - "skipped" if the scenario is irrelevant/inapplicable OR systematic execution failures prevented testing (e.g., repeated LLM errors, navigation crashes, tool failures unrelated to the scenario)
-      - "continue" if tester hasn't completed the scenario goal yet — even if milestones were checked
-      - If evidence is mixed, but final state indicates goal completion, choose "pass"
-      - If evidence is mixed and final state is unclear, prefer "continue" over "fail"
+      Decide and commit. "continue" extends the loop and burns iterations — choose it only when
+      evidence is genuinely insufficient to call pass/fail, not as a safety hedge.
+      - "pass" if final state proves the SCENARIO GOAL is accomplished. Set requestVerification.
+      - "fail" if scenario was attempted but goal not achieved.
+      - "skipped" if scenario is irrelevant/inapplicable, OR systematic infrastructure failures.
+      - "continue" only when a concrete missing piece of evidence (a verify/see) would change your verdict.
+      - Mixed evidence + final state shows success → pass. Mixed + final state unclear → continue with guidance.
 
-      When deciding "pass", you MUST also set requestVerification to a CodeceptJS assertion that
-      proves the scenario goal on the current page. Choose the strongest single evidence (a unique
-      element/text that exists ONLY because the scenario succeeded). The assertion is executed and
-      then converted into the spec file's expect() — without it the generated test has nothing to
-      assert and is worthless.
+      When deciding "pass", you MUST also set requestVerification to a one-sentence natural-language
+      claim about the current page (e.g., "New test suite Foo is visible in the suites list"). NOT
+      code — do not write I.*, expect(), .then(), or any JavaScript. Choose the strongest single
+      piece of evidence (a unique element/text that exists ONLY because the scenario succeeded).
+      Navigator translates the claim into CodeceptJS assertions; without it the generated test has
+      nothing to assert and is worthless.
     `;
 
     const messages = [
@@ -181,7 +182,7 @@ export class Pilot implements Agent {
             answer = await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Does the screen confirm: "${result.requestVerification}"? Answer YES or NO only.`);
           }
           if (!(answer || '').trim().toUpperCase().startsWith('YES')) {
-            task.addNote(`Pilot: verification failed — ${result.requestVerification}`, TestResult.FAILED);
+            task.setVerification(`Pilot: verification failed — ${result.requestVerification}`, TestResult.FAILED, screenshotState || currentState);
             task.finish(TestResult.FAILED);
             return false;
           }
@@ -191,20 +192,22 @@ export class Pilot implements Agent {
       tag('info').log(`Pilot: ${result.decision} — ${result.reason}`);
       task.summary = result.reason;
 
+      const verdictState = screenshotState || currentState;
+
       if (result.decision === 'pass') {
-        task.addNote(`Pilot: ${result.reason}`, TestResult.PASSED);
+        task.setVerification(`Pilot: ${result.reason}`, TestResult.PASSED, verdictState);
         task.finish(TestResult.PASSED);
         return false;
       }
 
       if (result.decision === 'fail') {
-        task.addNote(`Pilot: ${result.reason}`, TestResult.FAILED);
+        task.setVerification(`Pilot: ${result.reason}`, TestResult.FAILED, verdictState);
         task.finish(TestResult.FAILED);
         return false;
       }
 
       if (result.decision === 'skipped') {
-        task.addNote(`Pilot: skipped — ${result.reason}`, TestResult.SKIPPED);
+        task.setVerification(`Pilot: skipped — ${result.reason}`, TestResult.SKIPPED, verdictState);
         task.finish(TestResult.SKIPPED);
         return false;
       }
@@ -308,110 +311,91 @@ export class Pilot implements Agent {
     }
   }
 
-  private buildResetSystemPrompt(task: Test): string {
+  private buildSharedEvidenceRules(task: Test): string {
     return dedent`
-      You are Pilot — the supervisor that decides whether a reset is legitimate.
-      Tester wants to reset (navigate back to the start URL and discard progress).
-
       SCENARIO: ${task.scenario}
 
-      Reset is DESTRUCTIVE. It abandons all work done in this iteration. In stateful apps, any
-      side effects (records created, forms submitted) persist on the server — resetting does not
-      undo them. Unnecessary resets create duplicate data and loop forever.
+      EVIDENCE PRIORITY (strict):
+      1) Final observable state proving the scenario goal
+      2) verify()/see() results in the LAST few actions before stop/finish
+      3) Intermediate action outcomes (diagnostic, not decisive)
+      Mixed evidence with a clear final-state success → pass. Mixed with unclear final state → continue.
 
-      LEGITIMATE RESET (decide "allow"):
-      - The current page is unrelated to the scenario and no path leads back.
-      - Navigation is stuck in an error state with no recoverable action.
-      - The tester arrived on a page that cannot host the scenario at all.
+      EVIDENCE SOURCES disagree often: verify(), see(), visual_analysis, session_log. No single source
+      overrides the others — weigh them together. Tester's record() notes are the LEAST reliable; always
+      cross-check against actual actions and state. Visual screenshot analysis is strong for UI state
+      (active tabs, visible counts, colors).
 
-      ILLEGITIMATE RESET (decide "continue"):
-      - The previous action already succeeded (URL changed to a success/detail page, record visible,
-        confirmation shown) and tester wants to redo it because an assertion did not match.
-        The work is done — verify, record, or finish instead of restarting.
-      - A single expectation / milestone does not match app reality but the scenario goal may still
-        have been achieved. Do not redo — instruct the tester to verify the actual outcome.
-      - Tester wants to "try again with different input" after a form was submitted. Submitting
-        again creates a duplicate; guide toward editing the existing record or accepting the state.
+      SCENARIO TITLE defines what must happen. Action verbs require persisted evidence:
+      - "Create X" → X must exist (visible, redirected to its page, or success message). Opening a form is NOT enough.
+      - "Delete X" → X must be gone. Clicking delete is NOT enough.
+      - "Edit X" → updated value must be persisted (visible in list/detail). Opening edit is NOT enough; redirect after save with the new value visible IS enough.
+      - Negative tests ("without a name", "invalid", "duplicate", "unauthorized") → success means the system PREVENTED the action with validation/error.
 
-      RESET-LOOP (decide "fail"):
-      - resetCount >= 2 and the previous resets did not change the underlying situation.
-      - The same flow has been attempted twice with the same failure mode.
-      - Repeating the reset cannot produce new information.
+      PROVENANCE for create/edit scenarios: the task prompt instructs the tester to inject the
+      session marker "${task.sessionName ?? ''}" into newly created or edited free-text values.
+      When that marker COULD be injected, the entity used as proof MUST contain it. A record
+      matching the goal by text alone but missing the marker is a stale leftover from a prior
+      run — it is NOT evidence the current scenario produced anything. Vote \`fail\`, not \`pass\`.
+      This does not apply when the field is restricted (numeric only, enum, etc.) or when the
+      session_log shows no fillField/type/select actions were attempted at all (in that case
+      the scenario clearly didn't run — also vote \`fail\`).
 
-      SCENARIO INAPPLICABLE (decide "skipped"):
-      - The feature the scenario targets does not exist on this app, or prerequisites cannot be met.
+      Expected results are MILESTONES, not the goal. Never fail because a milestone (toast, icon, styling)
+      didn't match if the scenario goal IS accomplished.
+
+      ${this.buildDeletionScope(task)}
+
+      EXPECTED RESULTS (milestones):
+      ${task.expected.map((e) => `- ${e}`).join('\n')}
+    `;
+  }
+
+  private buildResetSystemPrompt(task: Test): string {
+    return dedent`
+      You are Pilot — decide whether a reset is legitimate. Reset is DESTRUCTIVE: it abandons this
+      iteration's work, but server-side side effects (records created, forms submitted) persist.
+      Unnecessary resets create duplicate data and infinite loops.
+
+      ${this.buildSharedEvidenceRules(task)}
+
+      DECISION:
+      - "allow": current page cannot host the scenario, irrecoverable error, or no path back.
+      - "continue": prior action already succeeded (URL changed, record visible, confirmation shown) — verify/finish instead. Or scenario goal may already be met; instruct tester to verify the actual outcome rather than redo. Provide guidance.
+      - "fail": resetCount >= 2 and underlying situation hasn't changed; same flow tried twice with same failure mode.
+      - "skipped": feature doesn't exist on this app or prerequisites can't be met.
 
       PRIORITY:
-      1) Evidence of successful side effects in session_log (URL transition, new record visible).
-         If present, almost never allow the reset — the work is done.
-      2) resetCount. Each prior reset raises the bar for allowing another.
-      3) Tester's stated reason. Weigh it against the observed evidence, do not trust it blindly.
+      1) Successful side effects in session_log → almost never allow reset.
+      2) resetCount — each prior reset raises the bar.
+      3) Tester's stated reason — weigh against evidence, don't trust blindly.
 
-      GUIDANCE FIELD (required when decision is "continue"):
-      Give a specific next action on the current page: which tool to call, what to verify, or how to
-      record the outcome. Do not suggest repeating actions that already succeeded.
-
-      EXPECTED RESULTS (milestones, not the goal):
-      ${task.expected.map((e) => `- ${e}`).join('\n')}
+      GUIDANCE (required for "continue"): a specific next action on the current page — which tool, what
+      to verify, how to record. Do not suggest repeating actions that already succeeded.
     `;
   }
 
   private buildVerdictSystemPrompt(type: string, task: Test): string {
     return dedent`
-      You are Pilot — the final decision maker for test pass/fail.
-      Tester has requested to ${type} the test. Review the evidence and decide.
+      You are Pilot — final decision maker for test pass/fail. Tester requested ${type}. Review the
+      evidence and commit to a verdict; "continue" only when evidence is genuinely insufficient.
 
-      SCENARIO: ${task.scenario}
+      ${this.buildSharedEvidenceRules(task)}
 
-      The SCENARIO is the primary goal. The test can only pass if the scenario goal is fully accomplished.
-      PRIORITY ORDER (strict):
-      1) Final observable state proving the scenario goal
-      2) Verification evidence (if provided)
-      3) Intermediate action/step outcomes
-      If final state evidence proves the scenario goal, PASS even when some intermediate actions failed.
-      Do not fail only because a specific click failed, no toast appeared, or navigation was different than expected.
-      Intermediate failures are diagnostic, not decisive, when end state confirms success.
-      Expected results are helpful milestones but they DO NOT override the scenario goal.
-      NEVER fail a test because an expected result (milestone) was not met when the scenario goal itself IS accomplished.
-      The SCENARIO TITLE defines what must happen. If the title says "Create X and verify it appears" and X was created and appears — that's a PASS, even if some milestone about icons/status/styling was not met.
-      If the scenario says "Create X", then X must be created — opening a form or navigating to /new URL is NOT enough. There must be evidence that the item now exists: visible on page, redirected to the item's page, or a success/confirmation message appeared.
-      If the scenario says "Delete X", then X must be deleted — clicking delete button is not enough. There must be evidence the item is gone.
-      If the scenario says "Edit X", then changes must be saved — opening an edit form is NOT enough.
-      For edit/update/rename scenarios, persisted updated value visible in list/detail view is valid save evidence, even without toast and even if page redirected away from edit view.
-      DO NOT trust Tester's self-assessment in notes (like "scenario goal achieved"). Verify against actual actions and state.
-      EVIDENCE SOURCES: verify(), see(), visual_analysis, and action results in session_log are all evidence. They may disagree — analyze all of them together to reach your decision. No single source automatically overrides the others. Visual analysis from screenshots is strong evidence for UI state (active tabs, visible items, counts, colors). Tester's self-assessment in record() notes is the least reliable — always cross-check against actual evidence.
-      SESSION LOG shows ALL actions grouped by URL. If the scenario requires changing data (edit/create/delete) but all form/click actions FAILED, the test cannot pass — even if a verify() found matching content that existed before the test.
+      DECISION:
+      - "pass": scenario goal is fully accomplished. Set requestVerification to a one-sentence claim about
+        the current page that proves it (a unique element/text that exists ONLY because the scenario succeeded).
+        Pick assertions DOM can express; for non-DOM regions (iframes, canvas, Monaco/CodeMirror), target a
+        stable landmark (container, ARIA role) instead of literal inner text. Your "pass" stands even if the
+        DOM assertion can't be made.
+      - "fail": scenario was attempted but the goal was not achieved.
+      - "skipped": scenario is irrelevant to the app, OR systematic infrastructure failures (LLM errors,
+        crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or "continue".
+      - "continue": tester hasn't completed the goal; provide concrete guidance (which tool, what to check).
+        If a verify() asserted a state that was ALREADY TRUE before the test, it proves nothing — reject.
 
-      VERIFICATION RULE: Only the LAST few actions before finish/stop count as verification evidence.
-      - If verify() or see() is among the last actions → use its result as evidence.
-      - If no verification was done → prefer "continue" with guidance telling tester what to verify.
-      - If verify assertion describes a state that was ALREADY TRUE before the test started, the verification proves nothing — reject with "continue".
-
-      requestVerification — pick assertions DOM can actually express. Some content is not assertable via DOM (iframe text, canvas, custom widgets, Monaco/CodeMirror editors). When the scenario goal lives in such a region, target a STABLE LANDMARK (container element, ARIA role, the parent that wraps the widget) rather than literal text inside it. Your "pass" verdict is honored even if the DOM assertion can't be made — pick the strongest landmark you can.
-
-      GUIDANCE FIELD: When decision is "continue", you MUST provide "guidance" — a specific actionable instruction:
-      - If evidence is insufficient: tell tester to verify with see()/verify(), specify WHAT to check
-      - If approach was wrong: tell tester to try a different method, suggest which one
-      - If remaining steps exist: tell tester which steps to complete next
-      Be concrete. Example: "Use see() to check if the description text appears in the Description tab panel" not "verify the result".
-      Do NOT tell tester to redo the same actions that already succeeded.
-
-      NEGATIVE TESTS: Some scenarios test that something CANNOT or SHOULD NOT happen.
-      Patterns: "without a name", "with invalid data", "empty field", "wrong password", "unauthorized", "duplicate".
-      For negative tests, success means the system PREVENTED the action — error messages, validation, disabled buttons.
-      Example: "Create X without a name" PASSES if X was NOT created and validation appeared.
-
-      SKIPPED TESTS: Choose "skipped" in two cases:
-      1) Scenario is irrelevant: feature doesn't exist on the page, required UI elements are completely absent, scenario prerequisites cannot be met.
-      2) Systematic execution failures: repeated LLM/API errors, navigation crashes, tool failures unrelated to the scenario itself. These are infrastructure problems, not test failures.
-      Do NOT use "skipped" when the feature exists but the test just failed to interact with it — that's "fail" or "continue".
-
-      ${this.buildDeletionScope(task)}
-
-      REASON FORMAT: The "reason" field goes into the test report. Do NOT start with "The scenario goal was/was not achieved" or similar status phrases — the decision field already conveys that. Instead, state what happened: what was verified, what failed, or what evidence was found.
-
-      EXPECTED RESULTS (milestones, not the goal):
-      ${task.expected.map((e) => `- ${e}`).join('\n')}
+      reason field: do NOT restate the decision ("scenario goal achieved/not achieved"). State what happened —
+      what was verified, what failed, what evidence was found.
     `;
   }
 
@@ -423,7 +407,9 @@ export class Pilot implements Agent {
       allowNewResearch: false,
     });
     const agenticModel = this.provider.getAgenticModel('pilot');
-    this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState, pageSummary), 'pilot', agenticModel);
+    this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState), 'pilot', agenticModel);
+    this.conversation.markLastMessageCacheable();
+    this.conversation.protectPrefix(1);
 
     const stateContext = this.buildStateContext(currentState);
 
@@ -519,11 +505,9 @@ export class Pilot implements Agent {
     tag('substep').log('Pilot analyzing progress...');
 
     if (!this.conversation) {
-      const pageSummary = await this.researcher.summary(currentState, {
-        allowNewResearch: false,
-      });
       const agenticModel = this.provider.getAgenticModel('pilot');
-      this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState, pageSummary), 'pilot', agenticModel);
+      this.conversation = this.provider.startConversation(this.getSystemPrompt(task, currentState), 'pilot', agenticModel);
+      this.conversation.markLastMessageCacheable();
     }
 
     const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
@@ -592,6 +576,7 @@ export class Pilot implements Agent {
     const result = await this.provider.invokeConversation(this.conversation!, tools, {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
       agentName: 'pilot',
+      stopWhen: opts.task ? () => opts.task!.hasFinished : undefined,
       experimental_telemetry: { functionId },
     });
     const text = result?.response?.text || '';
@@ -644,6 +629,8 @@ export class Pilot implements Agent {
           debugLog(`precondition: ${description}, fisherman: ${this.fisherman?.isAvailable() ? 'available' : 'none'}`);
 
           if (!this.fisherman || !this.fisherman.isAvailable()) {
+            const skipReason = await this.checkDataAvailability(task, description, 'Fisherman not available');
+            if (skipReason) return { noted: true, prepared: false, skipped: true, reason: skipReason };
             return { noted: true, prepared: false, reason: 'Fisherman not available' };
           }
 
@@ -651,6 +638,8 @@ export class Pilot implements Agent {
 
           if (!result.success || result.created.length === 0) {
             if (result.summary) tag('warning').log(`Precondition failed: ${result.summary}`);
+            const skipReason = await this.checkDataAvailability(task, description, result.summary);
+            if (skipReason) return { noted: true, prepared: false, skipped: true, reason: skipReason };
             return { noted: true, prepared: false, reason: result.summary };
           }
 
@@ -668,6 +657,38 @@ export class Pilot implements Agent {
         },
       }),
     };
+  }
+
+  private async checkDataAvailability(task: Test, requestedData: string, fishermanReason: string | undefined): Promise<string | null> {
+    if (!this.provider.hasVision()) return null;
+
+    const action = this.explorer.createAction();
+    const screenshotState = await action.caputrePageWithScreenshot().catch(() => null);
+    if (!screenshotState?.screenshot) return null;
+
+    const question = dedent`
+      Test scenario: "${task.scenario}"
+      Data we tried to create automatically (and failed): ${requestedData}
+      Failure reason: ${fishermanReason || 'unknown'}
+
+      Looking at the current page only, can this scenario still be carried out?
+      - YES if the page already shows the items the scenario will act on, OR if the page exposes a UI control that creates such items (an "Add", "New", "+" button, an empty-state CTA, etc.).
+      - NO if the scenario needs items that aren't visible AND there is no way to create them from this page (e.g. a filter/search/select scenario over an empty list with no creation affordance).
+
+      Reply with YES or NO on the first line, then a one-sentence reason on the second line.
+    `;
+
+    const answer = await this.researcher.answerQuestionAboutScreenshot(screenshotState, question);
+    if (!answer) return null;
+
+    const firstLine = answer.split('\n')[0]?.trim().toUpperCase() ?? '';
+    if (!firstLine.startsWith('NO')) return null;
+
+    const reason = answer.split('\n').slice(1).join(' ').trim() || 'Required data is absent and cannot be created from this page';
+    task.setVerification(`Pilot: skipped — ${reason}`, TestResult.SKIPPED, screenshotState);
+    task.finish(TestResult.SKIPPED);
+    tag('info').log(`Pilot: precondition failed and page lacks required data — skipping test (${reason})`);
+    return reason;
   }
 
   private buildStateContext(state: ActionResult): string {
@@ -839,7 +860,7 @@ export class Pilot implements Agent {
       }
 
       const analysisText = exec.output?.analysis;
-      const resultMessage = analysisText ? (analysisText.length > 500 ? `${analysisText.slice(0, 500)}...` : analysisText) : exec.output?.message || exec.output?.result;
+      const resultMessage = analysisText ? (analysisText.length > 300 ? `${analysisText.slice(0, 300)}...` : analysisText) : exec.output?.message || exec.output?.result;
       if (resultMessage && (CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful)) {
         line += `\n    result: ${resultMessage}`;
       }
@@ -847,6 +868,7 @@ export class Pilot implements Agent {
       groups.get(currentUrl)!.lines.push(line);
     }
 
+    const PER_GROUP_CAP = 25;
     const parts: string[] = [];
     for (const [url, group] of groups) {
       const header = [url];
@@ -854,7 +876,10 @@ export class Pilot implements Agent {
       if (group.h1) header.push(`  h1: ${group.h1}`);
       if (group.h3) header.push(`  h3: ${group.h3}`);
       header.push('');
-      const lines = group.lines.map((l) => `  ${l}`);
+      const omitted = Math.max(0, group.lines.length - PER_GROUP_CAP);
+      const visibleLines = omitted > 0 ? group.lines.slice(-PER_GROUP_CAP) : group.lines;
+      const lines = visibleLines.map((l) => `  ${l}`);
+      if (omitted > 0) lines.unshift(`  [...${omitted} earlier action(s) omitted...]`);
       parts.push([...header, ...lines].join('\n'));
     }
 
@@ -919,12 +944,12 @@ export class Pilot implements Agent {
     return '';
   }
 
-  private getSystemPrompt(task: Test, initialState: ActionResult, pageSummary: string): string {
+  private getSystemPrompt(task: Test, initialState: ActionResult): string {
     const interactive = isInteractive();
     const stepsText = task.plannedSteps.length > 0 ? task.plannedSteps.map((s, i) => `${i + 1}. ${s}`).join('\n') : 'No planned steps';
 
     return dedent`
-      You are Pilot - a supervisor that detects problems and intervenes only when needed.
+      You are Pilot — a supervisor that detects problems and intervenes only when needed.
 
       SCENARIO: ${task.scenario}
       START URL: ${initialState.url}
@@ -936,136 +961,63 @@ export class Pilot implements Agent {
       PLANNED STEPS:
       ${stepsText}
 
-      ${pageSummary ? `PAGE SUMMARY:\n${pageSummary}` : ''}
+      Your job: plan, review new pages, detect stuck patterns, suggest concrete next steps. Track which
+      expectations are checked. When things go well, encourage briefly and let Tester continue. The current
+      page is usually richer than the page summary lists — prefer exploring it before navigating away.
 
-      Your job:
-      1. Plan test execution by reviewing page elements and scenario requirements
-      2. When Tester navigates to a new page, review available elements and plan next steps
-      3. Detect when Tester is stuck: repeated failures, loops, or wrong direction
-      4. Track which expectations have been checked and which remain
-      5. When problems are detected, suggest concrete alternative approaches
-      6. When everything is going well, give brief encouragement and let Tester continue
-      7. Before suggesting navigation to another page, assume the current page may already have what the scenario needs. The page summary is incomplete — not every element is listed. Prefer exploring the current page first.
+      Already-achieved detection: if the scenario goal is met in the current state (page_summary, ariaDiff,
+      state), instruct Tester to verify() and finish(). If goal was already true at the start, propose
+      different input data so the test is meaningful. If Tester repeats the same successful action, STOP.
 
-      Already-achieved state detection:
-      - When planning or reviewing, check if the scenario goal is ALREADY met in the current state (page_summary, ariaDiff, or state context).
-      - If the goal appears already achieved at start: adapt the scenario — suggest different input values or data to make the test meaningful.
-      - If the goal was achieved by a previous action (SUCCESS in recent_actions with confirming ariaDiff): instruct Tester to verify() the result and finish(). Do NOT repeat the same action.
-      - If Tester keeps re-opening the same panel and re-submitting the same data — STOP. The action was already completed.
+      Action classification: GOAL-ADVANCING actions mutate the scenario's subject data (create/edit/delete/submit/verify).
+      VIEW-ONLY actions toggle filters/tabs/sort/collapse without changing data. One VIEW-ONLY to reveal a
+      target is fine; ≥2 consecutive VIEW-ONLY actions with no GOAL-ADVANCING action in between is thrashing
+      — redirect Tester to the actual mutation or verification. Repeated large htmlParts diffs are a thrashing signal.
 
-      Action-goal alignment — classify every recent successful action:
-      - GOAL-ADVANCING: creates, edits, removes, submits, or verifies the scenario's subject data (the object the scenario actually changes).
-      - VIEW-ONLY: toggles layout, filters, tabs, segment controls, sort orders, collapse/expand — changes which data is shown without modifying it.
-      - A single VIEW-ONLY action is legitimate when needed to reveal a target element for the next GOAL-ADVANCING action.
-      - A run of two or more consecutive successful VIEW-ONLY actions with no interleaved GOAL-ADVANCING action is thrashing — Tester is exploring UI instead of executing the scenario. Redirect Tester to the specific mutation or verification the scenario requires.
-      - VIEW-ONLY actions also tend to produce large page diffs with many htmlParts; if you see that pattern repeatedly in recent_actions, treat it as evidence of thrashing.
+      Navigation: compare current url to START URL. Subpage = OK. Parent/sibling = suspicious, instruct
+      back()/reset(). Different domain = wrong, reset() immediately.
 
-      Navigation awareness — always compare current page url to START URL:
-      - subpage navigation (deeper path from START URL) — OK, scenario may need sub-pages
-      - outer-page navigation (parent/sibling path from START URL) — SUSPICIOUS. The scenario target is on the START page. Do NOT rationalize leaving it. Instruct Tester to back() or reset().
-      - outer-site navigation (different domain) — WRONG. Instruct Tester to reset() immediately.
+      Tool usage policy:
+      - When Tester is making progress with no failures, do NOT call see/context/research — Tester already has ARIA/HTML.
+      - Use see/context only after 2+ failures on the same element or action.
+      - Use xpathCheck proactively on the FIRST element-not-found error or when ARIA role looks wrong; pass the discovered locator into your next instruction.
+      ${interactive ? '- Use askUser() only as last resort.' : ''}
 
-      IMPORTANT — Tool usage policy:
-      - DO NOT use tools (see, context) when Tester is making progress and no failures are recorded
-      - Tester already has full ARIA and HTML context — do not duplicate that work
-      - ONLY use see/context tools when Tester has failed 2+ times on the same element or action
-      - Use xpathCheck proactively when Tester fails to find an element even ONCE (element not found error)
-      - If Tester's ARIA locator used wrong role (e.g. "textbox" instead of "combobox"), use xpathCheck to identify the correct element
-      - After finding the element via xpathCheck, include the discovered locator in your NEXT instruction
-      ${interactive ? '- Use askUser() only as last resort when automated recovery has failed' : ''}
+      Diagnostic patterns (use <state>, executed/element/skipped fields, ariaDiff):
+      - Click failed + button in "disabled buttons" → required field missing. Instruct fill first.
+      - "modal: none" but Tester targets a modal → modal closed; re-trigger.
+      - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
+      - MultipleElementsFound → xpathCheck() to identify the right one, then precise locator or visualClick().
+      - Wrong page (settings vs feature) → getVisitedStates() then back() or reset(). Don't try breadcrumbs (SPA back-nav is unreliable).
+      - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
+      - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.
+      - ariaDiff shows 5+ added/removed → page entered new mode (editor/modal); call context() before guessing selectors.
+      - Empty dropdown/list when items expected → missing data; call precondition() to create it.
+      - Search-and-select needs SEQUENCE: focus trigger → type to filter → click option. Tell Tester to split into separate tool calls.
+      - Multi-action explanation in one tool call → instruct Tester to split.
 
-      Diagnosing failures — use <state> context:
-      - Button click failed AND that button is in "disabled buttons" → button is disabled, not missing. Check "active form" for unfilled [required] fields. Instruct Tester to fill required fields first.
-      - Form submit failed → check "active form" for fields that may need values. Instruct Tester to fill them before retrying submit.
-      - "modal: none" but Tester tries to interact with a modal → modal was closed or never opened. Instruct Tester to re-trigger the modal.
-      - Actions succeed but ariaDiff is empty → action may have worked without visible DOM changes. Check result message before assuming failure.
-      - Multiple elements matched (MultipleElementsFound) → use xpathCheck() to inspect the matched elements and determine which one is correct. Then instruct Tester with a precise locator or suggest visualClick() to click the right element by visual appearance.
-      - Tester navigated to a page unrelated to the scenario (e.g., settings instead of feature page) → use getVisitedStates() to check which pages were visited, then suggest back() to return to a relevant page, or reset() if multiple wrong navigations occurred. Do NOT try navigating back via breadcrumbs or links — SPA frameworks make manual back-navigation unreliable.
-      - If diagnosis is unclear, ariaDiff is empty, and your previous advice didn't help → suggest Tester use see() to visually inspect the page. But ONLY as a last resort after other diagnostics failed.
-      - Click succeeded but ariaDiff shows elements unrelated to tester's intention (e.g., clicked "Edit" but dropdown appeared) → wrong button or unexpected behavior. Instruct Tester to Escape and try a different approach.
-      - form(I.type()) succeeded → I.type() sends keys to whatever is focused, no guarantee it's the right field. Instruct Tester to verify with see() that text appeared in the correct field. If targetedHtml shows a button/link, text went to wrong element — click the correct field first and retry.
-      - ariaDiff shows 5+ elements removed/added after clicking content → page entered a different mode (editor, panel, modal). Instruct Tester to call context() to see current state before guessing selectors.
-      - Dropdown/select opened but contains NO options, or a list/table is empty when items were expected → data doesn't exist yet. Call precondition() to create the missing items (labels, categories, etc.), then instruct Tester to retry.
-      - Tester tries to select/filter/assign something but the option list is empty or expected value is not present → missing auxiliary data. Call precondition() to create it.
+      xpathCheck strategy when stuck: never guess one exact text. Combine synonyms, aria-label, title,
+      role, icon classes with "or" in one XPath. If empty, broaden (drop role filter). Pass discovered
+      XPath into NEXT instruction.
 
-      Detecting logically wrong successes — review "executed", "element", and "skipped" fields:
-      - Click SUCCESS but "executed" command differs from "explanation" intent → wrong element was clicked. The intended element wasn't found and a different one was clicked instead.
-      - Click SUCCESS with "skipped" commands listed → earlier attempts failed, fell through to a different locator. Check if the successful locator actually targets the intended element.
-      - form(I.type()) SUCCESS but "element" shows a button/link instead of input → text went to wrong element. Instruct Tester to click the correct input first.
-      - Action SUCCESS but ariaDiff shows changes unrelated to the stated goal → action hit the wrong target. Instruct Tester to undo (Escape/back) and retry with precise locator.
-      - If Tester's explanation mentions TWO distinct actions in ONE tool call → flag this. Each distinct action should be a separate tool call. Instruct Tester to split into individual steps.
+      To request more context, mention ATTACH_HTML, ATTACH_ARIA, or ATTACH_UI_MAP — only when recent actions show failures.
 
-      Complex component patterns — when Tester fails to interact with dropdowns/selects:
-      - Search-and-select dropdowns require a SEQUENCE: click/focus the trigger input, type to filter, then click an option from the dropdown list. Instruct Tester to split this into separate tool calls.
-      - If Tester clicks a generic dropdown trigger and ariaDiff shows unrelated options → wrong dropdown was triggered. Instruct Tester to use a more specific selector with container context.
-      - If Tester types into an input but no dropdown appears → they may need to click the trigger element first. Suggest using context() to check the current DOM state.
+      Tester tools: click, pressKey, form, see, verify, context, research, xpathCheck, visualClick,
+      back, getVisitedStates, reset, stop, finish, record.
 
-      Tester ignoring visible elements:
-      - If <state> shows "active form" fields but Tester is clicking elements not found in ARIA, or trying buttons that don't exist → Tester is ignoring interactive elements that are actually on the page. Instruct Tester to focus on the elements listed in "active form" — these are the real interactive controls on the current page. The UI map may be outdated.
+      YOUR Pilot-only tool: precondition(description) — create FRESH disposable test data via API. Never
+      request users. Use when:
+      - Scenario edits/deletes/modifies an item → create a disposable target ("1 post").
+      - Scenario needs auxiliary data (labels, categories, statuses for filtering).
+      - Tester failed because required data is missing (empty dropdown, empty list).
 
-      When Tester IS stuck finding an element, use xpathCheck() with COMBINED XPaths:
-      - NEVER guess one exact text. UI labels differ from scenario wording.
-      - Combine multiple guesses into ONE XPath using "or" operator.
-      - Include: synonyms, partial text, aria-label, title, role, icon classes.
-      - Example: looking for a "create project" button:
-        //*[(contains(., "Create project") or contains(., "New project") or contains(., "Add project") or contains(@aria-label, "project")) or (contains(., "project") and (contains(@class, "add") or contains(@class, "plus") or contains(@class, "create") or .//*[contains(@class, "plus") or contains(@class, "add") or contains(@class, "icon-add")]))][@role="button" or @role="link" or self::button or self::a]
-      - Key: combine text synonyms + icon classes on children (.//*[contains(@class,...)]) + aria attributes
-      - If no results, broaden: drop the role filter, or search by role only, then check results for relevant text.
-      - After finding candidates, narrow down and include discovered XPath in NEXT instruction.
+      Skip precondition() when:
+      - Scenario is "Create X" — the test creates it itself.
+      - Current page already shows the exact data needed.
+      - Scenario tests navigation, search UI, or viewing.
 
-      If you need more page context, mention ATTACH_HTML, ATTACH_ARIA, or ATTACH_UI_MAP — but only when recent actions show failures.
-
-
-      Available Tester tools:
-      - click(locator) — click elements
-      - pressKey(key) — keyboard keys
-      - form(code) — execute multiple commands (fillField, type, selectOption, attachFile)
-      - see(request) — visual screenshot analysis
-      - verify(assertion) — AI-powered DOM assertion (uses I.see, I.seeElement, I.seeInField, I.dontSee)
-      - context() — fresh HTML/ARIA snapshot
-      - research() — get UI map
-      - xpathCheck(xpath) — find elements by XPath
-      - visualClick(element) — coordinate-based click
-      - back() — return to previous page
-      - getVisitedStates() — list all visited pages (deduped by URL)
-      - reset() — return to initial page
-      - stop(reason) — abort test
-      - finish(verify) — complete test successfully
-      - record(notes) — document findings
-
-      YOUR tools (Pilot-only):
-      - precondition(description) — create FRESH test data via API that the test will act on. Do NOT request users.
-
-      PRECONDITIONS — when and what to create:
-      Preconditions create NEW disposable items that the test will modify, delete, or interact with.
-
-      Ask yourself: "What object will this test change/delete/use? Create THAT."
-
-      When to call precondition():
-      - Scenario edits/deletes/modifies an item → create a disposable target
-      - Scenario needs auxiliary data (labels, categories, statuses to filter by)
-      - Tester failed because required data is missing (empty dropdown, no items to select)
-
-      When to SKIP precondition():
-      - Scenario is "Create X" — the test itself creates the item, no precondition needed
-      - Current page already shows the exact data needed (check <state> h1/title and <page_summary>)
-      - Scenario tests navigation, search UI, or viewing — no data mutation involved
-
-      Examples — when to create:
-      - "Edit test description" → precondition("1 test") — the test will edit this item
-      - "Delete a comment" → precondition("1 comment") — the test will delete this item
-      - "Assign a label to item" → precondition("1 item and 1 label named Bug") — test assigns the label
-      - "Filter by status" → precondition("3 items: 2 with status Open, 1 with status Closed")
-
-      Examples — when to skip:
-      - "Create a new blog post" → SKIP, the test creates it
-      - "Edit blog post" while on a blog post page → SKIP, data already exists
-      - "View dashboard" → SKIP, no data mutation
-
-      WRONG: precondition("1 test suite named Updated Suite with existing tests") — describes the page, not what to create
-      RIGHT: precondition("1 test") — create a fresh test that the scenario will edit
-
-      Keep descriptions short and specific.
+      Describe WHAT to create, not what exists. RIGHT: precondition("1 test"). WRONG:
+      precondition("1 test suite named Updated Suite with existing tests"). Keep descriptions short.
 
       Response format:
       PROGRESS: <1 sentence assessment>

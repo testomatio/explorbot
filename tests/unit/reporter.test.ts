@@ -244,6 +244,142 @@ describe('Reporter', () => {
       expect(notes[0].endTime).toBeGreaterThanOrEqual(notes[0].startTime);
     });
   });
+
+  describe('Verification step', () => {
+    beforeEach(() => {
+      const configParser = ConfigParser.getInstance();
+      (configParser as any).config = { dirs: { output: '/tmp/explorbot-test' } };
+      (configParser as any).configPath = '/tmp/explorbot.config.js';
+    });
+
+    test('appends a Verification step with pilot message, url, details and screenshot', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Sign in', 'high', ['Logged in'], 'https://example.com/login');
+
+      const note = test.startNote('Type credentials');
+      test.addStep('I.fillField("email", "x")', 10, 'passed');
+      note.commit(TestResult.PASSED);
+
+      test.setVerification('Pilot: Logged-in indicator visible', TestResult.PASSED, {
+        screenshotFile: 'final.png',
+        fullUrl: 'https://example.com/dashboard',
+        title: 'Dashboard',
+      });
+      test.addVerificationDetail('💡 UX: button label "Go" is ambiguous');
+
+      const steps = reporter.combineStepsAndNotes(test);
+      const last = steps[steps.length - 1];
+
+      expect(last.category).toBe('user');
+      expect(last.title).toBe('Verification');
+      expect(last.status).toBe(TestResult.PASSED);
+      expect(last.artifacts?.[0]).toContain('final.png');
+      const subSteps = last.steps || [];
+      expect(subSteps[0].title).toBe('Pilot: Logged-in indicator visible');
+      const urlStep = subSteps.find((s) => s.title.startsWith('Navigated to'));
+      expect(urlStep?.title).toBe('Navigated to Dashboard');
+      expect(urlStep?.log).toBe('https://example.com/dashboard');
+      expect(subSteps.some((s) => s.title.includes('💡 UX'))).toBe(true);
+    });
+
+    test('falls back to lastScreenshotFile when verification has no screenshot', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Sign in', 'high', ['Logged in'], 'https://example.com/login');
+      test.setVerification('Pilot: ok', TestResult.PASSED);
+
+      const steps = reporter.combineStepsAndNotes(test, 'fallback.png');
+      const last = steps[steps.length - 1];
+      expect(last.title).toBe('Verification');
+      expect(last.artifacts?.[0]).toContain('fallback.png');
+    });
+
+    test('addUrlNote uses title when title changed', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Browse', 'high', ['Pages opened'], 'https://example.com/');
+
+      test.addUrlNote({ url: '/products', fullUrl: 'https://example.com/products', title: 'Products', h1: 'All products', screenshotFile: 'p.png' }, { title: 'Home', h1: 'Welcome' });
+
+      const steps = reporter.combineStepsAndNotes(test);
+      const userStep = steps.find((s) => s.title === 'Navigated to Products');
+      expect(userStep).toBeDefined();
+      expect(userStep?.log).toBe('https://example.com/products');
+      expect(userStep?.artifacts?.[0]).toContain('p.png');
+    });
+
+    test('addUrlNote falls back to h1 when title unchanged', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Browse', 'high', ['Pages opened'], 'https://example.com/');
+
+      test.addUrlNote({ url: '/products/42', fullUrl: 'https://example.com/products/42', title: 'Shop', h1: 'Widget 42' }, { title: 'Shop', h1: 'Catalog' });
+
+      const steps = reporter.combineStepsAndNotes(test);
+      const userStep = steps.find((s) => s.title === 'Navigated to Widget 42');
+      expect(userStep).toBeDefined();
+      expect(userStep?.log).toBe('https://example.com/products/42');
+    });
+
+    test('addUrlNote falls back to h2 when title and h1 unchanged but h2 changed', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Browse', 'high', ['Pages opened'], 'https://example.com/');
+
+      test.addUrlNote({ url: '/products/42', fullUrl: 'https://example.com/products/42', title: 'Shop', h1: 'Catalog', h2: 'Widget 42' }, { title: 'Shop', h1: 'Catalog', h2: 'Catalog overview' });
+
+      const steps = reporter.combineStepsAndNotes(test);
+      const userStep = steps.find((s) => s.title === 'Navigated to Widget 42');
+      expect(userStep).toBeDefined();
+      expect(userStep?.log).toBe('https://example.com/products/42');
+    });
+
+    test('addUrlNote keeps existing title when nothing changed (never inlines URL into title)', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Browse', 'high', ['Pages opened'], 'https://example.com/');
+
+      test.addUrlNote({ url: '/products?p=2', fullUrl: 'https://example.com/products?p=2', title: 'Shop', h1: 'Catalog' }, { title: 'Shop', h1: 'Catalog' });
+
+      const steps = reporter.combineStepsAndNotes(test);
+      const userStep = steps.find((s) => s.title === 'Navigated to Shop');
+      expect(userStep).toBeDefined();
+      expect(userStep?.log).toBe('https://example.com/products?p=2');
+      expect(userStep?.title).not.toContain('https://');
+    });
+
+    test('addUrlNote skips note when no descriptive label exists at all', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Browse', 'high', ['Pages opened'], 'https://example.com/');
+
+      test.addUrlNote({ url: '/x', fullUrl: 'https://example.com/x' });
+
+      const steps = reporter.combineStepsAndNotes(test);
+      expect(steps.find((s) => (s.title || '').startsWith('Navigated to'))).toBeUndefined();
+    });
+
+    test('addUrlNote does not dedupe when same label has different URLs', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Browse', 'high', ['Pages opened'], 'https://example.com/');
+
+      test.addUrlNote({ url: '/a', fullUrl: 'https://example.com/a', title: 'Detail' });
+      test.addUrlNote({ url: '/b', fullUrl: 'https://example.com/b', title: 'Detail' }, { title: 'Detail' });
+
+      const steps = reporter.combineStepsAndNotes(test);
+      const navSteps = steps.filter((s) => s.title === 'Navigated to Detail');
+      expect(navSteps.length).toBe(2);
+      expect(navSteps[0].log).toBe('https://example.com/a');
+      expect(navSteps[1].log).toBe('https://example.com/b');
+    });
+
+    test('no Verification step when test never set one (legacy lastScreenshotFile path still works)', () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Sign in', 'high', ['Logged in'], 'https://example.com/login');
+
+      const note = test.startNote('Click login');
+      test.addStep('I.click("Login")', 10, 'passed');
+      note.commit(TestResult.PASSED);
+
+      const steps = reporter.combineStepsAndNotes(test, 'last.png');
+      expect(steps.find((s) => s.title === 'Verification')).toBeUndefined();
+      expect(steps[steps.length - 1].artifacts?.some((a) => a.includes('last.png'))).toBe(true);
+    });
+  });
 });
 
 describe('Reporter config', () => {

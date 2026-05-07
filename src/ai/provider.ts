@@ -19,6 +19,15 @@ const responseLog = createDebug('explorbot:provider:in');
 class AiError extends Error {}
 export class ContextLengthError extends Error {}
 
+function extractCachedTokens(usage: any): number {
+  if (!usage) return 0;
+  const direct = usage.cachedInputTokens ?? usage.inputTokenDetails?.cacheReadTokens;
+  if (typeof direct === 'number') return direct;
+  const raw = usage.raw;
+  const fromRaw = raw?.prompt_tokens_details?.cached_tokens ?? raw?.promptTokensDetails?.cachedTokens;
+  return typeof fromRaw === 'number' ? fromRaw : 0;
+}
+
 function rejectAfterIdle(ms: number, signal: { cancelled: boolean }): Promise<never> {
   return new Promise((_, reject) => {
     const tick = () => {
@@ -265,9 +274,10 @@ export class Provider {
 
       if (response.usage) {
         Stats.recordTokens(options.agentName || 'unknown', modelName, {
-          input: response.usage.promptTokens || 0,
-          output: response.usage.completionTokens || 0,
-          total: response.usage.totalTokens || 0,
+          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
+          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
+          total: response.usage.totalTokens ?? 0,
+          cached: extractCachedTokens(response.usage),
         });
       }
 
@@ -355,9 +365,10 @@ export class Provider {
 
       if (response.usage) {
         Stats.recordTokens(options.agentName || 'unknown', modelName, {
-          input: response.usage.promptTokens || 0,
-          output: response.usage.completionTokens || 0,
-          total: response.usage.totalTokens || 0,
+          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
+          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
+          total: response.usage.totalTokens ?? 0,
+          cached: extractCachedTokens(response.usage),
         });
       }
 
@@ -428,9 +439,10 @@ export class Provider {
 
       if (response.usage) {
         Stats.recordTokens(options.agentName || 'unknown', modelName, {
-          input: response.usage.promptTokens || 0,
-          output: response.usage.completionTokens || 0,
-          total: response.usage.totalTokens || 0,
+          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
+          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
+          total: response.usage.totalTokens ?? 0,
+          cached: extractCachedTokens(response.usage),
         });
       }
 
@@ -625,9 +637,9 @@ export class Provider {
 
       if (response.usage) {
         Stats.recordTokens('vision', this.getModelName(this.config.visionModel), {
-          input: response.usage.promptTokens || 0,
-          output: response.usage.completionTokens || 0,
-          total: response.usage.totalTokens || 0,
+          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
+          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
+          total: response.usage.totalTokens ?? 0,
         });
       }
 

@@ -4,6 +4,7 @@ interface TokenUsage {
   input: number;
   output: number;
   total: number;
+  cached?: number;
 }
 
 export type ExplorbotMode = 'explore' | 'test' | 'freesail' | 'tui';
@@ -20,11 +21,12 @@ export class Stats {
 
   static recordTokens(_agent: string, model: string, usage: TokenUsage): void {
     if (!Stats.models[model]) {
-      Stats.models[model] = { input: 0, output: 0, total: 0 };
+      Stats.models[model] = { input: 0, output: 0, total: 0, cached: 0 };
     }
     Stats.models[model].input += usage.input;
     Stats.models[model].output += usage.output;
     Stats.models[model].total += usage.total;
+    Stats.models[model].cached = (Stats.models[model].cached ?? 0) + (usage.cached ?? 0);
   }
 
   static getElapsedTime(): string {

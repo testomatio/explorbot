@@ -26,6 +26,7 @@ export interface Note {
   startTime: number;
   endTime: number;
   screenshot?: string;
+  log?: string;
 }
 
 export class ActiveNote {
@@ -34,6 +35,7 @@ export class ActiveNote {
   message: string;
   status?: TestResultType;
   screenshot?: string;
+  log?: string;
 
   constructor(task: Task, message: string, status?: TestResultType) {
     this.task = task;
@@ -73,6 +75,7 @@ export class Task {
   steps: Record<string, StepData>;
   states: WebPageState[];
   startUrl: string;
+  verification?: Verification;
   protected timestampCounter = 0;
   private activeNote?: ActiveNote;
 
@@ -102,6 +105,7 @@ export class Task {
       startTime: activeNote.getStartTime(),
       endTime,
       screenshot: activeNote.screenshot,
+      log: activeNote.log,
     };
     this.activeNote = undefined;
   }
@@ -118,13 +122,28 @@ export class Task {
       .join('\n');
   }
 
-  addNote(message: string, status: TestResultType = null, screenshot?: string): void {
-    const isDuplicate = Object.values(this.notes).some((note) => note.message === message && note.status === status);
+  addNote(message: string, status: TestResultType = null, screenshot?: string, log?: string): void {
+    const isDuplicate = Object.values(this.notes).some((note) => note.message === message && note.status === status && note.log === log);
     if (isDuplicate) return;
 
     const now = performance.now();
     const timestamp = `${now}_${this.timestampCounter++}`;
-    this.notes[timestamp] = { message, status, startTime: now, endTime: now, screenshot };
+    this.notes[timestamp] = { message, status, startTime: now, endTime: now, screenshot, log };
+  }
+
+  addUrlNote(state: UrlNoteState, prevState?: { title?: string; h1?: string; h2?: string }): void {
+    const fullUrl = state.fullUrl || state.url;
+    if (!fullUrl) return;
+
+    let label: string | undefined;
+    if (state.title && state.title !== prevState?.title) label = state.title;
+    else if (state.h1 && state.h1 !== prevState?.h1) label = state.h1;
+    else if (state.h2 && state.h2 !== prevState?.h2) label = state.h2;
+    else label = state.title || state.h1 || state.h2;
+
+    if (!label) return;
+
+    this.addNote(`Navigated to ${label}`, TestResult.PASSED, state.screenshotFile, fullUrl);
   }
 
   addState(state: WebPageState): void {
@@ -134,6 +153,28 @@ export class Task {
   addStep(text: string, duration?: number, status?: string, error?: string, log?: string, artifacts?: string[]): void {
     const timestamp = `${performance.now()}_${this.timestampCounter++}`;
     this.steps[timestamp] = { text, duration, status, error, log, artifacts, noteStartTime: this.activeNote?.getStartTime() };
+  }
+
+  setActiveNoteScreenshot(screenshotFile?: string): void {
+    if (!this.activeNote || !screenshotFile) return;
+    this.activeNote.screenshot = screenshotFile;
+  }
+
+  setVerification(message: string, status: TestResultType, state?: UrlNoteState): void {
+    this.verification ||= { message: '', status: null, details: [] };
+    this.verification.message = message;
+    this.verification.status = status;
+    if (!state) return;
+    if (state.screenshotFile) this.verification.screenshot = state.screenshotFile;
+    const fullUrl = state.fullUrl || state.url;
+    if (fullUrl) this.verification.url = fullUrl;
+    this.verification.pageLabel = state.title || state.h1 || state.h2 || undefined;
+  }
+
+  addVerificationDetail(detail: string): void {
+    if (!detail) return;
+    this.verification ||= { message: '', status: null, details: [] };
+    this.verification.details.push(detail);
   }
 
   getLog(): Array<{ type: 'step' | 'note' | 'artifact'; content: string; timestamp: number }> {
@@ -441,4 +482,22 @@ export class Plan {
   toAiContext(options?: { skipSteps?: boolean }): string {
     return planToAiContext(this, options);
   }
+}
+
+interface Verification {
+  message: string;
+  status: TestResultType;
+  screenshot?: string;
+  url?: string;
+  pageLabel?: string;
+  details: string[];
+}
+
+interface UrlNoteState {
+  url?: string;
+  fullUrl?: string;
+  title?: string;
+  h1?: string;
+  h2?: string;
+  screenshotFile?: string;
 }

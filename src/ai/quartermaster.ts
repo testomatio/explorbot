@@ -240,11 +240,11 @@ Focus on what would confuse a real user or caused the agent to make mistakes.`;
     const criticalViolations = report.axeViolations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
     for (const v of criticalViolations.slice(0, 3)) {
       const nodeHtml = v.nodes[0]?.html.slice(0, 100) || '';
-      task.addNote(`🔴 A11Y [${v.impact}] ${v.id}: ${v.description} — ${nodeHtml}`);
+      task.addVerificationDetail(`🔴 A11Y [${v.impact}] ${v.id}: ${v.description} — ${nodeHtml}`);
     }
 
     for (const issue of report.semanticIssues.slice(0, 3)) {
-      task.addNote(`💡 UX [${issue.type}] ${issue.element}: ${issue.suggestion}`);
+      task.addVerificationDetail(`💡 UX [${issue.type}] ${issue.element}: ${issue.suggestion}`);
     }
   }
 

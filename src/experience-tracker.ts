@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import { type Tokens, marked } from 'marked';
 import type { ActionResult } from './action-result.js';
+import { isNonReusableCode } from './ai/historian/utils.ts';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
@@ -166,6 +167,10 @@ export class ExperienceTracker {
   writeAction(state: ActionResult, action: ActionInput): void {
     if (this.disabled || this.isWritingDisabled(state)) return;
     if (!action.code?.trim()) return;
+    if (isNonReusableCode(action.code)) {
+      debugLog('Skipping action with non-reusable code: %s', action.code);
+      return;
+    }
 
     this.ensureExperienceFile(state);
     const stateHash = state.getStateHash();
@@ -189,6 +194,10 @@ export class ExperienceTracker {
   writeFlow(state: ActionResult, body: string, relatedUrls?: string[]): void {
     if (this.disabled || this.isWritingDisabled(state)) return;
     if (!body?.trim()) return;
+    if (isNonReusableCode(body)) {
+      debugLog('Skipping flow body with non-reusable code');
+      return;
+    }
 
     this.ensureExperienceFile(state);
     const stateHash = state.getStateHash();
