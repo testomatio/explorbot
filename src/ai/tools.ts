@@ -656,7 +656,7 @@ export function createAgentTools({
           const researchResult = await researcher.research(currentState, { screenshot: true, data: true });
 
           return successToolResult('research', {
-            analysis: cap(researchResult, TOOL_OUTPUT_CAP),
+            analysis: researchResult,
             aria: cap(ActionResult.fromState(currentState).getInteractiveARIA(), ARIA_OUTPUT_CAP),
             message: `Successfully researched page: ${currentState.url}.`,
             suggestion: dedent`
@@ -1001,7 +1001,6 @@ export function createAgentTools({
 
 const PAGE_DIFF_SUGGESTION = 'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff.';
 
-const TOOL_OUTPUT_CAP = 4000;
 const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
 const ANALYSIS_OUTPUT_CAP = 2000;

@@ -172,20 +172,8 @@ export class Pilot implements Agent {
       if (result.decision === 'pass' && result.requestVerification && navigator) {
         tag('substep').log(`Pilot requesting verification: ${result.requestVerification}`);
         const verifyResult = await navigator.verifyState(result.requestVerification, currentState).catch(() => null);
-        if (verifyResult?.verified) {
-          if (verifyResult.assertionSteps?.length) {
-            this.explorer.getPlaywrightRecorder().recordVerification(verifyResult.assertionSteps);
-          }
-        } else {
-          let answer: string | null = null;
-          if (screenshotState?.screenshot) {
-            answer = await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Does the screen confirm: "${result.requestVerification}"? Answer YES or NO only.`);
-          }
-          if (!(answer || '').trim().toUpperCase().startsWith('YES')) {
-            task.setVerification(`Pilot: verification failed — ${result.requestVerification}`, TestResult.FAILED, screenshotState || currentState);
-            task.finish(TestResult.FAILED);
-            return false;
-          }
+        if (verifyResult?.verified && verifyResult.assertionSteps?.length) {
+          this.explorer.getPlaywrightRecorder().recordVerification(verifyResult.assertionSteps);
         }
       }
 
