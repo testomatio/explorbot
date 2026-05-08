@@ -24,7 +24,7 @@ import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, saveResearch } from './researcher/cache.ts';
 import { type CoordinateMethods, WithCoordinates } from './researcher/coordinates.ts';
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
-import { detectFocusFromAria, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
+import { detectFocusedSection, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
 import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
@@ -234,17 +234,12 @@ export class Researcher extends ResearcherBase implements Agent {
         await this.fixBrokenSections(result, activeConversation);
       }
 
-      // Focused section: parse AI declaration, then ARIA fallback
-      const focusMatch = result.text.match(/^>\s*Focused:\s*(.+)/m);
-      if (focusMatch) {
-        result.text = result.text.replace(focusMatch[0], '');
-        markSectionAsFocused(result, focusMatch[1].trim());
-      }
-      if (!hasFocusedSection(result.text)) {
+      // Focused section: unified Playwright probe (HTML+CSS+visibility).
+      // Must run BEFORE visuallyAnnotateContainers — annotation overlays inject z-index 99998+ which would pollute the scoring.
+      if (!interrupted() && this.hasScreenshotToAnalyze) {
         const sections = parseResearchSections(result.text);
-        const ariaSnapshot = this.actionResult?.getCompactARIA() || '';
-        const focusedName = detectFocusFromAria(ariaSnapshot, sections);
-        if (focusedName) markSectionAsFocused(result, focusedName);
+        const focused = await detectFocusedSection(this.explorer.playwrightHelper.page, sections);
+        if (focused) markSectionAsFocused(result, focused);
       }
 
       // Stage 4: Visual analysis
@@ -281,8 +276,8 @@ export class Researcher extends ResearcherBase implements Agent {
         await this.backfillBrokenLocators(result);
       }
 
-      // Focused section: final fallback
-      if (!hasFocusedSection(result.text)) {
+      // Focused section: final fallback (vision-only — without a screenshot we don't infer focus)
+      if (this.hasScreenshotToAnalyze && !hasFocusedSection(result.text)) {
         const sections = parseResearchSections(result.text);
         const fallback = pickDefaultFocusedSection(sections);
         if (fallback) markSectionAsFocused(result, fallback);
@@ -451,16 +446,6 @@ export class Researcher extends ResearcherBase implements Agent {
 
       | Element | ARIA | CSS | eidx |
       </section_format>
-
-      <focused_section>
-      At the end of your output, declare the primary focus area on a single line:
-
-      > Focused: <exact section name>
-
-      - If a dialog/modal/drawer/overlay exists, it is focused.
-      - Otherwise pick the section where the main business action happens (list for catalog, detail for item page, content for article).
-      - Navigation and menu/toolbar are never focused.
-      </focused_section>
     `;
   }
 

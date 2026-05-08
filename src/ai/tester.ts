@@ -387,10 +387,15 @@ export class Tester extends TaskAgent implements Agent {
             : undefined,
           catch: async ({ error, stop }) => {
             tag('error').log(`Test execution error: ${error}`);
+            const message = error instanceof Error ? error.message : String(error);
             if (!task.hasFinished) {
-              task.addNote(`Execution error: ${error instanceof Error ? error.message : String(error)}`);
+              task.addNote(`Execution error: ${message}`);
             }
-            stop();
+            if (error instanceof Error && error.name === 'AbortError') {
+              stop();
+              return;
+            }
+            conversation.addUserText(`Previous AI call failed: ${message}. Take a different approach on the next step.`);
           },
         }
       );

@@ -148,7 +148,7 @@ describe('Researcher researchBySections', () => {
 
     expect(mock.getRequests().length).toBe(1);
     expect(result).toContain('## Focus');
-    expect(result).toContain('> Focused: Focus');
+    expect(result).toContain('> **Focused**');
 
     const prompt = extractPromptText(mock.getLastRequest());
     expect(prompt).toContain('[role="dialog"]');
@@ -163,6 +163,6 @@ describe('Researcher researchBySections', () => {
 
     expect(mock.getRequests().length).toBe(2);
     expect(result).toContain('## Navigation');
-    expect(result).not.toContain('> Focused: Focus');
+    expect(result).not.toContain('> **Focused**');
   });
 });

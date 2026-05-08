@@ -7,7 +7,9 @@ import { tag } from '../../utils/logger.js';
 import { RulesLoader } from '../../utils/rules-loader.ts';
 import type { Provider } from '../provider.js';
 import { locatorRule as generalLocatorRuleText } from '../rules.js';
+import { markSectionAsFocused } from './focus.ts';
 import type { Constructor } from './mixin.ts';
+import { ResearchResult } from './research-result.ts';
 
 export interface SectionMethods {
   researchBySections(): Promise<string>;
@@ -54,9 +56,11 @@ export function WithSections<T extends Constructor>(Base: T) {
         throw new Error('Per-section research produced no sections — AI responses all empty or NOT_PRESENT');
       }
 
-      let merged = parts.join('\n\n');
-      if (focusCss) merged += '\n\n> Focused: Focus';
-      return merged;
+      const merged = parts.join('\n\n');
+      if (!focusCss) return merged;
+      const focused = new ResearchResult(merged, this.actionResult?.url || '');
+      markSectionAsFocused(focused, 'Focus');
+      return focused.text;
     }
 
     private async _detectFocusCss(): Promise<string | null> {
