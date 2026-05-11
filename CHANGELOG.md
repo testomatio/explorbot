@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-05-11
+
+### New CLI Options
+- **`explorbot explore --configure <spec>`** — Reuse a saved plan, mix old picks with newly planned tests, filter by style/priority, and control sub-page behavior. Spec is a single string of `key=value` (or `key:value`) pairs joined by `;`. Keys: `new` (share of `--max-tests` reserved for new tests, also enables reuse), `from` (explicit plan file, also enables reuse), `style` (planning styles to use; also filters old picks tagged with that style), `priority` (filter both old picks and new tests to the listed priorities), `pick_by` (`priority`|`random`|`index` — order in which old tests are selected and executed), `subpages` (`none`|`same`|`new`|`both` — sub-page behavior in reuse mode). Without `new` or `from`, reuse is off and exploration runs as before.
+  ```bash
+  explorbot explore /checkout --max-tests 10 --configure="new:25%"
+  explorbot explore /dashboard --max-tests 8 \
+    --configure="new:50%;priority=critical,high;pick_by=random"
+  explorbot explore /reports \
+    --configure="from=output/plans/reports_v2.md;new:0%"
+  explorbot explore /admin --max-tests 5 --configure="new:25%;subpages=none"
+  ```
+- **`explorbot explore --dry-run`** — Preview a run without executing tests. Picked old tests and newly-planned tests are marked `skipped`; the planner still runs (so you see what it would propose) but no tester actions hit the page and the plan file is not modified.
+  ```bash
+  explorbot explore /dashboard --max-tests 10 --configure="new:25%" --dry-run
+  ```
+
+### New TUI Commands
+- **`/explore --configure <spec>`** — Same reuse spec as the CLI option above. Lets you re-run a previously saved plan, blend in fresh AI-planned scenarios, and order picks by priority/random/file index — all from inside the TUI.
+  ```
+  /explore --configure "new:25%"
+  /explore --configure "new:50%;priority=critical,high;pick_by=random"
+  /explore /admin --configure "from=output/plans/admin.md;new:0%"
+  ```
+- **`/explore --dry-run`** — Preview which old picks and newly-planned tests would run, without spending tester time.
+  ```
+  /explore --configure "new:25%" --dry-run
+  ```
+
+### Changes
+- [Explore] Reuse mode prints a per-phase preview during a run: a `Picked old tests (N):` block lists the selected old picks with priority and OLD label after picking and before the tester executes, and a `Planner added N new test(s) [style=…] for <url>:` block fires after each planning round, before the new tests are run. End-of-run results table now sorts by execution time and gains an `Origin` column (OLD/NEW) when reuse was used.
+- [Pilot] Provenance check tightened: the entity cited as proof of a create/edit scenario must appear by name in `<notes>` or `<session_log>` tool inputs for THIS run. A record matching the goal by text alone but missing from the session is treated as a stale leftover and the verdict is `fail`. Same when no `fillField`/`type`/`select`/`click` on a target ran.
+- [Tester] When creating, editing, or deleting a named entity, the AI is now instructed to include the entity's identifier verbatim in `record({ notes: [...] })` — Pilot uses these notes to confirm provenance.
+- Plan file parser: priority is now read correctly from multi-line `<!-- test \n priority: X \n -->` blocks (the format the saver actually writes). Previously every test loaded from a saved plan defaulted to `normal` priority because the parser only looked for `priority:` on the same line as the opening `<!-- test`.
+
 ## 2026-05-07
 
 ### Configuration

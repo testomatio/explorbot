@@ -70,6 +70,10 @@ Bulleted list (`* `) of expected outcomes. Each outcome should describe a **veri
 
 The Tester marks a test as passing only when every expected outcome has been verified.
 
+## Reusing saved plans
+
+Saved plans aren't only artifacts — `explorbot explore --configure="new:25%"` will load the matching plan, re-run a subset of its tests, and let the planner generate a few new ones to fill the budget. Old picks can be filtered by priority/style and ordered by priority, file index, or random shuffle. See the [`--configure` reference in commands.md](./commands.md#explore-url) for the full key list and examples.
+
 ## See Also
 
 - [Automated Tests](./automated-tests.md) — the runnable Playwright or CodeceptJS files Explorbot writes after executing a plan

@@ -27,6 +27,7 @@ import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
 import type { Suite } from './suite.ts';
 import { Plan, type Test } from './test-plan.ts';
+import { parsePlansFromMarkdown } from './utils/test-plan-markdown.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
 import { relativeToCwd } from './utils/next-steps.ts';
 import { sanitizeFilename } from './utils/strings.ts';
@@ -349,7 +350,7 @@ export class ExplorBot {
     this.agents.planner = undefined;
   }
 
-  async plan(feature?: string, opts: { fresh?: boolean; style?: string; extend?: Plan; completedPlans?: Plan[] } = {}) {
+  async plan(feature?: string, opts: { fresh?: boolean; style?: string; extend?: Plan; completedPlans?: Plan[]; noSave?: boolean } = {}) {
     this.planFeature = feature;
 
     if (opts.fresh) {
@@ -379,7 +380,7 @@ export class ExplorBot {
       return this.currentPlan;
     }
 
-    this.savePlan();
+    if (!opts.noSave) this.savePlan();
 
     return this.currentPlan;
   }
@@ -409,19 +410,20 @@ export class ExplorBot {
     return planPath;
   }
 
-  generatePlanFilename(): string {
+  generatePlanFilename(feature?: string): string {
     const state = this.explorer?.getStateManager().getCurrentState();
     const urlPath = state?.url || '/';
     const urlPart = sanitizeFilename(urlPath) || 'root';
     const suffix = '.md';
-    if (!this.planFeature) return urlPart.slice(0, 256 - suffix.length) + suffix;
-    const featurePart = `_${sanitizeFilename(this.planFeature)}`;
+    const f = feature ?? this.planFeature;
+    if (!f) return urlPart.slice(0, 256 - suffix.length) + suffix;
+    const featurePart = `_${sanitizeFilename(f)}`;
     const maxFeatureLen = 256 - suffix.length - urlPart.length;
     if (maxFeatureLen <= 1) return urlPart.slice(0, 256 - suffix.length) + suffix;
     return urlPart + featurePart.slice(0, maxFeatureLen) + suffix;
   }
 
-  loadPlan(filename: string): Plan {
+  resolvePlanPath(filename: string): string {
     let planPath = filename;
 
     if (path.isAbsolute(filename)) {
@@ -438,12 +440,24 @@ export class ExplorBot {
       }
     }
 
+    return planPath;
+  }
+
+  loadPlan(filename: string): Plan {
+    const planPath = this.resolvePlanPath(filename);
     if (!existsSync(planPath)) {
       throw new Error(`Plan file not found: ${planPath}`);
     }
-
     this.setCurrentPlan(Plan.fromMarkdown(planPath));
     return this.currentPlan!;
+  }
+
+  loadPlans(filename: string): Plan[] {
+    const planPath = this.resolvePlanPath(filename);
+    if (!existsSync(planPath)) {
+      throw new Error(`Plan file not found: ${planPath}`);
+    }
+    return parsePlansFromMarkdown(planPath);
   }
 
   setCurrentPlan(plan?: Plan): void {

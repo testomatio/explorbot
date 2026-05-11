@@ -122,7 +122,15 @@ addCommonOptions(program.command('start [path]').description('Start web explorat
   await startTUI(explorBot);
 });
 
-addCommonOptions(program.command('explore <path>').description('Explore a page autonomously and run invented scenarios').option('--max-tests <count>', 'Maximum number of tests to run').option('--focus <feature>', 'Focus area for exploration')).action(async (explorePath, options) => {
+addCommonOptions(
+  program
+    .command('explore <path>')
+    .description('Explore a page autonomously and run invented scenarios')
+    .option('--max-tests <count>', 'Maximum number of tests to run')
+    .option('--focus <feature>', 'Focus area for exploration')
+    .option('--configure <spec>', 'Reuse spec: keys new|from|style|subpages|pick_by|priority, e.g. "new:25%;pick_by=random;priority=critical,high"')
+    .option('--dry-run', 'Mark picked tests as skipped without executing or generating new ones')
+).action(async (explorePath, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(explorePath, options));
     await explorBot.start();
@@ -130,8 +138,11 @@ addCommonOptions(program.command('explore <path>').description('Explore a page a
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
     const cmd = new ExploreCommand(explorBot);
     if (options.maxTests) cmd.maxTests = Number.parseInt(options.maxTests, 10);
+    if (options.dryRun) cmd.dryRun = true;
     const execArgs: string[] = [];
     if (options.focus) execArgs.push('--focus', `"${options.focus}"`);
+    if (options.configure) execArgs.push('--configure', `"${options.configure}"`);
+    if (options.dryRun) execArgs.push('--dry-run');
     await cmd.execute(execArgs.join(' '));
     await explorBot.stop();
     await showStatsAndExit(0);

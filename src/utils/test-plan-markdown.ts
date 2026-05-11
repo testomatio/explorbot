@@ -149,8 +149,15 @@ export function parsePlansFromMarkdown(filePath: string): Plan[] {
 
     if (line.startsWith('<!-- test')) {
       currentTest = null;
-      const priorityMatch = line.match(/priority:\s*(\w+)/);
+      let block = line;
+      let j = i;
+      while (!block.includes('-->') && j + 1 < lines.length) {
+        j++;
+        block += `\n${lines[j].trim()}`;
+      }
+      const priorityMatch = block.match(/priority:\s*(\w+)/);
       priority = (priorityMatch?.[1] as 'critical' | 'important' | 'high' | 'normal' | 'low') || 'normal';
+      i = j;
       continue;
     }
 

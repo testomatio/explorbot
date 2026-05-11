@@ -121,6 +121,106 @@ If a URL is provided, navigates there first. After completion, use `/navigate` o
 
 **CLI equivalent:** `explorbot explore [path]` — runs the full cycle and exits.
 
+#### Options
+
+| Option | Description |
+|---|---|
+| `--max-tests <n>` | Hard cap on tests executed in this run. Sub-page expansion stops once the cap is hit. |
+| `--focus <feature>` | Narrow planning to a single feature area (e.g. `--focus checkout`). The focus also becomes part of the saved plan filename. |
+| `--configure <spec>` | Reuse a saved plan, mix old + new tests, filter by style/priority, control sub-page behavior. See below. |
+| `--dry-run` | Mark every picked test as `skipped` instead of executing. New-test planning still runs (so you can preview what would be picked) but no AI tester actions and no plan-file writes. |
+
+#### `--configure <spec>` — reuse, ratio, filters
+
+Single-string config; pairs separated by `;`, each pair as `key:value` or `key=value`. Whitespace tolerated.
+
+| Key | Values | Default | Effect |
+|---|---|---|---|
+| `new` | `0%`–`100%` (or `0`–`1.0`) | `100%` | Share of `--max-tests` reserved for newly planned tests. The remainder is filled from old tests. **Setting `new` < 100% enables reuse.** |
+| `from` | path to a plan `.md` file | auto-lookup | Explicit plan source. **Also enables reuse.** When omitted, looks for `output/plans/<auto-named>.md` matching the current URL + focus. |
+| `style` | comma list (e.g. `normal,curious`) | all styles | Filters new generation to these planning styles AND filters old picks to tests tagged with one of these styles. (Old tests with no style metadata are kept either way.) |
+| `priority` | comma list of `critical,important,high,normal,low` | all priorities | Filters BOTH old picks AND newly-planned tests to the listed priorities. Generated tests outside the list are dropped. |
+| `pick_by` | `priority` \| `random` \| `index` | `priority` | Order in which old tests are picked (and executed). `priority`: critical → low. `random`: shuffled. `index`: file order. |
+| `subpages` | `none` \| `same` \| `new` \| `both` | `both` | Sub-page behavior in reuse mode. `same`: re-plan only sub-pages already in the loaded plan. `new`: only discover sub-pages not in the plan. `both`: both. `none`: skip sub-page expansion. |
+
+If `--configure` is omitted (or none of `new`/`from` is present), reuse is **off** and `explorbot explore` runs as before — fresh planning every time.
+
+If reuse is requested but the lookup file doesn't exist, a warning is logged and the run falls back to fresh planning.
+
+#### Examples
+
+**Re-run a saved plan as-is** (no AI generation, just the saved scenarios):
+
+```bash
+explorbot explore /checkout --max-tests 10 --configure="new:0%"
+```
+
+**Mix 75% old + 25% new** — top-priority old tests fill 7 slots, planner fills the remaining 3 with fresh ideas (deduped against the loaded plan):
+
+```bash
+explorbot explore /checkout --max-tests 10 --configure="new:25%"
+```
+
+**Random sample of high-priority old tests + half new:**
+
+```bash
+explorbot explore /dashboard --max-tests 8 \
+  --configure="new:50%;priority=critical,high;pick_by=random"
+```
+
+**Preview without spending tester time** — see exactly which old + new tests would run, all marked `skipped`:
+
+```bash
+explorbot explore /dashboard --max-tests 10 --configure="new:25%" --dry-run
+```
+
+**Use a specific plan file from a previous branch:**
+
+```bash
+explorbot explore /reports \
+  --configure="from=output/plans/reports_v2.md;new:0%"
+```
+
+**Skip sub-page expansion** — only the main page is replanned:
+
+```bash
+explorbot explore /admin --max-tests 5 --configure="new:25%;subpages=none"
+```
+
+**Filter to one planning style only** (no reuse — just narrows generation):
+
+```bash
+explorbot explore /admin --configure="style=curious"
+```
+
+**Reuse + restrict to chaos-style tests in the plan + pick a random batch:**
+
+```bash
+explorbot explore /admin --max-tests 6 \
+  --configure="new:0%;style=psycho;pick_by=random"
+```
+
+#### How picking interacts with the budget
+
+With `--max-tests N` and `new:R%`:
+
+- `oldQuota = N − round(N × R)` — number of old tests selected from the loaded plan
+- `newQuota = round(N × R)` — slots reserved for the planner
+
+Selection order for old tests:
+
+1. Drop old tests not matching `style=` (if set)
+2. Drop old tests not matching `priority=` (if set)
+3. Order the survivors by `pick_by` (`priority` is the default)
+4. Take the first `oldQuota`; mark the rest `enabled = false` so they don't run
+
+For new tests, the planner generates freely (the loaded plan is registered for scenario-level dedup, so it won't propose duplicates), then any test whose priority falls outside `priority=` is dropped before execution. Without `--max-tests`, both quotas are unbounded.
+
+#### See also
+
+- [Test Plans](./test-plans.md) — markdown format for saved plans
+- [Planner](./planner.md) — how new test scenarios are generated
+
 ### `/research [url] [--data]`
 
 Analyze the current page using the Researcher agent.

@@ -730,6 +730,7 @@ export class Tester extends TaskAgent implements Agent {
     - Use pressKey() for pressing special keys (Enter, Escape, Tab, Arrow keys) or key combinations with modifiers (Ctrl+A, Shift+Delete, etc.)
     - Use container CSS locators from <page_ui_map> to interact with elements inside sections
     - Systematically use record({ notes: ["..."] }) to write your findings, planned actions, observations, etc.
+    - When creating/editing/deleting a named entity, include its identifier verbatim in the note — Pilot uses it to confirm provenance.
     - Call record({ notes: ["..."], status: "success" }) when you see success/info message on a page or when expected outcome is achieved
     - Call record({ notes: ["..."], status: "fail" }) when an expected outcome cannot be achieved or has failed or you see error/alert/warning message on a page
     - NEVER call record(status: "success") if your last verify() or see() call FAILED. A failed check means the outcome is NOT confirmed — use record(status: "fail") instead, or retry with a different approach.

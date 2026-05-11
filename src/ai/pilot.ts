@@ -320,14 +320,9 @@ export class Pilot implements Agent {
       - "Edit X" → updated value must be persisted (visible in list/detail). Opening edit is NOT enough; redirect after save with the new value visible IS enough.
       - Negative tests ("without a name", "invalid", "duplicate", "unauthorized") → success means the system PREVENTED the action with validation/error.
 
-      PROVENANCE for create/edit scenarios: the task prompt instructs the tester to inject the
-      session marker "${task.sessionName ?? ''}" into newly created or edited free-text values.
-      When that marker COULD be injected, the entity used as proof MUST contain it. A record
-      matching the goal by text alone but missing the marker is a stale leftover from a prior
-      run — it is NOT evidence the current scenario produced anything. Vote \`fail\`, not \`pass\`.
-      This does not apply when the field is restricted (numeric only, enum, etc.) or when the
-      session_log shows no fillField/type/select actions were attempted at all (in that case
-      the scenario clearly didn't run — also vote \`fail\`).
+      PROVENANCE: the entity you cite as proof must appear by name in <notes> or
+      <session_log> tool inputs for THIS run. Name absent from tester activity = stale
+      coincidence, vote \`fail\`. Same if no fillField/type/select/click on a target ran.
 
       Expected results are MILESTONES, not the goal. Never fail because a milestone (toast, icon, styling)
       didn't match if the scenario goal IS accomplished.
