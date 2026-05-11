@@ -78,11 +78,7 @@ describe('doc-collector research navigation', () => {
         },
         research
       )
-    ).toEqual([
-      '/docs/openapi#tag/project-analytics-tags',
-      '/docs/openapi#tag/project-analytics-labels',
-      '/docs/openapi#tag/project-analytics-jira',
-    ]);
+    ).toEqual(['/docs/openapi#tag/project-analytics-tags', '/docs/openapi#tag/project-analytics-labels', '/docs/openapi#tag/project-analytics-jira']);
   });
 });
 
@@ -159,7 +155,6 @@ describe('doc-collector renderer', () => {
     expect(normalizeAction('user might be able to submit the login form by pressing Enter', 'might')).toBe('user might be able to submit the login form by pressing Enter');
     expect(normalizeAction('user can submit the login form by pressing Enter', 'might')).toBe('user might submit the login form by pressing Enter');
   });
-
 });
 
 describe('doc-collector scope and signal', () => {
@@ -178,24 +173,14 @@ describe('doc-collector scope and signal', () => {
     const bot = new DocBot();
     (bot as any).config = { docs: { minCanActions: 1, minInteractiveElements: 3 } };
 
-    expect(
-      (bot as any).getLowSignalReason(
-        { summary: 'The page currently loads with no visible content.', can: [], might: [] },
-        '* Content (0 elements) `main`\n\nChars: 120'
-      )
-    ).toContain('low-signal page');
+    expect((bot as any).getLowSignalReason({ summary: 'The page currently loads with no visible content.', can: [], might: [] }, '* Content (0 elements) `main`\n\nChars: 120')).toContain('low-signal page');
   });
 
   it('keeps pages with proven actions out of low-signal skip', () => {
     const bot = new DocBot();
     (bot as any).config = { docs: { minCanActions: 1, minInteractiveElements: 3 } };
 
-    expect(
-      (bot as any).getLowSignalReason(
-        { summary: 'Serial details page.', can: [{ action: 'watch episode', scope: 'one item', evidence: 'episode links visible' }], might: [] },
-        '* Episodes (10 elements) `.tp-show__list`\n\nChars: 1200'
-      )
-    ).toBeNull();
+    expect((bot as any).getLowSignalReason({ summary: 'Serial details page.', can: [{ action: 'watch episode', scope: 'one item', evidence: 'episode links visible' }], might: [] }, '* Episodes (10 elements) `.tp-show__list`\n\nChars: 1200')).toBeNull();
   });
 });
 
