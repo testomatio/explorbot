@@ -34,6 +34,7 @@ import { sanitizeFilename } from './utils/strings.ts';
 
 export interface ExplorBotOptions {
   from?: string;
+  baseUrl?: string;
   verbose?: boolean;
   config?: string;
   path?: string;

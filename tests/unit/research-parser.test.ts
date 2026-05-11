@@ -144,4 +144,19 @@ describe('formatResearchSummary', () => {
     const summary = formatResearchSummary(md);
     expect(summary).toContain('* Section (1 element)');
   });
+
+  it('drops invalid non-eidx values from the eidx column', () => {
+    const md = dedent`
+      ## Navigation
+
+      | Element | Type | ARIA | CSS | eidx |
+      |------|------|------|------|------|
+      | 'Year link' | link | { role: 'link', text: '2026' } | 'a[href*="/kod/2026"]' | 'a[href*="/kod/2026"]' |
+      | 'Episode link' | link | { role: 'link', text: 'Episode 1' } | 'a[href*="/episode-1"]' | 42 |
+    `;
+
+    const sections = parseResearchSections(md);
+    expect(sections[0].elements[0].eidx).toBeNull();
+    expect(sections[0].elements[1].eidx).toBe('e42');
+  });
 });
