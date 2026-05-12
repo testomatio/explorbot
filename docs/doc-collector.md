@@ -111,15 +111,15 @@ Start page:
 
 Allowed:
 
-- `/ua/serials/stb/kod`
-- `/ua/serials/stb/kod/2026`
-- `/ua/serials/stb/kod/2025/seriya-12`
+- `/pages/stb/kod`
+- `/pages/stb/kod/2026`
+- `/pages/stb/kod/2025/week-12`
 
 Blocked:
 
-- `/ua/serials`
-- `/ua/show`
-- `/ua/person/...`
+- `/pages/stats`
+- `/pages/show`
+- `/pages/person/...`
 
 ### `section`
 
