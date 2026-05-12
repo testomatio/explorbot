@@ -266,6 +266,7 @@ export class ConfigParser {
   private static instance: ConfigParser;
   private config: ExplorbotConfig | null = null;
   private configPath: string | null = null;
+  private runtimeBaseUrlOverride: string | null = null;
 
   private constructor() {}
 
@@ -285,8 +286,9 @@ export class ConfigParser {
   public async loadConfig(options?: {
     config?: string;
     path?: string;
+    baseUrl?: string;
   }): Promise<ExplorbotConfig> {
-    if (this.config && !options?.config && !options?.path) {
+    if (this.config && !options?.config && !options?.path && this.runtimeBaseUrlOverride === (options?.baseUrl || null)) {
       return this.config;
     }
 
@@ -317,7 +319,8 @@ export class ConfigParser {
         throw new Error('Configuration file is empty or invalid');
       }
 
-      this.config = this.resolveConfig(loadedConfig as ExplorbotConfig);
+      this.config = this.resolveConfig(loadedConfig as ExplorbotConfig, options);
+      this.runtimeBaseUrlOverride = options?.baseUrl || null;
       this.configPath = resolvedPath;
 
       log(`Configuration loaded from: ${resolvedPath}`);
@@ -372,6 +375,7 @@ export class ConfigParser {
     if (ConfigParser.instance) {
       ConfigParser.instance.config = null;
       ConfigParser.instance.configPath = null;
+      ConfigParser.instance.runtimeBaseUrlOverride = null;
     }
   }
 
@@ -455,11 +459,17 @@ export class ConfigParser {
     }
   }
 
-  private resolveConfig(config: ExplorbotConfig): ExplorbotConfig {
+  private resolveConfig(config: ExplorbotConfig, options?: { baseUrl?: string }): ExplorbotConfig {
     if (config.web?.url && !config.playwright?.url) {
       config.playwright = config.playwright || { browser: 'chromium', url: '' };
       config.playwright.url = config.web.url;
     }
+
+    if (options?.baseUrl) {
+      config.playwright = config.playwright || { browser: 'chromium', url: '' };
+      config.playwright.url = options.baseUrl;
+    }
+
     return config;
   }
 

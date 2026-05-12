@@ -1,0 +1,24 @@
+{
+  "name": "doc-collector",
+  "version": "1.0.0",
+  "description": "AI-powered website documentation collector",
+  "type": "module",
+  "bin": {
+    "doc-collector": "./bin/doc-collector-cli.ts"
+  },
+  "scripts": {
+    "format": "biome format --write .",
+    "lint:fix": "biome lint --write .",
+    "check:fix": "biome check --write ."
+  },
+  "dependencies": {
+    "ai": "^6.0.6",
+    "commander": "^14.0.1",
+    "dedent": "^1.6.0",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.5.3",
+    "typescript": "^5.0.0"
+  }
+}

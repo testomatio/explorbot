@@ -823,6 +823,8 @@ program
   });
 
 import { createApiCommands } from '../boat/api-tester/src/cli.ts';
+import { createDocsCommands } from '../boat/doc-collector/src/cli.ts';
 program.addCommand(createApiCommands('api'));
+program.addCommand(createDocsCommands('docs'));
 
 program.parse();

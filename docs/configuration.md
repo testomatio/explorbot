@@ -272,6 +272,24 @@ playwright: {
 }
 ```
 
+### Browser Context Options
+
+Example:
+
+```javascript
+playwright: {
+  ignoreHTTPSErrors: true,
+  bypassCSP: true,
+  userAgent: 'Mozilla/5.0 (Explorbot)',
+  locale: 'en-GB',
+  colorScheme: 'dark',
+  basicAuth: { username: 'user', password: 'pass' },
+  emulate: { ...devices['iPhone 13'] },
+}
+```
+
+The browser session (cookies, localStorage) is restored automatically when you launch with `--session` — see [`commands.md`](./commands.md#--session).
+
 ## Directory Structure
 
 Default directory layout:

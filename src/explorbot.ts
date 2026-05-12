@@ -34,6 +34,7 @@ import { parsePlansFromMarkdown } from './utils/test-plan-markdown.ts';
 
 export interface ExplorBotOptions {
   from?: string;
+  baseUrl?: string;
   verbose?: boolean;
   config?: string;
   path?: string;
