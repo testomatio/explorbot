@@ -23,7 +23,7 @@ CLI commands run headless by default, execute the task, and exit. TUI commands r
 
 ## Common Options
 
-These options are available on all CLI commands (`start`, `explore`, `plan`, `drill`, `research`, `context`):
+These options are available on all CLI commands (`start`, `explore`, `plan`, `drill`, `research`, `context`, `docs collect`):
 
 | Option | Description |
 |--------|-------------|
@@ -273,6 +273,36 @@ Navigate to a URI or state using AI assistance.
 ```
 
 The Navigator agent figures out how to reach the destination.
+
+## Documentation Collection
+
+### `explorbot docs collect <path-or-url>`
+
+Crawl pages and generate a documentation spec with `Purpose`, `User Can`, and `User Might` sections for each documented page.
+
+```bash
+explorbot docs collect /users/sign_in
+explorbot docs collect /docs/openapi#tag/project-analytics-tags --max-pages 20
+explorbot docs collect https://teleportal.ua/ua/serials/stb/kod --path explorbot-testing --show --session --max-pages 20
+```
+
+Output is written to:
+
+- `output/docs/spec.md`
+- `output/docs/pages/*.md`
+
+Use `docbot.config.*` to control crawl scope, path filters, dynamic-page collapsing, and low-signal page skipping.
+
+See [Documentation Collection](./doc-collector.md) for full configuration, crawl modes, and examples.
+
+### `explorbot docs init`
+
+Create a starter `docbot.config.ts` file.
+
+```bash
+explorbot docs init
+explorbot docs init --path explorbot-testing
+```
 
 ## Test Rerun
 

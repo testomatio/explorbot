@@ -82,10 +82,13 @@ export function matchesUrl(pattern: string, path: string): boolean {
 }
 
 export function extractStatePath(url: string): string {
-  if (url.startsWith('/')) return url;
+  if (url.startsWith('/')) {
+    return `/${url.replace(/^\/+/, '')}`;
+  }
   try {
     const urlObj = new URL(url);
-    return `${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
+    const normalizedPathname = `/${urlObj.pathname.replace(/^\/+/, '')}`;
+    return `${normalizedPathname}${urlObj.search}${urlObj.hash}`;
   } catch {
     return url;
   }

@@ -198,7 +198,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
       const eidxWithoutCoords: string[] = [];
       for (const section of sections) {
         for (const el of section.elements) {
-          if (el.eidx && !el.coordinates) eidxWithoutCoords.push(el.eidx);
+          if (el.eidx && /^e\d+$/i.test(el.eidx) && !el.coordinates) eidxWithoutCoords.push(el.eidx);
         }
       }
       if (eidxWithoutCoords.length === 0) return;

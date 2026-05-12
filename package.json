@@ -14,7 +14,7 @@
   "bin": {
     "explorbot": "./dist/bin/explorbot-cli.js"
   },
-  "files": ["dist/", "src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts", "boat/api-tester/src/**/*.ts", "rules/", "assets/sample-files/"],
+  "files": ["dist/", "src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts", "boat/api-tester/src/**/*.ts", "boat/doc-collector/src/**/*.ts", "boat/doc-collector/bin/**/*.ts", "boat/doc-collector/package.json", "rules/", "assets/sample-files/"],
   "scripts": {
     "build": "bun run src/index.tsx build && bun run build:bin",
     "build:bin": "bun build bin/explorbot-cli.ts --outdir bin --target node --external commander --format esm",

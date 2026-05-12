@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { ConfigParser } from '../../src/config';
+import { normalizeUrl } from '../../src/state-manager';
 import { extractStatePath, generalizeSegment, generalizeUrl, hasDynamicUrlSegment, isDynamicSegment, matchesUrl } from '../../src/utils/url-matcher';
 
 describe('url-matcher', () => {
@@ -166,12 +167,27 @@ describe('url-matcher', () => {
       expect(extractStatePath('/dashboard')).toBe('/dashboard');
     });
 
+    it('collapses repeated leading slashes for path-like URLs', () => {
+      expect(extractStatePath('///series/page/57/')).toBe('/series/page/57/');
+    });
+
     it('strips host from absolute URL, keeps hash', () => {
       expect(extractStatePath('https://example.com/page#section')).toBe('/page#section');
     });
 
+    it('collapses repeated leading slashes in absolute URL paths', () => {
+      expect(extractStatePath('https://example.com///series/page/57/')).toBe('/series/page/57/');
+    });
+
     it('returns original string when URL is unparseable', () => {
       expect(extractStatePath('not a url')).toBe('not a url');
+    });
+  });
+
+  describe('normalizeUrl', () => {
+    it('treats repeated leading slashes as a relative path, not a protocol-relative URL', () => {
+      expect(normalizeUrl('///series/page/57/')).toBe('series/page/57');
+      expect(normalizeUrl('/series/page/57/')).toBe('series/page/57');
     });
   });
 });
