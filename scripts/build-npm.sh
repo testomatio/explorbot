@@ -18,7 +18,11 @@ cp package.json "$DIST_DIR/package.json"
 
 CLI="$DIST_DIR/bin/explorbot-cli.js"
 if [ -f "$CLI" ]; then
-  sed -i '1s|^#!.*|#!/usr/bin/env node|' "$CLI"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    sed -i '' '1s|^#!.*|#!/usr/bin/env node|' "$CLI"
+  else
+    sed -i '1s|^#!.*|#!/usr/bin/env node|' "$CLI"
+  fi
   chmod +x "$CLI"
 fi
 
