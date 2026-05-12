@@ -106,7 +106,7 @@ Stay inside the starting path and its descendants.
 Start page:
 
 ```text
-/ua/serials/stb/kod
+/pages/stb/kod
 ```
 
 Allowed:
