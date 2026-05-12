@@ -495,8 +495,18 @@ export class ExploreCommand extends BaseCommand {
     if (this.dryRun) {
       test.start();
       test.finish(TestResult.SKIPPED);
-    } else {
+      this.testsRun++;
+      return;
+    }
+    try {
       await this.explorBot.agentTester().test(test);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      tag('warning').log(`Test failed: ${test.scenario} — ${msg}`);
+      if (!test.hasFinished) {
+        test.addNote(`Aborted: ${msg}`, TestResult.FAILED);
+        test.finish(TestResult.FAILED);
+      }
     }
     this.testsRun++;
   }

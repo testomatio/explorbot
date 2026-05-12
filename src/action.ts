@@ -22,6 +22,7 @@ import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
+import { withRetry } from './utils/retry.js';
 import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
 
@@ -79,12 +80,17 @@ class Action {
       const page = this.playwrightHelper.page;
       const frame = this.playwrightHelper.frame;
       await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-      const grabAll = () => Promise.all([(this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
-      const [html, title, browserLogs] = await grabAll().catch(async (err: Error) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!/navigating and changing the content/i.test(msg)) throw err;
-        await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-        return grabAll();
+      const grabAll = async () => {
+        try {
+          return await Promise.all([(this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
+        } catch (err) {
+          await recorder.reset();
+          await recorder.start();
+          throw err;
+        }
+      };
+      const [html, title, browserLogs] = await withRetry(grabAll, {
+        retryCondition: (err) => /navigating and changing the content/i.test(err.message),
       });
       const url = page?.url() || (await (this.actor as any).grabCurrentUrl?.());
 

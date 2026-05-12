@@ -39,7 +39,7 @@ declare namespace CodeceptJS {
 
 const debugLog = createDebug('explorbot:explorer');
 const FATAL_BROWSER_ERRORS = /Frame was detached|Target closed|Execution context was destroyed|Protocol error|Session closed/i;
-const RECOVERABLE_NAVIGATION_ERRORS = /net::ERR_ABORTED|page\.screenshot.*Timeout|waiting for fonts to load/i;
+const RECOVERABLE_NAVIGATION_ERRORS = /net::ERR_ABORTED|page\.screenshot.*Timeout|waiting for fonts to load|Unable to retrieve content because the page is navigating/i;
 
 interface TabInfo {
   url: string;

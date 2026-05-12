@@ -117,7 +117,6 @@ export class SessionAnalyst implements Agent {
   private serializeTest(test: Test, ref: number): string {
     const log = test
       .getLog()
-      .slice(-30)
       .map((entry) => `  - [${entry.type}] ${entry.content}`)
       .join('\n');
 
