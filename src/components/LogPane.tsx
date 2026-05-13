@@ -7,20 +7,31 @@ import { parseMarkdownToTerminal } from '../utils/markdown-terminal.js';
 
 import { Box, Text } from 'ink';
 import type { LogType, TaggedLogEntry } from '../utils/logger.js';
-import { isDebugMode, registerLogPane, setVerboseMode, unregisterLogPane } from '../utils/logger.js';
+import { isDebugMode, registerLogPane, unregisterLogPane } from '../utils/logger.js';
 
 // marked.use(new markedTerminal());
 
-type LogEntry = TaggedLogEntry;
+type LogEntry = TaggedLogEntry & { collapsedCount?: number };
 
 interface LogPaneProps {
   verboseMode: boolean;
 }
 
 const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
-  const [logs, setLogs] = useState<TaggedLogEntry[]>([]);
-  const pendingLogsRef = React.useRef<TaggedLogEntry[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const pendingLogsRef = React.useRef<LogEntry[]>([]);
   const flushTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const MAX_MULTILINE_LINES = 16;
+  const MAX_STEP_LINES = 8;
+  const MAX_SUBSTEP_LINES = 6;
+
+  const formatCollapsedContent = (lines: string[], collapsedCount: number, label: string) => {
+    if (collapsedCount <= 0) {
+      return lines.join('\n');
+    }
+    return [`... ${collapsedCount} earlier ${label}`, ...lines].join('\n');
+  };
 
   const flushLogs = useCallback(() => {
     if (pendingLogsRef.current.length === 0) return;
@@ -29,7 +40,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
     pendingLogsRef.current = [];
     flushTimeoutRef.current = null;
 
-    setLogs((prevLogs: TaggedLogEntry[]) => {
+    setLogs((prevLogs: LogEntry[]) => {
       const result = [...prevLogs];
 
       for (const logEntry of newLogs) {
@@ -40,6 +51,29 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
 
         const lastLog = result[result.length - 1];
         if (lastLog.type === logEntry.type && lastLog.content === logEntry.content && Math.abs((lastLog.timestamp?.getTime() || 0) - (logEntry.timestamp?.getTime() || 0)) < 1000) {
+          continue;
+        }
+
+        if ((logEntry.type === 'step' || logEntry.type === 'substep') && lastLog.type === logEntry.type && Math.abs((lastLog.timestamp?.getTime() || 0) - (logEntry.timestamp?.getTime() || 0)) < 1500) {
+          const currentLines = String(logEntry.content)
+            .split('\n')
+            .filter((line) => line.length > 0);
+          const previousLines = String(lastLog.content)
+            .split('\n')
+            .filter((line) => line.length > 0);
+          const visiblePreviousLines = lastLog.collapsedCount ? previousLines.slice(1) : previousLines;
+          const maxLines = logEntry.type === 'step' ? MAX_STEP_LINES : MAX_SUBSTEP_LINES;
+          const mergedLines = [...visiblePreviousLines, ...currentLines];
+          const overflow = Math.max(0, mergedLines.length - maxLines);
+          const collapsedCount = (lastLog.collapsedCount || 0) + overflow;
+          const visibleLines = mergedLines.slice(-maxLines);
+          const label = logEntry.type === 'step' ? 'steps' : 'details';
+          result[result.length - 1] = {
+            ...lastLog,
+            content: formatCollapsedContent(visibleLines, collapsedCount, label),
+            timestamp: logEntry.timestamp,
+            collapsedCount,
+          };
           continue;
         }
 
@@ -112,12 +146,12 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
       const cleaned = stripAnsi(dedent(log.content));
       const parsed = parseMarkdownToTerminal(cleaned);
       const lines = parsed.split('\n');
-      const maxLines = 30;
-      const truncated = lines.length > maxLines ? `${lines.slice(0, maxLines).join('\n')}\n... (${lines.length - maxLines} more lines)` : cleaned;
+      const truncated =
+        lines.length > MAX_MULTILINE_LINES ? `${lines.slice(0, MAX_MULTILINE_LINES).join('\n')}\n... (${lines.length - MAX_MULTILINE_LINES} more lines)` : parsed;
       return (
         <Box key={index} borderStyle="classic" borderLeft={false} borderRight={false} marginY={1} padding={1} borderColor="dim" overflow="hidden">
           <Text color="gray" dimColor>
-            {parsed}
+            {truncated}
           </Text>
         </Box>
       );

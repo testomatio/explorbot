@@ -87,7 +87,7 @@ export class Rerunner extends TaskAgent implements Agent {
       return { total: 0, passed: 0, failed: 0, healed: 0 };
     }
 
-    tag('info').log(`Re-running tests from: ${relative(process.cwd(), absPath)}`);
+    tag('step').log(`Re-running tests from: ${relative(process.cwd(), absPath)}`);
     setActivity('🔄 Re-running tests...', 'action');
 
     this.healedSteps = [];
