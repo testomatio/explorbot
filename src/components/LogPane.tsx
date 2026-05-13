@@ -26,12 +26,12 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
   const MAX_STEP_LINES = 8;
   const MAX_SUBSTEP_LINES = 6;
 
-  const formatCollapsedContent = (lines: string[], collapsedCount: number, label: string) => {
+  const formatCollapsedContent = useCallback((lines: string[], collapsedCount: number, label: string) => {
     if (collapsedCount <= 0) {
       return lines.join('\n');
     }
     return [`... ${collapsedCount} earlier ${label}`, ...lines].join('\n');
-  };
+  }, []);
 
   const flushLogs = useCallback(() => {
     if (pendingLogsRef.current.length === 0) return;
@@ -82,7 +82,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
 
       return result;
     });
-  }, []);
+  }, [formatCollapsedContent]);
 
   const addLog = useCallback(
     (logEntry: TaggedLogEntry) => {
