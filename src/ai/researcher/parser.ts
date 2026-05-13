@@ -64,6 +64,9 @@ export function mapRowToElement(row: Record<string, string>): ResearchElement | 
 
   let eidxRaw = (colMap.eidx || '').trim();
   if (eidxRaw && /^\d+$/.test(eidxRaw)) eidxRaw = `e${eidxRaw}`;
+  if (eidxRaw && !/^e\d+$/i.test(eidxRaw)) {
+    eidxRaw = '';
+  }
 
   const aria = parseAriaLocator(colMap.aria || '-');
 

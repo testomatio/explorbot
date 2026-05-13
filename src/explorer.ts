@@ -8,6 +8,7 @@ import { createTest } from 'codeceptjs/lib/mocha/test';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
+import type { BrowserContextOptions } from 'playwright';
 import { visuallyAnnotateContainers } from './ai/researcher/coordinates.ts';
 import { RequestStore } from './api/request-store.ts';
 import { XhrCapture } from './api/xhr-capture.ts';
@@ -238,7 +239,17 @@ class Explorer {
     }
     await this.connectOrLaunchBrowser();
     const hasSession = this.options?.session && existsSync(this.options.session);
-    const contextOptions = hasSession ? { storageState: this.options!.session } : undefined;
+    const helperOptions = this.playwrightHelper.options || {};
+    // CodeceptJS skips _createContextPage when sessions/storageState are involved, so we
+    // build contextOptions ourselves. Most keys share a name with Playwright's
+    // BrowserContextOptions and are copied as-is; `emulate` must be flattened, `basicAuth`
+    // renamed to `httpCredentials`, and `storageState` comes from the --session flag.
+    const contextOptions: BrowserContextOptions = {
+      ...helperOptions,
+    };
+    if (helperOptions.emulate) Object.assign(contextOptions, helperOptions.emulate);
+    if (helperOptions.basicAuth) contextOptions.httpCredentials = helperOptions.basicAuth;
+    if (hasSession) contextOptions.storageState = this.options!.session;
     await this.playwrightHelper._createContextPage(contextOptions);
     await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
     this.setupXhrCapture();

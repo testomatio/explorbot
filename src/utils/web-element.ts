@@ -122,7 +122,8 @@ export class WebElement {
   }
 
   static async fromEidxList(page: any, eidxList: string[]): Promise<WebElement[]> {
-    if (eidxList.length === 0) return [];
+    const validEidxList = eidxList.filter((eidx) => /^e\d+$/i.test(eidx));
+    if (validEidxList.length === 0) return [];
 
     const rawList: RawElementData[] = await page.evaluate(
       ([list, extractFnStr, config]: [string[], string, ElementExtractionConfig]) => {
@@ -136,7 +137,7 @@ export class WebElement {
         }
         return results;
       },
-      [eidxList, getElementDataExtractorSource(), ELEMENT_EXTRACTION_CONFIG] as [string[], string, ElementExtractionConfig]
+      [validEidxList, getElementDataExtractorSource(), ELEMENT_EXTRACTION_CONFIG] as [string[], string, ElementExtractionConfig]
     );
 
     return rawList.map((d) => WebElement.fromRawData(d));

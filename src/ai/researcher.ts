@@ -121,6 +121,8 @@ export class Researcher extends ResearcherBase implements Agent {
 
     const sessionName = `researcher: ${state.url}`;
     return Observability.run(sessionName, { tags: ['researcher'], sessionId: stateHash }, async () => {
+      const displayUrl = state.fullUrl || state.url;
+      tag('info').log(`Researching ${displayUrl} to understand the context...`);
       setActivity(`${this.emoji} Researching...`, 'action');
 
       await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
