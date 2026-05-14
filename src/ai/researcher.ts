@@ -151,10 +151,10 @@ export class Researcher extends ResearcherBase implements Agent {
       if (!deep && !force) {
         const similar = await findSimilarResearch(combinedHtml);
         if (similar) {
-          tag('info').log('Similar research found, reusing cached result');
+          tag('substep').log('Similar research found, reusing cached result');
           if (stateHash) saveResearch(stateHash, similar, combinedHtml);
           tag('multiline').log(formatResearchSummary(similar));
-          tag('success').log(`Research complete! ${similar.length} characters (reused)`);
+          tag('success').log('Research complete (reused)');
           await this.hooksRunner.runAfterHook('researcher', state.url);
           return similar;
         }
@@ -311,7 +311,7 @@ export class Researcher extends ResearcherBase implements Agent {
       }
 
       tag('multiline').log(formatResearchSummary(result.text, { visionUsed: this.hasScreenshotToAnalyze }));
-      tag('success').log(`Research complete! ${result.text.length} characters`);
+      tag('success').log('Research complete');
       if (researchFile) tag('substep').log(`Research file saved to: ${researchFile}`);
       if (this.actionResult?.screenshotFile) {
         const screenshotPath = outputPath('states', this.actionResult.screenshotFile);

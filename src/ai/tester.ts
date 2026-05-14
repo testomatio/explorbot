@@ -118,7 +118,6 @@ export class Tester extends TaskAgent implements Agent {
     const state = this.explorer.getStateManager().getCurrentState();
     if (!state) throw new Error('No state found');
 
-    tag('info').log(`Testing scenario: ${task.scenario}`);
     setActivity(`🧪 Testing: ${task.scenario}`, 'action');
 
     this.previousUrl = null;
@@ -678,7 +677,6 @@ export class Tester extends TaskAgent implements Agent {
     if (!task.hasFinished) {
       task.finish(TestResult.FAILED);
     }
-    tag('info').log(`Finished: ${task.scenario}`);
 
     if (task.isSuccessful) {
       tag('success').log(`Successful test: ${task.scenario}`);

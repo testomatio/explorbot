@@ -160,7 +160,6 @@ export class Planner extends PlannerBase implements Agent {
     this.freshStart = false;
 
     setActivity(`${this.emoji} Planning...`, 'action');
-    tag('info').log(`Planning test scenarios for ${state.url}`);
     if (style) tag('info').log(`Planning style: ${style}`);
 
     const tags = ['planner'];

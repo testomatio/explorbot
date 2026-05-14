@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import { faker } from '@faker-js/faker';
 import { context, trace } from '@opentelemetry/api';
-import { highlight } from 'cli-highlight';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
 import { hopeThat, retryTo, tryTo, within } from 'codeceptjs/lib/effects';
@@ -21,7 +20,7 @@ import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
-import { createDebug, log, setStepSpanParent, tag } from './utils/logger.js';
+import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
 
@@ -296,7 +295,13 @@ class Action {
   async expect(codeOrFunction: string | ((I: CodeceptJS.I) => void)): Promise<Action> {
     const codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
     this.expectation = codeString.toString();
-    log('Expecting', highlight(codeString, { language: 'javascript' }));
+    const expectationPreview = sanitizeCodeBlock(codeString)
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 2)
+      .join(' ');
+    tag('step').log(`Expecting: ${expectationPreview || 'assertion'}`);
     try {
       debugLog('Executing expectation:', codeString);
 

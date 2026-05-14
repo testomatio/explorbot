@@ -168,7 +168,7 @@ export class Driller extends TaskAgent implements Agent {
     this.allResults = [];
 
     return Observability.run(`driller: ${currentState.url}`, { tags: ['driller'], sessionId: sessionName }, async () => {
-      tag('info').log(`Driller starting on ${currentState.url}`);
+      tag('step').log(`Drilling page: ${currentState.url}`);
       await this.hooksRunner.runBeforeHook('driller', currentState.url);
 
       const originalState = await this.captureAnnotatedState();
