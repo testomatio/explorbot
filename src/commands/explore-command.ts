@@ -59,13 +59,14 @@ export class ExploreCommand extends BaseCommand {
       await this.runFreshMode(mainUrl, feature, cfg.styles);
     }
 
+    this.skipRemainingTestsOnHalt();
     const mainPlan = this.completedPlans[0];
     if (mainPlan) this.explorBot.setCurrentPlan(mainPlan);
     if (this.dryRun) {
       this.printResults();
       return;
     }
-    if (mainUrl) await this.explorBot.visit(mainUrl);
+    if (mainUrl && !Stats.haltSession) await this.explorBot.visit(mainUrl);
     const savedPath = this.explorBot.savePlans(this.completedPlans);
     this.printResults();
     await this.explorBot.printSessionAnalysis();
@@ -290,6 +291,7 @@ export class ExploreCommand extends BaseCommand {
       await this.explorBot.plan(feature, opts);
       if (this.explorBot.lastPlanError) {
         tag('warning').log(`Planning style '${opts.style}' failed after retry, skipping`);
+        await this.healByCaptain(this.explorBot.lastPlanError);
         return;
       }
     }
@@ -474,6 +476,7 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private isLimitReached(): boolean {
+    if (Stats.haltSession) return true;
     return this.maxTests != null && this.testsRun >= this.maxTests;
   }
 
@@ -500,6 +503,7 @@ export class ExploreCommand extends BaseCommand {
     }
     try {
       await this.explorBot.agentTester().test(test);
+      if (test.isSuccessful) Stats.recordSuccess();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       tag('warning').log(`Test failed: ${test.scenario} — ${msg}`);
@@ -507,8 +511,24 @@ export class ExploreCommand extends BaseCommand {
         test.addNote(`Aborted: ${msg}`, TestResult.FAILED);
         test.finish(TestResult.FAILED);
       }
+      await this.healByCaptain(err);
     }
     this.testsRun++;
+  }
+
+  private skipRemainingTestsOnHalt(): void {
+    if (!Stats.haltSession) return;
+    const reason = Stats.haltSession;
+    let skipped = 0;
+    for (const plan of this.completedPlans) {
+      for (const t of plan.getPendingTests()) {
+        t.start();
+        t.addNote(`Session halted: ${reason}`, TestResult.SKIPPED);
+        t.finish(TestResult.SKIPPED);
+        skipped++;
+      }
+    }
+    if (skipped > 0) tag('error').log(`Session halted: ${reason} — ${skipped} test(s) skipped`);
   }
 }
 

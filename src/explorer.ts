@@ -391,6 +391,18 @@ class Explorer {
     return FATAL_BROWSER_ERRORS.test(msg);
   }
 
+  async restartBrowser(): Promise<void> {
+    tag('warning').log('Captain heal: restarting browser');
+    try {
+      await this.playwrightHelper._stopBrowser();
+    } catch (err) {
+      debugLog('restartBrowser: stop failed', err);
+    }
+    await codeceptjs.recorder.reset();
+    await codeceptjs.recorder.start();
+    await this.connectOrLaunchBrowser();
+  }
+
   async recoverFromBrowserError(): Promise<boolean> {
     try {
       const url = this.stateManager.getCurrentState()?.url;

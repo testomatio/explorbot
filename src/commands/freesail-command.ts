@@ -33,13 +33,15 @@ export class FreesailCommand extends BaseCommand {
 
     await loop(
       async (ctx) => {
+        if (Stats.haltSession) ctx.stop();
         if (maxTests != null && testsRun >= maxTests) ctx.stop();
 
         const stateManager = this.explorBot.getExplorer().getStateManager();
         const state = stateManager.getCurrentState();
 
         if (state && !Researcher.getCachedResearch(state)) {
-          await this.explorBot.agentResearcher().research(state, { deep: true, screenshot: true });
+          await this.explorBot.agentResearcher().research(state, { deep: true, screenshot: true }).catch(this.healByCaptain);
+          if (Stats.haltSession) ctx.stop();
         }
 
         const cachedPlan = state?.url ? Planner.getCachedPlan(state.url) : null;
@@ -54,11 +56,13 @@ export class FreesailCommand extends BaseCommand {
           if (plan) testsRun += plan.tests.filter((t) => t.hasFinished).length;
         }
 
+        if (Stats.haltSession) ctx.stop();
         if (maxTests != null && testsRun >= maxTests) ctx.stop();
 
         const navigator = this.explorBot.agentNavigator();
         const visitedUrls = stateManager.getAllVisitedUrls();
-        const suggestion = await navigator.freeSail({ strategy, scope, visitedUrls });
+        const suggestion = await navigator.freeSail({ strategy, scope, visitedUrls }).catch(this.healByCaptain);
+        if (Stats.haltSession) ctx.stop();
         if (!suggestion) {
           tag('info').log('No navigation suggestion available');
           return;
@@ -71,7 +75,7 @@ export class FreesailCommand extends BaseCommand {
 
         tag('info').log(`Navigating to: ${suggestion.target} - ${suggestion.reason}`);
         await this.explorBot.openFreshTab();
-        await this.explorBot.visit(suggestion.target);
+        await this.explorBot.visit(suggestion.target).catch(this.healByCaptain);
         this.explorBot.clearPlan();
       },
       { maxAttempts: Number.POSITIVE_INFINITY }

@@ -10,7 +10,9 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { startLogCapture, stopLogCapture, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import { truncateJson } from '../utils/strings.ts';
+import { Stats } from '../stats.ts';
 import type { Agent } from './agent.js';
+import { WithHealMode } from './captain/heal-mode.ts';
 import { WithIdleMode } from './captain/idle-mode.ts';
 import { type CaptainMode, type ModeContext, debugLog } from './captain/mixin.ts';
 import { WithTestMode } from './captain/test-mode.ts';
@@ -22,8 +24,9 @@ import { Researcher } from './researcher.ts';
 import { TaskAgent } from './task-agent.ts';
 
 const MAX_STEPS = 15;
+const HEAL_MAX_STEPS = 5;
 
-const CaptainBase = WithTestMode(WithWebMode(WithIdleMode(TaskAgent as unknown as new (...args: any[]) => TaskAgent)));
+const CaptainBase = WithHealMode(WithTestMode(WithWebMode(WithIdleMode(TaskAgent as unknown as new (...args: any[]) => TaskAgent))));
 
 export class Captain extends CaptainBase implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form', 'navigate'];
@@ -491,6 +494,104 @@ export class Captain extends CaptainBase implements Agent {
     }
 
     return null;
+  }
+
+  async heal(): Promise<void> {
+    const ctx: ModeContext = { explorBot: this.explorBot, task: new Task('heal', '') };
+    let isDone = false;
+    const onDone = () => {
+      isDone = true;
+    };
+    const tools = { ...this.coreTools(ctx.task, onDone), ...this.healModeTools(ctx) };
+
+    const provider = this.explorBot.getProvider();
+    const conversation = provider.startConversation(
+      dedent`
+        <role>You are Captain in heal mode — diagnosing a cluster of failures during a long-running session.</role>
+        ${this.healModePrompt()}
+        <rules>
+        ${this.healModeRules()}
+        </rules>
+      `,
+      'captain',
+      provider.getAgenticModel('captain')
+    );
+    conversation.addUserText(this.buildHealContext());
+
+    await loop(
+      async ({ stop, iteration }) => {
+        debugLog(`Captain heal iteration ${iteration}`);
+        if (isDone || Stats.haltSession) {
+          stop();
+          return;
+        }
+
+        const result = await provider.invokeConversation(conversation, tools, {
+          maxToolRoundtrips: 3,
+          toolChoice: 'auto',
+        });
+
+        if (!result) {
+          stop();
+          return;
+        }
+
+        this.trackToolExecutions(result?.toolExecutions || []);
+
+        if (isDone || Stats.haltSession) stop();
+      },
+      {
+        maxAttempts: HEAL_MAX_STEPS,
+        interruptible: false,
+        observability: { agent: 'captain', name: 'captain.heal' },
+        catch: async ({ error, stop }) => {
+          tag('error').log(`Captain heal error: ${error.message}`);
+          stop();
+        },
+      }
+    );
+  }
+
+  private buildHealContext(): string {
+    const stateManager = this.explorBot.getExplorer().getStateManager();
+    const state = stateManager.getCurrentState();
+    const now = Date.now();
+    const errorLines = Stats.recentErrors.map((e) => {
+      const ageSec = Math.round((now - e.at) / 1000);
+      return `- (${ageSec}s ago) ${e.message.substring(0, 200)}`;
+    });
+    const page = this.explorBot.getExplorer().playwrightHelper?.page;
+    const pageAlive = !!page && !page.isClosed?.();
+
+    const plan = this.explorBot.getCurrentPlan();
+    const pending = plan?.getPendingTests().length ?? 0;
+    const completed = plan ? plan.tests.filter((t) => t.hasFinished).length : 0;
+
+    const previous = Stats.lastHealReason ? `Previous heal verdict: ${Stats.lastHealReason}` : 'No previous heal verdict.';
+
+    return dedent`
+      <recent_errors>
+      Consecutive failures: ${Stats.consecutiveFailures}
+      ${errorLines.join('\n') || '(empty)'}
+      </recent_errors>
+
+      <browser_state>
+      URL: ${state?.url || '(none)'}
+      Title: ${state?.title || '(none)'}
+      Page alive: ${pageAlive}
+      </browser_state>
+
+      <plan_progress>
+      Completed: ${completed}
+      Pending: ${pending}
+      </plan_progress>
+
+      <history>
+      ${previous}
+      </history>
+
+      Diagnose and pick ONE recovery action (or halt). End with done(summary).
+    `;
   }
 }
 

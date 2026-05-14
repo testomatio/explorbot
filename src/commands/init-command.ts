@@ -30,6 +30,10 @@ const config = {
     // agentic model for decision making
     agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
   },
+
+  // Captain heal mode: consecutive failures before Captain investigates and decides
+  // to recover / wait / halt the session. Set 0 or false to disable.
+  healAttempts: 2,
 };
 
 export default config;

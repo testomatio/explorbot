@@ -7,7 +7,14 @@ interface TokenUsage {
   cached?: number;
 }
 
+interface ErrorRecord {
+  message: string;
+  at: number;
+}
+
 export type ExplorbotMode = 'explore' | 'test' | 'freesail' | 'tui';
+
+const MAX_RECENT_ERRORS = 8;
 
 export class Stats {
   static startTime = Date.now();
@@ -18,6 +25,20 @@ export class Stats {
   static mode?: ExplorbotMode;
   static focus?: string;
   static models: Record<string, TokenUsage> = {};
+  static recentErrors: ErrorRecord[] = [];
+  static consecutiveFailures = 0;
+  static haltSession: string | null = null;
+  static lastHealReason: string | null = null;
+
+  static recordError(message: string): void {
+    Stats.recentErrors.push({ message, at: Date.now() });
+    if (Stats.recentErrors.length > MAX_RECENT_ERRORS) Stats.recentErrors.shift();
+    Stats.consecutiveFailures++;
+  }
+
+  static recordSuccess(): void {
+    Stats.consecutiveFailures = 0;
+  }
 
   static recordTokens(_agent: string, model: string, usage: TokenUsage): void {
     if (!Stats.models[model]) {

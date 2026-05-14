@@ -1,9 +1,13 @@
 import chalk from 'chalk';
 import { Command } from 'commander';
 import { isInteractive } from '../ai/task-agent.js';
+import { ConfigParser } from '../config.js';
 import type { ExplorBot } from '../explorbot.js';
+import { Stats } from '../stats.js';
 import { getCliName } from '../utils/cli-name.js';
 import { tag } from '../utils/logger.js';
+
+const DEFAULT_HEAL_ATTEMPTS = 2;
 
 export interface CommandOption {
   flags: string;
@@ -30,6 +34,19 @@ export abstract class BaseCommand {
   }
 
   abstract execute(args: string): Promise<void>;
+
+  protected healByCaptain = async (err: unknown): Promise<void> => {
+    const msg = err instanceof Error ? err.message : String(err);
+    tag('warning').log(`Failure observed: ${msg}`);
+    Stats.recordError(msg);
+    if (Stats.haltSession) return;
+    const attempts = ConfigParser.getInstance().getConfig().healAttempts ?? DEFAULT_HEAL_ATTEMPTS;
+    if (!attempts) return;
+    if (Stats.consecutiveFailures < attempts) return;
+    tag('warning').log(`Captain heal mode: ${Stats.consecutiveFailures} consecutive failures — investigating`);
+    await this.explorBot.agentCaptain().heal();
+    Stats.consecutiveFailures = 0;
+  };
 
   matches(commandName: string): boolean {
     return this.name === commandName || this.aliases.includes(commandName);

@@ -218,6 +218,7 @@ interface ExplorbotConfig {
   stepsFile?: string;
   files?: Record<string, string>;
   dynamicPageRegex?: string;
+  healAttempts?: number | false;
 }
 
 const config: ExplorbotConfig = {
