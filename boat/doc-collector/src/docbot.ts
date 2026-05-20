@@ -5,6 +5,7 @@ import type { Link, WebPageState } from '../../../src/state-manager.ts';
 import { normalizeUrl } from '../../../src/state-manager.ts';
 import { sanitizeFilename } from '../../../src/utils/strings.ts';
 import { tag } from '../../../src/utils/logger.ts';
+import { extractLinks } from '../../../src/utils/html.ts';
 import { Documentarian, type PageDocumentation } from './ai/documentarian.ts';
 import { type DocbotConfig, DocbotConfigParser } from './config.ts';
 import { type DocumentedPage, renderPageDocumentation, renderSpecIndex, type SkippedPage } from './docs-renderer.ts';
@@ -92,13 +93,21 @@ class DocBot {
           break;
         }
 
-        const state = this.explorBot.getCurrentState();
+        let state = this.explorBot.getCurrentState();
         if (!state) {
           skipped.push({
             url: target,
             reason: 'page state was not captured after navigation',
           });
           continue;
+        }
+        // If the current state is a stripped basic WebPageState (no html — happens when
+        // framenavigated fires after visit's own capture), force a fresh capture so
+        // links / html / aria are available for downstream link enqueue and research.
+        if (!state.html) {
+          const action = this.explorBot.getExplorer().createAction();
+          await action.capturePageState({ includeScreenshot: this.shouldUseScreenshots() }).catch(() => undefined);
+          state = this.explorBot.getCurrentState() ?? state;
         }
 
         const pageKey = this.getPageKey(state.url || target);
@@ -189,7 +198,15 @@ class DocBot {
     const paths: string[] = [];
     const seen = new Set<string>();
 
-    for (const link of state.links || []) {
+    // state.links may be empty when framenavigated overwrote a full ActionResult with a
+    // stripped-down basic state. Fall back to extracting from state.html so subtree crawl
+    // still discovers child paths.
+    let links = state.links ?? [];
+    if (links.length === 0 && state.html) {
+      links = extractLinks(state.html);
+    }
+
+    for (const link of links) {
       const nextPath = this.resolveLink(link, baseUrl);
       if (!nextPath) {
         continue;
