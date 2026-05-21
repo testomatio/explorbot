@@ -43,10 +43,7 @@ interface CLIOptions {
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
-  const sessionFile =
-    options.session === true
-      ? path.join(path.resolve(options.path || process.cwd()), 'output', 'session.json')
-      : options.session;
+  const sessionFile = options.session === true ? path.join(path.resolve(options.path || process.cwd()), 'output', 'session.json') : options.session;
 
   return {
     from,
