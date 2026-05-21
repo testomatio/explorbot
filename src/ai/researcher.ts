@@ -125,7 +125,7 @@ export class Researcher extends ResearcherBase implements Agent {
       tag('info').log(`Researching ${displayUrl} to understand the context...`);
       setActivity(`${this.emoji} Researching...`, 'action');
 
-      await this.ensureNavigated(state.url, screenshot && this.provider.hasVision());
+      await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
       const annotatedElements = await this.explorer.annotateElements();
@@ -285,7 +285,11 @@ export class Researcher extends ResearcherBase implements Agent {
       }
 
       if (!interrupted() && deep) {
-        await this.performDeepAnalysis(state, result);
+        try {
+          await this.performDeepAnalysis(state, result);
+        } catch (err) {
+          tag('warning').log(`Deep analysis failed, continuing with best-effort research: ${err instanceof Error ? err.message : err}`);
+        }
       }
 
       if (!interrupted() && data) {

@@ -854,12 +854,13 @@ export function createAgentTools({
       }),
       execute: async ({ reason }) => {
         const stateManager = explorer.getStateManager();
-        const currentUrl = stateManager.getCurrentState()?.url;
+        const currentState = stateManager.getCurrentState();
+        const currentUrl = currentState?.fullUrl || currentState?.url;
         const history = stateManager.getStateHistory();
 
         let targetUrl: string | null = null;
         for (let i = history.length - 1; i >= 0; i--) {
-          const url = history[i].toState.url;
+          const url = history[i].toState.fullUrl || history[i].toState.url;
           if (url !== currentUrl) {
             targetUrl = url;
             break;

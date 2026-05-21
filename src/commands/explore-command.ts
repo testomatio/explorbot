@@ -38,6 +38,11 @@ export class ExploreCommand extends BaseCommand {
   private oldTestRefs = new Set<Test>();
   private priorityFilter?: Set<string>;
 
+  private getCurrentPageUrl(): string | undefined {
+    const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+    return state?.fullUrl || state?.url;
+  }
+
   async execute(args: string): Promise<void> {
     const { opts, args: remaining } = this.parseArgs(args);
     if (opts.maxTests) {
@@ -51,7 +56,7 @@ export class ExploreCommand extends BaseCommand {
     if (this.dryRun) tag('info').log('Dry-run mode: planner runs to discover new tests; test execution is skipped');
     Stats.mode ??= 'explore';
     Stats.focus ??= feature;
-    const mainUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url;
+    const mainUrl = this.getCurrentPageUrl();
 
     if (cfg.enabled) {
       await this.runReuseMode(mainUrl, feature, cfg);

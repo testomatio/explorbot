@@ -120,6 +120,24 @@ export class SessionAnalyst implements Agent {
       .slice(-30)
       .map((entry) => `  - [${entry.type}] ${entry.content}`)
       .join('\n');
+    const checked = test.getCheckedExpectations().join(' | ') || '(none)';
+    const remaining = test.getRemainingExpectations().join(' | ') || '(none)';
+    const notes = test
+      .getPrintableNotes()
+      .slice(-12)
+      .map((note) => `  - ${note}`)
+      .join('\n');
+    const visitedUrls = test.getVisitedUrls({ localOnly: true }).join(' | ') || '(none)';
+    const verification = test.verification
+      ? dedent`
+          verification_status: ${test.verification.status || 'unknown'}
+          verification_message: ${test.verification.message || '(none)'}
+          verification_url: ${test.verification.url || '(none)'}
+          verification_page: ${test.verification.pageLabel || '(none)'}
+          verification_details:
+          ${(test.verification.details.length > 0 ? test.verification.details : ['(none)']).map((detail) => `  - ${detail}`).join('\n')}
+        `
+      : 'verification_status: none';
 
     return dedent`
       <test ref="#${ref}">
@@ -127,6 +145,12 @@ export class SessionAnalyst implements Agent {
       scenario: ${test.scenario}
       result: ${test.result || 'unknown'}
       expected: ${test.expected.join(' | ') || '(none)'}
+      checked_expectations: ${checked}
+      remaining_expectations: ${remaining}
+      visited_urls: ${visitedUrls}
+      ${verification}
+      notes:
+      ${notes || '  - (none)'}
       log:
       ${log}
       </test>

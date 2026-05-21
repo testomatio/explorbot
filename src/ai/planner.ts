@@ -80,6 +80,10 @@ export class Planner extends PlannerBase implements Agent {
     return ConfigParser.getInstance().getConfig().ai?.agents?.researcher?.sections || Object.keys(POSSIBLE_SECTIONS);
   }
 
+  private getDefaultStartUrl(state: { url: string; fullUrl?: string }): string {
+    return state.fullUrl || state.url;
+  }
+
   getSystemMessage(feature?: string): string {
     const currentUrl = this.stateManager.getCurrentState()?.url;
     const customPrompt = this.provider.getSystemPromptForAgent('planner', currentUrl);
@@ -187,7 +191,8 @@ export class Planner extends PlannerBase implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
-      const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, s.startUrl || state.url, s.steps || []));
+      const defaultStartUrl = this.getDefaultStartUrl(state);
+      const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, s.startUrl || defaultStartUrl, s.steps || []));
 
       return { tests: fromPlanning, planName: aiResult.object.planName };
     });
@@ -199,7 +204,8 @@ export class Planner extends PlannerBase implements Agent {
       const cached = state.url ? getRegisteredPlan(state.url) : null;
       const planName = feature || cached?.plan.title || result.planName || state.url;
       this.currentPlan = new Plan(planName);
-      this.currentPlan.url = state.url;
+      this.currentPlan.url = this.getDefaultStartUrl(state);
+      const defaultStartUrl = this.getDefaultStartUrl(state);
       if (parentPlan) this.currentPlan.parentPlan = parentPlan;
       const allPreviousScenarios = this.getPreviousSessionScenarios();
       const existingTestScenarios = this.getExistingTestFileScenarios(state.url);
@@ -207,13 +213,13 @@ export class Planner extends PlannerBase implements Agent {
       for (const t of tests) {
         if (allPreviousScenarios.has(t.scenario.toLowerCase())) continue;
         t.style = this.lastStyleName;
-        t.startUrl = state.url;
+        t.startUrl = defaultStartUrl;
         this.currentPlan.addTest(t);
       }
     } else {
       tag('step').log(`Expanding plan: "${this.currentPlan.title}"`);
       this.currentPlan.nextIteration();
-      const newTests = this.addNewTests(tests, state.url);
+      const newTests = this.addNewTests(tests, this.getDefaultStartUrl(state));
       if (newTests.length > 0) {
         const summary = `New scenarios:\n${newTests.map((t) => `+ [${t.priority}] ${t.scenario}`).join('\n')}`;
         tag('multiline').log(summary);
@@ -330,6 +336,13 @@ export class Planner extends PlannerBase implements Agent {
       Focus on URL page change or data persistency after page reload.
       If there are subpages (pages with same URL path) plan testing of those subpages as well
       If you plan to test CRUD operations, plan them in correct order: create, read, update.
+      Do not invent specific route names, success messages, validation texts, badge counts, or welcome messages unless they are visible in research, visited pages, or prior observed flows.
+      If exact wording is unknown, describe the expected result generically, for example "an authentication error is shown" or "the user stays on the login page" instead of guessing the literal text.
+      If exact redirect destination is unknown, describe the destination by visible page identity, for example "the dashboard page opens" or "the current workspace home page opens" instead of inventing a URL slug.
+      Only propose scenarios whose prerequisites are evident from page research, visited pages, or API data preparation context.
+      If a scenario needs existing records, recipients, results, notifications, or other target data, propose it only when that data is visible or API preconditions can create it.
+      If the page appears read-only, degraded, demo-limited, maintenance-like, or lacks write controls, prefer read-only scenarios such as opening panels, inspecting visible lists, filtering, searching, or verifying current state.
+      Do not assume hidden data exists just because a control is present.
       DO NOT propose "verification-only" tests that merely open a UI element (modal, dropdown, panel) and check it exists.
       Every test must complete a meaningful action that changes application state or produces a business outcome.
       Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
@@ -565,10 +578,15 @@ export class Planner extends PlannerBase implements Agent {
          - Good: "New suite 'My New Suite' appears in the suite list"
          - Good: "Suite appears under Starred filter tab"
          - Good: "Success message 'Suite created' is displayed"
+         - Good when wording is unknown: "An authentication error is displayed"
+         - Good when route is unknown: "The workspace home page is displayed"
          - Bad: "Modal is displayed" (just verifying existence, no business value)
          - Bad: "Dropdown menu is visible" (just verifying existence)
+         - Bad: "Welcome message is displayed" if no welcome message is visible in research
+         - Bad: "Redirected to /dashboard" if no such route was observed
          - Each outcome should be independently verifiable
          - Avoid combining multiple checks into one outcome
+         - Prefer durable user-facing results over fragile micro-signals
          - Expected outcomes describe WHAT TO VERIFY
 
          FORMATTING RULES:
