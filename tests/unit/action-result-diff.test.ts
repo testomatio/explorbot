@@ -4,7 +4,8 @@ import { ConfigParser } from '../../src/config.ts';
 
 describe('ActionResult Diff', () => {
   beforeEach(async () => {
-    await ConfigParser.getInstance().loadConfig('./explorbot.config.js');
+    ConfigParser.resetForTesting();
+    await ConfigParser.getInstance().loadConfig({ config: './explorbot.config.js' });
   });
   test('should create diff with previous state', () => {
     const previous = new ActionResult({
