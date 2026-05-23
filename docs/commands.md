@@ -1,29 +1,37 @@
 # Terminal Commands Reference
 
-## TUI and CLI Commands
+Explorbot exposes the same commands through two surfaces:
 
-Explorbot has two types of commands:
+- **CLI** — run from your shell. Each command launches a browser, executes the task, prints output, and exits with `0` on success or `1` on failure. Suitable for CI, scripting, and chaining commands together.
+- **TUI** — interactive terminal UI launched by `explorbot start`. The same commands are available as slash commands inside the session, where you can chain multiple actions against a long-lived browser.
 
-- **TUI commands** — slash commands available inside the terminal UI launched by `explorbot start`
-- **CLI commands** — run directly from your shell without launching TUI
+Both surfaces are backed by the same command classes in `src/commands/`, so behavior and options match.
 
-Some commands work in both modes. Where a CLI equivalent exists, it is noted below.
+## Command Reference
 
-| TUI Command | CLI Equivalent |
-|-------------|---------------|
-| `/explore [url]` | `explorbot explore [path]` |
-| `/research [url]` | `explorbot research <url>` |
-| `/plan [--focus <feature>]` | `explorbot plan <path> [--focus <feature>]` |
-| `/drill` | `explorbot drill <url>` |
-| `/learn [note]` | `explorbot learn [url] [description]` |
-| `/runs [file]` | `explorbot runs [file]` |
-| `/rerun <file> [index]` | `explorbot rerun <file> [index]` |
+| Capability | CLI | TUI | Notes |
+|---|---|---|---|
+| Start interactive session | `explorbot start [path]` | — | Boots the TUI |
+| Autonomous exploration | `explorbot explore <path>` | `/explore [url]` | Full research → plan → test cycle |
+| Research a page | `explorbot research <url>` | `/research [url]` | UI analysis only |
+| Generate test plan | `explorbot plan <path>` | `/plan [--focus <feature>]` | Writes plan markdown |
+| Navigate to a URL | `explorbot navigate <url>` | `/navigate <target>` | Reachability probe + session capture |
+| Drill page components | `explorbot drill <url>` | `/drill` | Learn interactions |
+| Execute plan tests | `explorbot test <planfile> [index]` | `/test [scenario\|number\|*]` | Run scenarios |
+| Re-run generated tests | `explorbot rerun <file> [index]` | `/rerun <file> [index]` | With AI auto-healing |
+| List generated tests | `explorbot runs [file]` | `/runs [file]` | Index + dry-run |
+| Store domain knowledge | `explorbot learn [url] [note]` | `/learn [note]` | Persisted to `knowledge/` |
+| Execute CodeceptJS command | `explorbot shell <url> <command>` | `I.click(...)` etc. inline | One-shot vs interactive |
+| Load saved plan | `explorbot plan:load <file> [index]` | `/plan:load <file>` | Preview a plan |
+| Collect documentation | `explorbot docs collect <path-or-url>` | — | See [doc-collector](./doc-collector.md) |
+| Extract built-in rules | `explorbot extract-rules <agent>` | — | Customizable rules to `rules/` |
+| Manage persistent browser | `explorbot browser {start\|stop\|status}` | — | Share browser across runs |
+| Initialize project | `explorbot init` | — | Generates `explorbot.config.*` |
+| Clean output | `explorbot clean [--type ...]` | `/clean` | CLI: artifacts. TUI: clear chat. |
 
-CLI commands run headless by default, execute the task, and exit. TUI commands run inside an interactive session where you can chain multiple actions.
+## Common CLI Options
 
-## Common Options
-
-These options are available on all CLI commands (`start`, `explore`, `plan`, `drill`, `research`, `context`, `docs collect`):
+These options are available on every CLI command that drives a browser (`start`, `explore`, `plan`, `navigate`, `drill`, `research`, `test`, `rerun`, `shell`, `context`, `docs collect`):
 
 | Option | Description |
 |--------|-------------|
@@ -38,18 +46,20 @@ These options are available on all CLI commands (`start`, `explore`, `plan`, `dr
 
 ### `--session`
 
-Persists browser state (cookies, localStorage, sessionStorage) to a JSON file. On next run, the session is restored automatically, skipping login or setup steps.
+Persists browser state (cookies, localStorage, sessionStorage) to a JSON file. On the next run, the session is restored automatically, skipping login or setup steps.
 
 ```bash
-explorbot start /login --session                # uses default output/session.json
+explorbot start /login --session                # default output/session.json
 explorbot start /dashboard --session auth.json  # custom session file
+explorbot navigate /login --session             # probe + capture auth in one shot
+explorbot research /dashboard --session auth.json   # reuse captured auth
 ```
 
 When the flag is provided without a file path, defaults to `output/session.json`.
 
 ## Persistent Browser
 
-By default, every CLI command that needs a browser (`start`, `explore`, `plan`, `drill`, `research`, `context`) launches a fresh Chromium process and shuts it down when done. This is slow during development when you restart explorbot frequently.
+By default, every CLI command that needs a browser (`start`, `explore`, `plan`, `navigate`, `drill`, `research`, `context`) launches a fresh Chromium process and shuts it down when done. This is slow during development when you restart explorbot frequently.
 
 The `explorbot browser` command lets you run a persistent browser server that survives across explorbot sessions. Any CLI command that launches a browser will automatically detect the running server and connect to it instead of starting a new one.
 
@@ -88,6 +98,7 @@ explorbot browser status
 explorbot browser start --show
 
 # Terminal 2: run commands — they reuse the same browser
+explorbot navigate /login --session
 explorbot research /login
 explorbot plan /login --focus authentication
 explorbot start /dashboard
@@ -106,20 +117,60 @@ explorbot browser stop
 | `-c, --config <path>` | Path to configuration file |
 | `-p, --path <path>` | Working directory path |
 
-## Exploration Commands
+## Navigation
 
-### `/explore [url]`
+### navigate
 
-Start full exploration cycle: research → plan → test.
+Drive the AI Navigator to a URL. The Navigator handles redirects, login walls, and recoverable errors — it does not just call `I.amOnPage`.
+
+```bash
+# CLI — exits 0 if reachable, 1 otherwise
+explorbot navigate /settings
+explorbot navigate /login --session             # capture session into output/session.json
+explorbot navigate /dashboard --session auth.json
+```
 
 ```
+# TUI
+/navigate /settings
+/navigate login page
+/navigate back to dashboard
+```
+
+**CLI exit code:** `0` when the Navigator confirms the page was reached, `1` when navigation failed (unreachable URL, unresolved redirect, connection refused, etc.).
+
+**Session capture:** combined with `--session`, this is the canonical way to capture an authenticated session for downstream agents. A typical CI pattern:
+
+```bash
+# 1. Establish authenticated session, fail fast if the app is down
+explorbot navigate /login --session ./auth.json || exit 1
+
+# 2. Reuse the captured session in subsequent commands
+explorbot research /dashboard --session ./auth.json
+explorbot explore /reports --session ./auth.json --max-tests 10
+```
+
+The TUI form accepts looser targets (state descriptions like "back to dashboard"); the CLI form expects a URL or path.
+
+## Exploration
+
+### explore
+
+Start a full exploration cycle: research → plan → test.
+
+```bash
+# CLI
+explorbot explore /dashboard
+explorbot explore /checkout --max-tests 10 --focus checkout
+```
+
+```
+# TUI
 /explore
 /explore /dashboard
 ```
 
-If a URL is provided, navigates there first. After completion, use `/navigate` or `/explore` again to continue.
-
-**CLI equivalent:** `explorbot explore [path]` — runs the full cycle and exits.
+If a URL is provided, navigates there first. After completion, use `/navigate` or `/explore` again to continue (TUI).
 
 #### Options
 
@@ -221,26 +272,44 @@ For new tests, the planner generates freely (the loaded plan is registered for s
 - [Test Plans](./test-plans.md) — markdown format for saved plans
 - [Planner](./planner.md) — how new test scenarios are generated
 
-### `/research [url] [--data]`
+### research
 
-Analyze the current page using the Researcher agent.
+Analyze a page using the Researcher agent.
+
+```bash
+# CLI
+explorbot research /settings
+explorbot research /dashboard --data --deep
+```
 
 ```
+# TUI
 /research
 /research /settings
 /research --data
 ```
 
-- If URL provided, navigates there first
-- `--data` flag extracts structured data from the page
+If a URL is provided, navigates there first.
 
-**CLI equivalent:** `explorbot research <url>` — researches the page and exits.
+| Option | Description |
+|---|---|
+| `--data` | Extract structured data from the page |
+| `--deep` | Enable deep analysis (expand hidden elements) |
+| `--no-fix` | Skip locator fix cycle (for debugging) |
 
-### `/plan [--focus <feature>]`
+### plan
 
-Generate test scenarios for the current page using the Planner agent.
+Generate test scenarios using the Planner agent.
+
+```bash
+# CLI
+explorbot plan /login
+explorbot plan /login --focus authentication
+explorbot plan /checkout --append --style curious
+```
 
 ```
+# TUI
 /plan
 /plan --focus login
 /plan --focus "checkout flow"
@@ -248,13 +317,27 @@ Generate test scenarios for the current page using the Planner agent.
 
 The `--focus` flag narrows the scope of generated tests to a specific feature area.
 
-**CLI equivalent:** `explorbot plan <path> [--focus <feature>]` — generates a plan and exits.
+| Option | Description |
+|---|---|
+| `-a, --append` | Add tests to existing plan file |
+| `--style <name>` | Planning style: `normal`, `curious`, `psycho` |
+| `--focus <feature>` | Focus area for test planning |
 
-### `/test [scenario|number|*]`
+### test
 
 Execute test scenarios using the Tester agent.
 
+```bash
+# CLI
+explorbot test output/plans/login.md          # run all enabled tests
+explorbot test output/plans/login.md 3        # run test #3
+explorbot test output/plans/login.md 1-5      # range
+explorbot test output/plans/login.md 1,3,7    # selection
+explorbot test output/plans/login.md --grep authentication
 ```
+
+```
+# TUI
 /test              # Run next pending test
 /test *            # Run all pending tests
 /test 2            # Run test #2 from plan
@@ -262,19 +345,106 @@ Execute test scenarios using the Tester agent.
 /test User can logout successfully   # Create and run ad-hoc test
 ```
 
-### `/navigate <target>`
+| Option | Description |
+|---|---|
+| `--grep <pattern>` | Run only tests whose scenario matches the pattern |
 
-Navigate to a URI or state using AI assistance.
+### drill
+
+Drill all components on a page to learn interactions.
+
+```bash
+# CLI
+explorbot drill /components
+explorbot drill /components --max-components 10
+explorbot drill /login --knowledge /login
+```
 
 ```
-/navigate /settings
-/navigate login page
-/navigate back to dashboard
+# TUI
+/drill
 ```
 
-The Navigator agent figures out how to reach the destination.
+| Option | Description |
+|---|---|
+| `--knowledge <path>` | Save learned interactions to a knowledge file at this URL path |
+| `--max-components <count>` | Maximum number of components to drill |
 
-## Documentation Collection
+## Test Rerun
+
+### runs
+
+List generated test files or dry-run a specific file to preview steps.
+
+```bash
+# CLI
+explorbot runs
+explorbot runs output/tests/suite.js
+```
+
+```
+# TUI
+/runs
+/runs output/tests/suite.js
+```
+
+Each test is numbered so you can reference it with `rerun`.
+
+### rerun
+
+Re-run generated tests with AI-powered auto-healing. When a step fails, the Rerunner agent diagnoses the issue and executes a fix.
+
+```bash
+# CLI
+explorbot rerun output/tests/suite.js
+explorbot rerun output/tests/suite.js 3
+explorbot rerun output/tests/suite.js 1-5
+explorbot rerun output/tests/suite.js 1,3,7
+explorbot rerun output/tests/suite.js --session
+```
+
+```
+# TUI
+/rerun output/tests/suite.js
+/rerun output/tests/suite.js 3
+/rerun output/tests/suite.js 1-5
+/rerun output/tests/suite.js 1,3,7
+```
+
+Tests without assertions (`I.see`, `I.seeElement`, etc.) are automatically skipped.
+
+See [Rerunning Tests](./rerun.md) for the full workflow and healing configuration.
+
+## Knowledge Management
+
+### knows (TUI)
+
+List all knowledge or show matching knowledge for a URL.
+
+```
+/knows
+/knows /login
+```
+
+### learn
+
+Store knowledge about the current page for future reference.
+
+```bash
+# CLI
+explorbot learn                             # interactive mode
+explorbot learn /login "Use admin credentials"
+```
+
+```
+# TUI
+/learn
+/learn Test user credentials: test@example.com / test123
+```
+
+Without arguments, opens an interactive editor. Knowledge is saved to `./knowledge/` and used by agents during exploration.
+
+## Documentation Collection (CLI only)
 
 ### `explorbot docs collect <path-or-url>`
 
@@ -304,39 +474,7 @@ explorbot docs init
 explorbot docs init --path explorbot-testing
 ```
 
-## Test Rerun
-
-### `/runs [file]`
-
-List generated test files or dry-run a specific file to preview steps.
-
-```
-/runs                                    # list all test files with indices
-/runs output/tests/suite.js              # dry-run: show steps without executing
-```
-
-Each test is numbered so you can reference it with `/rerun`.
-
-**CLI equivalent:** `explorbot runs [file]` — lists tests without starting a browser.
-
-### `/rerun <file> [index]`
-
-Re-run generated tests with AI-powered auto-healing. When a step fails, the Rerunner agent diagnoses the issue and executes a fix.
-
-```
-/rerun output/tests/suite.js             # run all tests in file
-/rerun output/tests/suite.js 3           # run test #3 only
-/rerun output/tests/suite.js 1-5         # run tests 1 through 5
-/rerun output/tests/suite.js 1,3,7       # run specific tests
-```
-
-Tests without assertions (`I.see`, `I.seeElement`, etc.) are automatically skipped.
-
-**CLI equivalent:** `explorbot rerun <file> [index]` — runs with healing and exits.
-
-See [Rerunning Tests](./rerun.md) for the full workflow and healing configuration.
-
-## Plan Management
+## Plan Management (TUI)
 
 ### `/plan:save [filename]`
 
@@ -357,7 +495,13 @@ Load a previously saved plan.
 /plan:load output/plans/checkout-plan.md
 ```
 
-## Page Inspection
+The CLI form `explorbot plan:load <file> [index]` previews a plan file from the shell — including details for a specific test when an index is given.
+
+### `/plan:reload`
+
+Reload the current plan file from disk after editing it externally.
+
+## Page Inspection (TUI)
 
 ### `/aria [--short]`
 
@@ -392,29 +536,11 @@ Extract structured data (tables, lists) from the current page.
 
 Uses AI to identify and format data on the page.
 
-## Knowledge Management
+### `/context`, `/context:aria`, `/context:html`, `/context:data`, `/context:knowledge`, `/context:experience`
 
-### `/knows [url]`
+Print the agent-facing context for the current page in its various forms — combined snapshot, ARIA only, HTML only, data only, applicable knowledge, or stored experience.
 
-List all knowledge or show matching knowledge for a URL.
-
-```
-/knows
-/knows /login
-```
-
-### `/learn [note]`
-
-Store knowledge about the current page for future reference.
-
-```
-/learn
-/learn Test user credentials: test@example.com / test123
-```
-
-Without arguments, opens an interactive editor. Knowledge is saved to `./knowledge/` and used by agents during exploration.
-
-## Session Commands
+## Session Commands (TUI)
 
 ### `/clean`
 
@@ -426,6 +552,8 @@ Clear the Captain agent's conversation history.
 
 Useful when the agent context becomes too large or confused.
 
+The CLI counterpart `explorbot clean [--type <kind>]` removes generated artifacts (experiences, plans, tests) from disk — different scope entirely.
+
 ### `/exit`
 
 Exit the application gracefully.
@@ -435,7 +563,35 @@ Exit the application gracefully.
 /quit
 ```
 
-## Rules & Styles
+## Other CLI Commands
+
+### `explorbot init`
+
+Initialize project configuration.
+
+```bash
+explorbot init
+explorbot init --config-path ./explorbot.config.js
+explorbot init --force
+```
+
+### `explorbot clean`
+
+Clean generated files.
+
+```bash
+explorbot clean                  # artifacts only
+explorbot clean --type experience
+explorbot clean --type all
+```
+
+### `explorbot shell <url> <command>`
+
+Execute a single CodeceptJS command on a page and exit. Handy for quick checks from a script.
+
+```bash
+explorbot shell /login "I.see('Sign in')"
+```
 
 ### `explorbot extract-rules <agent>`
 
@@ -449,9 +605,9 @@ explorbot extract-rules planner -d ./my-rules  # custom directory
 
 After extraction, edit the markdown files to customize how the agent behaves. See [Configuration: Rules](./configuration.md#rules) for details.
 
-## Direct Browser Control
+## Direct Browser Control (TUI)
 
-In addition to slash commands, you can execute CodeceptJS commands directly:
+In addition to slash commands, you can execute CodeceptJS commands directly inside the TUI:
 
 ```
 I.amOnPage('/login')
@@ -461,9 +617,9 @@ I.see('Welcome')
 I.waitForElement('.modal', 5)
 ```
 
-All [CodeceptJS Playwright helpers](https://codecept.io/helpers/Playwright/) are available.
+All [CodeceptJS Playwright helpers](https://codecept.io/helpers/Playwright/) are available. For a one-shot equivalent from the shell, use `explorbot shell <url> <command>`.
 
-## Keyboard Shortcuts
+## Keyboard Shortcuts (TUI)
 
 | Key | Action |
 |-----|--------|
