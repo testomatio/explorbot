@@ -599,6 +599,22 @@ addCommonOptions(program.command('research <url>').description('Research a page 
   }
 );
 
+addCommonOptions(program.command('navigate <url>').description('Navigate to a URL using the AI Navigator. Exits 0 if reachable, 1 otherwise.')).action(async (url, options) => {
+  try {
+    const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
+    await explorBot.start();
+
+    const { NavigateCommand } = await import('../src/commands/navigate-command.js');
+    await new NavigateCommand(explorBot).execute(url);
+
+    await explorBot.stop();
+    await showStatsAndExit(0);
+  } catch (error) {
+    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await showStatsAndExit(1);
+  }
+});
+
 addCommonOptions(
   program.command('drill <url>').alias('driller').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
 ).action(async (url, options) => {

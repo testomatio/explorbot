@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-05-24
+
+### New CLI Options
+- **`explorbot navigate <url>`** — Drive the AI Navigator to a URL from the shell. Exits `0` when the page is reached, `1` when navigation fails (unreachable URL, unresolved redirect, connection refused, etc.). Inherits all common options including `--session`, so the canonical "probe a URL and capture an authenticated session for downstream agents" runs as a single command. The Navigator handles redirects and login walls — it is not a plain `I.amOnPage`.
+  ```bash
+  explorbot navigate /login --session              # probe + save session to output/session.json
+  explorbot navigate /dashboard --session auth.json
+  explorbot navigate /unreachable && echo ok       # exit code reflects reachability
+  ```
+
 ## 2026-05-11
 
 ### New CLI Options
