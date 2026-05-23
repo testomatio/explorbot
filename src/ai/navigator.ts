@@ -80,8 +80,48 @@ class Navigator implements Agent {
     this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 
+  private getBaseOrigin(): string | null {
+    const baseUrl = this.explorer.getConfig().playwright.url;
+    try {
+      return new URL(baseUrl).origin;
+    } catch {
+      return null;
+    }
+  }
+
+  private getComparableCurrentUrl(stateManager: any, expectedUrl: string): string {
+    const currentState = stateManager.getCurrentState();
+    if (!currentState) return '';
+    const current = /^https?:\/\//i.test(expectedUrl) ? currentState.fullUrl || currentState.url || '' : currentState.url || '';
+    return current;
+  }
+
+  private isSameExpectedOrigin(expectedUrl: string, stateManager: any): boolean {
+    const currentState = stateManager.getCurrentState();
+    if (!currentState) return false;
+
+    const currentFullUrl = currentState.fullUrl || currentState.url || '';
+    if (!currentFullUrl) return false;
+
+    try {
+      const currentOrigin = new URL(currentFullUrl).origin;
+      if (/^https?:\/\//i.test(expectedUrl)) {
+        return currentOrigin === new URL(expectedUrl).origin;
+      }
+
+      const baseOrigin = this.getBaseOrigin();
+      if (!baseOrigin) return true;
+      return currentOrigin === baseOrigin;
+    } catch {
+      return !/^https?:\/\//i.test(expectedUrl);
+    }
+  }
+
   private isOnExpectedPage(expectedUrl: string, stateManager: any): boolean {
-    const currentUrl = stateManager.getCurrentState()?.url || '';
+    if (!this.isSameExpectedOrigin(expectedUrl, stateManager)) {
+      return false;
+    }
+    const currentUrl = this.getComparableCurrentUrl(stateManager, expectedUrl);
     return normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
   }
 
@@ -282,7 +322,8 @@ class Navigator implements Agent {
             }
           }
           const freshState = await action.capturePageState();
-          const urlMatches = normalizeUrl(freshState.url || '') === normalizeUrl(expectedUrl);
+          const currentUrl = /^https?:\/\//i.test(expectedUrl) ? freshState.fullUrl || freshState.url || '' : freshState.url || '';
+          const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
           const stateChanged = freshState.getStateHash() !== actionResult.getStateHash();
           resolved = urlMatches && stateChanged;
 

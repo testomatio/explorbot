@@ -24,7 +24,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
     async performDeepAnalysis(state: WebPageState, result: ResearchResult): Promise<void> {
       tag('info').log('Starting deep analysis of expandable elements');
-      await (this as any).navigateTo(state.url);
+      await (this as any).navigateTo(state.fullUrl || state.url);
 
       let expandables = await this._discoverExpandables(result.text);
       if (expandables.length === 0) {
@@ -35,7 +35,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
       const maxClicks = (this.explorer.getConfig().ai?.agents?.researcher as any)?.maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
       if (expandables.length > maxClicks) {
-        expandables = await this._selectExpandables(expandables, state.url, maxClicks);
+        expandables = await this._selectExpandables(expandables, state.fullUrl || state.url, maxClicks);
         tag('substep').log(`Selected ${expandables.length} expandables to click (max: ${maxClicks})`);
       }
 
@@ -177,7 +177,14 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         visionCall = this.provider.processImage(visionPrompt, screenshot.toString('base64'));
       }
 
-      const [textRes, visionRes] = await Promise.all([textCall, visionCall]);
+      let textRes: { text?: string } | null = null;
+      let visionRes: { text?: string } | null = null;
+      try {
+        [textRes, visionRes] = await Promise.all([textCall, visionCall]);
+      } catch (err) {
+        tag('warning').log(`Expandable discovery failed, skipping deep analysis: ${err instanceof Error ? err.message : err}`);
+        return [];
+      }
 
       const eidxSet = new Set<string>();
       const parseRefs = (text: string | undefined) => {
@@ -244,10 +251,16 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       `;
 
       const model = this.provider.getModelForAgent('researcher');
-      const r = await this.provider.chat([{ role: 'user', content: prompt }], model, {
-        agentName: 'researcher',
-        telemetryFunctionId: 'researcher.selectExpandables',
-      });
+      let r: { text?: string };
+      try {
+        r = await this.provider.chat([{ role: 'user', content: prompt }], model, {
+          agentName: 'researcher',
+          telemetryFunctionId: 'researcher.selectExpandables',
+        });
+      } catch (err) {
+        tag('warning').log(`Expandable selection failed, using first ${maxClicks}: ${err instanceof Error ? err.message : err}`);
+        return expandables.slice(0, maxClicks);
+      }
 
       const nums = (r.text || '').match(/\d+/g)?.map(Number) || [];
       const selected = expandables.filter((_, i) => nums.includes(i + 1));

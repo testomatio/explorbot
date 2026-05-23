@@ -313,6 +313,9 @@ export class Pilot implements Agent {
       overrides the others — weigh them together. Tester's record() notes are the LEAST reliable; always
       cross-check against actual actions and state. Visual screenshot analysis is strong for UI state
       (active tabs, visible counts, colors).
+      If the final page clearly shows an equivalent success state in a different UI form, do not fail only
+      because one narrow assertion targeted a specific badge, count, toast, or wording that the product
+      represents differently.
 
       SCENARIO TITLE defines what must happen. Action verbs require persisted evidence:
       - "Create X" → X must exist (visible, redirected to its page, or success message). Opening a form is NOT enough.
@@ -355,6 +358,8 @@ export class Pilot implements Agent {
 
       GUIDANCE (required for "continue"): a specific next action on the current page — which tool, what
       to verify, how to record. Do not suggest repeating actions that already succeeded.
+      If progress is blocked only because the page lacks target data for the scenario, prefer precondition()
+      over repeated UI attempts.
     `;
   }
 

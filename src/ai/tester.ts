@@ -880,7 +880,9 @@ export class Tester extends TaskAgent implements Agent {
             await this.explorer.switchToMainFrame();
           }
 
-          if (this.explorer.getStateManager().getCurrentState()?.url === resetUrl!) {
+          const currentState = this.explorer.getStateManager().getCurrentState();
+          const currentUrl = currentState?.fullUrl || currentState?.url;
+          if (currentUrl === resetUrl!) {
             return {
               success: false,
               message: 'Reset failed - already on initial page!',

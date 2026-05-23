@@ -3,8 +3,9 @@ import { ActionResult, Diff } from '../../src/action-result.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 describe('ActionResult Diff', () => {
-  beforeEach(async () => {
-    await ConfigParser.getInstance().loadConfig('./explorbot.config.js');
+  beforeEach(() => {
+    ConfigParser.resetForTesting();
+    ConfigParser.setupTestConfig();
   });
   test('should create diff with previous state', () => {
     const previous = new ActionResult({
