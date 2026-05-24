@@ -1,4 +1,6 @@
+import { tool } from 'ai';
 import dedent from 'dedent';
+import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
 import type Action from '../action.ts';
 import { ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
@@ -239,7 +241,25 @@ class Navigator implements Agent {
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
-    const tools = undefined;
+    let stopReason: string | null = null;
+    const tools = {
+      stop: tool({
+        description: dedent`
+          Stop the navigation because no locator change can resolve the goal.
+          Use this when the application rejected the submission (wrong credentials, missing CSRF,
+          captcha, validation failure you cannot satisfy from available data), required knowledge
+          is missing, or the page shows a blocking error you cannot dismiss.
+          Do NOT use this for locator or strategy problems — for those, emit new code blocks instead.
+        `,
+        inputSchema: z.object({
+          reason: z.string().describe('Short user-facing explanation. Quote the alert / validation text you saw and name what data or knowledge is missing.'),
+        }),
+        execute: async ({ reason }) => {
+          stopReason = reason;
+          return { success: true, message: 'Recorded. Navigator will stop and surface the reason.' };
+        },
+      }),
+    };
 
     let codeBlocks: string[] = [];
     let htmlContextAdded = false;
@@ -254,6 +274,12 @@ class Navigator implements Agent {
         if (codeBlocks.length === 0) {
           const result = await this.provider.invokeConversation(conversation, tools);
           if (!result) return;
+          if (stopReason) {
+            tag('error').log(`Navigator stopped: ${stopReason}`);
+            resolved = false;
+            stop();
+            return;
+          }
           const aiResponse = result?.response?.text;
           debugLog('AI:', aiResponse?.split('\n')[0]);
           debugLog('Received AI response:', aiResponse?.length ?? 0, 'characters');
@@ -299,14 +325,16 @@ class Navigator implements Agent {
             contextMsg += dedent`
               Some submits did not throw an error, but the URL did not change and the page reacted (see alerts / ARIA changes above).
               This means the submit was REJECTED by the application — invalid input, bad credentials, validation error, or missing required field — NOT that the locator was wrong.
-              Before changing locators, re-examine the data you submitted:
-              - Use values from the knowledge/hint context literally; do not abbreviate or guess them.
-              - Address any validation message shown above before retrying the same submit.
-              Only change locators if the page did NOT react at all to your click (no alert, no ARIA change) — that suggests the click missed its target.
 
+              You have two choices, and ONLY these two:
+              1. If the rejection can only be fixed by the user (wrong credentials, missing data, captcha, knowledge-file gap) — call the stop() tool with the alert text and what is needed. Do NOT propose more code blocks.
+              2. If you can correct the SUBMITTED DATA (not the locator) using values present in the knowledge / hint context above — emit corrected code blocks. Do not change the locator.
+
+              Only change locators if the page did NOT react at all to your click (no alert, no ARIA change) — that suggests the click missed its target.
             `;
+          } else {
+            contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
           }
-          contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
           conversation.addUserText(contextMsg);
           codeBlocks = [];
           batchFailures.length = 0;
@@ -428,12 +456,15 @@ class Navigator implements Agent {
       }
     }
 
-    if (!resolved && totalAttempts > 0) {
+    if (!resolved && stopReason) {
+      tag('error').log(`Navigator stopped: ${stopReason}`);
+    } else if (!resolved && totalAttempts > 0) {
       tag('error').log(`Navigation failed after ${totalAttempts} attempts`);
     }
 
     if (!resolved && isInteractive()) {
-      const userInput = await pause(`Navigator failed to resolve. Current: ${action.stateManager.getCurrentState()?.url}\n` + `Target: ${expectedUrl ?? '(none)'}\nEnter CodeceptJS commands (or press Enter to skip):`);
+      const stopLine = stopReason ? `Navigator stopped: ${stopReason}\n` : '';
+      const userInput = await pause(`${stopLine}Navigator failed to resolve. Current: ${action.stateManager.getCurrentState()?.url}\n` + `Target: ${expectedUrl ?? '(none)'}\nEnter CodeceptJS commands (or press Enter to skip):`);
 
       if (userInput?.trim()) {
         resolved = await action.attempt(userInput, message);

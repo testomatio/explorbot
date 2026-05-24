@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-25
+
+### Changes
+- [Navigator] Can now stop on its own when the page reacts to a submit but the cause is data, not the locator. A new `stop(reason)` tool is exposed to the Navigator's AI; the model is instructed to call it when an alert/validation message indicates the user must fix something (wrong credentials, missing knowledge, captcha). Until now the retry prompt told the model both "this is not a locator issue" AND "propose new solutions" in the same turn, so Navigator burned its full retry budget mutating locators that were already correct. The retry prompt is now branched: app-side rejection → `stop(reason)` or correct the submitted data; click that missed entirely → propose new locator strategies. When the model calls `stop()`, the reason is logged and surfaced in the interactive failure prompt so the user knows what to fix.
+
 ## 2026-05-24
 
 ### New CLI Options
