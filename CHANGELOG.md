@@ -9,11 +9,9 @@
   explorbot navigate /dashboard --session auth.json
   explorbot navigate /unreachable && echo ok       # exit code reflects reachability
   ```
-
-### Changes
 - [Navigator] When a click succeeds but the URL does not change to the expected target, the page's reaction is now captured and fed back to the AI: any alert/status messages that appeared (e.g. "Invalid email or password") and the ARIA diff are included in the next retry prompt. This breaks the "9-attempt syntactic-variant loop" that used to happen when a form submit was rejected by the server — the AI now sees *why* the submission failed and is instructed to re-examine credentials or input data before changing locators, rather than blaming the locator.
 
-## 2026-05-11
+
 
 ### New CLI Options
 - **`explorbot explore --configure <spec>`** — Reuse a saved plan, mix old picks with newly planned tests, filter by style/priority, and control sub-page behavior. Spec is a single string of `key=value` (or `key:value`) pairs joined by `;`. Keys: `new` (share of `--max-tests` reserved for new tests, also enables reuse), `from` (explicit plan file, also enables reuse), `style` (planning styles to use; also filters old picks tagged with that style), `priority` (filter both old picks and new tests to the listed priorities), `pick_by` (`priority`|`random`|`index` — order in which old tests are selected and executed), `subpages` (`none`|`same`|`new`|`both` — sub-page behavior in reuse mode). Without `new` or `from`, reuse is off and exploration runs as before.
