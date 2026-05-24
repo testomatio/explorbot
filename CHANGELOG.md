@@ -10,6 +10,9 @@
   explorbot navigate /unreachable && echo ok       # exit code reflects reachability
   ```
 
+### Changes
+- [Navigator] When a click succeeds but the URL does not change to the expected target, the page's reaction is now captured and fed back to the AI: any alert/status messages that appeared (e.g. "Invalid email or password") and the ARIA diff are included in the next retry prompt. This breaks the "9-attempt syntactic-variant loop" that used to happen when a form submit was rejected by the server — the AI now sees *why* the submission failed and is instructed to re-examine credentials or input data before changing locators, rather than blaming the locator.
+
 ## 2026-05-11
 
 ### New CLI Options

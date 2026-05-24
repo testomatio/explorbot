@@ -513,6 +513,42 @@ export function parseAriaLocator(ariaStr: string): { role: string; text: string 
   return { role: match[1], text: match[2] };
 }
 
+const ALERT_ROLES = new Set(['alert', 'alertdialog', 'status']);
+
+export function extractAlerts(ariaSnapshot: string | null): string[] {
+  if (!ariaSnapshot) return [];
+  const lines = ariaSnapshot.split('\n');
+  const alerts: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const header = line.match(/^(\s*)-\s*(\w+)\b/);
+    if (!header) continue;
+    if (!ALERT_ROLES.has(header[2])) continue;
+
+    const inline = line.match(/^\s*-\s*\w+\s*:?\s*"([^"]+)"/);
+    if (inline) {
+      const text = inline[1].trim();
+      if (text && text !== '-') alerts.push(text);
+      continue;
+    }
+
+    const indent = header[1].length;
+    const collected: string[] = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const child = lines[j];
+      const childIndent = child.match(/^(\s*)\S/);
+      if (!childIndent) continue;
+      if (childIndent[1].length <= indent) break;
+      const quoted = child.match(/"([^"]+)"/);
+      if (quoted) collected.push(quoted[1].trim());
+    }
+    if (collected.length > 0) alerts.push(collected.join(' '));
+  }
+
+  return Array.from(new Set(alerts.filter(Boolean)));
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────

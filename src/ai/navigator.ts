@@ -5,6 +5,7 @@ import { ExperienceTracker, renderExperienceToc } from '../experience-tracker.js
 import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
 import { type WebPageState, normalizeUrl } from '../state-manager.js';
+import { extractAlerts } from '../utils/aria.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
@@ -245,7 +246,7 @@ class Navigator implements Agent {
     let codeBlockIndex = 0;
     let totalAttempts = 0;
     const progressBlocks: string[] = [];
-    const batchFailures: Array<{ code: string; error: string }> = [];
+    const batchFailures: Array<{ code: string; error: string; alerts?: string[]; ariaChanges?: string | null; urlAfter?: string }> = [];
 
     let resolved = false;
     await loop(
@@ -274,12 +275,36 @@ class Navigator implements Agent {
           tag('substep').log('Feeding failures back to AI for a new batch...');
           let contextMsg = 'Previous solutions did not work. Analyze the failures and try DIFFERENT strategies (not syntactic variants of the same locator).\n\n';
           if (batchFailures.length > 0) {
-            const lines = batchFailures.map((f) => `- \`${f.code.split('\n')[0]}\` → ${f.error}`).join('\n');
+            const lines = batchFailures
+              .map((f) => {
+                const head = `- \`${f.code.split('\n')[0]}\` → ${f.error}`;
+                if (!f.alerts?.length && !f.ariaChanges) return head;
+                const parts = [head];
+                if (f.alerts?.length) parts.push(`  • Page now shows: ${f.alerts.map((a) => `"${a}"`).join(', ')}`);
+                if (f.ariaChanges) {
+                  const trimmed = f.ariaChanges.split('\n').slice(0, 8).join('\n    ');
+                  parts.push(`  • ARIA changes after click:\n    ${trimmed}`);
+                }
+                return parts.join('\n');
+              })
+              .join('\n');
             contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
           }
           if (!htmlContextAdded) {
             htmlContextAdded = true;
             contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;
+          }
+          const rejectedByApp = batchFailures.some((f) => (f.alerts && f.alerts.length > 0) || f.ariaChanges);
+          if (rejectedByApp) {
+            contextMsg += dedent`
+              Some submits did not throw an error, but the URL did not change and the page reacted (see alerts / ARIA changes above).
+              This means the submit was REJECTED by the application — invalid input, bad credentials, validation error, or missing required field — NOT that the locator was wrong.
+              Before changing locators, re-examine the data you submitted:
+              - Use values from the knowledge/hint context literally; do not abbreviate or guess them.
+              - Address any validation message shown above before retrying the same submit.
+              Only change locators if the page did NOT react at all to your click (no alert, no ARIA change) — that suggests the click missed its target.
+
+            `;
           }
           contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
           conversation.addUserText(contextMsg);
@@ -292,7 +317,9 @@ class Navigator implements Agent {
 
         await this.explorer.switchToMainFrame();
 
-        const prevHash = action.actionResult?.getStateHash() ?? actionResult.getStateHash();
+        const prevActionResult = action.actionResult ?? actionResult;
+        const prevHash = prevActionResult.getStateHash();
+        const prevAlerts = extractAlerts(prevActionResult.ariaSnapshot);
 
         debugLog(`Attempting resolution: ${codeBlock}`);
         const attemptOk = await action.attempt(codeBlock, message);
@@ -328,7 +355,28 @@ class Navigator implements Agent {
           resolved = urlMatches && stateChanged;
 
           if (!resolved && attemptOk) {
+            const newAlerts = extractAlerts(freshState.ariaSnapshot).filter((a) => !prevAlerts.includes(a));
+            let ariaChanges: string | null = null;
+            if (freshState.getStateHash() !== prevHash) {
+              try {
+                const diff = await freshState.diff(prevActionResult);
+                await diff.calculate();
+                ariaChanges = diff.ariaChanged;
+              } catch (err) {
+                debugLog('Failed to compute pageDiff for failed URL verification:', err);
+              }
+            }
+            batchFailures.push({
+              code: codeBlock,
+              error: `URL did not change (still ${freshState.url})`,
+              alerts: newAlerts,
+              ariaChanges,
+              urlAfter: freshState.url,
+            });
             tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${freshState.url}`);
+            if (newAlerts.length > 0) {
+              tag('warning').log(`Page now shows: ${newAlerts.map((a) => `"${a}"`).join(', ')}`);
+            }
           }
           if (freshState.getStateHash() !== prevHash && (attemptOk || urlMatches)) {
             progressBlocks.push(codeBlock);
