@@ -14,7 +14,7 @@
   explorbot navigate /dashboard --session auth.json
   explorbot navigate /unreachable && echo ok       # exit code reflects reachability
   ```
-- [Navigator] When a click succeeds but the URL does not change to the expected target, the page's reaction is now captured and fed back to the AI: any alert/status messages that appeared (e.g. "Invalid email or password") and the ARIA diff are included in the next retry prompt. This breaks the "9-attempt syntactic-variant loop" that used to happen when a form submit was rejected by the server — the AI now sees *why* the submission failed and is instructed to re-examine credentials or input data before changing locators, rather than blaming the locator.
+- [Navigator] When a click succeeds but the URL does not change to the expected target, the ARIA diff between the pre-click and post-click page is now included in the next retry prompt. The AI is instructed to read the diff and decide whether the application rejected the submit (in which case it should fix the submitted data, not the locator) or the click simply missed its target. This breaks the "9-attempt syntactic-variant loop" that used to happen when a form submit was rejected by the server — the model now has the evidence to tell the two cases apart.
 
 
 

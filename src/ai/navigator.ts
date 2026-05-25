@@ -7,7 +7,6 @@ import { ExperienceTracker, renderExperienceToc } from '../experience-tracker.js
 import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
 import { type WebPageState, normalizeUrl } from '../state-manager.js';
-import { extractAlerts } from '../utils/aria.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
@@ -266,7 +265,7 @@ class Navigator implements Agent {
     let codeBlockIndex = 0;
     let totalAttempts = 0;
     const progressBlocks: string[] = [];
-    const batchFailures: Array<{ code: string; error: string; alerts?: string[]; ariaChanges?: string | null; urlAfter?: string }> = [];
+    const batchFailures: Array<{ code: string; error: string; ariaChanges?: string | null; urlAfter?: string }> = [];
 
     let resolved = false;
     await loop(
@@ -304,14 +303,9 @@ class Navigator implements Agent {
             const lines = batchFailures
               .map((f) => {
                 const head = `- \`${f.code.split('\n')[0]}\` → ${f.error}`;
-                if (!f.alerts?.length && !f.ariaChanges) return head;
-                const parts = [head];
-                if (f.alerts?.length) parts.push(`  • Page now shows: ${f.alerts.map((a) => `"${a}"`).join(', ')}`);
-                if (f.ariaChanges) {
-                  const trimmed = f.ariaChanges.split('\n').slice(0, 8).join('\n    ');
-                  parts.push(`  • ARIA changes after click:\n    ${trimmed}`);
-                }
-                return parts.join('\n');
+                if (!f.ariaChanges) return head;
+                const trimmed = f.ariaChanges.split('\n').slice(0, 12).join('\n    ');
+                return `${head}\n  • ARIA changes after the action:\n    ${trimmed}`;
               })
               .join('\n');
             contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
@@ -320,17 +314,17 @@ class Navigator implements Agent {
             htmlContextAdded = true;
             contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;
           }
-          const rejectedByApp = batchFailures.some((f) => (f.alerts && f.alerts.length > 0) || f.ariaChanges);
-          if (rejectedByApp) {
+          const pageReacted = batchFailures.some((f) => f.ariaChanges);
+          if (pageReacted) {
             contextMsg += dedent`
-              Some submits did not throw an error, but the URL did not change and the page reacted (see alerts / ARIA changes above).
-              This means the submit was REJECTED by the application — invalid input, bad credentials, validation error, or missing required field — NOT that the locator was wrong.
+              Some actions did not throw, but the URL did not change to the expected target and the page changed in other ways (see the ARIA changes listed above).
+              Read the ARIA diff above and judge what happened. Look for any new role that conveys a server response — e.g. an alert, alertdialog, status, validation message, banner, or text that names a problem ("invalid", "required", "expired", "incorrect", "denied", "captcha", "verify"). Different sites express rejection differently; do not look for a specific phrase, read what is there.
 
-              You have two choices, and ONLY these two:
-              1. If the rejection can only be fixed by the user (wrong credentials, missing data, captcha, knowledge-file gap) — call the stop() tool with the alert text and what is needed. Do NOT propose more code blocks.
-              2. If you can correct the SUBMITTED DATA (not the locator) using values present in the knowledge / hint context above — emit corrected code blocks. Do not change the locator.
+              Decide between exactly two paths:
+              1. The diff shows the application rejected the action and the fix is something only the user can provide (wrong credentials, missing data, captcha, knowledge-file gap) — call the stop() tool and quote what you saw in the diff and what is needed.
+              2. The diff shows the application rejected the action but you can correct the SUBMITTED DATA using values present in the knowledge / hint context above — emit corrected code blocks. Do not change the locator.
 
-              Only change locators if the page did NOT react at all to your click (no alert, no ARIA change) — that suggests the click missed its target.
+              Only change locators if the diff shows NOTHING relevant happened in response to your click — that is the only signal that the click missed its target.
             `;
           } else {
             contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
@@ -347,7 +341,6 @@ class Navigator implements Agent {
 
         const prevActionResult = action.actionResult ?? actionResult;
         const prevHash = prevActionResult.getStateHash();
-        const prevAlerts = extractAlerts(prevActionResult.ariaSnapshot);
 
         debugLog(`Attempting resolution: ${codeBlock}`);
         const attemptOk = await action.attempt(codeBlock, message);
@@ -383,7 +376,6 @@ class Navigator implements Agent {
           resolved = urlMatches && stateChanged;
 
           if (!resolved && attemptOk) {
-            const newAlerts = extractAlerts(freshState.ariaSnapshot).filter((a) => !prevAlerts.includes(a));
             let ariaChanges: string | null = null;
             if (freshState.getStateHash() !== prevHash) {
               try {
@@ -397,14 +389,10 @@ class Navigator implements Agent {
             batchFailures.push({
               code: codeBlock,
               error: `URL did not change (still ${freshState.url})`,
-              alerts: newAlerts,
               ariaChanges,
               urlAfter: freshState.url,
             });
             tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${freshState.url}`);
-            if (newAlerts.length > 0) {
-              tag('warning').log(`Page now shows: ${newAlerts.map((a) => `"${a}"`).join(', ')}`);
-            }
           }
           if (freshState.getStateHash() !== prevHash && (attemptOk || urlMatches)) {
             progressBlocks.push(codeBlock);
