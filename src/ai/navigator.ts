@@ -244,14 +244,16 @@ class Navigator implements Agent {
     const tools = {
       stop: tool({
         description: dedent`
-          Stop the navigation because no locator change can resolve the goal.
-          Use this when the application rejected the submission (wrong credentials, missing CSRF,
-          captcha, validation failure you cannot satisfy from available data), required knowledge
-          is missing, or the page shows a blocking error you cannot dismiss.
+          Stop the navigation because no locator or strategy change can reach the goal.
+          Use this when reaching the goal requires something only the user can supply or that the
+          page cannot grant from the current state — for example: an authentication failure you
+          cannot guess past, a captcha or human-verification step, a permission the test cannot
+          satisfy, a piece of data not present in the available knowledge / hint context, or a
+          blocking error or dialog you cannot dismiss.
           Do NOT use this for locator or strategy problems — for those, emit new code blocks instead.
         `,
         inputSchema: z.object({
-          reason: z.string().describe('Short user-facing explanation. Quote the alert / validation text you saw and name what data or knowledge is missing.'),
+          reason: z.string().describe('Short user-facing explanation. Quote what you observed (alert text, dialog title, status message, validation note) and name what is missing or required.'),
         }),
         execute: async ({ reason }) => {
           stopReason = reason;
@@ -317,14 +319,17 @@ class Navigator implements Agent {
           const pageReacted = batchFailures.some((f) => f.ariaChanges);
           if (pageReacted) {
             contextMsg += dedent`
-              Some actions did not throw, but the URL did not change to the expected target and the page changed in other ways (see the ARIA changes listed above).
-              Read the ARIA diff above and judge what happened. Look for any new role that conveys a server response — e.g. an alert, alertdialog, status, validation message, banner, or text that names a problem ("invalid", "required", "expired", "incorrect", "denied", "captcha", "verify"). Different sites express rejection differently; do not look for a specific phrase, read what is there.
+              Some steps in the previous batch did not throw, but the URL did not change to the expected target and the page changed in other ways — the ARIA diff for each such step is listed in <previous_failures> above.
 
-              Decide between exactly two paths:
-              1. The diff shows the application rejected the action and the fix is something only the user can provide (wrong credentials, missing data, captcha, knowledge-file gap) — call the stop() tool and quote what you saw in the diff and what is needed.
-              2. The diff shows the application rejected the action but you can correct the SUBMITTED DATA using values present in the knowledge / hint context above — emit corrected code blocks. Do not change the locator.
+              Read those diffs and judge what each step actually triggered. Different action types produce different reactions; the diff is your only evidence of what happened. A diff might show, for example: a new alert / alertdialog / status / validation message appearing near a field or at page level; a modal, dialog, or wizard step opening; a banner, toast, or notification region appearing; a section expanding or collapsing; a tab or accordion switching content. A diff might also be empty or unrelated to the step — that is also a signal.
 
-              Only change locators if the diff shows NOTHING relevant happened in response to your click — that is the only signal that the click missed its target.
+              Choose exactly ONE path based on what the diffs actually show — do not assume the previous step submitted any particular kind of data:
+
+              A. The diff indicates the application requires something only the user can supply — for example: an authentication failure you cannot guess past, a captcha, a permission the test cannot satisfy, or knowledge that is not present in the provided context. Call the stop() tool and quote what you saw in the diff and what is needed.
+
+              B. The diff indicates the next step is something you can perform from the existing knowledge / hint context — for example: re-emit a step with a value that exists in the knowledge but was used incorrectly; dismiss an unexpected modal; accept a confirmation; take a follow-up step the page now requires. Emit code blocks for that next step. Do NOT change the locator of a step that already produced a reaction.
+
+              C. The diff is empty or unrelated to your step — the action likely missed its target. Propose a different locator strategy.
             `;
           } else {
             contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
