@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-05-25
+
+### Changes
+- [Navigator] Can now stop on its own when reaching the goal requires something only the user can supply. A new `stop(reason)` tool is exposed to the Navigator's AI; the model is instructed to call it when the ARIA diff after an action indicates the application needs something the test cannot provide — for example an authentication failure, captcha, a permission the test cannot satisfy, or knowledge missing from the provided context. Until now the retry prompt told the model both "this is not a locator issue" AND "propose new solutions" in the same turn, so Navigator burned its full retry budget mutating locators that were already correct. The retry prompt is now branched into three explicit paths: the page reacted in a way only the user can resolve → call `stop()`; the page reacted in a way the AI can resolve from existing knowledge → emit the next step; the diff is empty or unrelated → propose a different locator strategy. When `stop()` is called, the reason is logged and surfaced in the interactive failure prompt so the user knows what to fix.
+
 ## 2026-05-24
 
 ### New CLI Options
@@ -9,8 +14,9 @@
   explorbot navigate /dashboard --session auth.json
   explorbot navigate /unreachable && echo ok       # exit code reflects reachability
   ```
+- [Navigator] When a click succeeds but the URL does not change to the expected target, the ARIA diff between the pre-click and post-click page is now included in the next retry prompt. The AI is instructed to read the diff and decide whether the application rejected the submit (in which case it should fix the submitted data, not the locator) or the click simply missed its target. This breaks the "9-attempt syntactic-variant loop" that used to happen when a form submit was rejected by the server — the model now has the evidence to tell the two cases apart.
 
-## 2026-05-11
+
 
 ### New CLI Options
 - **`explorbot explore --configure <spec>`** — Reuse a saved plan, mix old picks with newly planned tests, filter by style/priority, and control sub-page behavior. Spec is a single string of `key=value` (or `key:value`) pairs joined by `;`. Keys: `new` (share of `--max-tests` reserved for new tests, also enables reuse), `from` (explicit plan file, also enables reuse), `style` (planning styles to use; also filters old picks tagged with that style), `priority` (filter both old picks and new tests to the listed priorities), `pick_by` (`priority`|`random`|`index` — order in which old tests are selected and executed), `subpages` (`none`|`same`|`new`|`both` — sub-page behavior in reuse mode). Without `new` or `from`, reuse is off and exploration runs as before.

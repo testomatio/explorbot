@@ -1,4 +1,6 @@
+import { tool } from 'ai';
 import dedent from 'dedent';
+import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
 import type Action from '../action.ts';
 import { ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
@@ -238,14 +240,34 @@ class Navigator implements Agent {
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
-    const tools = undefined;
+    let stopReason: string | null = null;
+    const tools = {
+      stop: tool({
+        description: dedent`
+          Stop the navigation because no locator or strategy change can reach the goal.
+          Use this when reaching the goal requires something only the user can supply or that the
+          page cannot grant from the current state — for example: an authentication failure you
+          cannot guess past, a captcha or human-verification step, a permission the test cannot
+          satisfy, a piece of data not present in the available knowledge / hint context, or a
+          blocking error or dialog you cannot dismiss.
+          Do NOT use this for locator or strategy problems — for those, emit new code blocks instead.
+        `,
+        inputSchema: z.object({
+          reason: z.string().describe('Short user-facing explanation. Quote what you observed (alert text, dialog title, status message, validation note) and name what is missing or required.'),
+        }),
+        execute: async ({ reason }) => {
+          stopReason = reason;
+          return { success: true, message: 'Recorded. Navigator will stop and surface the reason.' };
+        },
+      }),
+    };
 
     let codeBlocks: string[] = [];
     let htmlContextAdded = false;
     let codeBlockIndex = 0;
     let totalAttempts = 0;
     const progressBlocks: string[] = [];
-    const batchFailures: Array<{ code: string; error: string }> = [];
+    const batchFailures: Array<{ code: string; error: string; ariaChanges?: string | null; urlAfter?: string }> = [];
 
     let resolved = false;
     await loop(
@@ -253,6 +275,12 @@ class Navigator implements Agent {
         if (codeBlocks.length === 0) {
           const result = await this.provider.invokeConversation(conversation, tools);
           if (!result) return;
+          if (stopReason) {
+            tag('error').log(`Navigator stopped: ${stopReason}`);
+            resolved = false;
+            stop();
+            return;
+          }
           const aiResponse = result?.response?.text;
           debugLog('AI:', aiResponse?.split('\n')[0]);
           debugLog('Received AI response:', aiResponse?.length ?? 0, 'characters');
@@ -274,14 +302,38 @@ class Navigator implements Agent {
           tag('substep').log('Feeding failures back to AI for a new batch...');
           let contextMsg = 'Previous solutions did not work. Analyze the failures and try DIFFERENT strategies (not syntactic variants of the same locator).\n\n';
           if (batchFailures.length > 0) {
-            const lines = batchFailures.map((f) => `- \`${f.code.split('\n')[0]}\` → ${f.error}`).join('\n');
+            const lines = batchFailures
+              .map((f) => {
+                const head = `- \`${f.code.split('\n')[0]}\` → ${f.error}`;
+                if (!f.ariaChanges) return head;
+                const trimmed = f.ariaChanges.split('\n').slice(0, 12).join('\n    ');
+                return `${head}\n  • ARIA changes after the action:\n    ${trimmed}`;
+              })
+              .join('\n');
             contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
           }
           if (!htmlContextAdded) {
             htmlContextAdded = true;
             contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;
           }
-          contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
+          const pageReacted = batchFailures.some((f) => f.ariaChanges);
+          if (pageReacted) {
+            contextMsg += dedent`
+              Some steps in the previous batch did not throw, but the URL did not change to the expected target and the page changed in other ways — the ARIA diff for each such step is listed in <previous_failures> above.
+
+              Read those diffs and judge what each step actually triggered. Different action types produce different reactions; the diff is your only evidence of what happened. A diff might show, for example: a new alert / alertdialog / status / validation message appearing near a field or at page level; a modal, dialog, or wizard step opening; a banner, toast, or notification region appearing; a section expanding or collapsing; a tab or accordion switching content. A diff might also be empty or unrelated to the step — that is also a signal.
+
+              Choose exactly ONE path based on what the diffs actually show — do not assume the previous step submitted any particular kind of data:
+
+              A. The diff indicates the application requires something only the user can supply — for example: an authentication failure you cannot guess past, a captcha, a permission the test cannot satisfy, or knowledge that is not present in the provided context. Call the stop() tool and quote what you saw in the diff and what is needed.
+
+              B. The diff indicates the next step is something you can perform from the existing knowledge / hint context — for example: re-emit a step with a value that exists in the knowledge but was used incorrectly; dismiss an unexpected modal; accept a confirmation; take a follow-up step the page now requires. Emit code blocks for that next step. Do NOT change the locator of a step that already produced a reaction.
+
+              C. The diff is empty or unrelated to your step — the action likely missed its target. Propose a different locator strategy.
+            `;
+          } else {
+            contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
+          }
           conversation.addUserText(contextMsg);
           codeBlocks = [];
           batchFailures.length = 0;
@@ -292,7 +344,8 @@ class Navigator implements Agent {
 
         await this.explorer.switchToMainFrame();
 
-        const prevHash = action.actionResult?.getStateHash() ?? actionResult.getStateHash();
+        const prevActionResult = action.actionResult ?? actionResult;
+        const prevHash = prevActionResult.getStateHash();
 
         debugLog(`Attempting resolution: ${codeBlock}`);
         const attemptOk = await action.attempt(codeBlock, message);
@@ -328,6 +381,22 @@ class Navigator implements Agent {
           resolved = urlMatches && stateChanged;
 
           if (!resolved && attemptOk) {
+            let ariaChanges: string | null = null;
+            if (freshState.getStateHash() !== prevHash) {
+              try {
+                const diff = await freshState.diff(prevActionResult);
+                await diff.calculate();
+                ariaChanges = diff.ariaChanged;
+              } catch (err) {
+                debugLog('Failed to compute pageDiff for failed URL verification:', err);
+              }
+            }
+            batchFailures.push({
+              code: codeBlock,
+              error: `URL did not change (still ${freshState.url})`,
+              ariaChanges,
+              urlAfter: freshState.url,
+            });
             tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${freshState.url}`);
           }
           if (freshState.getStateHash() !== prevHash && (attemptOk || urlMatches)) {
@@ -380,12 +449,15 @@ class Navigator implements Agent {
       }
     }
 
-    if (!resolved && totalAttempts > 0) {
+    if (!resolved && stopReason) {
+      tag('error').log(`Navigator stopped: ${stopReason}`);
+    } else if (!resolved && totalAttempts > 0) {
       tag('error').log(`Navigation failed after ${totalAttempts} attempts`);
     }
 
     if (!resolved && isInteractive()) {
-      const userInput = await pause(`Navigator failed to resolve. Current: ${action.stateManager.getCurrentState()?.url}\n` + `Target: ${expectedUrl ?? '(none)'}\nEnter CodeceptJS commands (or press Enter to skip):`);
+      const stopLine = stopReason ? `Navigator stopped: ${stopReason}\n` : '';
+      const userInput = await pause(`${stopLine}Navigator failed to resolve. Current: ${action.stateManager.getCurrentState()?.url}\n` + `Target: ${expectedUrl ?? '(none)'}\nEnter CodeceptJS commands (or press Enter to skip):`);
 
       if (userInput?.trim()) {
         resolved = await action.attempt(userInput, message);
