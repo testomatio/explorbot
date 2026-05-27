@@ -1,4 +1,4 @@
-# Documentation Collection
+﻿# Documentation Collection
 
 `doc-collector` crawls pages and generates a lightweight spec:
 
@@ -11,7 +11,7 @@ Each page is summarized as:
 - `Purpose`
 - `User Can` (proven capabilities)
 - `User Might` (assumed capabilities)
-- `State Transitions` (when interactive mode is enabled)
+- `State Transitions` (when interactive mode is enabled and useful)
 
 ## Features
 
@@ -19,22 +19,37 @@ Each page is summarized as:
 
 Analyzes pages without interaction:
 
-- ✅ Researches page structure via Researcher agent
-- ✅ Identifies UI elements and navigation
-- ✅ Generates documentation from static analysis
-- ✅ Fast and reliable
+- вњ… Researches page structure via Researcher agent
+- вњ… Identifies UI elements and navigation
+- вњ… Generates documentation from static analysis
+- вњ… Fast and reliable
 
-### Interactive Documentation (Beta)
+### Interactive Documentation
 
 When `interactive: true` in config:
 
-- ✅ **Explores tabs** - Switches between tabs to document all content
-- ✅ **Tests buttons** - Clicks buttons to see what happens
-- ✅ **Expands sections** - Opens dropdowns, accordions, collapsible panels
-- ✅ **Tracks state changes** - Documents before/after states
-- ✅ **Graceful fallback** - Falls back to static mode if interactions fail
+- вњ… Tries selected page interactions before final documentation
+- вњ… Can capture state changes after clicking links, buttons, and tab-like controls
+- вњ… Can document navigation caused by interaction
+- вњ… Can enqueue URLs discovered from successful interactions
+- вњ… Falls back to static documentation when interaction results are weak or unreliable
 
-**Example output with interactions:**
+This mode is intended for cases where static research alone is not enough, for example:
+
+- alternate page states such as tabs
+- post-click behavior
+- item/detail navigation
+- documenting what changed after an interaction
+
+When interaction results are useful, page docs may include:
+
+- `State Transitions`
+- `Before`
+- `After`
+- `New capabilities discovered`
+- `Coverage Notes`
+
+Example:
 
 ```markdown
 ## State Transitions
@@ -113,7 +128,7 @@ export default {
     deniedPathSegments: ['callback', 'callbacks', 'logout', 'signout', 'sign_out', 'destroy', 'delete', 'remove'],
     minCanActions: 1,
     minInteractiveElements: 3,
-    interactive: false,  // Set to true to enable interactive exploration
+    interactive: false,
   },
 };
 ```
@@ -123,7 +138,7 @@ export default {
 | `maxPages` | `100` | Maximum pages to document |
 | `output` | `'docs'` | Output folder inside `output/` |
 | `screenshot` | `true` | Allow screenshot-assisted research |
-| `interactive` | `false` | Enable interactive exploration (click tabs, buttons, expand sections) |
+| `interactive` | `false` | Enable interaction attempts before final documentation |
 | `prompt` | unset | Extra instructions for the Documentarian |
 | `collapseDynamicPages` | `true` | Collapse dynamic URLs like `/users/123` and `/users/456` into one crawl key |
 | `scope` | `'site'` | Crawl breadth mode |
@@ -132,31 +147,6 @@ export default {
 | `deniedPathSegments` | built-in list | Block terminal or destructive endpoints |
 | `minCanActions` | `1` | Minimum proven actions before a page is considered low-signal |
 | `minInteractiveElements` | `3` | Minimum interactive elements before a page is considered low-signal |
-
-### Interactive Mode Requirements
-
-When `interactive: true`, Doc-Collector needs:
-
-1. **AI model with sufficient output capacity** (e.g., Claude 3.5+, Gemini Pro 1.5)
-2. **Explorer instance** (automatically provided when running via CLI)
-3. **Compatible model configuration** (see `explorbot.config.js`)
-
-**Example model configuration:**
-
-```javascript
-// explorbot.config.js
-{
-  ai: {
-    agents: {
-      documentarian: {
-        model: openrouter('google/gemini-pro-1.5'),  // High output capacity
-      },
-    },
-  },
-}
-```
-
-**Note:** If the model doesn't have sufficient output capacity, interactive mode will gracefully fall back to static documentation.
 
 ## Scope Modes
 
@@ -195,8 +185,12 @@ Softer boundary than `subtree`: keep the same scope root, its descendants, and c
 - same-origin only
 - visited pages are tracked through the state manager
 - dead loops are stopped
-- next targets are discovered from links and research navigation
+- next targets are discovered from links, research navigation, and successful interaction results
 - low-signal pages can be skipped
+- interactive mode does not replace static documentation; it augments it
+- static mode is unchanged when `interactive` is disabled
+- if interaction-driven generation fails, the collector falls back to static documentation
+- output quality still depends on research quality
 
 ## Related Docs
 
