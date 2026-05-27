@@ -2,15 +2,54 @@
 
 `doc-collector` crawls pages and generates a lightweight spec:
 
-- `output/docs/spec.md`
-- `output/docs/pages/*.md`
-- `output/research/*.md`
+- `output/docs/spec.md` - Main index
+- `output/docs/pages/*.md` - Individual page documentation
+- `output/research/*.md` - Research data
 
 Each page is summarized as:
 
 - `Purpose`
-- `User Can`
-- `User Might`
+- `User Can` (proven capabilities)
+- `User Might` (assumed capabilities)
+- `State Transitions` (when interactive mode is enabled)
+
+## Features
+
+### Static Documentation (Default)
+
+Analyzes pages without interaction:
+
+- ✅ Researches page structure via Researcher agent
+- ✅ Identifies UI elements and navigation
+- ✅ Generates documentation from static analysis
+- ✅ Fast and reliable
+
+### Interactive Documentation (Beta)
+
+When `interactive: true` in config:
+
+- ✅ **Explores tabs** - Switches between tabs to document all content
+- ✅ **Tests buttons** - Clicks buttons to see what happens
+- ✅ **Expands sections** - Opens dropdowns, accordions, collapsible panels
+- ✅ **Tracks state changes** - Documents before/after states
+- ✅ **Graceful fallback** - Falls back to static mode if interactions fail
+
+**Example output with interactions:**
+
+```markdown
+## State Transitions
+
+### Switched to tab: Merged
+**Before:** 18 elements (tab:3, link:5, text:7)
+**After:** Tab content: 21 elements (tab:3, link:8, text:7)
+
+### Clicked "Save" button
+**Before:** Form with 8 fields
+**After:** Success message appeared, form cleared
+**New capabilities discovered:**
+- User can create new runs
+- User can see run ID after creation
+```
 
 ## Commands
 
@@ -74,7 +113,7 @@ export default {
     deniedPathSegments: ['callback', 'callbacks', 'logout', 'signout', 'sign_out', 'destroy', 'delete', 'remove'],
     minCanActions: 1,
     minInteractiveElements: 3,
-    // prompt: 'Add domain-specific guidance here',
+    interactive: false,  // Set to true to enable interactive exploration
   },
 };
 ```
@@ -84,6 +123,7 @@ export default {
 | `maxPages` | `100` | Maximum pages to document |
 | `output` | `'docs'` | Output folder inside `output/` |
 | `screenshot` | `true` | Allow screenshot-assisted research |
+| `interactive` | `false` | Enable interactive exploration (click tabs, buttons, expand sections) |
 | `prompt` | unset | Extra instructions for the Documentarian |
 | `collapseDynamicPages` | `true` | Collapse dynamic URLs like `/users/123` and `/users/456` into one crawl key |
 | `scope` | `'site'` | Crawl breadth mode |
@@ -92,6 +132,31 @@ export default {
 | `deniedPathSegments` | built-in list | Block terminal or destructive endpoints |
 | `minCanActions` | `1` | Minimum proven actions before a page is considered low-signal |
 | `minInteractiveElements` | `3` | Minimum interactive elements before a page is considered low-signal |
+
+### Interactive Mode Requirements
+
+When `interactive: true`, Doc-Collector needs:
+
+1. **AI model with sufficient output capacity** (e.g., Claude 3.5+, Gemini Pro 1.5)
+2. **Explorer instance** (automatically provided when running via CLI)
+3. **Compatible model configuration** (see `explorbot.config.js`)
+
+**Example model configuration:**
+
+```javascript
+// explorbot.config.js
+{
+  ai: {
+    agents: {
+      documentarian: {
+        model: openrouter('google/gemini-pro-1.5'),  // High output capacity
+      },
+    },
+  },
+}
+```
+
+**Note:** If the model doesn't have sufficient output capacity, interactive mode will gracefully fall back to static documentation.
 
 ## Scope Modes
 

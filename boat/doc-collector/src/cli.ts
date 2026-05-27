@@ -95,6 +95,7 @@ export function createDocsCommands(name = 'docs'): Command {
             maxPages: 100,
             output: 'docs',
             screenshot: true,
+            interactive: false,
             collapseDynamicPages: true,
             scope: 'site',
             includePaths: [],
