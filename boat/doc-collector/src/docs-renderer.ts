@@ -29,7 +29,7 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
       lines.push(`**After:** ${transition.after}`);
       lines.push('');
       if (transition.newCapabilities && transition.newCapabilities.length > 0) {
-        lines.push('**New capabilities discovered:**');
+        lines.push('**Observed changes:**');
         for (const cap of transition.newCapabilities) {
           lines.push(`- ${cap}`);
         }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
-import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts';
 import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
+import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
@@ -130,7 +130,7 @@ describe('doc-collector renderer', () => {
           interactionCount: 1,
           canActions: ['user can sign in with email and password'],
           mightActions: ['user might use social login'],
-          interactionActions: ['Opened detail page: Login help'],
+          interactionActions: ['Clicked link: Login help'],
           qualityNotes: ['Coverage is complete for the visible sign-in form.'],
           filePath: 'D:/project/output/docs/pages/users_sign_in.md',
         },
@@ -153,7 +153,7 @@ describe('doc-collector renderer', () => {
     expect(markdown).toContain('User Might:');
     expect(markdown).toContain('- user might use social login');
     expect(markdown).toContain('Interactive Findings:');
-    expect(markdown).toContain('- Opened detail page: Login help');
+    expect(markdown).toContain('- Clicked link: Login help');
     expect(markdown).toContain('Coverage Notes:');
     expect(markdown).toContain('- Coverage is complete for the visible sign-in form.');
     expect(markdown).toContain('## Skipped');
@@ -170,12 +170,12 @@ describe('doc-collector scope and signal', () => {
   it('keeps subtree scope around the start page', () => {
     const bot = new DocBot();
     (bot as any).config = { docs: { scope: 'subtree' } };
-    (bot as any).scopeRoot = '/ua/serials/stb/kod';
+    (bot as any).scopeRoot = '/workspace/projects/main';
 
-    expect((bot as any).isInScope('/ua/serials/stb/kod/2026')).toBe(true);
-    expect((bot as any).isInScope('/ua/serials/stb/kod/2026/seriya-1')).toBe(true);
-    expect((bot as any).isInScope('/ua/person/actor')).toBe(false);
-    expect((bot as any).isInScope('/ua/faq')).toBe(false);
+    expect((bot as any).isInScope('/workspace/projects/main/reports')).toBe(true);
+    expect((bot as any).isInScope('/workspace/projects/main/reports/weekly')).toBe(true);
+    expect((bot as any).isInScope('/workspace/settings')).toBe(false);
+    expect((bot as any).isInScope('/help')).toBe(false);
   });
 
   it('marks pages with weak docs and few controls as low-signal', () => {
@@ -194,31 +194,30 @@ describe('doc-collector scope and signal', () => {
 });
 
 describe('doc-collector interactive candidate selection', () => {
-  it('prioritizes content detail links over global navigation categories', () => {
+  it('prioritizes non-navigation controls without assigning semantic categories', () => {
     const research = `
 ## Content
 
 | Element | Type | ARIA | CSS |
 |------|------|------|------|
-| 'Серіали' | link | { role: 'link', text: 'Серіали' } | 'a.menu-link' |
-| 'Граф Дракула: Історія кохання' | link | { role: 'link', text: 'Граф Дракула: Історія кохання' } | 'a.movie-card__title' |
-| 'Материнська любов' | link | { role: 'link', text: 'Материнська любов' } | 'a.movie-card__title' |
-| 'Моя провина: Лондон' | link | { role: 'link', text: 'Моя провина: Лондон' } | 'a.movie-card__title' |
+| 'Products' | link | { role: 'link', text: 'Products' } | 'a.menu-link' |
+| 'Quarterly report' | link | { role: 'link', text: 'Quarterly report' } | 'a.result-title' |
+| 'Account overview' | link | { role: 'link', text: 'Account overview' } | 'a.result-title' |
+| 'Billing settings' | link | { role: 'link', text: 'Billing settings' } | 'a.result-title' |
 
 ## Navigation
 
 | Element | Type | ARIA | CSS |
 |------|------|------|------|
-| 'Фільми' | link | { role: 'link', text: 'Фільми' } | 'header a[href="/films/"]' |
+| 'Products' | link | { role: 'link', text: 'Products' } | 'header a[href="/products/"]' |
 | '7' | link | { role: 'link', text: '7' } | '.pagination a.current' |
 | '8' | link | { role: 'link', text: '8' } | '.pagination a' |
 `;
 
-    expect(pickDocActionCandidates(research)).toEqual([
-      { label: 'Граф Дракула: Історія кохання', kind: 'detail', section: 'content' },
-      { label: 'Материнська любов', kind: 'detail', section: 'content' },
-      { label: 'Моя провина: Лондон', kind: 'detail', section: 'content' },
-    ]);
+    const candidates = pickDocActionCandidates(research);
+    expect(candidates).toHaveLength(3);
+    expect(candidates.map((candidate) => candidate.role)).toEqual(['link', 'link', 'link']);
+    expect(candidates.map((candidate) => candidate.section)).toEqual(['Content', 'Content', 'Content']);
   });
   it('ignores modal overlay buttons when selecting action candidates', () => {
     const research = `
@@ -264,7 +263,7 @@ describe('documentarian fallback', () => {
     const documentarian = new Documentarian(provider, {});
     const result = await documentarian.document(
       {
-        url: '/ua/serials/stb/kod',
+        url: '/workspace/projects/main',
         title: 'K.O.D.',
       },
       `## Content
@@ -272,7 +271,7 @@ describe('documentarian fallback', () => {
 | Element | Type | ARIA | CSS | Coordinates |
 |------|------|------|------|------|
 | 'Play button' | link | { role: 'link', text: 'play' } | 'a.about-project__play' | (468, 537) |
-| 'Broken row' | link | - | 2026' } | 'a[href="/ua/serials/stb/kod/2026"]' |
+| 'Broken row' | link | - | 2026' } | 'a[href="/workspace/projects/main/reports"]' |
 `
     );
 
@@ -325,62 +324,6 @@ describe('documentarian fallback', () => {
     expect(result.can).toHaveLength(1);
     expect(calls).toHaveLength(2);
     expect(calls[1]).toContain('<fallback_mode>');
-  });
-});
-
-describe('documentarian output normalization', () => {
-  it('compacts shell navigation actions and drops weak add-to-list assumptions', async () => {
-    const provider = {
-      async generateObject() {
-        return {
-          object: {
-            summary: 'Catalog page',
-            can: [
-              { action: "user can navigate to the 'Serials' section", scope: 'page-level', evidence: 'visible in navigation' },
-              { action: "user can navigate to the 'Cartoons' section", scope: 'page-level', evidence: 'visible in navigation' },
-              { action: "user can navigate to the 'Films' section", scope: 'page-level', evidence: 'visible in navigation' },
-              { action: "user can click the 'My Lists' link to navigate to their personal lists page", scope: 'page-level', evidence: 'visible in navigation' },
-              { action: "user can click the 'Login' link to access the login page", scope: 'page-level', evidence: 'visible in navigation' },
-              { action: 'user can type a search query in the search textbox and press the search button to perform a search', scope: 'page-level', evidence: 'textbox and button visible' },
-              { action: 'user can navigate between pages using the pagination links', scope: 'page-level', evidence: 'pagination visible' },
-              { action: 'user can navigate to the external streaming site "Watch online"', scope: 'page-level', evidence: 'external link visible' },
-            ],
-            might: [
-              { action: 'user might be able to click on an individual film item to view its detail page', scope: 'one item', evidence: 'Typical catalog pages display film thumbnails that are clickable.' },
-              { action: 'user might be able to add a film to a personal list from the list view', scope: 'one item', evidence: "The presence of a 'My Lists' menu suggests functionality to manage lists, though no add-to-list UI is shown." },
-            ],
-          },
-        };
-      },
-    } as any;
-
-    const documentarian = new Documentarian(provider, {});
-    const result = await documentarian.document(
-      {
-        url: '/films/best/2025/page/7/',
-        title: 'Films',
-      },
-      `## Menu
-
-| Element | Type | ARIA | CSS |
-|------|------|------|------|
-| 'Serials' | link | { role: 'link', text: 'Serials' } | 'a[href="/series/"]' |
-| 'Cartoons' | link | { role: 'link', text: 'Cartoons' } | 'a[href="/cartoons/"]' |
-| 'Films' | link | { role: 'link', text: 'Films' } | 'a[href="/films/"]' |
-| 'My Lists' | link | { role: 'link', text: 'My Lists' } | 'a[href="/mylists/"]' |
-| 'Login' | link | { role: 'link', text: 'Login' } | 'a[href="/login/"]' |
-`
-    );
-
-    expect(result.can.map((item) => item.action)).toEqual([
-      'user can navigate to major site sections using the visible navigation links',
-      'user can access account-related pages from the visible header links',
-      'user can type a search query in the search textbox and press the search button to perform a search',
-      'user can navigate between pages using the pagination links',
-      'user can open external links shown on the page',
-    ]);
-    expect(result.might.map((item) => item.action)).toEqual(['user might be able to click on an individual film item to view its detail page']);
-    expect((result as any).qualityNotes).toEqual(['Research did not provide a dedicated content section, so content-specific behavior may be under-documented.']);
   });
 });
 
@@ -442,16 +385,14 @@ describe('documentarian interactive mode', () => {
   it('keeps only meaningful interactive transitions', () => {
     const documentarian = new Documentarian({} as any, { docs: { interactive: true } });
     const interactions = (documentarian as any).getMeaningfulInteractions([
-      { action: 'Opened detail page: Movie A', before: '1', after: '2', targetUrl: '/movies/a' },
-      { action: 'Opened pagination page: 8', before: '1', after: '2', targetUrl: '/films/page/8' },
-      { action: 'Switched to tab: Merged', before: '1', after: '2' },
-      { action: 'Activated button: Save', before: '1', after: '2' },
-      { action: 'Opened category page: Cartoons', before: '1', after: '2', targetUrl: '/cartoons/' },
-      { action: 'I.click("Cartoons")', before: '1', after: '2', targetUrl: '/cartoons/' },
+      { action: 'Clicked link: Item A', before: '1', after: '2', targetUrl: '/items/a' },
+      { action: 'Clicked button: Save', before: '1', after: '2', changes: { urlChanged: false, newElements: 2, removedElements: 0 } },
+      { action: 'Clicked tab: Merged', before: '1', after: '2', discoveredUrls: ['/branches/merged'] },
+      { action: 'Clicked button: No change', before: '1', after: '1', changes: { urlChanged: false, newElements: 0, removedElements: 0 } },
     ]);
 
-    expect(interactions).toHaveLength(4);
-    expect(interactions.map((item: any) => item.action)).toEqual(['Opened detail page: Movie A', 'Opened pagination page: 8', 'Switched to tab: Merged', 'Activated button: Save']);
+    expect(interactions).toHaveLength(3);
+    expect(interactions.map((item: any) => item.action)).toEqual(['Clicked link: Item A', 'Clicked button: Save', 'Clicked tab: Merged']);
   });
 
   it('does not render empty new-capabilities block for transitions without discoveries', () => {
@@ -466,7 +407,7 @@ describe('documentarian interactive mode', () => {
         might: [],
         interactions: [
           {
-            action: 'Switched to tab: Merged',
+            action: 'Clicked tab: Merged',
             before: '12 elements (tab:2, link:4, button:2)',
             after: 'Tab content: 21 elements (link:8, button:3)',
             newCapabilities: [],
@@ -476,7 +417,7 @@ describe('documentarian interactive mode', () => {
     );
 
     expect(markdown).toContain('## State Transitions');
-    expect(markdown).not.toContain('**New capabilities discovered:**');
+    expect(markdown).not.toContain('**Observed changes:**');
   });
 
   it('falls back to static mode when interactive mode fails', async () => {
@@ -590,7 +531,7 @@ describe('documentarian interactive mode', () => {
     const provider = {
       async generateObject(messages: Array<{ role: string; content: string }>) {
         const prompt = messages[1].content;
-        if (prompt.includes('<interactions_found>')) {
+        if (prompt.includes('<interaction_observations>')) {
           throw new Error('Failed to validate JSON. Please adjust your prompt. See failed_generation for more details.');
         }
 
@@ -609,13 +550,13 @@ describe('documentarian interactive mode', () => {
 
     const states = [
       {
-        url: '/films',
-        title: 'Films',
+        url: '/items',
+        title: 'Items',
         ariaSnapshot: '[role: link]\n[role: heading]',
       },
       {
-        url: '/films/dracula',
-        title: 'Dracula',
+        url: '/items/example',
+        title: 'Example Item',
         ariaSnapshot: '[role: heading]\n[role: link]\n[role: img]',
       },
     ];
@@ -649,8 +590,8 @@ describe('documentarian interactive mode', () => {
     const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
     const result = await documentarian.document(
       {
-        url: '/films',
-        title: 'Films',
+        url: '/items',
+        title: 'Items',
       },
       `## content
 
@@ -658,7 +599,7 @@ describe('documentarian interactive mode', () => {
 
 | Element | Type | ARIA | CSS |
 |------|------|------|------|
-| 'Граф Дракула: Історія кохання' | link | { role: 'link', text: 'Граф Дракула: Історія кохання' } | 'a.movie-card__title' |
+| 'Quarterly report' | link | { role: 'link', text: 'Quarterly report' } | 'a.result-title' |
 `
     );
 
@@ -673,7 +614,7 @@ describe('documentarian interactive mode', () => {
       },
       async generateObject(messages: Array<{ role: string; content: string }>) {
         const prompt = messages[1].content;
-        expect(prompt).not.toContain('<interactions_found>');
+        expect(prompt).not.toContain('<interaction_observations>');
 
         return {
           object: {
@@ -790,7 +731,7 @@ describe('docbot interactive path extraction', () => {
       {
         interactions: [
           {
-            action: 'Switched to tab: Merged',
+            action: 'Clicked tab: Merged',
             before: '12 elements',
             after: '21 elements',
             discoveredUrls: ['/branches/merged/1', '/branches/merged/2'],
@@ -815,11 +756,11 @@ describe('docbot interactive path extraction', () => {
 
     const nextPaths = (bot as any).extractNextPaths(
       {
-        url: '/films/best',
-        title: 'Films',
+        url: '/items',
+        title: 'Items',
         links: [
           { title: 'Home', url: '/' },
-          { title: 'Series', url: '/series/' },
+          { title: 'Collection', url: '/collections/' },
         ],
       },
       'https://example.com',
@@ -827,16 +768,16 @@ describe('docbot interactive path extraction', () => {
       {
         interactions: [
           {
-            action: 'Opened detail page: Movie A',
+            action: 'Clicked link: Item A',
             before: '1',
             after: '2',
-            targetUrl: '/movies/a',
-            discoveredUrls: ['/movies/a/trailer'],
+            targetUrl: '/items/a',
+            discoveredUrls: ['/items/a/details'],
           },
         ],
       }
     );
 
-    expect(nextPaths).toEqual(['/movies/a', '/movies/a/trailer', '/', '/series/']);
+    expect(nextPaths).toEqual(['/items/a', '/items/a/details', '/', '/collections/']);
   });
 });

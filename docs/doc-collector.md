@@ -1,4 +1,4 @@
-﻿# Documentation Collection
+# Documentation Collection
 
 `doc-collector` crawls pages and generates a lightweight spec:
 
@@ -19,20 +19,20 @@ Each page is summarized as:
 
 Analyzes pages without interaction:
 
-- вњ… Researches page structure via Researcher agent
-- вњ… Identifies UI elements and navigation
-- вњ… Generates documentation from static analysis
-- вњ… Fast and reliable
+- ✅ Researches page structure via Researcher agent
+- ✅ Identifies UI elements and navigation
+- ✅ Generates documentation from static analysis
+- ✅ Fast and reliable
 
 ### Interactive Documentation
 
 When `interactive: true` in config:
 
-- вњ… Tries selected page interactions before final documentation
-- вњ… Can capture state changes after clicking links, buttons, and tab-like controls
-- вњ… Can document navigation caused by interaction
-- вњ… Can enqueue URLs discovered from successful interactions
-- вњ… Falls back to static documentation when interaction results are weak or unreliable
+- ✅ Tries selected page interactions before final documentation
+- Captures raw state observations after clicking links, buttons, and tab controls
+- Lets the Documentarian classify observed behavior from before/after evidence
+- ✅ Can enqueue URLs discovered from successful interactions
+- ✅ Falls back to static documentation when interaction results are weak or unreliable
 
 This mode is intended for cases where static research alone is not enough, for example:
 
@@ -46,7 +46,7 @@ When interaction results are useful, page docs may include:
 - `State Transitions`
 - `Before`
 - `After`
-- `New capabilities discovered`
+- `Observed changes`
 - `Coverage Notes`
 
 Example:
@@ -54,14 +54,14 @@ Example:
 ```markdown
 ## State Transitions
 
-### Switched to tab: Merged
+### Clicked tab: Merged
 **Before:** 18 elements (tab:3, link:5, text:7)
 **After:** Tab content: 21 elements (tab:3, link:8, text:7)
 
 ### Clicked "Save" button
 **Before:** Form with 8 fields
 **After:** Success message appeared, form cleared
-**New capabilities discovered:**
+**Observed changes:**
 - User can create new runs
 - User can see run ID after creation
 ```
@@ -75,7 +75,7 @@ Start from a relative path or a full URL:
 ```bash
 explorbot docs collect /users/sign_in
 explorbot docs collect /docs/openapi#tag/project-analytics-tags --max-pages 20
-explorbot docs collect https://teleportal.ua/ua/serials/stb/kod --path explorbot-testing --show --session --max-pages 20
+explorbot docs collect https://example.com/workspace/projects --path explorbot-testing --show --session --max-pages 20
 ```
 
 Supported options:

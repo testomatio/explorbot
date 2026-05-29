@@ -68,27 +68,16 @@ class Documentarian {
 
   private getMeaningfulInteractions(interactions: StateTransition[]): StateTransition[] {
     return interactions.filter((interaction) => {
-      const action = interaction.action || '';
-      if (action.startsWith('Opened detail page:')) {
+      if (interaction.targetUrl) {
         return true;
       }
-      if (action.startsWith('Opened pagination page:')) {
+      if (interaction.changes?.urlChanged) {
         return true;
       }
-      if (action.startsWith('Switched to tab:')) {
+      if ((interaction.changes?.newElements || 0) > 0) {
         return true;
       }
-      if (action.startsWith('Activated button:')) {
-        return true;
-      }
-      if (action.startsWith('Opened category page:')) {
-        return false;
-      }
-      if (action.startsWith('I.click(')) {
-        return false;
-      }
-
-      return Boolean(interaction.targetUrl);
+      return (interaction.discoveredUrls || []).length > 0;
     });
   }
 
@@ -222,8 +211,27 @@ class Documentarian {
   }
 
   private buildInteractionContext(interactions: StateTransition[]): string {
-    const lines = interactions.map((interaction) => `- ${interaction.action}: ${interaction.before} -> ${interaction.after}`).join('\n');
-    return `\n\n<interactions_found>\nThe following interactions were performed:\n${lines}\n</interactions_found>`;
+    const lines = interactions
+      .map((interaction) => {
+        const parts = [`Action: ${interaction.action}`, `Element: ${this.formatInteractionElement(interaction)}`, `Before: ${interaction.before}`, `After: ${interaction.after}`, `Changes: ${this.formatInteractionChanges(interaction)}`];
+        if (interaction.targetUrl) {
+          parts.push(`Target URL: ${interaction.targetUrl}`);
+        }
+        if (interaction.discoveredUrls && interaction.discoveredUrls.length > 0) {
+          parts.push(`Discovered URLs: ${interaction.discoveredUrls.join(', ')}`);
+        }
+        return `- ${parts.join('\n  ')}`;
+      })
+      .join('\n');
+    return dedent`
+
+      <interaction_observations>
+      These are raw observations collected after interacting with visible controls. They are not semantic conclusions.
+      Classify them yourself as proven user capabilities, possible capabilities, navigation, page-state changes, or noise.
+      Do not trust the action label as a capability category; use the before/after state, element metadata, and URL changes as evidence.
+      ${lines}
+      </interaction_observations>
+    `;
   }
 
   private shouldRetryWithSanitizedResearch(error: unknown): boolean {
@@ -231,133 +239,18 @@ class Documentarian {
     return message.includes('Failed to generate JSON') || message.includes('Failed to validate JSON') || message.includes('failed_generation') || message.includes('No object generated') || message.includes('response did not match schema');
   }
 
-  private normalizeDocumentation(documentation: PageDocumentation, state: WebPageState, research: string): PageDocumentation {
-    const can = this.compactShellActions(documentation.can, research);
-    const might = this.filterWeakMightActions(documentation.might, research, state);
-    const qualityNotes = this.evaluateDocumentationQuality(
-      {
-        ...documentation,
-        can,
-        might,
-      },
-      state,
-      research
-    );
+  private normalizeDocumentation(documentation: PageDocumentation, _state: WebPageState, _research: string): PageDocumentation {
+    const qualityNotes = this.evaluateDocumentationQuality(documentation);
 
     return {
       ...documentation,
-      can,
-      might,
       qualityNotes,
     };
   }
 
-  private compactShellActions(can: Capability[], research: string): Capability[] {
-    const shellActions = can.filter((item) => this.isShellNavigationAction(item));
-    if (shellActions.length < 3) {
-      return can;
-    }
-
-    const compacted: Capability[] = [];
-    const preserved = can.filter((item) => {
-      if (this.isShellNavigationAction(item)) {
-        return false;
-      }
-      if (this.isSearchAction(item.action)) {
-        return false;
-      }
-      if (this.isPaginationAction(item.action)) {
-        return false;
-      }
-      return true;
-    });
-    const hasSearch = can.some((item) => this.isSearchAction(item.action));
-    const hasPagination = can.some((item) => this.isPaginationAction(item.action));
-    const hasAccount = can.some((item) => this.isAccountAction(item.action));
-    const hasSectionNavigation = can.some((item) => this.isSectionNavigationAction(item.action));
-    const hasExternalNavigation = can.some((item) => this.isExternalLinkAction(item.action));
-    const hasUtilityNavigation = can.some((item) => this.isUtilityAction(item.action));
-
-    if (hasSectionNavigation) {
-      compacted.push({
-        action: 'user can navigate to major site sections using the visible navigation links',
-        scope: 'page-level',
-        evidence: this.hasMenuSection(research) ? 'Multiple section links are visible in the page header/menu.' : 'Multiple section links are visible on the page.',
-      });
-    }
-
-    if (hasAccount) {
-      compacted.push({
-        action: 'user can access account-related pages from the visible header links',
-        scope: 'page-level',
-        evidence: 'Account-related links such as login or personal lists are visible in the page navigation.',
-      });
-    }
-
-    if (hasSearch) {
-      const searchAction = can.find((item) => this.isSearchAction(item.action));
-      if (searchAction) {
-        compacted.push(searchAction);
-      }
-    }
-
-    if (hasPagination) {
-      const paginationAction = can.find((item) => this.isPaginationAction(item.action));
-      if (paginationAction) {
-        compacted.push(paginationAction);
-      }
-    }
-
-    if (hasExternalNavigation) {
-      compacted.push({
-        action: 'user can open external links shown on the page',
-        scope: 'page-level',
-        evidence: 'External destination links are visible in the page content or footer.',
-      });
-    }
-
-    if (hasUtilityNavigation) {
-      compacted.push({
-        action: 'user can open utility or support pages linked from the site navigation',
-        scope: 'page-level',
-        evidence: 'Utility links such as feedback, help, or related support pages are visible in navigation.',
-      });
-    }
-
-    return [...compacted, ...preserved];
-  }
-
-  private filterWeakMightActions(might: Capability[], research: string, state: WebPageState): Capability[] {
-    return might.filter((item) => {
-      const action = item.action.toLowerCase();
-      const evidence = item.evidence.toLowerCase();
-
-      if (/(add .*personal list|add .*favorites|add-to-list)/i.test(action) && !/(favorite|wishlist|bookmark|save|add)/i.test(research)) {
-        return false;
-      }
-
-      if (/(typical|suggests functionality|suggests a personalized list page)/i.test(evidence)) {
-        if (!this.hasPrimaryContentEvidence(research) && !this.looksLikeItemAction(action, state.url)) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }
-
-  private evaluateDocumentationQuality(documentation: PageDocumentation, state: WebPageState, research: string): string[] {
+  private evaluateDocumentationQuality(documentation: PageDocumentation): string[] {
     const notes: string[] = [];
-    const allPageLevel = documentation.can.length > 0 && documentation.can.every((item) => item.scope === 'page-level');
-    const hasItemLevel = [...documentation.can, ...documentation.might].some((item) => item.scope === 'one item' || item.scope === 'list of items');
-    const contentEvidence = this.hasPrimaryContentEvidence(research);
 
-    if (allPageLevel && !hasItemLevel && /(films|movies|catalog|list|series|cartoons)/i.test(state.url)) {
-      notes.push('Coverage is currently limited to page-level navigation and search actions; item-level content interactions were not confirmed.');
-    }
-    if (!contentEvidence) {
-      notes.push('Research did not provide a dedicated content section, so content-specific behavior may be under-documented.');
-    }
     if ((documentation.interactions || []).length === 0 && this.config.docs?.interactive) {
       notes.push('Interactive exploration did not produce any reliable page-specific transitions for this page.');
     }
@@ -394,53 +287,27 @@ class Documentarian {
     return sanitized.join('\n');
   }
 
-  private isShellNavigationAction(item: Capability): boolean {
-    if (item.scope !== 'page-level') {
-      return false;
+  private formatInteractionElement(interaction: StateTransition): string {
+    if (!interaction.element) {
+      return 'unknown element';
     }
 
-    const action = item.action.toLowerCase();
-    return this.isSectionNavigationAction(action) || this.isAccountAction(action) || this.isExternalLinkAction(action) || this.isUtilityAction(action);
+    const parts = [`role=${interaction.element.role}`, `name=${interaction.element.name}`, `section=${interaction.element.section}`];
+    if (interaction.element.container) {
+      parts.push(`container=${interaction.element.container}`);
+    }
+    if (interaction.element.locator) {
+      parts.push(`locator=${interaction.element.locator}`);
+    }
+    return parts.join(', ');
   }
 
-  private isSectionNavigationAction(action: string): boolean {
-    if (this.isPaginationAction(action) || this.isSearchAction(action) || this.isExternalLinkAction(action)) {
-      return false;
+  private formatInteractionChanges(interaction: StateTransition): string {
+    if (!interaction.changes) {
+      return 'unknown changes';
     }
 
-    return /(navigate to .*page|navigate to .*category|navigate to .*section|click the .* link to navigate)/i.test(action);
-  }
-
-  private isAccountAction(action: string): boolean {
-    return /(login|log in|personal lists|my lists|account)/i.test(action);
-  }
-
-  private isSearchAction(action: string): boolean {
-    return /search|search textbox|search button/.test(action.toLowerCase());
-  }
-
-  private isPaginationAction(action: string): boolean {
-    return /pagination|navigate between pages|page \d+/.test(action.toLowerCase());
-  }
-
-  private isExternalLinkAction(action: string): boolean {
-    return /external /.test(action.toLowerCase());
-  }
-
-  private isUtilityAction(action: string): boolean {
-    return /(feedback|support|help|contact|abuse|report)/i.test(action);
-  }
-
-  private hasMenuSection(research: string): boolean {
-    return /##\s+(menu|navigation|header)/i.test(research);
-  }
-
-  private hasPrimaryContentEvidence(research: string): boolean {
-    return /##\s+(content|cards|results|grid|catalog)/i.test(research);
-  }
-
-  private looksLikeItemAction(action: string, url: string): boolean {
-    return /(detail page|individual .* item|film item|movie item|view details)/i.test(action) || /(films|movies|catalog|list)/i.test(url);
+    return `urlChanged=${interaction.changes.urlChanged}, newElements=${interaction.changes.newElements}, removedElements=${interaction.changes.removedElements}`;
   }
 }
 
@@ -457,6 +324,22 @@ const stateTransitionSchema = z.object({
   targetUrl: z.string().optional(),
   discoveredUrls: z.array(z.string()).optional(),
   newCapabilities: z.array(z.string()).optional(),
+  element: z
+    .object({
+      role: z.string(),
+      name: z.string(),
+      section: z.string(),
+      container: z.string().optional(),
+      locator: z.string().optional(),
+    })
+    .optional(),
+  changes: z
+    .object({
+      urlChanged: z.boolean(),
+      newElements: z.number(),
+      removedElements: z.number(),
+    })
+    .optional(),
 });
 
 const pageDocumentationSchema = z.object({
@@ -466,7 +349,6 @@ const pageDocumentationSchema = z.object({
   interactions: z.array(stateTransitionSchema).optional(),
 });
 
-type Capability = z.infer<typeof capabilitySchema>;
 type StateTransition = z.infer<typeof stateTransitionSchema>;
 type PageDocumentation = z.infer<typeof pageDocumentationSchema> & {
   interactions?: StateTransition[];
