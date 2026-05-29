@@ -77,9 +77,37 @@ Notes:
 
 | Field | Purpose |
 |-------|---------|
-| `url` | URL pattern to match (required) |
+| `url` | URL pattern to match (required for web) |
+| `endpoint` | Endpoint pattern to match (used by API testing instead of `url`) |
+| `scope` | Which mode the file applies to: `web`, `api`, or `all` (optional) |
 | `title` | Human-readable title (optional) |
 | Custom fields | Any additional metadata for agents |
+
+## Scope: Web vs API
+
+Web exploration and API testing read separate knowledge so hints don't cross over:
+
+- Web testing reads `knowledge/*.md` (top level) and matches on `url`.
+- API testing reads `knowledge/api/*.md` and matches on `endpoint`.
+
+The `scope` field controls which mode a file applies to. When omitted, scope defaults from the file's directory (`knowledge/` → `web`, `knowledge/api/` → `api`).
+
+| Scope | Read by |
+|-------|---------|
+| `web` | Web exploration |
+| `api` | API testing |
+| `all` | Both |
+
+Use `scope: all` for shared knowledge such as credentials a top-level file should also reach API testing:
+
+```markdown
+---
+url: '*'
+scope: all
+---
+
+API token: ${env.API_KEY}
+```
 
 ## Variables
 
@@ -291,10 +319,13 @@ When an agent operates on a page, it receives relevant knowledge based on URL ma
 
 ```
 ./knowledge/
-├── login.md           # /login page
-├── checkout.md        # /checkout page
-├── general.md         # * (all pages)
-└── admin_users.md     # /admin/users/*
+├── login.md           # /login page (web)
+├── checkout.md        # /checkout page (web)
+├── general.md         # * (all pages, web)
+├── admin_users.md     # /admin/users/* (web)
+└── api/
+    ├── general.md     # * (all endpoints, api)
+    └── users.md       # /users endpoint (api)
 ```
 
 Files are named based on URL pattern. Multiple entries for the same URL are appended to the same file.

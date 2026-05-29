@@ -17,19 +17,28 @@ interface Knowledge {
 
 export class KnowledgeTracker {
   private knowledgeDir: string;
+  private sharedDir?: string;
+  private scope: string;
   private knowledgeFiles: Knowledge[] = [];
   private isLoaded = false;
 
-  constructor() {
-    const configParser = ConfigParser.getInstance();
-    const config = configParser.getConfig();
-    const configPath = configParser.getConfigPath();
+  constructor(opts?: { knowledgeDir?: string; sharedDir?: string; scope?: string }) {
+    this.scope = opts?.scope || 'web';
+    this.sharedDir = opts?.sharedDir;
 
-    if (configPath) {
-      const projectRoot = dirname(configPath);
-      this.knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
+    if (opts?.knowledgeDir) {
+      this.knowledgeDir = opts.knowledgeDir;
     } else {
-      this.knowledgeDir = config.dirs?.knowledge || 'knowledge';
+      const configParser = ConfigParser.getInstance();
+      const config = configParser.getConfig();
+      const configPath = configParser.getConfigPath();
+
+      if (configPath) {
+        const projectRoot = dirname(configPath);
+        this.knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
+      } else {
+        this.knowledgeDir = config.dirs?.knowledge || 'knowledge';
+      }
     }
 
     if (!existsSync(this.knowledgeDir)) {
@@ -42,28 +51,34 @@ export class KnowledgeTracker {
 
     this.knowledgeFiles = [];
 
-    if (!existsSync(this.knowledgeDir)) {
-      return;
+    const sources: Array<{ dir: string; defaultScope: string }> = [{ dir: this.knowledgeDir, defaultScope: this.scope }];
+    if (this.sharedDir && this.sharedDir !== this.knowledgeDir) {
+      sources.push({ dir: this.sharedDir, defaultScope: 'web' });
     }
 
-    const files = readdirSync(this.knowledgeDir)
-      .filter((file) => file.endsWith('.md'))
-      .map((file) => join(this.knowledgeDir, file));
+    for (const { dir, defaultScope } of sources) {
+      if (!existsSync(dir)) continue;
 
-    for (const filePath of files) {
-      try {
-        const fileContent = readFileSync(filePath, 'utf8');
-        const parsed = matter(fileContent);
-        const urlPattern = parsed.data.url || parsed.data.path || '*';
+      const files = readdirSync(dir)
+        .filter((file) => file.endsWith('.md'))
+        .map((file) => join(dir, file));
 
-        this.knowledgeFiles.push({
-          filePath,
-          url: urlPattern,
-          content: this.interpolateVars(parsed.content),
-          ...parsed.data,
-        });
-      } catch (error) {
-        // Skip invalid files
+      for (const filePath of files) {
+        try {
+          const fileContent = readFileSync(filePath, 'utf8');
+          const parsed = matter(fileContent);
+          const urlPattern = parsed.data.url || parsed.data.path || parsed.data.endpoint || '*';
+
+          this.knowledgeFiles.push({
+            filePath,
+            url: urlPattern,
+            content: this.interpolateVars(parsed.content),
+            ...parsed.data,
+            scope: parsed.data.scope || defaultScope,
+          });
+        } catch (error) {
+          // Skip invalid files
+        }
       }
     }
 
@@ -74,6 +89,7 @@ export class KnowledgeTracker {
     this.loadKnowledgeFiles();
 
     return this.knowledgeFiles.filter((knowledge) => {
+      if (knowledge.scope !== this.scope && knowledge.scope !== 'all') return false;
       return state.isMatchedBy(knowledge);
     });
   }

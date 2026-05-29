@@ -46,7 +46,7 @@ export class Chief extends ChiefBase {
     this.apiClient = apiClient || null;
   }
 
-  async plan(endpoint: string, opts?: { style?: string; specDefinition?: string }): Promise<Plan> {
+  async plan(endpoint: string, opts?: { style?: string; specDefinition?: string; knowledge?: string }): Promise<Plan> {
     tag('info').log(`Planning API tests for ${endpoint}`);
     if (opts?.style) tag('info').log(`Planning style: ${opts.style}`);
 
@@ -55,6 +55,14 @@ export class Chief extends ChiefBase {
     await Observability.run(`chief: ${endpoint}`, { tags: ['chief'], sessionId: endpoint }, async () => {
       const sampleData = await this.collectSampleData(endpoint);
       const conversation = this.buildConversation(endpoint, opts?.style, sampleData);
+
+      if (opts?.knowledge) {
+        conversation.addUserText(dedent`
+          <knowledge>
+          ${opts.knowledge}
+          </knowledge>
+        `);
+      }
 
       if (opts?.specDefinition) {
         conversation.addUserText(dedent`

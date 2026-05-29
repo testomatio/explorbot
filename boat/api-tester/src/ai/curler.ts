@@ -26,7 +26,7 @@ export class Curler {
     this.reporter = reporter;
   }
 
-  async test(test: Test, opts?: { specDefinition?: string; baseEndpoint?: string; searchSpec?: (query: string) => string }): Promise<{ success: boolean }> {
+  async test(test: Test, opts?: { specDefinition?: string; baseEndpoint?: string; searchSpec?: (query: string) => string; knowledge?: string }): Promise<{ success: boolean }> {
     tag('info').log(`Testing: ${test.scenario}`);
     debugLog('Starting test:', test.scenario);
 
@@ -37,7 +37,7 @@ export class Curler {
     const conversation = this.provider.startConversation(this.buildSystemPrompt(), 'curler', this.provider.getAgenticModel('curler'));
     const tools = createCurlerTools(this.apiClient, this.requestState, test, opts?.searchSpec);
 
-    const initialPrompt = this.buildTestPrompt(test, opts?.specDefinition, opts?.baseEndpoint);
+    const initialPrompt = this.buildTestPrompt(test, opts?.specDefinition, opts?.baseEndpoint, opts?.knowledge);
     conversation.addUserText(initialPrompt);
 
     await loop(
@@ -202,7 +202,7 @@ export class Curler {
     }
   }
 
-  private buildTestPrompt(test: Test, specDefinition?: string, baseEndpoint?: string): string {
+  private buildTestPrompt(test: Test, specDefinition?: string, baseEndpoint?: string, knowledge?: string): string {
     let prompt = dedent`
       <task>
       SCENARIO: ${test.scenario}
@@ -236,6 +236,15 @@ export class Curler {
         `;
       }
       prompt += specBlock;
+    }
+
+    if (knowledge) {
+      prompt += dedent`
+
+        <knowledge>
+        ${knowledge}
+        </knowledge>
+      `;
     }
 
     return prompt;

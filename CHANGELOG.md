@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-30
+
+### Changes
+- [API Testing] `explorbot api` now reads knowledge files. Planning (Chief) and execution (Curler) prompts now include knowledge that matches the endpoint under test.
+- [API Testing] API knowledge lives in `knowledge/api/` and matches endpoints via the `endpoint:` frontmatter field. `api init` and `api know` now write there.
+- Knowledge files support a `scope` frontmatter field — `web`, `api`, or `all` — so web exploration and API testing can isolate or share knowledge. Unscoped files default to their directory's mode (`knowledge/` → web, `knowledge/api/` → api); use `scope: all` for shared knowledge such as credentials.
+
 ## 2026-05-11
 
 ### New CLI Options

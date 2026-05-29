@@ -103,6 +103,7 @@ export function createApiCommands(name = 'api'): Command {
           specDefinition,
           baseEndpoint: bot.getConfig().api.baseEndpoint,
           searchSpec: (query) => bot.searchSpec(query),
+          knowledge: bot.getKnowledgeForEndpoint(test.startUrl),
         });
         if (result.success) passed++;
         else failed++;
@@ -146,6 +147,7 @@ export function createApiCommands(name = 'api'): Command {
             specDefinition,
             baseEndpoint: bot.getConfig().api.baseEndpoint,
             searchSpec: (query) => bot.searchSpec(query),
+            knowledge: bot.getKnowledgeForEndpoint(test.startUrl),
           });
           totalTests++;
           if (result.success) totalPassed++;
@@ -237,11 +239,11 @@ export default {
       console.log(`\nCreated: ${configPath}`);
 
       fs.mkdirSync('output', { recursive: true });
-      fs.mkdirSync('knowledge', { recursive: true });
+      fs.mkdirSync(path.join('knowledge', 'api'), { recursive: true });
 
       if (knowledge) {
-        const knowledgePath = path.resolve('knowledge', 'general.md');
-        fs.writeFileSync(knowledgePath, `---\nendpoint: "*"\n---\n${knowledge}\n`, 'utf8');
+        const knowledgePath = path.resolve('knowledge', 'api', 'general.md');
+        fs.writeFileSync(knowledgePath, `---\nendpoint: "*"\nscope: api\n---\n${knowledge}\n`, 'utf8');
         console.log(`Created: ${knowledgePath}`);
       }
 
@@ -281,12 +283,13 @@ export default {
         if (options.path) knowledgeDir = path.join(path.resolve(options.path), 'knowledge');
       }
 
-      fs.mkdirSync(knowledgeDir, { recursive: true });
+      const apiKnowledgeDir = path.join(knowledgeDir, 'api');
+      fs.mkdirSync(apiKnowledgeDir, { recursive: true });
 
       const filename = endpoint.replace(/^\//, '').replace(/[^a-zA-Z0-9]/g, '_') || 'general';
-      const filePath = path.join(knowledgeDir, `${filename}.md`);
+      const filePath = path.join(apiKnowledgeDir, `${filename}.md`);
 
-      const content = `---\nendpoint: "${endpoint}"\n---\n${description}\n`;
+      const content = `---\nendpoint: "${endpoint}"\nscope: api\n---\n${description}\n`;
 
       if (fs.existsSync(filePath)) {
         fs.appendFileSync(filePath, `\n---\n${description}\n`, 'utf8');

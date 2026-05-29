@@ -3,6 +3,7 @@ import path from 'node:path';
 import { AIProvider } from '../../../src/ai/provider.ts';
 import { RequestStore } from '../../../src/api/request-store.ts';
 import { extractEndpointDefinition, loadSpec, searchEndpoints, validateSpecs } from '../../../src/api/spec-reader.ts';
+import { KnowledgeTracker } from '../../../src/knowledge-tracker.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import { Plan } from '../../../src/test-plan.ts';
 import { setVerboseMode, tag } from '../../../src/utils/logger.ts';
@@ -20,6 +21,7 @@ export class ApiBot {
   private apiClient!: ApiClient;
   private requestState!: RequestStore;
   private reporter!: Reporter;
+  private knowledgeTracker!: KnowledgeTracker;
   private options: ApibotOptions;
   private apiSpec: any;
 
@@ -47,6 +49,9 @@ export class ApiBot {
     this.configParser.ensureDirectory(outputDir);
     this.requestState = new RequestStore(outputDir);
     this.reporter = new Reporter(this.config.reporter);
+
+    const knowledgeDir = this.configParser.getKnowledgeDir();
+    this.knowledgeTracker = new KnowledgeTracker({ knowledgeDir: path.join(knowledgeDir, 'api'), sharedDir: knowledgeDir, scope: 'api' });
 
     validateSpecs(this.config.api.spec);
     this.apiSpec = await loadSpec(this.config.api.spec!, outputDir);
@@ -109,7 +114,8 @@ export class ApiBot {
 
     const chief = this.agentChief();
     const specDefinition = this.getEndpointDefinition(endpoint);
-    this.currentPlan = await chief.plan(endpoint, { style: opts.style, specDefinition });
+    const knowledge = this.getKnowledgeForEndpoint(endpoint);
+    this.currentPlan = await chief.plan(endpoint, { style: opts.style, specDefinition, knowledge });
     const savedPath = this.savePlan();
     if (savedPath) {
       tag('info').log(`Plan saved to: ${path.relative(process.cwd(), savedPath)}`);
@@ -172,6 +178,13 @@ export class ApiBot {
 
   getEndpointDefinition(endpoint: string): string {
     return extractEndpointDefinition(this.apiSpec, endpoint, this.config.api.baseEndpoint);
+  }
+
+  getKnowledgeForEndpoint(endpoint: string): string {
+    return this.knowledgeTracker
+      .getMatchingKnowledge(endpoint)
+      .map((k) => k.content.trim())
+      .join('\n\n');
   }
 
   searchSpec(query: string): string {
