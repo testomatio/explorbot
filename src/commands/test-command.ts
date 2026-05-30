@@ -6,13 +6,20 @@ import { BaseCommand, type Suggestion } from './base-command.js';
 export class TestCommand extends BaseCommand {
   name = 'test';
   description = 'Launch tester agent to execute test scenarios';
+  options = [{ flags: '--from-plan <file>', description: 'Load plan file before selecting tests' }];
   suggestions: Suggestion[] = [
     { command: 'test', hint: 'run next test' },
     { command: 'plan', hint: 'create new plan' },
   ];
 
   async execute(args: string): Promise<void> {
+    const { opts, args: remaining } = this.parseArgs(args);
+    if (opts.fromPlan) {
+      this.explorBot.loadPlan(String(opts.fromPlan));
+    }
+
     const plan = this.explorBot.getCurrentPlan();
+    const selector = remaining.join(' ');
     Stats.mode = 'test';
     Stats.focus = plan?.title;
     const toExecute: Test[] = [];
@@ -22,22 +29,22 @@ export class TestCommand extends BaseCommand {
       return plan;
     };
 
-    if (!args) {
+    if (!selector) {
       const pending = requirePlan().getPendingTests();
       if (pending.length === 0) {
         throw new Error('All tests are already complete. Please run /plan to create new test scenarios.');
       }
       toExecute.push(pending[0]);
-    } else if (args === '*' || args === 'all') {
+    } else if (selector === '*' || selector === 'all') {
       toExecute.push(...requirePlan().getPendingTests());
-    } else if (args.match(/^[\d,\-\s]+$/)) {
+    } else if (selector.match(/^[\d,\-\s]+$/)) {
       const visible = requirePlan().tests.filter((t) => t.enabled);
-      const indices = parseTestIndices(args, visible.length);
+      const indices = parseTestIndices(selector, visible.length);
       for (const idx of indices) {
         toExecute.push(visible[idx]);
       }
     } else {
-      const matching = plan?.getPendingTests().filter((test) => test.scenario.toLowerCase().includes(args.toLowerCase())) || [];
+      const matching = plan?.getPendingTests().filter((test) => test.scenario.toLowerCase().includes(selector.toLowerCase())) || [];
       if (matching.length > 0) {
         toExecute.push(...matching);
       } else {
@@ -45,12 +52,12 @@ export class TestCommand extends BaseCommand {
         if (!state) {
           throw new Error('No page loaded. Please navigate to a page first.');
         }
-        const newTest = new Test(args, 'unknown', [], state.url);
+        const newTest = new Test(selector, 'unknown', [], state.url);
         if (plan) {
           plan.addTest(newTest);
-          tag('info').log(`Created new test: "${args}" and added to current plan.`);
+          tag('info').log(`Created new test: "${selector}" and added to current plan.`);
         } else {
-          tag('info').log(`Created ad-hoc test: "${args}"`);
+          tag('info').log(`Created ad-hoc test: "${selector}"`);
         }
         toExecute.push(newTest);
       }

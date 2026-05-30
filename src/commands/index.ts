@@ -26,6 +26,7 @@ import { PlanEditCommand } from './plan-edit-command.js';
 import { PlanLoadCommand } from './plan-load-command.js';
 import { PlanReloadCommand } from './plan-reload-command.js';
 import { PlanSaveCommand } from './plan-save-command.js';
+import { PlansCommand } from './plans-command.js';
 import { RerunCommand } from './rerun-command.js';
 import { ResearchCommand } from './research-command.js';
 import { RunsCommand } from './runs-command.js';
@@ -48,6 +49,7 @@ const commandClasses: CommandClass[] = [
   PlanCommand,
   PlanSaveCommand,
   PlanLoadCommand,
+  PlansCommand,
   PlanReloadCommand,
   PlanClearCommand,
   PlanEditCommand,
