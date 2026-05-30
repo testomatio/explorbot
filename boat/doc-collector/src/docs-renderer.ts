@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { WebPageState } from '../../../src/state-manager.ts';
-import type { PageDocumentation } from './ai/documentarian.ts';
+import type { PageDocumentation, StateTransition } from './ai/documentarian.ts';
 
 function renderPageDocumentation(state: WebPageState, documentation: PageDocumentation): string {
   const lines: string[] = [];
@@ -16,6 +16,28 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
   lines.push('');
   lines.push(ensureSentence(documentation.summary));
   lines.push('');
+
+  const interactions = documentation.interactions;
+  if (interactions && interactions.length > 0) {
+    lines.push('## State Transitions');
+    lines.push('');
+    for (const transition of interactions) {
+      lines.push(`### ${transition.action}`);
+      lines.push('');
+      lines.push(`**Before:** ${transition.before}`);
+      lines.push('');
+      lines.push(`**After:** ${transition.after}`);
+      lines.push('');
+      if (transition.newCapabilities && transition.newCapabilities.length > 0) {
+        lines.push('**Observed changes:**');
+        for (const cap of transition.newCapabilities) {
+          lines.push(`- ${cap}`);
+        }
+        lines.push('');
+      }
+    }
+  }
+
   lines.push('## User Can');
   lines.push('');
 
@@ -50,6 +72,16 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
     lines.push('');
   }
 
+  const qualityNotes = documentation.qualityNotes;
+  if (qualityNotes && qualityNotes.length > 0) {
+    lines.push('## Coverage Notes');
+    lines.push('');
+    for (const note of qualityNotes) {
+      lines.push(`- ${ensureSentence(note)}`);
+    }
+    lines.push('');
+  }
+
   return `${lines.join('\n').trimEnd()}\n`;
 }
 
@@ -79,6 +111,9 @@ function renderSpecIndex(outputDir: string, startPath: string, pages: Documented
     lines.push(`Purpose: ${ensureSentence(page.summary)}`);
     lines.push(`Proven actions: ${page.canCount}`);
     lines.push(`Possible actions: ${page.mightCount}`);
+    if (page.interactionCount > 0) {
+      lines.push(`Interactive transitions: ${page.interactionCount}`);
+    }
     if (page.title) {
       lines.push(`Title: ${normalizeInlineText(page.title)}`);
     }
@@ -96,6 +131,22 @@ function renderSpecIndex(outputDir: string, startPath: string, pages: Documented
       lines.push('User Might:');
       for (const action of page.mightActions) {
         lines.push(`- ${normalizeAction(action, 'might')}`);
+      }
+      lines.push('');
+    }
+
+    if (page.interactionActions.length > 0) {
+      lines.push('Interactive Findings:');
+      for (const action of page.interactionActions.slice(0, 3)) {
+        lines.push(`- ${normalizeInlineText(action)}`);
+      }
+      lines.push('');
+    }
+
+    if (page.qualityNotes.length > 0) {
+      lines.push('Coverage Notes:');
+      for (const note of page.qualityNotes) {
+        lines.push(`- ${ensureSentence(note)}`);
       }
       lines.push('');
     }
@@ -173,8 +224,11 @@ interface DocumentedPage {
   summary: string;
   canCount: number;
   mightCount: number;
+  interactionCount: number;
   canActions: string[];
   mightActions: string[];
+  interactionActions: string[];
+  qualityNotes: string[];
   filePath: string;
 }
 
@@ -184,4 +238,4 @@ interface SkippedPage {
 }
 
 export { renderPageDocumentation, renderSpecIndex, ensureSentence, normalizeAction };
-export type { DocumentedPage, SkippedPage };
+export type { DocumentedPage, SkippedPage, StateTransition };

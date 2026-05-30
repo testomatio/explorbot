@@ -1,0 +1,544 @@
+import { type ResearchElement, parseResearchSections } from '../../../../src/ai/researcher/parser.ts';
+import type Explorer from '../../../../src/explorer.ts';
+import type { WebPageState } from '../../../../src/state-manager.ts';
+
+export interface DocStateTransition {
+  action: string;
+  before: string;
+  after: string;
+  targetUrl?: string;
+  discoveredUrls?: string[];
+  newCapabilities?: string[];
+  element?: InteractionElement;
+  changes?: InteractionChanges;
+}
+
+interface InteractionCandidate {
+  element: ResearchElement;
+  container?: string;
+  role: 'link' | 'button' | 'tab';
+  sectionName: string;
+}
+
+interface InteractionElement {
+  role: string;
+  name: string;
+  section: string;
+  container?: string;
+  locator?: string;
+}
+
+interface InteractionChanges {
+  urlChanged: boolean;
+  newElements: number;
+  removedElements: number;
+}
+
+const MAX_PRIMARY_CANDIDATES = 3;
+const MAX_INTERACTIONS = 5;
+const MAX_LINKS = 15;
+const DEFAULT_WAIT_MS = 700;
+const TAB_WAIT_MS = 500;
+
+export async function collectDocInteractions(explorer: Explorer, state: WebPageState, research: string): Promise<DocStateTransition[]> {
+  const sections = parseResearchSections(research);
+  const transitions: DocStateTransition[] = [];
+  const tabGroup = findTabGroup(sections);
+
+  if (tabGroup) {
+    transitions.push(...(await exploreTabGroup(explorer, tabGroup, state.url)));
+  }
+
+  for (const candidate of findActionCandidates(sections)) {
+    if (transitions.length >= MAX_INTERACTIONS) {
+      break;
+    }
+
+    const transition = await executeInteraction(explorer, candidate, state.url, DEFAULT_WAIT_MS);
+    if (!transition) {
+      continue;
+    }
+
+    transitions.push(transition);
+  }
+
+  return transitions;
+}
+
+export function pickDocActionCandidates(research: string): Array<{ label: string; role: InteractionCandidate['role']; section: string }> {
+  return findActionCandidates(parseResearchSections(research)).map((candidate) => ({
+    label: candidate.element.name.trim(),
+    role: candidate.role,
+    section: candidate.sectionName,
+  }));
+}
+
+async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: ResearchElement[]; container?: string; sectionName: string }, restoreUrl: string): Promise<DocStateTransition[]> {
+  const transitions: DocStateTransition[] = [];
+
+  for (const element of tabGroup.elements) {
+    const transition = await executeInteraction(
+      explorer,
+      {
+        element,
+        container: tabGroup.container,
+        role: 'tab',
+        sectionName: tabGroup.sectionName,
+      },
+      restoreUrl,
+      TAB_WAIT_MS
+    );
+    if (!transition) {
+      continue;
+    }
+
+    transitions.push(transition);
+  }
+
+  await restoreInteractionState(explorer, restoreUrl, buildPrimaryCommand(tabGroup.elements[0], tabGroup.container));
+  return transitions;
+}
+
+async function executeInteraction(explorer: Explorer, candidate: InteractionCandidate, restoreUrl: string, waitMs: number): Promise<DocStateTransition | null> {
+  const beforeState = explorer.getStateManager().getCurrentState();
+  if (!beforeState) {
+    return null;
+  }
+
+  const executed = await attemptInteraction(explorer, candidate);
+  if (!executed) {
+    return null;
+  }
+
+  await wait(waitMs);
+
+  const afterState = explorer.getStateManager().getCurrentState();
+  if (!afterState) {
+    return null;
+  }
+
+  const ariaChanges = countAriaChanges(beforeState.ariaSnapshot || '', afterState.ariaSnapshot || '');
+  const urlChanged = beforeState.url !== afterState.url;
+  const transition = buildTransition(candidate, beforeState, afterState, {
+    urlChanged,
+    newElements: ariaChanges.newCount,
+    removedElements: ariaChanges.removedCount,
+  });
+
+  if (urlChanged) {
+    await restoreInteractionState(explorer, restoreUrl);
+  }
+
+  return transition;
+}
+
+async function attemptInteraction(explorer: Explorer, candidate: InteractionCandidate): Promise<boolean> {
+  const action = explorer.createAction();
+
+  for (const command of buildClickCommands(candidate.element, candidate.container)) {
+    const success = await action.attempt(command, buildPurpose(candidate), false);
+    if (success) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function restoreInteractionState(explorer: Explorer, restoreUrl: string, primaryCommand?: string | null): Promise<void> {
+  if (primaryCommand) {
+    const action = explorer.createAction();
+    const restored = await action.attempt(primaryCommand, `Restore initial state on ${restoreUrl}`, false);
+    if (restored) {
+      await wait(TAB_WAIT_MS);
+      return;
+    }
+  }
+
+  const action = explorer.createAction();
+  await action.attempt(`I.amOnPage(${JSON.stringify(restoreUrl)})`, `Restore page ${restoreUrl}`, false);
+}
+
+function buildTransition(candidate: InteractionCandidate, beforeState: WebPageState, afterState: WebPageState, changes: InteractionChanges): DocStateTransition {
+  const transition: DocStateTransition = {
+    action: describeAction(candidate),
+    before: summarizeInteractiveState(beforeState),
+    after: summarizeInteractiveState(afterState),
+    discoveredUrls: collectLinks(afterState).map((link) => link.url),
+    newCapabilities: collectDiscoveryNotes(afterState, changes),
+    element: buildInteractionElement(candidate),
+    changes,
+  };
+
+  if (changes.urlChanged) {
+    transition.targetUrl = afterState.url;
+  }
+
+  return transition;
+}
+
+function buildInteractionElement(candidate: InteractionCandidate): InteractionElement {
+  const element: InteractionElement = {
+    role: candidate.role,
+    name: candidate.element.name.trim(),
+    section: candidate.sectionName,
+  };
+
+  if (candidate.container) {
+    element.container = candidate.container;
+  }
+  if (candidate.element.css || candidate.element.xpath) {
+    element.locator = candidate.element.css || candidate.element.xpath || undefined;
+  }
+
+  return element;
+}
+
+function collectDiscoveryNotes(state: WebPageState, changes: InteractionChanges): string[] {
+  const notes: string[] = [];
+  const headings = collectHeadings(state);
+  const links = collectLinks(state);
+
+  if (changes.urlChanged) {
+    notes.push('URL changed after interaction');
+  }
+  if (changes.newElements > 0) {
+    notes.push(`ARIA snapshot gained ${changes.newElements} elements`);
+  }
+  if (changes.removedElements > 0) {
+    notes.push(`ARIA snapshot removed ${changes.removedElements} elements`);
+  }
+  if (headings.length > 0) {
+    notes.push(`Visible headings after interaction: ${headings.slice(0, 3).join(' | ')}`);
+  }
+  if (links.length > 0) {
+    notes.push(`Visible links after interaction: ${Math.min(links.length, MAX_LINKS)}`);
+  }
+
+  return notes;
+}
+
+function findTabGroup(sections: ReturnType<typeof parseResearchSections>): { elements: ResearchElement[]; container?: string; sectionName: string } | null {
+  for (const section of sections) {
+    const sectionName = section.name.toLowerCase();
+    const container = section.containerCss?.toLowerCase() || '';
+    if (isOverlaySection(sectionName, container)) {
+      continue;
+    }
+
+    const elements = section.elements.filter((element) => getElementRole(element) === 'tab');
+    if (elements.length < 2 || elements.length > 6) {
+      continue;
+    }
+
+    return {
+      elements,
+      container: section.containerCss || undefined,
+      sectionName: section.name,
+    };
+  }
+
+  return null;
+}
+
+function findActionCandidates(sections: ReturnType<typeof parseResearchSections>): InteractionCandidate[] {
+  const candidates: InteractionCandidate[] = [];
+  const seen = new Set<string>();
+  const navigationLabels = collectNavigationLabels(sections);
+
+  for (const section of sections) {
+    const sectionName = section.name.toLowerCase();
+    const container = section.containerCss?.toLowerCase() || '';
+    if (isOverlaySection(sectionName, container)) {
+      continue;
+    }
+    if (isNavigationSection(sectionName)) {
+      continue;
+    }
+
+    for (const element of section.elements) {
+      const candidate = toInteractionCandidate(element, section.name, section.containerCss, navigationLabels);
+      if (!candidate) {
+        continue;
+      }
+
+      const key = `${candidate.role}:${normalizeCandidateLabel(candidate.element.name)}`;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      candidates.push(candidate);
+    }
+  }
+
+  return candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a)).slice(0, MAX_PRIMARY_CANDIDATES);
+}
+
+function toInteractionCandidate(element: ResearchElement, sectionName: string, container: string | null | undefined, navigationLabels: Set<string>): InteractionCandidate | null {
+  const role = getElementRole(element);
+  if (role !== 'link' && role !== 'button' && role !== 'tab') {
+    return null;
+  }
+  if (!hasUsableName(element)) {
+    return null;
+  }
+  if (isShellLocator(element.css) || isShellLocator(element.xpath) || isShellLocator(container)) {
+    return null;
+  }
+  if (role === 'link' && navigationLabels.has(normalizeCandidateLabel(element.name))) {
+    return null;
+  }
+
+  return {
+    element,
+    container: container || undefined,
+    role,
+    sectionName,
+  };
+}
+
+function buildClickCommands(element: ResearchElement, container?: string): string[] {
+  const commands: string[] = [];
+
+  if (element.css) {
+    if (container && !element.css.startsWith(container)) {
+      commands.push(`I.click(${JSON.stringify(element.css)}, ${JSON.stringify(container)})`);
+    }
+    commands.push(`I.click(${JSON.stringify(element.css)})`);
+  }
+
+  if (element.aria) {
+    if (container) {
+      commands.push(`I.click(${JSON.stringify(element.aria)}, ${JSON.stringify(container)})`);
+    }
+    commands.push(`I.click(${JSON.stringify(element.aria)})`);
+  }
+
+  const xpath = buildXPathLocator(element);
+  if (xpath) {
+    commands.push(`I.click(${JSON.stringify(xpath)})`);
+  }
+
+  return [...new Set(commands)];
+}
+
+function buildPrimaryCommand(element: ResearchElement, container?: string): string | null {
+  return buildClickCommands(element, container)[0] || null;
+}
+
+function buildXPathLocator(element: ResearchElement): string | null {
+  if (!element.name) {
+    return null;
+  }
+
+  const text = xpathStringLiteral(element.name.trim());
+  const role = getElementRole(element);
+  if (role === 'link') {
+    return `//a[normalize-space()=${text}]`;
+  }
+  if (role === 'button' || role === 'tab') {
+    return `//*[self::button or @role="button" or @role="tab"][normalize-space()=${text}]`;
+  }
+
+  return `//*[normalize-space()=${text}]`;
+}
+
+function buildPurpose(candidate: InteractionCandidate): string {
+  return `Explore ${candidate.role} ${candidate.element.name.trim()}`;
+}
+
+function summarizeAria(aria: string): string {
+  const lines = aria.split('\n').filter((line) => line.trim());
+  if (lines.length === 0) {
+    return 'No elements';
+  }
+
+  const roleCounts: Record<string, number> = {};
+  for (const role of lines.map(extractAriaRole).filter((role): role is string => Boolean(role))) {
+    roleCounts[role] = (roleCounts[role] || 0) + 1;
+  }
+
+  const topRoles = Object.entries(roleCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([role, count]) => `${role}:${count}`)
+    .join(', ');
+
+  return `${lines.length} elements (${topRoles})`;
+}
+
+function extractAriaRole(line: string): string | null {
+  const roleMatch = line.match(/\[role: ([\w-]+)\]/);
+  if (roleMatch) {
+    return roleMatch[1];
+  }
+
+  const yamlMatch = line.trim().match(/^- ([\w-]+)(?:\s|$|:)/);
+  if (yamlMatch) {
+    return yamlMatch[1];
+  }
+
+  return null;
+}
+
+function countAriaChanges(before: string, after: string): { newCount: number; removedCount: number } {
+  const beforeLines = new Set(before.split('\n').filter((line) => line.trim()));
+  const afterLines = new Set(after.split('\n').filter((line) => line.trim()));
+  let newCount = 0;
+  let removedCount = 0;
+
+  for (const line of afterLines) {
+    if (!beforeLines.has(line)) {
+      newCount++;
+    }
+  }
+
+  for (const line of beforeLines) {
+    if (!afterLines.has(line)) {
+      removedCount++;
+    }
+  }
+
+  return { newCount, removedCount };
+}
+
+function summarizeInteractiveState(state: WebPageState): string {
+  const parts = [summarizeAria(state.ariaSnapshot || '')];
+  const headings = collectHeadings(state).slice(0, 3);
+  const links = collectLinks(state).slice(0, 3);
+
+  if (state.url) {
+    parts.push(`URL ${state.url}`);
+  }
+  if (headings.length > 0) {
+    parts.push(`Headings: ${headings.map((heading) => limitInlineText(heading, 90)).join(' | ')}`);
+  }
+  if (links.length > 0) {
+    parts.push(`Links: ${links.map((link) => `${link.title} -> ${link.url}`).join('; ')}`);
+  }
+
+  return parts.join('. ');
+}
+
+function collectHeadings(state: { h1?: string; h2?: string; h3?: string; h4?: string }): string[] {
+  return [state.h1, state.h2, state.h3, state.h4].filter((heading): heading is string => Boolean(heading)).map((heading) => heading.trim());
+}
+
+function collectLinks(state: { links?: Array<{ title: string; url: string }> }): Array<{ title: string; url: string }> {
+  return (state.links || [])
+    .filter((link) => link.url)
+    .slice(0, MAX_LINKS)
+    .map((link) => ({
+      title: link.title || link.url,
+      url: link.url,
+    }));
+}
+
+function describeAction(candidate: InteractionCandidate): string {
+  return `Clicked ${candidate.role}: ${candidate.element.name.trim()}`;
+}
+
+function hasUsableName(element: ResearchElement): boolean {
+  const name = element.name.trim();
+  if (!name) {
+    return false;
+  }
+  if (name.length < 2) {
+    return false;
+  }
+  return true;
+}
+
+function isNavigationSection(sectionName: string): boolean {
+  return /(navigation|menu|header|footer|breadcrumb)/i.test(sectionName);
+}
+
+function isOverlaySection(sectionName: string, container: string): boolean {
+  return /(overlay|modal|popup|dialog)/i.test(sectionName) || /(overlay|modal|popup|dialog)/i.test(container);
+}
+
+function scoreCandidate(candidate: InteractionCandidate): number {
+  let score = 0;
+
+  if (candidate.role === 'link') {
+    score += 50;
+  }
+  if (candidate.role === 'button') {
+    score += 40;
+  }
+  if (candidate.role === 'tab') {
+    score += 30;
+  }
+  if (candidate.container) {
+    score += 10;
+  }
+  if (candidate.element.css) {
+    score += 5;
+  }
+  if (candidate.element.name.trim().length > 8) {
+    score += 5;
+  }
+
+  return score;
+}
+
+function isShellLocator(locator: string | null | undefined): boolean {
+  if (!locator) {
+    return false;
+  }
+
+  return /(nav\[role="navigation"\]|header|menu|breadcrumb|footer)/i.test(locator);
+}
+
+function collectNavigationLabels(sections: ReturnType<typeof parseResearchSections>): Set<string> {
+  const labels = new Set<string>();
+
+  for (const section of sections) {
+    if (!isNavigationSection(section.name.toLowerCase())) {
+      continue;
+    }
+
+    for (const element of section.elements) {
+      const label = normalizeCandidateLabel(element.name);
+      if (!label) {
+        continue;
+      }
+      labels.add(label);
+    }
+  }
+
+  return labels;
+}
+
+function normalizeCandidateLabel(label: string): string {
+  return label.trim().toLowerCase();
+}
+
+function limitInlineText(text: string, maxLength: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function getElementRole(element: ResearchElement): 'link' | 'button' | 'tab' | string {
+  return (element.aria?.role || element.type || '').toLowerCase();
+}
+
+function xpathStringLiteral(value: string): string {
+  if (!value.includes("'")) {
+    return `'${value}'`;
+  }
+  if (!value.includes('"')) {
+    return `"${value}"`;
+  }
+
+  const parts = value.split("'").map((part) => `'${part}'`);
+  return `concat(${parts.join(`, "'", `)})`;
+}
+
+async function wait(timeout: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, timeout));
+}

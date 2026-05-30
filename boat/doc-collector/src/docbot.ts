@@ -41,7 +41,7 @@ class DocBot {
       config: this.options.docsConfig,
       path: this.options.path,
     });
-    this.documentarian = new Documentarian(this.explorBot.getProvider(), this.config);
+    this.documentarian = new Documentarian(this.explorBot.getProvider(), this.config, this.explorBot.getExplorer());
     this.ensureDirectory(this.configParser.getOutputDir());
     this.ensureDirectory(this.getPagesDir());
   }
@@ -128,18 +128,22 @@ class DocBot {
           summary: documentation.summary,
           canCount: documentation.can.length,
           mightCount: documentation.might.length,
+          interactionCount: (documentation.interactions || []).length,
           canActions: documentation.can.map((item) => item.action),
           mightActions: documentation.might.map((item) => item.action),
+          interactionActions: (documentation.interactions || []).map((item) => item.action),
+          qualityNotes: documentation.qualityNotes || [],
           filePath,
         });
         documented.add(pageKey);
 
-        const nextPaths = this.extractNextPaths(state, baseUrl, research);
+        const nextPaths = this.extractNextPaths(state, baseUrl, research, documentation);
+        const interactionPriorityPaths = new Set(this.extractInteractionPaths(baseUrl, documentation));
         for (const nextPath of nextPaths) {
           if (documented.has(this.getPageKey(nextPath))) {
             continue;
           }
-          if (stateManager.hasVisitedState(nextPath)) {
+          if (!interactionPriorityPaths.has(nextPath) && stateManager.hasVisitedState(nextPath)) {
             continue;
           }
           this.enqueuePath(nextPath, queue, queued);
@@ -185,9 +189,17 @@ class DocBot {
     return true;
   }
 
-  private extractNextPaths(state: WebPageState, baseUrl: string, research: string): string[] {
+  private extractNextPaths(state: WebPageState, baseUrl: string, research: string, documentation?: PageDocumentation): string[] {
     const paths: string[] = [];
     const seen = new Set<string>();
+
+    for (const interactionPath of this.extractInteractionPaths(baseUrl, documentation)) {
+      if (seen.has(interactionPath)) {
+        continue;
+      }
+      seen.add(interactionPath);
+      paths.push(interactionPath);
+    }
 
     for (const link of state.links || []) {
       const nextPath = this.resolveLink(link, baseUrl);
@@ -224,11 +236,58 @@ class DocBot {
     return paths;
   }
 
+  private extractInteractionPaths(baseUrl: string, documentation?: PageDocumentation): string[] {
+    const paths: string[] = [];
+    const seen = new Set<string>();
+    const interactions = documentation?.interactions;
+
+    for (const interaction of interactions || []) {
+      if (interaction.targetUrl) {
+        const nextPath = this.resolveRawUrl(interaction.targetUrl, baseUrl);
+        if (nextPath && this.isEligibleNextPath(nextPath) && !seen.has(nextPath)) {
+          seen.add(nextPath);
+          paths.push(nextPath);
+        }
+      }
+
+      for (const discoveredUrl of interaction.discoveredUrls || []) {
+        const discoveredPath = this.resolveRawUrl(discoveredUrl, baseUrl);
+        if (!discoveredPath) {
+          continue;
+        }
+        if (!this.isEligibleNextPath(discoveredPath)) {
+          continue;
+        }
+        if (seen.has(discoveredPath)) {
+          continue;
+        }
+        seen.add(discoveredPath);
+        paths.push(discoveredPath);
+      }
+    }
+
+    return paths;
+  }
+
+  private isEligibleNextPath(nextPath: string): boolean {
+    if (!shouldCrawlDocPath(nextPath, this.config)) {
+      return false;
+    }
+    if (!this.isInScope(nextPath)) {
+      return false;
+    }
+    return true;
+  }
+
   private resolveLink(link: Link, baseUrl: string): string | null {
+    return this.resolveRawUrl(link.url, baseUrl);
+  }
+
+  private resolveRawUrl(rawUrl: string, baseUrl: string): string | null {
     let resolved: URL;
 
     try {
-      resolved = new URL(link.url, baseUrl);
+      resolved = new URL(rawUrl, baseUrl);
     } catch {
       return null;
     }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
-import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts';
+import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
+import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
@@ -126,8 +127,11 @@ describe('doc-collector renderer', () => {
           summary: 'Sign in page',
           canCount: 7,
           mightCount: 1,
+          interactionCount: 1,
           canActions: ['user can sign in with email and password'],
           mightActions: ['user might use social login'],
+          interactionActions: ['Clicked link: Login help'],
+          qualityNotes: ['Coverage is complete for the visible sign-in form.'],
           filePath: 'D:/project/output/docs/pages/users_sign_in.md',
         },
       ],
@@ -143,10 +147,15 @@ describe('doc-collector renderer', () => {
     expect(markdown).toContain('## Overview');
     expect(markdown).toContain('### [/users/sign_in](pages/users_sign_in.md)');
     expect(markdown).toContain('Proven actions: 7');
+    expect(markdown).toContain('Interactive transitions: 1');
     expect(markdown).toContain('User Can:');
     expect(markdown).toContain('- user can sign in with email and password');
     expect(markdown).toContain('User Might:');
     expect(markdown).toContain('- user might use social login');
+    expect(markdown).toContain('Interactive Findings:');
+    expect(markdown).toContain('- Clicked link: Login help');
+    expect(markdown).toContain('Coverage Notes:');
+    expect(markdown).toContain('- Coverage is complete for the visible sign-in form.');
     expect(markdown).toContain('## Skipped');
     expect(markdown).toContain('/users/auth/google_oauth2. Reason: redirected into external auth flow.');
   });
@@ -161,12 +170,12 @@ describe('doc-collector scope and signal', () => {
   it('keeps subtree scope around the start page', () => {
     const bot = new DocBot();
     (bot as any).config = { docs: { scope: 'subtree' } };
-    (bot as any).scopeRoot = '/ua/serials/stb/kod';
+    (bot as any).scopeRoot = '/workspace/projects/main';
 
-    expect((bot as any).isInScope('/ua/serials/stb/kod/2026')).toBe(true);
-    expect((bot as any).isInScope('/ua/serials/stb/kod/2026/seriya-1')).toBe(true);
-    expect((bot as any).isInScope('/ua/person/actor')).toBe(false);
-    expect((bot as any).isInScope('/ua/faq')).toBe(false);
+    expect((bot as any).isInScope('/workspace/projects/main/reports')).toBe(true);
+    expect((bot as any).isInScope('/workspace/projects/main/reports/weekly')).toBe(true);
+    expect((bot as any).isInScope('/workspace/settings')).toBe(false);
+    expect((bot as any).isInScope('/help')).toBe(false);
   });
 
   it('marks pages with weak docs and few controls as low-signal', () => {
@@ -181,6 +190,48 @@ describe('doc-collector scope and signal', () => {
     (bot as any).config = { docs: { minCanActions: 1, minInteractiveElements: 3 } };
 
     expect((bot as any).getLowSignalReason({ summary: 'Serial details page.', can: [{ action: 'watch episode', scope: 'one item', evidence: 'episode links visible' }], might: [] }, '* Episodes (10 elements) `.tp-show__list`\n\nChars: 1200')).toBeNull();
+  });
+});
+
+describe('doc-collector interactive candidate selection', () => {
+  it('prioritizes non-navigation controls without assigning semantic categories', () => {
+    const research = `
+## Content
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Products' | link | { role: 'link', text: 'Products' } | 'a.menu-link' |
+| 'Quarterly report' | link | { role: 'link', text: 'Quarterly report' } | 'a.result-title' |
+| 'Account overview' | link | { role: 'link', text: 'Account overview' } | 'a.result-title' |
+| 'Billing settings' | link | { role: 'link', text: 'Billing settings' } | 'a.result-title' |
+
+## Navigation
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Products' | link | { role: 'link', text: 'Products' } | 'header a[href="/products/"]' |
+| '7' | link | { role: 'link', text: '7' } | '.pagination a.current' |
+| '8' | link | { role: 'link', text: '8' } | '.pagination a' |
+`;
+
+    const candidates = pickDocActionCandidates(research);
+    expect(candidates).toHaveLength(3);
+    expect(candidates.map((candidate) => candidate.role)).toEqual(['link', 'link', 'link']);
+    expect(candidates.map((candidate) => candidate.section)).toEqual(['Content', 'Content', 'Content']);
+  });
+  it('ignores modal overlay buttons when selecting action candidates', () => {
+    const research = `
+## overlay: AskTelegram Modal
+
+> Container: 'ask_modal_overlay'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Підписатися' | button | { role: 'button', text: 'Підписатися' } | 'ask_modal_yes' |
+| 'Ні, дякую' | button | { role: 'button', text: 'Ні, дякую' } | 'ask_modal_no' |
+`;
+
+    expect(pickDocActionCandidates(research)).toEqual([]);
   });
 });
 
@@ -212,7 +263,7 @@ describe('documentarian fallback', () => {
     const documentarian = new Documentarian(provider, {});
     const result = await documentarian.document(
       {
-        url: '/ua/serials/stb/kod',
+        url: '/workspace/projects/main',
         title: 'K.O.D.',
       },
       `## Content
@@ -220,7 +271,7 @@ describe('documentarian fallback', () => {
 | Element | Type | ARIA | CSS | Coordinates |
 |------|------|------|------|------|
 | 'Play button' | link | { role: 'link', text: 'play' } | 'a.about-project__play' | (468, 537) |
-| 'Broken row' | link | - | 2026' } | 'a[href="/ua/serials/stb/kod/2026"]' |
+| 'Broken row' | link | - | 2026' } | 'a[href="/workspace/projects/main/reports"]' |
 `
     );
 
@@ -228,5 +279,505 @@ describe('documentarian fallback', () => {
     expect(result.can).toHaveLength(1);
     expect(calls).toHaveLength(2);
     expect(calls[1]).toContain('<fallback_mode>');
+  });
+
+  it('retries with sanitized research after schema mismatch response', async () => {
+    const calls: string[] = [];
+    const provider = {
+      async generateObject(messages: Array<{ role: string; content: string }>) {
+        calls.push(messages[1].content);
+        if (calls.length === 1) {
+          throw new Error('No object generated: response did not match schema.');
+        }
+        return {
+          object: {
+            summary: 'Catalog page',
+            can: [
+              {
+                action: 'user can browse items',
+                scope: 'list of items',
+                evidence: 'Item links are visible',
+              },
+            ],
+            might: [],
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, {});
+    const result = await documentarian.document(
+      {
+        url: '/catalog',
+        title: 'Catalog',
+      },
+      `## Content
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Broken row' | link | - | broken
+| 'Item A' | link | { role: 'link', text: 'Item A' } | 'a.item' |
+`
+    );
+
+    expect(result.summary).toBe('Catalog page');
+    expect(result.can).toHaveLength(1);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain('<fallback_mode>');
+  });
+});
+
+describe('documentarian interactive mode', () => {
+  it('uses static mode when interactive is disabled', async () => {
+    const provider = {
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Static page',
+            can: [{ action: 'user can view', scope: 'page-level', evidence: 'visible' }],
+            might: [],
+          },
+        };
+      },
+      getModelForAgent() {
+        return 'mock-model';
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, { docs: { interactive: false } });
+    const result = await documentarian.document(
+      {
+        url: '/test',
+        title: 'Test',
+      },
+      '## Content\nStatic research'
+    );
+
+    expect(result.summary).toBe('Static page');
+    expect(result.can).toHaveLength(1);
+  });
+
+  it('uses static mode when explorer is not provided', async () => {
+    const provider = {
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Static page',
+            can: [{ action: 'user can view', scope: 'page-level', evidence: 'visible' }],
+            might: [],
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } });
+    const result = await documentarian.document(
+      {
+        url: '/test',
+        title: 'Test',
+      },
+      '## Content\nStatic research'
+    );
+
+    expect(result.summary).toBe('Static page');
+  });
+
+  it('keeps only meaningful interactive transitions', () => {
+    const documentarian = new Documentarian({} as any, { docs: { interactive: true } });
+    const interactions = (documentarian as any).getMeaningfulInteractions([
+      { action: 'Clicked link: Item A', before: '1', after: '2', targetUrl: '/items/a' },
+      { action: 'Clicked button: Save', before: '1', after: '2', changes: { urlChanged: false, newElements: 2, removedElements: 0 } },
+      { action: 'Clicked tab: Merged', before: '1', after: '2', discoveredUrls: ['/branches/merged'] },
+      { action: 'Clicked button: No change', before: '1', after: '1', changes: { urlChanged: false, newElements: 0, removedElements: 0 } },
+    ]);
+
+    expect(interactions).toHaveLength(3);
+    expect(interactions.map((item: any) => item.action)).toEqual(['Clicked link: Item A', 'Clicked button: Save', 'Clicked tab: Merged']);
+  });
+
+  it('does not render empty new-capabilities block for transitions without discoveries', () => {
+    const markdown = renderPageDocumentation(
+      {
+        url: '/branches',
+        title: 'Branches',
+      },
+      {
+        summary: 'Branches page',
+        can: [],
+        might: [],
+        interactions: [
+          {
+            action: 'Clicked tab: Merged',
+            before: '12 elements (tab:2, link:4, button:2)',
+            after: 'Tab content: 21 elements (link:8, button:3)',
+            newCapabilities: [],
+          },
+        ],
+      } as any
+    );
+
+    expect(markdown).toContain('## State Transitions');
+    expect(markdown).not.toContain('**Observed changes:**');
+  });
+
+  it('falls back to static mode when interactive mode fails', async () => {
+    const provider = {
+      async generateWithTools() {
+        throw new Error('Tool execution failed: interaction error');
+      },
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Static fallback',
+            can: [{ action: 'user can view', scope: 'page-level', evidence: 'fallback' }],
+            might: [],
+          },
+        };
+      },
+      getModelForAgent() {
+        return 'mock-model';
+      },
+    } as any;
+
+    const mockExplorer = {
+      getStateManager() {
+        return {
+          getCurrentState() {
+            return {
+              url: '/test',
+              title: 'Test',
+              ariaSnapshot: '[role: button]',
+            };
+          },
+        };
+      },
+      createAction() {
+        return {
+          async execute(command: string) {
+            return true;
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+
+    const result = await documentarian.document(
+      {
+        url: '/test',
+        title: 'Test',
+      },
+      '## Content\nResearch'
+    );
+
+    expect(result.summary).toBe('Static fallback');
+    expect(result.can).toHaveLength(1);
+  });
+
+  it('falls back to static mode when tool failure is capitalized in error text', async () => {
+    const provider = {
+      async generateWithTools() {
+        throw new Error('Tool execution failed');
+      },
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Static fallback',
+            can: [{ action: 'user can view', scope: 'page-level', evidence: 'fallback' }],
+            might: [],
+          },
+        };
+      },
+      getModelForAgent() {
+        return 'mock-model';
+      },
+    } as any;
+
+    const mockExplorer = {
+      getStateManager() {
+        return {
+          getCurrentState() {
+            return {
+              url: '/test',
+              title: 'Test',
+              ariaSnapshot: '[role: button]',
+            };
+          },
+        };
+      },
+      createAction() {
+        return {
+          async execute(command: string) {
+            return true;
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+
+    const result = await documentarian.document(
+      {
+        url: '/test',
+        title: 'Test',
+      },
+      '## Content\nResearch'
+    );
+
+    expect(result.summary).toBe('Static fallback');
+  });
+
+  it('falls back to static mode when interactive documentation fails JSON validation', async () => {
+    const provider = {
+      async generateObject(messages: Array<{ role: string; content: string }>) {
+        const prompt = messages[1].content;
+        if (prompt.includes('<interaction_observations>')) {
+          throw new Error('Failed to validate JSON. Please adjust your prompt. See failed_generation for more details.');
+        }
+
+        return {
+          object: {
+            summary: 'Static fallback',
+            can: [{ action: 'user can view content', scope: 'page-level', evidence: 'fallback after invalid interactive JSON' }],
+            might: [],
+          },
+        };
+      },
+      getModelForAgent() {
+        return 'mock-model';
+      },
+    } as any;
+
+    const states = [
+      {
+        url: '/items',
+        title: 'Items',
+        ariaSnapshot: '[role: link]\n[role: heading]',
+      },
+      {
+        url: '/items/example',
+        title: 'Example Item',
+        ariaSnapshot: '[role: heading]\n[role: link]\n[role: img]',
+      },
+    ];
+
+    let stateIndex = 0;
+    const mockExplorer = {
+      getStateManager() {
+        return {
+          getCurrentState() {
+            return states[stateIndex];
+          },
+        };
+      },
+      createAction() {
+        return {
+          async attempt(command: string) {
+            if (command.startsWith('I.click')) {
+              stateIndex = 1;
+              return true;
+            }
+            if (command.startsWith('I.amOnPage')) {
+              stateIndex = 0;
+              return true;
+            }
+            return false;
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const result = await documentarian.document(
+      {
+        url: '/items',
+        title: 'Items',
+      },
+      `## content
+
+> Container: 'main'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Quarterly report' | link | { role: 'link', text: 'Quarterly report' } | 'a.result-title' |
+`
+    );
+
+    expect(result.summary).toBe('Static fallback');
+    expect((result as any).interactions).toBeUndefined();
+  });
+
+  it('does not call tool fallback when deterministic interactions are unavailable', async () => {
+    const provider = {
+      async generateWithTools() {
+        throw new Error('tool fallback should not be used');
+      },
+      async generateObject(messages: Array<{ role: string; content: string }>) {
+        const prompt = messages[1].content;
+        expect(prompt).not.toContain('<interaction_observations>');
+
+        return {
+          object: {
+            summary: 'Static page',
+            can: [{ action: 'user can view content', scope: 'page-level', evidence: 'static research only' }],
+            might: [],
+          },
+        };
+      },
+      getModelForAgent() {
+        return 'mock-model';
+      },
+    } as any;
+
+    const mockExplorer = {
+      getStateManager() {
+        return {
+          getCurrentState() {
+            return {
+              url: '/test',
+              title: 'Test',
+              ariaSnapshot: '[role: tab]',
+            };
+          },
+        };
+      },
+      createAction() {
+        return {
+          async execute(command: string) {
+            return true;
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+
+    const result = await documentarian.document(
+      {
+        url: '/test',
+        title: 'Test',
+      },
+      '## Content\nLinks only'
+    );
+
+    expect(result.summary).toBe('Static page');
+  });
+});
+
+describe('documentarian interactive defaults', () => {
+  it('uses static mode by default when interactive is not configured', async () => {
+    const provider = {
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Static by default',
+            can: [{ action: 'user can view', scope: 'page-level', evidence: 'visible' }],
+            might: [],
+          },
+        };
+      },
+      async generateWithTools() {
+        throw new Error('interactive tools should not be called by default');
+      },
+    } as any;
+
+    const mockExplorer = {
+      getStateManager() {
+        return {
+          getCurrentState() {
+            return {
+              url: '/test',
+              title: 'Test',
+              ariaSnapshot: '[role: button]',
+            };
+          },
+        };
+      },
+      createAction() {
+        return {
+          async execute() {
+            return true;
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, {}, mockExplorer);
+    const result = await documentarian.document(
+      {
+        url: '/test',
+        title: 'Test',
+      },
+      '## Content\nButtons'
+    );
+
+    expect(result.summary).toBe('Static by default');
+  });
+});
+
+describe('docbot interactive path extraction', () => {
+  it('adds discovered urls from interactions into next crawl targets', () => {
+    const bot = new DocBot();
+    (bot as any).config = { docs: { scope: 'site' } };
+
+    const nextPaths = (bot as any).extractNextPaths(
+      {
+        url: '/branches',
+        title: 'Branches',
+        links: [],
+      },
+      'https://example.com',
+      '## Content\nBranches',
+      {
+        interactions: [
+          {
+            action: 'Clicked tab: Merged',
+            before: '12 elements',
+            after: '21 elements',
+            discoveredUrls: ['/branches/merged/1', '/branches/merged/2'],
+          },
+          {
+            action: 'I.click("Save")',
+            before: '8 elements',
+            after: '12 elements',
+            targetUrl: '/runs/123',
+            discoveredUrls: ['/runs/123/details'],
+          },
+        ],
+      }
+    );
+
+    expect(nextPaths).toEqual(['/branches/merged/1', '/branches/merged/2', '/runs/123', '/runs/123/details']);
+  });
+
+  it('prioritizes interaction-discovered paths ahead of generic page links', () => {
+    const bot = new DocBot();
+    (bot as any).config = { docs: { scope: 'site' } };
+
+    const nextPaths = (bot as any).extractNextPaths(
+      {
+        url: '/items',
+        title: 'Items',
+        links: [
+          { title: 'Home', url: '/' },
+          { title: 'Collection', url: '/collections/' },
+        ],
+      },
+      'https://example.com',
+      '',
+      {
+        interactions: [
+          {
+            action: 'Clicked link: Item A',
+            before: '1',
+            after: '2',
+            targetUrl: '/items/a',
+            discoveredUrls: ['/items/a/details'],
+          },
+        ],
+      }
+    );
+
+    expect(nextPaths).toEqual(['/items/a', '/items/a/details', '/', '/collections/']);
   });
 });
