@@ -1,6 +1,5 @@
+import { createRequire } from 'node:module';
 import { readFile } from 'node:fs/promises';
-// @ts-ignore — package ships a .js re-export without typings for this sub-path
-import * as playwrightUtils from 'playwright-core/lib/utils';
 import { createDebug } from './utils/logger.ts';
 
 const debugLog = createDebug('explorbot:playwright-recorder');
@@ -12,10 +11,25 @@ const RECORDABLE: Record<string, Set<string>> = {
 
 const PLAYWRIGHT_INCOMPATIBLE = "Playwright output is not compatible with this Playwright version (playwright-core/lib/utils does not expose asLocator). Use output.framework: 'codeceptjs' instead, or pin Playwright to a version shipping lib/utils/isomorphic/locatorGenerators.js.";
 
+let cachedAsLocator: ((lang: string, selector: string) => string) | null = null;
+let asLocatorLoadAttempted = false;
+const nodeRequire = typeof require === 'function' ? require : createRequire(import.meta.url);
+
 function getAsLocator(): (lang: string, selector: string) => string {
-  const fn = (playwrightUtils as any)?.asLocator;
-  if (typeof fn !== 'function') throw new Error(PLAYWRIGHT_INCOMPATIBLE);
-  return fn;
+  if (cachedAsLocator) return cachedAsLocator;
+  if (asLocatorLoadAttempted) throw new Error(PLAYWRIGHT_INCOMPATIBLE);
+
+  asLocatorLoadAttempted = true;
+  try {
+    const mod = nodeRequire('playwright-core/lib/utils');
+    if (typeof (mod as any)?.asLocator === 'function') {
+      cachedAsLocator = (mod as any).asLocator;
+      return cachedAsLocator!;
+    }
+  } catch {
+    // Module not exported or not found
+  }
+  throw new Error(PLAYWRIGHT_INCOMPATIBLE);
 }
 
 export interface TraceCall {
