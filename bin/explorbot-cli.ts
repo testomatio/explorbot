@@ -305,38 +305,47 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
   }
 });
 
-addCommonOptions(program.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1,3, 1-5, *, all').option('--grep <pattern>', 'Run tests matching pattern')).action(async (planfile, index, options) => {
-  try {
-    const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
-    await explorBot.start();
+addCommonOptions(program.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1,3, 1-5, *, all').option('--grep <pattern>', 'Run tests matching pattern').option('--from-plan <file>', 'Load plan file when the first argument is a test index')).action(
+  async (planfile, index, options) => {
+    try {
+      const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
+      await explorBot.start();
 
-    const plan = explorBot.loadPlan(planfile);
-    const pending = plan.getPendingTests();
-    log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests, ${pending.length} pending)`);
+      let planfileArg = planfile;
+      let indexArg = index;
+      if (options.fromPlan) {
+        planfileArg = options.fromPlan;
+        indexArg = planfile;
+      }
 
-    const startUrl = plan.url || pending[0]?.startUrl;
-    if (!startUrl) {
-      throw new Error('No URL found in plan or tests. Cannot determine where to navigate.');
+      const plan = explorBot.loadPlan(planfileArg);
+      const pending = plan.getPendingTests();
+      log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests, ${pending.length} pending)`);
+
+      const startUrl = plan.url || pending[0]?.startUrl;
+      if (!startUrl) {
+        throw new Error('No URL found in plan or tests. Cannot determine where to navigate.');
+      }
+
+      log(`Navigating to ${startUrl}`);
+      await explorBot.visit(startUrl);
+
+      let args = '';
+      if (indexArg) args = indexArg;
+      else if (options.grep) args = options.grep;
+
+      const { TestCommand } = await import('../src/commands/test-command.js');
+      const cmd = new TestCommand(explorBot);
+      await cmd.execute(args);
+
+      await explorBot.stop();
+      await showStatsAndExit(0);
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      await showStatsAndExit(1);
     }
-
-    log(`Navigating to ${startUrl}`);
-    await explorBot.visit(startUrl);
-
-    let args = '';
-    if (index) args = index;
-    else if (options.grep) args = options.grep;
-
-    const { TestCommand } = await import('../src/commands/test-command.js');
-    const cmd = new TestCommand(explorBot);
-    await cmd.execute(args);
-
-    await explorBot.stop();
-    await showStatsAndExit(0);
-  } catch (error) {
-    console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
-    await showStatsAndExit(1);
   }
-});
+);
 
 program
   .command('runs [file]')
@@ -352,6 +361,26 @@ program
       const explorBot = new ExplorBot({ path: options.path });
       const { RunsCommand } = await import('../src/commands/runs-command.js');
       await new RunsCommand(explorBot).execute(file || '');
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+program
+  .command('plans [plan]')
+  .description('List saved plans, or show tests for a specific plan')
+  .option('-p, --path <path>', 'Working directory path')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .action(async (plan, options) => {
+    try {
+      await ConfigParser.getInstance().loadConfig({
+        config: options.config,
+        path: options.path || process.cwd(),
+      });
+      const explorBot = new ExplorBot({ path: options.path });
+      const { PlansCommand } = await import('../src/commands/plans-command.js');
+      await new PlansCommand(explorBot).execute(plan || '');
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
