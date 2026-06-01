@@ -84,6 +84,8 @@ interface PilotAgentConfig extends AgentConfig {
 interface NavigatorAgentConfig extends AgentConfig {
   addHtmlOnTry?: number;
   maxAttempts?: number;
+  verifyAttempts?: number;
+  verifyTimeout?: number;
 }
 
 type HealFn = (ctx: { I: any }) => Promise<void> | void;

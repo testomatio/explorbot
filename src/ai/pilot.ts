@@ -322,6 +322,12 @@ export class Pilot implements Agent {
       - "Delete X" → X must be gone. Clicking delete is NOT enough.
       - "Edit X" → updated value must be persisted (visible in list/detail). Opening edit is NOT enough; redirect after save with the new value visible IS enough.
       - Negative tests ("without a name", "invalid", "duplicate", "unauthorized") → success means the system PREVENTED the action with validation/error.
+      - Navigation-prefixed titles ("Access/Open/Go to X to <do Y>") → the goal is <do Y>; reaching X is
+        only a milestone. A satisfied milestone (tab active, panel/prompt visible, list shown) is NEVER a pass
+        if <do Y> did not occur this run.
+      - If the page reveals the goal cannot be performed here — required control absent, integration not
+        connected, or only a setup/connect/empty-state prompt is shown — vote "skipped" (prerequisites unmet),
+        never "pass".
 
       PROVENANCE: the entity you cite as proof must appear by name in <notes> or
       <session_log> tool inputs for THIS run. Name absent from tester activity = stale

@@ -207,6 +207,17 @@ export class ActionResult implements ActionResultData {
     this.verifications[assertion] = passed;
   }
 
+  getVerification(message: string | RegExp): boolean | null {
+    if (!this.verifications) return null;
+    if (typeof message === 'string') {
+      return this.verifications[message] ?? null;
+    }
+    for (const [assertion, passed] of Object.entries(this.verifications)) {
+      if (message.test(assertion)) return passed;
+    }
+    return null;
+  }
+
   isSameUrl(state: WebPageState): boolean {
     if (!this.url || this.url === '') {
       return false;

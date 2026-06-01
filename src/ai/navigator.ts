@@ -82,6 +82,14 @@ class Navigator implements Agent {
     this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 
+  private get verifyAttempts(): number {
+    return this.explorer.getConfig().ai?.agents?.navigator?.verifyAttempts ?? 3;
+  }
+
+  private get verifyTimeout(): number {
+    return this.explorer.getConfig().ai?.agents?.navigator?.verifyTimeout ?? 1500;
+  }
+
   private getBaseOrigin(): string | null {
     const baseUrl = this.explorer.getConfig().playwright.url;
     try {
@@ -623,6 +631,12 @@ class Navigator implements Agent {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
+    const cachedVerification = actionResult.getVerification(message);
+    if (cachedVerification !== null) {
+      tag('substep').log(`Reusing cached verification: ${cachedVerification ? 'PASS' : 'FAIL'}`);
+      return { verified: cachedVerification, successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
+    }
+
     let knowledge = '';
     let experience = '';
 
@@ -645,6 +659,21 @@ class Navigator implements Agent {
       }
     }
 
+    const priorVerifications = Object.entries(actionResult.verifications ?? {});
+    let verificationContext = '';
+    if (priorVerifications.length > 0) {
+      const lines = priorVerifications.map(([claim, passed]) => `- "${claim}" → ${passed ? 'passed' : 'failed'}`).join('\n');
+      verificationContext = dedent`
+        <already_verified>
+        These claims were already checked on this page:
+        ${lines}
+
+        If the claim to verify has the same meaning as one above (even if worded differently), do NOT write any assertion code.
+        Respond with a single line and nothing else: ALREADY_VERIFIED: <exact text of the matching claim>
+        </already_verified>
+      `;
+    }
+
     const prompt = dedent`
       <message>
         ${message}
@@ -658,11 +687,13 @@ class Navigator implements Agent {
         </page_html>
       </page>
 
+      ${verificationContext}
+
       <task>
         Identify what assertion the user wants to verify on the page.
-        Propose different CodeceptJS assertion code blocks to verify the expected state.
+        Propose 2-3 strong, distinct CodeceptJS assertion code blocks that each directly prove the claim.
         Use only data from the <page> context to plan the verification.
-        Try various locators and approaches to verify the assertion.
+        Prefer the fewest, most specific assertions over many variants of the same locator.
 
         IMPORTANT: Each code block must verify the SPECIFIC claim in the message, not just a generic aspect of it.
         Bad: I.seeElement({"role":"button","aria-pressed":"true"}) — matches ANY button, not the specific one
@@ -684,6 +715,7 @@ class Navigator implements Agent {
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
     conversation.addUserText(prompt);
 
+    let alreadyVerified = false;
     const tools = this.buildExperienceTools();
 
     let codeBlocks: string[] = [];
@@ -691,56 +723,89 @@ class Navigator implements Agent {
     const assertionSteps: Array<{ name: string; args: any[] }> = [];
 
     const action = this.explorer.createAction();
+    let failures = 0;
 
-    await loop(
-      async ({ stop, iteration }) => {
-        if (codeBlocks.length === 0) {
-          const result = await this.provider.invokeConversation(conversation, tools);
-          if (!result) return;
-          const aiResponse = result?.response?.text;
-          debugLog('Received AI response:', aiResponse?.length ?? 0, 'characters');
-          tag('step').log('Verifying assertion...');
-          codeBlocks = extractCodeBlocks(aiResponse ?? '');
-        }
+    const page = this.explorer.playwrightHelper?.page;
+    const originalTimeout = this.explorer.playwrightHelper?.options?.timeout ?? 3000;
+    page?.setDefaultTimeout(this.verifyTimeout);
 
-        if (codeBlocks.length === 0) {
-          return;
-        }
+    try {
+      await loop(
+        async ({ stop, iteration }) => {
+          if (codeBlocks.length === 0) {
+            const result = await this.provider.invokeConversation(conversation, tools);
+            if (!result) return;
+            const aiResponse = result?.response?.text ?? '';
+            debugLog('Received AI response:', aiResponse.length, 'characters');
+            tag('step').log('Verifying assertion...');
 
-        const codeBlock = codeBlocks[iteration - 1];
-        if (!codeBlock) {
-          stop();
-          return;
-        }
+            if (this.checkAlreadyVerified(aiResponse, actionResult)) {
+              alreadyVerified = true;
+              stop();
+              return;
+            }
 
-        await this.explorer.switchToMainFrame();
+            codeBlocks = extractCodeBlocks(aiResponse);
+          }
 
-        const verified = await action.attempt(codeBlock, message, false);
+          if (codeBlocks.length === 0) {
+            return;
+          }
 
-        if (verified) {
-          tag('success').log('Verification passed');
-          successfulCodes.push(codeBlock);
-          assertionSteps.push(...action.assertionSteps);
-        }
-      },
-      {
-        maxAttempts: this.MAX_ATTEMPTS,
-        observability: {
-          agent: 'navigator',
+          const codeBlock = codeBlocks[iteration - 1];
+          if (!codeBlock) {
+            stop();
+            return;
+          }
+
+          await this.explorer.switchToMainFrame();
+
+          const verified = await action.attempt(codeBlock, message, false);
+
+          if (verified) {
+            tag('success').log('Verification passed');
+            successfulCodes.push(codeBlock);
+            assertionSteps.push(...action.assertionSteps);
+          } else {
+            failures++;
+          }
+
+          const target = Math.min(codeBlocks.length, this.verifyAttempts);
+          const majorityNeeded = Math.floor(target / 2) + 1;
+          if (successfulCodes.length >= majorityNeeded || failures > target - majorityNeeded) {
+            stop();
+          }
         },
-        catch: async (error) => {
-          debugLog(error);
-        },
-      }
-    );
+        {
+          maxAttempts: this.verifyAttempts,
+          observability: {
+            agent: 'navigator',
+          },
+          catch: async (error) => {
+            debugLog(error);
+          },
+        }
+      );
+    } finally {
+      page?.setDefaultTimeout(originalTimeout);
+    }
 
-    const totalAttempted = Math.min(codeBlocks.length, this.MAX_ATTEMPTS);
-    const verified = totalAttempted <= 1 ? successfulCodes.length > 0 : successfulCodes.length > totalAttempted / 2;
+    const totalAttempted = Math.min(codeBlocks.length, this.verifyAttempts);
+    const majorityNeeded = Math.floor(totalAttempted / 2) + 1;
+    let verified = successfulCodes.length >= majorityNeeded;
+    if (alreadyVerified) verified = true;
 
     actionResult.addVerification(message, verified);
     this.explorer.getStateManager().updateState(actionResult);
 
     return { verified, successfulCodes, assertionSteps, totalAttempted };
+  }
+
+  private checkAlreadyVerified(aiResponse: string, actionResult: ActionResult): boolean {
+    const verifiedMatch = aiResponse.match(/ALREADY_VERIFIED:\s*(.+)/i);
+    if (!verifiedMatch) return false;
+    const claim = verifiedMatch[1].trim().replace(/^["']|["']$/g, '');
+    return actionResult.getVerification(claim) === true;
   }
 }
 

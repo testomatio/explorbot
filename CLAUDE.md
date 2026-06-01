@@ -57,6 +57,8 @@ Avoid repetitive code patterns
 Avoid ternary operators!
 Never use `...(condition ? { key: value } : {})` spread pattern — use a plain `if` statement instead
 Avoid creating extra functions that were not explicitly set
+Private methods must be placed after public methods
+Avoid `=== null` / `=== undefined` comparisons when not needed — prefer shorter `if (...)` or `if (!...)` when applicable
 Use dedent when formatting prompts
 Use `mdq()` from `src/utils/markdown-query.ts` for all markdown manipulation (find sections, replace tables, extract text). Never do manual line-splitting/counting on markdown.
 Put types into the end of file
