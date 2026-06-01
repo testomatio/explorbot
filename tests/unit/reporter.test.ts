@@ -437,8 +437,13 @@ describe('Reporter config', () => {
     restoreEnv('TESTOMATIO_RUNGROUP_TITLE', savedRunGroup);
   });
 
-  test('enabled: true without TESTOMATIO sets HTML report env vars', () => {
+  test('enabled: true without html flag does not set HTML env vars', () => {
     const reporter = new Reporter({ enabled: true });
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
+  });
+
+  test('html: true without TESTOMATIO sets HTML report env vars', () => {
+    const reporter = new Reporter({ html: true });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBe('1');
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
     expect(process.env.TESTOMATIO_HTML_FILENAME).toBe(`${Stats.sessionLabel()}.html`);

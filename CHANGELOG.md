@@ -10,6 +10,7 @@
 - [Navigator] Verification is faster — it stops as soon as the outcome is decided instead of running every check, runs fewer assertions, and gives up quickly on checks that won't match rather than waiting the full timeout.
 - [Navigator] Reuses an earlier verification result on the same page instead of checking the same claim again — including when the new claim is worded differently but means the same thing.
 - [Pilot] A scenario whose goal was not actually performed this run no longer passes. Reaching a page, tab, or prompt is treated as a milestone, not success. Scenarios that cannot proceed because a prerequisite is missing — a required control is absent, an integration is not connected, or only a setup/empty-state prompt is shown — are now marked skipped instead of passed.
+- [Reporter] Local HTML and markdown reports are no longer produced automatically — turn them on with `reporter.html: true` and `reporter.markdown: true`. The run group is no longer a hardcoded "Explorbot <date>" default. `explorbot init` now writes a `reporter` block (HTML on, markdown on, and a date-based run group) into the generated config, so report output is visible and editable instead of assumed.
 
 ## 2026-05-25
 

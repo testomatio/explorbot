@@ -32,6 +32,10 @@ const config = {
   },
 
   reporter: {
+    // Save a local HTML report after each run.
+    html: true,
+    // Save a local markdown report after each run.
+    markdown: true,
     // Group runs by title in Testomat.io / HTML reports. Defaults to today's date — customize or remove.
     runGroup: new Date().toISOString().slice(0, 10),
   },

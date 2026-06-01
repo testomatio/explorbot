@@ -29,7 +29,7 @@ export class Reporter {
     this.reporterEnabled = Reporter.resolveEnabled(config);
     this.stateManager = stateManager;
 
-    if (this.reporterEnabled && (!process.env.TESTOMATIO || config?.html)) {
+    if (this.reporterEnabled && config?.html) {
       this.configureHtmlPipe();
     }
 
@@ -63,6 +63,7 @@ export class Reporter {
   static resolveEnabled(config?: ReporterConfig): boolean {
     if (config?.enabled === true) return true;
     if (config?.enabled === false) return false;
+    if (config?.html || config?.markdown) return true;
     return Boolean(process.env.TESTOMATIO);
   }
 
