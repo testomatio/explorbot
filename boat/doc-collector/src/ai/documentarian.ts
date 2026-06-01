@@ -45,7 +45,7 @@ class Documentarian {
     try {
       tag('info').log('Starting interactive exploration...');
 
-      const deterministicInteractions = await collectDocInteractions(this.explorer!, state, research);
+      const deterministicInteractions = await collectDocInteractions(this.explorer!, state, research, this.config);
       const meaningfulInteractions = this.getMeaningfulInteractions(deterministicInteractions);
       if (meaningfulInteractions.length > 0) {
         tag('success').log(`Collected ${meaningfulInteractions.length} deterministic interactions`);

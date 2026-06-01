@@ -120,6 +120,9 @@ class DocbotConfigParser {
           includePaths: [],
           excludePaths: [],
           deniedPathSegments: ['callback', 'callbacks', 'logout', 'signout', 'sign_out', 'destroy', 'delete', 'remove'],
+          deniedActionLabels: ['delete', 'remove', 'destroy', 'archive', 'discard', 'logout', 'sign out', 'signout', 'sign_out', 'erase', 'drop'],
+          maxPrimaryCandidates: 3,
+          maxInteractions: 5,
           minCanActions: 1,
           minInteractiveElements: 3,
         },
@@ -154,6 +157,9 @@ interface DocbotConfig {
     includePaths?: string[];
     excludePaths?: string[];
     deniedPathSegments?: string[];
+    deniedActionLabels?: string[];
+    maxPrimaryCandidates?: number;
+    maxInteractions?: number;
     minCanActions?: number;
     minInteractiveElements?: number;
     interactive?: boolean;

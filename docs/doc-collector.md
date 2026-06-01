@@ -126,6 +126,9 @@ export default {
     includePaths: [],
     excludePaths: [],
     deniedPathSegments: ['callback', 'callbacks', 'logout', 'signout', 'sign_out', 'destroy', 'delete', 'remove'],
+    deniedActionLabels: ['delete', 'remove', 'destroy', 'archive', 'discard', 'logout', 'sign out', 'signout', 'sign_out', 'erase', 'drop'],
+    maxPrimaryCandidates: 3,
+    maxInteractions: 5,
     minCanActions: 1,
     minInteractiveElements: 3,
     interactive: false,
@@ -145,6 +148,9 @@ export default {
 | `includePaths` | `[]` | Only allow matching paths |
 | `excludePaths` | `[]` | Exclude matching paths |
 | `deniedPathSegments` | built-in list | Block terminal or destructive endpoints |
+| `deniedActionLabels` | built-in list | Skip interactive candidates whose label or locator looks destructive |
+| `maxPrimaryCandidates` | `3` | Maximum non-tab interaction candidates selected from page content/control sections |
+| `maxInteractions` | `5` | Maximum deterministic interactions attempted per page |
 | `minCanActions` | `1` | Minimum proven actions before a page is considered low-signal |
 | `minInteractiveElements` | `3` | Minimum interactive elements before a page is considered low-signal |
 
