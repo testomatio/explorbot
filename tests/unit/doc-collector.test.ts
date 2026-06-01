@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { z } from 'zod';
 import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts';
 import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
 import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
@@ -236,6 +237,39 @@ describe('doc-collector interactive candidate selection', () => {
 });
 
 describe('documentarian fallback', () => {
+  it('uses strict-compatible schema for interaction element metadata', async () => {
+    const provider = {
+      async generateObject(_messages: Array<{ role: string; content: string }>, schema: any) {
+        const jsonSchema = z.toJSONSchema(schema) as any;
+        const interaction = jsonSchema.properties.interactions.anyOf[0].items;
+        const element = interaction.properties.element.anyOf[0];
+
+        expect(interaction.required).toContain('element');
+        expect(element.required).toEqual(['role', 'name', 'section', 'container', 'locator']);
+
+        return {
+          object: {
+            summary: 'Static page',
+            can: [],
+            might: [],
+            interactions: null,
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, {});
+    const result = await documentarian.document(
+      {
+        url: '/test',
+        title: 'Test',
+      },
+      '## Content\nStatic research'
+    );
+
+    expect(result.interactions).toBeUndefined();
+  });
+
   it('retries with sanitized research after JSON generation failure', async () => {
     const calls: string[] = [];
     const provider = {
