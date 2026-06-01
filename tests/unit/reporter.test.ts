@@ -437,8 +437,13 @@ describe('Reporter config', () => {
     restoreEnv('TESTOMATIO_RUNGROUP_TITLE', savedRunGroup);
   });
 
-  test('enabled: true without TESTOMATIO sets HTML report env vars', () => {
+  test('enabled: true without html flag does not set HTML env vars', () => {
     const reporter = new Reporter({ enabled: true });
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
+  });
+
+  test('html: true without TESTOMATIO sets HTML report env vars', () => {
+    const reporter = new Reporter({ html: true });
     expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBe('1');
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toContain('reports');
     expect(process.env.TESTOMATIO_HTML_FILENAME).toBe(`${Stats.sessionLabel()}.html`);
@@ -503,10 +508,9 @@ describe('Reporter config', () => {
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBeUndefined();
   });
 
-  test('runGroup defaults to "Explorbot YYYY-MM-DD" when enabled', () => {
+  test('runGroup is not set by default when enabled', () => {
     const reporter = new Reporter({ enabled: true });
-    const today = new Date().toISOString().slice(0, 10);
-    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBe(`Explorbot ${today}`);
+    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBeUndefined();
   });
 
   test('runGroup string overrides default', () => {
@@ -545,7 +549,9 @@ describe('Reporter config', () => {
     await reporter.reportTest(test);
     await reporter.finishRun();
 
-    const reportFile = join(outputDir, 'reports', `${Stats.sessionLabel()}.html`);
+    const runGroup = process.env.TESTOMATIO_RUNGROUP_TITLE;
+    let reportFile = join(outputDir, 'reports', `${Stats.sessionLabel()}.html`);
+    if (runGroup) reportFile = join(outputDir, 'reports', runGroup, `${Stats.sessionLabel()}.html`);
     expect(existsSync(reportFile)).toBe(true);
     expect(readFileSync(reportFile, 'utf8')).toContain('Verify sign in page is visible');
   });

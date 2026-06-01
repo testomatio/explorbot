@@ -29,7 +29,7 @@ export class Reporter {
     this.reporterEnabled = Reporter.resolveEnabled(config);
     this.stateManager = stateManager;
 
-    if (this.reporterEnabled && (!process.env.TESTOMATIO || config?.html)) {
+    if (this.reporterEnabled && config?.html) {
       this.configureHtmlPipe();
     }
 
@@ -63,6 +63,7 @@ export class Reporter {
   static resolveEnabled(config?: ReporterConfig): boolean {
     if (config?.enabled === true) return true;
     if (config?.enabled === false) return false;
+    if (config?.html || config?.markdown) return true;
     return Boolean(process.env.TESTOMATIO);
   }
 
@@ -88,12 +89,8 @@ export class Reporter {
 
   private configureRunGroup(runGroup: string | null | undefined): void {
     if (process.env.TESTOMATIO_RUNGROUP_TITLE) return;
-    if (runGroup === null) return;
-    if (runGroup) {
-      process.env.TESTOMATIO_RUNGROUP_TITLE = runGroup;
-      return;
-    }
-    process.env.TESTOMATIO_RUNGROUP_TITLE = `Explorbot ${new Date().toISOString().slice(0, 10)}`;
+    if (!runGroup) return;
+    process.env.TESTOMATIO_RUNGROUP_TITLE = runGroup;
   }
 
   async startRun(): Promise<void> {
