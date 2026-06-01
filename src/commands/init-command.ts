@@ -30,6 +30,11 @@ const config = {
     // agentic model for decision making
     agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
   },
+
+  reporter: {
+    // Group runs by title in Testomat.io / HTML reports. Defaults to today's date — customize or remove.
+    runGroup: new Date().toISOString().slice(0, 10),
+  },
 };
 
 export default config;

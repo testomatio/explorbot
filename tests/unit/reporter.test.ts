@@ -503,10 +503,9 @@ describe('Reporter config', () => {
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBeUndefined();
   });
 
-  test('runGroup defaults to "Explorbot YYYY-MM-DD" when enabled', () => {
+  test('runGroup is not set by default when enabled', () => {
     const reporter = new Reporter({ enabled: true });
-    const today = new Date().toISOString().slice(0, 10);
-    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBe(`Explorbot ${today}`);
+    expect(process.env.TESTOMATIO_RUNGROUP_TITLE).toBeUndefined();
   });
 
   test('runGroup string overrides default', () => {
