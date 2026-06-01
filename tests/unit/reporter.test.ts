@@ -545,7 +545,9 @@ describe('Reporter config', () => {
     await reporter.reportTest(test);
     await reporter.finishRun();
 
-    const reportFile = join(outputDir, 'reports', `${Stats.sessionLabel()}.html`);
+    const runGroup = process.env.TESTOMATIO_RUNGROUP_TITLE;
+    let reportFile = join(outputDir, 'reports', `${Stats.sessionLabel()}.html`);
+    if (runGroup) reportFile = join(outputDir, 'reports', runGroup, `${Stats.sessionLabel()}.html`);
     expect(existsSync(reportFile)).toBe(true);
     expect(readFileSync(reportFile, 'utf8')).toContain('Verify sign in page is visible');
   });
