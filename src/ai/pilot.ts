@@ -439,7 +439,7 @@ export class Pilot implements Agent {
         the elements needed for the scenario. The page summary does not list every element.
         Prefer interacting with the current page over navigating away.
 
-        If you load a recipe via learn_experience, do NOT rewrite its code in your plan — the
+        If you load a recipe via learnExperience, do NOT rewrite its code in your plan — the
         raw recipe is forwarded to Tester automatically. Reference it by step ("apply recipe
         steps 1–3, then…") and call out anywhere your scenario diverges from it.
 
@@ -574,7 +574,7 @@ export class Pilot implements Agent {
       experimental_telemetry: { functionId },
     });
     const text = result?.response?.text || '';
-    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learn_experience' && e.output?.content).map((e: any) => e.output.content);
+    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => e.output.content);
     if (learned.length === 0) return text;
     return dedent`
       ${text}
@@ -598,7 +598,7 @@ export class Pilot implements Agent {
   }
 
   private pickPlanningTools() {
-    const { see, context, verify, research, getVisitedStates, xpathCheck, learn_experience, askUser } = this.agentTools ?? {};
+    const { see, context, verify, research, getVisitedStates, xpathCheck, learnExperience, askUser } = this.agentTools ?? {};
     const planning: Record<string, unknown> = {};
     if (see) planning.see = see;
     if (context) planning.context = context;
@@ -606,7 +606,7 @@ export class Pilot implements Agent {
     if (research) planning.research = research;
     if (getVisitedStates) planning.getVisitedStates = getVisitedStates;
     if (xpathCheck) planning.xpathCheck = xpathCheck;
-    if (learn_experience) planning.learn_experience = learn_experience;
+    if (learnExperience) planning.learnExperience = learnExperience;
     if (askUser) planning.askUser = askUser;
     return planning;
   }

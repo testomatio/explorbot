@@ -499,7 +499,7 @@ export function renderExperienceToc(toc: ExperienceTocEntry[]): string {
   lines.push('Locators and step ordering worked then; the page may have changed since.');
   lines.push('Treat as a starting hypothesis, not ground truth. If a step fails, fall back to ARIA/UI-map.');
   lines.push('FLOW: = multi-step recipe (bullets + code + discovery). ACTION: = single-step snippet (one code block).');
-  lines.push('Call learn_experience({ fileTag, sectionIndex }) to read a section when it looks relevant to the current step.');
+  lines.push('Call learnExperience({ fileTag, sectionIndex }) to read a section when it looks relevant to the current step.');
   lines.push('');
   for (const entry of toc) {
     lines.push(`File ${entry.fileTag} ${entry.url}:`);

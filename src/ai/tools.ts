@@ -935,7 +935,7 @@ export function createAgentTools({
   };
 
   if (experienceTracker && getState) {
-    tools.learn_experience = tool({
+    tools.learnExperience = tool({
       description: dedent`
         Read the full body of a specific experience section listed in <experience>.
         The TOC shows entries like "A.1 ## FLOW: ..." or "A.2 ## ACTION: ...". Pass the fileTag and sectionIndex.
