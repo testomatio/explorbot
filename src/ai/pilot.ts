@@ -446,7 +446,7 @@ export class Pilot implements Agent {
         Be concise and specific. Tester will follow your plan.
       `,
       'pilot.planTest',
-      { tools: true, planningOnly: true, maxToolRoundtrips: 3, task }
+      { tools: true, maxToolRoundtrips: 3, task }
     );
   }
 
@@ -547,7 +547,7 @@ export class Pilot implements Agent {
     return `CHECKED: ${checked.length > 0 ? checked.join(', ') : 'none'}\nREMAINING: ${remaining.length > 0 ? remaining.join(', ') : 'none'}`;
   }
 
-  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; planningOnly?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
+  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
     debugLog(`sendToPilot: ${functionId}, tools: ${!!opts.tools}, roundtrips: ${opts.maxToolRoundtrips ?? 0}`);
 
     let finalUserText = userText;
@@ -560,7 +560,7 @@ export class Pilot implements Agent {
     this.conversation!.addUserText(finalUserText);
     let tools: any;
     if (opts.tools) {
-      tools = opts.planningOnly ? this.pickPlanningTools() : this.agentTools;
+      tools = this.pickPlanningTools();
     }
 
     if (opts.tools && opts.task) {
@@ -598,7 +598,7 @@ export class Pilot implements Agent {
   }
 
   private pickPlanningTools() {
-    const { see, context, verify, research, getVisitedStates, xpathCheck, learn_experience } = this.agentTools ?? {};
+    const { see, context, verify, research, getVisitedStates, xpathCheck, learn_experience, askUser } = this.agentTools ?? {};
     const planning: Record<string, unknown> = {};
     if (see) planning.see = see;
     if (context) planning.context = context;
@@ -607,6 +607,7 @@ export class Pilot implements Agent {
     if (getVisitedStates) planning.getVisitedStates = getVisitedStates;
     if (xpathCheck) planning.xpathCheck = xpathCheck;
     if (learn_experience) planning.learn_experience = learn_experience;
+    if (askUser) planning.askUser = askUser;
     return planning;
   }
 
