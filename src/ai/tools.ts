@@ -466,12 +466,14 @@ export function createAgentTools({
   navigator,
   experienceTracker,
   getState,
+  supervisor,
 }: {
   explorer: Explorer;
   researcher: Researcher;
   navigator: Navigator;
   experienceTracker?: ExperienceTracker;
   getState?: () => ActionResult | null;
+  supervisor?: boolean;
 }): any {
   let visionDisabled = false;
 
@@ -803,46 +805,6 @@ export function createAgentTools({
       },
     }),
 
-    askUser: tool({
-      description: dedent`
-        Ask the user for help when you're stuck or unsure how to proceed.
-        Only available in interactive mode (TUI).
-
-        Use when:
-        - Locator-based clicks keep failing
-        - You can't find an element that should exist
-        - Form interaction isn't working as expected
-        - You need clarification on what action to take
-      `,
-      inputSchema: z.object({
-        question: z.string().describe('What you need help with - be specific about what failed'),
-        context: z.string().optional().describe('Relevant context like locators tried, errors received'),
-      }),
-      execute: async ({ question, context }) => {
-        if (!isInteractive()) {
-          return {
-            success: false,
-            message: 'User input not available in non-interactive mode',
-            suggestion: 'Continue with automated recovery',
-          };
-        }
-
-        const prompt = context ? `${question}\n\nContext: ${context}\n\nYour suggestion ("skip" to continue):` : `${question}\n\nYour suggestion ("skip" to continue):`;
-
-        const userInput = await pause(prompt);
-
-        if (!userInput || userInput.toLowerCase() === 'skip') {
-          return { success: false, message: 'User skipped' };
-        }
-
-        return {
-          success: true,
-          userSuggestion: userInput,
-          instruction: 'Follow the user suggestion. Use interact() tool to execute.',
-        };
-      },
-    }),
-
     back: tool({
       description: dedent`
         Navigate back to the previous page (most recent URL different from current).
@@ -973,7 +935,7 @@ export function createAgentTools({
   };
 
   if (experienceTracker && getState) {
-    tools.learn_experience = tool({
+    tools.learnExperience = tool({
       description: dedent`
         Read the full body of a specific experience section listed in <experience>.
         The TOC shows entries like "A.1 ## FLOW: ..." or "A.2 ## ACTION: ...". Pass the fileTag and sectionIndex.
@@ -993,6 +955,48 @@ export function createAgentTools({
           return { error: 'Section not found. Experience may have been updated; re-read the latest TOC.' };
         }
         return section;
+      },
+    });
+  }
+
+  if (supervisor) {
+    tools.askUser = tool({
+      description: dedent`
+        Ask the user for help when automated recovery is stuck or the next step is unclear.
+        Only available in interactive mode (TUI).
+
+        Use when:
+        - The Tester keeps failing the same locator/element
+        - An element that should exist cannot be found
+        - Form interaction isn't working as expected
+        - You need a human decision on how to proceed
+      `,
+      inputSchema: z.object({
+        question: z.string().describe('What you need help with - be specific about what failed'),
+        context: z.string().optional().describe('Relevant context like locators tried, errors received'),
+      }),
+      execute: async ({ question, context }) => {
+        if (!isInteractive()) {
+          return {
+            success: false,
+            message: 'User input not available in non-interactive mode',
+            suggestion: 'Continue with automated recovery',
+          };
+        }
+
+        const prompt = context ? `${question}\n\nContext: ${context}\n\nYour suggestion ("skip" to continue):` : `${question}\n\nYour suggestion ("skip" to continue):`;
+
+        const userInput = await pause(prompt);
+
+        if (!userInput || userInput.toLowerCase() === 'skip') {
+          return { success: false, message: 'User skipped' };
+        }
+
+        return {
+          success: true,
+          userSuggestion: userInput,
+          instruction: 'Relay this suggestion to the Tester as the next concrete step.',
+        };
       },
     });
   }

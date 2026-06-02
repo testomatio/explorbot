@@ -22,7 +22,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
           return state ? ActionResult.fromState(state) : null;
         },
       });
-      const { see, context, visualClick, learn_experience } = agentTools;
+      const { see, context, visualClick, learnExperience } = agentTools;
 
       return {
         navigate: tool({
@@ -103,7 +103,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
         see,
         context,
         visualClick,
-        learn_experience,
+        learnExperience,
       };
     }
 

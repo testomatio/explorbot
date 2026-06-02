@@ -210,7 +210,7 @@ export class ExplorBot {
         const state = stateManager.getCurrentState();
         return state ? ActionResult.fromState(state) : null;
       };
-      const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState });
+      const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState, supervisor: true });
       return new Pilot(ai, tools, researcher, explorer, experienceTracker);
     }));
   }

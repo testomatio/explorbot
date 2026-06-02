@@ -481,21 +481,21 @@ class Navigator implements Agent {
     return resolved;
   }
 
-  private buildExperienceTools(): { learn_experience: unknown } | undefined {
+  private buildExperienceTools(): { learnExperience: unknown } | undefined {
     const stateManager = this.explorer.getStateManager();
     const getState = () => {
       const s = stateManager.getCurrentState();
       return s ? ActionResult.fromState(s) : null;
     };
-    const { learn_experience } = createAgentTools({
+    const { learnExperience } = createAgentTools({
       explorer: this.explorer,
       researcher: null as unknown as Researcher,
       navigator: this,
       experienceTracker: this.experienceTracker,
       getState,
     });
-    if (!learn_experience) return undefined;
-    return { learn_experience };
+    if (!learnExperience) return undefined;
+    return { learnExperience };
   }
 
   async freeSail(opts?: { strategy?: 'deep' | 'shallow'; scope?: string; visitedUrls?: Set<string> }, actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-03
+
+### Changes
+- [Pilot] No longer clicks or interacts with the page during supervision — it only inspects, verifies, and suggests the next step for the Tester to carry out. Previously the supervisor could perform clicks and coordinate-clicks itself, so it acted as a second tester on stuck pages and let tests loop far longer than needed.
+- [Pilot] Now owns asking the user for help. The "ask the user" escalation moved off the Tester and onto the Pilot, so requests for human input go through the supervisor (interactive mode only); the Tester no longer prompts the user directly.
+
 ## 2026-06-01
 
 ### Configuration
