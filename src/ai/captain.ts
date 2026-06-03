@@ -80,14 +80,19 @@ export class Captain extends CaptainBase implements Agent {
     }
   }
 
-  private detectMode(): CaptainMode {
-    if (this.explorBot.getExplorer().activeTest) return 'test';
-    if (this.explorBot.getExplorer().getStateManager().getCurrentState()) return 'web';
+  getMode(): CaptainMode {
+    const explorer = this.explorBot.getExplorer();
+    const activeTest = explorer.activeTest;
+    const page = explorer.playwrightHelper?.page;
+
+    if (activeTest && (!page || page.isClosed?.())) return 'heal';
+    if (activeTest) return 'test';
+    if (explorer.getStateManager().getCurrentState()) return 'web';
     return 'idle';
   }
 
   private systemPrompt(): string {
-    const mode = this.detectMode();
+    const mode = this.getMode();
     const currentUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url;
     const customPrompt = this.explorBot.getProvider().getSystemPromptForAgent('captain', currentUrl);
 
@@ -101,18 +106,20 @@ export class Captain extends CaptainBase implements Agent {
     - idle: plan management, file operations, knowledge. Always available.
     - web: page interaction, navigation, browser diagnostics. When working with a web page.
     - test: test analysis, state inspection. When a test is running or analyzing results.
+    - heal: browser/test recovery. When a test is running and browser state is broken or unavailable.
     </modes>
 
     ${this.idleModePrompt()}
-    ${mode === 'web' ? this.webModePrompt() : ''}
-    ${mode === 'test' ? this.testModePrompt() : ''}
+    ${mode === 'web' || mode === 'heal' ? this.webModePrompt() : ''}
+    ${mode === 'test' || mode === 'heal' ? this.testModePrompt() : ''}
 
     <rules>
     - After a successful action, if the pageDiff confirms the goal, call done() immediately — do not verify with see() or context() unless the user explicitly asked for verification
     - Prefer completing in fewer tool calls over thoroughness
     - NEVER run tests unless the user explicitly asks
-    ${mode === 'web' ? this.webModeRules() : ''}
-    ${mode === 'test' ? this.testModeRules() : ''}
+    ${mode === 'web' || mode === 'heal' ? this.webModeRules() : ''}
+    ${mode === 'test' || mode === 'heal' ? this.testModeRules() : ''}
+    ${mode === 'heal' ? '- First diagnose browser availability, then recover the browser/page before continuing test analysis.' : ''}
     </rules>
 
     ${customPrompt || ''}
@@ -286,11 +293,12 @@ export class Captain extends CaptainBase implements Agent {
   }
 
   private async tools(task: Task, onDone: (summary: string) => void) {
-    const mode = this.detectMode();
+    const mode = this.getMode();
     const ctx: ModeContext = { explorBot: this.explorBot, task };
     const core = this.coreTools(task, onDone);
     const idle = await this.idleModeTools(ctx);
 
+    if (mode === 'heal') return { ...core, ...idle, ...this.testModeTools(ctx), ...this.webModeTools(ctx) };
     if (mode === 'test') return { ...core, ...idle, ...this.testModeTools(ctx) };
     if (mode === 'web') return { ...core, ...idle, ...this.webModeTools(ctx) };
     return { ...core, ...idle };
@@ -365,20 +373,50 @@ export class Captain extends CaptainBase implements Agent {
     return result.object;
   }
 
+  async processExecutionError(error: Error, activeTest: Test): Promise<ExecutionRecoveryAction> {
+    const message = error.message || String(error);
+    const explorer = this.explorBot.getExplorer();
+
+    if (!explorer.isFatalBrowserError(error)) {
+      return {
+        action: 'continue',
+        message: `Previous execution error: ${message}. Investigate the current state and choose a different approach.`,
+      };
+    }
+
+    let recovered = await explorer.recoverFromBrowserError();
+    if (!recovered) {
+      recovered = await explorer.restartBrowser();
+    }
+    if (recovered) {
+      return {
+        action: 'continue',
+        recovered: true,
+        message: dedent`
+          Captain recovered the browser after a fatal page error.
+          Continue the test "${activeTest.scenario}" from the restored page.
+          The interrupted action is not evidence that the application failed.
+          Inspect the restored page and retry the scenario step when it is still required.
+        `,
+      };
+    }
+
+    return {
+      action: 'stop',
+      recovered: false,
+      message: `Captain could not recover the browser after fatal error: ${message}`,
+    };
+  }
+
   async handle(input: string, options: { reset?: boolean } = {}): Promise<string | null> {
     const stateManager = this.explorBot.getExplorer().getStateManager();
     const initialState = stateManager.getCurrentState();
-
-    if (!initialState) {
-      tag('warning').log('No page loaded. Use /navigate or I.amOnPage() first.');
-      return null;
-    }
 
     const conversation = options.reset ? this.resetConversation() : this.ensureConversation();
     let isDone = false;
     let finalSummary: string | null = null;
 
-    const startUrl = initialState.url || '';
+    const startUrl = initialState?.url || '';
     const task = new Task(input, startUrl);
     const onDone = (summary: string) => {
       isDone = true;
@@ -421,12 +459,14 @@ export class Captain extends CaptainBase implements Agent {
         }
 
         const currentState = stateManager.getCurrentState();
-        if (!currentState) {
+        if (!currentState && this.getMode() !== 'idle') {
           stop();
           return;
         }
 
-        await this.reinjectContextIfNeeded(conversation, currentState);
+        if (currentState) {
+          await this.reinjectContextIfNeeded(conversation, currentState);
+        }
 
         if (userInput) {
           const newContext = await this.getPageContext();
@@ -499,4 +539,10 @@ export default Captain;
 interface SupervisorAction {
   action: 'inject' | 'stop' | 'pass' | 'skip';
   message: string;
+}
+
+interface ExecutionRecoveryAction {
+  action: 'continue' | 'stop';
+  message: string;
+  recovered?: boolean;
 }

@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { tool } from 'ai';
 import { createBashTool } from 'bash-tool';
 import dedent from 'dedent';
@@ -75,6 +77,41 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
             return { success: true, tests: plan.tests.length };
           },
         }),
+        project: tool({
+          description: dedent`
+            Inspect Explorbot project configuration and recent generated artifacts.
+            Use this before answering questions about setup, previous sessions, reports, saved plans, or output files.
+          `,
+          inputSchema: z.object({
+            view: z.enum(['config', 'artifacts']).optional().describe('config shows setup summary; artifacts lists recent generated files'),
+          }),
+          execute: async ({ view }) => {
+            const parser = ConfigParser.getInstance();
+            const config = parser.getConfig();
+            const outputDir = parser.getOutputDir();
+
+            if (view === 'artifacts') {
+              return {
+                success: true,
+                outputDir,
+                artifacts: listRecentArtifacts(outputDir),
+                suggestion: 'Use bash to read a specific small report, plan, or log file when needed.',
+              };
+            }
+
+            return {
+              success: true,
+              configPath: parser.getConfigPath(),
+              baseUrl: config.playwright?.url,
+              browser: config.playwright?.browser,
+              headed: config.playwright?.show === true,
+              dirs: config.dirs,
+              agents: Object.fromEntries(Object.entries(config.ai?.agents || {}).map(([name, agentConfig]: [string, any]) => [name, { enabled: agentConfig?.enabled !== false, hasModelOverride: !!agentConfig?.model }])),
+              reporterEnabled: config.reporter?.enabled === true,
+              apiEnabled: !!config.api,
+            };
+          },
+        }),
       };
 
       if (cachedBashTool) {
@@ -100,6 +137,11 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
           - Use grep to search file contents
         </idle_capabilities>
 
+        <project_inspection>
+        Use project({ view: "config" }) before explaining Explorbot setup or suggesting config improvements.
+        Use project({ view: "artifacts" }) before answering questions about previous sessions, reports, plans, generated tests, or logs.
+        </project_inspection>
+
         <knowledge_saving>
         When user shares credentials, selectors, or important domain info during conversation,
         suggest saving it to a knowledge file using bash tool.
@@ -108,6 +150,42 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
       `;
     }
   };
+}
+
+function listRecentArtifacts(outputDir: string): Array<{ path: string; size: number; modifiedAt: string }> {
+  const dirs = ['reports', 'plans', 'tests', 'states'];
+  const artifacts: Array<{ path: string; size: number; modifiedAt: string; timestamp: number }> = [];
+
+  for (const dir of dirs) {
+    if (artifacts.length >= 200) break;
+    const targetDir = join(outputDir, dir);
+    if (!existsSync(targetDir)) continue;
+    collectArtifacts(outputDir, targetDir, artifacts);
+  }
+
+  return artifacts
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 20)
+    .map(({ timestamp, ...artifact }) => artifact);
+}
+
+function collectArtifacts(outputDir: string, targetDir: string, artifacts: Array<{ path: string; size: number; modifiedAt: string; timestamp: number }>): void {
+  for (const entry of readdirSync(targetDir, { withFileTypes: true })) {
+    if (artifacts.length >= 200) return;
+    const entryPath = join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      collectArtifacts(outputDir, entryPath, artifacts);
+      continue;
+    }
+
+    const stats = statSync(entryPath);
+    artifacts.push({
+      path: relative(outputDir, entryPath),
+      size: stats.size,
+      modifiedAt: stats.mtime.toISOString(),
+      timestamp: stats.mtimeMs,
+    });
+  }
 }
 
 export interface IdleModeMethods {

@@ -196,15 +196,28 @@ export default {
 
 The agent uses the default model unless overridden. The report file is always written to `output/reports/`; there is no opt-out for the file itself, but `enabled: false` disables the agent so nothing runs.
 
-## Captain Agent *(coming soon)*
+## Captain Agent
 
-**Purpose:** Orchestrates the whole testing session.
+**Purpose:** Supervises explicit user requests and non-standard recovery situations.
+
+**Modes:**
+- `idle` - plan management, project inspection, knowledge and experience file work. Available even before a page is loaded.
+- `web` - page interaction, navigation, browser diagnostics, visual/context checks.
+- `test` - test timeline inspection, state inspection, generated code/log analysis.
+- `heal` - browser and test recovery when an active test loses its page or browser context.
 
 **What it does:**
-- Coordinates all agents intelligently
-- Responds to user commands in real-time
-- Adjusts strategy based on discoveries
-- Manages conversation context efficiently
+- Handles direct TUI requests that need more judgment than a slash command
+- Explains current Explorbot configuration and suggests focused setup improvements
+- Reads recent output artifacts before answering questions about previous sessions
+- Inspects active tests, failed steps, page states, and Pilot analysis
+- Recovers closed/crashed pages during test execution and tells Tester how to continue
+- Can reload, recover, restart the browser, open a fresh tab, or close extra tabs when needed
+
+**When Captain runs:**
+- On explicit user requests in the TUI
+- During test interrupts where the user asks to stop, pass, skip, or redirect execution
+- During fatal browser execution errors, where it first tries recovery before stopping the test
 
 ## Per-Agent Model Configuration
 

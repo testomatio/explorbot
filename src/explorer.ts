@@ -199,12 +199,14 @@ class Explorer {
     }
   }
 
-  private setupXhrCapture(): void {
+  private setupXhrCapture(reuseRequestStore = false): void {
     const configParser = ConfigParser.getInstance();
     const outputDir = configParser.getOutputDir();
-    this.requestStore = new RequestStore(outputDir);
+    if (!reuseRequestStore || !this.requestStore) {
+      this.requestStore = new RequestStore(outputDir);
+    }
     const baseUrl = this.config.playwright.url;
-    this.xhrCapture = new XhrCapture(this.requestStore, baseUrl);
+    this.xhrCapture = new XhrCapture(this.requestStore!, baseUrl);
     this.xhrCapture.attach(this.playwrightHelper.page);
   }
 
@@ -239,18 +241,7 @@ class Explorer {
     }
     await this.connectOrLaunchBrowser();
     const hasSession = this.options?.session && existsSync(this.options.session);
-    const helperOptions = this.playwrightHelper.options || {};
-    // CodeceptJS skips _createContextPage when sessions/storageState are involved, so we
-    // build contextOptions ourselves. Most keys share a name with Playwright's
-    // BrowserContextOptions and are copied as-is; `emulate` must be flattened, `basicAuth`
-    // renamed to `httpCredentials`, and `storageState` comes from the --session flag.
-    const contextOptions: BrowserContextOptions = {
-      ...helperOptions,
-    };
-    if (helperOptions.emulate) Object.assign(contextOptions, helperOptions.emulate);
-    if (helperOptions.basicAuth) contextOptions.httpCredentials = helperOptions.basicAuth;
-    if (hasSession) contextOptions.storageState = this.options!.session;
-    await this.playwrightHelper._createContextPage(contextOptions);
+    await this.playwrightHelper._createContextPage(this.createBrowserContextOptions());
     await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
     this.setupXhrCapture();
     if (hasSession) {
@@ -285,6 +276,19 @@ class Explorer {
     }
 
     await this.playwrightHelper._startBrowser();
+  }
+
+  private createBrowserContextOptions(): BrowserContextOptions {
+    const helperOptions = this.playwrightHelper.options || {};
+    const contextOptions: BrowserContextOptions = {
+      ...helperOptions,
+    };
+
+    if (helperOptions.emulate) Object.assign(contextOptions, helperOptions.emulate);
+    if (helperOptions.basicAuth) contextOptions.httpCredentials = helperOptions.basicAuth;
+    if (this.options?.session && existsSync(this.options.session)) contextOptions.storageState = this.options.session;
+
+    return contextOptions;
   }
 
   createAction() {
@@ -386,6 +390,22 @@ class Explorer {
     await this.playwrightHelper.page.reload();
   }
 
+  private resolveBrowserUrl(url?: string): string | null {
+    if (!url) return null;
+    try {
+      return new URL(url).toString();
+    } catch {}
+
+    const baseUrl = this.config.playwright?.url || this.config.web?.url;
+    if (!baseUrl) return null;
+
+    try {
+      return new URL(url, baseUrl).toString();
+    } catch {
+      return null;
+    }
+  }
+
   isFatalBrowserError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message : String(error);
     return FATAL_BROWSER_ERRORS.test(msg);
@@ -393,7 +413,19 @@ class Explorer {
 
   async recoverFromBrowserError(): Promise<boolean> {
     try {
-      const url = this.stateManager.getCurrentState()?.url;
+      if (!this.playwrightHelper?.page || this.playwrightHelper.page.isClosed?.()) {
+        const context = this.playwrightHelper?.browserContext;
+        if (!context) return await this.restartBrowser();
+        const page = await context.newPage();
+        await page.bringToFront();
+        this.playwrightHelper.page = page;
+        this.bindFrameNavigated(page);
+        if (this.xhrCapture) {
+          this.xhrCapture.attach(this.playwrightHelper.page);
+        }
+      }
+
+      const url = this.resolveBrowserUrl(this.stateManager.getCurrentState()?.url);
       if (url) {
         tag('warning').log(`Browser error detected, recovering by navigating to ${url}`);
         await this.playwrightHelper.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
@@ -404,6 +436,49 @@ class Explorer {
       return true;
     } catch (err) {
       tag('error').log(`Browser recovery failed: ${err instanceof Error ? err.message : err}`);
+      return false;
+    }
+  }
+
+  async restartBrowser(): Promise<boolean> {
+    if (!this.playwrightHelper) return false;
+
+    const url = this.resolveBrowserUrl(this.stateManager.getCurrentState()?.url);
+
+    try {
+      if (this.xhrCapture && this.playwrightHelper.page) {
+        this.xhrCapture.detach(this.playwrightHelper.page);
+      }
+
+      await this.playwrightRecorder.stop();
+
+      if (this.playwrightHelper.browserContext) {
+        await this.playwrightHelper.browserContext.close().catch((err: unknown) => {
+          debugLog('Failed to close browser context before restart:', err);
+        });
+        this.playwrightHelper.browserContext = null;
+      }
+
+      if (!this.isSharedBrowser) {
+        await this.playwrightHelper._stopBrowser().catch((err: unknown) => {
+          debugLog('Failed to stop browser before restart:', err);
+        });
+      }
+
+      await this.connectOrLaunchBrowser();
+      await this.playwrightHelper._createContextPage(this.createBrowserContextOptions());
+      await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
+      this.setupXhrCapture(true);
+      this.listenToStateChanged();
+
+      if (url) {
+        await this.playwrightHelper.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      }
+
+      tag('success').log('Browser restarted');
+      return true;
+    } catch (err) {
+      tag('error').log(`Browser restart failed: ${err instanceof Error ? err.message : err}`);
       return false;
     }
   }
@@ -705,7 +780,6 @@ class Explorer {
     }
 
     await firstPage.bringToFront();
-
     this.playwrightHelper.page = firstPage;
 
     debugLog(`Cleaned up tabs, now focused on: ${await firstPage.url()}`);

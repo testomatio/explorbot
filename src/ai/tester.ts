@@ -137,6 +137,7 @@ export class Tester extends TaskAgent implements Agent {
     });
 
     const page = this.explorer.playwrightHelper?.page;
+    const observedPages = new Set<any>();
     const onPageError = (err: Error) => {
       task.addNote(`Console error: ${err.message}`, TestResult.FAILED);
     };
@@ -144,8 +145,21 @@ export class Tester extends TaskAgent implements Agent {
       if (msg.type() !== 'error') return;
       task.addNote(`Console error: ${msg.text()}`, TestResult.FAILED);
     };
-    page?.on('pageerror', onPageError);
-    page?.on('console', onConsoleMessage);
+    const watchPage = (targetPage: any) => {
+      if (!targetPage) return;
+      if (observedPages.has(targetPage)) return;
+      targetPage.on('pageerror', onPageError);
+      targetPage.on('console', onConsoleMessage);
+      observedPages.add(targetPage);
+    };
+    const unwatchPages = () => {
+      for (const observedPage of observedPages) {
+        observedPage.off('pageerror', onPageError);
+        observedPage.off('console', onConsoleMessage);
+      }
+      observedPages.clear();
+    };
+    watchPage(page);
 
     const initialState = ActionResult.fromState(state);
 
@@ -176,20 +190,19 @@ export class Tester extends TaskAgent implements Agent {
           expected: task.expected,
         },
       },
-      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest, page, onPageError, onConsoleMessage })
+      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest, watchPage, unwatchPages })
     );
   }
 
-  private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: { offFailedRequest?: () => void; page: any; onPageError: (err: Error) => void; onConsoleMessage: (msg: any) => void }): Promise<{ success: boolean }> {
-    const { offFailedRequest, page, onPageError, onConsoleMessage } = handlers;
+  private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: TestSessionHandlers): Promise<{ success: boolean }> {
+    const { offFailedRequest, watchPage, unwatchPages } = handlers;
 
     if (this.pilot) {
       try {
         const plan = await this.pilot.planTest(task, initialState);
         if (task.hasFinished) {
           offFailedRequest?.();
-          page?.off('pageerror', onPageError);
-          page?.off('console', onConsoleMessage);
+          unwatchPages();
           return { success: task.isSuccessful };
         }
         if (plan) {
@@ -201,8 +214,7 @@ export class Tester extends TaskAgent implements Agent {
         task.addNote(`Planning failed: ${message}`, TestResult.FAILED);
         task.finish(TestResult.FAILED);
         offFailedRequest?.();
-        page?.off('pageerror', onPageError);
-        page?.off('console', onConsoleMessage);
+        unwatchPages();
         return { success: false };
       }
     }
@@ -211,9 +223,37 @@ export class Tester extends TaskAgent implements Agent {
 
     task.start();
     await this.explorer.startTest(task);
+    let initialSetupStopped = false;
+    if (
+      !(await this.ensureBrowserPageAvailable(
+        task,
+        conversation,
+        () => {
+          initialSetupStopped = true;
+        },
+        watchPage
+      ))
+    ) {
+      offFailedRequest?.();
+      unwatchPages();
+      await this.cleanupStartedTest(task);
+      return { success: task.isSuccessful };
+    }
+    if (initialSetupStopped || task.hasFinished) {
+      offFailedRequest?.();
+      unwatchPages();
+      await this.cleanupStartedTest(task);
+      return { success: task.isSuccessful };
+    }
 
     debugLog(`Navigating to ${task.startUrl}`);
-    await this.explorer.visit(task.startUrl!);
+    const navigated = await this.visitStartUrlWithRecovery(task, conversation, watchPage);
+    if (!navigated) {
+      offFailedRequest?.();
+      unwatchPages();
+      await this.cleanupStartedTest(task);
+      return { success: task.isSuccessful };
+    }
 
     const startState = this.explorer.getStateManager().getCurrentState();
     if (startState) task.addUrlNote(startState);
@@ -238,6 +278,7 @@ export class Tester extends TaskAgent implements Agent {
       await loop(
         async ({ stop, pause, iteration, userInput }) => {
           debugLog('iteration', iteration);
+          if (!(await this.ensureBrowserPageAvailable(task, conversation, stop, watchPage))) return;
           const currentState = this.getCurrentState();
 
           const tools = {
@@ -385,21 +426,27 @@ export class Tester extends TaskAgent implements Agent {
               }
             : undefined,
           catch: async ({ error, stop }) => {
-            tag('error').log(`Test execution error: ${error}`);
-            const message = error instanceof Error ? error.message : String(error);
-            if (!task.hasFinished) {
-              task.addNote(`Execution error: ${message}`);
-            }
-            if (error instanceof Error && error.name === 'AbortError') {
-              stop();
-              return;
-            }
-            conversation.addUserText(`Previous AI call failed: ${message}. Take a different approach on the next step.`);
+            await this.handleExecutionError(task, conversation, error, stop, watchPage);
           },
         }
       );
 
       if (task.hasFinished) break;
+
+      let finalReviewStopped = false;
+      if (
+        !(await this.ensureBrowserPageAvailable(
+          task,
+          conversation,
+          () => {
+            finalReviewStopped = true;
+          },
+          watchPage
+        ))
+      ) {
+        break;
+      }
+      if (finalReviewStopped || task.hasFinished) break;
 
       const finalState = this.getCurrentState();
       const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation, this.navigator);
@@ -429,8 +476,7 @@ export class Tester extends TaskAgent implements Agent {
 
     offStateChange();
     offFailedRequest?.();
-    page?.off('pageerror', onPageError);
-    page?.off('console', onConsoleMessage);
+    unwatchPages();
     await this.finishTest(task);
     await this.explorer.stopTest(task, {
       startUrl: task.startUrl,
@@ -1091,4 +1137,125 @@ export class Tester extends TaskAgent implements Agent {
       }),
     };
   }
+
+  private async handleExecutionError(task: Test, conversation: Conversation, error: Error, stop: () => void, watchPage: (page: any) => void): Promise<void> {
+    tag('error').log(`Test execution error: ${error}`);
+    const message = error instanceof Error ? error.message : String(error);
+    if (!task.hasFinished) {
+      task.addNote(`Execution error: ${message}`);
+    }
+    if (error instanceof Error && error.name === 'AbortError') {
+      stop();
+      return;
+    }
+    if (this.captain && error instanceof Error) {
+      const recovery = await this.captain.processExecutionError(error, task);
+      tag('info').log(`Supervisor: ${recovery.action} - ${recovery.message}`);
+      task.addNote(recovery.message);
+      if (recovery.action === 'stop') {
+        task.finish(TestResult.FAILED);
+        stop();
+        return;
+      }
+      if (recovery.recovered) {
+        watchPage(this.explorer.playwrightHelper?.page);
+        this.resetFailureCount();
+        const recoveryContext = await this.buildRecoveryContext(task);
+        conversation.addUserText(`${recovery.message}\n\n${recoveryContext}`);
+        return;
+      }
+      conversation.addUserText(recovery.message);
+      return;
+    }
+    const isFatalBrowserError = this.explorer.isFatalBrowserError?.(error) ?? /Target closed|Session closed|Protocol error/i.test(message);
+    if (isFatalBrowserError) {
+      task.finish(TestResult.FAILED);
+      stop();
+      return;
+    }
+    conversation.addUserText(`Previous AI call failed: ${message}. Take a different approach on the next step.`);
+  }
+
+  private async cleanupStartedTest(task: Test): Promise<void> {
+    await this.finishTest(task);
+    await this.explorer.stopTest(task, {
+      startUrl: task.startUrl,
+      style: task.style,
+      sessionName: task.sessionName,
+    });
+  }
+
+  private async buildRecoveryContext(task: Test): Promise<string> {
+    let currentState: ActionResult | null = null;
+    try {
+      currentState = await this.explorer.createAction().capturePageState();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return dedent`
+        <browser_recovery>
+        Browser was restored, but fresh page context could not be captured: ${message}
+        The previous Target closed error was an external browser interruption, not product evidence.
+        Re-open or inspect the page before deciding pass/fail.
+        </browser_recovery>
+      `;
+    }
+
+    this.previousUrl = null;
+    this.previousStateHash = null;
+    const pageContext = await this.reinjectContextIfNeeded(1, currentState);
+    return dedent`
+      <browser_recovery>
+      Browser was restored during "${task.scenario}".
+      The previous Target closed error was an external browser interruption, not product evidence.
+      Ignore interrupted click/form attempts when judging whether the application works.
+      Retry the current scenario step from the restored page if the goal is still incomplete.
+      </browser_recovery>
+
+      ${pageContext}
+    `;
+  }
+
+  private async ensureBrowserPageAvailable(task: Test, conversation: Conversation, stop: () => void, watchPage: (page: any) => void): Promise<boolean> {
+    const page = this.explorer.playwrightHelper?.page;
+    if (page && !page.isClosed?.()) return true;
+
+    await this.handleExecutionError(task, conversation, new Error('Target closed: browser page is unavailable'), stop, watchPage);
+    return !task.hasFinished;
+  }
+
+  private async visitStartUrlWithRecovery(task: Test, conversation: Conversation, watchPage: (page: any) => void): Promise<boolean> {
+    try {
+      await this.explorer.visit(task.startUrl!);
+      return true;
+    } catch (error) {
+      let stopped = false;
+      await this.handleExecutionError(
+        task,
+        conversation,
+        error instanceof Error ? error : new Error(String(error)),
+        () => {
+          stopped = true;
+        },
+        watchPage
+      );
+
+      if (stopped || task.hasFinished) return false;
+
+      try {
+        await this.explorer.visit(task.startUrl!);
+        return true;
+      } catch (retryError) {
+        const message = retryError instanceof Error ? retryError.message : String(retryError);
+        task.addNote(`Initial navigation failed after recovery: ${message}`, TestResult.FAILED);
+        task.finish(TestResult.FAILED);
+        return false;
+      }
+    }
+  }
+}
+
+interface TestSessionHandlers {
+  offFailedRequest?: () => void;
+  watchPage: (page: any) => void;
+  unwatchPages: () => void;
 }

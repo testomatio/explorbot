@@ -47,18 +47,53 @@ export function WithWebMode<T extends Constructor>(Base: T) {
           description: dedent`
             Direct browser access via Playwright. Use for diagnostics and browser management.
             Actions:
+            - status: Inspect browser/page availability, URL, title, tab count
             - evaluate: Run JavaScript in browser context (localStorage, cookies, DOM, console)
             - closeTabs: Close all browser tabs except the current one
-            - screenshot: Take a screenshot of current page
             - reload: Reload the current page
+            - screenshot: Take a screenshot of current page
+            - recover: Recover from a closed/crashed page using Explorer recovery
+            - restart: Restart the browser when page/context recovery is not enough
+            - openFreshTab: Open a fresh tab in the current browser context
           `,
           inputSchema: z.object({
-            action: z.enum(['evaluate', 'closeTabs', 'screenshot', 'reload']).describe('Browser action to perform'),
+            action: z.enum(['status', 'evaluate', 'closeTabs', 'reload', 'screenshot', 'recover', 'restart', 'openFreshTab']).describe('Browser action to perform'),
             code: z.string().optional().describe('JavaScript code for evaluate action'),
           }),
           execute: async ({ action, code }) => {
-            const page = ctx.explorBot.getExplorer().playwrightHelper?.page;
-            if (!page) return { success: false, message: 'No browser page available' };
+            const explorer = ctx.explorBot.getExplorer();
+
+            if (action === 'status') {
+              const page = explorer.playwrightHelper?.page;
+              const pages = page?.context?.().pages?.() || [];
+              return {
+                success: true,
+                hasPage: !!page,
+                isClosed: page?.isClosed?.() || false,
+                url: page && !page.isClosed?.() ? await page.url() : null,
+                title: page && !page.isClosed?.() ? await page.title().catch(() => null) : null,
+                tabs: pages.length,
+              };
+            }
+
+            if (action === 'recover') {
+              const recovered = await explorer.recoverFromBrowserError();
+              return { success: recovered, message: recovered ? 'Browser page recovered' : 'Browser recovery failed' };
+            }
+
+            if (action === 'restart') {
+              const restarted = await explorer.restartBrowser();
+              return { success: restarted, message: restarted ? 'Browser restarted' : 'Browser restart failed' };
+            }
+
+            if (action === 'openFreshTab') {
+              await ctx.explorBot.openFreshTab();
+              const state = explorer.getStateManager().getCurrentState();
+              return { success: true, url: state?.url, title: state?.title };
+            }
+
+            const page = explorer.playwrightHelper?.page;
+            if (!page || page.isClosed?.()) return { success: false, message: 'No browser page available. Try browser({ action: "recover" }) first.' };
 
             if (action === 'evaluate') {
               if (!code) return { success: false, message: 'Code required for evaluate action' };
@@ -112,7 +147,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
         <web_capabilities>
         - Page actions: click, pressKey, form (CodeceptJS tools)
         - Navigation: navigate() — AI-powered navigation to URLs or page descriptions
-        - Browser diagnostics: browser() — evaluate JS, close tabs, screenshot, reload
+        - Browser diagnostics: browser() — inspect status, evaluate JS, close tabs, screenshot, reload, recover closed/crashed pages, restart browser, open a fresh tab
         - Visual analysis: see() — screenshot-based page verification
         - Context refresh: context() — get fresh HTML/ARIA snapshot
         - Visual fallback: visualClick() — coordinate-based click when locators fail
