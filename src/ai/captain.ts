@@ -268,6 +268,9 @@ export class Captain extends CaptainBase implements Agent {
       runCommand: tool({
         description: dedent`
           Execute a TUI command. Returns log output from command execution.
+          Use only when the user explicitly asks to run a slash command.
+          Never use this to analyze files, reports, logs, plans, generated tests, knowledge, or experience.
+          Never run /test, /rerun, /plan, /plans, /plan:load, /experience, /learn, or /drill unless the user explicitly requested that slash command.
           ${this.commandDescriptions
             .map((c) => {
               const opts = c.options ? ` (${c.options})` : '';
@@ -281,6 +284,13 @@ export class Captain extends CaptainBase implements Agent {
         execute: async ({ command }) => {
           if (!this.commandExecutor) return { success: false, message: 'Command executor not available' };
           const cmd = command.startsWith('/') ? command : `/${command}`;
+          if (isUnsafeImplicitCommand(cmd) && !isExplicitSlashRequest(task.description, cmd)) {
+            return {
+              success: false,
+              command: cmd,
+              message: 'Command blocked: slash commands that can run tests, mutate plans, or inspect unrelated project sections require an explicit user slash-command request. Use readArtifact/project/test inspection tools for analysis instead.',
+            };
+          }
           startLogCapture();
           try {
             await this.commandExecutor(cmd);
@@ -545,4 +555,17 @@ interface ExecutionRecoveryAction {
   action: 'continue' | 'stop';
   message: string;
   recovered?: boolean;
+}
+
+function isUnsafeImplicitCommand(command: string): boolean {
+  return /^\/(?:test|rerun|plan(?::load)?|plans|experience|learn|drill)(?:\s|$)/.test(command.trim());
+}
+
+function isExplicitSlashRequest(input: string, command: string): boolean {
+  const normalizedInput = input.trim();
+  if (!normalizedInput.startsWith('/')) return false;
+
+  const requested = normalizedInput.split(/\s+/)[0];
+  const actual = command.trim().split(/\s+/)[0];
+  return requested === actual;
 }

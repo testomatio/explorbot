@@ -59,7 +59,6 @@ describe('Captain modes', () => {
 
     expect(captain.getMode()).toBe('heal');
   });
-
 });
 
 describe('Captain execution recovery', () => {

@@ -56,5 +56,4 @@ describe('Explorer recovery URL resolution', () => {
     expect(navigated).toEqual(['https://the-internet.herokuapp.com/']);
     expect(boundEvents).toContain('framenavigated');
   });
-
 });

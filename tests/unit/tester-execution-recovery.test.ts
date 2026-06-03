@@ -183,13 +183,17 @@ describe('Tester execution recovery', () => {
 
   it('retries initial navigation after Captain recovers the browser', async () => {
     let visits = 0;
-    const tester = buildTester(undefined, { isClosed: () => false }, {
-      visit: async () => {
-        visits++;
-        if (visits === 1) throw new Error('Cannot navigate: page has been closed');
-      },
-      isFatalBrowserError: () => true,
-    });
+    const tester = buildTester(
+      undefined,
+      { isClosed: () => false },
+      {
+        visit: async () => {
+          visits++;
+          if (visits === 1) throw new Error('Cannot navigate: page has been closed');
+        },
+        isFatalBrowserError: () => true,
+      }
+    );
     const captain = {
       processExecutionError: async () => ({
         action: 'continue',
@@ -213,11 +217,15 @@ describe('Tester execution recovery', () => {
 
   it('cleans up started test lifecycle on early startup failure', async () => {
     let stopped = false;
-    const tester = buildTester(undefined, { isClosed: () => false }, {
-      stopTest: async () => {
-        stopped = true;
-      },
-    });
+    const tester = buildTester(
+      undefined,
+      { isClosed: () => false },
+      {
+        stopTest: async () => {
+          stopped = true;
+        },
+      }
+    );
     const task = buildTask();
     task.startUrl = '/';
 
