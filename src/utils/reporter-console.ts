@@ -1,3 +1,5 @@
+import stripAnsi from 'strip-ansi';
+
 export async function withCleanReporterConsole<T>(fn: () => Promise<T>): Promise<T> {
   const originalLog = console.log;
   const originalWarn = console.warn;
@@ -40,5 +42,5 @@ export function cleanReporterLine(args: any[]): string | null {
 }
 
 function stripAnsiText(text: string): string {
-  return text.replace(/\u001b\[[0-9;]*m/g, '').trim();
+  return stripAnsi(text).trim();
 }
