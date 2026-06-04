@@ -750,7 +750,7 @@ export class Tester extends TaskAgent implements Agent {
     - When filling complex form with lot of actions performed, use see() to look which fields were filled and which are not
     - When verify() fails, use see() to visually confirm the result — visual confirmation is equally valid evidence
     - For visual state verification (active tabs, selected items, counts, colors), prefer see() over DOM-based verify()
-    - When click() fails and element is visually present, use visualClick() as fallback
+    - When click() fails on an element you can see — or believe is there but may look different — you MUST try visualClick() before giving up; don't repeat visualClick in a row
     - If you land on a "Not Found", 404, or error page that is NOT part of the scenario, call reset() immediately to return to the initial page and try again
     - If you see a server error page (500, 503, etc.), record it with record({ notes: ["Server error on /path"], status: "fail" }) and call reset() to continue testing
     </rules>

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-04
+
+### Changes
+- [Tester] When a click or locator keeps failing on a button or link that is plainly visible on the page, the Tester now always tries clicking it by its visual appearance at least once before re-researching, switching targets, or deciding the element is unreachable. Previously it could exhaust broken locators and wrongly conclude a visible control did not exist.
+
 ## 2026-06-03
 
 ### Changes
