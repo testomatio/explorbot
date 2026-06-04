@@ -117,6 +117,7 @@ export class Captain extends CaptainBase implements Agent {
     - After a successful action, if the pageDiff confirms the goal, call done() immediately — do not verify with see() or context() unless the user explicitly asked for verification
     - Prefer completing in fewer tool calls over thoroughness
     - NEVER run tests unless the user explicitly asks
+    - If the user asks to show, display, explain, summarize, compare, or diagnose information, include the actual user-facing answer in done({ details }). Do not only say that it was shown or explained.
     ${mode === 'web' || mode === 'heal' ? this.webModeRules() : ''}
     ${mode === 'test' || mode === 'heal' ? this.testModeRules() : ''}
     ${mode === 'heal' ? '- First diagnose browser availability, then recover the browser/page before continuing test analysis.' : ''}
@@ -257,9 +258,20 @@ export class Captain extends CaptainBase implements Agent {
         description: 'Call when the user request is fulfilled.',
         inputSchema: z.object({
           summary: z.string().describe('What was done'),
+          details: z.string().optional().describe('Actual user-facing content. Required when the user asked to show, display, explain, summarize, compare, or diagnose information.'),
         }),
-        execute: async ({ summary }) => {
+        execute: async ({ summary, details }) => {
           debugLog('done', summary);
+          if (requiresUserFacingDetails(task.description) && !details?.trim()) {
+            return {
+              success: false,
+              message: 'The user asked for information to be shown or explained. Call done() again with the actual answer in details, not only a completion summary.',
+            };
+          }
+          if (details?.trim()) {
+            tag('details').log(details);
+            task.addNote(details);
+          }
           task.addNote(summary);
           onDone(summary);
           return { success: true, summary };
@@ -568,4 +580,8 @@ function isExplicitSlashRequest(input: string, command: string): boolean {
   const requested = normalizedInput.split(/\s+/)[0];
   const actual = command.trim().split(/\s+/)[0];
   return requested === actual;
+}
+
+function requiresUserFacingDetails(input: string): boolean {
+  return /\b(show|display|explain|describe|summarize|analyse|analyze|compare|tell me|details|status|what|which|why|how|где|покажи|объясни|обьясни|расскажи|что|какой|какие|почему|как)\b/i.test(input);
 }

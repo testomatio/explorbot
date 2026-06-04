@@ -12,11 +12,35 @@ function buildCaptain(commandExecutor?: (cmd: string) => Promise<void>) {
   }) as Captain;
 }
 
-function task(description: string) {
-  return { description } as Task;
+function task(description: string, notes: string[] = []) {
+  return {
+    description,
+    addNote: (note: string) => notes.push(note),
+  } as unknown as Task;
 }
 
 describe('Captain artifact analysis tools', () => {
+  it('keeps done details as the user-facing answer', async () => {
+    const notes: string[] = [];
+    const captain = buildCaptain();
+    const tools = (captain as any).coreTools(task('show config', notes), () => {});
+
+    const result = await tools.done.execute({ summary: 'Displayed config details', details: 'baseUrl: https://example.test\nbrowser: chromium' });
+
+    expect(result.success).toBe(true);
+    expect(notes).toEqual(['baseUrl: https://example.test\nbrowser: chromium', 'Displayed config details']);
+  });
+
+  it('rejects informational requests completed without details', async () => {
+    const captain = buildCaptain();
+    const tools = (captain as any).coreTools(task('explain what page I am on'), () => {});
+
+    const result = await tools.done.execute({ summary: 'Explained current page' });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('actual answer in details');
+  });
+
   it('reads explicit report artifact paths without shell commands', async () => {
     ConfigParser.resetForTesting();
     ConfigParser.setupTestConfig();
