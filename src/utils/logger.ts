@@ -116,7 +116,6 @@ class ConsoleDestination implements LogDestination {
     }
     console.log(content);
   }
-
 }
 
 class DebugDestination implements LogDestination {
