@@ -8,6 +8,7 @@ import { marked } from 'marked';
 import stripAnsi from 'strip-ansi';
 import { ConfigParser } from '../config.js';
 import { Observability } from '../observability.ts';
+import { RecentStepFilter, isLowValueConsoleLog, isLowValueTuiLog } from './log-filters.ts';
 import { parseMarkdownToTerminal } from './markdown-terminal.ts';
 
 export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'step' | 'multiline' | 'html' | 'input';
@@ -77,6 +78,7 @@ const debugFilter = new DebugFilter();
 class ConsoleDestination implements LogDestination {
   private verboseMode = false;
   private forceEnabled = false;
+  private recentSteps = new RecentStepFilter();
 
   isEnabled(): boolean {
     return this.forceEnabled || !process.env.INK_RUNNING;
@@ -93,6 +95,8 @@ class ConsoleDestination implements LogDestination {
   write(entry: TaggedLogEntry): void {
     if (entry.type === 'debug') return;
     if (entry.type === 'html') return;
+    if (isLowValueConsoleLog(entry)) return;
+    if (entry.type === 'step' && !this.verboseMode && this.recentSteps.shouldSuppress(entry.content)) return;
     let content = entry.content;
     if (entry.type === 'multiline') {
       const cleaned = stripAnsi(dedent(entry.content));
@@ -112,6 +116,7 @@ class ConsoleDestination implements LogDestination {
     }
     console.log(content);
   }
+
 }
 
 class DebugDestination implements LogDestination {
@@ -247,6 +252,7 @@ class ReactDestination implements LogDestination {
   }
 
   private shouldWrite(entry: TaggedLogEntry): boolean {
+    if (isLowValueTuiLog(entry) && !this.debugMode) return false;
     if (entry.type !== 'debug') return true;
     if (this.debugMode) return true;
     if (!entry.namespace) return true;

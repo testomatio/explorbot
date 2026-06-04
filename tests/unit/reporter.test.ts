@@ -6,6 +6,7 @@ import { ConfigParser } from '../../src/config.ts';
 import { Reporter } from '../../src/reporter.ts';
 import { Stats } from '../../src/stats.ts';
 import { ActiveNote, Plan, Task, Test, TestResult } from '../../src/test-plan.ts';
+import { cleanReporterLine } from '../../src/utils/reporter-console.ts';
 
 class TestableReporter extends Reporter {
   public combineStepsAndNotes(test: Test, lastScreenshotFile?: string) {
@@ -554,5 +555,19 @@ describe('Reporter config', () => {
     if (runGroup) reportFile = join(outputDir, 'reports', runGroup, `${Stats.sessionLabel()}.html`);
     expect(existsSync(reportFile)).toBe(true);
     expect(readFileSync(reportFile, 'utf8')).toContain('Verify sign in page is visible');
+  });
+});
+
+describe('Reporter console adapter', () => {
+  test('suppresses low-value reporter startup lines', () => {
+    expect(cleanReporterLine(['TESTOMATIO Testomatio Reporter v2.8.4'])).toBeNull();
+    expect(cleanReporterLine(['TESTOMATIO 📊 Report created. Report ID: abc123'])).toBeNull();
+    expect(cleanReporterLine(['Pipes:'])).toBeNull();
+  });
+
+  test('rewrites generated report paths and URLs', () => {
+    expect(cleanReporterLine(['HTML report was successfully generated. Full filepath: file:///tmp/report.html'])).toBe('HTML report: file:///tmp/report.html');
+    expect(cleanReporterLine(['Markdown report was successfully generated. Full filepath: file:///tmp/report.md'])).toBe('Markdown report: file:///tmp/report.md');
+    expect(cleanReporterLine(['Report URL: https://beta.testomat.io/projects/p/runs/r/report'])).toBe('Testomat.io report: https://beta.testomat.io/projects/p/runs/r/report');
   });
 });

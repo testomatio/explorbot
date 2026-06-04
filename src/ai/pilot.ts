@@ -177,7 +177,7 @@ export class Pilot implements Agent {
         }
       }
 
-      tag('info').log(`Pilot: ${result.decision} — ${result.reason}`);
+      tag('info').log(`Pilot: ${result.decision} - ${summarizePilotReason(result.reason)}`);
       task.summary = result.reason;
 
       const verdictState = screenshotState || currentState;
@@ -1019,4 +1019,12 @@ export class Pilot implements Agent {
       NEXT: <specific actionable instruction for Tester>
     `;
   }
+}
+
+function summarizePilotReason(reason: string): string {
+  const normalized = reason.replace(/\s+/g, ' ').trim();
+  const sentence = normalized.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim();
+  const summary = sentence || normalized;
+  if (summary.length <= 160) return summary;
+  return `${summary.slice(0, 157).trim()}...`;
 }

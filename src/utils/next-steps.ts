@@ -42,10 +42,5 @@ export function printNextSteps(sections: NextStepSection[]): void {
     blocks.push(lines.join('\n'));
   }
 
-  for (let i = 0; i < blocks.length; i++) {
-    if (i > 0) tag('info').log('');
-    for (const line of blocks[i].split('\n')) {
-      tag('info').log(line);
-    }
-  }
+  tag('multiline').log(blocks.join('\n\n'));
 }

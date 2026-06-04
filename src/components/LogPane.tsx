@@ -17,12 +17,20 @@ interface LogPaneProps {
   verboseMode: boolean;
 }
 
+function getMultilineLimit(content: string): number {
+  if (content.startsWith('Results:')) return 24;
+  if (content.startsWith('Plan:') || content.startsWith('Generated tests') || content.startsWith('Screencasts')) return 18;
+  if (content.startsWith('# Session Analysis')) return 22;
+  if (content.startsWith('ARIA Snapshot:') || content.startsWith('HTML Content:')) return 10;
+  if (content.includes('| type |') || content.includes('| Type |')) return 12;
+  return 16;
+}
+
 const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const pendingLogsRef = React.useRef<LogEntry[]>([]);
   const flushTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const MAX_MULTILINE_LINES = 16;
   const MAX_STEP_LINES = 8;
   const MAX_SUBSTEP_LINES = 6;
 
@@ -146,7 +154,8 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
       const cleaned = stripAnsi(dedent(log.content));
       const parsed = parseMarkdownToTerminal(cleaned);
       const lines = parsed.split('\n');
-      const truncated = lines.length > MAX_MULTILINE_LINES ? `${lines.slice(0, MAX_MULTILINE_LINES).join('\n')}\n... (${lines.length - MAX_MULTILINE_LINES} more lines)` : parsed;
+      const maxLines = getMultilineLimit(cleaned);
+      const truncated = lines.length > maxLines ? `${lines.slice(0, maxLines).join('\n')}\n... (${lines.length - maxLines} more lines)` : parsed;
       return (
         <Box key={index} borderStyle="classic" borderLeft={false} borderRight={false} marginY={1} padding={1} borderColor="dim" overflow="hidden">
           <Text color="gray" dimColor>
@@ -212,7 +221,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
     );
   };
 
-  const maxLogs = 100;
+  const maxLogs = 80;
   const visibleLogs = logs.length > maxLogs ? logs.slice(-maxLogs) : logs;
   return <Box flexDirection="column">{visibleLogs.map((log, index) => renderLogEntry(log, index)).filter(Boolean)}</Box>;
 });

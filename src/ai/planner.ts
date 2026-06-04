@@ -36,7 +36,7 @@ const TasksSchema = z.object({
         scenario: z.string().describe('A single sentence describing what to test'),
         priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).describe('Priority of the task based on business importance'),
         startUrl: z.string().nullable().describe('Start URL for the test if different from plan URL (only for tests on visited subpages)'),
-        steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Click on Login button", "Enter username in email field", "Submit the form"). Keep steps atomic and actionable.'),
+        steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Open the form", "Enter required data", "Submit the form"). Keep steps atomic and actionable.'),
         expectedOutcomes: z
           .array(z.string())
           .describe('List of expected outcomes that can be verified. Each outcome should be simple, specific, and easy to check (e.g., "Success message appears", "URL changes to /dashboard", "Form field shows error"). Keep outcomes atomic - do not combine multiple checks into one.'),
@@ -226,9 +226,7 @@ export class Planner extends PlannerBase implements Agent {
       }
     }
 
-    const availableStyles = Object.keys(getStyles()).join(', ');
     tag('success').log(`Planning complete! ${this.currentPlan.tests.length} tests in plan: ${this.currentPlan.title}`);
-    tag('info').log(`Planning style: ${this.lastStyleName} (available: ${availableStyles})`);
 
     if (state.url) registerPlan(state.url, this.currentPlan, feature, state.hash);
 
