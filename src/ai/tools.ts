@@ -307,6 +307,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
         Use cases:
         - Typing into input fields (I.fillField, I.type)
+        - Setting checkboxes/radios to a definite state (I.checkOption, I.uncheckOption)
         - Working with iframes (switch context with I.switchTo)
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
@@ -314,6 +315,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')
         I.selectOption('Country', 'USA', '.address-section')
+        I.checkOption('Agree', '.terms-section')
         I.attachFile('input[type="file"]', 'path/to/file', '.upload-section')
 
         Example - filling a form with ARIA locators:

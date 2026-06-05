@@ -25,7 +25,7 @@ import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, focusedElementRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
+import { actionRule, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createSpecialContextTools } from './tools.ts';
 
@@ -772,6 +772,8 @@ export class Tester extends TaskAgent implements Agent {
     ${actionRule}
 
     ${sectionContextRule}
+
+    ${formRequirementsRule}
 
     ${this.provider.getSystemPromptForAgent('tester', this.explorer.getStateManager().getCurrentState()?.url) || ''}
     `;

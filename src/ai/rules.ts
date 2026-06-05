@@ -131,6 +131,12 @@ export const fileUploadRule = dedent`
   </file_upload>
 `;
 
+export const formRequirementsRule = dedent`
+  <form_requirements>
+  Before filling a form that persists data (create/update), read each control's requirements (required, type/format, length, placeholder/aria-describedby hints) from <page_aria> and page HTML — call context() if not visible — and enter values that satisfy them. Search/filter/sort forms that only change the view do not need this.
+  </form_requirements>
+`;
+
 // in rage mode we do not protect from irreversible actions
 export const protectionRule = dedent`
   <important>
@@ -270,6 +276,8 @@ export const actionRule = dedent`
   If locator doesn't work, try CSS or XPath locators.
   If nothing works, use I.clickXY(x, y) as last resort.
 
+  For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.
+
 
   ### I.fillField
 
@@ -354,6 +362,19 @@ export const actionRule = dedent`
     I.selectOption('subscription', 'Monthly'); // match option by text
     I.selectOption('//form/select[@name=account]','Premium');
     I.selectOption('form select[name=account]', 'Premium');
+  </example>
+
+  ### I.checkOption / I.uncheckOption
+
+  Set a checkbox/radio to a definite state — idempotent, never toggles. Use for checkboxes instead of I.click. Run via form(), not click().
+
+  I.checkOption(<locator>, <context>)
+  I.uncheckOption(<locator>, <context>)
+
+  <example>
+    I.checkOption('Subscribe');
+    I.checkOption({ role: 'checkbox', text: 'Agree' });
+    I.uncheckOption('Subscribe', '.preferences');
   </example>
 
   ### I.attachFile

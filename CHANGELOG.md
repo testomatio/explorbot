@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-06
+
+### Changes
+- [Tester] Checkboxes and other toggle controls (switches, selectable rows/items) are no longer flipped back off by accident. The Tester now sets a checkbox with the idempotent `I.checkOption` / `I.uncheckOption` commands instead of `I.click`, so selecting an already-selected checkbox keeps it selected. It also reads the page state after each click and stops re-clicking a control once it already shows the wanted result (checked, selected, or a count/label confirming success). Previously a second click on a selected checkbox could toggle it off — for example dropping a "Select 32 tests" selection back to "Select 0 tests" and saving an empty result.
+- [Tester] Before filling a form that saves data (create/update), the Tester now reads each field's requirements — required, type/format, length, and placeholder/hint text — and enters values that satisfy them, instead of submitting and discovering validation errors. Search, filter, and sort forms that only change the view are skipped.
+
 ## 2026-06-04
 
 ### Changes
