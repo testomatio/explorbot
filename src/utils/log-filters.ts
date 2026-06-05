@@ -1,8 +1,3 @@
-interface LogFilterEntry {
-  type: string;
-  content: string;
-}
-
 export class RecentStepFilter {
   private recentStepKeys = new Map<string, number>();
 
@@ -22,25 +17,6 @@ export class RecentStepFilter {
     this.recentStepKeys.set(key, now);
     return false;
   }
-}
-
-export function isLowValueConsoleLog(entry: LogFilterEntry): boolean {
-  if (entry.type !== 'substep') return false;
-  return isLowValueSubstep(entry.content);
-}
-
-export function isLowValueTuiLog(entry: LogFilterEntry): boolean {
-  if (entry.type !== 'substep') return false;
-  return isLowValueSubstep(entry.content);
-}
-
-function isLowValueSubstep(content: string): boolean {
-  if (content.startsWith('Saved screencast:')) return true;
-  if (content.startsWith('Validated ') && content.includes(' locators:')) return true;
-  if (content.startsWith('Research file saved to:')) return true;
-  if (content.startsWith('Historian saved session for:')) return true;
-  if (content.startsWith('Saved plan tests to:')) return true;
-  return false;
 }
 
 function normalizeStepCommand(content: string): string | null {

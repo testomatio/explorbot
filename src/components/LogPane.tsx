@@ -17,15 +17,6 @@ interface LogPaneProps {
   verboseMode: boolean;
 }
 
-function getMultilineLimit(content: string): number {
-  if (content.startsWith('Results:')) return 24;
-  if (content.startsWith('Plan:') || content.startsWith('Generated tests') || content.startsWith('Screencasts')) return 18;
-  if (content.startsWith('# Session Analysis')) return 22;
-  if (content.startsWith('ARIA Snapshot:') || content.startsWith('HTML Content:')) return 10;
-  if (content.includes('| type |') || content.includes('| Type |')) return 12;
-  return 16;
-}
-
 const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const pendingLogsRef = React.useRef<LogEntry[]>([]);
@@ -123,6 +114,8 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
         return { color: 'yellow' as const };
       case 'debug':
         return { color: 'gray' as const, dimColor: true };
+      case 'operation':
+        return { color: 'gray' as const, dimColor: true };
       case 'substep':
         return { color: 'gray' as const, dimColor: true };
       case 'step':
@@ -154,7 +147,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
       const cleaned = stripAnsi(dedent(log.content));
       const parsed = parseMarkdownToTerminal(cleaned);
       const lines = parsed.split('\n');
-      const maxLines = getMultilineLimit(cleaned);
+      const maxLines = log.maxLines || 16;
       const truncated = lines.length > maxLines ? `${lines.slice(0, maxLines).join('\n')}\n... (${lines.length - maxLines} more lines)` : parsed;
       return (
         <Box key={index} borderStyle="classic" borderLeft={false} borderRight={false} marginY={1} padding={1} borderColor="dim" overflow="hidden">
@@ -172,6 +165,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
         type: 'multiline',
         content: `HTML Content:\n\n${markdown}`,
         timestamp: log.timestamp,
+        maxLines: 10,
       };
 
       return renderLogEntry(multilineLog, index);
@@ -185,6 +179,18 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
           {lines.map((line, lineIndex) => (
             <Text key={`${index}-${lineIndex}`} {...styles}>
               {lineIndex === 0 ? `> ${line}` : `   ${line}`}
+            </Text>
+          ))}
+        </Box>
+      );
+    }
+
+    if (log.type === 'operation') {
+      return (
+        <Box key={index} marginLeft={2} flexDirection="column">
+          {lines.map((line, lineIndex) => (
+            <Text key={`${index}-${lineIndex}`} {...styles}>
+              {lineIndex === 0 ? `· ${line}` : `  ${line}`}
             </Text>
           ))}
         </Box>

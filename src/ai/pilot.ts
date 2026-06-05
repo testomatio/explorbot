@@ -104,7 +104,7 @@ export class Pilot implements Agent {
 
     const schema = z.object({
       decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
-      reason: z.string().describe('What happened and why (1-2 sentences). Do NOT repeat the decision status (e.g. "scenario goal achieved/not achieved") — just explain the evidence. For continue: explain why rejected and suggest alternatives.'),
+      reason: z.string().describe('Concise user-facing reason, maximum 1 short sentence. Do NOT repeat the decision status; explain only the evidence. For continue: explain why rejected and suggest alternatives.'),
       guidance: z.string().nullable().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
       requestVerification: z
         .string()
@@ -177,7 +177,7 @@ export class Pilot implements Agent {
         }
       }
 
-      tag('info').log(`Pilot: ${result.decision} - ${summarizePilotReason(result.reason)}`);
+      tag('info').log(`Pilot: ${result.decision} - ${result.reason}`);
       task.summary = result.reason;
 
       const verdictState = screenshotState || currentState;
@@ -221,7 +221,7 @@ export class Pilot implements Agent {
 
     const schema = z.object({
       decision: z.enum(['allow', 'fail', 'continue', 'skipped']).describe('allow = reset proceeds, fail = test failed (stop looping), continue = veto reset, tester should act on current page instead, skipped = scenario is irrelevant or cannot be executed'),
-      reason: z.string().describe('What evidence justifies this decision (1-2 sentences). Do not restate the decision.'),
+      reason: z.string().describe('Concise evidence-only reason, maximum 1 short sentence. Do not restate the decision.'),
       guidance: z.string().nullable().describe('Required for "continue": concrete instruction for what the tester should do instead of resetting (e.g. which tool to call, what to verify).'),
     });
 
@@ -1017,14 +1017,8 @@ export class Pilot implements Agent {
       Response format:
       PROGRESS: <1 sentence assessment>
       NEXT: <specific actionable instruction for Tester>
+
+      Keep user-facing reasons concise: one short sentence with evidence only, no repeated verdict wording.
     `;
   }
-}
-
-function summarizePilotReason(reason: string): string {
-  const normalized = reason.replace(/\s+/g, ' ').trim();
-  const sentence = normalized.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim();
-  const summary = sentence || normalized;
-  if (summary.length <= 160) return summary;
-  return `${summary.slice(0, 157).trim()}...`;
 }

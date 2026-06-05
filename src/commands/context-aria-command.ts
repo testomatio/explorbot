@@ -17,6 +17,6 @@ export class ContextAriaCommand extends BaseCommand {
       throw new Error('No ARIA snapshot available for current page');
     }
 
-    tag('multiline').log(`ARIA Snapshot:\n\n${ariaSnapshot}`);
+    tag('multiline').log(`ARIA Snapshot:\n\n${ariaSnapshot}`, { maxLines: 10 });
   }
 }

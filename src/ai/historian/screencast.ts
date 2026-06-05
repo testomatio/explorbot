@@ -126,7 +126,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
       if (path) {
         this.savedFiles.add(path);
         task?.addArtifact?.(path);
-        tag('substep').log(`Saved screencast: ${relativeToCwd(path)}`);
+        tag('operation').log(`Saved screencast: ${relativeToCwd(path)}`);
       }
     }
   };

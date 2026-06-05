@@ -316,7 +316,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       tag('multiline').log(formatResearchSummary(result.text, { visionUsed: this.hasScreenshotToAnalyze }));
       tag('success').log('Research complete');
-      if (researchFile) tag('substep').log(`Research file saved to: ${researchFile}`);
+      if (researchFile) tag('operation').log(`Research file saved to: ${researchFile}`);
       if (this.actionResult?.screenshotFile) {
         const screenshotPath = outputPath('states', this.actionResult.screenshotFile);
         tag('substep').log(`UI screenshot: file://${screenshotPath}`);

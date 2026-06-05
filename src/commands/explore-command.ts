@@ -87,7 +87,7 @@ export class ExploreCommand extends BaseCommand {
       const t = tests[i];
       lines.push(`  ${String(i + 1).padStart(2)}. [${this.originLabel(t)}] [${t.priority.padEnd(9)}] ${t.scenario}`);
     }
-    tag('multiline').log(lines.join('\n'));
+    tag('multiline').log(lines.join('\n'), { maxLines: 24 });
   }
 
   private async runFreshMode(mainUrl: string | undefined, feature: string | undefined, styles?: string[]): Promise<void> {

@@ -8,10 +8,10 @@ import { marked } from 'marked';
 import stripAnsi from 'strip-ansi';
 import { ConfigParser } from '../config.js';
 import { Observability } from '../observability.ts';
-import { RecentStepFilter, isLowValueConsoleLog, isLowValueTuiLog } from './log-filters.ts';
+import { RecentStepFilter } from './log-filters.ts';
 import { parseMarkdownToTerminal } from './markdown-terminal.ts';
 
-export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'step' | 'multiline' | 'html' | 'input';
+export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'operation' | 'step' | 'multiline' | 'html' | 'input';
 
 export interface TaggedLogEntry {
   type: LogType;
@@ -19,6 +19,7 @@ export interface TaggedLogEntry {
   timestamp?: Date;
   originalArgs?: any[];
   namespace?: string;
+  maxLines?: number;
 }
 
 type LogEntry = TaggedLogEntry;
@@ -95,7 +96,7 @@ class ConsoleDestination implements LogDestination {
   write(entry: TaggedLogEntry): void {
     if (entry.type === 'debug') return;
     if (entry.type === 'html') return;
-    if (isLowValueConsoleLog(entry)) return;
+    if (entry.type === 'operation' && !this.verboseMode) return;
     if (entry.type === 'step' && !this.verboseMode && this.recentSteps.shouldSuppress(entry.content)) return;
     let content = entry.content;
     if (entry.type === 'multiline') {
@@ -111,6 +112,8 @@ class ConsoleDestination implements LogDestination {
       content = chalk.yellow(content);
     } else if (entry.type === 'step') {
       content = chalk.gray(`   ${content}`);
+    } else if (entry.type === 'operation') {
+      content = chalk.gray(`   · ${content}`);
     } else if (entry.type === 'substep') {
       content = chalk.gray(`   > ${content}`);
     }
@@ -251,7 +254,7 @@ class ReactDestination implements LogDestination {
   }
 
   private shouldWrite(entry: TaggedLogEntry): boolean {
-    if (isLowValueTuiLog(entry) && !this.debugMode) return false;
+    if (entry.type === 'operation' && !this.debugMode) return false;
     if (entry.type !== 'debug') return true;
     if (this.debugMode) return true;
     if (!entry.namespace) return true;
@@ -311,7 +314,7 @@ class CaptainDestination implements LogDestination {
 
   stopCapture(): string[] {
     this.capturing = false;
-    const logs = this.entries.filter((e) => e.type !== 'debug' && e.type !== 'html' && e.type !== 'multiline').map((e) => `[${e.type}] ${e.content}`);
+    const logs = this.entries.filter((e) => e.type !== 'debug' && e.type !== 'html' && e.type !== 'multiline' && e.type !== 'operation').map((e) => `[${e.type}] ${e.content}`);
     this.entries = [];
     return logs;
   }
@@ -437,6 +440,7 @@ class Logger {
       return;
     }
 
+    const options = this.extractLogOptions(type, args);
     let content = this.processArgs(args);
     if (type === 'step' && args[0]?.toCode) {
       content = args[0].toCode();
@@ -446,6 +450,7 @@ class Logger {
       content,
       timestamp: new Date(),
       originalArgs: args,
+      maxLines: options?.maxLines,
     };
 
     if (this.file.isEnabled()) this.file.write(entry);
@@ -484,6 +489,18 @@ class Logger {
 
   multiline(...args: any[]): void {
     this.log('multiline', ...args);
+  }
+
+  private extractLogOptions(type: LogType, args: any[]): { maxLines?: number } | null {
+    if (type !== 'multiline') return null;
+    const last = args[args.length - 1];
+    if (!last || typeof last !== 'object' || Array.isArray(last)) return null;
+    if (!('maxLines' in last)) return null;
+
+    args.pop();
+    const maxLines = Number(last.maxLines);
+    if (!Number.isFinite(maxLines) || maxLines <= 0) return null;
+    return { maxLines };
   }
 }
 

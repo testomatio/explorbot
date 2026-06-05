@@ -42,5 +42,5 @@ export function printNextSteps(sections: NextStepSection[]): void {
     blocks.push(lines.join('\n'));
   }
 
-  tag('multiline').log(blocks.join('\n\n'));
+  tag('multiline').log(blocks.join('\n\n'), { maxLines: 18 });
 }

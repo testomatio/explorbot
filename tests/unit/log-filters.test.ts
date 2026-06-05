@@ -1,19 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { RecentStepFilter, isLowValueConsoleLog, isLowValueTuiLog } from '../../src/utils/log-filters.ts';
+import { RecentStepFilter } from '../../src/utils/log-filters.ts';
 
 describe('log filters', () => {
-  test('filters low-value artifact substeps from console and TUI output', () => {
-    const entry = { type: 'substep', content: 'Saved screencast: output/screencasts/scenario.webm' };
-    expect(isLowValueConsoleLog(entry)).toBe(true);
-    expect(isLowValueTuiLog(entry)).toBe(true);
-  });
-
-  test('keeps user-facing substeps', () => {
-    const entry = { type: 'substep', content: 'Pilot reviewing finish verdict...' };
-    expect(isLowValueConsoleLog(entry)).toBe(false);
-    expect(isLowValueTuiLog(entry)).toBe(false);
-  });
-
   test('deduplicates repeated identical step commands within ttl', () => {
     const filter = new RecentStepFilter(15000);
     expect(filter.shouldSuppress('I.fillField("Search", "query")', 1000)).toBe(false);
