@@ -270,6 +270,8 @@ export const actionRule = dedent`
   If locator doesn't work, try CSS or XPath locators.
   If nothing works, use I.clickXY(x, y) as last resort.
 
+  For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.
+
 
   ### I.fillField
 
@@ -354,6 +356,19 @@ export const actionRule = dedent`
     I.selectOption('subscription', 'Monthly'); // match option by text
     I.selectOption('//form/select[@name=account]','Premium');
     I.selectOption('form select[name=account]', 'Premium');
+  </example>
+
+  ### I.checkOption / I.uncheckOption
+
+  Set a checkbox/radio to a definite state — idempotent, never toggles. Use for checkboxes instead of I.click. Run via form(), not click().
+
+  I.checkOption(<locator>, <context>)
+  I.uncheckOption(<locator>, <context>)
+
+  <example>
+    I.checkOption('Subscribe');
+    I.checkOption({ role: 'checkbox', text: 'Agree' });
+    I.uncheckOption('Subscribe', '.preferences');
   </example>
 
   ### I.attachFile
