@@ -136,31 +136,6 @@ export class Tester extends TaskAgent implements Agent {
       task.addNote(`Network error: ${r.method} ${r.path} → ${r.status}`, TestResult.FAILED);
     });
 
-    const page = this.explorer.playwrightHelper?.page;
-    const observedPages = new Set<any>();
-    const onPageError = (err: Error) => {
-      task.addNote(`Console error: ${err.message}`, TestResult.FAILED);
-    };
-    const onConsoleMessage = (msg: any) => {
-      if (msg.type() !== 'error') return;
-      task.addNote(`Console error: ${msg.text()}`, TestResult.FAILED);
-    };
-    const watchPage = (targetPage: any) => {
-      if (!targetPage) return;
-      if (observedPages.has(targetPage)) return;
-      targetPage.on('pageerror', onPageError);
-      targetPage.on('console', onConsoleMessage);
-      observedPages.add(targetPage);
-    };
-    const unwatchPages = () => {
-      for (const observedPage of observedPages) {
-        observedPage.off('pageerror', onPageError);
-        observedPage.off('console', onConsoleMessage);
-      }
-      observedPages.clear();
-    };
-    watchPage(page);
-
     const initialState = ActionResult.fromState(state);
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
@@ -190,19 +165,18 @@ export class Tester extends TaskAgent implements Agent {
           expected: task.expected,
         },
       },
-      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest, watchPage, unwatchPages })
+      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest })
     );
   }
 
   private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: TestSessionHandlers): Promise<{ success: boolean }> {
-    const { offFailedRequest, watchPage, unwatchPages } = handlers;
+    const { offFailedRequest } = handlers;
 
     if (this.pilot) {
       try {
         const plan = await this.pilot.planTest(task, initialState);
         if (task.hasFinished) {
           offFailedRequest?.();
-          unwatchPages();
           return { success: task.isSuccessful };
         }
         if (plan) {
@@ -214,43 +188,22 @@ export class Tester extends TaskAgent implements Agent {
         task.addNote(`Planning failed: ${message}`, TestResult.FAILED);
         task.finish(TestResult.FAILED);
         offFailedRequest?.();
-        unwatchPages();
         return { success: false };
       }
     }
 
     debugLog('Starting test execution with tools');
 
-    task.start();
-    await this.explorer.startTest(task);
-    let initialSetupStopped = false;
-    if (
-      !(await this.ensureBrowserPageAvailable(
-        task,
-        conversation,
-        () => {
-          initialSetupStopped = true;
-        },
-        watchPage
-      ))
-    ) {
+    if (!(await this.startExplorerTest(task, conversation))) {
       offFailedRequest?.();
-      unwatchPages();
-      await this.cleanupStartedTest(task);
-      return { success: task.isSuccessful };
-    }
-    if (initialSetupStopped || task.hasFinished) {
-      offFailedRequest?.();
-      unwatchPages();
       await this.cleanupStartedTest(task);
       return { success: task.isSuccessful };
     }
 
     debugLog(`Navigating to ${task.startUrl}`);
-    const navigated = await this.visitStartUrlWithRecovery(task, conversation, watchPage);
+    const navigated = await this.visitStartUrlWithRecovery(task, conversation);
     if (!navigated) {
       offFailedRequest?.();
-      unwatchPages();
       await this.cleanupStartedTest(task);
       return { success: task.isSuccessful };
     }
@@ -278,7 +231,7 @@ export class Tester extends TaskAgent implements Agent {
       await loop(
         async ({ stop, pause, iteration, userInput }) => {
           debugLog('iteration', iteration);
-          if (!(await this.ensureBrowserPageAvailable(task, conversation, stop, watchPage))) return;
+          if (!(await this.ensureBrowserPageAvailable(task, conversation, stop))) return;
           const currentState = this.getCurrentState();
 
           const tools = {
@@ -426,27 +379,14 @@ export class Tester extends TaskAgent implements Agent {
               }
             : undefined,
           catch: async ({ error, stop }) => {
-            await this.handleExecutionError(task, conversation, error, stop, watchPage);
+            await this.handleExecutionError(task, conversation, error, stop);
           },
         }
       );
 
       if (task.hasFinished) break;
 
-      let finalReviewStopped = false;
-      if (
-        !(await this.ensureBrowserPageAvailable(
-          task,
-          conversation,
-          () => {
-            finalReviewStopped = true;
-          },
-          watchPage
-        ))
-      ) {
-        break;
-      }
-      if (finalReviewStopped || task.hasFinished) break;
+      if (!(await this.canRunFinalReview(task, conversation))) break;
 
       const finalState = this.getCurrentState();
       const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation, this.navigator);
@@ -476,7 +416,6 @@ export class Tester extends TaskAgent implements Agent {
 
     offStateChange();
     offFailedRequest?.();
-    unwatchPages();
     await this.finishTest(task);
     await this.explorer.stopTest(task, {
       startUrl: task.startUrl,
@@ -1138,7 +1077,7 @@ export class Tester extends TaskAgent implements Agent {
     };
   }
 
-  private async handleExecutionError(task: Test, conversation: Conversation, error: Error, stop: () => void, watchPage: (page: any) => void): Promise<void> {
+  private async handleExecutionError(task: Test, conversation: Conversation, error: Error, stop: () => void): Promise<void> {
     tag('error').log(`Test execution error: ${error}`);
     const message = error instanceof Error ? error.message : String(error);
     if (!task.hasFinished) {
@@ -1158,7 +1097,7 @@ export class Tester extends TaskAgent implements Agent {
         return;
       }
       if (recovery.recovered) {
-        watchPage(this.explorer.playwrightHelper?.page);
+        this.explorer.watchActiveTestPage();
         this.resetFailureCount();
         const recoveryContext = await this.buildRecoveryContext(task);
         conversation.addUserText(`${recovery.message}\n\n${recoveryContext}`);
@@ -1183,6 +1122,18 @@ export class Tester extends TaskAgent implements Agent {
       style: task.style,
       sessionName: task.sessionName,
     });
+  }
+
+  private async startExplorerTest(task: Test, conversation: Conversation): Promise<boolean> {
+    task.start();
+    if (await this.explorer.startTest(task)) return true;
+
+    let stopped = false;
+    await this.handleExecutionError(task, conversation, new Error('Target closed: browser page is unavailable'), () => {
+      stopped = true;
+    });
+    if (stopped) return false;
+    return !task.hasFinished;
   }
 
   private async buildRecoveryContext(task: Test): Promise<string> {
@@ -1215,29 +1166,32 @@ export class Tester extends TaskAgent implements Agent {
     `;
   }
 
-  private async ensureBrowserPageAvailable(task: Test, conversation: Conversation, stop: () => void, watchPage: (page: any) => void): Promise<boolean> {
-    const page = this.explorer.playwrightHelper?.page;
-    if (page && !page.isClosed?.()) return true;
+  private async ensureBrowserPageAvailable(task: Test, conversation: Conversation, stop: () => void): Promise<boolean> {
+    if (await this.explorer.ensureActiveTestPageAvailable()) return true;
 
-    await this.handleExecutionError(task, conversation, new Error('Target closed: browser page is unavailable'), stop, watchPage);
+    await this.handleExecutionError(task, conversation, new Error('Target closed: browser page is unavailable'), stop);
     return !task.hasFinished;
   }
 
-  private async visitStartUrlWithRecovery(task: Test, conversation: Conversation, watchPage: (page: any) => void): Promise<boolean> {
+  private async canRunFinalReview(task: Test, conversation: Conversation): Promise<boolean> {
+    let stopped = false;
+    const available = await this.ensureBrowserPageAvailable(task, conversation, () => {
+      stopped = true;
+    });
+    if (!available) return false;
+    if (stopped) return false;
+    return !task.hasFinished;
+  }
+
+  private async visitStartUrlWithRecovery(task: Test, conversation: Conversation): Promise<boolean> {
     try {
       await this.explorer.visit(task.startUrl!);
       return true;
     } catch (error) {
       let stopped = false;
-      await this.handleExecutionError(
-        task,
-        conversation,
-        error instanceof Error ? error : new Error(String(error)),
-        () => {
-          stopped = true;
-        },
-        watchPage
-      );
+      await this.handleExecutionError(task, conversation, error instanceof Error ? error : new Error(String(error)), () => {
+        stopped = true;
+      });
 
       if (stopped || task.hasFinished) return false;
 
@@ -1256,6 +1210,4 @@ export class Tester extends TaskAgent implements Agent {
 
 interface TestSessionHandlers {
   offFailedRequest?: () => void;
-  watchPage: (page: any) => void;
-  unwatchPages: () => void;
 }

@@ -5,10 +5,10 @@ import * as codeceptjs from 'codeceptjs';
 import stepsListener from 'codeceptjs/lib/listener/steps';
 import storeListener from 'codeceptjs/lib/listener/store';
 import { createTest } from 'codeceptjs/lib/mocha/test';
+import type { BrowserContextOptions } from 'playwright';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
-import type { BrowserContextOptions } from 'playwright';
 import { visuallyAnnotateContainers } from './ai/researcher/coordinates.ts';
 import { RequestStore } from './api/request-store.ts';
 import { XhrCapture } from './api/xhr-capture.ts';
@@ -19,7 +19,7 @@ import { KnowledgeTracker } from './knowledge-tracker.js';
 import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
-import { Test } from './test-plan.ts';
+import { Test, TestResult } from './test-plan.ts';
 import { ELEMENT_EXTRACTION_CONFIG, getElementDataExtractorSource } from './utils/html.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 import { WebElement } from './utils/web-element.ts';
@@ -64,6 +64,10 @@ class Explorer {
   private xhrCapture: XhrCapture | null = null;
   private requestStore: RequestStore | null = null;
   private playwrightRecorder: PlaywrightRecorder = new PlaywrightRecorder();
+  private observedTestPages = new Set<any>();
+  private testPageErrorHandler: ((error: Error) => void) | null = null;
+  private testConsoleHandler: ((message: any) => void) | null = null;
+  private testDialogHandler: ((dialog: any) => void) | null = null;
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string }) {
     this.config = config;
@@ -617,11 +621,12 @@ class Explorer {
     return this._activeTest;
   }
 
-  async startTest(test: Test) {
+  async startTest(test: Test): Promise<boolean> {
     this._activeTest = test;
     await this.reporter.reportTestStart(test);
     await this.closeOtherTabs();
     this.otherTabs = [];
+    if (!(await this.ensureActiveTestPageAvailable())) return false;
 
     const codeceptjsTest = toCodeceptjsTest(test);
 
@@ -638,13 +643,7 @@ class Explorer {
       test.setActiveNoteScreenshot(lastScreenshot);
     };
 
-    const dialogHandler = (dialog: any) => {
-      const dialogType = dialog.type();
-      const dialogMessage = dialog.message();
-      test.addNote(`Native dialog ${dialogType} appeared: ${dialogMessage}. Accepted automatically`);
-    };
-
-    this.playwrightHelper?.page?.on('dialog', dialogHandler);
+    this.watchActiveTestPage();
 
     codeceptjs.event.dispatcher.emit('test.before', codeceptjsTest);
     codeceptjs.event.dispatcher.emit('test.start', codeceptjsTest);
@@ -655,11 +654,51 @@ class Explorer {
     codeceptjs.event.dispatcher.on('test.after', () => {
       codeceptjs.event.dispatcher.off('step.passed', stepHandler);
       codeceptjs.event.dispatcher.off('step.failed', stepHandler);
-      this.playwrightHelper?.page?.off('dialog', dialogHandler);
+      this.unwatchActiveTestPages();
     });
+
+    return true;
+  }
+
+  async ensureActiveTestPageAvailable(): Promise<boolean> {
+    const page = this.playwrightHelper?.page;
+    if (page && !page.isClosed?.()) {
+      this.watchActiveTestPage(page);
+      return true;
+    }
+
+    const recovered = await this.recoverFromBrowserError();
+    if (!recovered) return false;
+    this.watchActiveTestPage();
+    return true;
+  }
+
+  watchActiveTestPage(page = this.playwrightHelper?.page): void {
+    if (!this._activeTest) return;
+    if (!page) return;
+    if (this.observedTestPages.has(page)) return;
+
+    this.testPageErrorHandler ||= (err: Error) => {
+      this._activeTest?.addNote(`Console error: ${err.message}`, TestResult.FAILED);
+    };
+    this.testConsoleHandler ||= (msg: any) => {
+      if (msg.type() !== 'error') return;
+      this._activeTest?.addNote(`Console error: ${msg.text()}`, TestResult.FAILED);
+    };
+    this.testDialogHandler ||= (dialog: any) => {
+      const dialogType = dialog.type();
+      const dialogMessage = dialog.message();
+      this._activeTest?.addNote(`Native dialog ${dialogType} appeared: ${dialogMessage}. Accepted automatically`);
+    };
+
+    page.on('pageerror', this.testPageErrorHandler);
+    page.on('console', this.testConsoleHandler);
+    page.on('dialog', this.testDialogHandler);
+    this.observedTestPages.add(page);
   }
 
   async stopTest(test: Test, meta?: Record<string, string>) {
+    this.unwatchActiveTestPages();
     this._activeTest = null;
     const lastScreenshot = this.stateManager.getCurrentState()?.screenshotFile;
     if (lastScreenshot) {
@@ -682,6 +721,15 @@ class Explorer {
 
     codeceptjs.event.dispatcher.emit('test.finish', codeceptjsTest);
     codeceptjs.event.dispatcher.emit('test.after', codeceptjsTest);
+  }
+
+  private unwatchActiveTestPages(): void {
+    for (const page of this.observedTestPages) {
+      if (this.testPageErrorHandler) page.off('pageerror', this.testPageErrorHandler);
+      if (this.testConsoleHandler) page.off('console', this.testConsoleHandler);
+      if (this.testDialogHandler) page.off('dialog', this.testDialogHandler);
+    }
+    this.observedTestPages.clear();
   }
 
   async hasPlaywrightLocator(locatorFn: (page: any) => any, opts: { multiple?: boolean; contents?: boolean; success?: (locator: any) => Promise<void> | void } = {}): Promise<boolean> {

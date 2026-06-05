@@ -8,6 +8,8 @@ function buildTester(captain?: any, page: any = { id: 'recovered-page' }, explor
     playwrightHelper: {
       page,
     },
+    ensureActiveTestPageAvailable: async () => !!page && !page.isClosed?.(),
+    watchActiveTestPage: () => {},
     createAction: () => ({
       capturePageState: async () => ({
         url: '/',
@@ -78,17 +80,12 @@ describe('Tester execution recovery', () => {
     const task = buildTask();
     const conversation = buildConversation();
     const watchedPages: any[] = [];
+    (tester as any).explorer.watchActiveTestPage = () => watchedPages.push((tester as any).explorer.playwrightHelper.page);
     let stopped = false;
 
-    await (tester as any).handleExecutionError(
-      task,
-      conversation,
-      new Error('Target closed'),
-      () => {
-        stopped = true;
-      },
-      (page: any) => watchedPages.push(page)
-    );
+    await (tester as any).handleExecutionError(task, conversation, new Error('Target closed'), () => {
+      stopped = true;
+    });
 
     expect(stopped).toBe(false);
     expect(task.hasFinished).toBe(false);
@@ -110,15 +107,9 @@ describe('Tester execution recovery', () => {
     const conversation = buildConversation();
     let stopped = false;
 
-    await (tester as any).handleExecutionError(
-      task,
-      conversation,
-      new Error('Target closed'),
-      () => {
-        stopped = true;
-      },
-      () => {}
-    );
+    await (tester as any).handleExecutionError(task, conversation, new Error('Target closed'), () => {
+      stopped = true;
+    });
 
     expect(stopped).toBe(true);
     expect(task.hasFinished).toBe(true);
@@ -132,15 +123,9 @@ describe('Tester execution recovery', () => {
     const conversation = buildConversation();
     let stopped = false;
 
-    await (tester as any).handleExecutionError(
-      task,
-      conversation,
-      new Error('Locator not found'),
-      () => {
-        stopped = true;
-      },
-      () => {}
-    );
+    await (tester as any).handleExecutionError(task, conversation, new Error('Locator not found'), () => {
+      stopped = true;
+    });
 
     expect(stopped).toBe(false);
     expect(conversation.messages[0]).toContain('Previous AI call failed');
@@ -163,16 +148,12 @@ describe('Tester execution recovery', () => {
     const task = buildTask();
     const conversation = buildConversation();
     const watchedPages: any[] = [];
+    (tester as any).explorer.watchActiveTestPage = () => watchedPages.push((tester as any).explorer.playwrightHelper.page);
     let stopped = false;
 
-    const available = await (tester as any).ensureBrowserPageAvailable(
-      task,
-      conversation,
-      () => {
-        stopped = true;
-      },
-      (page: any) => watchedPages.push(page)
-    );
+    const available = await (tester as any).ensureBrowserPageAvailable(task, conversation, () => {
+      stopped = true;
+    });
 
     expect(available).toBe(true);
     expect(stopped).toBe(false);
@@ -205,14 +186,12 @@ describe('Tester execution recovery', () => {
     const task = buildTask();
     task.startUrl = '/';
     const conversation = buildConversation();
-    const watchedPages: any[] = [];
 
-    const navigated = await (tester as any).visitStartUrlWithRecovery(task, conversation, (page: any) => watchedPages.push(page));
+    const navigated = await (tester as any).visitStartUrlWithRecovery(task, conversation);
 
     expect(navigated).toBe(true);
     expect(visits).toBe(2);
     expect(task.hasFinished).toBe(false);
-    expect(watchedPages).toHaveLength(1);
   });
 
   it('cleans up started test lifecycle on early startup failure', async () => {

@@ -1,11 +1,10 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { tool } from 'ai';
 import { createBashTool } from 'bash-tool';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ConfigParser } from '../../config.ts';
 import { Test } from '../../test-plan.ts';
+import { listRecentArtifacts, readCaptainFile } from './file-tools.ts';
 import { type Constructor, type ModeContext, resolveProjectRoot } from './mixin.ts';
 
 let cachedBashTool: Awaited<ReturnType<typeof createBashTool>> | null = null;
@@ -17,6 +16,8 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
       const config = ConfigParser.getInstance().getConfig();
       const knowledgeDir = config.dirs?.knowledge || 'knowledge';
       const experienceDir = config.dirs?.experience || 'experience';
+      const outputDir = config.dirs?.output || 'output';
+      const readableDirs = [outputDir, knowledgeDir, experienceDir];
 
       if (!cachedBashTool && projectRoot) {
         cachedBashTool = await createBashTool({
@@ -95,7 +96,7 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
                 success: true,
                 outputDir,
                 artifacts: listRecentArtifacts(outputDir),
-                suggestion: 'Use bash to read a specific small report, plan, or log file when needed.',
+                suggestion: 'Use readFile to inspect specific reports, plans, logs, generated tests, knowledge, or experience files.',
               };
             }
 
@@ -112,37 +113,19 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
             };
           },
         }),
-        readArtifact: tool({
+        readFile: tool({
           description: dedent`
-            Read a specific small Explorbot artifact file for analysis.
+            Read a specific Explorbot project file for analysis.
             Use this for explicit user questions about reports, plans, logs, generated tests, knowledge, or experience files.
-            Prefer this over runCommand() for file analysis.
+            Prefer this over bash() for reading file contents after bash has found the file.
           `,
           inputSchema: z.object({
-            path: z.string().describe('Artifact path, such as output/reports/session-name-tests.md or explorbot-testing/output/reports/session-name-tests.md'),
+            path: z.string().describe('Path inside output, knowledge, or experience directories'),
+            startLine: z.number().optional().describe('First line to read, 1-based. Negative values count from the end of the file'),
+            endLine: z.number().optional().describe('Last line to read, 1-based and inclusive. Negative values count from the end of the file'),
             maxChars: z.number().optional().describe('Maximum characters to return, default 12000'),
           }),
-          execute: async ({ path, maxChars }) => {
-            const resolved = resolveReadableArtifact(projectRoot, path);
-            if (!resolved) {
-              return { success: false, message: 'File is outside allowed artifact directories' };
-            }
-            if (!existsSync(resolved)) {
-              return { success: false, message: `File not found: ${path}` };
-            }
-            if (!statSync(resolved).isFile()) {
-              return { success: false, message: `Not a file: ${path}` };
-            }
-
-            const limit = Math.max(1000, Math.min(maxChars || 12000, 50000));
-            const content = readFileSync(resolved, 'utf8');
-            return {
-              success: true,
-              path: relative(projectRoot || process.cwd(), resolved),
-              truncated: content.length > limit,
-              content: content.slice(0, limit),
-            };
-          },
+          execute: async (input) => readCaptainFile(projectRoot, input, readableDirs),
         }),
       };
 
@@ -157,18 +140,26 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
       const config = ConfigParser.getInstance().getConfig();
       const knowledgeDir = config.dirs?.knowledge || 'knowledge';
       const experienceDir = config.dirs?.experience || 'experience';
+      const outputDir = config.dirs?.output || 'output';
 
       return dedent`
         <idle_capabilities>
         - Plan management: updatePlan() — replace or append tests in the current plan
-        - readArtifact() — read a specific report, plan, log, generated test, knowledge, or experience file for analysis
-        - bash() — run shell commands for file operations
-          - READ from: ${knowledgeDir}/, ${experienceDir}/, output/
-          - WRITE to: ${knowledgeDir}/, ${experienceDir}/ only (NOT output/)
-          - Use ls to list files, cat to read small files
-          - Use head/tail for large files to avoid excessive output
-          - Use grep to search file contents
+        - readFile() — read specific report, plan, log, generated test, knowledge, or experience file content
+        - bash() — discover files and inspect file metadata
+          - READ from: ${knowledgeDir}/, ${experienceDir}/, ${outputDir}/
+          - WRITE to: ${knowledgeDir}/, ${experienceDir}/ only (NOT ${outputDir}/)
+          - Use wc -l -c file.txt to inspect size
+          - Use file file.txt to inspect type
+          - Use find . -name "*.md" to discover files
+          - Use grep -n "keyword" file.txt to find matching lines
+          - Use ls -lh to list files
         </idle_capabilities>
+
+        <file_reading>
+        Use bash() for file discovery and search. Once the needed file and line range are known,
+        use readFile() to read its contents. Do not use bash() to print file contents.
+        </file_reading>
 
         <project_inspection>
         Use project({ view: "config" }) before explaining Explorbot setup or suggesting config improvements.
@@ -183,61 +174,6 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
       `;
     }
   };
-}
-
-function listRecentArtifacts(outputDir: string): Array<{ path: string; size: number; modifiedAt: string }> {
-  const dirs = ['reports', 'plans', 'tests', 'states'];
-  const artifacts: Array<{ path: string; size: number; modifiedAt: string; timestamp: number }> = [];
-
-  for (const dir of dirs) {
-    if (artifacts.length >= 200) break;
-    const targetDir = join(outputDir, dir);
-    if (!existsSync(targetDir)) continue;
-    collectArtifacts(outputDir, targetDir, artifacts);
-  }
-
-  return artifacts
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 20)
-    .map(({ timestamp, ...artifact }) => artifact);
-}
-
-function collectArtifacts(outputDir: string, targetDir: string, artifacts: Array<{ path: string; size: number; modifiedAt: string; timestamp: number }>): void {
-  for (const entry of readdirSync(targetDir, { withFileTypes: true })) {
-    if (artifacts.length >= 200) return;
-    const entryPath = join(targetDir, entry.name);
-    if (entry.isDirectory()) {
-      collectArtifacts(outputDir, entryPath, artifacts);
-      continue;
-    }
-
-    const stats = statSync(entryPath);
-    artifacts.push({
-      path: relative(outputDir, entryPath),
-      size: stats.size,
-      modifiedAt: stats.mtime.toISOString(),
-      timestamp: stats.mtimeMs,
-    });
-  }
-}
-
-function resolveReadableArtifact(projectRoot: string | null, requestedPath: string): string | null {
-  if (!projectRoot) return null;
-
-  let cleanPath = requestedPath.trim();
-  const projectName = basename(projectRoot);
-  if (cleanPath.startsWith(`${projectName}/`) || cleanPath.startsWith(`${projectName}\\`)) {
-    cleanPath = cleanPath.slice(projectName.length + 1);
-  }
-
-  const resolved = isAbsolute(cleanPath) ? resolve(cleanPath) : resolve(projectRoot, cleanPath);
-  const allowedRoots = ['output', 'knowledge', 'experience'].map((dir) => resolve(projectRoot, dir));
-  for (const root of allowedRoots) {
-    const rel = relative(root, resolved);
-    if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) return resolved;
-  }
-
-  return null;
 }
 
 export interface IdleModeMethods {

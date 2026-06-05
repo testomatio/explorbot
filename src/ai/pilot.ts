@@ -67,7 +67,7 @@ export class Pilot implements Agent {
   }
 
   async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
-    const verdictType = task.hasAchievedAny() || this.hasSuccessfulAssertionEvidence(currentState, testerConversation) ? 'finish' : 'stop';
+    const verdictType = this.hasCompletionEvidence(task, currentState, testerConversation) ? 'finish' : 'stop';
     return this.reviewDecision(verdictType, task, currentState, testerConversation, navigator);
   }
 
@@ -885,7 +885,12 @@ export class Pilot implements Agent {
     return parts.join('\n\n');
   }
 
-  private hasSuccessfulAssertionEvidence(currentState: ActionResult, testerConversation: Conversation): boolean {
+  private hasCompletionEvidence(task: Test, currentState: ActionResult, testerConversation: Conversation): boolean {
+    if (task.hasAchievedAny()) return true;
+    return this.hasSuccessfulCheckEvidence(currentState, testerConversation);
+  }
+
+  private hasSuccessfulCheckEvidence(currentState: ActionResult, testerConversation: Conversation): boolean {
     if (Object.values(currentState.verifications ?? {}).some(Boolean)) return true;
     return testerConversation.getToolExecutions().some((t) => CHECK_TOOLS.includes(t.toolName) && t.wasSuccessful);
   }

@@ -1,7 +1,8 @@
+import { describe, expect, it } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { describe, expect, it } from 'bun:test';
 import { Captain } from '../../src/ai/captain.ts';
+import { readCaptainFile } from '../../src/ai/captain/file-tools.ts';
 import { ConfigParser } from '../../src/config.ts';
 import type { Task } from '../../src/test-plan.ts';
 
@@ -52,7 +53,7 @@ describe('Captain artifact analysis tools', () => {
 
     const captain = buildCaptain();
     const tools = await (captain as any).idleModeTools({ explorBot: {}, task: task('analyze report') });
-    const result = await tools.readArtifact.execute({ path: 'output/reports/session-demo-tests.md' });
+    const result = await tools.readFile.execute({ path: 'output/reports/session-demo-tests.md' });
 
     expect(result.success).toBe(true);
     expect(result.content).toContain('Expected button was missing');
@@ -72,12 +73,69 @@ describe('Captain artifact analysis tools', () => {
     const captain = buildCaptain();
     const tools = await (captain as any).idleModeTools({ explorBot: {}, task: task('analyze report') });
     const projectName = basename(dirname(parser.getConfigPath()!));
-    const result = await tools.readArtifact.execute({ path: `${projectName}/output/reports/session-demo-tests.md` });
+    const result = await tools.readFile.execute({ path: `${projectName}/output/reports/session-demo-tests.md` });
 
     expect(result.success).toBe(true);
     expect(result.content).toContain('Wrong expectation');
 
     rmSync(join(outputDir, '..'), { recursive: true, force: true });
+  });
+
+  it('reads a requested line range from file contents', async () => {
+    ConfigParser.resetForTesting();
+    ConfigParser.setupTestConfig();
+    const parser = ConfigParser.getInstance();
+    const outputDir = join(dirname(parser.getConfigPath()!), 'output');
+    const reportDir = join(outputDir, 'reports');
+    mkdirSync(reportDir, { recursive: true });
+    writeFileSync(join(reportDir, 'session-demo-tests.md'), ['line 1', 'line 2', 'line 3', 'line 4'].join('\n'));
+
+    const captain = buildCaptain();
+    const tools = await (captain as any).idleModeTools({ explorBot: {}, task: task('analyze report') });
+    const result = await tools.readFile.execute({ path: 'output/reports/session-demo-tests.md', startLine: 2, endLine: 3 });
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe('line 2\nline 3');
+
+    rmSync(join(outputDir, '..'), { recursive: true, force: true });
+  });
+
+  it('reads line ranges from the end of file', async () => {
+    ConfigParser.resetForTesting();
+    ConfigParser.setupTestConfig();
+    const parser = ConfigParser.getInstance();
+    const outputDir = join(dirname(parser.getConfigPath()!), 'output');
+    const reportDir = join(outputDir, 'reports');
+    mkdirSync(reportDir, { recursive: true });
+    writeFileSync(join(reportDir, 'session-demo-tests.md'), ['line 1', 'line 2', 'line 3', 'line 4'].join('\n'));
+
+    const captain = buildCaptain();
+    const tools = await (captain as any).idleModeTools({ explorBot: {}, task: task('analyze report') });
+    const result = await tools.readFile.execute({ path: 'output/reports/session-demo-tests.md', startLine: -2 });
+
+    expect(result.success).toBe(true);
+    expect(result.content).toBe('line 3\nline 4');
+
+    rmSync(join(outputDir, '..'), { recursive: true, force: true });
+  });
+
+  it('uses caller-provided readable directories', () => {
+    ConfigParser.resetForTesting();
+    ConfigParser.setupTestConfig();
+    const parser = ConfigParser.getInstance();
+    const projectRoot = dirname(parser.getConfigPath()!);
+    const customDir = join(projectRoot, 'custom-knowledge');
+    mkdirSync(customDir, { recursive: true });
+    writeFileSync(join(customDir, 'hint.md'), 'custom directory content');
+
+    const result = readCaptainFile(projectRoot, { path: 'custom-knowledge/hint.md' }, ['custom-knowledge']);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.content).toContain('custom directory content');
+    }
+
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 });
 

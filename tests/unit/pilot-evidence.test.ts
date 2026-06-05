@@ -11,7 +11,7 @@ describe('Pilot evidence', () => {
     const state = { verifications: { 'Heading is visible': true } };
     const conversation = { getToolExecutions: () => [] };
 
-    expect((pilot as any).hasSuccessfulAssertionEvidence(state, conversation)).toBe(true);
+    expect((pilot as any).hasSuccessfulCheckEvidence(state, conversation)).toBe(true);
     expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('PASS state verification');
   });
 
@@ -29,7 +29,16 @@ describe('Pilot evidence', () => {
       ],
     };
 
-    expect((pilot as any).hasSuccessfulAssertionEvidence(state, conversation)).toBe(true);
+    expect((pilot as any).hasSuccessfulCheckEvidence(state, conversation)).toBe(true);
     expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('PASS verify');
+  });
+
+  it('treats achieved task notes as completion evidence', () => {
+    const pilot = buildPilot();
+    const task = { hasAchievedAny: () => true };
+    const state = {};
+    const conversation = { getToolExecutions: () => [] };
+
+    expect((pilot as any).hasCompletionEvidence(task, state, conversation)).toBe(true);
   });
 });

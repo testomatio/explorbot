@@ -300,7 +300,7 @@ export class Captain extends CaptainBase implements Agent {
             return {
               success: false,
               command: cmd,
-              message: 'Command blocked: slash commands that can run tests, mutate plans, or inspect unrelated project sections require an explicit user slash-command request. Use readArtifact/project/test inspection tools for analysis instead.',
+              message: 'Command blocked: slash commands that can run tests, mutate plans, or inspect unrelated project sections require an explicit user slash-command request. Use readFile/project/test inspection tools for analysis instead.',
             };
           }
           startLogCapture();
