@@ -156,7 +156,7 @@ Analyzes page using HTML and ARIA tree. Fast and works with any model.
 /research --deep
 ```
 
-Expands hidden elements (dropdowns, accordions, tabs) to discover more UI. Clicks through interactive elements and documents what appears.
+Expands hidden elements (dropdowns, accordions, tabs) to discover more UI. Clicks through interactive elements and documents what appears. Deep research also reuses what it found on previous runs — see [Reusing Previous Results](#reusing-previous-results).
 
 #### Research with Data Extraction
 
@@ -224,6 +224,17 @@ For each element, the researcher:
 2. Clicks the element
 3. Detects what changed (navigation, modal, menu, UI change)
 4. Restores original state (Escape key or navigate back)
+
+### Reusing Previous Results
+
+Hidden sections discovered by deep research are saved under an **Extended Research** block in the page's research file, together with the action that revealed each one. On the next deep run for the same page — even in a later session — the researcher builds on that instead of starting from scratch:
+
+1. **Replay** — it re-runs the saved action for every previously found section to check it still opens.
+2. **Reuse** — sections that still open are kept as-is and are not explored again, so the run spends its click budget on what is actually new.
+3. **Re-discover** — if a section's trigger no longer works (the button moved or was renamed), it is flagged to the AI as "this section existed before, find it again", so a relocated control is recovered rather than lost.
+4. **Skip** — when every known section still opens and the click budget is already covered, the slow click-through exploration is skipped because the page is effectively unchanged.
+
+This makes repeated deep runs faster and stops the researcher from silently losing hidden UI it had already mapped. The reuse reads the last saved research file directly, so it works across sessions and is not limited by the in-memory [cache window](#caching).
 
 ### Filtering Elements
 
@@ -312,6 +323,8 @@ Use `--force` to bypass cache:
 ```bash
 /research --force
 ```
+
+This cache controls when a fresh result is reused within a session. It is separate from how [deep research reuses previous results](#reusing-previous-results): a deep run always reloads the last saved research file from `output/research/` to replay and verify previously discovered hidden sections, regardless of the cache window or session.
 
 ## Configuration Examples
 
