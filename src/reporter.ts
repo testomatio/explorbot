@@ -7,7 +7,6 @@ import type { StateManager } from './state-manager.js';
 import { Stats } from './stats.js';
 import { Test } from './test-plan.js';
 import { createDebug } from './utils/logger.js';
-import { withCleanReporterConsole } from './utils/reporter-console.js';
 
 export type ReporterMeta = Record<string, string | undefined>;
 
@@ -104,7 +103,7 @@ export class Reporter {
     }
 
     try {
-      const result = await withCleanReporterConsole(async () => {
+      const result = await withQuietReporterLogs(async () => {
         this.client = new Client({ apiKey: process.env.TESTOMATIO || '', title: this.buildTitle() });
         const timeoutMs = Number(process.env.TESTOMATIO_TIMEOUT_MS || '15000');
         const timeoutPromise = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), timeoutMs));
@@ -297,7 +296,7 @@ export class Reporter {
     }
 
     try {
-      await withCleanReporterConsole(async () => {
+      await withQuietReporterLogs(async () => {
         await this.client.updateRunStatus('finished');
       });
       this.isRunStarted = false;
@@ -343,5 +342,19 @@ export class Reporter {
 
   async reportSteps(test: Test, steps: ReporterStep[]): Promise<void> {
     return;
+  }
+}
+
+async function withQuietReporterLogs<T>(fn: () => Promise<T>): Promise<T> {
+  const previousLevel = process.env.TESTOMATIO_LOG_LEVEL;
+  process.env.TESTOMATIO_LOG_LEVEL = 'ERROR';
+  try {
+    return await fn();
+  } finally {
+    if (previousLevel === undefined) {
+      delete process.env.TESTOMATIO_LOG_LEVEL;
+    } else {
+      process.env.TESTOMATIO_LOG_LEVEL = previousLevel;
+    }
   }
 }

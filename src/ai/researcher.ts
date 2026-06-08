@@ -151,7 +151,7 @@ export class Researcher extends ResearcherBase implements Agent {
       if (!deep && !force) {
         const similar = await findSimilarResearch(combinedHtml);
         if (similar) {
-          tag('substep').log('Similar research found, reusing cached result');
+          tag('operation').log('Similar research found, reusing cached result');
           if (stateHash) saveResearch(stateHash, similar, combinedHtml);
           tag('multiline').log(formatResearchSummary(similar));
           tag('success').log('Research complete (reused)');
@@ -319,7 +319,7 @@ export class Researcher extends ResearcherBase implements Agent {
       if (researchFile) tag('operation').log(`Research file saved to: ${researchFile}`);
       if (this.actionResult?.screenshotFile) {
         const screenshotPath = outputPath('states', this.actionResult.screenshotFile);
-        tag('substep').log(`UI screenshot: file://${screenshotPath}`);
+        tag('operation').log(`UI screenshot: file://${screenshotPath}`);
       }
 
       await this.hooksRunner.runAfterHook('researcher', state.url);
@@ -467,7 +467,7 @@ export class Researcher extends ResearcherBase implements Agent {
         .filter((k) => !!k)
         .join('\n\n');
 
-      tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')} for: ${this.actionResult.url}`);
+      tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')} for: ${this.actionResult.url}`);
       knowledge = `
         <hint>
         Here is relevant knowledge for this page:

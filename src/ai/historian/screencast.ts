@@ -92,7 +92,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
         this.screencastTask = test?._explorbotTest || null;
         this.screencastLastChapter = null;
       } catch (err) {
-        tag('substep').log(`Screencast start failed: ${(err as Error).message}`);
+        tag('operation').log(`Screencast start failed: ${(err as Error).message}`);
       }
     }
 
@@ -116,7 +116,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
       try {
         await this.screencastPage.screencast.stop();
       } catch (err) {
-        tag('substep').log(`Screencast stop failed: ${(err as Error).message}`);
+        tag('operation').log(`Screencast stop failed: ${(err as Error).message}`);
       }
       this.screencastActive = false;
       this.screencastPage = null;
