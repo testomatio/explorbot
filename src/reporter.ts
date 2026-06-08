@@ -352,7 +352,7 @@ async function withQuietReporterLogs<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } finally {
     if (previousLevel === undefined) {
-      delete process.env.TESTOMATIO_LOG_LEVEL;
+      process.env.TESTOMATIO_LOG_LEVEL = undefined;
     } else {
       process.env.TESTOMATIO_LOG_LEVEL = previousLevel;
     }
