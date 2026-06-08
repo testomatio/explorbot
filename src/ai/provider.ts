@@ -294,8 +294,11 @@ export class Provider {
         }
         throw new ContextLengthError(error.message || error.toString());
       }
-      tag('error').log(error.message || error.toString());
-      throw new AiError(error.message || error.toString());
+      const message = error.message || error.toString();
+      if (message !== 'No response text from AI') {
+        tag('error').log(message);
+      }
+      throw new AiError(message);
     }
   }
 
@@ -376,7 +379,6 @@ export class Provider {
     } catch (error: any) {
       clearActivity();
       if (error?.message?.includes('Tool choice is required')) {
-        tag('warning').log('Model completed without calling a tool, returning empty result');
         return { text: '', toolCalls: [], toolResults: [], response: { messages: [] }, usage: null };
       }
       if (error?.name === 'AbortError') throw error;

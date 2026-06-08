@@ -206,7 +206,7 @@ class Navigator implements Agent {
     if (!actionResult.isInsideIframe) {
       const successful = this.experienceTracker.getSuccessfulExperience(actionResult);
       if (successful.length > 0) {
-        tag('substep').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${actionResult.url}`);
+        tag('operation').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${actionResult.url}`);
         experience = `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${successful.join('\n\n')}\n</experience>`;
       }
     }
@@ -307,7 +307,7 @@ class Navigator implements Agent {
             stop();
             return;
           }
-          tag('substep').log('Feeding failures back to AI for a new batch...');
+          tag('operation').log('Feeding failures back to AI for a new batch...');
           let contextMsg = 'Previous solutions did not work. Analyze the failures and try DIFFERENT strategies (not syntactic variants of the same locator).\n\n';
           if (batchFailures.length > 0) {
             const lines = batchFailures
@@ -633,7 +633,7 @@ class Navigator implements Agent {
 
     const cachedVerification = actionResult.getVerification(message);
     if (cachedVerification !== null) {
-      tag('substep').log(`Reusing cached verification: ${cachedVerification ? 'PASS' : 'FAIL'}`);
+      tag('operation').log(`Reusing cached verification: ${cachedVerification ? 'PASS' : 'FAIL'}`);
       return { verified: cachedVerification, successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
@@ -654,7 +654,7 @@ class Navigator implements Agent {
       const toc = this.experienceTracker.getExperienceTableOfContents(actionResult);
       if (toc.length > 0) {
         const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
-        tag('substep').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections) for: ${actionResult.url}`);
+        tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections) for: ${actionResult.url}`);
         experience = renderExperienceToc(toc);
       }
     }

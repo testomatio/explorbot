@@ -102,7 +102,7 @@ export function WithCodeceptJS<T extends Constructor>(Base: T) {
       writeFileSync(filePath, lines.join('\n'));
       this.savedFiles.add(filePath);
 
-      tag('substep').log(`Saved plan tests to: ${relativeToCwd(filePath)}`);
+      tag('operation').log(`Saved plan tests to: ${relativeToCwd(filePath)}`);
       return filePath;
     }
 

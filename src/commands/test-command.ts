@@ -69,7 +69,8 @@ export class TestCommand extends BaseCommand {
 
     tag('info').log(`Launching ${toExecute.length} test scenario(s).`);
     const tester = this.explorBot.agentTester();
-    for (const test of toExecute) {
+    for (const [index, test] of toExecute.entries()) {
+      tag('info').log(`Starting test ${index + 1}/${toExecute.length}: ${test.scenario}`);
       await tester.test(test);
     }
     tag('success').log('Test execution finished');

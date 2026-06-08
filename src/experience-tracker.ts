@@ -188,7 +188,7 @@ export class ExperienceTracker {
     const updatedContent = `${newEntry}\n\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
-    tag('substep').log(` Added ACTION to: ${stateHash}.md`);
+    tag('operation').log(`Added ACTION to: ${stateHash}.md`);
   }
 
   writeFlow(state: ActionResult, body: string, relatedUrls?: string[]): void {
@@ -218,7 +218,7 @@ export class ExperienceTracker {
     const updatedContent = `${body}\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
-    tag('substep').log(`Added FLOW to: ${stateHash}.md`);
+    tag('operation').log(`Added FLOW to: ${stateHash}.md`);
   }
 
   getAllExperience(): ExperienceFile[] {

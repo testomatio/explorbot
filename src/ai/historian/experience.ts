@@ -56,7 +56,7 @@ export function WithExperience<T extends Constructor>(Base: T) {
 
       await this.stopScreencast();
 
-      tag('substep').log(`Historian saved session for: ${task.description}`);
+      tag('operation').log(`Historian saved session for: ${task.description}`);
     }
 
     private async reportSession(test: Test, steps: SessionStep[]): Promise<void> {
