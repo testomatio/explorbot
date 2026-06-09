@@ -64,22 +64,27 @@ describe('Captain modes', () => {
 describe('Captain execution recovery', () => {
   it('continues after a fatal browser error is recovered', async () => {
     const captain = buildCaptainWithExplorer({
-      isFatalBrowserError: () => true,
-      recoverFromBrowserError: async () => true,
+      handleExecutionError: async () => ({
+        action: 'continue',
+        recovered: true,
+        message: 'Browser was recovered after a fatal page error.',
+      }),
     });
 
     const recovery = await captain.processExecutionError(new Error('Target closed'), { scenario: 'create project' } as any);
 
     expect(recovery.action).toBe('continue');
     expect(recovery.recovered).toBe(true);
-    expect(recovery.message).toContain('Captain recovered the browser');
+    expect(recovery.message).toContain('Browser was recovered');
   });
 
   it('stops when a fatal browser error cannot be recovered', async () => {
     const captain = buildCaptainWithExplorer({
-      isFatalBrowserError: () => true,
-      recoverFromBrowserError: async () => false,
-      restartBrowser: async () => false,
+      handleExecutionError: async () => ({
+        action: 'stop',
+        recovered: false,
+        message: 'Browser could not be recovered',
+      }),
     });
 
     const recovery = await captain.processExecutionError(new Error('Target closed'), { scenario: 'create project' } as any);
@@ -90,9 +95,11 @@ describe('Captain execution recovery', () => {
 
   it('continues when browser restart recovers after page recovery fails', async () => {
     const captain = buildCaptainWithExplorer({
-      isFatalBrowserError: () => true,
-      recoverFromBrowserError: async () => false,
-      restartBrowser: async () => true,
+      handleExecutionError: async () => ({
+        action: 'continue',
+        recovered: true,
+        message: 'Browser was recovered after a fatal page error.',
+      }),
     });
 
     const recovery = await captain.processExecutionError(new Error('Target closed'), { scenario: 'create project' } as any);
@@ -103,8 +110,10 @@ describe('Captain execution recovery', () => {
 
   it('continues with guidance for non-fatal execution errors', async () => {
     const captain = buildCaptainWithExplorer({
-      isFatalBrowserError: () => false,
-      recoverFromBrowserError: async () => false,
+      handleExecutionError: async () => ({
+        action: 'continue',
+        message: 'Previous execution error: Locator not found. Investigate the current state and choose a different approach.',
+      }),
     });
 
     const recovery = await captain.processExecutionError(new Error('Locator not found'), { scenario: 'create project' } as any);

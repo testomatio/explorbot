@@ -81,7 +81,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
     }
 
     async visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number> {
-      return visuallyAnnotateContainers(this.explorer.playwrightHelper.page, opts?.containers || []);
+      return this.explorer.visuallyAnnotateElements(opts);
     }
 
     private async _analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult> {
@@ -193,7 +193,6 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
     }
 
     async backfillCoordinates(result: ResearchResult): Promise<void> {
-      const page = this.explorer.playwrightHelper.page;
       const sections = parseResearchSections(result.text);
       const eidxWithoutCoords: string[] = [];
       for (const section of sections) {
@@ -203,7 +202,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
       }
       if (eidxWithoutCoords.length === 0) return;
 
-      const webElements = await WebElement.fromEidxList(page, eidxWithoutCoords);
+      const webElements = await this.explorer.runWithBrowserRecovery('backfillCoordinates', () => WebElement.fromEidxList(this.explorer.playwrightHelper.page, eidxWithoutCoords));
       if (webElements.length === 0) return;
 
       const rectMap = new Map(webElements.map((w) => [w.eidx!, w]));

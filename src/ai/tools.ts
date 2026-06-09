@@ -6,6 +6,7 @@ import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { extractFocusedElement } from '../utils/aria.ts';
+import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
@@ -287,6 +288,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             suggestion: 'Verify the key name is correct. For typing text, use form() tool instead.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('pressKey', `PressKey tool failed: ${errorMessage}`);
@@ -403,6 +405,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             action
           );
         } catch (error) {
+          throwIfFatalBrowserError(error);
           activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('form', `Form tool failed: ${errorMessage}`);
@@ -442,8 +445,7 @@ export function createSpecialContextTools(explorer: Explorer, context: 'iframe')
 
           await explorer.switchToMainFrame();
 
-          const action = explorer.createAction();
-          const nextState = await action.capturePageState();
+          const nextState = await explorer.capturePageState();
           const toolResult = await nextState.toToolResult(previousState, 'I.switchTo()');
 
           return successToolResult('exitIframe', {
@@ -452,6 +454,7 @@ export function createSpecialContextTools(explorer: Explorer, context: 'iframe')
             code: 'I.switchTo()',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('exitIframe', `Failed to exit iframe: ${errorMessage}`);
         }
@@ -496,8 +499,7 @@ export function createAgentTools({
         }
 
         try {
-          const action = explorer.createAction();
-          const actionResult = await action.caputrePageWithScreenshot();
+          const actionResult = await explorer.capturePageWithScreenshot();
 
           if (!actionResult.screenshot) {
             return failedToolResult('see', 'Failed to capture screenshot for analysis');
@@ -515,6 +517,7 @@ export function createAgentTools({
             suggestion: 'Visual confirmation is valid evidence for test results. Use record() to note the visual findings.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           visionDisabled = true;
           tag('warning').log('⚠️ Vision model is not available. Visual checks are disabled for this session.');
@@ -596,8 +599,7 @@ export function createAgentTools({
             });
           }
 
-          const action = explorer.createAction();
-          const actionResult = await action.capturePageState();
+          const actionResult = await explorer.capturePageState();
           const result = await navigator.verifyState(assertion, actionResult);
 
           if (result.verified) {
@@ -615,6 +617,7 @@ export function createAgentTools({
             suggestion: 'The assertion could not be verified. Check if the condition is actually present on the page or try a different assertion.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('verify', `Verify tool failed: ${errorMessage}`, {
             error: errorMessage,
@@ -670,6 +673,7 @@ export function createAgentTools({
             `,
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('research', `Research tool failed: ${errorMessage}`, {
             error: errorMessage,
@@ -714,6 +718,7 @@ export function createAgentTools({
             suggestion: 'The action could not be completed. Try a different instruction or use more specific element descriptions.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('interact', `Interact tool failed: ${errorMessage}`, {
             error: errorMessage,
@@ -752,7 +757,7 @@ export function createAgentTools({
 
           const previousState = ActionResult.fromState(currentState);
           const action = explorer.createAction();
-          const actionResult = await action.caputrePageWithScreenshot();
+          const actionResult = await explorer.capturePageWithScreenshot();
 
           if (!actionResult.screenshot) {
             return failedToolResult('visualClick', 'Failed to capture screenshot for visual analysis');
@@ -793,6 +798,7 @@ export function createAgentTools({
             analysis: locationResult,
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           visionDisabled = true;
           tag('warning').log('⚠️ Vision model is not available. Visual clicks are disabled for this session.');
@@ -1010,6 +1016,10 @@ function cap(text: string | undefined | null, max: number): string {
   if (!text) return '';
   if (text.length <= max) return text;
   return `${text.slice(0, max)}\n[...truncated; ${text.length - max} chars omitted...]`;
+}
+
+function throwIfFatalBrowserError(error: unknown): void {
+  if (isFatalBrowserError(error)) throw error;
 }
 
 function transformContainsCommand(command: string): string {

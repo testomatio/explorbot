@@ -23,9 +23,9 @@ import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
+import { isFatalBrowserError } from './utils/browser-errors.ts';
 
 const debugLog = createDebug('explorbot:action');
-const FATAL_BROWSER_ERRORS = /Frame was detached|Target closed|Execution context was destroyed|Protocol error|Session closed/i;
 
 class Action {
   private actor: CodeceptJS.I;
@@ -78,21 +78,26 @@ class Action {
       const page = this.playwrightHelper.page;
       const frame = this.playwrightHelper.frame;
       await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-      const grabAll = () => Promise.all([(this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
+      await waitForUsablePageDom(page);
+      const grabAll = () => Promise.all([captureHtml(page, frame), captureTitle(page), this.captureBrowserLogs()]);
       const [html, title, browserLogs] = await grabAll().catch(async (err: Error) => {
         const msg = err instanceof Error ? err.message : String(err);
         if (!/navigating and changing the content/i.test(msg)) throw err;
         await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
+        await waitForUsablePageDom(page);
         return grabAll();
       });
       const url = page?.url() || (await (this.actor as any).grabCurrentUrl?.());
 
       let screenshotFile: string | undefined = undefined;
+      const statesDir = outputPath('states');
+      fs.mkdirSync(statesDir, { recursive: true });
 
       if (includeScreenshot) {
         const filename = safeFilename(`${stateHash}_${timestamp}`, '.png');
-        screenshotFile = await (this.actor as any)
-          .saveScreenshot(filename)
+        const screenshotPath = join(statesDir, filename);
+        screenshotFile = await page
+          ?.screenshot({ path: screenshotPath, fullPage: true })
           .then(() => filename)
           .catch((err: Error) => {
             debugLog('Screenshot failed, continuing without it:', err);
@@ -101,8 +106,6 @@ class Action {
       }
 
       // Save HTML to file
-      const statesDir = outputPath('states');
-      fs.mkdirSync(statesDir, { recursive: true });
       const htmlFile = safeFilename(`${stateHash}_${timestamp}`, '.html');
       const htmlPath = join(statesDir, htmlFile);
       fs.writeFileSync(htmlPath, html, 'utf8');
@@ -158,7 +161,7 @@ class Action {
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (FATAL_BROWSER_ERRORS.test(msg)) throw err;
+      if (isFatalBrowserError(err)) throw err;
       debugLog('capturePageState failed with non-fatal error:', msg);
       const url = this.playwrightHelper.page?.url?.() || '';
       return new ActionResult({ url, error: msg });
@@ -375,6 +378,7 @@ class Action {
       return true;
     } catch (error) {
       this.lastError = error as Error;
+      if (isFatalBrowserError(error)) throw error;
       debugLog(`Attempt failed: ${codeBlock}: ${errorToString(error) || this.lastError?.toString()}`);
       return false;
     }
@@ -404,6 +408,33 @@ function errorToString(error: any): string {
     return error.cliMessage();
   }
   return error.message || error.toString();
+}
+
+async function waitForUsablePageDom(page: any): Promise<void> {
+  if (!page?.waitForFunction) return;
+
+  await page
+    .waitForFunction(
+      () => {
+        const body = document.body;
+        if (!body) return false;
+        return body.children.length > 0 || body.textContent?.trim().length > 0;
+      },
+      undefined,
+      { timeout: 5000 }
+    )
+    .catch(() => {});
+}
+
+async function captureHtml(page: any, frame: any): Promise<string> {
+  if (frame?.content) return frame.content();
+  if (page?.content) return page.content();
+  throw new Error('Playwright page is unavailable for HTML capture');
+}
+
+async function captureTitle(page: any): Promise<string> {
+  if (page?.title) return page.title();
+  return '';
 }
 
 function sanitizeCodeBlock(code: string): string {

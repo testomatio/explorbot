@@ -26,7 +26,6 @@ const MAX_STEPS = 15;
 const CaptainBase = WithTestMode(WithWebMode(WithIdleMode(TaskAgent as unknown as new (...args: any[]) => TaskAgent)));
 
 export class Captain extends CaptainBase implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form', 'navigate'];
   emoji = '🧑‍✈️';
   private explorBot: ExplorBot;
   private conversation: Conversation | null = null;
@@ -72,6 +71,12 @@ export class Captain extends CaptainBase implements Agent {
 
   protected trackToolExecutions(toolExecutions: any[]): void {
     super.trackToolExecutions(toolExecutions);
+    if (toolExecutions.length > 0) {
+      this.recentToolCalls.push(...toolExecutions);
+      if (this.recentToolCalls.length > 20) {
+        this.recentToolCalls = this.recentToolCalls.slice(-20);
+      }
+    }
     for (const exec of toolExecutions) {
       const label = toolExecutionLabel(exec.input);
       if (!label) continue;
@@ -117,7 +122,7 @@ export class Captain extends CaptainBase implements Agent {
     - After a successful action, if the pageDiff confirms the goal, call done() immediately — do not verify with see() or context() unless the user explicitly asked for verification
     - Prefer completing in fewer tool calls over thoroughness
     - NEVER run tests unless the user explicitly asks
-    - If the user asks to show, display, explain, summarize, compare, or diagnose information, include the actual user-facing answer in done({ details }). Do not only say that it was shown or explained.
+    - If you are answering with information rather than completing a browser action, include the actual user-facing answer in done({ details }). Do not only say that it was shown or explained.
     ${mode === 'web' || mode === 'heal' ? this.webModeRules() : ''}
     ${mode === 'test' || mode === 'heal' ? this.testModeRules() : ''}
     ${mode === 'heal' ? '- First diagnose browser availability, then recover the browser/page before continuing test analysis.' : ''}
@@ -262,10 +267,10 @@ export class Captain extends CaptainBase implements Agent {
         }),
         execute: async ({ summary, details }) => {
           debugLog('done', summary);
-          if (requiresUserFacingDetails(task.description) && !details?.trim()) {
+          if (!details?.trim() && !this.canCompleteWithoutDetails()) {
             return {
               success: false,
-              message: 'The user asked for information to be shown or explained. Call done() again with the actual answer in details, not only a completion summary.',
+              message: 'No user-facing result was provided. Call done() again with the actual answer in details, or complete a browser action first.',
             };
           }
           if (details?.trim()) {
@@ -282,7 +287,7 @@ export class Captain extends CaptainBase implements Agent {
           Execute a TUI command. Returns log output from command execution.
           Use only when the user explicitly asks to run a slash command.
           Never use this to analyze files, reports, logs, plans, generated tests, knowledge, or experience.
-          Never run /test, /rerun, /plan, /plans, /plan:load, /experience, /learn, or /drill unless the user explicitly requested that slash command.
+          Never run a slash command unless the user request itself starts with that slash command.
           ${this.commandDescriptions
             .map((c) => {
               const opts = c.options ? ` (${c.options})` : '';
@@ -296,11 +301,11 @@ export class Captain extends CaptainBase implements Agent {
         execute: async ({ command }) => {
           if (!this.commandExecutor) return { success: false, message: 'Command executor not available' };
           const cmd = command.startsWith('/') ? command : `/${command}`;
-          if (isUnsafeImplicitCommand(cmd) && !isExplicitSlashRequest(task.description, cmd)) {
+          if (!isExplicitSlashRequest(task.description, cmd)) {
             return {
               success: false,
               command: cmd,
-              message: 'Command blocked: slash commands that can run tests, mutate plans, or inspect unrelated project sections require an explicit user slash-command request. Use readFile/project/test inspection tools for analysis instead.',
+              message: 'Command blocked: slash commands require an explicit matching slash-command request from the user.',
             };
           }
           startLogCapture();
@@ -396,38 +401,16 @@ export class Captain extends CaptainBase implements Agent {
   }
 
   async processExecutionError(error: Error, activeTest: Test): Promise<ExecutionRecoveryAction> {
-    const message = error.message || String(error);
     const explorer = this.explorBot.getExplorer();
-
-    if (!explorer.isFatalBrowserError(error)) {
-      return {
-        action: 'continue',
-        message: `Previous execution error: ${message}. Investigate the current state and choose a different approach.`,
-      };
-    }
-
-    let recovered = await explorer.recoverFromBrowserError();
-    if (!recovered) {
-      recovered = await explorer.restartBrowser();
-    }
-    if (recovered) {
-      return {
-        action: 'continue',
-        recovered: true,
-        message: dedent`
-          Captain recovered the browser after a fatal page error.
-          Continue the test "${activeTest.scenario}" from the restored page.
-          The interrupted action is not evidence that the application failed.
-          Inspect the restored page and retry the scenario step when it is still required.
-        `,
-      };
-    }
-
+    const result = await explorer.handleExecutionError(error);
     return {
-      action: 'stop',
-      recovered: false,
-      message: `Captain could not recover the browser after fatal error: ${message}`,
+      ...result,
+      message: result.recovered ? `${result.message}\nContinue the test "${activeTest.scenario}" from the restored page.` : result.message,
     };
+  }
+
+  private canCompleteWithoutDetails(): boolean {
+    return (this.recentToolCalls || []).some(hasBrowserCompletionEvidence);
   }
 
   async handle(input: string, options: { reset?: boolean } = {}): Promise<string | null> {
@@ -525,7 +508,7 @@ export class Captain extends CaptainBase implements Agent {
 
         if (result?.toolExecutions?.length) {
           const lastExec = result.toolExecutions[result.toolExecutions.length - 1];
-          if (lastExec.wasSuccessful && this.ACTION_TOOLS.includes(lastExec.toolName)) {
+          if (hasBrowserCompletionEvidence(lastExec)) {
             conversation.addUserText('Action succeeded. If the goal is achieved, call done() now with a brief summary.');
           }
         }
@@ -569,19 +552,25 @@ interface ExecutionRecoveryAction {
   recovered?: boolean;
 }
 
-function isUnsafeImplicitCommand(command: string): boolean {
-  return /^\/(?:test|rerun|plan(?::load)?|plans|experience|learn|drill)(?:\s|$)/.test(command.trim());
-}
-
 function isExplicitSlashRequest(input: string, command: string): boolean {
-  const normalizedInput = input.trim();
-  if (!normalizedInput.startsWith('/')) return false;
-
-  const requested = normalizedInput.split(/\s+/)[0];
-  const actual = command.trim().split(/\s+/)[0];
+  const requested = slashCommandToken(input);
+  const actual = slashCommandToken(command);
+  if (!requested || !actual) return false;
   return requested === actual;
 }
 
-function requiresUserFacingDetails(input: string): boolean {
-  return /\b(show|display|explain|describe|summarize|analyse|analyze|compare|tell me|details|status|what|which|why|how|где|покажи|объясни|обьясни|расскажи|что|какой|какие|почему|как)\b/i.test(input);
+function slashCommandToken(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('/')) return null;
+
+  for (let i = 1; i < trimmed.length; i++) {
+    if (trimmed[i] <= ' ') return trimmed.slice(0, i);
+  }
+  return trimmed;
+}
+
+function hasBrowserCompletionEvidence(execution: any): boolean {
+  if (!execution?.wasSuccessful) return false;
+  const output = execution.output || {};
+  return Boolean(output.pageDiff || output.code || output.playwrightGroupId);
 }

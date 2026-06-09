@@ -194,18 +194,22 @@ export class Tester extends TaskAgent implements Agent {
 
     debugLog('Starting test execution with tools');
 
-    if (!(await this.startExplorerTest(task, conversation))) {
+    if (!(await this.explorer.startTest(task))) {
       offFailedRequest?.();
       await this.cleanupStartedTest(task);
       return { success: task.isSuccessful };
     }
 
     debugLog(`Navigating to ${task.startUrl}`);
-    const navigated = await this.visitStartUrlWithRecovery(task, conversation);
-    if (!navigated) {
-      offFailedRequest?.();
-      await this.cleanupStartedTest(task);
-      return { success: task.isSuccessful };
+    try {
+      await this.explorer.visit(task.startUrl!);
+    } catch (error) {
+      const result = await this.handleLoopError(task, error);
+      if (result === 'stop') {
+        offFailedRequest?.();
+        await this.cleanupStartedTest(task);
+        return { success: task.isSuccessful };
+      }
     }
 
     const startState = this.explorer.getStateManager().getCurrentState();
@@ -231,7 +235,12 @@ export class Tester extends TaskAgent implements Agent {
       await loop(
         async ({ stop, pause, iteration, userInput }) => {
           debugLog('iteration', iteration);
-          if (!(await this.ensureBrowserPageAvailable(task, conversation, stop))) return;
+          if (!(await this.explorer.ensurePageAvailable())) {
+            task.addNote('Browser page is unavailable');
+            task.finish(TestResult.FAILED);
+            stop();
+            return;
+          }
           const currentState = this.getCurrentState();
 
           const tools = {
@@ -379,14 +388,15 @@ export class Tester extends TaskAgent implements Agent {
               }
             : undefined,
           catch: async ({ error, stop }) => {
-            await this.handleExecutionError(task, conversation, error, stop);
+            const result = await this.handleLoopError(task, error);
+            if (result === 'stop') stop();
           },
         }
       );
 
       if (task.hasFinished) break;
 
-      if (!(await this.canRunFinalReview(task, conversation))) break;
+      if (!(await this.explorer.ensurePageAvailable())) break;
 
       const finalState = this.getCurrentState();
       const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation, this.navigator);
@@ -1077,42 +1087,27 @@ export class Tester extends TaskAgent implements Agent {
     };
   }
 
-  private async handleExecutionError(task: Test, conversation: Conversation, error: Error, stop: () => void): Promise<void> {
-    tag('error').log(`Test execution error: ${error}`);
+  private async handleLoopError(task: Test, error: unknown): Promise<'continue' | 'stop'> {
     const message = error instanceof Error ? error.message : String(error);
-    if (!task.hasFinished) {
-      task.addNote(`Execution error: ${message}`);
-    }
-    if (error instanceof Error && error.name === 'AbortError') {
-      stop();
-      return;
-    }
-    if (this.captain && error instanceof Error) {
-      const recovery = await this.captain.processExecutionError(error, task);
-      tag('info').log(`Supervisor: ${recovery.action} - ${recovery.message}`);
-      task.addNote(recovery.message);
-      if (recovery.action === 'stop') {
-        task.finish(TestResult.FAILED);
-        stop();
-        return;
-      }
-      if (recovery.recovered) {
-        this.explorer.watchActiveTestPage();
-        this.resetFailureCount();
-        const recoveryContext = await this.buildRecoveryContext(task);
-        conversation.addUserText(`${recovery.message}\n\n${recoveryContext}`);
-        return;
-      }
-      conversation.addUserText(recovery.message);
-      return;
-    }
-    const isFatalBrowserError = this.explorer.isFatalBrowserError?.(error) ?? /Target closed|Session closed|Protocol error/i.test(message);
-    if (isFatalBrowserError) {
+    if (!task.hasFinished) task.addNote(`Execution error: ${message}`);
+
+    const result = await this.explorer.handleExecutionError(error);
+    tag('info').log(`Browser supervisor: ${result.action} - ${result.message}`);
+    task.addNote(result.message);
+
+    if (result.action === 'stop') {
       task.finish(TestResult.FAILED);
-      stop();
-      return;
+      return 'stop';
     }
-    conversation.addUserText(`Previous AI call failed: ${message}. Take a different approach on the next step.`);
+
+    if (result.recovered) {
+      this.resetFailureCount();
+      this.previousUrl = null;
+      this.previousStateHash = null;
+    }
+
+    this.currentConversation?.addUserText(result.message);
+    return 'continue';
   }
 
   private async cleanupStartedTest(task: Test): Promise<void> {
@@ -1122,89 +1117,6 @@ export class Tester extends TaskAgent implements Agent {
       style: task.style,
       sessionName: task.sessionName,
     });
-  }
-
-  private async startExplorerTest(task: Test, conversation: Conversation): Promise<boolean> {
-    task.start();
-    if (await this.explorer.startTest(task)) return true;
-
-    let stopped = false;
-    await this.handleExecutionError(task, conversation, new Error('Target closed: browser page is unavailable'), () => {
-      stopped = true;
-    });
-    if (stopped) return false;
-    return !task.hasFinished;
-  }
-
-  private async buildRecoveryContext(task: Test): Promise<string> {
-    let currentState: ActionResult | null = null;
-    try {
-      currentState = await this.explorer.createAction().capturePageState();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return dedent`
-        <browser_recovery>
-        Browser was restored, but fresh page context could not be captured: ${message}
-        The previous Target closed error was an external browser interruption, not product evidence.
-        Re-open or inspect the page before deciding pass/fail.
-        </browser_recovery>
-      `;
-    }
-
-    this.previousUrl = null;
-    this.previousStateHash = null;
-    const pageContext = await this.reinjectContextIfNeeded(1, currentState);
-    return dedent`
-      <browser_recovery>
-      Browser was restored during "${task.scenario}".
-      The previous Target closed error was an external browser interruption, not product evidence.
-      Ignore interrupted click/form attempts when judging whether the application works.
-      Retry the current scenario step from the restored page if the goal is still incomplete.
-      </browser_recovery>
-
-      ${pageContext}
-    `;
-  }
-
-  private async ensureBrowserPageAvailable(task: Test, conversation: Conversation, stop: () => void): Promise<boolean> {
-    if (await this.explorer.ensureActiveTestPageAvailable()) return true;
-
-    await this.handleExecutionError(task, conversation, new Error('Target closed: browser page is unavailable'), stop);
-    return !task.hasFinished;
-  }
-
-  private async canRunFinalReview(task: Test, conversation: Conversation): Promise<boolean> {
-    let stopped = false;
-    const available = await this.ensureBrowserPageAvailable(task, conversation, () => {
-      stopped = true;
-    });
-    if (!available) return false;
-    if (stopped) return false;
-    return !task.hasFinished;
-  }
-
-  private async visitStartUrlWithRecovery(task: Test, conversation: Conversation): Promise<boolean> {
-    try {
-      await this.explorer.visit(task.startUrl!);
-      return true;
-    } catch (error) {
-      let stopped = false;
-      await this.handleExecutionError(task, conversation, error instanceof Error ? error : new Error(String(error)), () => {
-        stopped = true;
-      });
-
-      if (stopped || task.hasFinished) return false;
-
-      try {
-        await this.explorer.visit(task.startUrl!);
-        return true;
-      } catch (retryError) {
-        const message = retryError instanceof Error ? retryError.message : String(retryError);
-        task.addNote(`Initial navigation failed after recovery: ${message}`, TestResult.FAILED);
-        task.finish(TestResult.FAILED);
-        return false;
-      }
-    }
   }
 }
 

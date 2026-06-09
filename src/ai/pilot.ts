@@ -93,8 +93,7 @@ export class Pilot implements Agent {
     let screenshotState: ActionResult | null = null;
     if (this.provider.hasVision()) {
       try {
-        const action = this.explorer.createAction();
-        screenshotState = await action.caputrePageWithScreenshot();
+        screenshotState = await this.explorer.capturePageWithScreenshot();
         if (screenshotState.screenshot) {
           visualAnalysis = (await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Describe current page state relevant to: ${task.scenario}`)) || '';
         }
@@ -661,8 +660,7 @@ export class Pilot implements Agent {
   private async checkDataAvailability(task: Test, requestedData: string, fishermanReason: string | undefined): Promise<string | null> {
     if (!this.provider.hasVision()) return null;
 
-    const action = this.explorer.createAction();
-    const screenshotState = await action.caputrePageWithScreenshot().catch(() => null);
+    const screenshotState = await this.explorer.capturePageWithScreenshot().catch(() => null);
     if (!screenshotState?.screenshot) return null;
 
     const question = dedent`

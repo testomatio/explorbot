@@ -24,7 +24,7 @@ export abstract class TaskAgent {
   protected consecutiveFailures = 0;
   protected consecutiveEmptyResults = 0;
   protected recentToolCalls: any[] = [];
-  protected abstract readonly ACTION_TOOLS: string[];
+  protected readonly ACTION_TOOLS: string[] = [];
 
   private _historian: Historian | null = null;
   private _quartermaster: Quartermaster | null = null;

@@ -279,11 +279,10 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           const isCoordinateClick = el.commands[0].startsWith('I.clickXY(');
           if (!isCoordinateClick) {
             const hoverCmd = el.commands[0].replace('I.click(', 'I.moveCursorTo(');
-            const hoverAction = this.explorer.createAction();
-            await hoverAction.attempt(hoverCmd, undefined, false);
+            await this.explorer.attemptAction(hoverCmd, undefined, false);
             await new Promise((r) => setTimeout(r, 500));
 
-            await this.explorer.createAction().capturePageState();
+            await this.explorer.capturePageState();
             const hoverAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
             const hoverDiff = await hoverAR.diff(previousState);
             await hoverDiff.calculate();
@@ -303,9 +302,8 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           }
 
           let clickCode: string | null = null;
-          const action = this.explorer.createAction();
           for (const cmd of el.commands) {
-            if (await action.attempt(cmd, undefined, false)) {
+            if (await this.explorer.attemptAction(cmd, undefined, false)) {
               clickCode = cmd;
               break;
             }
@@ -319,7 +317,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
           let diff: Diff;
           try {
-            await this.explorer.createAction().capturePageState();
+            await this.explorer.capturePageState();
             const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
             diff = await currAR.diff(previousState);
             await diff.calculate();
@@ -361,7 +359,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     private async _restorePageState(url: string, originalAria: string): Promise<void> {
       try {
         await (this as any).cancelInUi();
-        await this.explorer.createAction().capturePageState();
+        await this.explorer.capturePageState();
         const currentAria = this.stateManager.getCurrentState()?.ariaSnapshot || '';
         if (!diffAriaSnapshots(originalAria, currentAria)) return;
       } catch (err) {

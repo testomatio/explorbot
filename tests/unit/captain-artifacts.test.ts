@@ -32,14 +32,34 @@ describe('Captain artifact analysis tools', () => {
     expect(notes).toEqual(['baseUrl: https://example.test\nbrowser: chromium', 'Displayed config details']);
   });
 
-  it('rejects informational requests completed without details', async () => {
+  it('rejects completion without details before any successful action', async () => {
     const captain = buildCaptain();
-    const tools = (captain as any).coreTools(task('explain what page I am on'), () => {});
+    const tools = (captain as any).coreTools(task('inspect the current state'), () => {});
 
-    const result = await tools.done.execute({ summary: 'Explained current page' });
+    const result = await tools.done.execute({ summary: 'Inspected current state' });
 
     expect(result.success).toBe(false);
     expect(result.message).toContain('actual answer in details');
+  });
+
+  it('allows completion without details after successful browser evidence', async () => {
+    const captain = buildCaptain();
+    (captain as any).recentToolCalls = [{ wasSuccessful: true, output: { code: 'I.click("Submit")' } }];
+    const tools = (captain as any).coreTools(task('click the submit button'), () => {});
+
+    const result = await tools.done.execute({ summary: 'Clicked submit' });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects completion without details after read-only tool output', async () => {
+    const captain = buildCaptain();
+    (captain as any).recentToolCalls = [{ wasSuccessful: true, output: { content: 'report details' } }];
+    const tools = (captain as any).coreTools(task('show report'), () => {});
+
+    const result = await tools.done.execute({ summary: 'Read report' });
+
+    expect(result.success).toBe(false);
   });
 
   it('reads explicit report artifact paths without shell commands', async () => {
@@ -140,26 +160,26 @@ describe('Captain artifact analysis tools', () => {
 });
 
 describe('Captain command guard', () => {
-  it('blocks test execution commands for natural-language analysis requests', async () => {
+  it('blocks slash commands for natural-language analysis requests', async () => {
     let called = false;
     const captain = buildCaptain(async () => {
       called = true;
     });
     const tools = (captain as any).coreTools(task('analyze the latest report'), () => {});
-    const result = await tools.runCommand.execute({ command: '/test failing_demo_for_captain_tui_explanation' });
+    const result = await tools.runCommand.execute({ command: '/anything' });
 
     expect(result.success).toBe(false);
     expect(called).toBe(false);
     expect(result.message).toContain('Command blocked');
   });
 
-  it('allows execution commands when the user explicitly typed that slash command', async () => {
+  it('allows slash commands when the user explicitly typed that slash command', async () => {
     let called = false;
     const captain = buildCaptain(async () => {
       called = true;
     });
-    const tools = (captain as any).coreTools(task('/test 1'), () => {});
-    const result = await tools.runCommand.execute({ command: '/test 1' });
+    const tools = (captain as any).coreTools(task('/anything value'), () => {});
+    const result = await tools.runCommand.execute({ command: '/anything value' });
 
     expect(result.success).toBe(true);
     expect(called).toBe(true);
