@@ -79,7 +79,7 @@ class Action {
       const frame = this.playwrightHelper.frame;
       await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
       await waitForUsablePageDom(page);
-      const grabAll = () => Promise.all([captureHtml(page, frame), captureTitle(page), this.captureBrowserLogs()]);
+      const grabAll = () => Promise.all([captureHtml(page, frame, this.actor), captureTitle(page, this.actor), this.captureBrowserLogs()]);
       const [html, title, browserLogs] = await grabAll().catch(async (err: Error) => {
         const msg = err instanceof Error ? err.message : String(err);
         if (!/navigating and changing the content/i.test(msg)) throw err;
@@ -426,14 +426,16 @@ async function waitForUsablePageDom(page: any): Promise<void> {
     .catch(() => {});
 }
 
-async function captureHtml(page: any, frame: any): Promise<string> {
+async function captureHtml(page: any, frame: any, actor: any): Promise<string> {
   if (frame?.content) return frame.content();
   if (page?.content) return page.content();
+  if (actor?.grabSource) return actor.grabSource();
   throw new Error('Playwright page is unavailable for HTML capture');
 }
 
-async function captureTitle(page: any): Promise<string> {
+async function captureTitle(page: any, actor: any): Promise<string> {
   if (page?.title) return page.title();
+  if (actor?.grabTitle) return actor.grabTitle();
   return '';
 }
 
