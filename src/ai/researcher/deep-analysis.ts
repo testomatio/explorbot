@@ -5,10 +5,11 @@ import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
 import { WebPageState } from '../../state-manager.js';
 import { detectFocusArea, diffAriaSnapshots } from '../../utils/aria.ts';
+import { extractCodeBlocks } from '../../utils/code-extractor.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
 import type { Provider } from '../provider.js';
-import { getCachedResearch, saveResearch } from './cache.ts';
+import { getCachedResearch, getPreviousResearch, saveResearch } from './cache.ts';
 import { type Constructor, debugLog } from './mixin.ts';
 import { type ResearchElement, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
@@ -26,14 +27,30 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       tag('info').log('Starting deep analysis of expandable elements');
       await (this as any).navigateTo(state.fullUrl || state.url);
 
-      let expandables = await this._discoverExpandables(result.text);
-      if (expandables.length === 0) {
-        tag('info').log('No expandable elements identified by AI');
-        return;
-      }
-      tag('substep').log(`Identified ${expandables.length} expandable elements`);
-
       const maxClicks = (this.explorer.getConfig().ai?.agents?.researcher as any)?.maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
+
+      const expandedSections: string[] = [];
+      const navigationLinks: Array<{ code: string; url: string }> = [];
+      let verifiedCodes: string[] = [];
+      let missing: PreviousSection[] = [];
+
+      const previousSections = this._loadPreviousExtendedSections(state.hash || '');
+      if (previousSections.length > 0) {
+        tag('substep').log(`Replaying ${previousSections.length} previously discovered sections`);
+        const replay = await this._replayPreviousSections(state, previousSections, maxClicks);
+        expandedSections.push(...replay.verified);
+        verifiedCodes = replay.verifiedCodes;
+        missing = replay.missing;
+        tag('info').log(`Reused ${replay.verified.length}/${previousSections.length} previous sections, ${missing.length} to re-discover`);
+
+        if (missing.length === 0 && replay.verified.length >= maxClicks) {
+          tag('info').log('Page appears unchanged, reusing previous sections and skipping discovery');
+          this._appendExtendedResearch(result, expandedSections, navigationLinks);
+          return;
+        }
+      }
+
+      let expandables = await this._discoverExpandables(result.text, missing, verifiedCodes);
       if (expandables.length > maxClicks) {
         expandables = await this._selectExpandables(expandables, state.fullUrl || state.url, maxClicks);
         tag('substep').log(`Selected ${expandables.length} expandables to click (max: ${maxClicks})`);
@@ -44,10 +61,12 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           commands: this._buildClickCommands(el),
           description: el.name,
         }))
-        .filter((el) => el.commands.length > 0);
+        .filter((el) => el.commands.length > 0)
+        .filter((el) => !el.commands.some((cmd) => verifiedCodes.includes(cmd)));
 
       if (elements.length === 0) {
-        tag('info').log('No expandables with valid locators');
+        tag('info').log('No new expandable elements to click');
+        this._appendExtendedResearch(result, expandedSections, navigationLinks);
         return;
       }
 
@@ -57,25 +76,11 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       for (const el of elements) debugLog(`Expandable: ${el.description} → ${el.commands[0]}`);
       tag('substep').log(`Clicking ${elements.length} expandable elements`);
 
-      const expandedSections: string[] = [];
-      const navigationLinks: Array<{ code: string; url: string }> = [];
-
       await this._clickExpandableElements(elements, state, expandedSections, navigationLinks);
 
       tag('info').log(`Deep analysis complete. Sections: ${expandedSections.length}, navigation links: ${navigationLinks.length}`);
 
-      const dedupedSections = this._deduplicateExpandedSections(expandedSections);
-      if (dedupedSections.length !== expandedSections.length) {
-        tag('substep').log(`Deduplicated ${expandedSections.length} → ${dedupedSections.length} extended sections`);
-      }
-
-      if (dedupedSections.length > 0) {
-        result.text += `\n\n# Extended Research\n\n${dedupedSections.join('\n\n---\n\n')}`;
-      }
-      if (navigationLinks.length > 0) {
-        const links = navigationLinks.map((l) => `- \`${l.code}\` opens ${l.url}`).join('\n');
-        result.text += `\n\n## Navigation Links\n\n${links}`;
-      }
+      this._appendExtendedResearch(result, expandedSections, navigationLinks);
     }
 
     async researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null> {
@@ -127,7 +132,70 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       return sectionMarkdown;
     }
 
-    private async _discoverExpandables(researchText: string): Promise<ExpandableElement[]> {
+    private _loadPreviousExtendedSections(hash: string): PreviousSection[] {
+      if (!hash) return [];
+      const previous = getPreviousResearch(hash);
+      if (!previous) return [];
+
+      const sections: PreviousSection[] = [];
+      for (const section of parseResearchSections(previous)) {
+        if (!section.isExtended) continue;
+        const code = extractCodeBlocks(section.rawMarkdown)[0];
+        if (!code) continue;
+        sections.push({ name: section.name, code });
+      }
+      return sections;
+    }
+
+    private async _replayPreviousSections(state: WebPageState, prevSections: PreviousSection[], maxClicks: number): Promise<{ verified: string[]; verifiedCodes: string[]; missing: PreviousSection[] }> {
+      const originalAria = state.ariaSnapshot || '';
+      const verified: string[] = [];
+      const verifiedCodes: string[] = [];
+      const missing: PreviousSection[] = [];
+
+      for (const section of prevSections.slice(0, maxClicks)) {
+        if (executionController.isInterrupted()) break;
+
+        let outcome: ExpansionOutcome;
+        try {
+          outcome = await this._executeAndAnalyze([section.code], section.name, state, originalAria, this._summarizeExpanded(verified));
+        } catch (err) {
+          tag('warning').log(`Replay failed for "${section.name}": ${err instanceof Error ? err.message : err}`);
+          await this._restorePageState(state.url, originalAria).catch(() => {});
+          missing.push(section);
+          continue;
+        }
+
+        if (outcome.status === 'revealed') {
+          verified.push(outcome.sectionMarkdown);
+          verifiedCodes.push(section.code);
+          debugLog(`Replayed and verified section: ${section.name}`);
+          continue;
+        }
+
+        debugLog(`Could not replay previous section: ${section.name}`);
+        missing.push(section);
+      }
+
+      return { verified, verifiedCodes, missing };
+    }
+
+    private _appendExtendedResearch(result: ResearchResult, expandedSections: string[], navigationLinks: Array<{ code: string; url: string }>): void {
+      const dedupedSections = this._deduplicateExpandedSections(expandedSections);
+      if (dedupedSections.length !== expandedSections.length) {
+        tag('substep').log(`Deduplicated ${expandedSections.length} → ${dedupedSections.length} extended sections`);
+      }
+
+      if (dedupedSections.length > 0) {
+        result.text += `\n\n# Extended Research\n\n${dedupedSections.join('\n\n---\n\n')}`;
+      }
+      if (navigationLinks.length > 0) {
+        const links = navigationLinks.map((l) => `- \`${l.code}\` opens ${l.url}`).join('\n');
+        result.text += `\n\n## Navigation Links\n\n${links}`;
+      }
+    }
+
+    private async _discoverExpandables(researchText: string, missing: PreviousSection[] = [], verifiedCodes: string[] = []): Promise<ExpandableElement[]> {
       const allElements = new Map<string, ExpandableElement>();
       for (const section of parseResearchSections(researchText)) {
         for (const el of section.elements) {
@@ -138,6 +206,16 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
       const eidxList = [...allElements.keys()].join(', ');
 
+      let missingHint = '';
+      if (missing.length > 0) {
+        const list = missing.map((s) => `- "${s.name}" (previously revealed via ${s.code})`).join('\n');
+        missingHint = dedent`
+
+          These sections were present on a previous visit but their trigger could not be replayed now — the element may have moved or been renamed. Prioritize finding the element that now reveals each:
+          ${list}
+        `;
+      }
+
       const textPrompt = dedent`
         From this UI research, identify elements that could reveal hidden UI when clicked
         (dropdown menus, popups, expandable panels, accordion sections, overflow menus, tab switches).
@@ -145,6 +223,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         Available eidx refs: ${eidxList}
 
         ${researchText}
+        ${missingHint}
 
         Rules:
         - Only pick elements that HIDE content until clicked (menus, dropdowns, accordions, tabs)
@@ -168,6 +247,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
           Look for: overflow/ellipsis menus, chevron dropdowns, hamburger menus,
           gear/settings buttons, accordion toggles, tab switches, filter buttons.
+          ${missingHint}
 
           Rules:
           - For repeated icons (same icon on every list row), pick only the FIRST one
@@ -302,53 +382,15 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
             }
           }
 
-          let clickCode: string | null = null;
-          const action = this.explorer.createAction();
-          for (const cmd of el.commands) {
-            if (await action.attempt(cmd, undefined, false)) {
-              clickCode = cmd;
-              break;
-            }
-          }
-          if (!clickCode) {
-            debugLog(`Click failed: ${el.description.slice(0, 80)}`);
+          const outcome = await this._executeAndAnalyze(el.commands, el.description, state, originalAria, this._summarizeExpanded(expandedSections));
+          if (outcome.status === 'navigated') {
+            navigationLinks.push({ code: outcome.code, url: outcome.url });
             continue;
           }
-
-          await new Promise((r) => setTimeout(r, 500));
-
-          let diff: Diff;
-          try {
-            await this.explorer.createAction().capturePageState();
-            const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
-            diff = await currAR.diff(previousState);
-            await diff.calculate();
-          } catch (err) {
-            tag('warning').log(`State capture failed after click: ${err instanceof Error ? err.message : err}`);
-            await this._restorePageState(state.url, originalAria);
-            continue;
-          }
-
-          if (diff.urlHasChanged()) {
-            debugLog(`Click navigated to ${this.stateManager.getCurrentState()?.url}`);
-            navigationLinks.push({ code: clickCode, url: this.stateManager.getCurrentState()?.url || '' });
-            await (this as any).navigateTo(state.url);
-            continue;
-          }
-
-          const clickHtmlSize = diff.htmlParts.reduce((sum, p) => sum + p.subtree.length, 0);
-          if (!diff.ariaChanged && clickHtmlSize <= 150) {
-            debugLog(`No changes from: ${el.description.slice(0, 80)}`);
-            continue;
-          }
-
-          const sectionMarkdown = await this._analyzeExpandedAction(clickCode, el.description, diff, this._summarizeExpanded(expandedSections));
-          if (sectionMarkdown) {
-            expandedSections.push(sectionMarkdown);
+          if (outcome.status === 'revealed') {
+            expandedSections.push(outcome.sectionMarkdown);
             debugLog(`Captured section from: ${el.description.slice(0, 80)}`);
           }
-
-          await this._restorePageState(state.url, originalAria);
         } catch (err) {
           tag('warning').log(`Expandable click failed for "${el.description.slice(0, 80)}": ${err instanceof Error ? err.message : err}`);
           try {
@@ -356,6 +398,55 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           } catch {}
         }
       }
+    }
+
+    private async _executeAndAnalyze(commands: string[], description: string, state: WebPageState, originalAria: string, alreadyExpanded: string[]): Promise<ExpansionOutcome> {
+      const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);
+
+      let clickCode: string | null = null;
+      const action = this.explorer.createAction();
+      for (const cmd of commands) {
+        if (await action.attempt(cmd, undefined, false)) {
+          clickCode = cmd;
+          break;
+        }
+      }
+      if (!clickCode) {
+        debugLog(`Click failed: ${description.slice(0, 80)}`);
+        return { status: 'failed' };
+      }
+
+      await new Promise((r) => setTimeout(r, 500));
+
+      let diff: Diff;
+      try {
+        await this.explorer.createAction().capturePageState();
+        const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
+        diff = await currAR.diff(previousState);
+        await diff.calculate();
+      } catch (err) {
+        tag('warning').log(`State capture failed after click: ${err instanceof Error ? err.message : err}`);
+        await this._restorePageState(state.url, originalAria);
+        return { status: 'failed' };
+      }
+
+      if (diff.urlHasChanged()) {
+        const url = this.stateManager.getCurrentState()?.url || '';
+        debugLog(`Click navigated to ${url}`);
+        await (this as any).navigateTo(state.url);
+        return { status: 'navigated', code: clickCode, url };
+      }
+
+      const clickHtmlSize = diff.htmlParts.reduce((sum, p) => sum + p.subtree.length, 0);
+      if (!diff.ariaChanged && clickHtmlSize <= 150) {
+        debugLog(`No changes from: ${description.slice(0, 80)}`);
+        return { status: 'none', code: clickCode };
+      }
+
+      const sectionMarkdown = await this._analyzeExpandedAction(clickCode, description, diff, alreadyExpanded);
+      await this._restorePageState(state.url, originalAria);
+      if (!sectionMarkdown) return { status: 'none', code: clickCode };
+      return { status: 'revealed', code: clickCode, sectionMarkdown };
     }
 
     private async _restorePageState(url: string, originalAria: string): Promise<void> {
@@ -483,6 +574,13 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 interface ExpandableElement extends ResearchElement {
   container: string | null;
 }
+
+interface PreviousSection {
+  name: string;
+  code: string;
+}
+
+type ExpansionOutcome = { status: 'revealed'; code: string; sectionMarkdown: string } | { status: 'navigated'; code: string; url: string } | { status: 'none'; code: string } | { status: 'failed' };
 
 export interface DeepAnalysisMethods {
   performDeepAnalysis(state: WebPageState, result: ResearchResult): Promise<void>;
