@@ -188,7 +188,7 @@ export class ExperienceTracker {
     const updatedContent = `${newEntry}\n\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
-    tag('substep').log(` Added ACTION to: ${stateHash}.md`);
+    tag('operation').log(`Added ACTION to: ${stateHash}.md`);
   }
 
   writeFlow(state: ActionResult, body: string, relatedUrls?: string[]): void {
@@ -218,7 +218,7 @@ export class ExperienceTracker {
     const updatedContent = `${body}\n${content}`;
     this.writeExperienceFile(stateHash, updatedContent, data);
 
-    tag('substep').log(`Added FLOW to: ${stateHash}.md`);
+    tag('operation').log(`Added FLOW to: ${stateHash}.md`);
   }
 
   getAllExperience(): ExperienceFile[] {
@@ -499,7 +499,7 @@ export function renderExperienceToc(toc: ExperienceTocEntry[]): string {
   lines.push('Locators and step ordering worked then; the page may have changed since.');
   lines.push('Treat as a starting hypothesis, not ground truth. If a step fails, fall back to ARIA/UI-map.');
   lines.push('FLOW: = multi-step recipe (bullets + code + discovery). ACTION: = single-step snippet (one code block).');
-  lines.push('Call learn_experience({ fileTag, sectionIndex }) to read a section when it looks relevant to the current step.');
+  lines.push('Call learnExperience({ fileTag, sectionIndex }) to read a section when it looks relevant to the current step.');
   lines.push('');
   for (const entry of toc) {
     lines.push(`File ${entry.fileTag} ${entry.url}:`);

@@ -80,7 +80,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
         }
       }
 
-      tag('substep').log(`Validated ${locators.length} locators: ${locators.length - broken} valid, ${broken} broken`);
+      tag('operation').log(`Validated ${locators.length} locators: ${locators.length - broken} valid, ${broken} broken`);
     }
 
     async fixBrokenSections(result: ResearchResult, conversation: Conversation): Promise<void> {

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-06-06
+
+### Changes
+- [Tester] Checkboxes and other toggle controls (switches, selectable rows/items) are no longer flipped back off by accident. The Tester now sets a checkbox with the idempotent `I.checkOption` / `I.uncheckOption` commands instead of `I.click`, so selecting an already-selected checkbox keeps it selected. It also reads the page state after each click and stops re-clicking a control once it already shows the wanted result (checked, selected, or a count/label confirming success). Previously a second click on a selected checkbox could toggle it off — for example dropping a "Select 32 tests" selection back to "Select 0 tests" and saving an empty result.
+- [Tester] Before filling a form that saves data (create/update), the Tester now reads each field's requirements — required, type/format, length, and placeholder/hint text — and enters values that satisfy them, instead of submitting and discovering validation errors. Search, filter, and sort forms that only change the view are skipped.
+
+## 2026-06-04
+
+### Changes
+- [Tester] When a click or locator keeps failing on a button or link that is plainly visible on the page, the Tester now always tries clicking it by its visual appearance at least once before re-researching, switching targets, or deciding the element is unreachable. Previously it could exhaust broken locators and wrongly conclude a visible control did not exist.
+
+## 2026-06-03
+
+### Changes
+- [Pilot] No longer clicks or interacts with the page during supervision — it only inspects, verifies, and suggests the next step for the Tester to carry out. Previously the supervisor could perform clicks and coordinate-clicks itself, so it acted as a second tester on stuck pages and let tests loop far longer than needed.
+- [Pilot] Now owns asking the user for help. The "ask the user" escalation moved off the Tester and onto the Pilot, so requests for human input go through the supervisor (interactive mode only); the Tester no longer prompts the user directly.
+
 ## 2026-06-01
 
 ### Configuration

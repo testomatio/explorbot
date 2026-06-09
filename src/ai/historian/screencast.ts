@@ -94,7 +94,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
         this.screencastTask = test?._explorbotTest || null;
         this.screencastLastChapter = null;
       } catch (err) {
-        tag('substep').log(`Screencast start failed: ${(err as Error).message}`);
+        tag('operation').log(`Screencast start failed: ${(err as Error).message}`);
       }
     }
 
@@ -122,9 +122,9 @@ export function WithScreencast<T extends Constructor>(Base: T) {
       } catch (err) {
         const message = (err as Error).message;
         if (FATAL_SCREENCAST_STOP_ERRORS.test(message)) {
-          tag('substep').log('Screencast skipped: browser was closed before recording could be finalized');
+          tag('operation').log('Screencast skipped: browser was closed before recording could be finalized');
         } else {
-          tag('substep').log(`Screencast stop failed: ${message}`);
+          tag('operation').log(`Screencast stop failed: ${message}`);
         }
       }
       this.screencastActive = false;
@@ -135,7 +135,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
       if (path && stopped) {
         this.savedFiles.add(path);
         task?.addArtifact?.(path);
-        tag('substep').log(`Saved screencast: ${relativeToCwd(path)}`);
+        tag('operation').log(`Saved screencast: ${relativeToCwd(path)}`);
       }
     }
   };

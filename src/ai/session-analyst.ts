@@ -41,6 +41,9 @@ export class SessionAnalyst implements Agent {
 
       Crucial distinction: "the app misbehaved" vs "the automation could not interact with the app". ONLY the first is a Defect. If the automation gives up before the app responds — timeout, retries exhausted, dead loop / loop detected, could not click or find an element — that is an Execution issue regardless of what the log calls it. Failure inside the automation ≠ failure inside the product.
 
+      The action log is more authoritative than the scenario title. If the actual submitted data, page state, or action sequence does not match the scenario title, classify it as Execution issue and do not list that scenario under What works. Do NOT infer a product Defect or UX issue from behavior caused by incorrect test data or an automation mismatch.
+      Negative test data is valid when it matches a negative scenario. Do not call intentionally invalid input wrong data when the scenario expects rejection or validation feedback.
+
       A solitary failure where adjacent tests on the same feature passed → Execution, not Defect.
 
       ## Severity (defects only)
@@ -76,7 +79,7 @@ export class SessionAnalyst implements Agent {
 
       ## Brevity rules
 
-      - Headline: 2 sentences MAX. About the FEATURE, not the run. No counts, no "N tests", no "this session". Banned words: "exercised", "comprehensive", "notably", "this session", "module", "targeted", "covered creation".
+      - Headline: 2 sentences MAX. About the FEATURE, not the run. No counts, no "N tests", no "this session". Never use these words: "exercised", "comprehensive", "notably", "this session", "module", "targeted", "covered creation".
       - What works: feature name + test refs. NO parentheticals, NO caveats. If there's a caveat, the entry doesn't belong here.
       - Defect title is the BUG ("Search returns non-matching results"), never the scenario name.
       - Reproduce steps are imperative one-liners drawn from the log.

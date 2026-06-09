@@ -23,8 +23,8 @@ describe('Logger', () => {
     }
 
     process.env.INITIAL_CWD = '/tmp';
-    process.env.INK_RUNNING = undefined;
-    process.env.DEBUG = undefined;
+    Reflect.deleteProperty(process.env, 'INK_RUNNING');
+    Reflect.deleteProperty(process.env, 'DEBUG');
 
     setVerboseMode(false);
     setPreserveConsoleLogs(false);
@@ -68,6 +68,17 @@ describe('Logger', () => {
     it('should log substep messages', () => {
       logSubstep('Test substep message');
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Test substep message'));
+    });
+
+    it('should hide operation messages by default', () => {
+      tag('operation').log('Saved generated artifact');
+      expect(consoleSpy).not.toHaveBeenCalled();
+    });
+
+    it('should log operation messages in verbose mode', () => {
+      setVerboseMode(true);
+      tag('operation').log('Saved generated artifact');
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Saved generated artifact'));
     });
   });
 
@@ -285,6 +296,20 @@ describe('Logger', () => {
       const multilineLogger = tag('multiline');
       multilineLogger.log('# Heading\n\nSome **bold** text');
       expect(consoleSpy).toHaveBeenCalled();
+    });
+
+    it('should preserve multiline maxLines option for TUI rendering', () => {
+      process.env.INK_RUNNING = 'true';
+      const entries: TaggedLogEntry[] = [];
+      const mockLogPane = (entry: TaggedLogEntry) => {
+        entries.push(entry);
+      };
+      registerLogPane(mockLogPane);
+
+      tag('multiline').log('Line 1\nLine 2', { maxLines: 1 });
+
+      unregisterLogPane(mockLogPane);
+      expect(entries.find((entry) => entry.type === 'multiline')?.maxLines).toBe(1);
     });
   });
 

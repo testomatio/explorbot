@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { Client } from '@testomatio/reporter';
 import type { Step } from '@testomatio/reporter/types/types.js';
-import { ConfigParser, outputPath } from './config.js';
+import { outputPath } from './config.js';
 import type { ReporterConfig } from './config.js';
 import type { StateManager } from './state-manager.js';
 import { Stats } from './stats.js';
@@ -103,11 +103,13 @@ export class Reporter {
     }
 
     try {
-      this.client = new Client({ apiKey: process.env.TESTOMATIO || '', title: this.buildTitle() });
-      const timeoutMs = Number(process.env.TESTOMATIO_TIMEOUT_MS || '15000');
-      const timeoutPromise = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), timeoutMs));
+      const result = await withQuietReporterLogs(async () => {
+        this.client = new Client({ apiKey: process.env.TESTOMATIO || '', title: this.buildTitle() });
+        const timeoutMs = Number(process.env.TESTOMATIO_TIMEOUT_MS || '15000');
+        const timeoutPromise = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), timeoutMs));
 
-      const result = await Promise.race([this.client.createRun({ configuration: { exploratory: true } }).then(() => 'success' as const), timeoutPromise]);
+        return await Promise.race([this.client.createRun({ configuration: { exploratory: true } }).then(() => 'success' as const), timeoutPromise]);
+      });
 
       if (result === 'timeout') {
         debugLog('Reporter run creation timed out');
@@ -294,7 +296,9 @@ export class Reporter {
     }
 
     try {
-      await this.client.updateRunStatus('finished');
+      await withQuietReporterLogs(async () => {
+        await this.client.updateRunStatus('finished');
+      });
       this.isRunStarted = false;
       debugLog('Testomat.io run finished');
     } catch (error) {
@@ -338,5 +342,19 @@ export class Reporter {
 
   async reportSteps(test: Test, steps: ReporterStep[]): Promise<void> {
     return;
+  }
+}
+
+async function withQuietReporterLogs<T>(fn: () => Promise<T>): Promise<T> {
+  const previousLevel = process.env.TESTOMATIO_LOG_LEVEL;
+  process.env.TESTOMATIO_LOG_LEVEL = 'ERROR';
+  try {
+    return await fn();
+  } finally {
+    if (previousLevel === undefined) {
+      process.env.TESTOMATIO_LOG_LEVEL = undefined;
+    } else {
+      process.env.TESTOMATIO_LOG_LEVEL = previousLevel;
+    }
   }
 }
