@@ -4,7 +4,7 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
-import { setActivity } from '../activity.ts';
+import { clearActivity, setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
@@ -13,7 +13,7 @@ import type { StateTransition, WebPageState } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
-import { ErrorPageError } from '../utils/error-page.ts';
+import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -148,6 +148,14 @@ export class Tester extends TaskAgent implements Agent {
     page?.on('console', onConsoleMessage);
 
     const initialState = ActionResult.fromState(state);
+    if (isErrorPage(initialState)) {
+      task.start();
+      await this.explorer.startTest(task);
+      offFailedRequest?.();
+      page?.off('pageerror', onPageError);
+      page?.off('console', onConsoleMessage);
+      return await this.abortStartedTestOnErrorPage(task, initialState);
+    }
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
     conversation.markLastMessageCacheable();
@@ -217,6 +225,15 @@ export class Tester extends TaskAgent implements Agent {
 
     const startState = this.explorer.getStateManager().getCurrentState();
     if (startState) task.addUrlNote(startState);
+    if (startState) {
+      const startActionResult = ActionResult.fromState(startState);
+      if (isErrorPage(startActionResult)) {
+        offFailedRequest?.();
+        page?.off('pageerror', onPageError);
+        page?.off('console', onConsoleMessage);
+        return await this.abortStartedTestOnErrorPage(task, startActionResult);
+      }
+    }
     const currentUrl = startState?.url || task.startUrl || '';
     await this.hooksRunner.runBeforeHook('tester', currentUrl);
 
@@ -432,11 +449,7 @@ export class Tester extends TaskAgent implements Agent {
     page?.off('pageerror', onPageError);
     page?.off('console', onConsoleMessage);
     await this.finishTest(task);
-    await this.explorer.stopTest(task, {
-      startUrl: task.startUrl,
-      style: task.style,
-      sessionName: task.sessionName,
-    });
+    await this.explorer.stopTest(task, this.buildStopTestMeta(task));
 
     return {
       success: task.isSuccessful,
@@ -687,6 +700,26 @@ export class Tester extends TaskAgent implements Agent {
     } else {
       tag('warning').log(`Test with no result: ${task.scenario}`);
     }
+  }
+
+  private async abortStartedTestOnErrorPage(task: Test, actionResult: ActionResult): Promise<{ success: boolean }> {
+    const error = new ErrorPageError(actionResult.url || task.startUrl || '', actionResult.title, actionResult.httpStatus);
+    tag('warning').log(error.message);
+    task.addNote(error.message, TestResult.FAILED, actionResult.screenshotFile, actionResult.fullUrl || actionResult.url);
+    task.finish(TestResult.FAILED);
+    this.finishTest(task);
+    await this.explorer.stopTest(task, this.buildStopTestMeta(task));
+    clearActivity(true);
+    return { success: false };
+  }
+
+  private buildStopTestMeta(task: Test): Record<string, string> {
+    const meta: Record<string, string> = {
+      startUrl: task.startUrl,
+    };
+    if (task.style) meta.style = task.style;
+    if (task.sessionName) meta.sessionName = task.sessionName;
+    return meta;
   }
 
   getSystemMessage(): string {

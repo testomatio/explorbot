@@ -9,6 +9,8 @@ const LOADING_WORD = /\bloading\b/i;
 export type PageCondition = 'ok' | 'loading' | 'error';
 
 export function detectPageCondition(actionResult: ActionResult): PageCondition {
+  if (actionResult.httpStatus && actionResult.httpStatus >= 400) return 'error';
+
   const headingFields = [actionResult.title, actionResult.h1, actionResult.h2].filter(Boolean) as string[];
 
   for (const field of headingFields) {
@@ -40,9 +42,12 @@ export function isErrorPage(actionResult: ActionResult): boolean {
 export class ErrorPageError extends Error {
   constructor(
     public readonly url: string,
-    public readonly title?: string
+    public readonly title?: string,
+    public readonly httpStatus?: number
   ) {
-    super(`Error page detected at ${url}${title ? ` (${title})` : ''}`);
+    const status = httpStatus ? `HTTP ${httpStatus}` : '';
+    const details = [status, title].filter(Boolean).join(', ');
+    super(`Error page detected at ${url}${details ? ` (${details})` : ''}`);
     this.name = 'ErrorPageError';
   }
 }

@@ -249,6 +249,49 @@ describe('ExploreCommand picking algorithm (via dry-run execute)', () => {
   });
 });
 
+describe('ExploreCommand error page guard', () => {
+  test('does not plan or run tests when current page is an error page', async () => {
+    let planCalled = 0;
+    let testerCalled = 0;
+    let saveCalled = 0;
+    const explorBot = {
+      getExplorer: () => ({
+        getStateManager: () => ({
+          getCurrentState: () => ({
+            url: '/missing',
+            fullUrl: 'https://example.com/missing',
+            title: 'Application',
+            httpStatus: 404,
+            html: '<html><body>Short response</body></html>',
+          }),
+        }),
+      }),
+      plan: async () => {
+        planCalled++;
+      },
+      agentTester: () => ({
+        test: async () => {
+          testerCalled++;
+        },
+      }),
+      getCurrentPlan: () => undefined,
+      savePlans: () => {
+        saveCalled++;
+        return null;
+      },
+      printSessionAnalysis: async () => {},
+      agentHistorian: () => ({ getSavedFiles: () => [] }),
+    } as unknown as ExplorBot;
+
+    const cmd = new ExploreCommand(explorBot);
+    await cmd.execute('--max-tests 1');
+
+    expect(planCalled).toBe(0);
+    expect(testerCalled).toBe(0);
+    expect(saveCalled).toBe(0);
+  });
+});
+
 describe('ExploreCommand priority filter applies to NEW tests too', () => {
   test('new tests with disallowed priorities get disabled and do not run', async () => {
     const fakePlan = new Plan('Live');

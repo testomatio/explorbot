@@ -41,6 +41,7 @@ class Action {
   public playwrightGroupId: string | null = null;
   public assertionSteps: Array<{ name: string; args: any[] }> = [];
   private recorder?: PlaywrightRecorder;
+  private mainDocumentStatus: number | undefined = undefined;
 
   constructor(actor: CodeceptJS.I, stateManager: StateManager, recorder?: PlaywrightRecorder) {
     this.actor = actor;
@@ -144,6 +145,7 @@ class Action {
       const result = new ActionResult({
         html,
         title,
+        httpStatus: await this.captureMainDocumentStatus(),
         url,
         browserLogs,
         htmlFile,
@@ -163,6 +165,45 @@ class Action {
       const url = this.playwrightHelper.page?.url?.() || '';
       return new ActionResult({ url, error: msg });
     }
+  }
+
+  private async captureMainDocumentStatus(): Promise<number | undefined> {
+    if (this.mainDocumentStatus) return this.mainDocumentStatus;
+
+    try {
+      const page = this.playwrightHelper.page;
+      const status = await page.evaluate(() => {
+        const navigation = performance.getEntriesByType('navigation').at(-1) as PerformanceNavigationTiming & { responseStatus?: number };
+        if (!navigation) return undefined;
+        if (new URL(navigation.name).href !== window.location.href) return undefined;
+        return navigation.responseStatus;
+      });
+      if (typeof status !== 'number') return undefined;
+      if (status <= 0) return undefined;
+      return status;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private captureMainDocumentResponse(): () => void {
+    const page = this.playwrightHelper.page;
+    if (!page?.on || !page?.off) return () => {};
+
+    this.mainDocumentStatus = undefined;
+
+    const handler = (response: any) => {
+      const request = response.request();
+      if (request.resourceType() !== 'document') return;
+      if (response.frame() !== page.mainFrame()) return;
+      const status = response.status();
+      if (typeof status !== 'number') return;
+      if (status <= 0) return;
+      this.mainDocumentStatus = status;
+    };
+
+    page.on('response', handler);
+    return () => page.off('response', handler);
   }
 
   /**
@@ -235,6 +276,7 @@ class Action {
     const stepListener = attachStepLogger(executedSteps, assertionSteps);
     const groupId = this.recorder ? await this.recorder.beginAction(codeString) : null;
     this.playwrightGroupId = groupId;
+    const detachMainDocumentResponse = this.captureMainDocumentResponse();
     const activeSpan = Observability.getSpan();
     const tracer = trace.getTracer('ai');
     const stepSpan = activeSpan ? tracer.startSpan('codeceptjs.step', undefined, trace.setSpan(context.active(), activeSpan)) : null;
@@ -280,6 +322,7 @@ class Action {
       this.assertionSteps = [];
       throw err;
     } finally {
+      detachMainDocumentResponse();
       if (groupId) await this.recorder!.endAction();
       detachStepLogger(stepListener);
       if (stepSpan) {
