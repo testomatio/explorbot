@@ -68,6 +68,9 @@ function createMockExplorer(state = fakeState) {
     getConfig: () => ConfigParser.getInstance().getConfig(),
     visit: async () => {},
     annotateElements: async () => [],
+    capturePageState: async () => ActionResult.fromState(state),
+    capturePageWithScreenshot: async () => ActionResult.fromState(state),
+    runWithBrowserRecovery: async (_label: string, operation: () => Promise<any>) => operation(),
     createAction: () => ({
       capturePageState: async () => ActionResult.fromState(state),
       caputrePageWithScreenshot: async () => ActionResult.fromState(state),

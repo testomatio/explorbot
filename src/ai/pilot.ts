@@ -67,7 +67,7 @@ export class Pilot implements Agent {
   }
 
   async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
-    const verdictType = task.hasAchievedAny() ? 'finish' : 'stop';
+    const verdictType = this.hasCompletionEvidence(task, currentState, testerConversation) ? 'finish' : 'stop';
     return this.reviewDecision(verdictType, task, currentState, testerConversation, navigator);
   }
 
@@ -86,14 +86,14 @@ export class Pilot implements Agent {
 
     const sessionLog = this.formatSessionLog(testerConversation);
     const stateContext = this.buildStateContext(currentState);
+    const successfulAssertions = this.formatSuccessfulAssertions(currentState, testerConversation);
     const notes = task.notesToString() || 'No notes recorded.';
 
     let visualAnalysis = '';
     let screenshotState: ActionResult | null = null;
     if (this.provider.hasVision()) {
       try {
-        const action = this.explorer.createAction();
-        screenshotState = await action.caputrePageWithScreenshot();
+        screenshotState = await this.explorer.capturePageWithScreenshot();
         if (screenshotState.screenshot) {
           visualAnalysis = (await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Describe current page state relevant to: ${task.scenario}`)) || '';
         }
@@ -124,6 +124,10 @@ export class Pilot implements Agent {
       ${visualAnalysis ? `<visual_analysis>\n${visualAnalysis}\n</visual_analysis>` : ''}
 
       ${this.formatExpectations(task)}
+
+      <successful_assertions>
+      ${successfulAssertions || 'None'}
+      </successful_assertions>
 
       <notes>
       ${notes}
@@ -658,8 +662,7 @@ export class Pilot implements Agent {
   private async checkDataAvailability(task: Test, requestedData: string, fishermanReason: string | undefined): Promise<string | null> {
     if (!this.provider.hasVision()) return null;
 
-    const action = this.explorer.createAction();
-    const screenshotState = await action.caputrePageWithScreenshot().catch(() => null);
+    const screenshotState = await this.explorer.capturePageWithScreenshot().catch(() => null);
     if (!screenshotState?.screenshot) return null;
 
     const question = dedent`
@@ -880,6 +883,32 @@ export class Pilot implements Agent {
     }
 
     return parts.join('\n\n');
+  }
+
+  private hasCompletionEvidence(task: Test, currentState: ActionResult, testerConversation: Conversation): boolean {
+    if (task.hasAchievedAny()) return true;
+    return this.hasSuccessfulCheckEvidence(currentState, testerConversation);
+  }
+
+  private hasSuccessfulCheckEvidence(currentState: ActionResult, testerConversation: Conversation): boolean {
+    if (Object.values(currentState.verifications ?? {}).some(Boolean)) return true;
+    return testerConversation.getToolExecutions().some((t) => CHECK_TOOLS.includes(t.toolName) && t.wasSuccessful);
+  }
+
+  private formatSuccessfulAssertions(currentState: ActionResult, testerConversation: Conversation): string {
+    const lines: string[] = [];
+    for (const [assertion, passed] of Object.entries(currentState.verifications ?? {})) {
+      if (passed) lines.push(`PASS state verification: ${assertion}`);
+    }
+
+    for (const exec of testerConversation.getToolExecutions()) {
+      if (!CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful) continue;
+      const description = exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
+      const result = exec.output?.message || exec.output?.analysis || exec.output?.result;
+      lines.push(`PASS ${exec.toolName}: ${description}${result ? ` -> ${result}` : ''}`);
+    }
+
+    return [...new Set(lines)].join('\n');
   }
 
   private formatActions(toolCalls: any[]): string {

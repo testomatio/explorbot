@@ -136,17 +136,6 @@ export class Tester extends TaskAgent implements Agent {
       task.addNote(`Network error: ${r.method} ${r.path} → ${r.status}`, TestResult.FAILED);
     });
 
-    const page = this.explorer.playwrightHelper?.page;
-    const onPageError = (err: Error) => {
-      task.addNote(`Console error: ${err.message}`, TestResult.FAILED);
-    };
-    const onConsoleMessage = (msg: any) => {
-      if (msg.type() !== 'error') return;
-      task.addNote(`Console error: ${msg.text()}`, TestResult.FAILED);
-    };
-    page?.on('pageerror', onPageError);
-    page?.on('console', onConsoleMessage);
-
     const initialState = ActionResult.fromState(state);
 
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
@@ -176,20 +165,18 @@ export class Tester extends TaskAgent implements Agent {
           expected: task.expected,
         },
       },
-      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest, page, onPageError, onConsoleMessage })
+      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest })
     );
   }
 
-  private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: { offFailedRequest?: () => void; page: any; onPageError: (err: Error) => void; onConsoleMessage: (msg: any) => void }): Promise<{ success: boolean }> {
-    const { offFailedRequest, page, onPageError, onConsoleMessage } = handlers;
+  private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: TestSessionHandlers): Promise<{ success: boolean }> {
+    const { offFailedRequest } = handlers;
 
     if (this.pilot) {
       try {
         const plan = await this.pilot.planTest(task, initialState);
         if (task.hasFinished) {
           offFailedRequest?.();
-          page?.off('pageerror', onPageError);
-          page?.off('console', onConsoleMessage);
           return { success: task.isSuccessful };
         }
         if (plan) {
@@ -201,19 +188,29 @@ export class Tester extends TaskAgent implements Agent {
         task.addNote(`Planning failed: ${message}`, TestResult.FAILED);
         task.finish(TestResult.FAILED);
         offFailedRequest?.();
-        page?.off('pageerror', onPageError);
-        page?.off('console', onConsoleMessage);
         return { success: false };
       }
     }
 
     debugLog('Starting test execution with tools');
 
-    task.start();
-    await this.explorer.startTest(task);
+    if (!(await this.explorer.startTest(task))) {
+      offFailedRequest?.();
+      await this.cleanupStartedTest(task);
+      return { success: task.isSuccessful };
+    }
 
     debugLog(`Navigating to ${task.startUrl}`);
-    await this.explorer.visit(task.startUrl!);
+    try {
+      await this.explorer.visit(task.startUrl!);
+    } catch (error) {
+      const result = await this.handleLoopError(task, error);
+      if (result === 'stop') {
+        offFailedRequest?.();
+        await this.cleanupStartedTest(task);
+        return { success: task.isSuccessful };
+      }
+    }
 
     const startState = this.explorer.getStateManager().getCurrentState();
     if (startState) task.addUrlNote(startState);
@@ -238,6 +235,12 @@ export class Tester extends TaskAgent implements Agent {
       await loop(
         async ({ stop, pause, iteration, userInput }) => {
           debugLog('iteration', iteration);
+          if (!(await this.explorer.ensurePageAvailable())) {
+            task.addNote('Browser page is unavailable');
+            task.finish(TestResult.FAILED);
+            stop();
+            return;
+          }
           const currentState = this.getCurrentState();
 
           const tools = {
@@ -385,21 +388,15 @@ export class Tester extends TaskAgent implements Agent {
               }
             : undefined,
           catch: async ({ error, stop }) => {
-            tag('error').log(`Test execution error: ${error}`);
-            const message = error instanceof Error ? error.message : String(error);
-            if (!task.hasFinished) {
-              task.addNote(`Execution error: ${message}`);
-            }
-            if (error instanceof Error && error.name === 'AbortError') {
-              stop();
-              return;
-            }
-            conversation.addUserText(`Previous AI call failed: ${message}. Take a different approach on the next step.`);
+            const result = await this.handleLoopError(task, error);
+            if (result === 'stop') stop();
           },
         }
       );
 
       if (task.hasFinished) break;
+
+      if (!(await this.explorer.ensurePageAvailable())) break;
 
       const finalState = this.getCurrentState();
       const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation, this.navigator);
@@ -429,8 +426,6 @@ export class Tester extends TaskAgent implements Agent {
 
     offStateChange();
     offFailedRequest?.();
-    page?.off('pageerror', onPageError);
-    page?.off('console', onConsoleMessage);
     await this.finishTest(task);
     await this.explorer.stopTest(task, {
       startUrl: task.startUrl,
@@ -1093,4 +1088,40 @@ export class Tester extends TaskAgent implements Agent {
       }),
     };
   }
+
+  private async handleLoopError(task: Test, error: unknown): Promise<'continue' | 'stop'> {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!task.hasFinished) task.addNote(`Execution error: ${message}`);
+
+    const result = await this.explorer.handleExecutionError(error);
+    tag('info').log(`Browser supervisor: ${result.action} - ${result.message}`);
+    task.addNote(result.message);
+
+    if (result.action === 'stop') {
+      task.finish(TestResult.FAILED);
+      return 'stop';
+    }
+
+    if (result.recovered) {
+      this.resetFailureCount();
+      this.previousUrl = null;
+      this.previousStateHash = null;
+    }
+
+    this.currentConversation?.addUserText(result.message);
+    return 'continue';
+  }
+
+  private async cleanupStartedTest(task: Test): Promise<void> {
+    await this.finishTest(task);
+    await this.explorer.stopTest(task, {
+      startUrl: task.startUrl,
+      style: task.style,
+      sessionName: task.sessionName,
+    });
+  }
+}
+
+interface TestSessionHandlers {
+  offFailedRequest?: () => void;
 }

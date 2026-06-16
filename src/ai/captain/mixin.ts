@@ -8,7 +8,7 @@ export type Constructor<T = object> = new (...args: any[]) => T;
 
 export const debugLog = createDebug('explorbot:captain');
 
-export type CaptainMode = 'idle' | 'web' | 'test';
+export type CaptainMode = 'idle' | 'web' | 'test' | 'heal';
 
 export interface ModeContext {
   explorBot: ExplorBot;

@@ -42,6 +42,9 @@ function createMockExplorer(configOverrides: Record<string, unknown> = {}, playw
     getConfig: () => config,
     visit: async () => {},
     annotateElements: async () => [],
+    capturePageState: async () => ActionResult.fromState(fakeState),
+    capturePageWithScreenshot: async () => ActionResult.fromState(fakeState),
+    runWithBrowserRecovery: async (_label: string, operation: () => Promise<any>) => operation(),
     createAction: () => ({
       capturePageState: async () => ActionResult.fromState(fakeState),
       caputrePageWithScreenshot: async () => ActionResult.fromState(fakeState),

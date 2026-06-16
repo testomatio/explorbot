@@ -98,6 +98,9 @@ describe('Researcher with real browser + aimock', () => {
       getConfig: () => ConfigParser.getInstance().getConfig(),
       visit: async () => {},
       annotateElements: async () => (await annotatePageElements(page)).elements,
+      capturePageState: async () => ActionResult.fromState(state),
+      capturePageWithScreenshot: async () => ActionResult.fromState(state),
+      runWithBrowserRecovery: async (_label: string, operation: () => Promise<any>) => operation(),
       createAction: () => ({
         capturePageState: async () => ActionResult.fromState(state),
         caputrePageWithScreenshot: async () => ActionResult.fromState(state),

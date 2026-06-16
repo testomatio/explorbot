@@ -121,6 +121,7 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
       case 'step':
         return { color: 'cyan' as const, dimColor: true };
       case 'multiline':
+      case 'details':
         return { color: 'gray' as const, dimColor: true };
       case 'html':
         return { color: 'gray' as const };
@@ -143,16 +144,16 @@ const LogPane: React.FC<LogPaneProps> = React.memo(({ verboseMode }) => {
     }
     const styles = getLogStyles(log.type);
 
-    if (log.type === 'multiline') {
+    if (log.type === 'multiline' || log.type === 'details') {
       const cleaned = stripAnsi(dedent(log.content));
       const parsed = parseMarkdownToTerminal(cleaned);
       const lines = parsed.split('\n');
       const maxLines = log.maxLines || 16;
-      const truncated = lines.length > maxLines ? `${lines.slice(0, maxLines).join('\n')}\n... (${lines.length - maxLines} more lines)` : parsed;
+      const content = log.type === 'details' ? parsed : lines.length > maxLines ? `${lines.slice(0, maxLines).join('\n')}\n... (${lines.length - maxLines} more lines)` : parsed;
       return (
         <Box key={index} borderStyle="classic" borderLeft={false} borderRight={false} marginY={1} padding={1} borderColor="dim" overflow="hidden">
           <Text color="gray" dimColor>
-            {truncated}
+            {content}
           </Text>
         </Box>
       );

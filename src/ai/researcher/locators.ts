@@ -194,8 +194,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
       }
 
       if (needsXpath.length > 0) {
-        const page = this.explorer.playwrightHelper.page;
-        const webElements = await WebElement.fromEidxList(page, needsXpath);
+        const webElements = await this.explorer.runWithBrowserRecovery('backfillBrokenLocators', () => WebElement.fromEidxList(this.explorer.playwrightHelper.page, needsXpath));
         const changedSections = new Set<(typeof sections)[0]>();
         for (const w of webElements) {
           const entry = needsXpathEls.get(w.eidx!);

@@ -136,6 +136,10 @@ class Navigator implements Agent {
   }
 
   async visit(url: string): Promise<void> {
+    return this.explorer.runWithBrowserRecovery('navigator.visit', () => this.visitOnce(url));
+  }
+
+  private async visitOnce(url: string): Promise<void> {
     try {
       const action = this.explorer.createAction();
 
@@ -170,7 +174,7 @@ class Navigator implements Agent {
           throw new Error(`Navigation to ${url} failed: ${action.lastError?.message}`);
         }
       }
-      await action.caputrePageWithScreenshot();
+      await this.explorer.capturePageWithScreenshot();
       await this.hooksRunner.runAfterHook('navigator', url);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -382,7 +386,7 @@ class Navigator implements Agent {
               // URL did not transition to expectedUrl within timeout
             }
           }
-          const freshState = await action.capturePageState();
+          const freshState = await this.explorer.capturePageState();
           const currentUrl = /^https?:\/\//i.test(expectedUrl) ? freshState.fullUrl || freshState.url || '' : freshState.url || '';
           const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
           const stateChanged = freshState.getStateHash() !== actionResult.getStateHash();

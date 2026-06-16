@@ -11,7 +11,7 @@ import { Observability } from '../observability.ts';
 import { RecentStepFilter } from './log-filters.ts';
 import { parseMarkdownToTerminal } from './markdown-terminal.ts';
 
-export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'operation' | 'step' | 'multiline' | 'html' | 'input';
+export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'operation' | 'step' | 'multiline' | 'details' | 'html' | 'input';
 
 export interface TaggedLogEntry {
   type: LogType;
@@ -99,7 +99,7 @@ class ConsoleDestination implements LogDestination {
     if (entry.type === 'operation' && !this.verboseMode) return;
     if (entry.type === 'step' && !this.verboseMode && this.recentSteps.shouldSuppress(entry.content)) return;
     let content = entry.content;
-    if (entry.type === 'multiline') {
+    if (entry.type === 'multiline' || entry.type === 'details') {
       const cleaned = stripAnsi(dedent(entry.content));
       const parsed = parseMarkdownToTerminal(cleaned);
       content = parsed;
@@ -314,7 +314,7 @@ class CaptainDestination implements LogDestination {
 
   stopCapture(): string[] {
     this.capturing = false;
-    const logs = this.entries.filter((e) => e.type !== 'debug' && e.type !== 'html' && e.type !== 'multiline' && e.type !== 'operation').map((e) => `[${e.type}] ${e.content}`);
+    const logs = this.entries.filter((e) => e.type !== 'debug' && e.type !== 'html' && e.type !== 'multiline' && e.type !== 'details' && e.type !== 'operation').map((e) => `[${e.type}] ${e.content}`);
     this.entries = [];
     return logs;
   }
