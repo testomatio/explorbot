@@ -35,7 +35,7 @@ describe('Tester error page handling', () => {
     const currentState = createState('500 Internal Server Error', '<html><body><h1>500 Internal Server Error</h1></body></html>', '/broken');
     const startConversation = mock(() => createConversation());
     const visit = mock(async () => {});
-    const startTest = mock(async () => {});
+    const startTest = mock(async () => true);
     const stopTest = mock(async () => {});
 
     const explorer: any = {
@@ -89,7 +89,7 @@ describe('Tester error page handling', () => {
     const visit = mock(async () => {
       currentState = createState('Application', '<html><body>Short response</body></html>', '/missing', 404);
     });
-    const startTest = mock(async () => {});
+    const startTest = mock(async () => true);
     const stopTest = mock(async () => {});
 
     const explorer: any = {
@@ -134,7 +134,8 @@ describe('Tester error page handling', () => {
 
     expect(result.success).toBe(false);
     expect(task.result).toBe(TestResult.FAILED);
-    expect(Object.values(task.notes).some((note) => note.message.includes('Error page detected at /missing (HTTP 404'))).toBe(true);
+    const expectedMessageStart = 'Error page detected at /missing (HTTP 404';
+    expect(Object.values(task.notes).some((note) => note.message.includes(expectedMessageStart))).toBe(true);
     expect(visit).toHaveBeenCalledTimes(1);
     expect(startTest).toHaveBeenCalledTimes(1);
     expect(stopTest).toHaveBeenCalledTimes(1);

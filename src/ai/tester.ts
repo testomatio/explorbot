@@ -141,8 +141,6 @@ export class Tester extends TaskAgent implements Agent {
       task.start();
       await this.explorer.startTest(task);
       offFailedRequest?.();
-      page?.off('pageerror', onPageError);
-      page?.off('console', onConsoleMessage);
       return await this.abortStartedTestOnErrorPage(task, initialState);
     }
 
@@ -226,8 +224,6 @@ export class Tester extends TaskAgent implements Agent {
       const startActionResult = ActionResult.fromState(startState);
       if (isErrorPage(startActionResult)) {
         offFailedRequest?.();
-        page?.off('pageerror', onPageError);
-        page?.off('console', onConsoleMessage);
         return await this.abortStartedTestOnErrorPage(task, startActionResult);
       }
     }
