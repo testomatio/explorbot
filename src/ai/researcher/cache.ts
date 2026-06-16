@@ -49,6 +49,13 @@ export function getCachedResearch(hash: string): string {
   return cached;
 }
 
+export function getPreviousResearch(hash: string): string {
+  if (!hash) return '';
+  const researchFile = outputPath('research', `${hash}.md`);
+  if (!existsSync(researchFile)) return '';
+  return readFileSync(researchFile, 'utf8');
+}
+
 export function saveResearch(hash: string, text: string, combinedHtml?: string): string {
   const researchDir = outputPath('research');
   const researchFile = join(researchDir, `${hash}.md`);
