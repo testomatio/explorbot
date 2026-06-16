@@ -1,4 +1,5 @@
-import type { ActionResult } from '../action-result.js';
+import { ActionResult } from '../action-result.js';
+import type { WebPageState } from '../state-manager.js';
 import { isBodyEmpty } from './html.js';
 
 const HTTP_ERRORS = ['400 Bad Request', '401 Unauthorized', '403 Forbidden', '404 Not Found', '405 Method Not Allowed', '408 Request Timeout', '500 Internal Server Error', '502 Bad Gateway', '503 Service Unavailable', '504 Gateway Timeout'];
@@ -37,6 +38,13 @@ export function detectPageCondition(actionResult: ActionResult): PageCondition {
 
 export function isErrorPage(actionResult: ActionResult): boolean {
   return detectPageCondition(actionResult) === 'error';
+}
+
+export function getStateErrorPageError(state: WebPageState | null | undefined): ErrorPageError | null {
+  if (!state) return null;
+  const actionResult = ActionResult.fromState(state);
+  if (!isErrorPage(actionResult)) return null;
+  return new ErrorPageError(actionResult.url, actionResult.title, actionResult.httpStatus);
 }
 
 export class ErrorPageError extends Error {

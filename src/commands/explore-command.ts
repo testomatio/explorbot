@@ -1,12 +1,11 @@
 import figureSet from 'figures';
-import { ActionResult } from '../action-result.ts';
 import { getStyles } from '../ai/planner/styles.js';
 import { outputPath } from '../config.js';
 import { normalizeUrl } from '../state-manager.js';
 import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
 import { getCliName } from '../utils/cli-name.ts';
-import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
+import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { safeFilename } from '../utils/strings.ts';
@@ -57,7 +56,11 @@ export class ExploreCommand extends BaseCommand {
     Stats.mode ??= 'explore';
     Stats.focus ??= feature;
     const mainUrl = this.getCurrentPageUrl();
-    if (this.isCurrentPageErrorPage()) return;
+    const error = getStateErrorPageError(this.explorBot.getExplorer().getStateManager().getCurrentState());
+    if (error) {
+      tag('warning').log(error.message);
+      return;
+    }
 
     if (cfg.enabled) {
       await this.runReuseMode(mainUrl, feature, cfg);
@@ -80,16 +83,6 @@ export class ExploreCommand extends BaseCommand {
 
   private originLabel(test: Test): string {
     return this.oldTestRefs.has(test) ? 'OLD' : 'NEW';
-  }
-
-  private isCurrentPageErrorPage(): boolean {
-    const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
-    if (!state) return false;
-    const actionResult = ActionResult.fromState(state);
-    if (!isErrorPage(actionResult)) return false;
-    const error = new ErrorPageError(actionResult.url, actionResult.title, actionResult.httpStatus);
-    tag('warning').log(error.message);
-    return true;
   }
 
   private printPreview(label: string, tests: Test[]): void {

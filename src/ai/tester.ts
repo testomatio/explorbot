@@ -224,8 +224,8 @@ export class Tester extends TaskAgent implements Agent {
     await this.explorer.visit(task.startUrl!);
 
     const startState = this.explorer.getStateManager().getCurrentState();
-    if (startState) task.addUrlNote(startState);
     if (startState) {
+      task.addUrlNote(startState);
       const startActionResult = ActionResult.fromState(startState);
       if (isErrorPage(startActionResult)) {
         offFailedRequest?.();
