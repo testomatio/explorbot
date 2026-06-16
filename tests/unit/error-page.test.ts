@@ -2,16 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { ActionResult } from '../../src/action-result.ts';
 import { detectPageCondition, isErrorPage } from '../../src/utils/error-page.ts';
 
-function createActionResult(data: { title?: string; h1?: string; h2?: string; html?: string; url?: string }): ActionResult {
+function createActionResult(data: { title?: string; h1?: string; h2?: string; html?: string; url?: string; httpStatus?: number }): ActionResult {
   const html = data.html ?? `<html><body><h1>${data.h1 ?? ''}</h1><h2>${data.h2 ?? ''}</h2></body></html>`;
   return new ActionResult({
     url: data.url ?? '/test',
     title: data.title ?? '',
+    httpStatus: data.httpStatus,
     html,
   });
 }
 
 describe('isErrorPage', () => {
+  describe('HTTP status detection', () => {
+    it('should detect failed document navigation by status', () => {
+      expect(isErrorPage(createActionResult({ httpStatus: 404, html: '<html><body>Not Found</body></html>' }))).toBe(true);
+      expect(isErrorPage(createActionResult({ httpStatus: 500, html: '<html><body>Server Error</body></html>' }))).toBe(true);
+    });
+
+    it('should not treat successful document navigation as an error page', () => {
+      expect(isErrorPage(createActionResult({ httpStatus: 200, html: '<html><body>Not Found</body></html>' }))).toBe(false);
+    });
+  });
+
   describe('HTTP error detection', () => {
     it('should detect 400 Bad Request', () => {
       expect(isErrorPage(createActionResult({ title: '400 Bad Request' }))).toBe(true);

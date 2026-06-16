@@ -1,4 +1,5 @@
-import type { ActionResult } from '../action-result.js';
+import { ActionResult } from '../action-result.js';
+import type { WebPageState } from '../state-manager.js';
 import { isBodyEmpty } from './html.js';
 
 const HTTP_ERRORS = ['400 Bad Request', '401 Unauthorized', '403 Forbidden', '404 Not Found', '405 Method Not Allowed', '408 Request Timeout', '500 Internal Server Error', '502 Bad Gateway', '503 Service Unavailable', '504 Gateway Timeout'];
@@ -9,6 +10,8 @@ const LOADING_WORD = /\bloading\b/i;
 export type PageCondition = 'ok' | 'loading' | 'error';
 
 export function detectPageCondition(actionResult: ActionResult): PageCondition {
+  if (actionResult.httpStatus && actionResult.httpStatus >= 400) return 'error';
+
   const headingFields = [actionResult.title, actionResult.h1, actionResult.h2].filter(Boolean) as string[];
 
   for (const field of headingFields) {
@@ -37,12 +40,22 @@ export function isErrorPage(actionResult: ActionResult): boolean {
   return detectPageCondition(actionResult) === 'error';
 }
 
+export function getStateErrorPageError(state: WebPageState | null | undefined): ErrorPageError | null {
+  if (!state) return null;
+  const actionResult = ActionResult.fromState(state);
+  if (!isErrorPage(actionResult)) return null;
+  return new ErrorPageError(actionResult.url, actionResult.title, actionResult.httpStatus);
+}
+
 export class ErrorPageError extends Error {
   constructor(
     public readonly url: string,
-    public readonly title?: string
+    public readonly title?: string,
+    public readonly httpStatus?: number
   ) {
-    super(`Error page detected at ${url}${title ? ` (${title})` : ''}`);
+    const status = httpStatus ? `HTTP ${httpStatus}` : '';
+    const details = [status, title].filter(Boolean).join(', ');
+    super(`Error page detected at ${url}${details ? ` (${details})` : ''}`);
     this.name = 'ErrorPageError';
   }
 }

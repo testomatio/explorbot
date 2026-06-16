@@ -135,7 +135,7 @@ export class Researcher extends ResearcherBase implements Agent {
       const condition = detectPageCondition(this.actionResult!);
       if (condition === 'error') {
         tag('warning').log(`Detected error page at ${state.url}`);
-        throw new ErrorPageError(state.url, this.actionResult!.title);
+        throw new ErrorPageError(state.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
       if (condition === 'loading') {
         const settled = await this.waitUntilSettled(screenshot);
@@ -377,7 +377,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
     let condition = detectPageCondition(this.actionResult!);
     if (condition === 'error') {
-      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title);
+      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
     }
     if (condition === 'ok') return true;
 
@@ -387,7 +387,7 @@ export class Researcher extends ResearcherBase implements Agent {
       this.actionResult = await this.explorer.capturePageState({ includeScreenshot });
       condition = detectPageCondition(this.actionResult!);
       if (condition === 'error') {
-        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title);
+        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
       if (condition === 'ok') return true;
     }

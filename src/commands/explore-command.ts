@@ -5,7 +5,7 @@ import { normalizeUrl } from '../state-manager.js';
 import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
 import { getCliName } from '../utils/cli-name.ts';
-import { ErrorPageError } from '../utils/error-page.ts';
+import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { safeFilename } from '../utils/strings.ts';
@@ -56,6 +56,11 @@ export class ExploreCommand extends BaseCommand {
     Stats.mode ??= 'explore';
     Stats.focus ??= feature;
     const mainUrl = this.getCurrentPageUrl();
+    const error = getStateErrorPageError(this.explorBot.getExplorer().getStateManager().getCurrentState());
+    if (error) {
+      tag('warning').log(error.message);
+      return;
+    }
 
     if (cfg.enabled) {
       await this.runReuseMode(mainUrl, feature, cfg);
