@@ -35,7 +35,7 @@ const TasksSchema = z.object({
       z.object({
         scenario: z.string().describe('A single sentence describing what to test'),
         priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).describe('Priority of the task based on business importance'),
-        startUrl: z.string().nullable().describe('Start URL for the test if different from plan URL (only for tests on visited subpages)'),
+        startUrl: z.string().nullable().describe('Start URL for the test if different from plan URL. Use only stable feature/list/detail pages, not transient create/edit/modal URLs unless the scenario specifically starts inside that form.'),
         steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Open the form", "Enter required data", "Submit the form"). Keep steps atomic and actionable.'),
         expectedOutcomes: z
           .array(z.string())
@@ -90,6 +90,9 @@ export class Planner extends PlannerBase implements Agent {
     const featureDirective = feature
       ? `\n    IMPORTANT: The user requested to focus specifically on: "${feature}"\n    ALL scenarios MUST be directly related to this feature. Do not propose generic page tests unrelated to it.\n    Use the user's exact wording to guide scenario names — do not substitute different entities (e.g., do not plan "suite" actions when user said "test").`
       : '';
+    const focusExistingDataDirective = feature
+      ? '\n    If this focus asks for search, filter, tabs, sorting, or list behavior involving existing items, only use item names/values visible in the provided page research. If no concrete visible item names/values are present, do NOT propose scenarios that require an existing known item; propose no-match search, empty-state, clear-search, tab/filter empty-list, or other read-only list behavior instead.'
+      : '';
     return dedent`
     <role>
     You are ISTQB certified senior manual QA planning exploratory testing session of a web application.
@@ -113,7 +116,7 @@ export class Planner extends PlannerBase implements Agent {
       Bad: "Open delete dropdown" + "Confirm deletion" — these are ONE test, not two.
       Bad: "Search for X" + "Verify search results" — searching and verifying is ONE test.
       Bad: "Leave field empty" + "Click submit" — that's one negative test, not two.
-      If two scenarios cannot run independently (one requires the other to run first), merge them into one.${featureDirective}
+      If two scenarios cannot run independently (one requires the other to run first), merge them into one.${featureDirective}${focusExistingDataDirective}
     </task>
 
     ${customPrompt || ''}
@@ -341,6 +344,12 @@ export class Planner extends PlannerBase implements Agent {
       If a scenario needs existing records, recipients, results, notifications, or other target data, propose it only when that data is visible or API preconditions can create it.
       If the page appears read-only, degraded, demo-limited, maintenance-like, or lacks write controls, prefer read-only scenarios such as opening panels, inspecting visible lists, filtering, searching, or verifying current state.
       Do not assume hidden data exists just because a control is present.
+      For scenarios that act on existing items or search/filter by existing values, use only item names or values visible in research, visited pages, or prior observed flows.
+      If the list is empty or no concrete item names are visible, do not invent "known" or "existing" items. Prefer empty-state, no-match search, clear-search, or read-only list behavior scenarios.
+      Do not use transient create/edit/new modal or form URLs as scenario startUrl unless the scenario specifically tests that form. For unrelated scenarios, start from the stable parent list/detail page and open the form during the test if needed.
+      Search, filter, sorting, tab, and list inspection scenarios must start from a stable list/index page where those controls are visible, not from a create/edit form.
+      When the user focus is search, filter, sorting, tabs, or list inspection, do not add create/update/delete setup or cleanup to the same scenario unless the user explicitly requested that data-changing workflow. Use existing visible data or valid empty-state checks instead.
+      For dropdowns, filters, tabs, run types, statuses, and other option sets, only propose values explicitly visible in research, visited pages, or prior observed flows. Do not infer common options that are not present.
       DO NOT propose "verification-only" tests that merely open a UI element (modal, dropdown, panel) and check it exists.
       Every test must complete a meaningful action that changes application state or produces a business outcome.
       Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
@@ -514,7 +523,9 @@ export class Planner extends PlannerBase implements Agent {
           .join('\n')}
 
         You MAY propose tests starting from these pages if they are relevant to the plan "${this.currentPlan.title}".
-        Set startUrl for such tests. Ignore pages that belong to a different feature area.
+        Set startUrl for such tests only when the page is a stable feature/list/detail page.
+        Do not use create/edit/new/modal URLs as startUrl for scenarios that need the underlying page.
+        Ignore pages that belong to a different feature area.
         </context_from_previous_tests>
 
         Propose ONLY new scenarios that are NOT in the existing tests list.

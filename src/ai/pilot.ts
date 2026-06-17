@@ -433,6 +433,9 @@ export class Pilot implements Agent {
         - The current page already shows the item the test will act on (check <state> and <page_summary>)
         - The scenario tests navigation, UI behavior, or viewing — no data mutation needed
 
+        If the user/scenario explicitly forbids create, edit, update, delete, remove, or other data mutation,
+        do NOT call precondition(). Use visible existing data, or plan a skip/fail when no suitable data exists.
+
         If needed, call precondition() now. If not, proceed directly to planning.
 
         THEN: Based on the page elements and current state, outline:
@@ -1029,6 +1032,7 @@ export class Pilot implements Agent {
 
       Tester tools: click, pressKey, form, see, verify, context, research, xpathCheck, visualClick,
       back, getVisitedStates, reset, stop, finish, record.
+      Use tool names exactly as listed. Do not invent combined names, aliases, or names with channel markers such as "commentary".
 
       YOUR Pilot-only tool: precondition(description) — create FRESH disposable test data via API. Never
       request users. Use when:
@@ -1040,6 +1044,9 @@ export class Pilot implements Agent {
       - Scenario is "Create X" — the test creates it itself.
       - Current page already shows the exact data needed.
       - Scenario tests navigation, search UI, or viewing.
+
+      Never use precondition() to work around an explicit user/scenario prohibition against creating,
+      editing, updating, deleting, removing, or otherwise mutating data.
 
       Describe WHAT to create, not what exists. RIGHT: precondition("1 test"). WRONG:
       precondition("1 test suite named Updated Suite with existing tests"). Keep descriptions short.

@@ -197,6 +197,11 @@ export class Fisherman implements Agent {
       ${endpointList}
       ${scopeBlock}
 
+      AVAILABLE TOOLS:
+      getEndpointSpec, request, finish, stop.
+      Use tool names exactly as listed. Do not invent aliases, combined names, or names with channel markers such as "commentary".
+      Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
+
       WORKFLOW:
       1. Call getEndpointSpec to see the request body example for the endpoint
       2. Make requests — the response automatically extracts IDs, names, and status fields
@@ -204,6 +209,9 @@ export class Fisherman implements Agent {
       4. Call finish with a summary and IDs of all created items
 
       RULES:
+      - If the data-preparation request or surrounding scenario explicitly forbids creating, editing,
+        updating, deleting, removing, or otherwise mutating data, call stop with a concise reason.
+        Do not work around that restriction with API requests.
       - Always call getEndpointSpec before your first request to an unfamiliar endpoint
       - Chain requests logically — create parent resources before children
       - If a request fails, try once more with adjusted data before reporting failure
@@ -216,6 +224,9 @@ export class Fisherman implements Agent {
       Prepare the following test data:
 
       ${instructions}
+
+      If these instructions conflict with an explicit no-mutation restriction, do not create data.
+      Call stop and explain that data preparation is forbidden by scenario constraints.
 
       Execute the necessary API requests to create this data. When done, call finish with the summary.
     `;

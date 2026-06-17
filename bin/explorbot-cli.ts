@@ -338,6 +338,7 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
       const cmd = new TestCommand(explorBot);
       await cmd.execute(args);
 
+      await explorBot.printSessionAnalysis();
       await explorBot.stop();
       await showStatsAndExit(0);
     } catch (error) {
