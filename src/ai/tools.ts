@@ -74,15 +74,6 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           });
         }
 
-        const invalidCoordinateCommands = rawCommands.map((cmd) => cmd.trim()).filter((cmd) => cmd.startsWith('I.clickXY') && !/^I\.clickXY\(\s*\d+\s*,\s*\d+\s*\)/.test(cmd));
-
-        if (invalidCoordinateCommands.length > 0) {
-          activeNote.commit(TestResult.FAILED);
-          return failedToolResult('click', `Invalid coordinate clicks: ${invalidCoordinateCommands.join(', ')}. I.clickXY requires numeric x and y coordinates.`, {
-            suggestion: 'Use a DOM locator with click(), or use visualClick() to derive coordinates from a screenshot.',
-          });
-        }
-
         const commands = rawCommands.map((cmd) => {
           const trimmed = cmd.trim();
           if (trimmed.startsWith('I.click')) return trimmed;
