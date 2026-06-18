@@ -24,7 +24,7 @@ import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
-import { fileUploadRule, protectionRule } from './rules.ts';
+import { dataProtectionRules, fileUploadRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -346,10 +346,8 @@ export class Planner extends PlannerBase implements Agent {
       Do not assume hidden data exists just because a control is present.
       For scenarios that act on existing items or search/filter by existing values, use only item names or values visible in research, visited pages, or prior observed flows.
       If the list is empty or no concrete item names are visible, do not invent "known" or "existing" items. Prefer empty-state, no-match search, clear-search, or read-only list behavior scenarios.
-      Do not use transient create/edit/new modal or form URLs as scenario startUrl unless the scenario specifically tests that form. For unrelated scenarios, start from the stable parent list/detail page and open the form during the test if needed.
-      Search, filter, sorting, tab, and list inspection scenarios must start from a stable list/index page where those controls are visible, not from a create/edit form.
-      When the user focus is search, filter, sorting, tabs, or list inspection, do not add create/update/delete setup or cleanup to the same scenario unless the user explicitly requested that data-changing workflow. Use existing visible data or valid empty-state checks instead.
-      For dropdowns, filters, tabs, run types, statuses, and other option sets, only propose values explicitly visible in research, visited pages, or prior observed flows. Do not infer common options that are not present.
+      Search, filter, sorting, tab, and list scenarios must start from a stable page where those controls are visible; avoid transient create/edit/new URLs unless the scenario tests that form.
+      For option values and list items, use only visible or previously observed data; do not add create/update/delete setup unless the user explicitly requests that workflow.
       DO NOT propose "verification-only" tests that merely open a UI element (modal, dropdown, panel) and check it exists.
       Every test must complete a meaningful action that changes application state or produces a business outcome.
       Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
@@ -360,7 +358,7 @@ export class Planner extends PlannerBase implements Agent {
       Tests that only switch views, toggle filters, or paginate are LESS valuable — propose them only after data-changing tests are covered.
       If multiple ways to create or modify data exist (different types, different forms), propose a separate test for each.
       </priority_order>
-      ${protectionRule}
+      ${dataProtectionRules}
       ${fileUploadRule}
       </rules>
 

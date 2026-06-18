@@ -9,6 +9,7 @@ import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import { type FishermanResult, createFishermanTools } from './fisherman-tools.ts';
 import type { Provider } from './provider.ts';
+import { dataProtectionRules } from './rules.ts';
 
 const MAX_ITERATIONS = 15;
 const MAX_TOOL_ROUNDTRIPS = 5;
@@ -85,7 +86,7 @@ export class Fisherman implements Agent {
       baseEndpoint: this.baseEndpoint,
     });
 
-    const conversation = this.provider.startConversation(this.buildSystemPrompt(endpointList, scopeUrl), 'fisherman');
+    const conversation = this.provider.startConversation(this.buildSystemPrompt(endpointList, Object.keys(tools), scopeUrl), 'fisherman');
     conversation.addUserText(this.buildTaskPrompt(instructions));
 
     await loop(
@@ -187,7 +188,7 @@ export class Fisherman implements Agent {
     return lines.join('\n');
   }
 
-  private buildSystemPrompt(endpointList: string, scopeUrl?: string): string {
+  private buildSystemPrompt(endpointList: string, toolNames: string[], scopeUrl?: string): string {
     const scopeBlock = scopeUrl ? `\n\nSCOPE: You are operating within ${scopeUrl}.\nAll created items must belong to this scope.` : '';
 
     return dedent`
@@ -198,7 +199,7 @@ export class Fisherman implements Agent {
       ${scopeBlock}
 
       AVAILABLE TOOLS:
-      getEndpointSpec, request, finish, stop.
+      ${toolNames.join(', ')}.
       Use tool names exactly as listed. Do not invent aliases, combined names, or names with channel markers such as "commentary".
       Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
 
@@ -209,13 +210,12 @@ export class Fisherman implements Agent {
       4. Call finish with a summary and IDs of all created items
 
       RULES:
-      - If the data-preparation request or surrounding scenario explicitly forbids creating, editing,
-        updating, deleting, removing, or otherwise mutating data, call stop with a concise reason.
-        Do not work around that restriction with API requests.
       - Always call getEndpointSpec before your first request to an unfamiliar endpoint
       - Chain requests logically — create parent resources before children
       - If a request fails, try once more with adjusted data before reporting failure
       - Use realistic but unique data for each item (vary names, titles)
+
+      ${dataProtectionRules}
     `;
   }
 
@@ -225,10 +225,10 @@ export class Fisherman implements Agent {
 
       ${instructions}
 
-      If these instructions conflict with an explicit no-mutation restriction, do not create data.
-      Call stop and explain that data preparation is forbidden by scenario constraints.
+      ${dataProtectionRules}
 
-      Execute the necessary API requests to create this data. When done, call finish with the summary.
+      If data preparation is allowed by these rules, execute the necessary API requests to create this data.
+      When done, call finish with the summary. If data preparation is forbidden, call stop with the reason.
     `;
   }
 }

@@ -153,6 +153,24 @@ export const protectionRule = dedent`
   </important>
 `;
 
+export const dataProtectionRules = dedent`
+  <data_protection_rules>
+  ${protectionRule}
+
+  If the user request, scenario, focus, or test instructions explicitly prohibit creating,
+  editing, updating, deleting, removing, or otherwise mutating data, do not perform those
+  actions through the UI, API preconditions, cleanup, fallback steps, or Fisherman.
+
+  Do not use Fisherman or API data preparation to bypass a no-mutation, read-only, search,
+  filter, tab, or list-inspection constraint. Use visible existing data when it is available.
+  If no suitable data exists, report the missing precondition instead of creating data.
+
+  Destructive actions are allowed only against disposable data created by the current scenario
+  or prepared for that scenario by Fisherman/API preconditions. Existing application data must
+  remain unchanged.
+  </data_protection_rules>
+`;
+
 export const focusedElementRule = dedent`
   <focused_element_actions>
   When a text input element is focused (textbox, combobox, contenteditable):

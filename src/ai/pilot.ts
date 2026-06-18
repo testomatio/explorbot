@@ -18,6 +18,7 @@ import type { Fisherman } from './fisherman.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
+import { dataProtectionRules } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
@@ -424,6 +425,8 @@ export class Pilot implements Agent {
 
         FIRST: Decide if precondition() is needed.
 
+        ${dataProtectionRules}
+
         Call precondition() WHEN:
         - The scenario edits/deletes/modifies an item, and you want a DISPOSABLE item to act on safely
         - The scenario needs specific data clearly NOT on the current page (e.g., items with specific statuses for filtering)
@@ -432,9 +435,6 @@ export class Pilot implements Agent {
         - The scenario is "Create X" — the test itself creates the item
         - The current page already shows the item the test will act on (check <state> and <page_summary>)
         - The scenario tests navigation, UI behavior, or viewing — no data mutation needed
-
-        If the user/scenario explicitly forbids create, edit, update, delete, remove, or other data mutation,
-        do NOT call precondition(). Use visible existing data, or plan a skip/fail when no suitable data exists.
 
         If needed, call precondition() now. If not, proceed directly to planning.
 
@@ -1036,6 +1036,7 @@ export class Pilot implements Agent {
 
       YOUR Pilot-only tool: precondition(description) — create FRESH disposable test data via API. Never
       request users. Use when:
+
       - Scenario edits/deletes/modifies an item → create a disposable target ("1 post").
       - Scenario needs auxiliary data (labels, categories, statuses for filtering).
       - Tester failed because required data is missing (empty dropdown, empty list).
@@ -1045,8 +1046,7 @@ export class Pilot implements Agent {
       - Current page already shows the exact data needed.
       - Scenario tests navigation, search UI, or viewing.
 
-      Never use precondition() to work around an explicit user/scenario prohibition against creating,
-      editing, updating, deleting, removing, or otherwise mutating data.
+      ${dataProtectionRules}
 
       Describe WHAT to create, not what exists. RIGHT: precondition("1 test"). WRONG:
       precondition("1 test suite named Updated Suite with existing tests"). Keep descriptions short.

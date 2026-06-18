@@ -25,7 +25,7 @@ import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
+import { actionRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createSpecialContextTools } from './tools.ts';
 
@@ -777,7 +777,6 @@ export class Tester extends TaskAgent implements Agent {
     - Before retrying your actions check maybe they already achived expected results. Use see() tool for that
     - If the current URL is already a create/edit/new form and the scenario is about creating/editing that entity, fill and submit that form. Do not click the list-page "New" button again from inside the form.
     - If the scenario is about search/filter/sort/tabs/list inspection and the current URL is a create/edit/new form, go back or reset to the stable list page before interacting with list controls.
-    - If the scenario or user focus explicitly says not to create, edit, update, delete, remove, or otherwise mutate data, do not perform those actions as setup or fallback. Use visible existing data; if none exists, record the blocker and stop/skip according to Pilot guidance.
     - When selecting related entities from a list, do not choose rows/options/cards marked as "0 items", "0 tests", or otherwise empty if the scenario requires selecting real content.
     - In selection pickers, counters such as "Selected 0", "Matched tests 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
     - A passed form/click command only means the command executed. If a required field remains empty, submit stays disabled, or the expected text is not visible, treat the action as not completed and correct the missing field/state.
@@ -811,6 +810,8 @@ export class Tester extends TaskAgent implements Agent {
 
     ${formRequirementsRule}
 
+    ${dataProtectionRules}
+
     ${this.provider.getSystemPromptForAgent('tester', this.explorer.getStateManager().getCurrentState()?.url) || ''}
     `;
   }
@@ -835,12 +836,10 @@ export class Tester extends TaskAgent implements Agent {
       If goal is not achievable, log that and skip to next one.
       Do not hallucinate that goal was achieved when it was not.
       If the scenario action could not be completed, do not finish with a verification of the failure state.
-      Respect explicit scenario restrictions. If the scenario says not to create, edit, update, delete,
-      remove, or mutate data, do not do those actions through the UI as setup or fallback.
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
 
-      ${protectionRule}
+      ${dataProtectionRules}
 
       ${this.buildDeletionScope(task)}
 
