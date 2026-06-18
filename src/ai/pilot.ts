@@ -18,7 +18,7 @@ import type { Fisherman } from './fisherman.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
-import { dataProtectionRules } from './rules.ts';
+import { capabilityGroundingRule, dataProtectionRules } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
@@ -92,7 +92,7 @@ export class Pilot implements Agent {
 
     let visualAnalysis = '';
     let screenshotState: ActionResult | null = null;
-    if (this.provider.hasVision()) {
+    if (type === 'finish' && this.provider.hasVision()) {
       try {
         screenshotState = await this.explorer.capturePageWithScreenshot();
         if (screenshotState.screenshot) {
@@ -379,6 +379,8 @@ export class Pilot implements Agent {
       You are Pilot — final decision maker for test pass/fail. Tester requested ${type}. Review the
       evidence and commit to a verdict; "continue" only when evidence is genuinely insufficient.
 
+      ${capabilityGroundingRule}
+
       ${this.buildSharedEvidenceRules(task)}
 
       DECISION:
@@ -387,6 +389,8 @@ export class Pilot implements Agent {
         Pick assertions DOM can express; for non-DOM regions (iframes, canvas, Monaco/CodeMirror), target a
         stable landmark (container, ARIA role) instead of literal inner text. Your "pass" stands even if the
         DOM assertion can't be made.
+        Do not pass when Tester achieved only a related navigation/filter/tab/status outcome instead of the
+        requested action, workflow, or entity detail goal.
       - "fail": scenario was attempted but the goal was not achieved.
       - "skipped": scenario is irrelevant to the app, OR systematic infrastructure failures (LLM errors,
         crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or "continue".
@@ -424,6 +428,8 @@ export class Pilot implements Agent {
         Plan the test execution for this scenario.
 
         FIRST: Decide if precondition() is needed.
+
+        ${capabilityGroundingRule}
 
         ${dataProtectionRules}
 
@@ -1033,6 +1039,8 @@ export class Pilot implements Agent {
       Tester tools: click, pressKey, form, see, verify, context, research, xpathCheck, visualClick,
       back, getVisitedStates, reset, stop, finish, record.
       Use tool names exactly as listed. Do not invent combined names, aliases, or names with channel markers such as "commentary".
+
+      ${capabilityGroundingRule}
 
       YOUR Pilot-only tool: precondition(description) — create FRESH disposable test data via API. Never
       request users. Use when:

@@ -24,7 +24,7 @@ import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
-import { dataProtectionRules, fileUploadRule } from './rules.ts';
+import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -348,6 +348,7 @@ export class Planner extends PlannerBase implements Agent {
       If the list is empty or no concrete item names are visible, do not invent "known" or "existing" items. Prefer empty-state, no-match search, clear-search, or read-only list behavior scenarios.
       Search, filter, sorting, tab, and list scenarios must start from a stable page where those controls are visible; avoid transient create/edit/new URLs unless the scenario tests that form.
       For option values and list items, use only visible or previously observed data; do not add create/update/delete setup unless the user explicitly requests that workflow.
+      Detail-view scenarios must target visible data entities from list rows, cards, tree nodes, or detail links; do not use filter tabs, counters, status tabs, breadcrumbs, or navigation controls as detail targets.
       DO NOT propose "verification-only" tests that merely open a UI element (modal, dropdown, panel) and check it exists.
       Every test must complete a meaningful action that changes application state or produces a business outcome.
       Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
@@ -358,6 +359,7 @@ export class Planner extends PlannerBase implements Agent {
       Tests that only switch views, toggle filters, or paginate are LESS valuable — propose them only after data-changing tests are covered.
       If multiple ways to create or modify data exist (different types, different forms), propose a separate test for each.
       </priority_order>
+      ${capabilityGroundingRule}
       ${dataProtectionRules}
       ${fileUploadRule}
       </rules>

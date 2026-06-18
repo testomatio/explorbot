@@ -25,7 +25,7 @@ import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
+import { actionRule, capabilityGroundingRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createSpecialContextTools } from './tools.ts';
 
@@ -66,6 +66,8 @@ export class Tester extends TaskAgent implements Agent {
   private hooksRunner: HooksRunner;
   private seenUiMapUrls = new Set<string>();
   private lastAnalyzedStateHash: string | null = null;
+  private stalledIterations = 0;
+  private readonly MAX_STALLED_ITERATIONS = 3;
 
   constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
     super();
@@ -126,6 +128,7 @@ export class Tester extends TaskAgent implements Agent {
     this.pageActionResult = null;
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
+    this.stalledIterations = 0;
     this.explorer.getStateManager().clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
@@ -348,6 +351,11 @@ export class Tester extends TaskAgent implements Agent {
               });
           }
 
+          if (this.shouldStopForStalledExecution(task, currentState, result?.toolExecutions || [])) {
+            stop();
+            return;
+          }
+
           if (assertionPerformed) {
             const message = result?.toolExecutions?.find((execution: any) => execution.toolName === 'verify')?.output?.message || '';
             task.addNote(message, wasSuccessful ? TestResult.PASSED : TestResult.FAILED);
@@ -453,6 +461,31 @@ export class Tester extends TaskAgent implements Agent {
     if (this.consecutiveEmptyResults >= 2) return true;
     if (iteration % this.progressCheckInterval !== 0) return false;
     if (this.lastAnalyzedStateHash === currentState.hash) return false;
+    return true;
+  }
+
+  private shouldStopForStalledExecution(task: Test, previousState: ActionResult, toolExecutions: any[]): boolean {
+    if (task.hasFinished) return false;
+
+    const currentState = this.getCurrentState();
+    const stateChanged = previousState.url !== currentState.url || previousState.hash !== currentState.hash;
+    const actionTools = [...this.ACTION_TOOLS, ...this.SPECIAL_CONTEXT_ACTION_TOOLS];
+    const hasSuccessfulAction = toolExecutions.some((execution) => execution.wasSuccessful && actionTools.includes(execution.toolName));
+    const hasSuccessfulAssertion = toolExecutions.some((execution) => execution.wasSuccessful && this.ASSERTION_TOOLS.includes(execution.toolName));
+
+    if (stateChanged || hasSuccessfulAction || hasSuccessfulAssertion) {
+      this.stalledIterations = 0;
+      return false;
+    }
+
+    const hasNoBrowserProgress = toolExecutions.length === 0 || toolExecutions.every((execution) => !actionTools.includes(execution.toolName) || !execution.wasSuccessful);
+    if (!hasNoBrowserProgress) return false;
+
+    this.stalledIterations++;
+    if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
+
+    task.addNote('No browser progress after repeated attempts on unchanged page', TestResult.FAILED);
+    task.finish(TestResult.FAILED);
     return true;
   }
 
@@ -810,6 +843,8 @@ export class Tester extends TaskAgent implements Agent {
 
     ${formRequirementsRule}
 
+    ${capabilityGroundingRule}
+
     ${dataProtectionRules}
 
     ${this.provider.getSystemPromptForAgent('tester', this.explorer.getStateManager().getCurrentState()?.url) || ''}
@@ -838,6 +873,8 @@ export class Tester extends TaskAgent implements Agent {
       If the scenario action could not be completed, do not finish with a verification of the failure state.
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
+
+      ${capabilityGroundingRule}
 
       ${dataProtectionRules}
 
@@ -1151,10 +1188,24 @@ export class Tester extends TaskAgent implements Agent {
       this.resetFailureCount();
       this.previousUrl = null;
       this.previousStateHash = null;
+      this.stalledIterations = 0;
+    } else if (this.shouldStopAfterStalledLoopError(task)) {
+      return 'stop';
     }
 
     this.currentConversation?.addUserText(result.message);
     return 'continue';
+  }
+
+  private shouldStopAfterStalledLoopError(task: Test): boolean {
+    if (task.hasFinished) return false;
+
+    this.stalledIterations++;
+    if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
+
+    task.addNote('No browser progress after repeated execution errors', TestResult.FAILED);
+    task.finish(TestResult.FAILED);
+    return true;
   }
 
   private async cleanupStartedTest(task: Test): Promise<void> {
