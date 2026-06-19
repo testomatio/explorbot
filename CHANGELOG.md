@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-20
+
+### Changes
+- Structured output (test planning, supervisor verdicts, and other AI steps that return data) now works with models that don't support strict JSON Schema. When a model rejects the `json_schema` response format, the AI provider automatically retries the same request in JSON object mode — sending the expected shape in the prompt and validating the reply — instead of failing the whole step. The model is remembered for the rest of the session so later requests skip straight to the working mode. Previously these models failed every planning attempt with "This model does not support response format `json_schema`".
+- [Planner] Now honors its own per-agent settings from `ai.agents.planner` (such as `providerOptions`) when generating a plan. Previously those settings were silently ignored during planning, so options like a model's reasoning effort never took effect — which could leave a reasoning model spending its whole output budget thinking and never returning a plan.
+- AI requests no longer print the "System messages in the prompt or messages fields can be a security risk" warning on every call.
+
 ## 2026-06-06
 
 ### Changes

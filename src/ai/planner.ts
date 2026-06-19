@@ -181,7 +181,7 @@ export class Planner extends PlannerBase implements Agent {
 
       debugLog('Sending planning prompt to AI provider with structured output');
 
-      const aiResult = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model);
+      const aiResult = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model, { agentName: 'planner' });
 
       if (!aiResult?.object?.scenarios) {
         throw new Error('No tasks were created successfully');

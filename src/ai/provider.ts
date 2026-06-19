@@ -1,6 +1,7 @@
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { generateObject, generateText, stepCountIs } from 'ai';
+import dedent from 'dedent';
+import { asSchema, generateObject, generateText, stepCountIs } from 'ai';
 import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
@@ -18,6 +19,13 @@ const responseLog = createDebug('explorbot:provider:in');
 
 class AiError extends Error {}
 export class ContextLengthError extends Error {}
+
+const modelsWithoutJsonSchema = new Set<string>();
+
+function isJsonSchemaUnsupportedError(error: any): boolean {
+  const msg = (error?.message || error?.toString() || '').toLowerCase();
+  return msg.includes('json_schema') && (msg.includes('does not support') || msg.includes('not supported'));
+}
 
 function extractCachedTokens(usage: any): number {
   if (!usage) return 0;
@@ -242,6 +250,7 @@ export class Provider {
     const telemetry = this.getTelemetry(options);
     const config = this.mergeProviderOptions(
       {
+        allowSystemInMessages: true,
         maxTokens: 16384,
         ...(this.config.config || {}),
         ...options,
@@ -317,6 +326,7 @@ export class Provider {
     const { stopWhen: _ignoredStopWhen, ...optionsWithoutStop } = options;
     const config = this.mergeProviderOptions(
       {
+        allowSystemInMessages: true,
         tools,
         maxTokens: 16384,
         toolChoice: 'auto',
@@ -400,53 +410,10 @@ export class Provider {
   async generateObject(messages: ModelMessage[], schema: any, model?: any, options: any = {}): Promise<any> {
     const modelToUse = model || this.config.model;
     const modelName = this.getModelName(modelToUse);
-    setActivity(`🤖 Asking ${modelName} for structured output`, 'ai');
-    promptLog(`Using model: ${modelName}`);
-
-    const telemetry = this.getTelemetry(options);
-    const config = this.mergeProviderOptions(
-      {
-        schema,
-        ...(this.config.config || {}),
-        ...options,
-        ...(telemetry ? { experimental_telemetry: telemetry } : {}),
-        model: modelToUse,
-        abortSignal: executionController.getAbortSignal(),
-      },
-      options.agentName
-    );
+    const jsonMode = modelsWithoutJsonSchema.has(modelName);
 
     try {
-      promptLog(messages[messages.length - 1].content);
-      const response = await withRetry(async () => {
-        const timeout = config.timeout || 30000;
-        const cancel = { cancelled: false };
-        try {
-          return (await Promise.race([
-            generateObject({
-              messages,
-              ...config,
-            }),
-            rejectAfterIdle(timeout, cancel),
-          ])) as any;
-        } finally {
-          cancel.cancelled = true;
-        }
-      }, this.getRetryOptions(options));
-
-      clearActivity();
-      responseLog(response.object);
-
-      if (response.usage) {
-        Stats.recordTokens(options.agentName || 'unknown', modelName, {
-          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
-          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
-          total: response.usage.totalTokens ?? 0,
-          cached: extractCachedTokens(response.usage),
-        });
-      }
-
-      return response;
+      return await this.runGenerateObject(messages, schema, modelToUse, modelName, options, jsonMode);
     } catch (error: any) {
       clearActivity();
       if (error?.name === 'AbortError') throw error;
@@ -459,8 +426,89 @@ export class Provider {
         }
         throw new ContextLengthError(error.message || error.toString());
       }
+      if (!jsonMode && isJsonSchemaUnsupportedError(error)) {
+        modelsWithoutJsonSchema.add(modelName);
+        tag('warning').log(`${modelName} does not support json_schema, falling back to JSON object mode`);
+        return this.runGenerateObject(messages, schema, modelToUse, modelName, options, true);
+      }
       throw new AiError(error.message || error.toString());
     }
+  }
+
+  private async runGenerateObject(messages: ModelMessage[], schema: any, modelToUse: any, modelName: string, options: any, jsonMode: boolean): Promise<any> {
+    setActivity(`🤖 Asking ${modelName} for structured output`, 'ai');
+    promptLog(`Using model: ${modelName}`);
+
+    const telemetry = this.getTelemetry(options);
+    const baseConfig: Record<string, any> = {
+      allowSystemInMessages: true,
+      ...(this.config.config || {}),
+      ...options,
+      model: modelToUse,
+      abortSignal: executionController.getAbortSignal(),
+    };
+    if (telemetry) baseConfig.experimental_telemetry = telemetry;
+
+    let requestMessages = messages;
+    if (jsonMode) {
+      baseConfig.output = 'no-schema';
+      const instruction = dedent`
+        Respond with a single valid JSON object that conforms to this JSON Schema.
+        Output only the JSON, with no markdown fences or surrounding text.
+
+        ${JSON.stringify(await asSchema(schema).jsonSchema, null, 2)}
+      `;
+      requestMessages = [...messages, { role: 'user', content: instruction }];
+    }
+    if (!jsonMode) {
+      baseConfig.schema = schema;
+    }
+
+    const config = this.mergeProviderOptions(baseConfig, options.agentName);
+
+    const retryOptions = this.getRetryOptions(options);
+    if (!jsonMode) {
+      const baseCondition = retryOptions.retryCondition;
+      retryOptions.retryCondition = (error: Error) => !isJsonSchemaUnsupportedError(error) && (!baseCondition || baseCondition(error));
+    }
+
+    promptLog(messages[messages.length - 1].content);
+    const response = await withRetry(async () => {
+      const timeout = config.timeout || 30000;
+      const cancel = { cancelled: false };
+      try {
+        return (await Promise.race([
+          generateObject({
+            messages: requestMessages,
+            ...config,
+          }),
+          rejectAfterIdle(timeout, cancel),
+        ])) as any;
+      } finally {
+        cancel.cancelled = true;
+      }
+    }, retryOptions);
+
+    clearActivity();
+
+    if (jsonMode) {
+      const validation = await asSchema(schema).validate?.(response.object);
+      if (validation && !validation.success) throw new AiError(`JSON object did not match schema: ${validation.error.message}`);
+      if (validation?.success) response.object = validation.value;
+    }
+
+    responseLog(response.object);
+
+    if (response.usage) {
+      Stats.recordTokens(options.agentName || 'unknown', modelName, {
+        input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
+        output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
+        total: response.usage.totalTokens ?? 0,
+        cached: extractCachedTokens(response.usage),
+      });
+    }
+
+    return response;
   }
 
   static isContextLengthError(error: any): boolean {
