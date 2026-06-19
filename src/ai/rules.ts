@@ -153,6 +153,52 @@ export const protectionRule = dedent`
   </important>
 `;
 
+export const dataProtectionRules = dedent`
+  <data_protection_rules>
+  ${protectionRule}
+
+  If the user request, scenario, focus, or test instructions explicitly prohibit creating,
+  editing, updating, deleting, removing, or otherwise mutating data, do not perform those
+  actions through the UI, API preconditions, cleanup, fallback steps, or Fisherman.
+
+  Do not use Fisherman or API data preparation to bypass a no-mutation, read-only, search,
+  filter, tab, or list-inspection constraint. Use visible existing data when it is available.
+  If no suitable data exists, report the missing precondition instead of creating data.
+
+  Destructive actions are allowed only against disposable data created by the current scenario
+  or prepared for that scenario by Fisherman/API preconditions. Existing application data must
+  remain unchanged.
+  </data_protection_rules>
+`;
+
+export const capabilityGroundingRule = dedent`
+  <capability_grounding>
+  When a scenario depends on a named action, menu item, status, option, workflow, or feature,
+  that capability must be visible or explicitly confirmed in the current research/page context
+  for the same target entity type.
+
+  Do not transfer capabilities between similar entities, rows, lists, detail pages, or menus.
+  Do not replace a requested action with a synonym or related action unless the UI explicitly
+  shows that action for the target entity.
+
+  When an action is described as applying to an item, row, card, record, node, or entity,
+  the target must be grounded as that kind of data entity in the current context. Do not use
+  navigation links, filter tabs, counters, breadcrumbs, headings, toolbar controls, or other
+  page controls as the subject of row/entity actions.
+
+  When a scenario asks to open, view, inspect, or navigate to an entity detail view, success
+  requires evidence of that entity detail context. An active filter, selected tab, visible count,
+  or filtered list is not enough to prove an entity detail view opened.
+
+  Do not rewrite a scenario goal to match a similar outcome that happened accidentally. If the
+  requested entity detail/action/workflow was not achieved, report that mismatch instead of
+  passing the test for a related filter, tab, navigation, or status view.
+
+  If the required capability is not available for the target entity after reasonable discovery,
+  record the missing capability and stop instead of repeatedly trying unrelated locators.
+  </capability_grounding>
+`;
+
 export const focusedElementRule = dedent`
   <focused_element_actions>
   When a text input element is focused (textbox, combobox, contenteditable):

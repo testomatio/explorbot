@@ -113,6 +113,8 @@ For input field values, ALWAYS use I.seeInField() — never check value via CSS 
 Prefer text locators (label, name, placeholder) for form fields: I.seeInField('Search', 'value') over I.seeInField('input[name="search"]', 'value').
 Only use locators that exist in the provided HTML or ARIA snapshot.
 Verify exact conditions, not approximate matches.
+When the claim contains a concrete quoted value, generated assertion code MUST include that whole value. Do not shorten names, IDs, titles, emails, URLs, or other user-created values.
+For exact visible text, prefer a text assertion scoped to a specific container or an ARIA locator with the complete text. Partial text is not valid evidence for a claim about the full value.
 NEVER use `:has-text(...)` inside a seeElement/dontSeeElement locator. Checking text inside an element is the job of I.see(text, context) — the `:has-text()` form duplicates that capability with a fragile selector.
 NEVER emit two assertions that check the same fact with different shapes. `I.see(text, locator)` and `I.seeElement("<locator>:has-text('text')")` verify the same thing — pick one (prefer I.see). One claim, one assertion.
 </verification_rules>

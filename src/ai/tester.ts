@@ -25,7 +25,7 @@ import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, protectionRule, sectionContextRule } from './rules.ts';
+import { actionRule, capabilityGroundingRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createSpecialContextTools } from './tools.ts';
 
@@ -43,7 +43,7 @@ const SAMPLE_FILES: Record<string, string> = {
 };
 
 export class Tester extends TaskAgent implements Agent {
-  protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
+  protected readonly ACTION_TOOLS = ['click', 'hover', 'pressKey', 'form'];
   protected readonly SPECIAL_CONTEXT_ACTION_TOOLS = ['exitIframe'];
   emoji = '🧪';
   private explorer: Explorer;
@@ -66,6 +66,8 @@ export class Tester extends TaskAgent implements Agent {
   private hooksRunner: HooksRunner;
   private seenUiMapUrls = new Set<string>();
   private lastAnalyzedStateHash: string | null = null;
+  private stalledIterations = 0;
+  private readonly MAX_STALLED_ITERATIONS = 3;
 
   constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
     super();
@@ -126,6 +128,7 @@ export class Tester extends TaskAgent implements Agent {
     this.pageActionResult = null;
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
+    this.stalledIterations = 0;
     this.explorer.getStateManager().clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
@@ -348,6 +351,11 @@ export class Tester extends TaskAgent implements Agent {
               });
           }
 
+          if (this.shouldStopForStalledExecution(task, currentState, result?.toolExecutions || [])) {
+            stop();
+            return;
+          }
+
           if (assertionPerformed) {
             const message = result?.toolExecutions?.find((execution: any) => execution.toolName === 'verify')?.output?.message || '';
             task.addNote(message, wasSuccessful ? TestResult.PASSED : TestResult.FAILED);
@@ -456,6 +464,31 @@ export class Tester extends TaskAgent implements Agent {
     return true;
   }
 
+  private shouldStopForStalledExecution(task: Test, previousState: ActionResult, toolExecutions: any[]): boolean {
+    if (task.hasFinished) return false;
+
+    const currentState = this.getCurrentState();
+    const stateChanged = previousState.url !== currentState.url || previousState.hash !== currentState.hash;
+    const actionTools = [...this.ACTION_TOOLS, ...this.SPECIAL_CONTEXT_ACTION_TOOLS];
+    const hasSuccessfulAction = toolExecutions.some((execution) => execution.wasSuccessful && actionTools.includes(execution.toolName));
+    const hasSuccessfulAssertion = toolExecutions.some((execution) => execution.wasSuccessful && this.ASSERTION_TOOLS.includes(execution.toolName));
+
+    if (stateChanged || hasSuccessfulAction || hasSuccessfulAssertion) {
+      this.stalledIterations = 0;
+      return false;
+    }
+
+    const hasNoBrowserProgress = toolExecutions.length === 0 || toolExecutions.every((execution) => !actionTools.includes(execution.toolName) || !execution.wasSuccessful);
+    if (!hasNoBrowserProgress) return false;
+
+    this.stalledIterations++;
+    if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
+
+    task.addNote('No browser progress after repeated attempts on unchanged page', TestResult.FAILED);
+    task.finish(TestResult.FAILED);
+    return true;
+  }
+
   private async prepareInstructionsForNextStep(task: Test): Promise<string> {
     let outcomeStatus = dedent`
       <task>
@@ -464,6 +497,8 @@ export class Tester extends TaskAgent implements Agent {
   
       <rules>
       Use tools ${this.ACTION_TOOLS.join(', ')} to interact with the page.
+      Use tool names exactly as listed in this prompt. Do not invent combined tool names, aliases, or names with channel markers such as "commentary".
+      Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
       Do not do unsuccesful clicks again.
       Do not run same tool calls with same parameters again.
       </rules>
@@ -746,6 +781,7 @@ export class Tester extends TaskAgent implements Agent {
     <rules>
     - Refer to UI Map from <page_ui_map> to understand the page structure and its main elements
     - Use only elements that exist in the provided ARIA tree or HTML, <page_aria> and <page_html>
+    - Use tool input schemas exactly as documented. Do not invent parameter names or add fields not listed by the tool schema.
     - Use click() for buttons, links, and clickable elements ONLY - do NOT include I.fillField() or I.type() commands in click() tool
     - click() commands array is for FALLBACK LOCATORS of the SAME element, NOT for clicking different elements in sequence. If you need to click two different elements, make two separate click() calls.
     - Use form() for text input (I.fillField, I.type), dropdown selection (I.selectOption), file uploads (I.attachFile), and multi-step form interactions
@@ -758,6 +794,7 @@ export class Tester extends TaskAgent implements Agent {
     - NEVER call record(status: "success") if your last verify() or see() call FAILED. A failed check means the outcome is NOT confirmed — use record(status: "fail") instead, or retry with a different approach.
     - Use finish() to complete the test, not record(). record() is for intermediate notes.
     - Call finish(verify) when all goals are achieved — provide an assertion to verify
+    - NEVER call finish() with a negative assertion that says the goal did NOT happen. If the goal cannot be achieved after real attempts, record the blocker and call stop().
     - ONLY call stop() if the scenario itself is completely irrelevant to this page and no expectations can be achieved
     - Use reset() ONLY as a last resort when the current page cannot host the scenario. Never reset after a successful flow just because an assertion or milestone did not match — verify differently or record() the finding instead. Reset is destructive and does not undo server-side side effects.
     - Be precise with locators (CSS or XPath)
@@ -771,6 +808,13 @@ export class Tester extends TaskAgent implements Agent {
     - When you interact with form with inputs, ensure that you click corresponding button to save its data
     - Follow <locator_priority> rules when selecting locators for all tools
     - Before retrying your actions check maybe they already achived expected results. Use see() tool for that
+    - If the current URL is already a create/edit/new form and the scenario is about creating/editing that entity, fill and submit that form. Do not click the list-page "New" button again from inside the form.
+    - If the scenario is about search/filter/sort/tabs/list inspection and the current URL is a create/edit/new form, go back or reset to the stable list page before interacting with list controls.
+    - When selecting related entities from a list, do not choose rows/options/cards marked as "0 items", "0 tests", or otherwise empty if the scenario requires selecting real content.
+    - In selection pickers, counters such as "Selected 0", "Matched tests 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
+    - A passed form/click command only means the command executed. If a required field remains empty, submit stays disabled, or the expected text is not visible, treat the action as not completed and correct the missing field/state.
+    - For filter/tab scenarios, success requires BOTH: the requested filter/tab is visibly active/selected AND the list content matches that filter. Do not finish from only one of these signals.
+    - Empty-state text such as "No matched items" only proves a filter when the requested filter/tab is active and the empty state belongs to the filtered list.
     - When filling complex form with lot of actions performed, use see() to look which fields were filled and which are not
     - When verify() fails, use see() to visually confirm the result — visual confirmation is equally valid evidence
     - For visual state verification (active tabs, selected items, counts, colors), prefer see() over DOM-based verify()
@@ -799,6 +843,10 @@ export class Tester extends TaskAgent implements Agent {
 
     ${formRequirementsRule}
 
+    ${capabilityGroundingRule}
+
+    ${dataProtectionRules}
+
     ${this.provider.getSystemPromptForAgent('tester', this.explorer.getStateManager().getCurrentState()?.url) || ''}
     `;
   }
@@ -822,10 +870,13 @@ export class Tester extends TaskAgent implements Agent {
       Try to achieve as many goals as possible.
       If goal is not achievable, log that and skip to next one.
       Do not hallucinate that goal was achieved when it was not.
+      If the scenario action could not be completed, do not finish with a verification of the failure state.
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
 
-      ${protectionRule}
+      ${capabilityGroundingRule}
+
+      ${dataProtectionRules}
 
       ${this.buildDeletionScope(task)}
 
@@ -963,12 +1014,13 @@ export class Tester extends TaskAgent implements Agent {
       }),
       stop: tool({
         description: dedent`
-          Stop the current test because the scenario is fundamentally incompatible with the page.
-          Use this ONLY when the scenario cannot be executed on the current page or application.
-          Do NOT use this for failures — use reset() and retry instead.
+          Stop the current test because it cannot be completed in the current session.
+          Use this when the scenario is incompatible, required UI/data is absent, or repeated varied attempts
+          show that automation cannot complete the workflow.
+          Do NOT use this immediately after the first failed action — retry with a materially different approach first.
         `,
         inputSchema: z.object({
-          reason: z.string().describe('Explanation why the scenario is incompatible'),
+          reason: z.string().describe('Explanation why the scenario cannot be completed'),
         }),
         execute: async ({ reason }) => {
           task.addNote(`Stop requested: ${reason}`);
@@ -1003,6 +1055,7 @@ export class Tester extends TaskAgent implements Agent {
           Provide a specific assertion to verify the final state.
           The assertion MUST prove that YOUR ACTIONS changed the page state.
           Do NOT verify something that was already true before you started testing.
+          Do NOT provide an assertion that verifies absence, failure, an empty state, or that the goal did not happen.
 
           Examples of good assertions:
           - "New user 'john@example.com' is visible in the users list"
@@ -1135,10 +1188,24 @@ export class Tester extends TaskAgent implements Agent {
       this.resetFailureCount();
       this.previousUrl = null;
       this.previousStateHash = null;
+      this.stalledIterations = 0;
+    } else if (this.shouldStopAfterStalledLoopError(task)) {
+      return 'stop';
     }
 
     this.currentConversation?.addUserText(result.message);
     return 'continue';
+  }
+
+  private shouldStopAfterStalledLoopError(task: Test): boolean {
+    if (task.hasFinished) return false;
+
+    this.stalledIterations++;
+    if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
+
+    task.addNote('No browser progress after repeated execution errors', TestResult.FAILED);
+    task.finish(TestResult.FAILED);
+    return true;
   }
 
   private async cleanupStartedTest(task: Test): Promise<void> {

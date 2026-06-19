@@ -18,7 +18,7 @@ import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
-export const CODECEPT_TOOLS = ['click', 'pressKey', 'form'] as const;
+export const CODECEPT_TOOLS = ['click', 'hover', 'pressKey', 'form'] as const;
 export const ASSERTION_TOOLS = ['verify'] as const;
 
 export function createCodeceptJSTools(explorer: Explorer, task: Task) {
@@ -154,6 +154,84 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             ...toolResult,
             attempts,
             suggestion,
+          },
+          action.lastError
+        );
+      },
+    }),
+
+    hover: tool({
+      description: dedent`
+        Move the mouse cursor to an element to reveal hover-only controls.
+
+        Use this before clicking row actions, icon buttons, menus, or toolbars that appear only
+        when the user hovers a list item, table row, card, or tree node.
+
+        This tool ONLY accepts I.moveCursorTo(locator) commands. It does not click.
+        After hovering, use context(), see(), or click() the revealed control.
+      `,
+      inputSchema: z.object({
+        commands: z.array(z.string()).describe(dedent`
+          FALLBACK LOCATORS for ONE element to hover.
+          Order by reliability:
+          1. I.moveCursorTo(text, container)
+          2. I.moveCursorTo(ARIA, container)
+          3. I.moveCursorTo(CSS, container)
+          4. I.moveCursorTo(CSS) or I.moveCursorTo(XPath)
+        `),
+        explanation: z.string().describe('Why you are hovering this element'),
+      }),
+      execute: async ({ commands: rawCommands, explanation }) => {
+        const activeNote = task.startNote(explanation);
+
+        if (rawCommands.length === 0) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('hover', 'No commands provided');
+        }
+
+        const invalidCommands = rawCommands.map((cmd) => cmd.trim()).filter((cmd) => cmd.startsWith('I.') && !cmd.startsWith('I.moveCursorTo'));
+
+        if (invalidCommands.length > 0) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('hover', `Invalid commands: ${invalidCommands.join(', ')}. Hover tool only accepts I.moveCursorTo() commands.`, {
+            suggestion: 'Use click() to click elements, or form() for typing/selecting.',
+          });
+        }
+
+        const commands = rawCommands.map((cmd) => {
+          const trimmed = cmd.trim();
+          if (trimmed.startsWith('I.moveCursorTo')) return trimmed;
+          return `I.moveCursorTo(${JSON.stringify(trimmed)})`;
+        });
+
+        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+        const action = explorer.createAction();
+        const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
+
+        for (const command of commands) {
+          const success = await action.attempt(command, explanation, true);
+          attempts.push({
+            command,
+            success,
+            ...(action.lastError && { error: action.lastError.toString() }),
+          });
+
+          if (!success) continue;
+
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
+          activeNote.commit(TestResult.PASSED);
+          return successToolResult('hover', { ...toolResult, attempts, code: command }, action);
+        }
+
+        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
+        activeNote.commit(TestResult.FAILED);
+        return failedToolResult(
+          'hover',
+          'All hover commands failed',
+          {
+            ...toolResult,
+            attempts,
+            suggestion: 'Use xpathCheck() to locate the row/card/tree node, or visualClick() if the hover target is only visually identifiable.',
           },
           action.lastError
         );
@@ -488,6 +566,7 @@ export function createAgentTools({
         Check the page contents based on current page state and screenshot.
         This tool will trigger visual research to check the page contents on request.
         Use it to verify the actions were performed correctly and the page is in the expected state.
+        Input schema has exactly one field: request. Do not pass text, reason, assertion, or other fields.
 
         <example>
         request: "Check current state of the Login form"
