@@ -2,10 +2,10 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path, { join } from 'node:path';
 // @ts-ignore
 import * as codeceptjs from 'codeceptjs';
-import dedent from 'dedent';
 import stepsListener from 'codeceptjs/lib/listener/steps';
 import storeListener from 'codeceptjs/lib/listener/store';
 import { createTest } from 'codeceptjs/lib/mocha/test';
+import dedent from 'dedent';
 import type { BrowserContextOptions } from 'playwright';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
@@ -21,10 +21,10 @@ import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
 import { Test, TestResult } from './test-plan.ts';
+import { BrowserRecoveryError, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { ELEMENT_EXTRACTION_CONFIG, getElementDataExtractorSource } from './utils/html.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 import { WebElement } from './utils/web-element.ts';
-import { BrowserRecoveryError, isFatalBrowserError } from './utils/browser-errors.ts';
 
 declare global {
   namespace NodeJS {
@@ -315,6 +315,18 @@ class Explorer {
       return await operation();
     } catch (error) {
       if (!this.isFatalBrowserError(error)) throw error;
+
+      if (isNavigationTransitionError(error)) {
+        tag('warning').log(`${label}: page is still navigating, waiting before retry...`);
+        if (await this.waitForUsablePageDom()) {
+          try {
+            return await operation();
+          } catch (retryError) {
+            if (!this.isFatalBrowserError(retryError)) throw retryError;
+            if (!isNavigationTransitionError(retryError)) throw retryError;
+          }
+        }
+      }
 
       tag('warning').log(`${label}: browser page is unavailable, recovering...`);
       let recovered = await this.recoverFromBrowserError();

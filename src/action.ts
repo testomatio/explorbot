@@ -18,12 +18,12 @@ import type { UserResolveFunction } from './explorbot.ts';
 import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
+import { isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
-import { isFatalBrowserError } from './utils/browser-errors.ts';
 
 const debugLog = createDebug('explorbot:action');
 
@@ -78,16 +78,25 @@ class Action {
       const timestamp = Date.now();
       const page = this.playwrightHelper.page;
       const frame = this.playwrightHelper.frame;
-      await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-      await waitForUsablePageDom(page);
+      await waitForPageToSettle(page);
       const grabAll = () => Promise.all([captureHtml(page, frame, this.actor), captureTitle(page, this.actor), this.captureBrowserLogs()]);
-      const [html, title, browserLogs] = await grabAll().catch(async (err: Error) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!/navigating and changing the content/i.test(msg)) throw err;
-        await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-        await waitForUsablePageDom(page);
-        return grabAll();
-      });
+      let html = '';
+      let title = '';
+      let browserLogs: any[] = [];
+      let captured = false;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          [html, title, browserLogs] = await grabAll();
+          captured = true;
+          break;
+        } catch (err) {
+          if (!isNavigationTransitionError(err)) throw err;
+          await waitForPageToSettle(page);
+        }
+      }
+      if (!captured) {
+        [html, title, browserLogs] = await grabAll();
+      }
       const url = page?.url() || (await (this.actor as any).grabCurrentUrl?.());
 
       let screenshotFile: string | undefined = undefined;
@@ -467,6 +476,29 @@ async function waitForUsablePageDom(page: any): Promise<void> {
       { timeout: 5000 }
     )
     .catch(() => {});
+}
+
+async function waitForPageToSettle(page: any): Promise<void> {
+  if (!page) return;
+
+  const deadline = Date.now() + 6000;
+  let lastUrl = page.url?.() || '';
+  let stableSince = Date.now();
+
+  while (Date.now() < deadline) {
+    await page.waitForLoadState?.('domcontentloaded', { timeout: 1000 }).catch(() => {});
+    await waitForUsablePageDom(page);
+
+    const currentUrl = page.url?.() || '';
+    if (currentUrl === lastUrl) {
+      if (Date.now() - stableSince >= 600) return;
+    } else {
+      lastUrl = currentUrl;
+      stableSince = Date.now();
+    }
+
+    await sleep(200);
+  }
 }
 
 async function captureHtml(page: any, frame: any, actor: any): Promise<string> {
