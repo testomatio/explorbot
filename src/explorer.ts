@@ -24,6 +24,7 @@ import { Test, TestResult } from './test-plan.ts';
 import { BrowserRecoveryError, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { ELEMENT_EXTRACTION_CONFIG, getElementDataExtractorSource } from './utils/html.ts';
 import { createDebug, log, tag } from './utils/logger.js';
+import { waitForPageReadiness } from './utils/page-readiness.ts';
 import { WebElement } from './utils/web-element.ts';
 
 declare global {
@@ -314,25 +315,26 @@ class Explorer {
     try {
       return await operation();
     } catch (error) {
-      if (!this.isFatalBrowserError(error)) throw error;
+      let recoveryError = error;
 
       if (isNavigationTransitionError(error)) {
         tag('warning').log(`${label}: page is still navigating, waiting before retry...`);
-        if (await this.waitForUsablePageDom()) {
-          try {
-            return await operation();
-          } catch (retryError) {
-            if (!this.isFatalBrowserError(retryError)) throw retryError;
-            if (!isNavigationTransitionError(retryError)) throw retryError;
-          }
+        await this.waitForPageReadiness();
+        try {
+          return await operation();
+        } catch (retryError) {
+          if (!isNavigationTransitionError(retryError)) throw retryError;
+          recoveryError = retryError;
         }
       }
+
+      if (!this.isFatalBrowserError(recoveryError)) throw recoveryError;
 
       tag('warning').log(`${label}: browser page is unavailable, recovering...`);
       let recovered = await this.recoverFromBrowserError();
       if (!recovered) recovered = await this.restartBrowser();
-      if (!recovered) throw new BrowserRecoveryError(label, error, false);
-      if (!(await this.waitForUsablePageDom())) throw new BrowserRecoveryError(label, error, true);
+      if (!recovered) throw new BrowserRecoveryError(label, recoveryError, false);
+      if (!(await this.waitForPageReadiness())) throw new BrowserRecoveryError(label, recoveryError, true);
 
       try {
         return await operation();
@@ -389,7 +391,7 @@ class Explorer {
         const msg = err instanceof Error ? err.message : String(err);
         if (!RECOVERABLE_NAVIGATION_ERRORS.test(msg)) throw err;
         tag('warning').log(`Navigation warning (continuing after load): ${msg.split('\n')[0]}`);
-        await this.playwrightHelper.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+        await this.waitForPageReadiness();
         await action.capturePageState();
       }
     }
@@ -500,11 +502,11 @@ class Explorer {
       if (url) {
         tag('warning').log(`Browser error detected, recovering by navigating to ${url}`);
         await this.playwrightHelper.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-        return this.waitForUsablePageDom();
+        return this.waitForPageReadiness();
       }
       tag('warning').log('Browser error detected, reloading page');
       await this.playwrightHelper.page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
-      return this.waitForUsablePageDom();
+      return this.waitForPageReadiness();
     } catch (err) {
       tag('error').log(`Browser recovery failed: ${err instanceof Error ? err.message : err}`);
       return false;
@@ -544,7 +546,7 @@ class Explorer {
 
       if (url) {
         await this.playwrightHelper.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-        if (!(await this.waitForUsablePageDom())) return false;
+        if (!(await this.waitForPageReadiness())) return false;
       }
 
       tag('success').log('Browser restarted');
@@ -562,27 +564,14 @@ class Explorer {
     }
   }
 
-  private async waitForUsablePageDom(): Promise<boolean> {
+  private async waitForPageReadiness(): Promise<boolean> {
     const page = this.playwrightHelper?.page;
     if (!page) return false;
 
-    await page.waitForLoadState?.('domcontentloaded', { timeout: 5000 }).catch(() => {});
-    if (page.waitForFunction) {
-      const hasUsableDom = await page
-        .waitForFunction(
-          () => {
-            const body = document.body;
-            if (!body) return false;
-            return body.children.length > 0 || body.textContent?.trim().length > 0;
-          },
-          undefined,
-          { timeout: 5000 }
-        )
-        .then(() => true)
-        .catch(() => false);
-      if (!hasUsableDom) return false;
-    }
-    await page.waitForLoadState?.('networkidle', { timeout: 3000 }).catch(() => {});
+    await waitForPageReadiness(page, {
+      timeout: this.config.playwright.waitForTimeout,
+      spinnerSelectors: this.config.playwright.spinnerSelectors,
+    });
     return true;
   }
 

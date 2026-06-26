@@ -22,6 +22,7 @@ interface PlaywrightConfig {
   waitForAction?: number;
   waitForNavigation?: 'load' | 'domcontentloaded' | 'networkidle';
   waitForTimeout?: number;
+  spinnerSelectors?: string[];
   ignoreHTTPSErrors?: boolean;
   userAgent?: string;
   viewport?: {

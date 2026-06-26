@@ -16,6 +16,13 @@ describe('browser error classification', () => {
     expect(isNavigationTransitionError(error)).toBe(false);
   });
 
+  it('does not treat generic execution context loss as a navigation transition', () => {
+    const error = new Error('Execution context was destroyed');
+
+    expect(isFatalBrowserError(error)).toBe(true);
+    expect(isNavigationTransitionError(error)).toBe(false);
+  });
+
   it('keeps browser recovery errors fatal without classifying them as transitions', () => {
     const error = new BrowserRecoveryError('visit', new Error('Protocol error'), true);
 

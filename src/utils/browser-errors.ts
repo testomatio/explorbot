@@ -2,7 +2,7 @@
 // not typed exceptions. Keep those external message markers in one adapter so
 // recovery decisions are not duplicated across agents/actions.
 const FATAL_BROWSER_ERROR_MARKERS = ['Frame was detached', 'Target closed', 'Target page, context or browser has been closed', 'Execution context was destroyed', 'Protocol error', 'Session closed'];
-const NAVIGATION_TRANSITION_ERROR_MARKERS = ['Execution context was destroyed', 'most likely because of a navigation', 'navigating and changing the content'];
+const NAVIGATION_TRANSITION_ERROR_MARKERS = ['most likely because of a navigation', 'navigating and changing the content'];
 
 export class BrowserRecoveryError extends Error {
   constructor(
