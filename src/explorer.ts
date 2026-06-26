@@ -323,7 +323,7 @@ class Explorer {
         try {
           return await operation();
         } catch (retryError) {
-          if (!isNavigationTransitionError(retryError)) throw retryError;
+          if (!isNavigationTransitionError(retryError) && !this.isFatalBrowserError(retryError)) throw retryError;
           recoveryError = retryError;
         }
       }

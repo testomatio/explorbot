@@ -83,6 +83,30 @@ describe('Explorer recovery URL resolution', () => {
     expect(recoveries).toBe(1);
   });
 
+  it('falls back to browser recovery when navigation retry exposes a fatal browser error', async () => {
+    const explorer = buildExplorer('https://the-internet.herokuapp.com');
+    let attempts = 0;
+    let recoveries = 0;
+    (explorer as any).playwrightHelper = {
+      page: { isClosed: () => false },
+    };
+    (explorer as any).recoverFromBrowserError = async () => {
+      recoveries++;
+      return true;
+    };
+
+    const result = await explorer.runWithBrowserRecovery('test operation', async () => {
+      attempts++;
+      if (attempts === 1) throw new Error('page.evaluate: Execution context was destroyed, most likely because of a navigation');
+      if (attempts === 2) throw new Error('Target closed');
+      return 'recovered';
+    });
+
+    expect(result).toBe('recovered');
+    expect(attempts).toBe(3);
+    expect(recoveries).toBe(1);
+  });
+
   it('recovers and retries action attempts through Explorer', async () => {
     const explorer = buildExplorer('https://the-internet.herokuapp.com');
     let attempts = 0;

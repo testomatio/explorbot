@@ -290,6 +290,19 @@ playwright: {
 
 The browser session (cookies, localStorage) is restored automatically when you launch with `--session` — see [`commands.md`](./commands.md#--session).
 
+### Loading Indicators
+
+For SPAs, `domcontentloaded` can happen before the application finishes loading page data. Use `spinnerSelectors` to tell Explorbot which loading indicators should be treated as part of page readiness:
+
+```javascript
+playwright: {
+  waitForTimeout: 5000,
+  spinnerSelectors: ['.spinner', '.loading', '[aria-busy="true"]'],
+}
+```
+
+Explorbot waits for `domcontentloaded`, then races Playwright `networkidle`, visible configured spinners becoming hidden, or timeout before capturing the page state. If no configured spinner is visible on a page, the spinner rule is ignored for that page.
+
 ## Directory Structure
 
 Default directory layout:
@@ -397,6 +410,7 @@ export default {
     timeout: 30000,                // Default timeout (ms)
     waitForNavigation: 'load',     // 'load' | 'domcontentloaded' | 'networkidle'
     waitForTimeout: 1000,          // Wait after navigation (ms)
+    spinnerSelectors: [],          // Loading indicators to wait for before page capture
     ignoreHTTPSErrors: false,      // Ignore HTTPS certificate errors
     userAgent: 'custom-agent',     // Custom user agent string
     viewport: {
