@@ -59,6 +59,7 @@ interface AgentConfig extends HooksConfig {
   systemPrompt?: string;
   rules?: RuleEntry[];
   providerOptions?: Record<string, any>;
+  reasoning?: 'provider-default' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 }
 
 interface ResearcherAgentConfig extends AgentConfig {

@@ -2,7 +2,13 @@
 
 ## 2026-06-26
 
+### Configuration
+- **`ai.agents.<agent>.reasoning`** — Reasoning effort for any agent, set the same way across providers: `'none'`, `'minimal'`, `'low'`, `'medium'`, `'high'`, `'xhigh'`, or `'provider-default'`. Replaces having to set each provider's own key under `providerOptions`. Default: `'low'` for the Researcher, provider default for other agents.
+- **`ai.config.maxOutputTokens`** — Maximum output length per AI call, renamed from `ai.config.maxTokens` (Vercel AI SDK 7). The old `maxTokens` key is now ignored, so move any existing value to `maxOutputTokens`. Default: `16384`.
+
 ### Changes
+- [Researcher] Runs with low reasoning effort by default, so its output budget goes to extracting the UI map instead of the model's internal thinking — this reduces "response truncated" failures on large pages. Override per agent with the new `reasoning` option.
+- Upgraded to Vercel AI SDK 7. If you pin AI provider packages in your project, use `ai` v7 with `@ai-sdk/*` v4 (for example `@ai-sdk/openai`, `@ai-sdk/groq`, `@ai-sdk/anthropic`).
 - ARIA diff: interactive controls that flip state (checkbox, expanded/collapsed, pressed, selected) are now reported on a dedicated `toggled` line in both directions — so the agent always sees "now checked" or "now collapsed", even when other page changes overflow the diff.
 - Run report now includes a Models table listing each role, the model it used, and the tokens it consumed.
 - Added SambaNova as a supported AI provider.

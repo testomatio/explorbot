@@ -68,6 +68,13 @@ export class Researcher extends ResearcherBase implements Agent {
     this.stateManager = explorer.getStateManager();
     this.experienceTracker = this.stateManager.getExperienceTracker();
     this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
+
+    const ai = explorer.getConfig().ai;
+    if (ai) {
+      ai.agents ??= {};
+      ai.agents.researcher ??= {};
+      ai.agents.researcher.reasoning ??= 'low';
+    }
   }
 
   protected getNavigator(): Navigator {
@@ -177,7 +184,7 @@ export class Researcher extends ResearcherBase implements Agent {
       } catch (error) {
         if (!(error instanceof ContextLengthError) || retriesLeft <= 0) {
           if (error instanceof ContextLengthError) {
-            tag('warning').log('Output truncated. Try lowering reasoning effort or increasing maxTokens in ai.config.');
+            tag('warning').log('Output truncated. Try lowering reasoning effort or increasing maxOutputTokens in ai.config.');
           }
           throw error;
         }

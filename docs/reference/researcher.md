@@ -14,9 +14,9 @@ You can also run research manually to inspect pages or debug locator issues.
 ## Configuration
 
 > [!IMPORTANT]
-> The Researcher processes large amounts of HTML and ARIA tokens on every call. Use a **fast, cheap model with low reasoning effort** — it does not need deep thinking, just accurate element extraction. Models like `gpt-oss-20b` via Groq or Cerebras at 100+ TPS work well. Set `providerOptions` to reduce reasoning effort if your model supports it.
+> The Researcher processes large amounts of HTML and ARIA tokens on every call. Use a **fast, cheap model** — it does not need deep thinking, just accurate element extraction. Models like `gpt-oss-20b` via Groq or Cerebras at 100+ TPS work well. The Researcher runs with `reasoning: 'low'` by default so the output budget goes to the UI map, not the chain-of-thought.
 >
-> On reasoning models, reasoning tokens count against the output budget. If you hit `AI response empty: output truncated at maxTokens`, switch the Researcher to a non-reasoning model or disable reasoning via `providerOptions` — see [Low Reasoning Effort](#low-reasoning-effort) below.
+> On reasoning models, reasoning tokens count against the output budget. If you hit `AI response empty: output truncated at maxTokens`, raise `maxOutputTokens`, lower `reasoning` further, or switch the Researcher to a non-reasoning model — see [Low Reasoning Effort](#low-reasoning-effort) below.
 
 ```javascript
 ai: {
@@ -30,7 +30,7 @@ ai: {
       stopWords: ['cookie', 'share'],
       maxElementsToExplore: 15,
       retries: 2,
-      providerOptions: { groq: { reasoningEffort: 'low' } },
+      reasoning: 'low', // default for the Researcher; lower to 'none' or raise as needed
     },
   },
 }
@@ -49,7 +49,8 @@ ai: {
 | `stopWords` | `string[]` | defaults | Words to filter during deep exploration (replaces defaults) |
 | `maxElementsToExplore` | `number` | `10` | Max elements per deep exploration |
 | `retries` | `number` | `2` | Retries when most locators are broken in Stage 2 |
-| `providerOptions` | `object` | - | Provider-specific options (e.g. reasoning effort) |
+| `reasoning` | `string` | `'low'` | Reasoning effort: `'none'`, `'minimal'`, `'low'`, `'medium'`, `'high'`, `'xhigh'`, or `'provider-default'`. Defaults to `'low'` for the Researcher. |
+| `providerOptions` | `object` | - | Provider-specific options. Reasoning keys here take precedence over `reasoning`. |
 
 See [Configuration Examples](#configuration-examples) at the end of this page for common setups.
 
@@ -402,7 +403,7 @@ When none of the selectors match, the Researcher falls back to mapping the whole
 
 ### Handling Truncated Responses
 
-The Researcher produces a lot of output for busy pages. If the model's response is cut off at `maxTokens`, Explorbot retries by splitting the work into one request per section (focus, main, sidebar, and so on) and merging the results. This usually happens transparently in the logs; no configuration is needed.
+The Researcher produces a lot of output for busy pages. If the model's response is cut off at `maxOutputTokens`, Explorbot retries by splitting the work into one request per section (focus, main, sidebar, and so on) and merging the results. This usually happens transparently in the logs; no configuration is needed.
 
 If you see it often, consider:
 - lowering reasoning effort (see [Low Reasoning Effort](#low-reasoning-effort) below),
@@ -467,21 +468,29 @@ ai: {
 
 ### Low Reasoning Effort
 
-Reasoning tokens count toward the model's output budget. On a heavy page the chain-of-thought can consume the whole `maxTokens` window before the UI map is emitted, which surfaces as `AI response empty: output truncated at maxTokens`.
+Reasoning tokens count toward the model's output budget. On a heavy page the chain-of-thought can consume the whole `maxOutputTokens` window before the UI map is emitted, which surfaces as `AI response empty: output truncated at maxTokens`.
 
-The Vercel AI SDK has **no universal reasoning-effort parameter** — each provider uses a different key under `providerOptions`. Explorbot forwards `providerOptions` straight to the SDK, so you can list every provider you might use at once. Only the block that matches the active provider is applied; the rest are ignored.
+The Researcher already runs with `reasoning: 'low'` by default. AI SDK 7 added a single provider-agnostic `reasoning` setting, so you can adjust it without knowing each provider's key — the SDK maps it to the active provider's effort control:
+
+```javascript
+ai: {
+  agents: {
+    researcher: {
+      reasoning: 'none', // 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'provider-default'
+    },
+  },
+}
+```
+
+For provider-specific control (such as a thinking-token budget), set `providerOptions` instead. These keys take precedence over the top-level `reasoning`:
 
 ```javascript
 ai: {
   agents: {
     researcher: {
       providerOptions: {
-        groq:       { reasoningEffort: 'low' },             // or 'none'
-        openai:     { reasoningEffort: 'low' },             // gpt-5, o1, o3, o4-mini
-        anthropic:  { thinking: { type: 'disabled' } },     // or { type: 'enabled', budgetTokens: 1024 }
-        google:     { thinkingConfig: { thinkingBudget: 0 } }, // Gemini 2.5
-        openrouter: { reasoning: { effort: 'low' } },       // or { exclude: true }
-        xai:        { reasoningEffort: 'low' },
+        anthropic: { thinking: { type: 'enabled', budgetTokens: 1024 } },
+        google:    { thinkingConfig: { thinkingBudget: 0 } }, // Gemini 2.5
       },
     },
   },
