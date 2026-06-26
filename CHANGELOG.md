@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-26
+
+### Changes
+- ARIA diff: interactive controls that flip state (checkbox, expanded/collapsed, pressed, selected) are now reported on a dedicated `toggled` line in both directions — so the agent always sees "now checked" or "now collapsed", even when other page changes overflow the diff.
+- Run report now includes a Models table listing each role, the model it used, and the tokens it consumed.
+- Added SambaNova as a supported AI provider.
+- Documentation restructured into `guides/`, `reference/`, and `contributing/`, with a new Getting Started guide, a Customization cookbook (login, cookie banners, modals, test data), and a refreshed README and logo.
+
 ## 2026-06-06
 
 ### Changes
@@ -145,7 +153,7 @@
 ## 2026-04-26
 
 ### Changes
-- **Generates Playwright tests.** Every run is now saved as a runnable test — Playwright (`.spec.ts`) or CodeceptJS (`.js`). Set `ai.agents.historian.framework: 'playwright'` to get Playwright output. The spec uses the actual `page.locator(...)` calls executed during the run, each action wrapped in `test.step`, with `expect(...)` assertions for what the Pilot verified. Run it with `npx playwright test`. See [Automated Tests](docs/automated-tests.md).
+- **Generates Playwright tests.** Every run is now saved as a runnable test — Playwright (`.spec.ts`) or CodeceptJS (`.js`). Set `ai.agents.historian.framework: 'playwright'` to get Playwright output. The spec uses the actual `page.locator(...)` calls executed during the run, each action wrapped in `test.step`, with `expect(...)` assertions for what the Pilot verified. Run it with `npx playwright test`. See [Automated Tests](docs/guides/automated-tests.md).
 - [Historian] Each step in the generated test is wrapped in `await test.step('<explanation>', …)` (or `Section('<explanation>')` for CodeceptJS), labelled with the AI's own description.
 - [Historian] `test.beforeEach` / `Before` calls `goto(startUrl)` and replays the `wait` / `waitForElement` knowledge declared for that URL.
 - [Historian] Failed scenarios become `test.skip(...)` / `Scenario.skip(...)` with a `// FAILED:` comment; unfinished ones become `test.fixme(...)` / `Scenario.todo(...)` stubs. The file always runs.

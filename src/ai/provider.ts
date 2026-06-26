@@ -110,6 +110,16 @@ export class Provider {
     return this.config.agenticModel || this.config.model;
   }
 
+  getConfiguredModels(): Record<string, string> {
+    const models: Record<string, string> = { model: this.getModelName(this.config.model) };
+    if (this.config.agenticModel) models.agenticModel = this.getModelName(this.config.agenticModel);
+    if (this.config.visionModel) models.visionModel = this.getModelName(this.config.visionModel);
+    for (const [agent, agentConfig] of Object.entries(this.config.agents || {})) {
+      if (agentConfig?.model) models[agent] = this.getModelName(agentConfig.model);
+    }
+    return models;
+  }
+
   getSystemPromptForAgent(agentName: string, currentUrl?: string): string | undefined {
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     const parts: string[] = [];
