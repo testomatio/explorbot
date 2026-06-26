@@ -165,7 +165,7 @@ export class Pilot implements Agent {
     try {
       const response = await this.provider.generateObject(messages, schema, this.provider.getAgenticModel('pilot'), {
         agentName: 'pilot',
-        experimental_telemetry: { functionId: 'pilot.reviewVerdict' },
+        telemetry: { functionId: 'pilot.reviewVerdict' },
       });
 
       const result = response?.object;
@@ -267,7 +267,7 @@ export class Pilot implements Agent {
     try {
       const response = await this.provider.generateObject(messages, schema, this.provider.getAgenticModel('pilot'), {
         agentName: 'pilot',
-        experimental_telemetry: { functionId: 'pilot.reviewReset' },
+        telemetry: { functionId: 'pilot.reviewReset' },
       });
 
       const result = response?.object;
@@ -585,7 +585,7 @@ export class Pilot implements Agent {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
       agentName: 'pilot',
       stopWhen: opts.task ? () => opts.task!.hasFinished : undefined,
-      experimental_telemetry: { functionId },
+      telemetry: { functionId },
     });
     const text = result?.response?.text || '';
     const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => e.output.content);

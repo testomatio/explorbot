@@ -25,12 +25,13 @@ import { ExperienceTracker } from './experience-tracker.ts';
 import Explorer from './explorer.ts';
 import { KnowledgeTracker } from './knowledge-tracker.ts';
 import { WebPageState } from './state-manager.ts';
+import { Stats } from './stats.ts';
 import type { Suite } from './suite.ts';
 import { Plan, type Test } from './test-plan.ts';
-import { parsePlansFromMarkdown } from './utils/test-plan-markdown.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
 import { relativeToCwd } from './utils/next-steps.ts';
 import { sanitizeFilename } from './utils/strings.ts';
+import { parsePlansFromMarkdown } from './utils/test-plan-markdown.ts';
 
 export interface ExplorBotOptions {
   from?: string;
@@ -494,7 +495,10 @@ export class ExplorBot {
 
       const reporter = this.explorer?.getReporter();
       if (reporter?.isEnabled()) {
-        await reporter.setRunDescription(markdown);
+        let description = markdown;
+        const modelsTable = Stats.modelsTable(this.provider.getConfiguredModels());
+        if (modelsTable) description = `${markdown}\n\n${modelsTable}`;
+        await reporter.setRunDescription(description);
       }
 
       this.lastReportedTestCount = tests.length;

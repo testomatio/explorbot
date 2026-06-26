@@ -1,19 +1,18 @@
 # AI Provider Configuration
 
-Explorbot uses the [Vercel AI SDK](https://sdk.vercel.ai/) to connect to AI providers. This gives you flexibility to use any supported provider — and even mix providers for different models.
+Explorbot connects to AI providers through the [Vercel AI SDK](https://sdk.vercel.ai/). Use any supported provider, and mix providers across different models.
 
 ## Requirements
 
 Your model must support:
-- **Structured output** (JSON mode)
-- **Tool use** (function calling)
+- Structured output (JSON mode)
+- Tool use (function calling)
 
-For vision features (screenshot analysis), you also need a vision-capable model.
-
+To analyze screenshots, you also need a vision-capable model.
 
 ### OpenRouter (recommended)
 
-**OpenRouter** is the default we recommend: one key reaches [many providers and models](https://openrouter.ai/models).
+Start with OpenRouter. One key reaches [many providers and models](https://openrouter.ai/models).
 
 ```bash
 bun add @openrouter/ai-sdk-provider
@@ -35,7 +34,7 @@ export default {
 };
 ```
 
-Pick model IDs from [OpenRouter](https://openrouter.ai/) that support structured output and tools for your workload.
+Pick model IDs from [OpenRouter](https://openrouter.ai/) that support structured output and tools.
 
 ### Groq
 
@@ -127,7 +126,7 @@ export default {
 };
 ```
 
-Note: Anthropic models are powerful but slower; useful when accuracy matters more than speed.
+Note: Anthropic models are slower but accurate. Use them when accuracy matters more than speed.
 
 ### Azure OpenAI
 
@@ -178,7 +177,7 @@ export default {
 
 ## Multi-Provider Configuration
 
-You can mix clients the same way you assign `model`, `visionModel`, and `agenticModel` — each field can use a different provider instance:
+Mix clients the same way you assign `model`, `visionModel`, and `agenticModel`. Each field can use a different provider instance:
 
 ```javascript
 import { createGroq } from '@ai-sdk/groq';

@@ -561,4 +561,4 @@ bun run check:fix    # Run all Biome checks and fixes
 
 AI agent calls are tested via `@copilotkit/aimock` — a real HTTP mock server pointed at by the real `Provider`. Tests duck-type-mock Explorer/StateManager/downstream agents, and inspect actual prompts via aimock's Journal (`mock.getLastRequest()`).
 
-Tests live in `tests/integration/`. Canned UI maps in `test-data/ui-maps/` (fictional apps only — no real product data). See `docs/ai-integration-tests.md` for principles and `tests/integration/planner.test.ts` as the reference implementation.
+Tests live in `tests/integration/`. Canned UI maps in `test-data/ui-maps/` (fictional apps only — no real product data). See `docs/contributing/ai-integration-tests.md` for principles and `tests/integration/planner.test.ts` as the reference implementation.

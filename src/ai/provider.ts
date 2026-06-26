@@ -1,6 +1,7 @@
+import { OpenTelemetry } from '@ai-sdk/otel';
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { generateObject, generateText, stepCountIs } from 'ai';
+import { generateObject, generateText, isStepCount, registerTelemetry } from 'ai';
 import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { AIConfig } from '../config.js';
@@ -19,9 +20,11 @@ const responseLog = createDebug('explorbot:provider:in');
 class AiError extends Error {}
 export class ContextLengthError extends Error {}
 
+let telemetryRegistered = false;
+
 function extractCachedTokens(usage: any): number {
   if (!usage) return 0;
-  const direct = usage.cachedInputTokens ?? usage.inputTokenDetails?.cacheReadTokens;
+  const direct = usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens;
   if (typeof direct === 'number') return direct;
   const raw = usage.raw;
   const fromRaw = raw?.prompt_tokens_details?.cached_tokens ?? raw?.promptTokensDetails?.cachedTokens;
@@ -86,7 +89,7 @@ export class Provider {
       await generateText({
         model: this.config.model,
         prompt: 'hi',
-        maxTokens: 1,
+        maxOutputTokens: 1,
       });
     } catch (error: any) {
       throw new AiError(`AI connection failed: ${error.message}`);
@@ -110,6 +113,16 @@ export class Provider {
     return this.config.agenticModel || this.config.model;
   }
 
+  getConfiguredModels(): Record<string, string> {
+    const models: Record<string, string> = { model: this.getModelName(this.config.model) };
+    if (this.config.agenticModel) models.agenticModel = this.getModelName(this.config.agenticModel);
+    if (this.config.visionModel) models.visionModel = this.getModelName(this.config.visionModel);
+    for (const [agent, agentConfig] of Object.entries(this.config.agents || {})) {
+      if (agentConfig?.model) models[agent] = this.getModelName(agentConfig.model);
+    }
+    return models;
+  }
+
   getSystemPromptForAgent(agentName: string, currentUrl?: string): string | undefined {
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     const parts: string[] = [];
@@ -129,6 +142,12 @@ export class Provider {
     return agentConfig?.providerOptions;
   }
 
+  getReasoningForAgent(agentName?: string): string | undefined {
+    if (!agentName) return undefined;
+    const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
+    return agentConfig?.reasoning;
+  }
+
   private getRetryOptions(options: any = {}): RetryOptions {
     return {
       ...this.defaultRetryOptions,
@@ -144,6 +163,12 @@ export class Provider {
       ...config,
       providerOptions: { ...config.providerOptions, ...agentOptions },
     };
+  }
+
+  private finalizeConfig(config: Record<string, any>, options: any, telemetry: any): void {
+    if (telemetry) config.telemetry = telemetry;
+    const reasoning = this.getReasoningForAgent(options.agentName);
+    if (reasoning) config.reasoning ??= reasoning;
   }
 
   private initLangfuse() {
@@ -167,6 +192,10 @@ export class Provider {
       instrumentations: [],
     });
     void this.otelSdk.start();
+    if (!telemetryRegistered) {
+      registerTelemetry(new OpenTelemetry());
+      telemetryRegistered = true;
+    }
     this.telemetryEnabled = true;
   }
 
@@ -177,20 +206,20 @@ export class Provider {
 
     const runTelemetry = Observability.getTelemetry();
 
-    if (!options.experimental_telemetry) {
-      return runTelemetry || { isEnabled: true };
+    if (!options.telemetry) {
+      return runTelemetry;
     }
 
     if (!runTelemetry) {
-      return options.experimental_telemetry;
+      return options.telemetry;
     }
 
     return {
       ...runTelemetry,
-      ...options.experimental_telemetry,
+      ...options.telemetry,
       metadata: {
         ...runTelemetry.metadata,
-        ...options.experimental_telemetry.metadata,
+        ...options.telemetry.metadata,
       },
     };
   }
@@ -242,15 +271,16 @@ export class Provider {
     const telemetry = this.getTelemetry(options);
     const config = this.mergeProviderOptions(
       {
-        maxTokens: 16384,
+        maxOutputTokens: 16384,
+        allowSystemInMessages: true,
         ...(this.config.config || {}),
         ...options,
-        ...(telemetry ? { experimental_telemetry: telemetry } : {}),
         model,
         abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
+    this.finalizeConfig(config, options, telemetry);
 
     promptLog(messages[messages.length - 1].content);
     try {
@@ -259,7 +289,7 @@ export class Provider {
         if (!result.text) {
           debugLog(result);
           if (result.finishReason === 'length') {
-            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxTokens in config or use a model with higher output capacity.');
+            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
           }
           throw new Error('No response text from AI');
         }
@@ -315,23 +345,24 @@ export class Provider {
     const telemetry = this.getTelemetry(options);
     const maxRoundtrips = options.maxToolRoundtrips ?? 5;
     const extraStop = options.stopWhen;
-    const stopConditions: any[] = [stepCountIs(maxRoundtrips)];
+    const stopConditions: any[] = [isStepCount(maxRoundtrips)];
     if (extraStop) stopConditions.push(extraStop);
     const { stopWhen: _ignoredStopWhen, ...optionsWithoutStop } = options;
     const config = this.mergeProviderOptions(
       {
         tools,
-        maxTokens: 16384,
+        maxOutputTokens: 16384,
         toolChoice: 'auto',
+        allowSystemInMessages: true,
         ...(this.config.config || {}),
         ...optionsWithoutStop,
         stopWhen: stopConditions,
-        ...(telemetry ? { experimental_telemetry: telemetry } : {}),
         model,
         abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
+    this.finalizeConfig(config, options, telemetry);
     try {
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
@@ -346,7 +377,7 @@ export class Provider {
           ])) as any;
           const hasToolCall = (result.toolCalls?.length || 0) > 0;
           if (!result.text && !hasToolCall && result.finishReason === 'length') {
-            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxTokens in config or use a model with higher output capacity.');
+            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
           }
           return result;
         } finally {
@@ -409,14 +440,15 @@ export class Provider {
     const config = this.mergeProviderOptions(
       {
         schema,
+        allowSystemInMessages: true,
         ...(this.config.config || {}),
         ...options,
-        ...(telemetry ? { experimental_telemetry: telemetry } : {}),
         model: modelToUse,
         abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
+    this.finalizeConfig(config, options, telemetry);
 
     try {
       promptLog(messages[messages.length - 1].content);
@@ -617,13 +649,13 @@ export class Provider {
     ];
 
     const telemetry = this.getTelemetry({});
-    const config = {
-      maxTokens: 16384,
+    const config: Record<string, any> = {
+      maxOutputTokens: 16384,
       ...(this.config.config || {}),
-      ...(telemetry ? { experimental_telemetry: telemetry } : {}),
       model: this.config.visionModel,
       abortSignal: executionController.getAbortSignal(),
     };
+    if (telemetry) config.telemetry = telemetry;
 
     try {
       promptLog(`Processing image with prompt: ${prompt}`);

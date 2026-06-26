@@ -1,6 +1,6 @@
 # Building and Publishing the npm Package
 
-Explorbot uses Bun as its development runtime but is published to npm as a Node.js-compatible package. This document explains how the build works and how to publish.
+Explorbot develops on Bun but ships to npm as a Node.js-compatible package. This page covers how the build works and how to publish it.
 
 ## Prerequisites
 
@@ -10,14 +10,14 @@ Explorbot uses Bun as its development runtime but is published to npm as a Node.
 
 ## How the Build Works
 
-The source code is written in TypeScript with `.ts` imports (enabled by `allowImportingTsExtensions` in `tsconfig.json`). Bun runs these natively, but Node.js requires compiled `.js` files.
+The source is TypeScript with `.ts` imports (enabled by `allowImportingTsExtensions` in `tsconfig.json`). Bun runs these natively, but Node.js needs compiled `.js` files.
 
-The build uses TypeScript compiler (`tsc`) with a dedicated `tsconfig.build.json`:
+The build runs the TypeScript compiler (`tsc`) with a dedicated `tsconfig.build.json`:
 
-1. **TypeScript compilation** - Compiles `src/`, `bin/`, and `boat/` to `dist/` preserving the directory structure
-2. **Import rewriting** - `rewriteRelativeImportExtensions` rewrites `.ts` imports to `.js` in the output (TypeScript 5.7+ feature)
-3. **Asset copying** - Copies `rules/` and `assets/sample-files/` into `dist/` so runtime path resolution works
-4. **Shebang replacement** - Replaces `#!/usr/bin/env bun` with `#!/usr/bin/env node` in the CLI entry point
+1. **TypeScript compilation** - Compiles `src/`, `bin/`, and `boat/` to `dist/`, preserving the directory structure.
+2. **Import rewriting** - `rewriteRelativeImportExtensions` rewrites `.ts` imports to `.js` in the output (a TypeScript 5.7+ feature).
+3. **Asset copying** - Copies `rules/` and `assets/sample-files/` into `dist/` so runtime path resolution works.
+4. **Shebang replacement** - Replaces `#!/usr/bin/env bun` with `#!/usr/bin/env node` in the CLI entry point.
 
 ### Build Configuration
 
@@ -32,11 +32,11 @@ The build uses TypeScript compiler (`tsc`) with a dedicated `tsconfig.build.json
 | `sourceMap` | `true` | Source maps for debugging |
 | `skipLibCheck` | `true` | Skip type checking of dependencies |
 
-Type checking is skipped during build (`--noCheck` flag) because Bun is more permissive than `tsc` strict mode. Type safety is enforced by Bun during development.
+The build skips type checking (`--noCheck` flag) because Bun is more permissive than `tsc` strict mode. Bun enforces type safety during development.
 
 ### Package Structure
 
-After building, the npm package contains:
+After the build, the npm package contains:
 
 ```
 dist/
@@ -73,7 +73,7 @@ npm pack --dry-run
 
 ## Publishing
 
-Publishing is automated via GitHub Actions (see below), but can also be done manually:
+GitHub Actions publishes automatically (see below), but you can also publish manually:
 
 ```bash
 # Bump version
@@ -85,11 +85,11 @@ npm publish
 
 ## Known Limitations
 
-- **Worker in `src/ai/researcher/cache.ts`** - Creates a Worker with a `.ts` URL, which is Bun-specific. This feature won't work on Node.js.
-- **No type declarations** - The package doesn't ship `.d.ts` files since it's a CLI tool, not a library.
+- **Worker in `src/ai/researcher/cache.ts`** - Creates a Worker from a `.ts` URL, which is Bun-specific. This feature does not work on Node.js.
+- **No type declarations** - The package ships no `.d.ts` files, since it is a CLI tool, not a library.
 
 ## CI/CD
 
-The `test.yml` workflow verifies the npm build on every push by running `bun run build:npm` followed by `node dist/bin/explorbot-cli.js --help` across Node.js 18, 20, 22, and 24.
+The `test.yml` workflow verifies the npm build on every push. It runs `bun run build:npm`, then `node dist/bin/explorbot-cli.js --help` across Node.js 18, 20, 22, and 24.
 
-The `publish.yml` workflow automatically publishes to npm when a version tag (`v*`) is pushed.
+The `publish.yml` workflow publishes to npm when you push a version tag (`v*`).

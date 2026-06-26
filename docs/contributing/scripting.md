@@ -1,6 +1,6 @@
 # Building Custom Scripts
 
-Explorbot can be used programmatically to build autonomous testing pipelines. This guide shows how to create scripts that run without the TUI.
+Use Explorbot programmatically to build testing pipelines. This guide shows how to write scripts that run without the TUI.
 
 ## Basic Setup
 
@@ -45,7 +45,7 @@ console.log(state.title);
 
 ## Research
 
-Analyze a page to understand its UI:
+Analyze a page to read its UI:
 
 ```typescript
 const state = bot.getCurrentState();
@@ -83,7 +83,7 @@ Plan with focus:
 ```typescript
 // Focus on specific feature
 const plan = await bot.agentPlanner().plan('checkout flow');
-// Or from CLI: explorbot plan /checkout --focus "checkout flow"
+// Or from CLI: ./bin/explorbot-cli.ts plan /checkout --focus "checkout flow"
 ```
 
 ## Creating Tests Manually
@@ -277,11 +277,11 @@ Example GitHub Actions workflow:
 
 ## Tips
 
-1. **Use `incognito: true`** for CI to ensure clean state
-2. **Set `show: true`** during development to see what's happening
-3. **Start small** — test one scenario before building full suites
-4. **Save plans** — load them later to re-run the same tests
-5. **Check `generatedCode`** — tests produce reusable CodeceptJS code
+1. Set `incognito: true` in CI for a clean state.
+2. Set `show: true` during development to watch the browser.
+3. Start small. Test one scenario before you build full suites.
+4. Save plans. Load them later to re-run the same tests.
+5. Check `generatedCode`. Tests produce reusable CodeceptJS code.
 
 ## FAQ
 

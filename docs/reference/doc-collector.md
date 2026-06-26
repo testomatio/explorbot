@@ -2,9 +2,9 @@
 
 `doc-collector` crawls pages and generates a lightweight spec:
 
-- `output/docs/spec.md` - Main index
-- `output/docs/pages/*.md` - Individual page documentation
-- `output/research/*.md` - Research data
+- `output/docs/spec.md` - main index
+- `output/docs/pages/*.md` - individual page documentation
+- `output/research/*.md` - research data
 
 Each page is summarized as:
 
@@ -17,31 +17,20 @@ Each page is summarized as:
 
 ### Static Documentation (Default)
 
-Analyzes pages without interaction:
-
-- ✅ Researches page structure via Researcher agent
-- ✅ Identifies UI elements and navigation
-- ✅ Generates documentation from static analysis
-- ✅ Fast and reliable
+Analyzes pages without interacting with them. It researches page structure via the Researcher agent, identifies UI elements and navigation, and generates documentation from that static analysis. This mode is fast and reliable.
 
 ### Interactive Documentation
 
-When `interactive: true` in config:
+Set `interactive: true` in config to try page interactions before writing the final documentation. The collector clicks links, buttons, and tab controls, then captures raw state observations before and after each action. The Documentarian classifies the observed behavior from that evidence. URLs found through successful interactions can be added to the crawl queue. When interaction results are weak or unreliable, the collector falls back to static documentation.
 
-- ✅ Tries selected page interactions before final documentation
-- Captures raw state observations after clicking links, buttons, and tab controls
-- Lets the Documentarian classify observed behavior from before/after evidence
-- ✅ Can enqueue URLs discovered from successful interactions
-- ✅ Falls back to static documentation when interaction results are weak or unreliable
-
-This mode is intended for cases where static research alone is not enough, for example:
+Use this mode when static research alone isn't enough, for example:
 
 - alternate page states such as tabs
 - post-click behavior
-- item/detail navigation
+- item or detail navigation
 - documenting what changed after an interaction
 
-When interaction results are useful, page docs may include:
+When interaction results are useful, page docs can include:
 
 - `State Transitions`
 - `Before`
@@ -68,14 +57,14 @@ Example:
 
 ## Commands
 
-### `explorbot docs collect <path-or-url>`
+### `npx explorbot docs collect <path-or-url>`
 
 Start from a relative path or a full URL:
 
 ```bash
-explorbot docs collect /users/sign_in
-explorbot docs collect /docs/openapi#tag/project-analytics-tags --max-pages 20
-explorbot docs collect https://example.com/workspace/projects --path explorbot-testing --show --session --max-pages 20
+npx explorbot docs collect /users/sign_in
+npx explorbot docs collect /docs/openapi#tag/project-analytics-tags --max-pages 20
+npx explorbot docs collect https://example.com/workspace/projects --path explorbot-testing --show --session --max-pages 20
 ```
 
 Supported options:
@@ -95,14 +84,14 @@ Supported options:
 
 If you pass a full URL, its origin is used as the runtime base URL for that run.
 
-### `explorbot docs init`
+### `npx explorbot docs init`
 
 Create a starter `docbot.config.ts`:
 
 ```bash
-explorbot docs init
-explorbot docs init --path explorbot-testing
-explorbot docs init --path explorbot-testing --force
+npx explorbot docs init
+npx explorbot docs init --path explorbot-testing
+npx explorbot docs init --path explorbot-testing --force
 ```
 
 ### Standalone CLI
@@ -113,7 +102,7 @@ bun boat/doc-collector/bin/doc-collector-cli.ts collect /users/sign_in --max-pag
 
 ## Config
 
-The collector loads `docbot.config.js`, `docbot.config.mjs`, or `docbot.config.ts`. If none exists, defaults are used.
+The collector loads `docbot.config.js`, `docbot.config.mjs`, or `docbot.config.ts`. If none exists, it uses defaults.
 
 ```ts
 export default {
@@ -178,14 +167,14 @@ Blocked:
 
 ### `section`
 
-Softer boundary than `subtree`: keep the same scope root, its descendants, and closely related slug variations.
+A softer boundary than `subtree`: keep the same scope root, its descendants, and closely related slug variations.
 
 ## Notes
 
 - same-origin only
 - visited pages are tracked through the state manager
 - dead loops are stopped
-- next targets are discovered from links, research navigation, and successful interaction results
+- next targets come from links, research navigation, and successful interaction results
 - low-signal pages can be skipped
 - interactive mode does not replace static documentation; it augments it
 - static mode is unchanged when `interactive` is disabled
@@ -194,6 +183,6 @@ Softer boundary than `subtree`: keep the same scope root, its descendants, and c
 
 ## Related Docs
 
-- [commands.md](./commands.md) - terminal command reference
+- [commands.md](../guides/commands.md) - terminal command reference
 - [configuration.md](./configuration.md) - main Explorbot configuration
 - [researcher.md](./researcher.md) - researcher behavior
