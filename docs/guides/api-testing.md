@@ -1,10 +1,10 @@
 # API Testing
 
-Explorbot can autonomously test REST APIs alongside web applications. The API testing module (codename **api-tester**) uses AI agents to plan and execute HTTP-based test scenarios against your API endpoints.
+Explorbot tests REST APIs alongside web applications. The API testing module (codename **api-tester**) plans and runs HTTP test scenarios against your endpoints.
 
 ## Quick Start
 
-**1. Add API config** to your `explorbot.config.js`:
+Add API config to your `explorbot.config.js`:
 
 ```javascript
 export default {
@@ -26,56 +26,56 @@ export default {
 };
 ```
 
-**2. Explore an endpoint:**
+Explore an endpoint:
 
 ```bash
-explorbot api explore /users
+npx explorbot api explore /users
 ```
 
-This runs the full cycle: plan tests across multiple styles, execute them, and report results.
+This runs the full cycle: plan tests across several styles, run them, and report results.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `explorbot api plan <endpoint>` | Generate a test plan for an endpoint |
-| `explorbot api test <planfile> [index]` | Execute tests from a plan file |
-| `explorbot api explore <endpoint>` | Full cycle: plan all styles, execute, report |
-| `explorbot api init` | Initialize a standalone API testing project |
-| `explorbot api know <endpoint> [desc]` | Add API knowledge for an endpoint |
+| `npx explorbot api plan <endpoint>` | Generate a test plan for an endpoint |
+| `npx explorbot api test <planfile> [index]` | Execute tests from a plan file |
+| `npx explorbot api explore <endpoint>` | Full cycle: plan all styles, execute, report |
+| `npx explorbot api init` | Initialize a standalone API testing project |
+| `npx explorbot api know <endpoint> [desc]` | Add API knowledge for an endpoint |
 
 ### Planning
 
 ```bash
-explorbot api plan /users                  # generate test plan
-explorbot api plan /users --style hacker   # use specific planning style
-explorbot api plan /users --fresh          # discard previous plan, start fresh
+npx explorbot api plan /users                  # generate test plan
+npx explorbot api plan /users --style hacker   # use specific planning style
+npx explorbot api plan /users --fresh          # discard previous plan, start fresh
 ```
 
-The planner generates scenarios with priorities, steps, and expected outcomes. Plans are saved as markdown in `output/plans/`.
+The planner generates scenarios with priorities, steps, and expected outcomes. It saves plans as markdown in `output/plans/`.
 
 ### Running Tests
 
 ```bash
-explorbot api test output/plans/users.md 1       # run first test
-explorbot api test output/plans/users.md 1-3     # run tests 1 to 3
-explorbot api test output/plans/users.md 1,3,5   # run specific tests
-explorbot api test output/plans/users.md *       # run all pending tests
+npx explorbot api test output/plans/users.md 1       # run first test
+npx explorbot api test output/plans/users.md 1-3     # run tests 1 to 3
+npx explorbot api test output/plans/users.md 1,3,5   # run specific tests
+npx explorbot api test output/plans/users.md *       # run all pending tests
 ```
 
 ### Full Exploration
 
 ```bash
-explorbot api explore /users
+npx explorbot api explore /users
 ```
 
-Runs all planning styles (normal, curious, psycho, hacker), generates tests for each, executes them, and produces a combined report.
+Runs every planning style (normal, curious, psycho, hacker), generates tests for each, runs them, and writes a combined report.
 
 ## Configuration
 
 ### Unified Config
 
-API testing works from your main `explorbot.config.js` — no separate config file needed. Add an `api` section:
+API testing works from your main `explorbot.config.js`. No separate config file is needed. Add an `api` section:
 
 ```javascript
 export default {
@@ -108,7 +108,7 @@ export default {
 
 ### Authentication Hooks
 
-Use `bootstrap` to dynamically obtain auth tokens before tests run:
+Use `bootstrap` to obtain an auth token before tests run:
 
 ```javascript
 api: {
@@ -128,11 +128,11 @@ api: {
 },
 ```
 
-The object returned by `bootstrap` is merged into the default headers for all subsequent requests.
+The object returned by `bootstrap` merges into the default headers for every later request.
 
 ### Standalone Config
 
-For dedicated API testing projects, you can use a standalone `apibot.config.ts` instead:
+For a dedicated API testing project, use a standalone `apibot.config.ts` instead:
 
 ```typescript
 import { openai } from '@ai-sdk/openai';
@@ -159,13 +159,13 @@ When both files exist, `apibot.config.*` takes precedence over `explorbot.config
 
 ## Agents
 
-API testing uses two specialized agents:
+API testing uses two agents.
 
 ### Chief
 
-Plans API test scenarios for an endpoint. Analyzes the OpenAPI spec, fetches sample data, and generates test cases with priorities and expected outcomes.
+Plans API test scenarios for an endpoint. Reads the OpenAPI spec, fetches sample data, and generates test cases with priorities and expected outcomes.
 
-**Planning styles** cycle automatically during `explore`:
+Planning styles cycle during `explore`:
 
 | Style | Focus |
 |-------|-------|
@@ -174,11 +174,11 @@ Plans API test scenarios for an endpoint. Analyzes the OpenAPI spec, fetches sam
 | `psycho` | Stress testing, boundary values, extreme inputs |
 | `hacker` | Security-focused: injection, auth bypass, privilege escalation |
 
-Custom styles can be added in `rules/chief/styles/`.
+Add custom styles in `rules/chief/styles/`.
 
 ### Curler
 
-Executes test scenarios step-by-step using AI-driven tool calling. Available tools:
+Runs test scenarios step by step through AI tool calling. Available tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -192,7 +192,7 @@ Executes test scenarios step-by-step using AI-driven tool calling. Available too
 
 ### Agent Model Configuration
 
-Both Chief and Curler use `agenticModel` by default (falling back to `model`). Override per-agent:
+Both Chief and Curler use `agenticModel` by default and fall back to `model`. Override per agent:
 
 ```javascript
 ai: {
@@ -207,14 +207,14 @@ ai: {
 
 ## Knowledge
 
-Add API-specific knowledge to help agents understand your endpoints:
+Add API knowledge to help agents understand your endpoints:
 
 ```bash
-explorbot api know /users "CRUD endpoint for user management. Requires admin role."
-explorbot api know /auth "Login with email/password, returns JWT token"
+npx explorbot api know /users "CRUD endpoint for user management. Requires admin role."
+npx explorbot api know /auth "Login with email/password, returns JWT token"
 ```
 
-Knowledge files are saved in `knowledge/` with endpoint frontmatter:
+Explorbot saves knowledge files in `knowledge/` with endpoint frontmatter:
 
 ```markdown
 ---
@@ -234,6 +234,6 @@ User IDs are UUIDs.
 
 ## See Also
 
-- [Configuration](./configuration.md) — Full configuration reference
-- [Agents](./agents.md) — Agent descriptions and capabilities
-- [Observability](./observability.md) — Langfuse tracing for API tests
+- [Configuration](../reference/configuration.md) — full configuration reference
+- [Agents](../reference/agents.md) — agent descriptions and capabilities
+- [Observability](../contributing/observability.md) — Langfuse tracing for API tests

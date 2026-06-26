@@ -1,13 +1,13 @@
 # Knowledge System
 
-Explorbot can learn about your application through knowledge files. This helps agents make better decisions — especially for authentication, special workflows, or app-specific behavior.
+Knowledge files tell explorbot facts about your app. Agents read them to make better decisions about authentication, special workflows, and app-specific behavior.
 
 ## Adding Knowledge
 
 ### Interactive Mode
 
 ```bash
-explorbot learn
+npx explorbot learn
 ```
 
 Opens a TUI form where you can:
@@ -18,25 +18,25 @@ Opens a TUI form where you can:
 ### CLI Mode
 
 ```bash
-explorbot learn "<url-pattern>" "<description>"
+npx explorbot learn "<url-pattern>" "<description>"
 ```
 
 Examples:
 
 ```bash
 # Login credentials
-explorbot learn "/login" "Use credentials: admin@example.com / secret123"
+npx explorbot learn "/login" "Use credentials: admin@example.com / secret123"
 
 # General knowledge (applies to all pages)
-explorbot learn "*" "This is a React SPA. Wait for loading spinners to disappear."
+npx explorbot learn "*" "This is a React SPA. Wait for loading spinners to disappear."
 
 # Specific page behavior
-explorbot learn "/checkout" "Credit card field requires format: XXXX-XXXX-XXXX-XXXX"
+npx explorbot learn "/checkout" "Credit card field requires format: XXXX-XXXX-XXXX-XXXX"
 ```
 
 ### Inside TUI
 
-While exploring, use the `/learn` command:
+While exploring, use the `/learn` command.
 
 ```
 /learn                              # Opens interactive form
@@ -55,7 +55,7 @@ While exploring, use the `/learn` command:
 
 ## Knowledge File Format
 
-Knowledge is stored in `./knowledge/` as markdown files with frontmatter:
+Knowledge lives in `./knowledge/` as markdown files with frontmatter:
 
 ```markdown
 ---
@@ -83,7 +83,7 @@ Notes:
 
 ## Variables
 
-Knowledge files support variable interpolation using `${namespace.key}` syntax. Variables are resolved when knowledge is loaded.
+Knowledge files support variable interpolation with `${namespace.key}` syntax. Explorbot resolves variables when it loads the knowledge.
 
 ### Environment Variables
 
@@ -99,11 +99,11 @@ Login credentials:
 - password: ${env.PASSWORD}
 ```
 
-Missing environment variables are replaced with an empty string.
+Missing environment variables become an empty string.
 
 ### Config Variables
 
-Use `${config.path}` to reference values from `explorbot.config.js` using dot notation.
+Use `${config.path}` to reference values from `explorbot.config.js` with dot notation.
 
 ```markdown
 ---
@@ -114,7 +114,7 @@ Base URL: ${config.playwright.url}
 Browser: ${config.playwright.browser}
 ```
 
-Any scalar config value can be referenced. Object values are replaced with an empty string.
+You can reference any scalar config value. Object values become an empty string.
 
 ### Supported Namespaces
 
@@ -123,11 +123,11 @@ Any scalar config value can be referenced. Object values are replaced with an em
 | `env` | `process.env` | `${env.API_KEY}` |
 | `config` | `explorbot.config.js` | `${config.playwright.url}` |
 
-Expressions with unknown namespaces (e.g. `${other.value}`) or without a namespace (e.g. `${value}`) are left as-is.
+Expressions with an unknown namespace (such as `${other.value}`) or no namespace (such as `${value}`) are left as-is.
 
 ## Page Automation
 
-Knowledge files can include automation commands that execute when navigating to matching pages. This is useful for handling loading states, cookie banners, or page-specific setup.
+Knowledge files can run automation commands when explorbot navigates to a matching page. Use this for loading states, cookie banners, or page-specific setup.
 
 ### Available Fields
 
@@ -166,7 +166,7 @@ App pages need cookie consent dismissed and loading complete.
 
 ### CodeceptJS Effects
 
-Knowledge code has access to CodeceptJS effects for error handling and retries:
+Knowledge code can use CodeceptJS effects for error handling and retries:
 
 | Effect | Purpose |
 |--------|---------|
@@ -191,11 +191,11 @@ Dashboard may show cookie banner. Data loads asynchronously - retry reload if ne
 ```
 
 > [!NOTE]
-> Effects are async - use `await` when calling them in knowledge code.
+> Effects are async. Use `await` when you call them in knowledge code.
 
 ### SPA Navigation
 
-For single-page apps where full page reload breaks state:
+For single-page apps where a full reload breaks state:
 
 ```markdown
 ---
@@ -207,11 +207,11 @@ Settings uses client-side routing. Use pushState to preserve app state.
 ```
 
 > [!TIP]
-> Use knowledge automation for page-specific behaviors. For agent-specific logic (like running code only during testing), use [Agent Hooks](./hooks.md) instead.
+> Use knowledge automation for page-specific behavior. For agent-specific logic, such as code that runs only during testing, use [Agent Hooks](./hooks.md) instead.
 
 ### Execution Order
 
-When navigating to a page, automation executes in this order:
+When explorbot navigates to a page, automation runs in this order:
 
 1. Navigation (`I.amOnPage()` or `history.pushState`)
 2. `wait` (if specified)
@@ -273,19 +273,19 @@ Test users available:
 
 ## How Agents Use Knowledge
 
-When an agent operates on a page, it receives relevant knowledge based on URL matching:
+When an agent works on a page, it gets the knowledge whose URL pattern matches:
 
-1. **Navigator** — Uses credentials, knows about special interactions
-2. **Researcher** — Understands page structure, hidden elements
-3. **Planner** — Incorporates edge cases, validation rules into test scenarios
-4. **Tester** — Uses test data, knows expected behaviors
+1. **Navigator** — uses credentials and knows about special interactions
+2. **Researcher** — reads page structure and hidden elements
+3. **Planner** — adds edge cases and validation rules to test scenarios
+4. **Tester** — uses test data and expected behaviors
 
 ## Best Practices
 
-1. **Start with auth** — Add login credentials before exploring protected areas
-2. **Use `*` for globals** — Document app-wide behaviors (loading states, timeouts)
-3. **Be specific** — Include exact selectors, formats, and values when known
-4. **Update as you learn** — Add knowledge when agents struggle with interactions
+1. **Start with auth** — add login credentials before exploring protected areas
+2. **Use `*` for globals** — document app-wide behavior such as loading states and timeouts
+3. **Be specific** — give exact selectors, formats, and values when you know them
+4. **Update as you learn** — add knowledge when agents struggle with an interaction
 
 ## File Organization
 
@@ -297,10 +297,10 @@ When an agent operates on a page, it receives relevant knowledge based on URL ma
 └── admin_users.md     # /admin/users/*
 ```
 
-Files are named based on URL pattern. Multiple entries for the same URL are appended to the same file.
+Files are named after the URL pattern. Multiple entries for the same URL append to the same file.
 
 ## See Also
 
-- [Agent Hooks](./hooks.md) - Per-agent custom code execution
-- [Configuration](./configuration.md) - Full configuration reference
-- [Page Interaction](./page-interaction.md) - How agents interact with pages
+- [Agent Hooks](./hooks.md) — per-agent custom code execution
+- [Configuration](../reference/configuration.md) — full configuration reference
+- [Page Interaction](../reference/page-interaction.md) — how agents interact with pages

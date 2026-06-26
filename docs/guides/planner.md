@@ -1,17 +1,17 @@
 # Planner Agent
 
-The Planner agent generates test scenarios from Researcher findings. It creates business-focused tests with steps, expected outcomes, and priorities — ready for the Tester agent to execute.
+The Planner agent turns Researcher findings into test scenarios. Each scenario has steps, expected outcomes, and a priority, ready for the Tester to run.
 
 ## Overview
 
 When you run `/plan` or `/explore`, the Planner:
 
-1. Receives the Researcher's UI map of the current page
-2. Applies a **planning style** (testing approach)
-3. Generates 3–12 test scenarios with steps and expected outcomes
-4. Assigns priorities based on business importance
+1. Receives the Researcher's UI map of the current page.
+2. Applies a planning style.
+3. Generates 3 to 12 scenarios with steps and expected outcomes.
+4. Assigns priorities based on business importance.
 
-On repeated runs, the Planner expands the existing plan with new scenarios using a different style, avoiding duplicates.
+Run it again and the Planner adds new scenarios in a different style. It skips scenarios that already exist.
 
 ## Configuration
 
@@ -41,17 +41,17 @@ ai: {
 
 ## Planning Styles
 
-Each time the Planner generates scenarios, it applies a **style** — a testing approach that shapes what kind of tests get created. Styles cycle automatically on each planning iteration, so repeated runs produce different types of tests.
+A style is a testing approach that shapes which tests the Planner creates. Styles cycle on each planning iteration, so repeated runs produce different kinds of tests.
 
 ### Built-in Styles
 
-All three built-in styles rank scenarios by **outcome strength**, from strongest to weakest:
+All three built-in styles rank scenarios by outcome strength, from strongest to weakest:
 
 1. **Data change** — a record is created, edited, deleted; a setting is persisted; a message is sent; a job is triggered.
-2. **State change** — a route change, a filter or sort actually applied to real data, a mode or auth change the app remembers.
-3. **UI-only change** — something opens, closes, is cancelled, is hovered, is toggled for display. The application never registers anything new.
+2. **State change** — a route change, a filter or sort applied to real data, a mode or auth change the app remembers.
+3. **UI-only change** — something opens, closes, is cancelled, is hovered, or is toggled for display. The application registers nothing new.
 
-Scenarios ending in category 1 or 2 are preferred. Category 3 is only proposed when the UI-only behaviour itself has a verifiable side effect (a warning prompt, a persisted draft, a badge appearing).
+The Planner prefers scenarios that end in category 1 or 2. It proposes category 3 only when the UI-only behaviour has a verifiable side effect, such as a warning prompt, a persisted draft, or a badge appearing.
 
 | Style | Focus | What it generates |
 |-------|-------|-------------------|
@@ -61,7 +61,7 @@ Scenarios ending in category 1 or 2 are preferred. Category 3 is only proposed w
 
 ### How Cycling Works
 
-The default cycle is: **normal** → **psycho** → **curious** → **normal** → ...
+The default cycle is: normal, psycho, curious, then back to normal.
 
 | Iteration | Style | Purpose |
 |-----------|-------|---------|
@@ -70,9 +70,9 @@ The default cycle is: **normal** → **psycho** → **curious** → **normal** �
 | 3rd `/plan` | curious | Fill coverage gaps from previous iterations |
 | 4th `/plan` | normal | Re-examine with fresh research |
 
-Each iteration only proposes scenarios that don't already exist in the plan. When all feature areas are covered, the Planner returns an empty list.
+Each iteration proposes only scenarios that aren't already in the plan. When all feature areas are covered, the Planner returns an empty list.
 
-You can force a specific style:
+Force a specific style:
 
 ```
 /plan --style psycho
@@ -85,7 +85,7 @@ You can force a specific style:
 Extract the built-in styles to your project:
 
 ```bash
-explorbot extract-rules planner
+npx explorbot extract-rules planner
 ```
 
 This creates:
@@ -97,9 +97,9 @@ rules/planner/styles/
   curious.md
 ```
 
-Edit any file to change how the Planner thinks. For example, edit `normal.md` to add domain-specific patterns or `psycho.md` to include industry-specific invalid inputs.
+Edit any file to change how the Planner thinks. For example, edit `normal.md` to add domain-specific patterns, or `psycho.md` to add industry-specific invalid inputs.
 
-Explorbot loads from your `rules/planner/styles/` first, falling back to built-in for any missing files. You only need to extract the styles you want to change.
+Explorbot loads from your `rules/planner/styles/` first and falls back to the built-in files for any you didn't extract. Extract only the styles you want to change.
 
 #### Create New Styles
 
@@ -140,22 +140,20 @@ planner: {
 }
 ```
 
-A style name can appear multiple times — the Planner cycles through the list by index.
+A style name can appear more than once. The Planner cycles through the list by index.
 
 ### Writing Style Files
 
-Style files are plain markdown with no frontmatter. The entire content becomes the `<approach>` section of the Planner's prompt.
+Style files are plain markdown with no frontmatter. The whole file becomes the `<approach>` section of the Planner's prompt.
 
-Write it as instructions to a senior QA engineer describing how to think about test scenarios.
+Write it as instructions to a senior QA engineer on how to think about test scenarios. Include:
 
-**What to include:**
+- **Mindset** — "Think like a hacker", "Think like a first-time user", "Focus on what previous tests missed".
+- **Patterns to test** — empty fields, long strings, optional controls, CRUD order.
+- **What counts as a test** — complete workflows, not just "open modal and check it exists".
+- **What to skip** — navigation away from the page, duplicate coverage.
 
-- **Mindset** — "Think like a hacker", "Think like a first-time user", "Focus on what previous tests missed"
-- **Patterns to test** — empty fields, long strings, optional controls, CRUD order
-- **What counts as a test** — complete workflows, not just "open modal and check it exists"
-- **What to skip** — navigation away from the page, duplicating coverage
-
-**Example — a "performer" style focused on real user journeys:**
+This "performer" style focuses on real user journeys:
 
 ```markdown
 Think like a real user of this product. What would they actually do on this page?
@@ -175,7 +173,7 @@ where X is a real business outcome, not a single control click.
 
 ## Page-Specific Rules
 
-Use [rules](./configuration.md#rules) to give the Planner extra instructions for specific pages:
+Use [rules](../reference/configuration.md#rules) to give the Planner extra instructions for specific pages:
 
 ```javascript
 planner: {
@@ -187,11 +185,11 @@ planner: {
 }
 ```
 
-Rules are additive — all matching rules are concatenated and appended to the Planner's prompt alongside the active style.
+Rules are additive. The Planner concatenates all matching rules and appends them to its prompt alongside the active style.
 
 ## Test Priorities
 
-The Planner assigns priorities based on business importance:
+The Planner assigns priorities by business importance:
 
 | Priority | Meaning | Examples |
 |----------|---------|---------|
@@ -203,6 +201,6 @@ The Planner assigns priorities based on business importance:
 
 ## See Also
 
-- [Configuration: Rules](./configuration.md#rules) — URL-aware rule files
-- [Agents](./agents.md) — All agent descriptions
+- [Configuration: Rules](../reference/configuration.md#rules) — URL-aware rule files
+- [Agents](../reference/agents.md) — all agent descriptions
 - [Commands](./commands.md) — CLI and TUI commands
