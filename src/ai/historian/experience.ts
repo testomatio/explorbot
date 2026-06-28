@@ -308,7 +308,10 @@ export function WithExperience<T extends Constructor>(Base: T) {
 
       const state = this.resolveActionState(exec, initialState);
       const title = getExecutionLabel(exec, `${exec.toolName} target element`);
-      const failedCommands = failedAttempts.map((attempt) => attempt.command).filter(Boolean).join(', ');
+      const failedCommands = failedAttempts
+        .map((attempt) => attempt.command)
+        .filter(Boolean)
+        .join(', ');
       const explanation = failedCommands ? `Use this locator after these alternatives failed: ${failedCommands}` : 'Use this locator after fallback attempts failed.';
       this.experienceTracker.writeAction(state, {
         title,
