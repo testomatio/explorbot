@@ -217,6 +217,8 @@ export function WithExperience<T extends Constructor>(Base: T) {
         if (!CODECEPT_TOOLS.includes(exec.toolName as any)) continue;
         if (!exec.output?.code) continue;
 
+        this.saveFallbackAttempts(exec, initialState);
+
         if (!exec.wasSuccessful) {
           const bucket = failedByTool.get(exec.toolName) || [];
           bucket.push(exec);
@@ -280,16 +282,7 @@ export function WithExperience<T extends Constructor>(Base: T) {
           const candidate = candidates[pattern.candidateIndex];
           if (!candidate) continue;
 
-          const url = candidate.success.output?.pageDiff?.currentUrl;
-          let state: ActionResult = initialState;
-
-          if (url && url !== initialState.url) {
-            const transition = this.stateManager.getLastVisitToPath(url);
-            if (transition) {
-              state = ActionResult.fromState(transition.toState);
-            }
-          }
-
+          const state = this.resolveActionState(candidate.success, initialState);
           if (isNonReusableCode(candidate.success.output.code)) continue;
           this.experienceTracker.writeAction(state, { title: pattern.intent, code: candidate.success.output.code, explanation: pattern.explanation });
         }
@@ -298,6 +291,39 @@ export function WithExperience<T extends Constructor>(Base: T) {
       } catch (error: any) {
         debugLog('Failed to detect retry patterns: %s', error.message);
       }
+    }
+
+    private saveFallbackAttempts(exec: ToolExecution, initialState: ActionResult): void {
+      if (!exec.wasSuccessful) return;
+      const attempts = exec.output?.attempts;
+      if (!Array.isArray(attempts)) return;
+      if (attempts.length < 2) return;
+
+      const successfulAttempt = attempts.find((attempt) => attempt.success && attempt.command === exec.output.code) || attempts.find((attempt) => attempt.success);
+      if (!successfulAttempt?.command) return;
+
+      const failedAttempts = attempts.filter((attempt) => !attempt.success);
+      if (failedAttempts.length === 0) return;
+      if (isNonReusableCode(successfulAttempt.command)) return;
+
+      const state = this.resolveActionState(exec, initialState);
+      const title = getExecutionLabel(exec, `${exec.toolName} target element`);
+      const failedCommands = failedAttempts.map((attempt) => attempt.command).filter(Boolean).join(', ');
+      const explanation = failedCommands ? `Use this locator after these alternatives failed: ${failedCommands}` : 'Use this locator after fallback attempts failed.';
+      this.experienceTracker.writeAction(state, {
+        title,
+        code: successfulAttempt.command,
+        explanation,
+      });
+    }
+
+    private resolveActionState(exec: ToolExecution, initialState: ActionResult): ActionResult {
+      const url = exec.output?.url || exec.output?.pageDiff?.previousUrl;
+      if (!url || url === initialState.url) return initialState;
+
+      const transition = this.stateManager.getLastVisitToPath(url);
+      if (!transition) return initialState;
+      return ActionResult.fromState(transition.toState);
     }
 
     private async analyzeDiscoveries(stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null }>): Promise<void> {

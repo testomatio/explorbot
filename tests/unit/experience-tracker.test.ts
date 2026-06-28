@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
 import { ExperienceTracker } from '../../src/experience-tracker';
 
 describe('ExperienceTracker', () => {
   let experienceTracker: ExperienceTracker;
-  const testDir = '/tmp/experience';
+  const testRoot = join(process.cwd(), 'tmp', 'experience-tracker-test');
+  const testDir = join(testRoot, 'experience');
 
   beforeEach(() => {
     if (existsSync(testDir)) {
@@ -24,7 +26,7 @@ describe('ExperienceTracker', () => {
 
     const configParser = ConfigParser.getInstance();
     (configParser as any).config = mockConfig;
-    (configParser as any).configPath = '/tmp/config.js';
+    (configParser as any).configPath = join(testRoot, 'config.js');
 
     experienceTracker = new ExperienceTracker();
   });
@@ -122,6 +124,26 @@ describe('ExperienceTracker', () => {
 
       const withDesc = experienceTracker.getRelevantExperience(parent, { includeDescendantExperience: true });
       expect(withDesc).toHaveLength(2);
+    });
+
+    it('includes experience when current state matches related URL', () => {
+      const list = new ActionResult({
+        html: '<html><body>List</body></html>',
+        url: 'https://example.com/projects/demo',
+        title: 'List',
+      });
+      const suite = new ActionResult({
+        html: '<html><body>Suite</body></html>',
+        url: 'https://example.com/projects/demo/suite/123',
+        title: 'Suite',
+      });
+
+      experienceTracker.writeFlow(list, '## FLOW: open suite\n\n* Open suite\n\n```js\nI.click("Suite")\n```\n\n---\n', ['/projects/demo/suite/123']);
+
+      const relevant = experienceTracker.getRelevantExperience(suite);
+
+      expect(relevant).toHaveLength(1);
+      expect(relevant[0].content).toContain('## FLOW: open suite');
     });
   });
 
@@ -238,7 +260,7 @@ describe('ExperienceTracker', () => {
       experienceTracker.writeFlow(state, '');
       experienceTracker.writeFlow(state, '   \n  ');
       const stateHash = state.getStateHash();
-      const filePath = `/tmp/experience/${stateHash}.md`;
+      const filePath = join(testDir, `${stateHash}.md`);
       if (existsSync(filePath)) {
         const { content } = experienceTracker.readExperienceFile(stateHash);
         expect(content.trim()).toBe('');
@@ -266,7 +288,7 @@ describe('ExperienceTracker', () => {
       const state = makeState();
       disabledTracker.writeFlow(state, sampleBody);
       const stateHash = state.getStateHash();
-      const filePath = `/tmp/experience/${stateHash}.md`;
+      const filePath = join(testDir, `${stateHash}.md`);
       expect(existsSync(filePath)).toBe(false);
     });
   });

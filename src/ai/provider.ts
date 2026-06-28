@@ -253,14 +253,22 @@ export class Provider {
     const toolCalls = response.toolCalls || [];
     const toolResults = response.toolResults || [];
 
-    const toolExecutions = toolCalls.map((call: any, index: number) => ({
-      toolName: call.toolName || '',
-      input: call.input,
-      output: toolResults[index]?.output,
-      wasSuccessful: toolResults[index]?.output?.success || false,
-    }));
+    const toolExecutions = toolCalls.map((call: any, index: number) => {
+      const output = this.unwrapToolOutput(toolResults[index]?.output);
+      return {
+        toolName: call.toolName || '',
+        input: call.input,
+        output,
+        wasSuccessful: Boolean(output) && output.success !== false,
+      };
+    });
+    conversation.addToolExecutions(toolExecutions);
 
     return { conversation, response, toolExecutions };
+  }
+
+  private unwrapToolOutput(output: any): any {
+    return output?.type === 'json' && output?.value ? output.value : output;
   }
 
   async chat(messages: ModelMessage[], model: any, options: any = {}): Promise<any> {

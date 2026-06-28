@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { ModelMessage } from 'ai';
+import { Conversation } from '../../src/ai/conversation.js';
 import { AiError, Provider } from '../../src/ai/provider.js';
 import { ConfigParser } from '../../src/config.js';
 import type { AIConfig } from '../../src/config.js';
@@ -95,6 +96,33 @@ describe('Provider', () => {
       });
 
       expect(response.text).toBe('Response');
+    });
+  });
+
+  describe('invokeConversation', () => {
+    it('should unwrap json tool outputs before storing executions', async () => {
+      const conversation = new Conversation([{ role: 'user', content: 'click the run' }], mockAI.getModel());
+      const output = {
+        success: true,
+        code: 'I.click("Star Test Run")',
+        attempts: [
+          { command: 'I.click("Missing")', success: false },
+          { command: 'I.click("Star Test Run")', success: true },
+        ],
+      };
+
+      (provider as any).generateWithTools = async () => ({
+        text: '',
+        response: { messages: [] },
+        toolCalls: [{ toolName: 'click', input: { locator: 'Star Test Run' } }],
+        toolResults: [{ output: { type: 'json', value: output } }],
+      });
+
+      const result = await provider.invokeConversation(conversation, { click: {} });
+
+      expect(result?.toolExecutions?.[0]?.output).toEqual(output);
+      expect(result?.toolExecutions?.[0]?.wasSuccessful).toBe(true);
+      expect(conversation.getToolExecutions()[0]?.output?.attempts).toHaveLength(2);
     });
   });
 

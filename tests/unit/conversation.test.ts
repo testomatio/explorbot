@@ -405,4 +405,34 @@ describe('Conversation', () => {
       expect(output.pageDiff.htmlParts).toBeDefined();
     });
   });
+
+  it('preserves recorded tool executions after compacting prompt tool results', () => {
+    const conversation = new Conversation();
+    conversation.addToolExecutions([
+      {
+        toolName: 'click',
+        input: { explanation: 'Open run' },
+        wasSuccessful: true,
+        output: {
+          success: true,
+          code: 'I.click("Run")',
+          attempts: [
+            { command: 'I.click("Missing")', success: false },
+            { command: 'I.click("Run")', success: true },
+          ],
+          pageDiff: {
+            htmlParts: [{ subtree: '<div>large</div>' }],
+            ariaChanges: 'x'.repeat(600),
+          },
+        },
+      },
+    ]);
+
+    conversation.compactToolResults(0);
+
+    const [execution] = conversation.getToolExecutions();
+    expect(execution.output.attempts).toHaveLength(2);
+    expect(execution.output.pageDiff.htmlParts).toHaveLength(1);
+    expect(execution.output.pageDiff.ariaChanges).toHaveLength(600);
+  });
 });

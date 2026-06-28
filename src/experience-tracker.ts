@@ -99,6 +99,10 @@ export class ExperienceTracker {
 
   readExperienceFile(stateHash: string): { content: string; data: any } {
     const filePath = this.getExperienceFilePath(stateHash);
+    return this.readExperienceFileByPath(filePath);
+  }
+
+  private readExperienceFileByPath(filePath: string): { content: string; data: any } {
     const fileContent = readFileSync(filePath, 'utf8');
     const { content, data } = matter(fileContent);
     return { content, data };
@@ -269,9 +273,23 @@ export class ExperienceTracker {
     return this.getAllExperience()
       .filter((experience) => {
         const experienceState = experience.data as WebPageState;
-        return state.isRelevantExperienceRecord(experienceState, {
-          includeDescendantExperience: options?.includeDescendantExperience,
-        });
+        if (
+          state.isRelevantExperienceRecord(experienceState, {
+            includeDescendantExperience: options?.includeDescendantExperience,
+          })
+        ) {
+          return true;
+        }
+
+        const related = Array.isArray(experience.data.related) ? experience.data.related : [];
+        return related.some((url) =>
+          state.isRelevantExperienceRecord(
+            { url },
+            {
+              includeDescendantExperience: options?.includeDescendantExperience,
+            }
+          )
+        );
       })
       .map((experience) => {
         const lines = experience.content.split('\n');
@@ -350,7 +368,7 @@ export class ExperienceTracker {
     const filePath = this.findExperienceFileByHash(entry.fileHash);
     if (!filePath) return null;
 
-    const { content } = this.readExperienceFile(entry.fileHash);
+    const { content } = this.readExperienceFileByPath(filePath);
     const extracted = extractHeadingSection(content, sectionIndex);
     if (!extracted) return null;
 
@@ -424,7 +442,7 @@ export class ExperienceTracker {
     const filePath = this.findExperienceFileByHash(entry.fileHash);
     if (!filePath) return null;
 
-    const { content } = this.readExperienceFile(entry.fileHash);
+    const { content } = this.readExperienceFileByPath(filePath);
     const extracted = extractHeadingSection(content, sectionIndex);
     if (!extracted) return null;
 

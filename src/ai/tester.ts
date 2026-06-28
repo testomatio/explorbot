@@ -581,6 +581,7 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (isNewUrl) {
+      const experience = this.getExperience(currentState);
       const alreadySeenUiMap = this.seenUiMapUrls.has(currentUrl);
       let research = '';
       if (!alreadySeenUiMap) {
@@ -625,6 +626,8 @@ export class Tester extends TaskAgent implements Agent {
         However, <page_ui_map> is not always up to date, use <page_aria> and <page_html> to understand the ACTUAL state of the page
         Do not interact with elements that are not listed in <page_aria> and <page_html>
         Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
+
+        ${experience}
       `;
       return context;
     }
@@ -784,6 +787,7 @@ export class Tester extends TaskAgent implements Agent {
     - Use tool input schemas exactly as documented. Do not invent parameter names or add fields not listed by the tool schema.
     - Use click() for buttons, links, and clickable elements ONLY - do NOT include I.fillField() or I.type() commands in click() tool
     - click() commands array is for FALLBACK LOCATORS of the SAME element, NOT for clicking different elements in sequence. If you need to click two different elements, make two separate click() calls.
+    - If <experience> contains an ACTION/FLOW code block that matches the current step, put that saved command FIRST in the relevant tool's commands array. Add new fallback locators only after the saved command.
     - Use form() for text input (I.fillField, I.type), dropdown selection (I.selectOption), file uploads (I.attachFile), and multi-step form interactions
     - Use pressKey() for pressing special keys (Enter, Escape, Tab, Arrow keys) or key combinations with modifiers (Ctrl+A, Shift+Delete, etc.)
     - Use container CSS locators from <page_ui_map> to interact with elements inside sections
@@ -853,6 +857,7 @@ export class Tester extends TaskAgent implements Agent {
 
   private buildScenarioBlock(task: Test, actionResult: ActionResult): string {
     const knowledge = this.getKnowledge(actionResult);
+    const experience = this.getExperience(actionResult);
 
     return dedent`
       <task>
@@ -883,6 +888,8 @@ export class Tester extends TaskAgent implements Agent {
       ${this.buildAvailableFiles()}
 
       ${knowledge}
+
+      ${experience}
     `;
   }
 

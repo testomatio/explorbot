@@ -607,6 +607,19 @@ export class Pilot implements Agent {
     const state = this.explorer.getStateManager().getCurrentState();
     if (!state) return '';
     const actionResult = ActionResult.fromState(state);
+    const successful = this.experienceTracker.getSuccessfulExperience(actionResult);
+    if (successful.length > 0) {
+      return dedent`
+        <experience>
+        Past successful recipes recorded from prior runs for this page.
+        Prefer these solutions first when they match the current scenario. Use the exact code blocks as the first attempt before trying alternative locators.
+        If a saved locator misses, then fall back to ARIA/UI-map.
+
+        ${successful.join('\n\n')}
+        </experience>
+      `;
+    }
+
     const toc = this.experienceTracker.getExperienceTableOfContents(actionResult);
     return renderExperienceToc(toc);
   }

@@ -14,15 +14,18 @@ function buildActionResult(browserLogs: any[] = [], ariaSnapshot = ''): ActionRe
   });
 }
 
-function buildPilotWithStore(store: RequestStore | null, hasOtherTabs = false): Pilot {
+function buildPilotWithStore(store: RequestStore | null, hasOtherTabs = false, experienceTracker?: any): Pilot {
   const explorer: any = {
     getRequestStore: () => store,
     hasOtherTabs: () => hasOtherTabs,
     getOtherTabsInfo: () => [],
+    getStateManager: () => ({
+      getCurrentState: () => buildActionResult(),
+    }),
   };
   const provider: any = {};
   const researcher: any = {};
-  return new Pilot(provider, {}, researcher, explorer);
+  return new Pilot(provider, {}, researcher, explorer, experienceTracker);
 }
 
 function makeFailure(method: string, path: string, status: number, counter: number): RequestResult {
@@ -99,5 +102,25 @@ describe('Pilot buildStateContext — error signals', () => {
     const pilot = buildPilotWithStore(null);
     const context = (pilot as any).buildStateContext(buildActionResult());
     expect(context).toContain('network errors: none');
+  });
+
+  it('renders full successful experience for planning before TOC fallback', () => {
+    const experienceTracker = {
+      getSuccessfulExperience: () => ['## ACTION: open run\n\n```js\nI.click("Star Test Run")\n```'],
+      getExperienceTableOfContents: () => [
+        {
+          fileTag: 'A',
+          fileHash: 'page',
+          url: '/page',
+          sections: [{ index: 1, level: 2, title: 'ACTION: open run' }],
+        },
+      ],
+    };
+    const pilot = buildPilotWithStore(null, false, experienceTracker);
+    const context = (pilot as any).getExperienceToc();
+
+    expect(context).toContain('I.click("Star Test Run")');
+    expect(context).toContain('Prefer these solutions first');
+    expect(context).not.toContain('Call learnExperience');
   });
 });

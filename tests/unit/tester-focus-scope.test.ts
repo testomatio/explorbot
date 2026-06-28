@@ -2,15 +2,23 @@ import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { Tester } from '../../src/ai/tester.ts';
 
-function buildTester(): Tester {
+function buildTester(experienceToc: any[] = []): Tester {
   const explorer: any = {
     getConfig: () => ({}),
     getCurrentIframeInfo: () => null,
     hasOtherTabs: () => false,
     getOtherTabsInfo: () => [],
     clearOtherTabsInfo: () => {},
+    getStateManager: () => ({
+      getExperienceTracker: () => ({
+        getExperienceTableOfContents: () => experienceToc,
+      }),
+      getCurrentState: () => buildState('- main:', '/page'),
+    }),
   };
-  const provider: any = {};
+  const provider: any = {
+    getSystemPromptForAgent: () => '',
+  };
   const researcher: any = {
     research: async () => '',
     researchOverlay: async () => null,
@@ -29,6 +37,14 @@ function buildState(ariaSnapshot: string, url = '/page'): ActionResult {
 }
 
 describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
+  it('instructs tester to put matching experience commands first', () => {
+    const tester = buildTester();
+    const system = (tester as any).getSystemMessage();
+
+    expect(system).toContain('put that saved command FIRST');
+    expect(system).toContain('Add new fallback locators only after the saved command');
+  });
+
   it('emits <focus_scope> when ARIA snapshot contains a dialog', async () => {
     const tester = buildTester();
     const state = buildState('- dialog "Create Requirement":\n  - tablist:\n    - tab "Text"\n    - tab "File"');
@@ -67,5 +83,23 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
 
     expect(context).toContain('<focus_scope>');
     expect(context).toContain('A dialog "New Form"');
+  });
+
+  it('emits experience TOC on URL change', async () => {
+    const tester = buildTester([
+      {
+        fileTag: 'A',
+        fileHash: 'page',
+        url: '/page',
+        sections: [{ index: 1, level: 2, title: 'FLOW: create item' }],
+      },
+    ]);
+    const state = buildState('- main:\n  - button "Create"', '/with-experience');
+
+    const context = await (tester as any).reinjectContextIfNeeded(2, state);
+
+    expect(context).toContain('<experience>');
+    expect(context).toContain('A.1 ## FLOW: create item');
+    expect(context).toContain('Call learnExperience');
   });
 });

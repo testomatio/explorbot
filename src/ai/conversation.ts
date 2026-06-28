@@ -20,6 +20,7 @@ export class Conversation {
   model: any;
   telemetryFunctionId?: string;
   protectedPrefixCount = 0;
+  private toolExecutions: ToolExecution[] = [];
   private autoTrimRules: Map<string, number>;
 
   constructor(messages: ModelMessage[] = [], model?: any, telemetryFunctionId?: string) {
@@ -83,7 +84,9 @@ export class Conversation {
   }
 
   clone(): Conversation {
-    return new Conversation([...this.messages], this.model, this.telemetryFunctionId);
+    const clone = new Conversation([...this.messages], this.model, this.telemetryFunctionId);
+    clone.toolExecutions = [...this.toolExecutions];
+    return clone;
   }
 
   cleanupTag(tagName: string, replacement: string, keepLast = 0): void {
@@ -227,6 +230,10 @@ export class Conversation {
   }
 
   getToolExecutions(): ToolExecution[] {
+    if (this.toolExecutions.length > 0) {
+      return [...this.toolExecutions];
+    }
+
     const toolCalls = new Map<string, any>();
     for (const message of this.messages) {
       if (message.role !== 'assistant') continue;
@@ -255,5 +262,10 @@ export class Conversation {
     }
 
     return executions;
+  }
+
+  addToolExecutions(executions: ToolExecution[]): void {
+    if (executions.length === 0) return;
+    this.toolExecutions.push(...executions);
   }
 }
