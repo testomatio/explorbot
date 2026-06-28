@@ -43,7 +43,9 @@ describe('Tester error page handling', () => {
       getStateManager: () => ({
         getCurrentState: () => currentState,
         clearHistory: () => {},
-        getExperienceTracker: () => ({}),
+        getExperienceTracker: () => ({
+          getExperienceTableOfContents: () => [],
+        }),
       }),
       getKnowledgeTracker: () => ({
         getRelevantKnowledge: () => [],
@@ -97,7 +99,9 @@ describe('Tester error page handling', () => {
       getStateManager: () => ({
         getCurrentState: () => currentState,
         clearHistory: () => {},
-        getExperienceTracker: () => ({}),
+        getExperienceTracker: () => ({
+          getExperienceTableOfContents: () => [],
+        }),
       }),
       getKnowledgeTracker: () => ({
         getRelevantKnowledge: () => [],
