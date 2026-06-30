@@ -24,7 +24,7 @@ import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
-import { fileUploadRule, protectionRule } from './rules.ts';
+import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -35,8 +35,8 @@ const TasksSchema = z.object({
       z.object({
         scenario: z.string().describe('A single sentence describing what to test'),
         priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).describe('Priority of the task based on business importance'),
-        startUrl: z.string().nullable().describe('Start URL for the test if different from plan URL (only for tests on visited subpages)'),
-        steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Click on Login button", "Enter username in email field", "Submit the form"). Keep steps atomic and actionable.'),
+        startUrl: z.string().nullable().describe('Start URL for the test if different from plan URL. Use only stable feature/list/detail pages, not transient create/edit/modal URLs unless the scenario specifically starts inside that form.'),
+        steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Open the form", "Enter required data", "Submit the form"). Keep steps atomic and actionable.'),
         expectedOutcomes: z
           .array(z.string())
           .describe('List of expected outcomes that can be verified. Each outcome should be simple, specific, and easy to check (e.g., "Success message appears", "URL changes to /dashboard", "Form field shows error"). Keep outcomes atomic - do not combine multiple checks into one.'),
@@ -90,6 +90,9 @@ export class Planner extends PlannerBase implements Agent {
     const featureDirective = feature
       ? `\n    IMPORTANT: The user requested to focus specifically on: "${feature}"\n    ALL scenarios MUST be directly related to this feature. Do not propose generic page tests unrelated to it.\n    Use the user's exact wording to guide scenario names — do not substitute different entities (e.g., do not plan "suite" actions when user said "test").`
       : '';
+    const focusExistingDataDirective = feature
+      ? '\n    If this focus asks for search, filter, tabs, sorting, or list behavior involving existing items, only use item names/values visible in the provided page research. If no concrete visible item names/values are present, do NOT propose scenarios that require an existing known item; propose no-match search, empty-state, clear-search, tab/filter empty-list, or other read-only list behavior instead.'
+      : '';
     return dedent`
     <role>
     You are ISTQB certified senior manual QA planning exploratory testing session of a web application.
@@ -113,7 +116,7 @@ export class Planner extends PlannerBase implements Agent {
       Bad: "Open delete dropdown" + "Confirm deletion" — these are ONE test, not two.
       Bad: "Search for X" + "Verify search results" — searching and verifying is ONE test.
       Bad: "Leave field empty" + "Click submit" — that's one negative test, not two.
-      If two scenarios cannot run independently (one requires the other to run first), merge them into one.${featureDirective}
+      If two scenarios cannot run independently (one requires the other to run first), merge them into one.${featureDirective}${focusExistingDataDirective}
     </task>
 
     ${customPrompt || ''}
@@ -226,9 +229,7 @@ export class Planner extends PlannerBase implements Agent {
       }
     }
 
-    const availableStyles = Object.keys(getStyles()).join(', ');
     tag('success').log(`Planning complete! ${this.currentPlan.tests.length} tests in plan: ${this.currentPlan.title}`);
-    tag('info').log(`Planning style: ${this.lastStyleName} (available: ${availableStyles})`);
 
     if (state.url) registerPlan(state.url, this.currentPlan, feature, state.hash);
 
@@ -343,6 +344,11 @@ export class Planner extends PlannerBase implements Agent {
       If a scenario needs existing records, recipients, results, notifications, or other target data, propose it only when that data is visible or API preconditions can create it.
       If the page appears read-only, degraded, demo-limited, maintenance-like, or lacks write controls, prefer read-only scenarios such as opening panels, inspecting visible lists, filtering, searching, or verifying current state.
       Do not assume hidden data exists just because a control is present.
+      For scenarios that act on existing items or search/filter by existing values, use only item names or values visible in research, visited pages, or prior observed flows.
+      If the list is empty or no concrete item names are visible, do not invent "known" or "existing" items. Prefer empty-state, no-match search, clear-search, or read-only list behavior scenarios.
+      Search, filter, sorting, tab, and list scenarios must start from a stable page where those controls are visible; avoid transient create/edit/new URLs unless the scenario tests that form.
+      For option values and list items, use only visible or previously observed data; do not add create/update/delete setup unless the user explicitly requests that workflow.
+      Detail-view scenarios must target visible data entities from list rows, cards, tree nodes, or detail links; do not use filter tabs, counters, status tabs, breadcrumbs, or navigation controls as detail targets.
       DO NOT propose "verification-only" tests that merely open a UI element (modal, dropdown, panel) and check it exists.
       Every test must complete a meaningful action that changes application state or produces a business outcome.
       Opening a modal is NOT a test — performing an action INSIDE the modal IS a test.
@@ -353,7 +359,8 @@ export class Planner extends PlannerBase implements Agent {
       Tests that only switch views, toggle filters, or paginate are LESS valuable — propose them only after data-changing tests are covered.
       If multiple ways to create or modify data exist (different types, different forms), propose a separate test for each.
       </priority_order>
-      ${protectionRule}
+      ${capabilityGroundingRule}
+      ${dataProtectionRules}
       ${fileUploadRule}
       </rules>
 
@@ -516,7 +523,9 @@ export class Planner extends PlannerBase implements Agent {
           .join('\n')}
 
         You MAY propose tests starting from these pages if they are relevant to the plan "${this.currentPlan.title}".
-        Set startUrl for such tests. Ignore pages that belong to a different feature area.
+        Set startUrl for such tests only when the page is a stable feature/list/detail page.
+        Do not use create/edit/new/modal URLs as startUrl for scenarios that need the underlying page.
+        Ignore pages that belong to a different feature area.
         </context_from_previous_tests>
 
         Propose ONLY new scenarios that are NOT in the existing tests list.

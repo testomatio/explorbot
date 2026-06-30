@@ -6,6 +6,7 @@ import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { extractFocusedElement } from '../utils/aria.ts';
+import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
@@ -17,7 +18,7 @@ import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
-export const CODECEPT_TOOLS = ['click', 'pressKey', 'form'] as const;
+export const CODECEPT_TOOLS = ['click', 'hover', 'pressKey', 'form'] as const;
 export const ASSERTION_TOOLS = ['verify'] as const;
 
 export function createCodeceptJSTools(explorer: Explorer, task: Task) {
@@ -159,6 +160,84 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
       },
     }),
 
+    hover: tool({
+      description: dedent`
+        Move the mouse cursor to an element to reveal hover-only controls.
+
+        Use this before clicking row actions, icon buttons, menus, or toolbars that appear only
+        when the user hovers a list item, table row, card, or tree node.
+
+        This tool ONLY accepts I.moveCursorTo(locator) commands. It does not click.
+        After hovering, use context(), see(), or click() the revealed control.
+      `,
+      inputSchema: z.object({
+        commands: z.array(z.string()).describe(dedent`
+          FALLBACK LOCATORS for ONE element to hover.
+          Order by reliability:
+          1. I.moveCursorTo(text, container)
+          2. I.moveCursorTo(ARIA, container)
+          3. I.moveCursorTo(CSS, container)
+          4. I.moveCursorTo(CSS) or I.moveCursorTo(XPath)
+        `),
+        explanation: z.string().describe('Why you are hovering this element'),
+      }),
+      execute: async ({ commands: rawCommands, explanation }) => {
+        const activeNote = task.startNote(explanation);
+
+        if (rawCommands.length === 0) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('hover', 'No commands provided');
+        }
+
+        const invalidCommands = rawCommands.map((cmd) => cmd.trim()).filter((cmd) => cmd.startsWith('I.') && !cmd.startsWith('I.moveCursorTo'));
+
+        if (invalidCommands.length > 0) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('hover', `Invalid commands: ${invalidCommands.join(', ')}. Hover tool only accepts I.moveCursorTo() commands.`, {
+            suggestion: 'Use click() to click elements, or form() for typing/selecting.',
+          });
+        }
+
+        const commands = rawCommands.map((cmd) => {
+          const trimmed = cmd.trim();
+          if (trimmed.startsWith('I.moveCursorTo')) return trimmed;
+          return `I.moveCursorTo(${JSON.stringify(trimmed)})`;
+        });
+
+        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+        const action = explorer.createAction();
+        const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
+
+        for (const command of commands) {
+          const success = await action.attempt(command, explanation, true);
+          attempts.push({
+            command,
+            success,
+            ...(action.lastError && { error: action.lastError.toString() }),
+          });
+
+          if (!success) continue;
+
+          const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
+          activeNote.commit(TestResult.PASSED);
+          return successToolResult('hover', { ...toolResult, attempts, code: command }, action);
+        }
+
+        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
+        activeNote.commit(TestResult.FAILED);
+        return failedToolResult(
+          'hover',
+          'All hover commands failed',
+          {
+            ...toolResult,
+            attempts,
+            suggestion: 'Use xpathCheck() to locate the row/card/tree node, or visualClick() if the hover target is only visually identifiable.',
+          },
+          action.lastError
+        );
+      },
+    }),
+
     pressKey: tool({
       description: dedent`
         Press a keyboard key or key combination. Use this for special keys like Enter, Escape, Tab, Arrow keys, or key combinations with modifiers.
@@ -287,6 +366,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             suggestion: 'Verify the key name is correct. For typing text, use form() tool instead.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('pressKey', `PressKey tool failed: ${errorMessage}`);
@@ -307,6 +387,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
         Use cases:
         - Typing into input fields (I.fillField, I.type)
+        - Setting checkboxes/radios to a definite state (I.checkOption, I.uncheckOption)
         - Working with iframes (switch context with I.switchTo)
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
@@ -314,6 +395,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')
         I.selectOption('Country', 'USA', '.address-section')
+        I.checkOption('Agree', '.terms-section')
         I.attachFile('input[type="file"]', 'path/to/file', '.upload-section')
 
         Example - filling a form with ARIA locators:
@@ -403,6 +485,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             action
           );
         } catch (error) {
+          throwIfFatalBrowserError(error);
           activeNote.commit(TestResult.FAILED);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('form', `Form tool failed: ${errorMessage}`);
@@ -442,8 +525,7 @@ export function createSpecialContextTools(explorer: Explorer, context: 'iframe')
 
           await explorer.switchToMainFrame();
 
-          const action = explorer.createAction();
-          const nextState = await action.capturePageState();
+          const nextState = await explorer.capturePageState();
           const toolResult = await nextState.toToolResult(previousState, 'I.switchTo()');
 
           return successToolResult('exitIframe', {
@@ -452,6 +534,7 @@ export function createSpecialContextTools(explorer: Explorer, context: 'iframe')
             code: 'I.switchTo()',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('exitIframe', `Failed to exit iframe: ${errorMessage}`);
         }
@@ -466,12 +549,14 @@ export function createAgentTools({
   navigator,
   experienceTracker,
   getState,
+  supervisor,
 }: {
   explorer: Explorer;
   researcher: Researcher;
   navigator: Navigator;
   experienceTracker?: ExperienceTracker;
   getState?: () => ActionResult | null;
+  supervisor?: boolean;
 }): any {
   let visionDisabled = false;
 
@@ -481,6 +566,7 @@ export function createAgentTools({
         Check the page contents based on current page state and screenshot.
         This tool will trigger visual research to check the page contents on request.
         Use it to verify the actions were performed correctly and the page is in the expected state.
+        Input schema has exactly one field: request. Do not pass text, reason, assertion, or other fields.
 
         <example>
         request: "Check current state of the Login form"
@@ -496,8 +582,7 @@ export function createAgentTools({
         }
 
         try {
-          const action = explorer.createAction();
-          const actionResult = await action.caputrePageWithScreenshot();
+          const actionResult = await explorer.capturePageWithScreenshot();
 
           if (!actionResult.screenshot) {
             return failedToolResult('see', 'Failed to capture screenshot for analysis');
@@ -515,6 +600,7 @@ export function createAgentTools({
             suggestion: 'Visual confirmation is valid evidence for test results. Use record() to note the visual findings.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           visionDisabled = true;
           tag('warning').log('⚠️ Vision model is not available. Visual checks are disabled for this session.');
@@ -596,8 +682,7 @@ export function createAgentTools({
             });
           }
 
-          const action = explorer.createAction();
-          const actionResult = await action.capturePageState();
+          const actionResult = await explorer.capturePageState();
           const result = await navigator.verifyState(assertion, actionResult);
 
           if (result.verified) {
@@ -615,6 +700,7 @@ export function createAgentTools({
             suggestion: 'The assertion could not be verified. Check if the condition is actually present on the page or try a different assertion.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('verify', `Verify tool failed: ${errorMessage}`, {
             error: errorMessage,
@@ -670,6 +756,7 @@ export function createAgentTools({
             `,
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('research', `Research tool failed: ${errorMessage}`, {
             error: errorMessage,
@@ -714,6 +801,7 @@ export function createAgentTools({
             suggestion: 'The action could not be completed. Try a different instruction or use more specific element descriptions.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           return failedToolResult('interact', `Interact tool failed: ${errorMessage}`, {
             error: errorMessage,
@@ -752,7 +840,7 @@ export function createAgentTools({
 
           const previousState = ActionResult.fromState(currentState);
           const action = explorer.createAction();
-          const actionResult = await action.caputrePageWithScreenshot();
+          const actionResult = await explorer.capturePageWithScreenshot();
 
           if (!actionResult.screenshot) {
             return failedToolResult('visualClick', 'Failed to capture screenshot for visual analysis');
@@ -793,6 +881,7 @@ export function createAgentTools({
             analysis: locationResult,
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
           visionDisabled = true;
           tag('warning').log('⚠️ Vision model is not available. Visual clicks are disabled for this session.');
@@ -800,46 +889,6 @@ export function createAgentTools({
             suggestion: 'Vision is now disabled. Use xpathCheck() to find the element, then click() with the discovered locator.',
           });
         }
-      },
-    }),
-
-    askUser: tool({
-      description: dedent`
-        Ask the user for help when you're stuck or unsure how to proceed.
-        Only available in interactive mode (TUI).
-
-        Use when:
-        - Locator-based clicks keep failing
-        - You can't find an element that should exist
-        - Form interaction isn't working as expected
-        - You need clarification on what action to take
-      `,
-      inputSchema: z.object({
-        question: z.string().describe('What you need help with - be specific about what failed'),
-        context: z.string().optional().describe('Relevant context like locators tried, errors received'),
-      }),
-      execute: async ({ question, context }) => {
-        if (!isInteractive()) {
-          return {
-            success: false,
-            message: 'User input not available in non-interactive mode',
-            suggestion: 'Continue with automated recovery',
-          };
-        }
-
-        const prompt = context ? `${question}\n\nContext: ${context}\n\nYour suggestion ("skip" to continue):` : `${question}\n\nYour suggestion ("skip" to continue):`;
-
-        const userInput = await pause(prompt);
-
-        if (!userInput || userInput.toLowerCase() === 'skip') {
-          return { success: false, message: 'User skipped' };
-        }
-
-        return {
-          success: true,
-          userSuggestion: userInput,
-          instruction: 'Follow the user suggestion. Use interact() tool to execute.',
-        };
       },
     }),
 
@@ -973,7 +1022,7 @@ export function createAgentTools({
   };
 
   if (experienceTracker && getState) {
-    tools.learn_experience = tool({
+    tools.learnExperience = tool({
       description: dedent`
         Read the full body of a specific experience section listed in <experience>.
         The TOC shows entries like "A.1 ## FLOW: ..." or "A.2 ## ACTION: ...". Pass the fileTag and sectionIndex.
@@ -997,6 +1046,48 @@ export function createAgentTools({
     });
   }
 
+  if (supervisor) {
+    tools.askUser = tool({
+      description: dedent`
+        Ask the user for help when automated recovery is stuck or the next step is unclear.
+        Only available in interactive mode (TUI).
+
+        Use when:
+        - The Tester keeps failing the same locator/element
+        - An element that should exist cannot be found
+        - Form interaction isn't working as expected
+        - You need a human decision on how to proceed
+      `,
+      inputSchema: z.object({
+        question: z.string().describe('What you need help with - be specific about what failed'),
+        context: z.string().optional().describe('Relevant context like locators tried, errors received'),
+      }),
+      execute: async ({ question, context }) => {
+        if (!isInteractive()) {
+          return {
+            success: false,
+            message: 'User input not available in non-interactive mode',
+            suggestion: 'Continue with automated recovery',
+          };
+        }
+
+        const prompt = context ? `${question}\n\nContext: ${context}\n\nYour suggestion ("skip" to continue):` : `${question}\n\nYour suggestion ("skip" to continue):`;
+
+        const userInput = await pause(prompt);
+
+        if (!userInput || userInput.toLowerCase() === 'skip') {
+          return { success: false, message: 'User skipped' };
+        }
+
+        return {
+          success: true,
+          userSuggestion: userInput,
+          instruction: 'Relay this suggestion to the Tester as the next concrete step.',
+        };
+      },
+    });
+  }
+
   return tools;
 }
 
@@ -1010,6 +1101,10 @@ function cap(text: string | undefined | null, max: number): string {
   if (!text) return '';
   if (text.length <= max) return text;
   return `${text.slice(0, max)}\n[...truncated; ${text.length - max} chars omitted...]`;
+}
+
+function throwIfFatalBrowserError(error: unknown): void {
+  if (isFatalBrowserError(error)) throw error;
 }
 
 function transformContainsCommand(command: string): string {

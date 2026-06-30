@@ -10,6 +10,8 @@ import { relativeToCwd } from '../../utils/next-steps.ts';
 import { safeFilename } from '../../utils/strings.ts';
 import { type Constructor, debugLog } from './mixin.ts';
 
+const FATAL_SCREENCAST_STOP_ERRORS = /Target page, context or browser has been closed|Target closed|Session closed|Protocol error/i;
+
 export interface ScreencastMethods {
   attachScreencast(): void;
   isScreencastActive(): boolean;
@@ -92,7 +94,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
         this.screencastTask = test?._explorbotTest || null;
         this.screencastLastChapter = null;
       } catch (err) {
-        tag('substep').log(`Screencast start failed: ${(err as Error).message}`);
+        tag('operation').log(`Screencast start failed: ${(err as Error).message}`);
       }
     }
 
@@ -113,20 +115,27 @@ export function WithScreencast<T extends Constructor>(Base: T) {
       if (!this.screencastActive) return;
       const path = this.screencastPath;
       const task = this.screencastTask;
+      let stopped = false;
       try {
         await this.screencastPage.screencast.stop();
+        stopped = true;
       } catch (err) {
-        tag('substep').log(`Screencast stop failed: ${(err as Error).message}`);
+        const message = (err as Error).message;
+        if (FATAL_SCREENCAST_STOP_ERRORS.test(message)) {
+          tag('operation').log('Screencast skipped: browser was closed before recording could be finalized');
+        } else {
+          tag('operation').log(`Screencast stop failed: ${message}`);
+        }
       }
       this.screencastActive = false;
       this.screencastPage = null;
       this.screencastPath = null;
       this.screencastTask = null;
       this.screencastLastChapter = null;
-      if (path) {
+      if (path && stopped) {
         this.savedFiles.add(path);
         task?.addArtifact?.(path);
-        tag('substep').log(`Saved screencast: ${relativeToCwd(path)}`);
+        tag('operation').log(`Saved screencast: ${relativeToCwd(path)}`);
       }
     }
   };

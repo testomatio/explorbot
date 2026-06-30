@@ -5,10 +5,11 @@ import * as codeceptjs from 'codeceptjs';
 import stepsListener from 'codeceptjs/lib/listener/steps';
 import storeListener from 'codeceptjs/lib/listener/store';
 import { createTest } from 'codeceptjs/lib/mocha/test';
+import dedent from 'dedent';
+import type { BrowserContextOptions } from 'playwright';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import { AIProvider } from './ai/provider.js';
-import type { BrowserContextOptions } from 'playwright';
 import { visuallyAnnotateContainers } from './ai/researcher/coordinates.ts';
 import { RequestStore } from './api/request-store.ts';
 import { XhrCapture } from './api/xhr-capture.ts';
@@ -19,9 +20,11 @@ import { KnowledgeTracker } from './knowledge-tracker.js';
 import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
-import { Test } from './test-plan.ts';
+import { Test, TestResult } from './test-plan.ts';
+import { BrowserRecoveryError, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { ELEMENT_EXTRACTION_CONFIG, getElementDataExtractorSource } from './utils/html.ts';
 import { createDebug, log, tag } from './utils/logger.js';
+import { waitForPageReadiness } from './utils/page-readiness.ts';
 import { WebElement } from './utils/web-element.ts';
 
 declare global {
@@ -39,12 +42,17 @@ declare namespace CodeceptJS {
 }
 
 const debugLog = createDebug('explorbot:explorer');
-const FATAL_BROWSER_ERRORS = /Frame was detached|Target closed|Execution context was destroyed|Protocol error|Session closed/i;
 const RECOVERABLE_NAVIGATION_ERRORS = /net::ERR_ABORTED|page\.screenshot.*Timeout|waiting for fonts to load/i;
 
 interface TabInfo {
   url: string;
   title: string;
+}
+
+interface BrowserExecutionErrorResult {
+  action: 'continue' | 'stop';
+  message: string;
+  recovered?: boolean;
 }
 
 class Explorer {
@@ -64,6 +72,10 @@ class Explorer {
   private xhrCapture: XhrCapture | null = null;
   private requestStore: RequestStore | null = null;
   private playwrightRecorder: PlaywrightRecorder = new PlaywrightRecorder();
+  private observedTestPages = new Set<any>();
+  private testPageErrorHandler: ((error: Error) => void) | null = null;
+  private testConsoleHandler: ((message: any) => void) | null = null;
+  private testDialogHandler: ((dialog: any) => void) | null = null;
 
   constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string }) {
     this.config = config;
@@ -199,12 +211,14 @@ class Explorer {
     }
   }
 
-  private setupXhrCapture(): void {
+  private setupXhrCapture(reuseRequestStore = false): void {
     const configParser = ConfigParser.getInstance();
     const outputDir = configParser.getOutputDir();
-    this.requestStore = new RequestStore(outputDir);
+    if (!reuseRequestStore || !this.requestStore) {
+      this.requestStore = new RequestStore(outputDir);
+    }
     const baseUrl = this.config.playwright.url;
-    this.xhrCapture = new XhrCapture(this.requestStore, baseUrl);
+    this.xhrCapture = new XhrCapture(this.requestStore!, baseUrl);
     this.xhrCapture.attach(this.playwrightHelper.page);
   }
 
@@ -239,18 +253,7 @@ class Explorer {
     }
     await this.connectOrLaunchBrowser();
     const hasSession = this.options?.session && existsSync(this.options.session);
-    const helperOptions = this.playwrightHelper.options || {};
-    // CodeceptJS skips _createContextPage when sessions/storageState are involved, so we
-    // build contextOptions ourselves. Most keys share a name with Playwright's
-    // BrowserContextOptions and are copied as-is; `emulate` must be flattened, `basicAuth`
-    // renamed to `httpCredentials`, and `storageState` comes from the --session flag.
-    const contextOptions: BrowserContextOptions = {
-      ...helperOptions,
-    };
-    if (helperOptions.emulate) Object.assign(contextOptions, helperOptions.emulate);
-    if (helperOptions.basicAuth) contextOptions.httpCredentials = helperOptions.basicAuth;
-    if (hasSession) contextOptions.storageState = this.options!.session;
-    await this.playwrightHelper._createContextPage(contextOptions);
+    await this.playwrightHelper._createContextPage(this.createBrowserContextOptions());
     await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
     this.setupXhrCapture();
     if (hasSession) {
@@ -287,8 +290,77 @@ class Explorer {
     await this.playwrightHelper._startBrowser();
   }
 
+  private createBrowserContextOptions(): BrowserContextOptions {
+    const helperOptions = this.playwrightHelper.options || {};
+    const contextOptions: BrowserContextOptions = {
+      ...helperOptions,
+    };
+
+    if (helperOptions.emulate) Object.assign(contextOptions, helperOptions.emulate);
+    if (helperOptions.basicAuth) contextOptions.httpCredentials = helperOptions.basicAuth;
+    if (this.options?.session && existsSync(this.options.session)) contextOptions.storageState = this.options.session;
+
+    return contextOptions;
+  }
+
   createAction() {
     return new Action(this.actor, this.stateManager, this.playwrightRecorder);
+  }
+
+  async runWithBrowserRecovery<T>(label: string, operation: () => Promise<T>): Promise<T> {
+    if (!(await this.ensurePageAvailable())) {
+      throw new Error(`Browser page is unavailable before ${label}`);
+    }
+
+    try {
+      return await operation();
+    } catch (error) {
+      let recoveryError = error;
+
+      if (isNavigationTransitionError(error)) {
+        tag('warning').log(`${label}: page is still navigating, waiting before retry...`);
+        await this.waitForPageReadiness();
+        try {
+          return await operation();
+        } catch (retryError) {
+          if (!isNavigationTransitionError(retryError) && !this.isFatalBrowserError(retryError)) throw retryError;
+          recoveryError = retryError;
+        }
+      }
+
+      if (!this.isFatalBrowserError(recoveryError)) throw recoveryError;
+
+      tag('warning').log(`${label}: browser page is unavailable, recovering...`);
+      let recovered = await this.recoverFromBrowserError();
+      if (!recovered) recovered = await this.restartBrowser();
+      if (!recovered) throw new BrowserRecoveryError(label, recoveryError, false);
+      if (!(await this.waitForPageReadiness())) throw new BrowserRecoveryError(label, recoveryError, true);
+
+      try {
+        return await operation();
+      } catch (retryError) {
+        if (this.isFatalBrowserError(retryError)) {
+          throw new BrowserRecoveryError(label, retryError, true);
+        }
+        throw retryError;
+      }
+    }
+  }
+
+  async capturePageState(opts: { includeScreenshot?: boolean } = {}): Promise<ActionResult> {
+    return this.runWithBrowserRecovery('capturePageState', () => this.createAction().capturePageState(opts));
+  }
+
+  async capturePageWithScreenshot(): Promise<ActionResult> {
+    return this.capturePageState({ includeScreenshot: true });
+  }
+
+  async executeAction(code: string): Promise<Action> {
+    return this.runWithBrowserRecovery('executeAction', () => this.createAction().execute(code));
+  }
+
+  async attemptAction(code: string, originalMessage?: string, experience = true): Promise<boolean> {
+    return this.runWithBrowserRecovery('attemptAction', () => this.createAction().attempt(code, originalMessage, experience));
   }
 
   getPlaywrightRecorder(): PlaywrightRecorder {
@@ -296,6 +368,10 @@ class Explorer {
   }
 
   async visit(url: string) {
+    return this.runWithBrowserRecovery('visit', () => this.visitOnce(url));
+  }
+
+  private async visitOnce(url: string) {
     await this.closeOtherTabs();
 
     const serializedUrl = JSON.stringify(url);
@@ -315,7 +391,7 @@ class Explorer {
         const msg = err instanceof Error ? err.message : String(err);
         if (!RECOVERABLE_NAVIGATION_ERRORS.test(msg)) throw err;
         tag('warning').log(`Navigation warning (continuing after load): ${msg.split('\n')[0]}`);
-        await this.playwrightHelper.page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+        await this.waitForPageReadiness();
         await action.capturePageState();
       }
     }
@@ -338,12 +414,14 @@ class Explorer {
   }
 
   async annotateElements(): Promise<WebElement[]> {
-    const { elements } = await annotatePageElements(this.playwrightHelper.page);
-    return elements;
+    return this.runWithBrowserRecovery('annotateElements', async () => {
+      const { elements } = await annotatePageElements(this.playwrightHelper.page);
+      return elements;
+    });
   }
 
   async visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number> {
-    return visuallyAnnotateContainers(this.playwrightHelper.page, opts?.containers || []);
+    return this.runWithBrowserRecovery('visuallyAnnotateElements', () => visuallyAnnotateContainers(this.playwrightHelper.page, opts?.containers || []));
   }
 
   async getEidxInContainer(containerCss: string | null): Promise<string[]> {
@@ -386,24 +464,95 @@ class Explorer {
     await this.playwrightHelper.page.reload();
   }
 
+  private resolveBrowserUrl(url?: string): string | null {
+    if (!url) return null;
+    try {
+      return new URL(url).toString();
+    } catch {}
+
+    const baseUrl = this.config.playwright?.url || this.config.web?.url;
+    if (!baseUrl) return null;
+
+    try {
+      return new URL(url, baseUrl).toString();
+    } catch {
+      return null;
+    }
+  }
+
   isFatalBrowserError(error: unknown): boolean {
-    const msg = error instanceof Error ? error.message : String(error);
-    return FATAL_BROWSER_ERRORS.test(msg);
+    return isFatalBrowserError(error);
   }
 
   async recoverFromBrowserError(): Promise<boolean> {
     try {
-      const url = this.stateManager.getCurrentState()?.url;
+      if (!this.playwrightHelper?.page || this.playwrightHelper.page.isClosed?.()) {
+        const context = this.playwrightHelper?.browserContext;
+        if (!context) return await this.restartBrowser();
+        const page = await context.newPage();
+        await page.bringToFront();
+        await this.playwrightHelper._setPage(page);
+        this.bindFrameNavigated(page);
+        if (this.xhrCapture) {
+          this.xhrCapture.attach(this.playwrightHelper.page);
+        }
+      }
+
+      const url = this.resolveBrowserUrl(this.stateManager.getCurrentState()?.url);
       if (url) {
         tag('warning').log(`Browser error detected, recovering by navigating to ${url}`);
         await this.playwrightHelper.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-        return true;
+        return this.waitForPageReadiness();
       }
       tag('warning').log('Browser error detected, reloading page');
       await this.playwrightHelper.page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
-      return true;
+      return this.waitForPageReadiness();
     } catch (err) {
       tag('error').log(`Browser recovery failed: ${err instanceof Error ? err.message : err}`);
+      return false;
+    }
+  }
+
+  async restartBrowser(): Promise<boolean> {
+    if (!this.playwrightHelper) return false;
+
+    const url = this.resolveBrowserUrl(this.stateManager.getCurrentState()?.url);
+
+    try {
+      if (this.xhrCapture && this.playwrightHelper.page) {
+        this.xhrCapture.detach(this.playwrightHelper.page);
+      }
+
+      await this.playwrightRecorder.stop();
+
+      if (this.playwrightHelper.browserContext) {
+        await this.playwrightHelper.browserContext.close().catch((err: unknown) => {
+          debugLog('Failed to close browser context before restart:', err);
+        });
+        this.playwrightHelper.browserContext = null;
+      }
+
+      if (!this.isSharedBrowser) {
+        await this.playwrightHelper._stopBrowser().catch((err: unknown) => {
+          debugLog('Failed to stop browser before restart:', err);
+        });
+      }
+
+      await this.connectOrLaunchBrowser();
+      await this.playwrightHelper._createContextPage(this.createBrowserContextOptions());
+      await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
+      this.setupXhrCapture(true);
+      this.listenToStateChanged();
+
+      if (url) {
+        await this.playwrightHelper.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        if (!(await this.waitForPageReadiness())) return false;
+      }
+
+      tag('success').log('Browser restarted');
+      return true;
+    } catch (err) {
+      tag('error').log(`Browser restart failed: ${err instanceof Error ? err.message : err}`);
       return false;
     }
   }
@@ -413,6 +562,17 @@ class Explorer {
       debugLog('Switching to main frame');
       await this.playwrightHelper.switchTo();
     }
+  }
+
+  private async waitForPageReadiness(): Promise<boolean> {
+    const page = this.playwrightHelper?.page;
+    if (!page) return false;
+
+    await waitForPageReadiness(page, {
+      timeout: this.config.playwright.waitForTimeout,
+      spinnerSelectors: this.config.playwright.spinnerSelectors,
+    });
+    return true;
   }
 
   async isInsideIframe(): Promise<boolean> {
@@ -542,11 +702,13 @@ class Explorer {
     return this._activeTest;
   }
 
-  async startTest(test: Test) {
+  async startTest(test: Test): Promise<boolean> {
     this._activeTest = test;
+    test.start();
     await this.reporter.reportTestStart(test);
     await this.closeOtherTabs();
     this.otherTabs = [];
+    if (!(await this.ensurePageAvailable())) return false;
 
     const codeceptjsTest = toCodeceptjsTest(test);
 
@@ -563,13 +725,7 @@ class Explorer {
       test.setActiveNoteScreenshot(lastScreenshot);
     };
 
-    const dialogHandler = (dialog: any) => {
-      const dialogType = dialog.type();
-      const dialogMessage = dialog.message();
-      test.addNote(`Native dialog ${dialogType} appeared: ${dialogMessage}. Accepted automatically`);
-    };
-
-    this.playwrightHelper?.page?.on('dialog', dialogHandler);
+    this.watchActiveTestPage();
 
     codeceptjs.event.dispatcher.emit('test.before', codeceptjsTest);
     codeceptjs.event.dispatcher.emit('test.start', codeceptjsTest);
@@ -580,11 +736,105 @@ class Explorer {
     codeceptjs.event.dispatcher.on('test.after', () => {
       codeceptjs.event.dispatcher.off('step.passed', stepHandler);
       codeceptjs.event.dispatcher.off('step.failed', stepHandler);
-      this.playwrightHelper?.page?.off('dialog', dialogHandler);
+      this.unwatchActiveTestPages();
     });
+
+    return true;
+  }
+
+  async ensurePageAvailable(): Promise<boolean> {
+    const page = this.playwrightHelper?.page;
+    if (page && !page.isClosed?.()) {
+      this.watchActiveTestPage(page);
+      return true;
+    }
+
+    const recovered = await this.recoverFromBrowserError();
+    if (!recovered) return false;
+    this.watchActiveTestPage();
+    return true;
+  }
+
+  async ensureActiveTestPageAvailable(): Promise<boolean> {
+    return this.ensurePageAvailable();
+  }
+
+  async handleExecutionError(error: unknown): Promise<BrowserExecutionErrorResult> {
+    const message = error instanceof Error ? error.message : String(error);
+    tag('error').log(`Browser execution error: ${message}`);
+
+    if (error instanceof Error && error.name === 'AbortError') {
+      return {
+        action: 'stop',
+        message,
+      };
+    }
+
+    if (error instanceof BrowserRecoveryError) {
+      return {
+        action: 'stop',
+        recovered: error.recovered,
+        message: error.message,
+      };
+    }
+
+    if (!this.isFatalBrowserError(error)) {
+      return {
+        action: 'continue',
+        message: `Previous execution error: ${message}. Investigate the current state and choose a different approach.`,
+      };
+    }
+
+    let recovered = await this.recoverFromBrowserError();
+    if (!recovered) recovered = await this.restartBrowser();
+
+    if (!recovered) {
+      return {
+        action: 'stop',
+        recovered: false,
+        message: `Browser could not be recovered after fatal error: ${message}`,
+      };
+    }
+
+    this.watchActiveTestPage();
+    return {
+      action: 'continue',
+      recovered: true,
+      message: dedent`
+        Browser was recovered after a fatal page error.
+        Continue from the restored page.
+        The interrupted browser action is not product evidence.
+        Inspect the restored page and retry the current step when it is still required.
+      `,
+    };
+  }
+
+  watchActiveTestPage(page = this.playwrightHelper?.page): void {
+    if (!this._activeTest) return;
+    if (!page) return;
+    if (this.observedTestPages.has(page)) return;
+
+    this.testPageErrorHandler ||= (err: Error) => {
+      this._activeTest?.addNote(`Console error: ${err.message}`, TestResult.FAILED);
+    };
+    this.testConsoleHandler ||= (msg: any) => {
+      if (msg.type() !== 'error') return;
+      this._activeTest?.addNote(`Console error: ${msg.text()}`, TestResult.FAILED);
+    };
+    this.testDialogHandler ||= (dialog: any) => {
+      const dialogType = dialog.type();
+      const dialogMessage = dialog.message();
+      this._activeTest?.addNote(`Native dialog ${dialogType} appeared: ${dialogMessage}. Accepted automatically`);
+    };
+
+    page.on('pageerror', this.testPageErrorHandler);
+    page.on('console', this.testConsoleHandler);
+    page.on('dialog', this.testDialogHandler);
+    this.observedTestPages.add(page);
   }
 
   async stopTest(test: Test, meta?: Record<string, string>) {
+    this.unwatchActiveTestPages();
     this._activeTest = null;
     const lastScreenshot = this.stateManager.getCurrentState()?.screenshotFile;
     if (lastScreenshot) {
@@ -607,6 +857,15 @@ class Explorer {
 
     codeceptjs.event.dispatcher.emit('test.finish', codeceptjsTest);
     codeceptjs.event.dispatcher.emit('test.after', codeceptjsTest);
+  }
+
+  private unwatchActiveTestPages(): void {
+    for (const page of this.observedTestPages) {
+      if (this.testPageErrorHandler) page.off('pageerror', this.testPageErrorHandler);
+      if (this.testConsoleHandler) page.off('console', this.testConsoleHandler);
+      if (this.testDialogHandler) page.off('dialog', this.testDialogHandler);
+    }
+    this.observedTestPages.clear();
   }
 
   async hasPlaywrightLocator(locatorFn: (page: any) => any, opts: { multiple?: boolean; contents?: boolean; success?: (locator: any) => Promise<void> | void } = {}): Promise<boolean> {
@@ -671,7 +930,7 @@ class Explorer {
     await oldPage.close();
     await newPage.bringToFront();
 
-    this.playwrightHelper.page = newPage;
+    await this.playwrightHelper._setPage(newPage);
     this.otherTabs = [];
 
     this.bindFrameNavigated(newPage);
@@ -705,8 +964,7 @@ class Explorer {
     }
 
     await firstPage.bringToFront();
-
-    this.playwrightHelper.page = firstPage;
+    await this.playwrightHelper._setPage(firstPage);
 
     debugLog(`Cleaned up tabs, now focused on: ${await firstPage.url()}`);
   }

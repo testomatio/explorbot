@@ -54,6 +54,24 @@ export class Stats {
     return String(num);
   }
 
+  static modelsTable(roleModels: Record<string, string>): string {
+    const usedModels = Object.entries(Stats.models).filter(([, tokens]) => tokens.total > 0);
+    if (usedModels.length === 0) return '';
+
+    const rolesByModel: Record<string, string[]> = {};
+    for (const [role, model] of Object.entries(roleModels)) {
+      if (!rolesByModel[model]) rolesByModel[model] = [];
+      rolesByModel[model].push(role);
+    }
+
+    const rows = usedModels.map(([model, tokens]) => {
+      const roles = rolesByModel[model]?.join(', ') || '-';
+      return `| ${roles} | ${model} | ${Stats.humanizeTokens(tokens.total)} |`;
+    });
+
+    return ['## Models', '', '| Role | Model | Tokens |', '| --- | --- | --- |', ...rows].join('\n');
+  }
+
   static hasActivity(): boolean {
     if (Stats.tests > 0 || Stats.plans > 0 || Stats.researches > 0) return true;
     const totalTokens = Object.values(Stats.models).reduce((sum, m) => sum + m.total, 0);

@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-06-26
+
+### Configuration
+- **`ai.agents.<agent>.reasoning`** — Reasoning effort for any agent, set the same way across providers: `'none'`, `'minimal'`, `'low'`, `'medium'`, `'high'`, `'xhigh'`, or `'provider-default'`. Replaces having to set each provider's own key under `providerOptions`. Default: `'low'` for the Researcher, provider default for other agents.
+- **`ai.config.maxOutputTokens`** — Maximum output length per AI call, renamed from `ai.config.maxTokens` (Vercel AI SDK 7). The old `maxTokens` key is now ignored, so move any existing value to `maxOutputTokens`. Default: `16384`.
+
+### Changes
+- [Researcher] Runs with low reasoning effort by default, so its output budget goes to extracting the UI map instead of the model's internal thinking — this reduces "response truncated" failures on large pages. Override per agent with the new `reasoning` option.
+- Upgraded to Vercel AI SDK 7. If you pin AI provider packages in your project, use `ai` v7 with `@ai-sdk/*` v4 (for example `@ai-sdk/openai`, `@ai-sdk/groq`, `@ai-sdk/anthropic`).
+- ARIA diff: interactive controls that flip state (checkbox, expanded/collapsed, pressed, selected) are now reported on a dedicated `toggled` line in both directions — so the agent always sees "now checked" or "now collapsed", even when other page changes overflow the diff.
+- Run report now includes a Models table listing each role, the model it used, and the tokens it consumed.
+- Added SambaNova as a supported AI provider.
+- Documentation restructured into `guides/`, `reference/`, and `contributing/`, with a new Getting Started guide, a Customization cookbook (login, cookie banners, modals, test data), and a refreshed README and logo.
+
+## 2026-06-06
+
+### Changes
+- [Researcher] Deep research (`--deep`) now builds on previous runs instead of starting over. It reloads the hidden sections (dropdowns, modals, expanded panels, tabs) found last time — even in an earlier session — and replays the action that revealed each to confirm it still works. Sections that still open are reused as-is, ones whose button moved or was renamed are flagged so the AI looks for them again, and when everything still matches the slow click-through exploration is skipped entirely. Previously every deep run re-discovered hidden UI from scratch and could silently miss sections it had found before.
+- [Tester] Checkboxes and other toggle controls (switches, selectable rows/items) are no longer flipped back off by accident. The Tester now sets a checkbox with the idempotent `I.checkOption` / `I.uncheckOption` commands instead of `I.click`, so selecting an already-selected checkbox keeps it selected. It also reads the page state after each click and stops re-clicking a control once it already shows the wanted result (checked, selected, or a count/label confirming success). Previously a second click on a selected checkbox could toggle it off — for example dropping a "Select 32 tests" selection back to "Select 0 tests" and saving an empty result.
+- [Tester] Before filling a form that saves data (create/update), the Tester now reads each field's requirements — required, type/format, length, and placeholder/hint text — and enters values that satisfy them, instead of submitting and discovering validation errors. Search, filter, and sort forms that only change the view are skipped.
+
+## 2026-06-04
+
+### Changes
+- [Tester] When a click or locator keeps failing on a button or link that is plainly visible on the page, the Tester now always tries clicking it by its visual appearance at least once before re-researching, switching targets, or deciding the element is unreachable. Previously it could exhaust broken locators and wrongly conclude a visible control did not exist.
+
+## 2026-06-03
+
+### Changes
+- [Pilot] No longer clicks or interacts with the page during supervision — it only inspects, verifies, and suggests the next step for the Tester to carry out. Previously the supervisor could perform clicks and coordinate-clicks itself, so it acted as a second tester on stuck pages and let tests loop far longer than needed.
+- [Pilot] Now owns asking the user for help. The "ask the user" escalation moved off the Tester and onto the Pilot, so requests for human input go through the supervisor (interactive mode only); the Tester no longer prompts the user directly.
+
 ## 2026-06-01
 
 ### Configuration
@@ -127,7 +159,7 @@
 ## 2026-04-26
 
 ### Changes
-- **Generates Playwright tests.** Every run is now saved as a runnable test — Playwright (`.spec.ts`) or CodeceptJS (`.js`). Set `ai.agents.historian.framework: 'playwright'` to get Playwright output. The spec uses the actual `page.locator(...)` calls executed during the run, each action wrapped in `test.step`, with `expect(...)` assertions for what the Pilot verified. Run it with `npx playwright test`. See [Automated Tests](docs/automated-tests.md).
+- **Generates Playwright tests.** Every run is now saved as a runnable test — Playwright (`.spec.ts`) or CodeceptJS (`.js`). Set `ai.agents.historian.framework: 'playwright'` to get Playwright output. The spec uses the actual `page.locator(...)` calls executed during the run, each action wrapped in `test.step`, with `expect(...)` assertions for what the Pilot verified. Run it with `npx playwright test`. See [Automated Tests](docs/guides/automated-tests.md).
 - [Historian] Each step in the generated test is wrapped in `await test.step('<explanation>', …)` (or `Section('<explanation>')` for CodeceptJS), labelled with the AI's own description.
 - [Historian] `test.beforeEach` / `Before` calls `goto(startUrl)` and replays the `wait` / `waitForElement` knowledge declared for that URL.
 - [Historian] Failed scenarios become `test.skip(...)` / `Scenario.skip(...)` with a `// FAILED:` comment; unfinished ones become `test.fixme(...)` / `Scenario.todo(...)` stubs. The file always runs.

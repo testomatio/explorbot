@@ -18,14 +18,16 @@ import type { UserResolveFunction } from './explorbot.ts';
 import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
+import { isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
+import { waitForPageReadiness } from './utils/page-readiness.ts';
 import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
 
 const debugLog = createDebug('explorbot:action');
-const FATAL_BROWSER_ERRORS = /Frame was detached|Target closed|Execution context was destroyed|Protocol error|Session closed/i;
+const CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS = 3;
 
 class Action {
   private actor: CodeceptJS.I;
@@ -41,6 +43,7 @@ class Action {
   public playwrightGroupId: string | null = null;
   public assertionSteps: Array<{ name: string; args: any[] }> = [];
   private recorder?: PlaywrightRecorder;
+  private mainDocumentStatus: number | undefined = undefined;
 
   constructor(actor: CodeceptJS.I, stateManager: StateManager, recorder?: PlaywrightRecorder) {
     this.actor = actor;
@@ -77,22 +80,32 @@ class Action {
       const timestamp = Date.now();
       const page = this.playwrightHelper.page;
       const frame = this.playwrightHelper.frame;
-      await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-      const grabAll = () => Promise.all([(this.actor as any).grabSource(), (this.actor as any).grabTitle(), this.captureBrowserLogs()]);
-      const [html, title, browserLogs] = await grabAll().catch(async (err: Error) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!/navigating and changing the content/i.test(msg)) throw err;
-        await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-        return grabAll();
-      });
+      await this.waitForPageReadiness(page);
+      const grabAll = () => Promise.all([captureHtml(page, frame, this.actor), captureTitle(page, this.actor), this.captureBrowserLogs()]);
+      let html = '';
+      let title = '';
+      let browserLogs: any[] = [];
+      for (let attempt = 1; attempt <= CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS; attempt++) {
+        try {
+          [html, title, browserLogs] = await grabAll();
+          break;
+        } catch (err) {
+          if (!isNavigationTransitionError(err)) throw err;
+          if (attempt === CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS) throw err;
+          await this.waitForPageReadiness(page);
+        }
+      }
       const url = page?.url() || (await (this.actor as any).grabCurrentUrl?.());
 
       let screenshotFile: string | undefined = undefined;
+      const statesDir = outputPath('states');
+      fs.mkdirSync(statesDir, { recursive: true });
 
       if (includeScreenshot) {
         const filename = safeFilename(`${stateHash}_${timestamp}`, '.png');
-        screenshotFile = await (this.actor as any)
-          .saveScreenshot(filename)
+        const screenshotPath = join(statesDir, filename);
+        screenshotFile = await page
+          ?.screenshot({ path: screenshotPath, fullPage: true })
           .then(() => filename)
           .catch((err: Error) => {
             debugLog('Screenshot failed, continuing without it:', err);
@@ -101,8 +114,6 @@ class Action {
       }
 
       // Save HTML to file
-      const statesDir = outputPath('states');
-      fs.mkdirSync(statesDir, { recursive: true });
       const htmlFile = safeFilename(`${stateHash}_${timestamp}`, '.html');
       const htmlPath = join(statesDir, htmlFile);
       fs.writeFileSync(htmlPath, html, 'utf8');
@@ -144,6 +155,7 @@ class Action {
       const result = new ActionResult({
         html,
         title,
+        httpStatus: await this.captureMainDocumentStatus(),
         url,
         browserLogs,
         htmlFile,
@@ -158,11 +170,50 @@ class Action {
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (FATAL_BROWSER_ERRORS.test(msg)) throw err;
+      if (isFatalBrowserError(err)) throw err;
       debugLog('capturePageState failed with non-fatal error:', msg);
       const url = this.playwrightHelper.page?.url?.() || '';
       return new ActionResult({ url, error: msg });
     }
+  }
+
+  private async captureMainDocumentStatus(): Promise<number | undefined> {
+    if (this.mainDocumentStatus) return this.mainDocumentStatus;
+
+    try {
+      const page = this.playwrightHelper.page;
+      const status = await page.evaluate(() => {
+        const navigation = performance.getEntriesByType('navigation').at(-1) as PerformanceNavigationTiming & { responseStatus?: number };
+        if (!navigation) return undefined;
+        if (new URL(navigation.name).href !== window.location.href) return undefined;
+        return navigation.responseStatus;
+      });
+      if (typeof status !== 'number') return undefined;
+      if (status <= 0) return undefined;
+      return status;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private captureMainDocumentResponse(): () => void {
+    const page = this.playwrightHelper.page;
+    if (!page?.on || !page?.off) return () => {};
+
+    this.mainDocumentStatus = undefined;
+
+    const handler = (response: any) => {
+      const request = response.request();
+      if (request.resourceType() !== 'document') return;
+      if (response.frame() !== page.mainFrame()) return;
+      const status = response.status();
+      if (typeof status !== 'number') return;
+      if (status <= 0) return;
+      this.mainDocumentStatus = status;
+    };
+
+    page.on('response', handler);
+    return () => page.off('response', handler);
   }
 
   /**
@@ -235,6 +286,7 @@ class Action {
     const stepListener = attachStepLogger(executedSteps, assertionSteps);
     const groupId = this.recorder ? await this.recorder.beginAction(codeString) : null;
     this.playwrightGroupId = groupId;
+    const detachMainDocumentResponse = this.captureMainDocumentResponse();
     const activeSpan = Observability.getSpan();
     const tracer = trace.getTracer('ai');
     const stepSpan = activeSpan ? tracer.startSpan('codeceptjs.step', undefined, trace.setSpan(context.active(), activeSpan)) : null;
@@ -280,6 +332,7 @@ class Action {
       this.assertionSteps = [];
       throw err;
     } finally {
+      detachMainDocumentResponse();
       if (groupId) await this.recorder!.endAction();
       detachStepLogger(stepListener);
       if (stepSpan) {
@@ -375,6 +428,7 @@ class Action {
       return true;
     } catch (error) {
       this.lastError = error as Error;
+      if (isFatalBrowserError(error)) throw error;
       debugLog(`Attempt failed: ${codeBlock}: ${errorToString(error) || this.lastError?.toString()}`);
       return false;
     }
@@ -395,6 +449,13 @@ class Action {
   getActionResult(): ActionResult | null {
     return this.actionResult;
   }
+
+  private async waitForPageReadiness(page: any): Promise<void> {
+    await waitForPageReadiness(page, {
+      timeout: this.config.playwright.waitForTimeout,
+      spinnerSelectors: this.config.playwright.spinnerSelectors,
+    });
+  }
 }
 
 export default Action;
@@ -404,6 +465,19 @@ function errorToString(error: any): string {
     return error.cliMessage();
   }
   return error.message || error.toString();
+}
+
+async function captureHtml(page: any, frame: any, actor: any): Promise<string> {
+  if (frame?.content) return frame.content();
+  if (page?.content) return page.content();
+  if (actor?.grabSource) return actor.grabSource();
+  throw new Error('Playwright page is unavailable for HTML capture');
+}
+
+async function captureTitle(page: any, actor: any): Promise<string> {
+  if (page?.title) return page.title();
+  if (actor?.grabTitle) return actor.grabTitle();
+  return '';
 }
 
 function sanitizeCodeBlock(code: string): string {

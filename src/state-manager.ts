@@ -24,6 +24,8 @@ export interface WebPageState {
   url: string;
   /** Page title */
   title?: string;
+  /** HTTP status of the main document navigation */
+  httpStatus?: number;
   /** Full URL for reference */
   fullUrl?: string;
   /** Timestamp when state was captured */

@@ -136,6 +136,10 @@ class Navigator implements Agent {
   }
 
   async visit(url: string): Promise<void> {
+    return this.explorer.runWithBrowserRecovery('navigator.visit', () => this.visitOnce(url));
+  }
+
+  private async visitOnce(url: string): Promise<void> {
     try {
       const action = this.explorer.createAction();
 
@@ -170,7 +174,7 @@ class Navigator implements Agent {
           throw new Error(`Navigation to ${url} failed: ${action.lastError?.message}`);
         }
       }
-      await action.caputrePageWithScreenshot();
+      await this.explorer.capturePageWithScreenshot();
       await this.hooksRunner.runAfterHook('navigator', url);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -206,7 +210,7 @@ class Navigator implements Agent {
     if (!actionResult.isInsideIframe) {
       const successful = this.experienceTracker.getSuccessfulExperience(actionResult);
       if (successful.length > 0) {
-        tag('substep').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${actionResult.url}`);
+        tag('operation').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${actionResult.url}`);
         experience = `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${successful.join('\n\n')}\n</experience>`;
       }
     }
@@ -307,7 +311,7 @@ class Navigator implements Agent {
             stop();
             return;
           }
-          tag('substep').log('Feeding failures back to AI for a new batch...');
+          tag('operation').log('Feeding failures back to AI for a new batch...');
           let contextMsg = 'Previous solutions did not work. Analyze the failures and try DIFFERENT strategies (not syntactic variants of the same locator).\n\n';
           if (batchFailures.length > 0) {
             const lines = batchFailures
@@ -382,7 +386,7 @@ class Navigator implements Agent {
               // URL did not transition to expectedUrl within timeout
             }
           }
-          const freshState = await action.capturePageState();
+          const freshState = await this.explorer.capturePageState();
           const currentUrl = /^https?:\/\//i.test(expectedUrl) ? freshState.fullUrl || freshState.url || '' : freshState.url || '';
           const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
           const stateChanged = freshState.getStateHash() !== actionResult.getStateHash();
@@ -481,21 +485,21 @@ class Navigator implements Agent {
     return resolved;
   }
 
-  private buildExperienceTools(): { learn_experience: unknown } | undefined {
+  private buildExperienceTools(): { learnExperience: unknown } | undefined {
     const stateManager = this.explorer.getStateManager();
     const getState = () => {
       const s = stateManager.getCurrentState();
       return s ? ActionResult.fromState(s) : null;
     };
-    const { learn_experience } = createAgentTools({
+    const { learnExperience } = createAgentTools({
       explorer: this.explorer,
       researcher: null as unknown as Researcher,
       navigator: this,
       experienceTracker: this.experienceTracker,
       getState,
     });
-    if (!learn_experience) return undefined;
-    return { learn_experience };
+    if (!learnExperience) return undefined;
+    return { learnExperience };
   }
 
   async freeSail(opts?: { strategy?: 'deep' | 'shallow'; scope?: string; visitedUrls?: Set<string> }, actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
@@ -633,7 +637,7 @@ class Navigator implements Agent {
 
     const cachedVerification = actionResult.getVerification(message);
     if (cachedVerification !== null) {
-      tag('substep').log(`Reusing cached verification: ${cachedVerification ? 'PASS' : 'FAIL'}`);
+      tag('operation').log(`Reusing cached verification: ${cachedVerification ? 'PASS' : 'FAIL'}`);
       return { verified: cachedVerification, successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
@@ -654,7 +658,7 @@ class Navigator implements Agent {
       const toc = this.experienceTracker.getExperienceTableOfContents(actionResult);
       if (toc.length > 0) {
         const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
-        tag('substep').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections) for: ${actionResult.url}`);
+        tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections) for: ${actionResult.url}`);
         experience = renderExperienceToc(toc);
       }
     }

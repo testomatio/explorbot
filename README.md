@@ -1,38 +1,102 @@
-# Explorbot
+<p align="center">
+  <img src="assets/explorbot-logo.png" alt="Explorbot" width="560">
+</p>
 
-**The vibe-testing agent for web applications.**
+<p align="center"><b>The vibe-testing agent for web applications.</b></p>
 
 ![Explorbot Terminal UI](https://github.com/testomatio/explorbot/blob/main/assets/screenshot.png)
 
-Explorbot explores your web app like a curious human would — clicking around, filling forms, finding bugs, and learning as it goes. No test scripts required. Just point it at your app and let it work.
+Explorbot is an AI agent that investigates your product like your most relentless QA engineer — clicking around, filling forms, and finding bugs. It turns every discovery into a test you can keep. No test scripts required. Just point it at your app and let it work.
 
 ```bash
 npx explorbot start https://your-app.com
 ```
 
-Explorbot is your first assitant in testing.
-It will do its best to use your application with no babysitting. It will use application and provide you valuable feedback.
+It runs with no babysitting and reports back what it finds. This is vibe-testing.
+
+New here? Read the [Getting Started guide](docs/getting-started.md).
 
 ## Use Cases
 
-* Autonomously test web application or its parts
+* Autonomously test a web application or parts of it
 * Discover test scenarios and get automated tests for them
-* Write manual test cases from exploring website
-* 24h/7d of monkey-testing for web application that can reveal hidden errors
+* Write manual test cases from exploring a website
+* 24/7 monkey-testing that reveals hidden errors
 * Quick-test for MVPs and prototypes
 
-Explorbot can start testing features which were not covered by unit tests or browser tests.
+Explorbot tests features that unit tests and scripted browser tests never reach.
 
 ## Demo
 
 ![Explorbot in action](https://github.com/testomatio/explorbot/blob/main/assets/demo.gif)
 
+## A new layer of testing
+
+Unit tests check a function. End-to-end tests replay fixed user journeys. **Exploratory tests** investigate the app the way a curious tester would — taking new paths every run and catching what no one thought to script.
+
+Explorbot makes that third layer routine. It runs on your CI next to the other two, and everything stays local — no cloud service touches your app.
+
+## How a session works
+
+Give Explorbot a goal and a URL. A crew of agents takes it from there — no scripts, no human in the loop.
+
+1. **Research** — map the page into sections and index every element. No source or docs needed.
+2. **Plan** — draft test scenarios across normal, curious, and edge styles.
+3. **Execute** — drive the browser step by step, adapting as the app changes.
+4. **Verify** — confirm each outcome, cluster findings by root cause, and capture evidence.
+5. **Keep** — save passing flows as real tests, with reports and screencasts — and learn for next run.
+
+![Explorbot Architecture](assets/architecture.png)
+
+## The crew
+
+Cheap, fast workers do the clicking and reading; smart managers make the calls — so a full session costs cents, not dollars.
+
+| | | |
+|---|---|---|
+| [Researcher](docs/reference/agents.md) | [Planner](docs/reference/agents.md) | [Tester](docs/reference/agents.md) |
+| [Pilot](docs/reference/agents.md) | [Captain](docs/reference/agents.md) | [Navigator](docs/reference/agents.md) |
+| [Analyst](docs/reference/agents.md) | [Historian](docs/reference/agents.md) | [Fisherman](docs/reference/agents.md) |
+
+See [Agents](docs/reference/agents.md) for what each one does.
+
+## Core Philosophy
+
+**Strategic decisions are deterministic** — the workflow (research → plan → test) is predictable and consistent.
+
+**Tactical decisions are AI-driven** — how to click a button, what to do when a modal appears, how to recover from an error.
+
+**Cheap workers, smart managers** — token-hungry agents run on a fast, cheap model. The decision-makers read only short action logs, so a smarter model there costs almost nothing.
+
+**Explorbot learns from failure** — it reuses past experience with a page to make faster, better decisions next time.
+
+**Explorbot needs your knowledge** — you guide it with plain-text notes and domain hints, loaded when the matching page opens.
+
+When tuned, Explorbot **runs autonomously for hours**, trying new scenarios on its own. The more it runs, the more it learns.
+
+## What you get
+
+Every run leaves behind:
+
+- **Runnable tests** — Playwright or CodeceptJS specs for every flow, ready to commit and run in CI.
+- **Reports** — a pass/fail breakdown with a written analysis, as HTML and Markdown, or in Testomat.io.
+- **Videos** — step-by-step screencasts of every run.
+- **Experience** — what Explorbot learned, reused to test smarter next time.
+
+See [Automated Tests](docs/guides/automated-tests.md) for the test output and [Reporting](docs/guides/reporting.md) for reports.
+
+## It works with your suite
+
+Explorbot won't replace your regression tests — it covers what they can't. Your Playwright or CodeceptJS suites replay the same fixed steps every build. Explorbot re-explores the same pages new ways, clicking UI and paths your scripts never touch. Point it at a brand-new feature with zero coverage, and it works out the basic test cases and runs them right away.
+
 ## Requirements
 
-- NodeJS 24+ or **Bun**
-- **AI provider API key** — OpenRouter recommended; Groq, Cerebras, OpenAI, Anthropic, or others via [Vercel AI SDK](https://sdk.vercel.ai/providers)
-- **Modern terminal** — iTerm2, WARP, Kitty, Ghostty. WSL if running on Windows
-- **Compatible web app** — Check [docs/prerequisites.md](docs/prerequisites.md) to verify your app works with Explorbot
+- Node.js 24+ or **Bun**
+- An **AI provider key** — OpenRouter recommended; Groq, Cerebras, OpenAI, Anthropic, and others via the [Vercel AI SDK](https://sdk.vercel.ai/providers)
+- A **modern terminal** — iTerm2, WARP, Kitty, Ghostty, or Windows Terminal with WSL
+- A **compatible web app** — CRUD-heavy apps fit best. See [Prerequisites](docs/reference/prerequisites.md)
+
+If your CI runs Playwright, it runs Explorbot. No GPUs, no special runners.
 
 ## Quick Start
 
@@ -49,288 +113,66 @@ npx playwright install
 npx explorbot init
 ```
 
-**3. Edit `explorbot.config.js`** — set your app URL and AI provider:
+**3. Configure and run**
 
-> [!IMPORTANT]
-> **Explorbot uses three types of models:**
->
-> | Type | Config key | Purpose | Recommendation |
-> |------|-----------|---------|----------------|
-> | **model** | `ai.model` | Standard model for HTML/ARIA processing. Used by Tester, Navigator, Researcher. Should be fast and cheap — these agents are token-hungry. | e.g. `openai/gpt-oss-20b` |
-> | **visionModel** | `ai.visionModel` | Screenshot analysis. Used when agents need to visually inspect the page. | e.g. `meta-llama/llama-4-scout-17b-16e-instruct` |
-> | **agenticModel** | `ai.agenticModel` | Exceptional decision making. Used by Captain and Pilot — agents that read compact action logs and make high-level decisions. Benefits from a smarter model. | Strong agentic models but fast (MiniMax 2.5, Grok Fast, Qwen, …) |
->
-> See [OpenRouter](https://openrouter.ai/rankings#performance) for latency-focused model picks.
-
-This example uses **OpenRouter** (one API key, many providers). Any Vercel AI SDK provider works; see [docs/providers.md](docs/providers.md).
-
-```javascript
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
-
-export default {
-  web: {
-    url: 'https://your-app.com',
-  },
-  ai: {
-    model: openrouter('openai/gpt-oss-20b'),
-    visionModel: openrouter('meta-llama/llama-4-scout-17b-16e-instruct'),
-    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
-  },
-};
-```
-
-> [!TIP]
-> Captain and Pilot barely use tokens (just action summaries), so a smarter `agenticModel` costs very little while significantly improving test quality. You can also override any agent's model individually via `ai.agents.<name>.model`.
-
-**4. Add knowledge** (optional but recommended)
-
-If your app requires authentication, tell Explorbot how to log in:
-
-```bash
-# Interactive mode
-npx explorbot learn
-
-# Or via CLI
-npx explorbot learn "/login" "Use credentials: admin@example.com / secret123"
-```
-
-> [!TIP]
-> Use `--session` to persist browser cookies and localStorage between runs. Log in once, and Explorbot will restore the session on next start:
-> ```bash
-> npx explorbot start /login --session          # saves to output/session.json
-> npx explorbot start /dashboard --session      # restores session, skips login
-> npx explorbot start /app --session auth.json  # custom session file
-> ```
-
-> [!NOTE]
-> Use `*` as URL pattern to add general knowledge that applies to all pages. See [docs/knowledge.md](docs/knowledge.md) for more.
-
-**5. Run**
+Add your AI provider key to `.env`, set your app URL in `explorbot.config.js`, then point Explorbot at a focused page — an admin panel, settings, or any CRUD section:
 
 ```bash
 npx explorbot start /admin/users
 ```
 
-Start from a small functional area of your app (admin panel, settings, any CRUD section) so Explorbot can quickly understand its business purpose and context.
+Type `/explore`, and Explorbot runs its loop on its own — research, plan, test, repeat — learning from every run.
 
-Browser runs headless by default — use `--show` to see it:
-
-```bash
-npx explorbot start /settings --show
-```
-
-Requires a modern terminal (iTerm2, WARP, Kitty, Ghostty, Windows Terminal). On Windows, use WSL.
-
-## How It Works
-
-Explorbot explores websites, analyzes their UI, and proposes tests — which it can then execute. It controls its own browser through CodeceptJS → Playwright (no MCP involved).
-
-![Explorbot Architecture](assets/architecture.png)
-
-Run `/explore` in TUI or use `explorbot explore` from CLI to watch the cycle: research → plan → test → repeat.
-
-**Supporting components:**
-
-* **Pilot** — supervises Tester from a separate conversation: reviews action logs, detects stuck patterns, makes final pass/fail decisions. Uses `agenticModel` since it only processes compact summaries, not raw HTML
-* **Historian** — saves sessions as CodeceptJS code, learns from experience
-* **Quartermaster** — analyzes pages for A11y issues (axe-core + semantic)
-* **Reporter** — sends test results to Testomat.io
-
-## Basic Usage
-
-Once in the terminal UI:
-
-```
-/explore              # Full cycle: research → plan → test
-/research             # Analyze current page
-/plan                 # Generate test scenarios
-/test                 # Run next test
-/navigate /settings   # Go to a page
-```
-
-You can also run CodeceptJS commands directly:
-
-```
-I.click('Login')
-I.fillField('email', 'test@example.com')
-I.see('Welcome')
-```
-
-See [docs/commands.md](docs/commands.md) for all commands.
-
-> [!NOTE]
-> Most TUI commands also have CLI equivalents that run headless and exit. For example, `explorbot research <url>` and `explorbot plan <path>` work without launching TUI. See [docs/commands.md](docs/commands.md) for the full mapping.
-
-## What You Get
-
-| Output | Location | Description |
-|--------|----------|-------------|
-| Test files | `output/tests/*.spec.ts` or `*.js` | Runnable Playwright or CodeceptJS tests |
-| Test plans | `output/plans/*.md` | Markdown documentation of scenarios |
-| Experience | `./experience/` | What Explorbot learned about your app |
-
-Every run is saved as a real Playwright or CodeceptJS test you can commit and run from CI. Configure the Historian to choose the output framework, record screencasts of every run, or both:
-
-```js
-ai: {
-  agents: {
-    historian: {
-      framework: 'playwright',          // or 'codeceptjs' (default)
-      screencast: true,                 // record .webm video per scenario, chapters labelled with each step
-      // screencast: { size: { width: 1280, height: 720 }, quality: 95 }
-    },
-  },
-}
-```
-
-Screencasts land in `output/screencasts/<plan>-<n>-<scenario>.webm` and are listed alongside generated tests at the end of every run.
-
-Playwright output uses the actual `page.locator(...)` calls executed during the run, with each action wrapped in `test.step` so failures land on a labelled step:
-
-```ts
-test('Create a new manual plan', async ({ page }) => {
-  await test.step("Click the 'New plan' button in toolbar", async () => {
-    await page.getByRole('button', { name: 'New plan' }).first().click();
-  });
-
-  await test.step('Select Manual plan type in modal', async () => {
-    await page.locator('#portal-container').getByRole('button', { name: 'Manual' }).click();
-  });
-
-  await test.step('Verification', async () => {
-    await expect(page).toContainText('Test Plan UI Creation 001');
-  });
-});
-```
-
-See [Automated Tests](docs/automated-tests.md) for the CodeceptJS version and how failed or unfinished scenarios are handled.
-
-## Two Ways to Run
-
-**Interactive mode** — Launch TUI, guide exploration, get real-time feedback:
-
-```bash
-npx explorbot start https://your-app.com
-```
-
-**Autonomous mode** — Non-interactive testing and planning:
-
-```bash
-npx explorbot explore /admin/users
-```
-
-**Freesail mode** — Fully autonomous, continuous exploration across multiple pages:
-
-```bash
-npx explorbot freesail /admin              # explore and test pages indefinitely
-npx explorbot freesail /app --deep         # depth-first: explore nearby pages first
-npx explorbot freesail /app --shallow      # breadth-first: spread across many pages
-npx explorbot freesail /app --scope /admin # restrict to URLs under /admin
-```
-
-Freesail navigates to a page, researches it, runs tests, then moves on to the next least-visited page — repeating until stopped. Also available as `/freesail` in TUI.
-
-## API Testing
-
-Explorbot also tests REST APIs. Add an `api` section to your config and point it at your API:
-
-```javascript
-export default {
-  web: {
-    url: 'http://localhost:3000',
-  },
-  ai: {
-    model: openrouter('openai/gpt-oss-20b'),
-    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
-  },
-  api: {
-    baseEndpoint: 'http://localhost:3000/api/v1',
-    spec: ['http://localhost:3000/api/openapi.json'],
-    headers: {
-      'Authorization': 'Bearer <token>',
-    },
-  },
-};
-```
-
-```bash
-npx explorbot api explore /users          # full cycle: plan + test all styles
-npx explorbot api plan /users             # generate test plan only
-npx explorbot api test plans/users.md *   # run all tests from a plan
-```
-
-The API tester uses two agents — **Chief** (plans test scenarios across styles: normal, curious, psycho, hacker) and **Curler** (executes HTTP requests and verifies responses). Both use `agenticModel` by default.
-
-See [docs/api-testing.md](docs/api-testing.md) for setup, authentication hooks, and full command reference.
-
-## Core Philosophy
-
-**Strategic decisions are deterministic** — The workflow (research → plan → test) is predictable and consistent.
-
-**Tactical decisions are AI-driven** — How to click that button, what to do when a modal appears, how to recover from errors.
-
-**Cheap workers, smart managers** — Tester, Navigator, and Researcher are token-hungry agents that chew through HTML and ARIA on every step. They run on the fast, cheap `model`. Captain and Pilot are the decision-makers — they read only compact action logs and make high-level choices. Set `agenticModel` to a smarter model for better results at negligible extra cost.
-
-**Explorbot learns from its failures** — It uses previous experience interacting with a web page for faster and better decisions on next runs.
-
-**Explorbot needs your knowledge** — You adjust Explorbot prompts by passing suggestions, UI explanations, and domain knowledge as text files, which are loaded when the corresponding page is opened.
-
-When tuned, Explorbot **can run autonomously for hours** navigating a web application and trying different scenarios. You don't need to watch it. The more Explorbot runs, the more it learns and the more complex scenarios it can test.
-
+That's the gist. The [**Getting Started guide**](docs/getting-started.md) walks through the full setup — choosing models, teaching Explorbot to log in, and picking the right feature to start on.
 
 ## Teaching Explorbot
 
-* **Knowledge** (`./knowledge/`) — Tell Explorbot about your app: credentials, form rules, navigation quirks. See [docs/knowledge.md](docs/knowledge.md).
-* **Rules** (`./rules/`) — Customize agent behavior with markdown files. Add page-specific instructions, override planning styles, or tune how agents work on different parts of your app. See [docs/configuration.md](docs/configuration.md#rules).
-* **Experience** (`./experience/`) — Explorbot learns automatically from successful interactions and saves what works.
+Explorbot gets better when you tell it about your app:
 
-## Further Reading
+- **Knowledge** — credentials, form rules, navigation quirks. See [Knowledge](docs/guides/knowledge.md).
+- **Rules** — per-agent, per-page instructions. See [Configuration](docs/reference/configuration.md#rules).
+- **Experience** — learned automatically from what works.
 
-- [docs/prerequisites.md](docs/prerequisites.md) — Application compatibility checklist
-- [docs/commands.md](docs/commands.md) — Terminal command reference
-- [docs/api-testing.md](docs/api-testing.md) — API testing setup and commands
-- [docs/knowledge.md](docs/knowledge.md) — Knowledge system and URL patterns
-- [docs/providers.md](docs/providers.md) — AI provider configuration
-- [docs/agents.md](docs/agents.md) — Agent descriptions and capabilities
-- [docs/planner.md](docs/planner.md) — Planner agent: planning styles and customization
-- [docs/scripting.md](docs/scripting.md) — Building custom autonomous scripts
-- [docs/observability.md](docs/observability.md) — Langfuse tracing and debugging
-- [docs/page-interaction.md](docs/page-interaction.md) — How agents interact with pages
+Handling logins, cookie banners, modals, and test data takes a few lines — see [Customization](docs/guides/customization.md).
+
+## It also tests REST APIs
+
+Point Explorbot at an OpenAPI spec and it plans and runs API tests too. See [API Testing](docs/guides/api-testing.md).
+
+## Keep going
+
+When you're ready to go deeper, the [full documentation](docs/README.md) covers everything, starting with the [Getting Started guide](docs/getting-started.md).
 
 ## FAQ
 
-**Can I run it in Cursor? or Claude Code?**
-No, Explorbot is a separate application designed for constant testing. Cursor, Codex, or Claude Code are coding agents — not relevant here.
+**Can I run it in Cursor or Claude Code?**
+No, Explorbot is a separate application designed for constant testing. Cursor, Codex, and Claude Code are coding agents — not relevant here.
 
-> However, Explorbot can be used as subagent or terminal command which is controlled by coding agent.
+> However, Explorbot can be used as a subagent or terminal command controlled by a coding agent.
 
-**Can I bring Cursor or OpenAI Subscription?**
-No Cursor and OpenAI subscription can't be used. Mostly because their models are slow for Explorbot's usage. We recommend using pay-per-token via Groq and OpenRouter.
+**Can I bring a Cursor or OpenAI subscription?**
+No. Their models are too slow for the way Explorbot works. Use pay-per-token providers like Groq and OpenRouter.
 
 **I want to use Opus!!!**
-Opus is great for coding. But for testing we need a simpler model that can safely consume lots of HTML tokens. Opus must be used for sophisticated decision-making, while explorbot needs to collect knowledge from webpages and do it fast.
+Opus is great for coding. Testing needs a simpler model that can safely consume lots of HTML tokens, fast. Save the expensive models for sophisticated decision-making.
 
-**Is that expensive?**
+**Is it expensive?**
 No. With fast open models (e.g. `openai/gpt-oss-20b` on OpenRouter or Groq), expect roughly **~$1/hour of continuous run**, depending on provider and traffic.
 
 **Does Explorbot have MCP?**
 Not yet.
 
 **Can I build my own agents with it?**
-Yes, use the programmatic API. See [docs/scripting.md](docs/scripting.md).
+Yes, use the programmatic API. See [Scripting](docs/contributing/scripting.md).
 
-**Ok, but I can do the same in Cursor with Playwright MCP!**
+**Can I do the same in Cursor with Playwright MCP?**
 Good luck running it on CI!
 
 ## Development
 
 * Clone this repository
 * Use **Bun** to run TS and TSX with no building
-* Create a sample project under `example` directory:
+* Create a sample project under the `example` directory:
 
 ```
 ./bin/explorbot-cli.ts init --path example
@@ -351,7 +193,3 @@ Explorbot is licensed under the [Elastic License 2.0 (ELv2)](LICENSE).
 The only restriction: you may not offer Explorbot itself as a hosted/managed service (i.e., resell it as a product). This license is used by Elastic, Grafana, and other open-source companies.
 
 Explorbot is built by [Testomat.io](https://testomat.io).
-
----
-
-Explorbot learns as it explores. The more it tests your app, the better it gets at testing your app. That's vibe-testing.

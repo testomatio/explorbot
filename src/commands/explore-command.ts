@@ -5,9 +5,8 @@ import { normalizeUrl } from '../state-manager.js';
 import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
 import { getCliName } from '../utils/cli-name.ts';
-import { ErrorPageError } from '../utils/error-page.ts';
+import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
-import { jsonToTable } from '../utils/markdown-parser.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../utils/next-steps.ts';
 import { safeFilename } from '../utils/strings.ts';
 import { BaseCommand, type Suggestion } from './base-command.js';
@@ -57,6 +56,11 @@ export class ExploreCommand extends BaseCommand {
     Stats.mode ??= 'explore';
     Stats.focus ??= feature;
     const mainUrl = this.getCurrentPageUrl();
+    const error = getStateErrorPageError(this.explorBot.getExplorer().getStateManager().getCurrentState());
+    if (error) {
+      tag('warning').log(error.message);
+      return;
+    }
 
     if (cfg.enabled) {
       await this.runReuseMode(mainUrl, feature, cfg);
@@ -88,14 +92,14 @@ export class ExploreCommand extends BaseCommand {
       const t = tests[i];
       lines.push(`  ${String(i + 1).padStart(2)}. [${this.originLabel(t)}] [${t.priority.padEnd(9)}] ${t.scenario}`);
     }
-    tag('multiline').log(lines.join('\n'));
+    tag('multiline').log(lines.join('\n'), { maxLines: 24 });
   }
 
   private async runFreshMode(mainUrl: string | undefined, feature: string | undefined, styles?: string[]): Promise<void> {
     await this.runAllStyles(mainUrl, feature, undefined, undefined, styles);
+    this.rememberCurrentPlan();
     const mainPlan = this.explorBot.getCurrentPlan();
     if (!mainPlan) return;
-    this.completedPlans.push(mainPlan);
 
     if (feature || this.isLimitReached()) return;
 
@@ -270,6 +274,7 @@ export class ExploreCommand extends BaseCommand {
     const styleList = styles ?? Object.keys(getStyles());
     let fresh = true;
     for (const style of styleList) {
+      if (this.isLimitReached()) break;
       if (!fresh && pageUrl && !this.dryRun) {
         await this.explorBot.visit(pageUrl);
       }
@@ -278,8 +283,17 @@ export class ExploreCommand extends BaseCommand {
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
       await this.runPendingTests();
+      this.rememberCurrentPlan();
       fresh = false;
     }
+  }
+
+  private rememberCurrentPlan(): void {
+    const plan = this.explorBot.getCurrentPlan();
+    if (!plan) return;
+    if (this.completedPlans.includes(plan)) return;
+    if (plan.tests.every((test) => test.startTime == null)) return;
+    this.completedPlans.push(plan);
   }
 
   private async planWithRetry(feature: string | undefined, opts: { fresh: boolean; style: string; extend?: Plan; completedPlans?: Plan[]; noSave?: boolean }, pageUrl?: string): Promise<void> {
@@ -401,34 +415,63 @@ export class ExploreCommand extends BaseCommand {
 
     if (allTests.length === 0) return;
 
-    const hasSubPages = this.completedPlans.length > 1;
+    const hasSubPages = new Set(this.completedPlans.map((plan) => plan.title)).size > 1;
     const hasOrigin = this.oldTestRefs.size > 0;
-    const rows = allTests.map(({ test, planTitle }, index) => {
+    const completed = allTests.map(({ test, planTitle }, index) => {
       const durationMs = test.getDurationMs();
       const duration = durationMs != null ? `${(durationMs / 1000).toFixed(1)}s` : '-';
       let status = 'failed';
       if (test.isSuccessful) status = 'passed';
       else if (test.isSkipped) status = 'skipped';
-      const row: Record<string, string> = {
-        '#': String(index + 1),
-        Status: status,
-        Title: test.scenario.replace(/\|/g, '-'),
-        Priority: test.priority,
-        Time: duration,
-        Steps: String(Object.keys(test.notes).length),
+      return {
+        index: index + 1,
+        status,
+        title: test.scenario.replace(/\s+/g, ' ').trim(),
+        priority: test.priority,
+        duration,
+        durationMs: durationMs ?? 0,
+        steps: Object.keys(test.notes).length,
+        origin: hasOrigin ? this.originLabel(test) : '',
+        planTitle: hasSubPages ? planTitle : '',
       };
-      if (hasOrigin) {
-        row.Origin = this.originLabel(test);
-      }
-      if (hasSubPages) {
-        row.Plan = planTitle;
-      }
-      return row;
     });
-    const columns = ['#', 'Status', 'Title', 'Priority', 'Time', 'Steps'];
-    if (hasOrigin) columns.push('Origin');
-    if (hasSubPages) columns.push('Plan');
-    tag('multiline').log(jsonToTable(rows, columns));
+    const passed = completed.filter((t) => t.status === 'passed').length;
+    const failed = completed.filter((t) => t.status === 'failed').length;
+    const skipped = completed.filter((t) => t.status === 'skipped').length;
+    const totalSeconds = completed.reduce((sum, t) => sum + t.durationMs, 0) / 1000;
+    const lines = [`Results: ${passed} passed, ${failed} failed, ${skipped} skipped - ${formatDuration(totalSeconds)}`];
+
+    const failedTests = completed.filter((t) => t.status === 'failed');
+    if (failedTests.length > 0) {
+      lines.push('', 'Failed tests:');
+      for (const test of failedTests) {
+        lines.push(`  #${test.index} [${test.priority}] ${test.title} (${test.duration}, ${test.steps} steps)`);
+      }
+    }
+
+    const slowTests = completed
+      .filter((t) => t.durationMs >= 1000)
+      .sort((a, b) => b.durationMs - a.durationMs)
+      .slice(0, 3);
+    if (slowTests.length > 0) {
+      lines.push('', 'Slowest tests:');
+      for (const test of slowTests) {
+        lines.push(`  #${test.index} ${test.duration} - ${test.title}`);
+      }
+    }
+
+    const detailLines = completed
+      .map((test) => {
+        const details = [test.origin, test.planTitle].filter(Boolean).join(' - ');
+        return details ? `  #${test.index} ${details}` : '';
+      })
+      .filter(Boolean);
+    if (detailLines.length > 0) {
+      lines.push('', 'Details:');
+      lines.push(...detailLines);
+    }
+
+    tag('multiline').log(lines.join('\n'));
     tag('info').log(`${figureSet.tick} ${allTests.length} tests completed`);
   }
 
@@ -463,8 +506,8 @@ export class ExploreCommand extends BaseCommand {
     }
 
     if (screencasts.length > 0) {
-      const commands = screencasts.map((f) => ({ label: '', command: relativeToCwd(f) }));
       const screencastDir = relativeToCwd(outputPath('screencasts'));
+      const commands = [{ label: 'Folder', command: screencastDir }];
       const planSlugs = [...new Set(this.completedPlans.map((p) => safeFilename(p.title)).filter(Boolean))];
       for (const slug of planSlugs) {
         commands.push({ label: 'Browse plan', command: `ls ${screencastDir}/${slug}-*` });
@@ -528,4 +571,11 @@ function parseRatio(s: string): number | null {
   const n = Number.parseFloat(trimmed);
   if (Number.isNaN(n) || n < 0 || n > 1) return null;
   return n;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return `${minutes}m ${remainingSeconds}s`;
 }

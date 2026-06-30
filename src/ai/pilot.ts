@@ -18,6 +18,7 @@ import type { Fisherman } from './fisherman.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
+import { capabilityGroundingRule, dataProtectionRules } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
@@ -67,7 +68,7 @@ export class Pilot implements Agent {
   }
 
   async reviewCompletion(task: Test, currentState: ActionResult, testerConversation: Conversation, navigator?: Navigator): Promise<boolean> {
-    const verdictType = task.hasAchievedAny() ? 'finish' : 'stop';
+    const verdictType = this.hasCompletionEvidence(task, currentState, testerConversation) ? 'finish' : 'stop';
     return this.reviewDecision(verdictType, task, currentState, testerConversation, navigator);
   }
 
@@ -86,14 +87,14 @@ export class Pilot implements Agent {
 
     const sessionLog = this.formatSessionLog(testerConversation);
     const stateContext = this.buildStateContext(currentState);
+    const successfulAssertions = this.formatSuccessfulAssertions(currentState, testerConversation);
     const notes = task.notesToString() || 'No notes recorded.';
 
     let visualAnalysis = '';
     let screenshotState: ActionResult | null = null;
-    if (this.provider.hasVision()) {
+    if (type === 'finish' && this.provider.hasVision()) {
       try {
-        const action = this.explorer.createAction();
-        screenshotState = await action.caputrePageWithScreenshot();
+        screenshotState = await this.explorer.capturePageWithScreenshot();
         if (screenshotState.screenshot) {
           visualAnalysis = (await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Describe current page state relevant to: ${task.scenario}`)) || '';
         }
@@ -104,7 +105,7 @@ export class Pilot implements Agent {
 
     const schema = z.object({
       decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
-      reason: z.string().describe('What happened and why (1-2 sentences). Do NOT repeat the decision status (e.g. "scenario goal achieved/not achieved") — just explain the evidence. For continue: explain why rejected and suggest alternatives.'),
+      reason: z.string().describe('Concise user-facing reason, maximum 1 short sentence and 120 characters. Do NOT repeat the decision status; explain only the evidence. For continue: explain why rejected and suggest alternatives.'),
       guidance: z.string().nullable().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
       requestVerification: z
         .string()
@@ -124,6 +125,10 @@ export class Pilot implements Agent {
       ${visualAnalysis ? `<visual_analysis>\n${visualAnalysis}\n</visual_analysis>` : ''}
 
       ${this.formatExpectations(task)}
+
+      <successful_assertions>
+      ${successfulAssertions || 'None'}
+      </successful_assertions>
 
       <notes>
       ${notes}
@@ -160,7 +165,7 @@ export class Pilot implements Agent {
     try {
       const response = await this.provider.generateObject(messages, schema, this.provider.getAgenticModel('pilot'), {
         agentName: 'pilot',
-        experimental_telemetry: { functionId: 'pilot.reviewVerdict' },
+        telemetry: { functionId: 'pilot.reviewVerdict' },
       });
 
       const result = response?.object;
@@ -177,7 +182,7 @@ export class Pilot implements Agent {
         }
       }
 
-      tag('info').log(`Pilot: ${result.decision} — ${result.reason}`);
+      tag('info').log(`Pilot: ${result.decision} - ${result.reason}`);
       task.summary = result.reason;
 
       const verdictState = screenshotState || currentState;
@@ -221,7 +226,7 @@ export class Pilot implements Agent {
 
     const schema = z.object({
       decision: z.enum(['allow', 'fail', 'continue', 'skipped']).describe('allow = reset proceeds, fail = test failed (stop looping), continue = veto reset, tester should act on current page instead, skipped = scenario is irrelevant or cannot be executed'),
-      reason: z.string().describe('What evidence justifies this decision (1-2 sentences). Do not restate the decision.'),
+      reason: z.string().describe('Concise evidence-only reason, maximum 1 short sentence and 120 characters. Do not restate the decision.'),
       guidance: z.string().nullable().describe('Required for "continue": concrete instruction for what the tester should do instead of resetting (e.g. which tool to call, what to verify).'),
     });
 
@@ -262,7 +267,7 @@ export class Pilot implements Agent {
     try {
       const response = await this.provider.generateObject(messages, schema, this.provider.getAgenticModel('pilot'), {
         agentName: 'pilot',
-        experimental_telemetry: { functionId: 'pilot.reviewReset' },
+        telemetry: { functionId: 'pilot.reviewReset' },
       });
 
       const result = response?.object;
@@ -374,6 +379,8 @@ export class Pilot implements Agent {
       You are Pilot — final decision maker for test pass/fail. Tester requested ${type}. Review the
       evidence and commit to a verdict; "continue" only when evidence is genuinely insufficient.
 
+      ${capabilityGroundingRule}
+
       ${this.buildSharedEvidenceRules(task)}
 
       DECISION:
@@ -382,14 +389,17 @@ export class Pilot implements Agent {
         Pick assertions DOM can express; for non-DOM regions (iframes, canvas, Monaco/CodeMirror), target a
         stable landmark (container, ARIA role) instead of literal inner text. Your "pass" stands even if the
         DOM assertion can't be made.
+        Do not pass when Tester achieved only a related navigation/filter/tab/status outcome instead of the
+        requested action, workflow, or entity detail goal.
       - "fail": scenario was attempted but the goal was not achieved.
       - "skipped": scenario is irrelevant to the app, OR systematic infrastructure failures (LLM errors,
         crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or "continue".
       - "continue": tester hasn't completed the goal; provide concrete guidance (which tool, what to check).
         If a verify() asserted a state that was ALREADY TRUE before the test, it proves nothing — reject.
 
-      reason field: do NOT restate the decision ("scenario goal achieved/not achieved"). State what happened —
-      what was verified, what failed, what evidence was found.
+      reason field: one short sentence, maximum 120 characters. Do NOT restate the decision
+      ("scenario goal achieved/not achieved"). State what happened: what was verified, what failed,
+      or what evidence was found.
     `;
   }
 
@@ -419,6 +429,10 @@ export class Pilot implements Agent {
 
         FIRST: Decide if precondition() is needed.
 
+        ${capabilityGroundingRule}
+
+        ${dataProtectionRules}
+
         Call precondition() WHEN:
         - The scenario edits/deletes/modifies an item, and you want a DISPOSABLE item to act on safely
         - The scenario needs specific data clearly NOT on the current page (e.g., items with specific statuses for filtering)
@@ -439,14 +453,14 @@ export class Pilot implements Agent {
         the elements needed for the scenario. The page summary does not list every element.
         Prefer interacting with the current page over navigating away.
 
-        If you load a recipe via learn_experience, do NOT rewrite its code in your plan — the
+        If you load a recipe via learnExperience, do NOT rewrite its code in your plan — the
         raw recipe is forwarded to Tester automatically. Reference it by step ("apply recipe
         steps 1–3, then…") and call out anywhere your scenario diverges from it.
 
         Be concise and specific. Tester will follow your plan.
       `,
       'pilot.planTest',
-      { tools: true, planningOnly: true, maxToolRoundtrips: 3, task }
+      { tools: true, maxToolRoundtrips: 3, task }
     );
   }
 
@@ -547,7 +561,7 @@ export class Pilot implements Agent {
     return `CHECKED: ${checked.length > 0 ? checked.join(', ') : 'none'}\nREMAINING: ${remaining.length > 0 ? remaining.join(', ') : 'none'}`;
   }
 
-  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; planningOnly?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
+  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
     debugLog(`sendToPilot: ${functionId}, tools: ${!!opts.tools}, roundtrips: ${opts.maxToolRoundtrips ?? 0}`);
 
     let finalUserText = userText;
@@ -560,7 +574,7 @@ export class Pilot implements Agent {
     this.conversation!.addUserText(finalUserText);
     let tools: any;
     if (opts.tools) {
-      tools = opts.planningOnly ? this.pickPlanningTools() : this.agentTools;
+      tools = this.pickPlanningTools();
     }
 
     if (opts.tools && opts.task) {
@@ -571,10 +585,10 @@ export class Pilot implements Agent {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
       agentName: 'pilot',
       stopWhen: opts.task ? () => opts.task!.hasFinished : undefined,
-      experimental_telemetry: { functionId },
+      telemetry: { functionId },
     });
     const text = result?.response?.text || '';
-    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learn_experience' && e.output?.content).map((e: any) => e.output.content);
+    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => e.output.content);
     if (learned.length === 0) return text;
     return dedent`
       ${text}
@@ -598,7 +612,7 @@ export class Pilot implements Agent {
   }
 
   private pickPlanningTools() {
-    const { see, context, verify, research, getVisitedStates, xpathCheck, learn_experience } = this.agentTools ?? {};
+    const { see, context, verify, research, getVisitedStates, xpathCheck, learnExperience, askUser } = this.agentTools ?? {};
     const planning: Record<string, unknown> = {};
     if (see) planning.see = see;
     if (context) planning.context = context;
@@ -606,7 +620,8 @@ export class Pilot implements Agent {
     if (research) planning.research = research;
     if (getVisitedStates) planning.getVisitedStates = getVisitedStates;
     if (xpathCheck) planning.xpathCheck = xpathCheck;
-    if (learn_experience) planning.learn_experience = learn_experience;
+    if (learnExperience) planning.learnExperience = learnExperience;
+    if (askUser) planning.askUser = askUser;
     return planning;
   }
 
@@ -656,8 +671,7 @@ export class Pilot implements Agent {
   private async checkDataAvailability(task: Test, requestedData: string, fishermanReason: string | undefined): Promise<string | null> {
     if (!this.provider.hasVision()) return null;
 
-    const action = this.explorer.createAction();
-    const screenshotState = await action.caputrePageWithScreenshot().catch(() => null);
+    const screenshotState = await this.explorer.capturePageWithScreenshot().catch(() => null);
     if (!screenshotState?.screenshot) return null;
 
     const question = dedent`
@@ -880,6 +894,32 @@ export class Pilot implements Agent {
     return parts.join('\n\n');
   }
 
+  private hasCompletionEvidence(task: Test, currentState: ActionResult, testerConversation: Conversation): boolean {
+    if (task.hasAchievedAny()) return true;
+    return this.hasSuccessfulCheckEvidence(currentState, testerConversation);
+  }
+
+  private hasSuccessfulCheckEvidence(currentState: ActionResult, testerConversation: Conversation): boolean {
+    if (Object.values(currentState.verifications ?? {}).some(Boolean)) return true;
+    return testerConversation.getToolExecutions().some((t) => CHECK_TOOLS.includes(t.toolName) && t.wasSuccessful);
+  }
+
+  private formatSuccessfulAssertions(currentState: ActionResult, testerConversation: Conversation): string {
+    const lines: string[] = [];
+    for (const [assertion, passed] of Object.entries(currentState.verifications ?? {})) {
+      if (passed) lines.push(`PASS state verification: ${assertion}`);
+    }
+
+    for (const exec of testerConversation.getToolExecutions()) {
+      if (!CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful) continue;
+      const description = exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
+      const result = exec.output?.message || exec.output?.analysis || exec.output?.result;
+      lines.push(`PASS ${exec.toolName}: ${description}${result ? ` -> ${result}` : ''}`);
+    }
+
+    return [...new Set(lines)].join('\n');
+  }
+
   private formatActions(toolCalls: any[]): string {
     return toolCalls
       .map((t) => {
@@ -998,9 +1038,13 @@ export class Pilot implements Agent {
 
       Tester tools: click, pressKey, form, see, verify, context, research, xpathCheck, visualClick,
       back, getVisitedStates, reset, stop, finish, record.
+      Use tool names exactly as listed. Do not invent combined names, aliases, or names with channel markers such as "commentary".
+
+      ${capabilityGroundingRule}
 
       YOUR Pilot-only tool: precondition(description) — create FRESH disposable test data via API. Never
       request users. Use when:
+
       - Scenario edits/deletes/modifies an item → create a disposable target ("1 post").
       - Scenario needs auxiliary data (labels, categories, statuses for filtering).
       - Tester failed because required data is missing (empty dropdown, empty list).
@@ -1010,12 +1054,16 @@ export class Pilot implements Agent {
       - Current page already shows the exact data needed.
       - Scenario tests navigation, search UI, or viewing.
 
+      ${dataProtectionRules}
+
       Describe WHAT to create, not what exists. RIGHT: precondition("1 test"). WRONG:
       precondition("1 test suite named Updated Suite with existing tests"). Keep descriptions short.
 
       Response format:
       PROGRESS: <1 sentence assessment>
       NEXT: <specific actionable instruction for Tester>
+
+      Keep user-facing reasons concise: one short sentence, maximum 120 characters, evidence only, no repeated verdict wording.
     `;
   }
 }

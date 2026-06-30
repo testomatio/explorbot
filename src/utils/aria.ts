@@ -334,6 +334,54 @@ const detectRenames = (prev: FlatEntry[], curr: FlatEntry[], prevTotals: Map<str
   return { added, removed };
 };
 
+// Interactive controls keep a stable role+name across a state flip; only an ARIA state
+// attribute changes. Report those flips on their own line so the model always sees
+// "now checked / now collapsed", in both directions, regardless of other page churn.
+const STATE_WORDS: Record<string, { on: string; off: string }> = {
+  checked: { on: 'checked', off: 'unchecked' },
+  selected: { on: 'selected', off: 'unselected' },
+  pressed: { on: 'pressed', off: 'unpressed' },
+  expanded: { on: 'expanded', off: 'collapsed' },
+};
+const STATE_ATTRS = Object.keys(STATE_WORDS);
+
+const stateWord = (attr: string, value: unknown): string => {
+  if (attr === 'checked' && value === 'mixed') return 'partially checked';
+  const words = STATE_WORDS[attr];
+  if (value === true || value === 'true') return words.on;
+  return words.off;
+};
+
+// Pair entries by path; when role and name match but a state attr differs, it's a toggle.
+const detectToggles = (prev: FlatEntry[], curr: FlatEntry[]): { toggled: string[]; togglePaths: Set<string> } => {
+  const toggled: string[] = [];
+  const togglePaths = new Set<string>();
+  const currByPath = new Map(curr.map((e) => [e.path, e]));
+
+  for (const before of prev) {
+    const after = currByPath.get(before.path);
+    if (!after) continue;
+    if (before.entry.role !== after.entry.role) continue;
+    if (before.entry.name !== after.entry.name) continue;
+
+    const transitions: string[] = [];
+    for (const attr of STATE_ATTRS) {
+      const was = stateWord(attr, before.entry[attr]);
+      const now = stateWord(attr, after.entry[attr]);
+      if (was === now) continue;
+      transitions.push(`${was} -> ${now}`);
+    }
+    if (transitions.length === 0) continue;
+
+    togglePaths.add(before.path);
+    let label = String(after.entry.role);
+    const name = after.entry.name;
+    if (typeof name === 'string' && name.trim()) label += ` "${name.trim()}"`;
+    toggled.push(`${label}: ${transitions.join(', ')}`);
+  }
+  return { toggled, togglePaths };
+};
+
 const TOP_DIFF_ITEMS = 10;
 
 const formatDiffSection = (label: string, items: string[]): string[] => {
@@ -358,9 +406,15 @@ const formatDiffSection = (label: string, items: string[]): string[] => {
   return lines;
 };
 
-const formatDiff = (added: string[], removed: string[]): string | null => {
-  if (added.length === 0 && removed.length === 0) return null;
-  return ['ariaDiff:', ...formatDiffSection('added', added), ...formatDiffSection('removed', removed)].join('\n');
+const formatDiff = (added: string[], removed: string[], toggled: string[]): string | null => {
+  if (added.length === 0 && removed.length === 0 && toggled.length === 0) return null;
+  const sections = ['ariaDiff:'];
+  if (toggled.length > 0) {
+    sections.push('  toggled:');
+    for (const line of toggled) sections.push(`    - ${line}`);
+  }
+  sections.push(...formatDiffSection('added', added), ...formatDiffSection('removed', removed));
+  return sections.join('\n');
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -437,13 +491,16 @@ export const diffAriaSnapshots = (previous: string | null, current: string | nul
     tree = dropEmpty(tree);
     return flatten(tree);
   };
-  const prev = flat(previous);
-  const curr = flat(current);
+  const prevAll = flat(previous);
+  const currAll = flat(current);
+  const { toggled, togglePaths } = detectToggles(prevAll, currAll);
+  const prev = prevAll.filter((e) => !togglePaths.has(e.path));
+  const curr = currAll.filter((e) => !togglePaths.has(e.path));
   const prevTotals = countBy(prev.map((e) => e.summary));
   const currTotals = countBy(curr.map((e) => e.summary));
   const byCount = diffByCount(prevTotals, currTotals);
   const renames = detectRenames(prev, curr, prevTotals, currTotals);
-  return formatDiff([...byCount.added, ...renames.added], [...byCount.removed, ...renames.removed]);
+  return formatDiff([...byCount.added, ...renames.added], [...byCount.removed, ...renames.removed], toggled);
 };
 
 export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {

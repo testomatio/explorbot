@@ -1,6 +1,7 @@
 import dedent from 'dedent';
 import { describe, expect, it } from 'vitest';
 import { formatResearchSummary, parseResearchSections } from '../../src/ai/researcher/parser.ts';
+import { extractCodeBlocks } from '../../src/utils/code-extractor.ts';
 
 const researchMarkdown = dedent`
   ## Page Purpose
@@ -86,6 +87,35 @@ describe('parseResearchSections', () => {
     `;
     const sections = parseResearchSections(md);
     expect(sections.every((s) => !s.isExtended)).toBe(true);
+  });
+
+  it('keeps the replay action code in an extended section rawMarkdown', () => {
+    const md = dedent`
+      ## List
+
+      Suite list content.
+      > Container: \`.suites-list-content\`
+
+      # Extended Research
+
+      ### Dropdown Expansion
+
+      Action:
+
+      \`\`\`js
+      I.click({ role: 'button', text: 'New' }, '.toolbar')
+      \`\`\`
+
+      A dropdown menu appeared.
+
+      | Element | Type | ARIA | CSS |
+      |------|------|------|------|
+      | Folder | button | { role: 'button', text: 'Folder' } | '.folder' |
+    `;
+
+    const extended = parseResearchSections(md).filter((s) => s.isExtended);
+    expect(extended).toHaveLength(1);
+    expect(extractCodeBlocks(extended[0].rawMarkdown)[0]).toBe("I.click({ role: 'button', text: 'New' }, '.toolbar')");
   });
 });
 

@@ -12,6 +12,7 @@ interface PlaywrightConfig {
   timeout: number;
   waitForNavigation: 'load' | 'domcontentloaded' | 'networkidle';
   waitForTimeout: number;
+  spinnerSelectors?: string[];
   ignoreHTTPSErrors: boolean;
   userAgent: string;
   viewport: {
@@ -122,6 +123,7 @@ const config: ExplorbotConfig = {
     timeout: 10000,
     waitForNavigation: 'networkidle',
     waitForTimeout: 5000,
+    spinnerSelectors: ['.spinner', '.loading', '[aria-busy="true"]'],
     ignoreHTTPSErrors: true,
     userAgent: 'Explorbot/1.0',
     viewport: {

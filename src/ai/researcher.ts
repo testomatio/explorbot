@@ -68,6 +68,13 @@ export class Researcher extends ResearcherBase implements Agent {
     this.stateManager = explorer.getStateManager();
     this.experienceTracker = this.stateManager.getExperienceTracker();
     this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
+
+    const ai = explorer.getConfig().ai;
+    if (ai) {
+      ai.agents ??= {};
+      ai.agents.researcher ??= {};
+      ai.agents.researcher.reasoning ??= 'low';
+    }
   }
 
   protected getNavigator(): Navigator {
@@ -130,12 +137,12 @@ export class Researcher extends ResearcherBase implements Agent {
 
       const annotatedElements = await this.explorer.annotateElements();
       debugLog(`Annotated ${annotatedElements.length} interactive elements with eidx`);
-      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot && this.provider.hasVision() });
+      this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot && this.provider.hasVision() });
 
       const condition = detectPageCondition(this.actionResult!);
       if (condition === 'error') {
         tag('warning').log(`Detected error page at ${state.url}`);
-        throw new ErrorPageError(state.url, this.actionResult!.title);
+        throw new ErrorPageError(state.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
       if (condition === 'loading') {
         const settled = await this.waitUntilSettled(screenshot);
@@ -151,7 +158,7 @@ export class Researcher extends ResearcherBase implements Agent {
       if (!deep && !force) {
         const similar = await findSimilarResearch(combinedHtml);
         if (similar) {
-          tag('substep').log('Similar research found, reusing cached result');
+          tag('operation').log('Similar research found, reusing cached result');
           if (stateHash) saveResearch(stateHash, similar, combinedHtml);
           tag('multiline').log(formatResearchSummary(similar));
           tag('success').log('Research complete (reused)');
@@ -177,7 +184,7 @@ export class Researcher extends ResearcherBase implements Agent {
       } catch (error) {
         if (!(error instanceof ContextLengthError) || retriesLeft <= 0) {
           if (error instanceof ContextLengthError) {
-            tag('warning').log('Output truncated. Try lowering reasoning effort or increasing maxTokens in ai.config.');
+            tag('warning').log('Output truncated. Try lowering reasoning effort or increasing maxOutputTokens in ai.config.');
           }
           throw error;
         }
@@ -239,7 +246,7 @@ export class Researcher extends ResearcherBase implements Agent {
       // Must run BEFORE visuallyAnnotateContainers — annotation overlays inject z-index 99998+ which would pollute the scoring.
       if (!interrupted() && this.hasScreenshotToAnalyze) {
         const sections = parseResearchSections(result.text);
-        const focused = await detectFocusedSection(this.explorer.playwrightHelper.page, sections);
+        const focused = await this.explorer.runWithBrowserRecovery('detectFocusedSection', () => detectFocusedSection(this.explorer.playwrightHelper.page, sections));
         if (focused) markSectionAsFocused(result, focused);
       }
 
@@ -252,7 +259,7 @@ export class Researcher extends ResearcherBase implements Agent {
         const freshBroken = freshContainerLocs.filter((l) => l.valid === false).map((l) => l.locator);
         const containers = validContainers.filter((c) => !freshBroken.includes(c.css));
         await this.visuallyAnnotateElements({ containers });
-        this.actionResult = await this.explorer.createAction().caputrePageWithScreenshot();
+        this.actionResult = await this.explorer.capturePageWithScreenshot();
         const visualResult = await this.analyzeScreenshotForVisualProps();
         if (visualResult.elements.size > 0) {
           await this.mergeVisualData(result, visualResult.elements);
@@ -316,10 +323,10 @@ export class Researcher extends ResearcherBase implements Agent {
 
       tag('multiline').log(formatResearchSummary(result.text, { visionUsed: this.hasScreenshotToAnalyze }));
       tag('success').log('Research complete');
-      if (researchFile) tag('substep').log(`Research file saved to: ${researchFile}`);
+      if (researchFile) tag('operation').log(`Research file saved to: ${researchFile}`);
       if (this.actionResult?.screenshotFile) {
         const screenshotPath = outputPath('states', this.actionResult.screenshotFile);
-        tag('substep').log(`UI screenshot: file://${screenshotPath}`);
+        tag('operation').log(`UI screenshot: file://${screenshotPath}`);
       }
 
       await this.hooksRunner.runAfterHook('researcher', state.url);
@@ -331,7 +338,7 @@ export class Researcher extends ResearcherBase implements Agent {
     if (!this.actionResult) {
       debugLog('No action result, navigating to URL');
       await this.explorer.visit(url);
-      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot });
+      this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot });
       return;
     }
 
@@ -341,7 +348,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
     if (!isEmpty && isOnCurrentState) {
       if ((!this.actionResult.screenshot && screenshot) || !this.actionResult.ariaSnapshot) {
-        this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot });
+        this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot });
       }
       return;
     }
@@ -349,6 +356,8 @@ export class Researcher extends ResearcherBase implements Agent {
     if (isEmpty && isOnCurrentState) {
       debugLog('HTML body empty on current URL, waiting for content');
       tag('step').log('Page body is empty, waiting for content...');
+      await this.explorer.visit(url);
+      this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot ?? false });
       await this.waitUntilSettled(screenshot ?? false);
       return;
     }
@@ -357,36 +366,35 @@ export class Researcher extends ResearcherBase implements Agent {
     tag('step').log('Navigating to URL...');
 
     await this.explorer.visit(url);
-    this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot: screenshot ?? false });
+    this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot ?? false });
   }
 
   private async waitUntilSettled(screenshot: boolean): Promise<boolean> {
     const errorPageTimeout = (this.explorer.getConfig().ai?.agents?.researcher as any)?.errorPageTimeout ?? 10;
     if (errorPageTimeout <= 0) return false;
 
-    const page = this.explorer.playwrightHelper.page;
     const includeScreenshot = screenshot && this.provider.hasVision();
 
     try {
-      await page?.waitForLoadState('networkidle', { timeout: errorPageTimeout * 1000 });
+      await this.explorer.runWithBrowserRecovery('waitUntilSettled', () => this.explorer.playwrightHelper.page?.waitForLoadState('networkidle', { timeout: errorPageTimeout * 1000 }));
     } catch {}
 
     await this.explorer.annotateElements();
-    this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot });
+    this.actionResult = await this.explorer.capturePageState({ includeScreenshot });
 
     let condition = detectPageCondition(this.actionResult!);
     if (condition === 'error') {
-      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title);
+      throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
     }
     if (condition === 'ok') return true;
 
     for (let i = 0; i < 3; i++) {
       await new Promise((r) => setTimeout(r, 1000));
       await this.explorer.annotateElements();
-      this.actionResult = await this.explorer.createAction().capturePageState({ includeScreenshot });
+      this.actionResult = await this.explorer.capturePageState({ includeScreenshot });
       condition = detectPageCondition(this.actionResult!);
       if (condition === 'error') {
-        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title);
+        throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
       }
       if (condition === 'ok') return true;
     }
@@ -467,7 +475,7 @@ export class Researcher extends ResearcherBase implements Agent {
         .filter((k) => !!k)
         .join('\n\n');
 
-      tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')} for: ${this.actionResult.url}`);
+      tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')} for: ${this.actionResult.url}`);
       knowledge = `
         <hint>
         Here is relevant knowledge for this page:
@@ -762,17 +770,15 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   async navigateTo(url: string): Promise<void> {
-    const action = this.explorer.createAction();
-    await action.execute(`I.amOnPage("${url}")`);
+    await this.explorer.visit(url);
   }
 
   async cancelInUi() {
     const beforeAria = this.stateManager.getCurrentState()?.ariaSnapshot || null;
-    const action = this.explorer.createAction();
 
-    await action.execute('I.clickXY(0, 0)');
+    await this.explorer.executeAction('I.clickXY(0, 0)');
     if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null)) return;
 
-    await action.execute(`I.pressKey('Escape')`);
+    await this.explorer.executeAction(`I.pressKey('Escape')`);
   }
 }

@@ -131,6 +131,12 @@ export const fileUploadRule = dedent`
   </file_upload>
 `;
 
+export const formRequirementsRule = dedent`
+  <form_requirements>
+  Before filling a form that persists data (create/update), read each control's requirements (required, type/format, length, placeholder/aria-describedby hints) from <page_aria> and page HTML — call context() if not visible — and enter values that satisfy them. Search/filter/sort forms that only change the view do not need this.
+  </form_requirements>
+`;
+
 // in rage mode we do not protect from irreversible actions
 export const protectionRule = dedent`
   <important>
@@ -145,6 +151,52 @@ export const protectionRule = dedent`
   The test must not destroy the resource it is running against — doing so invalidates every subsequent scenario that starts on the same URL.
   Do not propose or perform delete/remove/archive actions on the entity that owns the current URL; propose such actions only on disposable children created within the scenario itself.
   </important>
+`;
+
+export const dataProtectionRules = dedent`
+  <data_protection_rules>
+  ${protectionRule}
+
+  If the user request, scenario, focus, or test instructions explicitly prohibit creating,
+  editing, updating, deleting, removing, or otherwise mutating data, do not perform those
+  actions through the UI, API preconditions, cleanup, fallback steps, or Fisherman.
+
+  Do not use Fisherman or API data preparation to bypass a no-mutation, read-only, search,
+  filter, tab, or list-inspection constraint. Use visible existing data when it is available.
+  If no suitable data exists, report the missing precondition instead of creating data.
+
+  Destructive actions are allowed only against disposable data created by the current scenario
+  or prepared for that scenario by Fisherman/API preconditions. Existing application data must
+  remain unchanged.
+  </data_protection_rules>
+`;
+
+export const capabilityGroundingRule = dedent`
+  <capability_grounding>
+  When a scenario depends on a named action, menu item, status, option, workflow, or feature,
+  that capability must be visible or explicitly confirmed in the current research/page context
+  for the same target entity type.
+
+  Do not transfer capabilities between similar entities, rows, lists, detail pages, or menus.
+  Do not replace a requested action with a synonym or related action unless the UI explicitly
+  shows that action for the target entity.
+
+  When an action is described as applying to an item, row, card, record, node, or entity,
+  the target must be grounded as that kind of data entity in the current context. Do not use
+  navigation links, filter tabs, counters, breadcrumbs, headings, toolbar controls, or other
+  page controls as the subject of row/entity actions.
+
+  When a scenario asks to open, view, inspect, or navigate to an entity detail view, success
+  requires evidence of that entity detail context. An active filter, selected tab, visible count,
+  or filtered list is not enough to prove an entity detail view opened.
+
+  Do not rewrite a scenario goal to match a similar outcome that happened accidentally. If the
+  requested entity detail/action/workflow was not achieved, report that mismatch instead of
+  passing the test for a related filter, tab, navigation, or status view.
+
+  If the required capability is not available for the target entity after reasonable discovery,
+  record the missing capability and stop instead of repeatedly trying unrelated locators.
+  </capability_grounding>
 `;
 
 export const focusedElementRule = dedent`
@@ -270,6 +322,8 @@ export const actionRule = dedent`
   If locator doesn't work, try CSS or XPath locators.
   If nothing works, use I.clickXY(x, y) as last resort.
 
+  For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.
+
 
   ### I.fillField
 
@@ -354,6 +408,19 @@ export const actionRule = dedent`
     I.selectOption('subscription', 'Monthly'); // match option by text
     I.selectOption('//form/select[@name=account]','Premium');
     I.selectOption('form select[name=account]', 'Premium');
+  </example>
+
+  ### I.checkOption / I.uncheckOption
+
+  Set a checkbox/radio to a definite state — idempotent, never toggles. Use for checkboxes instead of I.click. Run via form(), not click().
+
+  I.checkOption(<locator>, <context>)
+  I.uncheckOption(<locator>, <context>)
+
+  <example>
+    I.checkOption('Subscribe');
+    I.checkOption({ role: 'checkbox', text: 'Agree' });
+    I.uncheckOption('Subscribe', '.preferences');
   </example>
 
   ### I.attachFile

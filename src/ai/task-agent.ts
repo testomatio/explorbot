@@ -24,7 +24,7 @@ export abstract class TaskAgent {
   protected consecutiveFailures = 0;
   protected consecutiveEmptyResults = 0;
   protected recentToolCalls: any[] = [];
-  protected abstract readonly ACTION_TOOLS: string[];
+  protected readonly ACTION_TOOLS: string[] = [];
 
   private _historian: Historian | null = null;
   private _quartermaster: Quartermaster | null = null;
@@ -44,7 +44,7 @@ export abstract class TaskAgent {
       .filter((k) => !!k)
       .join('\n\n');
 
-    tag('substep').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
+    tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
     return dedent`
       <knowledge>
       Here is relevant knowledge for this page:
@@ -61,7 +61,7 @@ export abstract class TaskAgent {
 
     const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
     debugLog(`injecting experience TOC (${toc.length} files, ${totalSections} sections)`);
-    tag('substep').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections)`);
+    tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections)`);
     return renderExperienceToc(toc);
   }
 

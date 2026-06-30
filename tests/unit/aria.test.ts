@@ -28,6 +28,44 @@ describe('aria', () => {
     expect(diff).toBe(['ariaDiff:', '  added:', '    - button "Submit" [disabled]', '  removed:', '    - button "Submit"'].join('\n'));
   });
 
+  it('reports a checked checkbox as a toggle, not as added/removed', () => {
+    const diff = diffAriaSnapshots('- checkbox "Accept"', '- checkbox "Accept" [checked]');
+
+    expect(diff).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Accept": unchecked -> checked', '  added: []', '  removed: []'].join('\n'));
+  });
+
+  it('reports an unchecked checkbox as a toggle in the reverse direction', () => {
+    const diff = diffAriaSnapshots('- checkbox "Accept" [checked]', '- checkbox "Accept"');
+
+    expect(diff).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Accept": checked -> unchecked', '  added: []', '  removed: []'].join('\n'));
+  });
+
+  it('keeps the toggle line even when other changes overflow the top-10 cap', () => {
+    const before = [...Array.from({ length: 12 }, (_, i) => `- button "Old${i}"`), '- checkbox "Toggle Me"'].join('\n');
+    const after = [...Array.from({ length: 12 }, (_, i) => `- button "New${i}"`), '- checkbox "Toggle Me" [checked]'].join('\n');
+
+    const diff = diffAriaSnapshots(before, after);
+
+    expect(diff).toContain('  toggled:');
+    expect(diff).toContain('    - checkbox "Toggle Me": unchecked -> checked');
+    expect(diff).toContain('+ 2 more interactive elements');
+  });
+
+  it('only flags the toggled control, leaving an identical untouched sibling alone', () => {
+    const before = '- checkbox "Item"\n- checkbox "Item"';
+    const after = '- checkbox "Item" [checked]\n- checkbox "Item"';
+
+    const diff = diffAriaSnapshots(before, after);
+
+    expect(diff).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Item": unchecked -> checked', '  added: []', '  removed: []'].join('\n'));
+  });
+
+  it('renders expanded, pressed, and selected transitions', () => {
+    expect(diffAriaSnapshots('- button "Menu"', '- button "Menu" [expanded]')).toContain('    - button "Menu": collapsed -> expanded');
+    expect(diffAriaSnapshots('- button "Bold"', '- button "Bold" [pressed]')).toContain('    - button "Bold": unpressed -> pressed');
+    expect(diffAriaSnapshots('- option "One"', '- option "One" [selected]')).toContain('    - option "One": unselected -> selected');
+  });
+
   it('truncates added/removed sections to top 10 with overflow summary', () => {
     const before = Array.from({ length: 12 }, (_, i) => `- button "Old${i}"`).join('\n');
     const after = Array.from({ length: 12 }, (_, i) => `- button "New${i}"`).join('\n');

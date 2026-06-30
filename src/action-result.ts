@@ -52,6 +52,7 @@ export interface ToolResultMetadata {
 export class ActionResult implements ActionResultData {
   public id?: number;
   public title = '';
+  public httpStatus: number | undefined = undefined;
   public error: string | null = null;
   public timestamp: Date = new Date();
   public h1: string | undefined = undefined;
@@ -82,6 +83,7 @@ export class ActionResult implements ActionResultData {
     this.url = data.url ?? '';
     this.fullUrl = data.fullUrl;
     this.title = data.title ?? '';
+    this.httpStatus = data.httpStatus;
     this.error = data.error ?? null;
     this.browserLogs = data.browserLogs ?? [];
     this.iframeSnapshots = data.iframeSnapshots ?? [];

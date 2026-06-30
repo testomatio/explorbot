@@ -62,6 +62,6 @@ export class Historian extends HistorianBase {
 
     writeFileSync(filePath, content);
     this.savedFiles.add(filePath);
-    tag('substep').log(`Updated test file with healed steps: ${relativeToCwd(filePath)}`);
+    tag('operation').log(`Updated test file with healed steps: ${relativeToCwd(filePath)}`);
   }
 }

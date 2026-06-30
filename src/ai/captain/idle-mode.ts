@@ -4,6 +4,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ConfigParser } from '../../config.ts';
 import { Test } from '../../test-plan.ts';
+import { listRecentArtifacts, readCaptainFile } from './file-tools.ts';
 import { type Constructor, type ModeContext, resolveProjectRoot } from './mixin.ts';
 
 let cachedBashTool: Awaited<ReturnType<typeof createBashTool>> | null = null;
@@ -15,6 +16,8 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
       const config = ConfigParser.getInstance().getConfig();
       const knowledgeDir = config.dirs?.knowledge || 'knowledge';
       const experienceDir = config.dirs?.experience || 'experience';
+      const outputDir = config.dirs?.output || 'output';
+      const readableDirs = [outputDir, knowledgeDir, experienceDir];
 
       if (!cachedBashTool && projectRoot) {
         cachedBashTool = await createBashTool({
@@ -75,6 +78,55 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
             return { success: true, tests: plan.tests.length };
           },
         }),
+        project: tool({
+          description: dedent`
+            Inspect Explorbot project configuration and recent generated artifacts.
+            Use this before answering questions about setup, previous sessions, reports, saved plans, or output files.
+          `,
+          inputSchema: z.object({
+            view: z.enum(['config', 'artifacts']).optional().describe('config shows setup summary; artifacts lists recent generated files'),
+          }),
+          execute: async ({ view }) => {
+            const parser = ConfigParser.getInstance();
+            const config = parser.getConfig();
+            const outputDir = parser.getOutputDir();
+
+            if (view === 'artifacts') {
+              return {
+                success: true,
+                outputDir,
+                artifacts: listRecentArtifacts(outputDir),
+                suggestion: 'Use readFile to inspect specific reports, plans, logs, generated tests, knowledge, or experience files.',
+              };
+            }
+
+            return {
+              success: true,
+              configPath: parser.getConfigPath(),
+              baseUrl: config.playwright?.url,
+              browser: config.playwright?.browser,
+              headed: config.playwright?.show === true,
+              dirs: config.dirs,
+              agents: Object.fromEntries(Object.entries(config.ai?.agents || {}).map(([name, agentConfig]: [string, any]) => [name, { enabled: agentConfig?.enabled !== false, hasModelOverride: !!agentConfig?.model }])),
+              reporterEnabled: config.reporter?.enabled === true,
+              apiEnabled: !!config.api,
+            };
+          },
+        }),
+        readFile: tool({
+          description: dedent`
+            Read a specific Explorbot project file for analysis.
+            Use this for explicit user questions about reports, plans, logs, generated tests, knowledge, or experience files.
+            Prefer this over bash() for reading file contents after bash has found the file.
+          `,
+          inputSchema: z.object({
+            path: z.string().describe('Path inside output, knowledge, or experience directories'),
+            startLine: z.number().optional().describe('First line to read, 1-based. Negative values count from the end of the file'),
+            endLine: z.number().optional().describe('Last line to read, 1-based and inclusive. Negative values count from the end of the file'),
+            maxChars: z.number().optional().describe('Maximum characters to return, default 12000'),
+          }),
+          execute: async (input) => readCaptainFile(projectRoot, input, readableDirs),
+        }),
       };
 
       if (cachedBashTool) {
@@ -88,17 +140,31 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
       const config = ConfigParser.getInstance().getConfig();
       const knowledgeDir = config.dirs?.knowledge || 'knowledge';
       const experienceDir = config.dirs?.experience || 'experience';
+      const outputDir = config.dirs?.output || 'output';
 
       return dedent`
         <idle_capabilities>
         - Plan management: updatePlan() — replace or append tests in the current plan
-        - bash() — run shell commands for file operations
-          - READ from: ${knowledgeDir}/, ${experienceDir}/, output/
-          - WRITE to: ${knowledgeDir}/, ${experienceDir}/ only (NOT output/)
-          - Use ls to list files, cat to read small files
-          - Use head/tail for large files to avoid excessive output
-          - Use grep to search file contents
+        - readFile() — read specific report, plan, log, generated test, knowledge, or experience file content
+        - bash() — discover files and inspect file metadata
+          - READ from: ${knowledgeDir}/, ${experienceDir}/, ${outputDir}/
+          - WRITE to: ${knowledgeDir}/, ${experienceDir}/ only (NOT ${outputDir}/)
+          - Use wc -l -c file.txt to inspect size
+          - Use file file.txt to inspect type
+          - Use find . -name "*.md" to discover files
+          - Use grep -n "keyword" file.txt to find matching lines
+          - Use ls -lh to list files
         </idle_capabilities>
+
+        <file_reading>
+        Use bash() for file discovery and search. Once the needed file and line range are known,
+        use readFile() to read its contents. Do not use bash() to print file contents.
+        </file_reading>
+
+        <project_inspection>
+        Use project({ view: "config" }) before explaining Explorbot setup or suggesting config improvements.
+        Use project({ view: "artifacts" }) before answering questions about previous sessions, reports, plans, generated tests, or logs.
+        </project_inspection>
 
         <knowledge_saving>
         When user shares credentials, selectors, or important domain info during conversation,

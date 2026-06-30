@@ -9,6 +9,7 @@ import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import { type FishermanResult, createFishermanTools } from './fisherman-tools.ts';
 import type { Provider } from './provider.ts';
+import { dataProtectionRules } from './rules.ts';
 
 const MAX_ITERATIONS = 15;
 const MAX_TOOL_ROUNDTRIPS = 5;
@@ -85,7 +86,7 @@ export class Fisherman implements Agent {
       baseEndpoint: this.baseEndpoint,
     });
 
-    const conversation = this.provider.startConversation(this.buildSystemPrompt(endpointList, scopeUrl), 'fisherman');
+    const conversation = this.provider.startConversation(this.buildSystemPrompt(endpointList, Object.keys(tools), scopeUrl), 'fisherman');
     conversation.addUserText(this.buildTaskPrompt(instructions));
 
     await loop(
@@ -187,7 +188,7 @@ export class Fisherman implements Agent {
     return lines.join('\n');
   }
 
-  private buildSystemPrompt(endpointList: string, scopeUrl?: string): string {
+  private buildSystemPrompt(endpointList: string, toolNames: string[], scopeUrl?: string): string {
     const scopeBlock = scopeUrl ? `\n\nSCOPE: You are operating within ${scopeUrl}.\nAll created items must belong to this scope.` : '';
 
     return dedent`
@@ -196,6 +197,11 @@ export class Fisherman implements Agent {
       AVAILABLE ENDPOINTS:
       ${endpointList}
       ${scopeBlock}
+
+      AVAILABLE TOOLS:
+      ${toolNames.join(', ')}.
+      Use tool names exactly as listed. Do not invent aliases, combined names, or names with channel markers such as "commentary".
+      Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
 
       WORKFLOW:
       1. Call getEndpointSpec to see the request body example for the endpoint
@@ -208,6 +214,8 @@ export class Fisherman implements Agent {
       - Chain requests logically — create parent resources before children
       - If a request fails, try once more with adjusted data before reporting failure
       - Use realistic but unique data for each item (vary names, titles)
+
+      ${dataProtectionRules}
     `;
   }
 
@@ -217,7 +225,10 @@ export class Fisherman implements Agent {
 
       ${instructions}
 
-      Execute the necessary API requests to create this data. When done, call finish with the summary.
+      ${dataProtectionRules}
+
+      If data preparation is allowed by these rules, execute the necessary API requests to create this data.
+      When done, call finish with the summary. If data preparation is forbidden, call stop with the reason.
     `;
   }
 }

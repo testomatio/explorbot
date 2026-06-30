@@ -29,7 +29,7 @@ bun run test:coverage:summary
 ```
 
 #### LCOV Coverage File
-Coverage data is automatically generated in `coverage/lcov.info` when using the `--coverage` flag.
+The `--coverage` flag writes coverage data to `coverage/lcov.info`.
 
 ## Coverage Configuration
 
@@ -42,7 +42,7 @@ Coverage is configured in `bunfig.toml`:
 
 ## Current Coverage Status
 
-As of the latest test run:
+From the latest test run:
 
 | Component | Functions | Lines | Status |
 |-----------|-----------|-------|---------|
@@ -91,11 +91,11 @@ describe('ComponentName', () => {
 
 ### Best Practices
 
-1. **Happy Path Focus**: Tests focus on successful scenarios and core functionality
-2. **Test Isolation**: Each test should be independent and clean up after itself
-3. **Descriptive Names**: Test names should clearly describe what is being tested
-4. **Mock External Dependencies**: Use the MockAIProvider for AI-related tests
-5. **Temp Directories**: Use `/tmp/` paths for file system tests
+1. **Happy path focus**: Test successful scenarios and core functionality.
+2. **Test isolation**: Make each test independent and clean up after itself.
+3. **Descriptive names**: Name tests for what they check.
+4. **Mock external dependencies**: Use `MockAIProvider` for AI-related tests.
+5. **Temp directories**: Use `/tmp/` paths for file system tests.
 
 ### Mock AI Provider
 
@@ -113,7 +113,7 @@ mockAI.setResponses([
 
 ## CI/CD Integration
 
-Coverage reports can be integrated with CI/CD pipelines:
+Generate coverage reports for your CI pipeline:
 
 ```bash
 # Generate coverage for CI
@@ -123,4 +123,4 @@ bun test tests/unit --coverage --coverage-reporter=lcov
 bun test tests/unit --coverage --coverage-reporter=text
 ```
 
-The LCOV file (`coverage/lcov.info`) can be uploaded to coverage services like Codecov or Coveralls.
+Upload the LCOV file (`coverage/lcov.info`) to a coverage service like Codecov or Coveralls.

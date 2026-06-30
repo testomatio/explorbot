@@ -1,9 +1,9 @@
 # Agent Hooks
 
-Hooks allow you to execute custom code before or after specific agents run. They provide fine-grained control over page preparation and cleanup on a per-agent basis.
+Hooks run custom code before or after a specific agent. Use them to prepare and clean up the page per agent.
 
 > [!NOTE]
-> For simple page automation (waiting, clicking cookie banners), prefer using [Knowledge Files](./knowledge.md) with `wait`, `waitForElement`, or `code` fields. Hooks are best when you need different behavior for different agents.
+> For simple page automation such as waiting or clicking cookie banners, use [Knowledge Files](./knowledge.md) with the `wait`, `waitForElement`, or `code` fields. Reach for hooks when you need different behavior for different agents.
 
 ## When to Use Hooks vs Knowledge
 
@@ -49,7 +49,7 @@ export default {
 
 ### Playwright Hooks
 
-Direct access to Playwright page object:
+Get direct access to the Playwright page object:
 
 ```javascript
 beforeHook: {
@@ -63,7 +63,7 @@ beforeHook: {
 
 ### CodeceptJS Hooks
 
-Use familiar CodeceptJS `I` actor:
+Use the CodeceptJS `I` actor:
 
 ```javascript
 beforeHook: {
@@ -77,7 +77,7 @@ beforeHook: {
 
 ## URL Pattern Matching
 
-Apply different hooks based on URL patterns:
+Run different hooks for different URL patterns:
 
 ```javascript
 researcher: {
@@ -199,7 +199,7 @@ tester: {
 
 ## Error Handling
 
-Hook errors are logged but don't stop agent execution:
+A hook error is logged but does not stop the agent:
 
 ```javascript
 beforeHook: {
@@ -232,6 +232,6 @@ beforeHook: {
 
 ## See Also
 
-- [Knowledge Files](./knowledge.md) - Page-level automation with `wait`, `waitForElement`, `code`
-- [Configuration](./configuration.md) - Full configuration reference
-- [Agents](./agents.md) - Agent descriptions and workflows
+- [Knowledge Files](./knowledge.md) — page-level automation with `wait`, `waitForElement`, `code`
+- [Configuration](../reference/configuration.md) — full configuration reference
+- [Agents](../reference/agents.md) — agent descriptions and workflows

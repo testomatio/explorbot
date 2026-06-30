@@ -1,8 +1,8 @@
 # Configuration
 
-Explorbot uses a configuration file to customize its behavior. Create `explorbot.config.js` or `explorbot.config.ts` in your project root.
+Explorbot reads its settings from `explorbot.config.js` or `explorbot.config.ts` in your project root.
 
-## Quick Start
+## Quick start
 
 ```javascript
 import { createGroq } from '@ai-sdk/groq';
@@ -21,11 +21,11 @@ export default {
 };
 ```
 
-For detailed AI provider setup (OpenAI, Anthropic, Groq, Cerebras, Google, Azure), see [AI Providers](./providers.md).
+To set up a provider — OpenAI, Anthropic, Groq, Cerebras, Google, or Azure — see [AI providers](./providers.md).
 
 ## Rules
 
-Rules are markdown files that customize how agents behave. They live in the `rules/` directory, organized by agent name:
+Rules are markdown files that change how an agent behaves. They live in `rules/`, one folder per agent:
 
 ```
 rules/
@@ -42,9 +42,9 @@ rules/
       curious.md
 ```
 
-Each rule file is plain markdown — its content is appended to the agent's prompt.
+Each rule file is plain markdown. Its content is appended to the agent's prompt.
 
-### Configuring Rules
+### Configuring rules
 
 Add a `rules` array to any agent's config. Each entry is either a filename (loads for all URLs) or an object mapping a URL pattern to a filename:
 
@@ -72,21 +72,21 @@ ai: {
 }
 ```
 
-URL patterns work the same as [knowledge files](./knowledge.md#url-patterns): `*`, `/exact`, `/path/*`, `^regex$`, glob patterns.
+URL patterns work the same as [knowledge files](../guides/knowledge.md#url-patterns): `*`, `/exact`, `/path/*`, `^regex$`, and glob patterns.
 
-### Planning Styles
+### Planning styles
 
-The Planner and Chief agents cycle through **styles** — different testing approaches applied on each planning iteration. Built-in styles include `normal`, `psycho` (stress-testing), and `curious` (coverage gaps).
+The Planner and Chief agents cycle through styles — different testing approaches applied on each planning round. Built-in styles are `normal`, `psycho` (stress-testing), and `curious` (coverage gaps).
 
-To customize styles, extract the built-in ones and edit them:
+To change a style, extract the built-in ones and edit them:
 
 ```bash
-explorbot extract-rules planner
+npx explorbot extract-rules planner
 ```
 
-This copies the planner's built-in rules — including the `styles/` subdirectory — to `rules/planner/`. Edit them freely; Explorbot loads from your `rules/` directory first, falling back to built-in styles.
+This copies the planner's built-in rules, including the `styles/` folder, to `rules/planner/`. Edit them freely. Explorbot loads your `rules/` directory first and falls back to the built-in styles.
 
-Override which styles to use and their order in config:
+Set which styles to use, and their order, in config:
 
 ```javascript
 ai: {
@@ -98,7 +98,7 @@ ai: {
 }
 ```
 
-### Rules vs Knowledge vs systemPrompt
+### Rules vs knowledge vs systemPrompt
 
 | Mechanism | Purpose | URL-aware | File-based |
 |-----------|---------|-----------|------------|
@@ -106,9 +106,9 @@ ai: {
 | **Knowledge** | App domain info (credentials, data) | Yes | Yes (`knowledge/`) |
 | **systemPrompt** | Quick inline instructions | No | No (in config) |
 
-Rules and `systemPrompt` can be used together — rules from files load first, then `systemPrompt` is appended.
+Rules and `systemPrompt` work together: rules from files load first, then `systemPrompt` is appended.
 
-## Tips & Tricks
+## Tips
 
 ### Handle slow pages
 
@@ -131,7 +131,7 @@ ai: {
 }
 ```
 
-### Run in Docker/CI
+### Run in Docker or CI
 
 ```javascript
 playwright: {
@@ -144,7 +144,7 @@ playwright: {
 }
 ```
 
-### Enable observability with Langfuse
+### Trace AI calls with Langfuse
 
 ```javascript
 ai: {
@@ -156,13 +156,13 @@ ai: {
 }
 ```
 
-See [Observability](./observability.md) for details.
+See [Observability](../contributing/observability.md) for details.
 
-## Agent Configuration
+## Agent configuration
 
-Each agent can be individually configured with its own model and custom system prompt.
+Each agent takes its own model and system prompt.
 
-### Available Agents
+### Available agents
 
 | Agent | Purpose |
 |-------|---------|
@@ -177,7 +177,7 @@ Each agent can be individually configured with its own model and custom system p
 | `chief` | API test planning |
 | `curler` | API test execution |
 
-### Agent Options
+### Agent options
 
 ```javascript
 agents: {
@@ -201,11 +201,11 @@ agents: {
 | `beforeHook` | `Hook \| HookPatternMap` | Code to run before agent execution |
 | `afterHook` | `Hook \| HookPatternMap` | Code to run after agent execution |
 
-See [Agent Hooks](./hooks.md) for detailed hook configuration.
+See [Agent hooks](../guides/hooks.md) for hook configuration.
 
-### Researcher Agent Options
+### Researcher agent options
 
-The researcher agent supports all standard agent options plus additional options for controlling interactive exploration:
+The Researcher takes all standard agent options plus options that control interactive exploration:
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -226,9 +226,9 @@ ai: {
 }
 ```
 
-See [Researcher Agent](./researcher.md) for detailed documentation and examples.
+See [Researcher agent](./researcher.md) for full documentation and examples.
 
-### Historian Agent Options
+### Historian agent options
 
 | Option | Type | Description |
 |--------|------|-------------|
@@ -244,13 +244,13 @@ ai: {
 }
 ```
 
-With `'playwright'`, runs are saved as `@playwright/test` `.spec.ts` files using the actual Playwright calls captured at runtime. See [Automated Tests](./automated-tests.md).
+With `'playwright'`, runs are saved as `@playwright/test` `.spec.ts` files using the actual Playwright calls captured at runtime. See [Automated tests](../guides/automated-tests.md).
 
-See [AI Providers](./providers.md) for recommended models and provider setup.
+See [AI providers](./providers.md) for recommended models and provider setup.
 
-## Playwright Settings
+## Playwright settings
 
-### Browser Selection
+### Browser selection
 
 ```javascript
 playwright: {
@@ -260,7 +260,7 @@ playwright: {
 }
 ```
 
-### Viewport and Window Size
+### Viewport and window size
 
 ```javascript
 playwright: {
@@ -272,9 +272,7 @@ playwright: {
 }
 ```
 
-### Browser Context Options
-
-Example:
+### Browser context options
 
 ```javascript
 playwright: {
@@ -288,11 +286,24 @@ playwright: {
 }
 ```
 
-The browser session (cookies, localStorage) is restored automatically when you launch with `--session` — see [`commands.md`](./commands.md#--session).
+The browser session (cookies, localStorage) is restored when you launch with `--session` — see [commands.md](../guides/commands.md#--session).
+
+### Loading Indicators
+
+For SPAs, `domcontentloaded` can happen before the application finishes loading page data. Use `spinnerSelectors` to tell Explorbot which loading indicators should be treated as part of page readiness:
+
+```javascript
+playwright: {
+  waitForTimeout: 5000,
+  spinnerSelectors: ['.spinner', '.loading', '[aria-busy="true"]'],
+}
+```
+
+Explorbot waits for `domcontentloaded`, then races Playwright `networkidle`, visible configured spinners becoming hidden, or timeout before capturing the page state. If no configured spinner is visible on a page, the spinner rule is ignored for that page.
 
 ## Directory Structure
 
-Default directory layout:
+The default layout:
 
 ```
 your-project/
@@ -312,7 +323,7 @@ your-project/
     └── sessions/
 ```
 
-Customize paths:
+Change the paths:
 
 ```javascript
 dirs: {
@@ -322,9 +333,9 @@ dirs: {
 }
 ```
 
-## Environment Variables
+## Environment variables
 
-Store sensitive values in environment variables:
+Keep secrets in environment variables:
 
 ```bash
 # .env
@@ -333,7 +344,7 @@ LANGFUSE_PUBLIC_KEY=pk-...
 LANGFUSE_SECRET_KEY=sk-...
 ```
 
-Reference in config:
+Reference them in config:
 
 ```javascript
 const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
@@ -350,9 +361,9 @@ export default {
 };
 ```
 
-## Configuration File Locations
+## Config file locations
 
-Explorbot searches for config files in this order:
+Explorbot looks for a config file in this order:
 
 1. `explorbot.config.js`
 2. `explorbot.config.mjs`
@@ -364,13 +375,13 @@ Explorbot searches for config files in this order:
 8. `src/config/explorbot.config.mjs`
 9. `src/config/explorbot.config.ts`
 
-Or specify a custom path:
+Or pass a custom path:
 
 ```bash
-explorbot explore --config ./custom/path/config.js
+npx explorbot explore --config ./custom/path/config.js
 ```
 
-## Full Configuration Reference
+## Full configuration reference
 
 ```javascript
 export default {
@@ -397,6 +408,7 @@ export default {
     timeout: 30000,                // Default timeout (ms)
     waitForNavigation: 'load',     // 'load' | 'domcontentloaded' | 'networkidle'
     waitForTimeout: 1000,          // Wait after navigation (ms)
+    spinnerSelectors: [],          // Loading indicators to wait for before page capture
     ignoreHTTPSErrors: false,      // Ignore HTTPS certificate errors
     userAgent: 'custom-agent',     // Custom user agent string
     viewport: {
@@ -486,13 +498,13 @@ export default {
 };
 ```
 
-## See Also
+## See also
 
-- [API Testing](./api-testing.md) - API testing setup and commands
-- [AI Providers](./providers.md) - Provider setup examples
-- [Agents](./agents.md) - Agent descriptions and workflows
-- [Agent Hooks](./hooks.md) - Custom code before/after agent execution
-- [Researcher Agent](./researcher.md) - Researcher configuration and usage
-- [Planner Agent](./planner.md) - Planning styles and customization
-- [Knowledge Files](./knowledge.md) - Domain knowledge format
-- [Observability](./observability.md) - Langfuse integration
+- [API testing](../guides/api-testing.md) — API testing setup and commands
+- [AI providers](./providers.md) — provider setup examples
+- [Agents](./agents.md) — agent descriptions and workflows
+- [Agent hooks](../guides/hooks.md) — custom code before and after an agent runs
+- [Researcher agent](./researcher.md) — Researcher configuration and usage
+- [Planner agent](../guides/planner.md) — planning styles and customization
+- [Knowledge files](../guides/knowledge.md) — domain knowledge format
+- [Observability](../contributing/observability.md) — Langfuse integration
