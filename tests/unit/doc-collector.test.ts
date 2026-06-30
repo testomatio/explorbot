@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { z } from 'zod';
 import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts';
 import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
 import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
@@ -233,9 +234,102 @@ describe('doc-collector interactive candidate selection', () => {
 
     expect(pickDocActionCandidates(research)).toEqual([]);
   });
+
+  it('keeps content control candidates inside sticky header containers', () => {
+    const research = `
+## Content Filters Controls
+
+> Container: '.sticky-header .first'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Automated' | link | { role: 'link', text: 'Automated' } | 'a.filter-tab' |
+| 'Unfinished' | link | { role: 'link', text: 'Unfinished' } | 'a.filter-tab' |
+
+## Control Create New Branch
+
+> Container: '.flex-none.black'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Create New Branch' | button | { role: 'button', text: 'Create New Branch' } | 'button.primary-btn' |
+`;
+
+    expect(pickDocActionCandidates(research).map((candidate) => candidate.label)).toEqual(['Automated', 'Unfinished', 'Create New Branch']);
+  });
+
+  it('keeps navigation and destructive actions out of interactive candidates', () => {
+    const research = `
+## Navigation
+
+> Container: '.mainnav-menu'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Branches' | link | { role: 'link', text: 'Branches' } | 'a[href="/branches"]' |
+
+## Content
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'View Branch' | link | { role: 'link', text: 'View Branch' } | 'a.branch' |
+| 'Delete Branch' | button | { role: 'button', text: 'Delete Branch' } | 'button.delete' |
+| 'Archive Branch' | button | { role: 'button', text: 'Archive Branch' } | 'button.archive' |
+`;
+
+    expect(pickDocActionCandidates(research)).toEqual([{ label: 'View Branch', role: 'link', section: 'Content' }]);
+  });
+
+  it('allows candidate limits to be configured', () => {
+    const research = `
+## Content
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Item A' | link | { role: 'link', text: 'Item A' } | 'a.item-a' |
+| 'Item B' | link | { role: 'link', text: 'Item B' } | 'a.item-b' |
+| 'Item C' | link | { role: 'link', text: 'Item C' } | 'a.item-c' |
+| 'Item D' | link | { role: 'link', text: 'Item D' } | 'a.item-d' |
+`;
+
+    expect(pickDocActionCandidates(research, { docs: { maxPrimaryCandidates: 4 } })).toHaveLength(4);
+  });
 });
 
 describe('documentarian fallback', () => {
+  it('uses strict-compatible schema for interaction element metadata', async () => {
+    const provider = {
+      async generateObject(_messages: Array<{ role: string; content: string }>, schema: any) {
+        const jsonSchema = z.toJSONSchema(schema) as any;
+        const interaction = jsonSchema.properties.interactions.anyOf[0].items;
+        const element = interaction.properties.element.anyOf[0];
+
+        expect(interaction.required).toContain('element');
+        expect(element.required).toEqual(['role', 'name', 'section', 'container', 'locator']);
+
+        return {
+          object: {
+            summary: 'Static page',
+            can: [],
+            might: [],
+            interactions: null,
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, {});
+    const result = await documentarian.document(
+      {
+        url: '/test',
+        title: 'Test',
+      },
+      '## Content\nStatic research'
+    );
+
+    expect(result.interactions).toBeUndefined();
+  });
+
   it('retries with sanitized research after JSON generation failure', async () => {
     const calls: string[] = [];
     const provider = {

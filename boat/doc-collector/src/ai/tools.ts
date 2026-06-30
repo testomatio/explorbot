@@ -1,6 +1,7 @@
 import { type ResearchElement, parseResearchSections } from '../../../../src/ai/researcher/parser.ts';
 import type Explorer from '../../../../src/explorer.ts';
 import type { WebPageState } from '../../../../src/state-manager.ts';
+import type { DocbotConfig } from '../config.ts';
 
 export interface DocStateTransition {
   action: string;
@@ -34,23 +35,25 @@ interface InteractionChanges {
   removedElements: number;
 }
 
-const MAX_PRIMARY_CANDIDATES = 3;
-const MAX_INTERACTIONS = 5;
+const DEFAULT_MAX_PRIMARY_CANDIDATES = 3;
+const DEFAULT_MAX_INTERACTIONS = 5;
 const MAX_LINKS = 15;
 const DEFAULT_WAIT_MS = 700;
 const TAB_WAIT_MS = 500;
+const DEFAULT_DENIED_ACTION_LABELS = ['delete', 'remove', 'destroy', 'archive', 'discard', 'logout', 'sign out', 'signout', 'sign_out', 'erase', 'drop'];
 
-export async function collectDocInteractions(explorer: Explorer, state: WebPageState, research: string): Promise<DocStateTransition[]> {
+export async function collectDocInteractions(explorer: Explorer, state: WebPageState, research: string, config: DocbotConfig = {}): Promise<DocStateTransition[]> {
   const sections = parseResearchSections(research);
   const transitions: DocStateTransition[] = [];
+  const maxInteractions = getPositiveConfigNumber(config.docs?.maxInteractions, DEFAULT_MAX_INTERACTIONS);
   const tabGroup = findTabGroup(sections);
 
   if (tabGroup) {
-    transitions.push(...(await exploreTabGroup(explorer, tabGroup, state.url)));
+    transitions.push(...(await exploreTabGroup(explorer, tabGroup, state.url, maxInteractions)));
   }
 
-  for (const candidate of findActionCandidates(sections)) {
-    if (transitions.length >= MAX_INTERACTIONS) {
+  for (const candidate of findActionCandidates(sections, config)) {
+    if (transitions.length >= maxInteractions) {
       break;
     }
 
@@ -65,18 +68,22 @@ export async function collectDocInteractions(explorer: Explorer, state: WebPageS
   return transitions;
 }
 
-export function pickDocActionCandidates(research: string): Array<{ label: string; role: InteractionCandidate['role']; section: string }> {
-  return findActionCandidates(parseResearchSections(research)).map((candidate) => ({
+export function pickDocActionCandidates(research: string, config: DocbotConfig = {}): Array<{ label: string; role: InteractionCandidate['role']; section: string }> {
+  return findActionCandidates(parseResearchSections(research), config).map((candidate) => ({
     label: candidate.element.name.trim(),
     role: candidate.role,
     section: candidate.sectionName,
   }));
 }
 
-async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: ResearchElement[]; container?: string; sectionName: string }, restoreUrl: string): Promise<DocStateTransition[]> {
+async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: ResearchElement[]; container?: string; sectionName: string }, restoreUrl: string, maxInteractions: number): Promise<DocStateTransition[]> {
   const transitions: DocStateTransition[] = [];
 
   for (const element of tabGroup.elements) {
+    if (transitions.length >= maxInteractions) {
+      break;
+    }
+
     const transition = await executeInteraction(
       explorer,
       {
@@ -241,23 +248,21 @@ function findTabGroup(sections: ReturnType<typeof parseResearchSections>): { ele
   return null;
 }
 
-function findActionCandidates(sections: ReturnType<typeof parseResearchSections>): InteractionCandidate[] {
+function findActionCandidates(sections: ReturnType<typeof parseResearchSections>, config: DocbotConfig): InteractionCandidate[] {
   const candidates: InteractionCandidate[] = [];
   const seen = new Set<string>();
   const navigationLabels = collectNavigationLabels(sections);
+  const maxPrimaryCandidates = getPositiveConfigNumber(config.docs?.maxPrimaryCandidates, DEFAULT_MAX_PRIMARY_CANDIDATES);
 
   for (const section of sections) {
     const sectionName = section.name.toLowerCase();
     const container = section.containerCss?.toLowerCase() || '';
-    if (isOverlaySection(sectionName, container)) {
-      continue;
-    }
-    if (isNavigationSection(sectionName)) {
+    if (isIgnoredSection(sectionName, container)) {
       continue;
     }
 
     for (const element of section.elements) {
-      const candidate = toInteractionCandidate(element, section.name, section.containerCss, navigationLabels);
+      const candidate = toInteractionCandidate(element, section.name, section.containerCss, navigationLabels, config);
       if (!candidate) {
         continue;
       }
@@ -272,10 +277,10 @@ function findActionCandidates(sections: ReturnType<typeof parseResearchSections>
     }
   }
 
-  return candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a)).slice(0, MAX_PRIMARY_CANDIDATES);
+  return candidates.sort((a, b) => scoreCandidate(b) - scoreCandidate(a)).slice(0, maxPrimaryCandidates);
 }
 
-function toInteractionCandidate(element: ResearchElement, sectionName: string, container: string | null | undefined, navigationLabels: Set<string>): InteractionCandidate | null {
+function toInteractionCandidate(element: ResearchElement, sectionName: string, container: string | null | undefined, navigationLabels: Set<string>, config: DocbotConfig): InteractionCandidate | null {
   const role = getElementRole(element);
   if (role !== 'link' && role !== 'button' && role !== 'tab') {
     return null;
@@ -283,7 +288,10 @@ function toInteractionCandidate(element: ResearchElement, sectionName: string, c
   if (!hasUsableName(element)) {
     return null;
   }
-  if (isShellLocator(element.css) || isShellLocator(element.xpath) || isShellLocator(container)) {
+  if (isPageShellContainer(element.css) || isPageShellContainer(element.xpath)) {
+    return null;
+  }
+  if (isDestructiveAction(element, config)) {
     return null;
   }
   if (role === 'link' && navigationLabels.has(normalizeCandidateLabel(element.name))) {
@@ -454,6 +462,20 @@ function isNavigationSection(sectionName: string): boolean {
   return /(navigation|menu|header|footer|breadcrumb)/i.test(sectionName);
 }
 
+function isContentControlSection(sectionName: string): boolean {
+  return /(content|control|filter|toolbar|action|list|data)/i.test(sectionName);
+}
+
+function isIgnoredSection(sectionName: string, container: string): boolean {
+  if (isOverlaySection(sectionName, container)) {
+    return true;
+  }
+  if (isContentControlSection(sectionName)) {
+    return false;
+  }
+  return isNavigationSection(sectionName) || isPageShellContainer(container);
+}
+
 function isOverlaySection(sectionName: string, container: string): boolean {
   return /(overlay|modal|popup|dialog)/i.test(sectionName) || /(overlay|modal|popup|dialog)/i.test(container);
 }
@@ -483,12 +505,12 @@ function scoreCandidate(candidate: InteractionCandidate): number {
   return score;
 }
 
-function isShellLocator(locator: string | null | undefined): boolean {
+function isPageShellContainer(locator: string | null | undefined): boolean {
   if (!locator) {
     return false;
   }
 
-  return /(nav\[role="navigation"\]|header|menu|breadcrumb|footer)/i.test(locator);
+  return /(^|[\s>+~,.#\[])(nav|navigation|mainnav|header|menu|breadcrumb|footer)([\s>+~,.#\]_-]|$)/i.test(locator);
 }
 
 function collectNavigationLabels(sections: ReturnType<typeof parseResearchSections>): Set<string> {
@@ -513,6 +535,24 @@ function collectNavigationLabels(sections: ReturnType<typeof parseResearchSectio
 
 function normalizeCandidateLabel(label: string): string {
   return label.trim().toLowerCase();
+}
+
+function isDestructiveAction(element: ResearchElement, config: DocbotConfig): boolean {
+  const label = normalizeCandidateLabel(element.name);
+  const deniedLabels = config.docs?.deniedActionLabels || DEFAULT_DENIED_ACTION_LABELS;
+  if (deniedLabels.some((denied) => label.includes(normalizeCandidateLabel(denied)))) {
+    return true;
+  }
+
+  const locator = `${element.css || ''} ${element.xpath || ''}`.toLowerCase();
+  return deniedLabels.some((denied) => locator.includes(normalizeCandidateLabel(denied)));
+}
+
+function getPositiveConfigNumber(value: number | undefined, fallback: number): number {
+  if (!value || value <= 0) {
+    return fallback;
+  }
+  return value;
 }
 
 function limitInlineText(text: string, maxLength: number): string {

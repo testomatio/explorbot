@@ -45,7 +45,7 @@ class Documentarian {
     try {
       tag('info').log('Starting interactive exploration...');
 
-      const deterministicInteractions = await collectDocInteractions(this.explorer!, state, research);
+      const deterministicInteractions = await collectDocInteractions(this.explorer!, state, research, this.config);
       const meaningfulInteractions = this.getMeaningfulInteractions(deterministicInteractions);
       if (meaningfulInteractions.length > 0) {
         tag('success').log(`Collected ${meaningfulInteractions.length} deterministic interactions`);
@@ -240,10 +240,15 @@ class Documentarian {
   }
 
   private normalizeDocumentation(documentation: PageDocumentation, _state: WebPageState, _research: string): PageDocumentation {
-    const qualityNotes = this.evaluateDocumentationQuality(documentation);
+    const normalized = { ...documentation };
+    if (!normalized.interactions) {
+      normalized.interactions = undefined;
+    }
+
+    const qualityNotes = this.evaluateDocumentationQuality(normalized);
 
     return {
-      ...documentation,
+      ...normalized,
       qualityNotes,
     };
   }
@@ -321,36 +326,55 @@ const stateTransitionSchema = z.object({
   action: z.string(),
   before: z.string(),
   after: z.string(),
-  targetUrl: z.string().optional(),
-  discoveredUrls: z.array(z.string()).optional(),
-  newCapabilities: z.array(z.string()).optional(),
+  targetUrl: z.string().nullable(),
+  discoveredUrls: z.array(z.string()).nullable(),
+  newCapabilities: z.array(z.string()).nullable(),
   element: z
     .object({
       role: z.string(),
       name: z.string(),
       section: z.string(),
-      container: z.string().optional(),
-      locator: z.string().optional(),
+      container: z.string().nullable(),
+      locator: z.string().nullable(),
     })
-    .optional(),
+    .nullable(),
   changes: z
     .object({
       urlChanged: z.boolean(),
       newElements: z.number(),
       removedElements: z.number(),
     })
-    .optional(),
+    .nullable(),
 });
 
 const pageDocumentationSchema = z.object({
   summary: z.string(),
   can: z.array(capabilitySchema),
   might: z.array(capabilitySchema),
-  interactions: z.array(stateTransitionSchema).optional(),
+  interactions: z.array(stateTransitionSchema).nullable(),
 });
 
-type StateTransition = z.infer<typeof stateTransitionSchema>;
-type PageDocumentation = z.infer<typeof pageDocumentationSchema> & {
+type StateTransition = {
+  action: string;
+  before: string;
+  after: string;
+  targetUrl?: string | null;
+  discoveredUrls?: string[] | null;
+  newCapabilities?: string[] | null;
+  element?: {
+    role: string;
+    name: string;
+    section: string;
+    container?: string | null;
+    locator?: string | null;
+  } | null;
+  changes?: {
+    urlChanged: boolean;
+    newElements: number;
+    removedElements: number;
+  } | null;
+};
+type PageDocumentation = Omit<z.infer<typeof pageDocumentationSchema>, 'interactions'> & {
   interactions?: StateTransition[];
   qualityNotes?: string[];
 };
