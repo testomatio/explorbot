@@ -21,6 +21,7 @@ describe('extractElementData', () => {
     expect(data?.allAttrs['data-explorbot-context']).toBe('Toggle - off');
     expect(data?.allAttrs['data-explorbot-area']).toContain('main');
     expect(data?.allAttrs['data-explorbot-area']).toContain('role:switch');
+    expect(data?.allAttrs['data-explorbot-hit']).toBe('target');
     expect(data?.allAttrs['data-explorbot-variant']).toContain('primary-btn');
     expect(data?.allAttrs['data-explorbot-variant']).toContain('btn-md');
     expect(data?.outerHTML).toContain('aria-checked="false"');
@@ -48,11 +49,35 @@ describe('extractElementData', () => {
     expect(data?.allAttrs['data-explorbot-variant']).toContain('code-editor');
     expect(data?.allAttrs['data-explorbot-frame-source-index']).toBe('1');
   });
+
+  it('marks visible elements covered by another UI layer', () => {
+    const dom = new JSDOM(`
+      <main>
+        <input aria-label="Suite name" />
+        <aside role="dialog" aria-label="Navigation drawer"></aside>
+      </main>
+    `);
+    useDom(dom);
+    const input = dom.window.document.querySelector('input')!;
+    const aside = dom.window.document.querySelector('aside')!;
+    mockVisibleBox(input);
+    mockVisibleBox(aside);
+    dom.window.document.elementFromPoint = () => aside;
+
+    const data = extractElementData(input);
+
+    expect(data?.allAttrs['data-explorbot-hit']).toBe('covered');
+    expect(data?.allAttrs['data-explorbot-covered-by']).toContain('aside');
+    expect(data?.allAttrs['data-explorbot-covered-by']).toContain('role="dialog"');
+  });
 });
 
 function useDom(dom: JSDOM) {
   (globalThis as any).window = dom.window;
   (globalThis as any).document = dom.window.document;
+  Object.defineProperty(dom.window, 'innerWidth', { configurable: true, value: 1280 });
+  Object.defineProperty(dom.window, 'innerHeight', { configurable: true, value: 720 });
+  dom.window.document.elementFromPoint = () => null;
 }
 
 function mockVisibleBox(element: Element) {
@@ -68,4 +93,10 @@ function mockVisibleBox(element: Element) {
     toJSON: () => ({}),
   });
   (element as HTMLElement).style.position = 'fixed';
+  const originalElementFromPoint = element.ownerDocument.elementFromPoint;
+  element.ownerDocument.elementFromPoint = (x: number, y: number) => {
+    const rect = element.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return element;
+    return originalElementFromPoint.call(element.ownerDocument, x, y);
+  };
 }

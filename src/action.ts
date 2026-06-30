@@ -20,7 +20,7 @@ import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { extractCodeBlocks } from './utils/code-extractor.js';
-import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
+import { captureDomHtmlSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { waitForPageReadiness } from './utils/page-readiness.ts';
 import { safeFilename } from './utils/strings.ts';
@@ -468,6 +468,8 @@ function errorToString(error: any): string {
 }
 
 async function captureHtml(page: any, frame: any, actor: any): Promise<string> {
+  if (frame?.evaluate) return frame.evaluate(captureDomHtmlSnapshot);
+  if (page?.evaluate) return page.evaluate(captureDomHtmlSnapshot);
   if (frame?.content) return frame.content();
   if (page?.content) return page.content();
   if (actor?.grabSource) return actor.grabSource();

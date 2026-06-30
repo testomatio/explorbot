@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
-import { extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
+import { captureDomHtmlSnapshot, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
 
 // Load test HTML files
 const githubHtml = readFileSync(join(process.cwd(), 'test-data/github.html'), 'utf8');
@@ -13,6 +14,49 @@ const testomatHtml = readFileSync(join(process.cwd(), 'test-data/testomat.html')
 const checkoutHtml = readFileSync(join(process.cwd(), 'test-data/checkout.html'), 'utf8');
 
 describe('HTML Parsing Library', () => {
+  describe('captureDomHtmlSnapshot', () => {
+    it('serializes live form control state', () => {
+      const dom = new JSDOM(`
+        <html>
+          <body>
+            <input aria-label="Suite name" />
+            <textarea aria-label="Description"></textarea>
+            <input type="checkbox" aria-label="Enabled" />
+          </body>
+        </html>
+      `);
+      const previousWindow = globalThis.window;
+      const previousDocument = globalThis.document;
+      const previousInput = globalThis.HTMLInputElement;
+      const previousTextArea = globalThis.HTMLTextAreaElement;
+      const previousSelect = globalThis.HTMLSelectElement;
+      (globalThis as any).window = dom.window;
+      (globalThis as any).document = dom.window.document;
+      (globalThis as any).HTMLInputElement = dom.window.HTMLInputElement;
+      (globalThis as any).HTMLTextAreaElement = dom.window.HTMLTextAreaElement;
+      (globalThis as any).HTMLSelectElement = dom.window.HTMLSelectElement;
+
+      const input = dom.window.document.querySelector('input[aria-label="Suite name"]') as HTMLInputElement;
+      const textarea = dom.window.document.querySelector('textarea') as HTMLTextAreaElement;
+      const checkbox = dom.window.document.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      input.value = 'Managerial Objective';
+      textarea.value = 'Runtime-only text';
+      checkbox.checked = true;
+
+      const snapshot = captureDomHtmlSnapshot();
+
+      expect(snapshot).toContain('data-explorbot-value="Managerial Objective"');
+      expect(snapshot).toContain('data-explorbot-value="Runtime-only text"');
+      expect(snapshot).toContain('data-explorbot-checked="true"');
+
+      (globalThis as any).window = previousWindow;
+      (globalThis as any).document = previousDocument;
+      (globalThis as any).HTMLInputElement = previousInput;
+      (globalThis as any).HTMLTextAreaElement = previousTextArea;
+      (globalThis as any).HTMLSelectElement = previousSelect;
+    });
+  });
+
   describe('htmlMinimalUISnapshot', () => {
     // Ported from CodeceptJS tests
     it('should cut out all non-interactive elements from GitHub HTML', async () => {
