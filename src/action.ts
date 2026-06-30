@@ -18,14 +18,16 @@ import type { UserResolveFunction } from './explorbot.ts';
 import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
+import { isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { extractCodeBlocks } from './utils/code-extractor.js';
 import { htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
+import { waitForPageReadiness } from './utils/page-readiness.ts';
 import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
-import { isFatalBrowserError } from './utils/browser-errors.ts';
 
 const debugLog = createDebug('explorbot:action');
+const CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS = 3;
 
 class Action {
   private actor: CodeceptJS.I;
@@ -78,16 +80,21 @@ class Action {
       const timestamp = Date.now();
       const page = this.playwrightHelper.page;
       const frame = this.playwrightHelper.frame;
-      await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-      await waitForUsablePageDom(page);
+      await this.waitForPageReadiness(page);
       const grabAll = () => Promise.all([captureHtml(page, frame, this.actor), captureTitle(page, this.actor), this.captureBrowserLogs()]);
-      const [html, title, browserLogs] = await grabAll().catch(async (err: Error) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!/navigating and changing the content/i.test(msg)) throw err;
-        await page?.waitForLoadState('domcontentloaded', { timeout: 10000 })?.catch(() => {});
-        await waitForUsablePageDom(page);
-        return grabAll();
-      });
+      let html = '';
+      let title = '';
+      let browserLogs: any[] = [];
+      for (let attempt = 1; attempt <= CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS; attempt++) {
+        try {
+          [html, title, browserLogs] = await grabAll();
+          break;
+        } catch (err) {
+          if (!isNavigationTransitionError(err)) throw err;
+          if (attempt === CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS) throw err;
+          await this.waitForPageReadiness(page);
+        }
+      }
       const url = page?.url() || (await (this.actor as any).grabCurrentUrl?.());
 
       let screenshotFile: string | undefined = undefined;
@@ -442,6 +449,13 @@ class Action {
   getActionResult(): ActionResult | null {
     return this.actionResult;
   }
+
+  private async waitForPageReadiness(page: any): Promise<void> {
+    await waitForPageReadiness(page, {
+      timeout: this.config.playwright.waitForTimeout,
+      spinnerSelectors: this.config.playwright.spinnerSelectors,
+    });
+  }
 }
 
 export default Action;
@@ -451,22 +465,6 @@ function errorToString(error: any): string {
     return error.cliMessage();
   }
   return error.message || error.toString();
-}
-
-async function waitForUsablePageDom(page: any): Promise<void> {
-  if (!page?.waitForFunction) return;
-
-  await page
-    .waitForFunction(
-      () => {
-        const body = document.body;
-        if (!body) return false;
-        return body.children.length > 0 || body.textContent?.trim().length > 0;
-      },
-      undefined,
-      { timeout: 5000 }
-    )
-    .catch(() => {});
 }
 
 async function captureHtml(page: any, frame: any, actor: any): Promise<string> {
