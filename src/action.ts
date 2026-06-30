@@ -468,8 +468,11 @@ function errorToString(error: any): string {
 }
 
 async function captureHtml(page: any, frame: any, actor: any): Promise<string> {
-  if (frame?.evaluate) return frame.evaluate(captureDomHtmlSnapshot);
-  if (page?.evaluate) return page.evaluate(captureDomHtmlSnapshot);
+  for (const scope of [frame, page]) {
+    if (!scope?.evaluate) continue;
+    const html = await scope.evaluate(captureDomHtmlSnapshot).catch(() => null);
+    if (typeof html === 'string') return html;
+  }
   if (frame?.content) return frame.content();
   if (page?.content) return page.content();
   if (actor?.grabSource) return actor.grabSource();
