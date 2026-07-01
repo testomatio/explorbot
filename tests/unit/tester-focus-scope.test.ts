@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { Tester } from '../../src/ai/tester.ts';
+import { Test } from '../../src/test-plan.ts';
 
 function buildTester(): Tester {
   const explorer: any = {
     getConfig: () => ({}),
+    getStateManager: () => ({
+      getExperienceTracker: () => ({
+        getExperienceTableOfContents: () => [],
+      }),
+    }),
+    getKnowledgeTracker: () => ({
+      getRelevantKnowledge: () => [],
+    }),
     getCurrentIframeInfo: () => null,
     hasOtherTabs: () => false,
     getOtherTabsInfo: () => [],
@@ -15,6 +24,31 @@ function buildTester(): Tester {
     research: async () => '',
     researchOverlay: async () => null,
   };
+  const navigator: any = {};
+  return new Tester(explorer, provider, researcher, navigator);
+}
+
+function buildTesterWithExperience(): Tester {
+  const explorer: any = {
+    getConfig: () => ({ files: {} }),
+    getStateManager: () => ({
+      getExperienceTracker: () => ({
+        getExperienceTableOfContents: () => [
+          {
+            fileTag: 'A',
+            fileHash: 'abc123',
+            url: '/page',
+            sections: [{ index: 1, level: 2, title: 'FLOW: create item' }],
+          },
+        ],
+      }),
+    }),
+    getKnowledgeTracker: () => ({
+      getRelevantKnowledge: () => [],
+    }),
+  };
+  const provider: any = {};
+  const researcher: any = {};
   const navigator: any = {};
   return new Tester(explorer, provider, researcher, navigator);
 }
@@ -67,5 +101,21 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
 
     expect(context).toContain('<focus_scope>');
     expect(context).toContain('A dialog "New Form"');
+  });
+});
+
+describe('Tester experience context', () => {
+  it('adds only the experience table of contents to the scenario prompt', () => {
+    const tester = buildTesterWithExperience();
+    const task = new Test('create item', 'normal', 'item exists', '/page');
+    const state = buildState('- main:', '/page');
+
+    const scenarioBlock = (tester as any).buildScenarioBlock(task, state);
+
+    expect(scenarioBlock).toContain('<experience>');
+    expect(scenarioBlock).toContain('A.1 ## FLOW: create item');
+    expect(scenarioBlock).toContain('Call learnExperience({ fileTag, sectionIndex })');
+    expect(scenarioBlock).not.toContain('I.click');
+    expect(scenarioBlock).not.toContain('```');
   });
 });

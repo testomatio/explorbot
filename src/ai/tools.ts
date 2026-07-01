@@ -20,6 +20,22 @@ const debugLog = createDebug('explorbot:tools');
 
 export const CODECEPT_TOOLS = ['click', 'hover', 'pressKey', 'form'] as const;
 export const ASSERTION_TOOLS = ['verify'] as const;
+export type CodeceptToolName = (typeof CODECEPT_TOOLS)[number];
+
+const CODECEPT_FORM_COMMANDS: readonly string[] = ['I.fillField', 'I.type', 'I.selectOption', 'I.attachFile', 'I.checkOption', 'I.uncheckOption'];
+
+function getCodeceptToolName(commandName: string): CodeceptToolName | null {
+  const toolName = CODECEPT_TOOLS.find((name) => commandName === `I.${name}`);
+  if (toolName) return toolName;
+  if (CODECEPT_FORM_COMMANDS.includes(commandName)) return 'form';
+  return null;
+}
+
+export function getCodeceptToolNameFromCode(code: string): CodeceptToolName | null {
+  const parenIndex = code.trim().indexOf('(');
+  if (parenIndex < 1) return null;
+  return getCodeceptToolName(code.trim().slice(0, parenIndex));
+}
 
 export function createCodeceptJSTools(explorer: Explorer, task: Task) {
   const stateManager = explorer.getStateManager();

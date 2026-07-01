@@ -4,12 +4,12 @@ import { ActionResult } from '../../action-result.ts';
 import { ExperienceTracker, type SessionStep } from '../../experience-tracker.ts';
 import type { Reporter, ReporterStep } from '../../reporter.ts';
 import type { StateManager } from '../../state-manager.ts';
-import { type Task, Test } from '../../test-plan.ts';
+import { type StepData, type Task, Test } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
 import { extractStatePath } from '../../utils/url-matcher.ts';
 import type { Conversation, ToolExecution } from '../conversation.ts';
 import type { Provider } from '../provider.ts';
-import { CODECEPT_TOOLS } from '../tools.ts';
+import { CODECEPT_TOOLS, getCodeceptToolNameFromCode } from '../tools.ts';
 import { type Constructor, debugLog } from './mixin.ts';
 import { getExecutionLabel, isNonReusableCode, stripComments } from './utils.ts';
 
@@ -38,12 +38,18 @@ export function WithExperience<T extends Constructor>(Base: T) {
         task.generatedCode = this.isPlaywrightFramework() ? await this.toPlaywrightCode(conversation, task.description) : this.toCode(conversation, task.description);
       }
 
-      const steps = await this.extractSteps(toolExecutions);
+      const conversationSteps = await this.extractSteps(toolExecutions);
+      const taskSteps = this.extractPassedCodeceptSteps(task);
+      const steps = this.mergeUniqueStepsByCode(conversationSteps, taskSteps);
 
       const skipExperience = result === 'failed' || (task instanceof Test && (task.hasFailed || task.isSkipped));
       if (!skipExperience) {
+        const hasExistingFlow = this.hasRelevantFlowExperience(initialState);
         await this.detectRetryPatterns(toolExecutions, initialState);
-        const body = await this.curateFlow(steps, task, initialState);
+        let body = await this.curateFlow(steps, task, initialState);
+        if (!body.trim() && !hasExistingFlow) {
+          body = this.renderFlowFromSuccessfulSteps(steps, task);
+        }
         if (body.trim()) {
           const relatedUrls = this.extractVisitedUrls(toolExecutions, initialState.url || '');
           this.experienceTracker.writeFlow(initialState, body, relatedUrls);
@@ -94,6 +100,47 @@ export function WithExperience<T extends Constructor>(Base: T) {
       await this.analyzeDiscoveries(stepsWithDiffs);
 
       return stepsWithDiffs.map((s) => s.step);
+    }
+
+    private hasRelevantFlowExperience(state: ActionResult): boolean {
+      return this.experienceTracker.getRelevantExperience(state).some((experience) => experience.content.includes('## FLOW:'));
+    }
+
+    private extractPassedCodeceptSteps(task: Task): SessionStep[] {
+      const steps: SessionStep[] = [];
+      for (const step of Object.values(task.steps)) {
+        const sessionStep = this.toReusableSessionStep(step);
+        if (sessionStep) steps.push(sessionStep);
+      }
+      return steps;
+    }
+
+    private toReusableSessionStep(step: StepData): SessionStep | null {
+      if (step.status !== 'passed') return null;
+      const code = stripComments(step.text);
+      if (!code || isNonReusableCode(code)) return null;
+      const toolName = getCodeceptToolNameFromCode(code);
+      if (!toolName) return null;
+
+      return {
+        message: step.text,
+        status: 'passed',
+        tool: toolName,
+        code,
+      };
+    }
+
+    private mergeUniqueStepsByCode(primary: SessionStep[], secondary: SessionStep[]): SessionStep[] {
+      const merged: SessionStep[] = [];
+      const seen = new Set<string>();
+      for (const step of [...primary, ...secondary]) {
+        const identity = stripComments(step.code || '').trim();
+        if (!identity) continue;
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        merged.push(step);
+      }
+      return merged;
     }
 
     private async curateFlow(steps: SessionStep[], task: Task, initialState: ActionResult): Promise<string> {
@@ -205,6 +252,32 @@ export function WithExperience<T extends Constructor>(Base: T) {
         debugLog('curateFlow failed, skipping flow write: %s', error.message);
         return '';
       }
+    }
+
+    private renderFlowFromSuccessfulSteps(steps: SessionStep[], task: Task): string {
+      if (steps.length === 0) return '';
+
+      const title = task.description.charAt(0).toLowerCase() + task.description.slice(1);
+      const blocks = steps
+        .filter((step) => step.code)
+        .map((step) => {
+          const lines = [`* ${step.message}`];
+          lines.push('');
+          lines.push('```js');
+          lines.push(stripComments(step.code || ''));
+          lines.push('```');
+          if (step.discovery) {
+            lines.push('');
+            for (const discovery of step.discovery.split('\n').filter((line) => line.trim())) {
+              lines.push(`> ${discovery.trim()}`);
+            }
+          }
+          return lines.join('\n');
+        });
+
+      if (blocks.length === 0) return '';
+
+      return `## FLOW: ${title}\n\n${blocks.join('\n\n')}\n\n---\n`;
     }
 
     private async detectRetryPatterns(toolExecutions: ToolExecution[], initialState: ActionResult): Promise<void> {
