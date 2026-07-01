@@ -50,6 +50,7 @@ export const locatorRule = dedent`
   - If no accessible name exists, mark ARIA as "-" and use CSS/XPath:
     * CSS: use partial href a[href*="settings"] or SVG icon class a:has(svg.md-icon-cog)
     * XPath: use contains(@href,"settings") or SVG class //a[.//svg[contains(@class,"md-icon-cog")]]
+  - In inline create/edit rows, confirmation can be an icon-only control near the edited field instead of a text Save button. Anchor the locator to the same row/form as the field and target the adjacent confirm icon/control.
   - NEVER use empty text: { "role": "button", "text": "" } is INVALID and useless
 
   <good_aria_locator_example>
@@ -307,6 +308,7 @@ export const actionRule = dedent`
   Use context parameter (second argument) to narrow click area when:
   - The same text/button appears multiple times on page
   - You need to click inside a specific form, modal, or section
+  - You need an icon-only confirm/save control next to a field in an inline create/edit row
   Context should be a CSS selector pointing to a unique container.
 
   <example>
@@ -319,6 +321,7 @@ export const actionRule = dedent`
   </example>
 
   Prefer text/ARIA locators with context over complex CSS/XPath selectors.
+  For inline create/edit flows, after filling a field verify it contains the value, then confirm using the nearest explicit button/link, an adjacent icon-only confirm control in the same row/form, or Enter if the field remains focused.
   If locator doesn't work, try CSS or XPath locators.
   If nothing works, use I.clickXY(x, y) as last resort.
 

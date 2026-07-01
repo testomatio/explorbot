@@ -428,7 +428,10 @@ export class Researcher extends ResearcherBase implements Agent {
       - Research all menus and navigational areas.
       - Ignore decorative sidebars, footer-only links, and external links.
       - Detect layout patterns: list/detail split, 2-pane, or 3-pane layouts.
-      - Every element with an eidx attribute MUST appear in the UI map — describe icon-only buttons by their visual role.
+      - In split-pane layouts, keep global toolbar, list pane, and detail pane as separate sections. Do not copy toolbar/list elements into the detail section unless they are physically inside that detail container.
+      - If the URL or page state opens an entity detail panel, describe that panel as the active detail context and include its close/back/pin controls when present.
+      - If an element has data-explorbot-hit="covered" or "offscreen", do not present it as directly actionable. Prefer the overlay, drawer, dialog, or focused section covering it, and mention what must be dismissed or revealed first.
+      - Every element with an eidx attribute MUST appear in exactly one matching UI map section — describe icon-only buttons by their visual role.
       - Every UI map row needs a CSS selector; ARIA may be "-" for icon-only buttons, CSS must never be "-".
       - ARIA locator JSON uses keys "role" and "text" (NOT "name").
       - Mark elements with likely hover interactions (title, aria-describedby, menu items with submenus) as "(hover)".
@@ -445,6 +448,7 @@ export class Researcher extends ResearcherBase implements Agent {
         .join('\n')}
 
       - Sections can overlap; prefer more detailed sections over broader ones.
+      - Section tables must list only elements physically inside the declared container. If a control belongs to a global toolbar, list it only in the toolbar section.
       - Never name a section "Focus" or "Focused" — use what it contains (Detail, Modal, Form, Content, List).
       - Omit sections that are not present or not relevant.
       - Each section needs a container CSS locator; UI map CSS locators are relative to it.
