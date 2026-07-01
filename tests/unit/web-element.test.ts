@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { JSDOM } from 'jsdom';
-import { extractElementData } from '../../src/utils/web-element.ts';
+import { WebElement, extractElementData } from '../../src/utils/web-element.ts';
 
 describe('extractElementData', () => {
   it('adds context, area, and variant hints for component drilling', () => {
@@ -69,6 +69,26 @@ describe('extractElementData', () => {
     expect(data?.allAttrs['data-explorbot-hit']).toBe('covered');
     expect(data?.allAttrs['data-explorbot-covered-by']).toContain('aside');
     expect(data?.allAttrs['data-explorbot-covered-by']).toContain('role="dialog"');
+  });
+});
+
+describe('WebElement', () => {
+  it('reads internal explorbot attributes by logical name', () => {
+    const element = new WebElement({
+      tag: 'input',
+      xpath: '',
+      clickXPath: '',
+      attrs: {
+        'data-explorbot-hit': 'covered',
+        'data-explorbot-covered-by': 'aside[role="dialog"]',
+      },
+      text: '',
+      x: 10,
+      y: 20,
+    });
+
+    expect(element.ourAttr('hit')).toBe('covered');
+    expect(element.ourAttr('coveredBy')).toBe('aside[role="dialog"]');
   });
 });
 

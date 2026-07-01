@@ -1021,8 +1021,8 @@ export function createAgentTools({
 
         const visibilityNote = visible ? 'Element IS visible in browser — Tester can use this XPath as locator.' : 'Element exists in DOM but is NOT visible. May need scrolling, a click to reveal, or is hidden.';
 
-        const hit = liveElement?.attrs['data-explorbot-hit'] || null;
-        const coveredBy = liveElement?.attrs['data-explorbot-covered-by'] || null;
+        const hit = liveElement?.ourAttr('hit') || null;
+        const coveredBy = liveElement?.ourAttr('coveredBy') || null;
         let resolvedVisibilityNote = visibilityNote;
         if (hit === 'covered') {
           resolvedVisibilityNote = `Element exists in DOM and is visible, but is covered by ${coveredBy || 'another UI layer'}. Dismiss or move the covering UI before interacting with it.`;

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
-import { captureDomHtmlSnapshot, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
+import { captureHtmlForSnapshot, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, isBodyEmpty } from '../../src/utils/html.ts';
 
 // Load test HTML files
 const githubHtml = readFileSync(join(process.cwd(), 'test-data/github.html'), 'utf8');
@@ -14,8 +14,8 @@ const testomatHtml = readFileSync(join(process.cwd(), 'test-data/testomat.html')
 const checkoutHtml = readFileSync(join(process.cwd(), 'test-data/checkout.html'), 'utf8');
 
 describe('HTML Parsing Library', () => {
-  describe('captureDomHtmlSnapshot', () => {
-    it('serializes live form control state', () => {
+  describe('captureHtmlForSnapshot', () => {
+    it('feeds live form control state into the combined snapshot pipeline', () => {
       const dom = new JSDOM(`
         <html>
           <body>
@@ -43,11 +43,16 @@ describe('HTML Parsing Library', () => {
       textarea.value = 'Runtime-only text';
       checkbox.checked = true;
 
-      const snapshot = captureDomHtmlSnapshot();
+      const snapshot = captureHtmlForSnapshot();
 
       expect(snapshot).toContain('data-explorbot-value="Managerial Objective"');
       expect(snapshot).toContain('data-explorbot-value="Runtime-only text"');
       expect(snapshot).toContain('data-explorbot-checked="true"');
+
+      const combined = htmlCombinedSnapshot(snapshot);
+      expect(combined).toContain('value="Managerial Objective"');
+      expect(combined).toContain('value="Runtime-only text"');
+      expect(combined).toContain('checked="true"');
 
       (globalThis as any).window = previousWindow;
       (globalThis as any).document = previousDocument;

@@ -171,7 +171,7 @@ export type ComponentScopeExtractionConfig = {
   limits: typeof HTML_EXTRACTION_LIMITS;
 };
 
-export function captureDomHtmlSnapshot(): string {
+export function captureHtmlForSnapshot(): string {
   const clone = document.documentElement.cloneNode(true) as HTMLElement;
   const liveControls = Array.from(document.querySelectorAll('input, textarea, select')) as Array<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>;
   const clonedControls = Array.from(clone.querySelectorAll('input, textarea, select')) as HTMLElement[];
@@ -283,7 +283,7 @@ export function extractElementData(el: Element, config?: ElementExtractionConfig
     return Array.from(tokens).slice(0, 8);
   }
 
-  function describeTopElement(target: Element): string {
+  function describeOverlappingElement(target: Element): string {
     const parts = [target.tagName.toLowerCase()];
     const role = target.getAttribute('role');
     const ariaLabel = target.getAttribute('aria-label');
@@ -319,7 +319,7 @@ export function extractElementData(el: Element, config?: ElementExtractionConfig
 
     const centerPoint = viewportPoints[0];
     const top = document.elementFromPoint(centerPoint.x, centerPoint.y);
-    return { hit: 'covered', coveredBy: top ? describeTopElement(top) : undefined };
+    return { hit: 'covered', coveredBy: top ? describeOverlappingElement(top) : undefined };
   }
 
   function isEmbeddedCodeEditorFrame(target: Element): boolean {
