@@ -7,10 +7,11 @@ import type { Plan } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
 import { relativeToCwd } from '../../utils/next-steps.ts';
 import { safeFilename } from '../../utils/strings.ts';
+import { CODECEPT_TOOLS, isNonReusableCode, stripComments } from '../../utils/step-analyzer.ts';
 import type { Conversation } from '../conversation.ts';
-import { ASSERTION_TOOLS, CODECEPT_TOOLS } from '../tools.ts';
+import { ASSERTION_TOOLS } from '../tools.ts';
 import type { Constructor } from './mixin.ts';
-import { escapeString, getExecutionLabel, isNonReusableCode, stripComments } from './utils.ts';
+import { escapeString, getExecutionLabel } from './utils.ts';
 
 export interface CodeceptJSMethods {
   toCode(conversation: Conversation, scenario: string): string;

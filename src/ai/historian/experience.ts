@@ -4,14 +4,14 @@ import { ActionResult } from '../../action-result.ts';
 import { ExperienceTracker, type SessionStep } from '../../experience-tracker.ts';
 import type { Reporter, ReporterStep } from '../../reporter.ts';
 import type { StateManager } from '../../state-manager.ts';
-import { type StepData, type Task, Test } from '../../test-plan.ts';
+import { type Task, Test } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
+import { isCodeceptToolName, isNonReusableCode, mergeUniqueStepsByCode, stripComments, toReusableSessionStep } from '../../utils/step-analyzer.ts';
 import { extractStatePath } from '../../utils/url-matcher.ts';
 import type { Conversation, ToolExecution } from '../conversation.ts';
 import type { Provider } from '../provider.ts';
-import { CODECEPT_TOOLS, getCodeceptToolNameFromCode } from '../tools.ts';
 import { type Constructor, debugLog } from './mixin.ts';
-import { getExecutionLabel, isNonReusableCode, stripComments } from './utils.ts';
+import { getExecutionLabel } from './utils.ts';
 
 export interface ExperienceMethods {
   saveSession(task: Task, initialState: ActionResult, conversation: Conversation): Promise<void>;
@@ -40,7 +40,7 @@ export function WithExperience<T extends Constructor>(Base: T) {
 
       const conversationSteps = await this.extractSteps(toolExecutions);
       const taskSteps = this.extractPassedCodeceptSteps(task);
-      const steps = this.mergeUniqueStepsByCode(conversationSteps, taskSteps);
+      const steps = mergeUniqueStepsByCode(conversationSteps, taskSteps);
 
       const skipExperience = result === 'failed' || (task instanceof Test && (task.hasFailed || task.isSkipped));
       if (!skipExperience) {
@@ -82,7 +82,7 @@ export function WithExperience<T extends Constructor>(Base: T) {
       const stepsWithDiffs: Array<{ step: SessionStep; ariaDiff: string | null }> = [];
 
       for (const exec of toolExecutions) {
-        if (!CODECEPT_TOOLS.includes(exec.toolName as any)) continue;
+        if (!isCodeceptToolName(exec.toolName)) continue;
         if (!exec.output?.code) continue;
         if (!exec.wasSuccessful) continue;
         if (isNonReusableCode(exec.output.code)) continue;
@@ -109,38 +109,10 @@ export function WithExperience<T extends Constructor>(Base: T) {
     private extractPassedCodeceptSteps(task: Task): SessionStep[] {
       const steps: SessionStep[] = [];
       for (const step of Object.values(task.steps)) {
-        const sessionStep = this.toReusableSessionStep(step);
+        const sessionStep = toReusableSessionStep(step);
         if (sessionStep) steps.push(sessionStep);
       }
       return steps;
-    }
-
-    private toReusableSessionStep(step: StepData): SessionStep | null {
-      if (step.status !== 'passed') return null;
-      const code = stripComments(step.text);
-      if (!code || isNonReusableCode(code)) return null;
-      const toolName = getCodeceptToolNameFromCode(code);
-      if (!toolName) return null;
-
-      return {
-        message: step.text,
-        status: 'passed',
-        tool: toolName,
-        code,
-      };
-    }
-
-    private mergeUniqueStepsByCode(primary: SessionStep[], secondary: SessionStep[]): SessionStep[] {
-      const merged: SessionStep[] = [];
-      const seen = new Set<string>();
-      for (const step of [...primary, ...secondary]) {
-        const identity = stripComments(step.code || '').trim();
-        if (!identity) continue;
-        if (seen.has(identity)) continue;
-        seen.add(identity);
-        merged.push(step);
-      }
-      return merged;
     }
 
     private async curateFlow(steps: SessionStep[], task: Task, initialState: ActionResult): Promise<string> {
@@ -287,7 +259,7 @@ export function WithExperience<T extends Constructor>(Base: T) {
       const candidates: Array<{ failed: ToolExecution[]; success: ToolExecution }> = [];
 
       for (const exec of toolExecutions) {
-        if (!CODECEPT_TOOLS.includes(exec.toolName as any)) continue;
+        if (!isCodeceptToolName(exec.toolName)) continue;
         if (!exec.output?.code) continue;
 
         if (!exec.wasSuccessful) {
