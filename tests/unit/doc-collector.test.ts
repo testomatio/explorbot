@@ -6,6 +6,7 @@ import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
+import { captureDocumentationScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
 
 describe('doc-collector path filter', () => {
   it('allows regular documentation pages', () => {
@@ -117,6 +118,40 @@ describe('doc-collector renderer', () => {
     expect(markdown).toContain('Signal: OAuth buttons are shown in the form.');
   });
 
+  it('renders page and section screenshots as markdown images', () => {
+    const markdown = renderPageDocumentation(
+      {
+        url: '/users/sign_in',
+        title: 'Testomat.io',
+      },
+      {
+        summary: 'Sign in page for existing users',
+        can: [],
+        might: [],
+      },
+      [
+        {
+          title: 'Page screenshot',
+          path: 'D:/project/output/docs/screenshots/users_sign_in_page.png',
+          relativePath: '../screenshots/users_sign_in_page.png',
+          kind: 'page',
+        },
+        {
+          title: 'Login form',
+          path: 'D:/project/output/docs/screenshots/users_sign_in_login_form.png',
+          relativePath: '../screenshots/users_sign_in_login_form.png',
+          kind: 'section',
+          selector: '.login-form',
+        },
+      ]
+    );
+
+    expect(markdown).toContain('## Screenshots');
+    expect(markdown).toContain('![Page screenshot](../screenshots/users_sign_in_page.png)');
+    expect(markdown).toContain('![Login form](../screenshots/users_sign_in_login_form.png)');
+    expect(markdown).toContain('Section: `.login-form`');
+  });
+
   it('renders aggregate spec index with skipped pages', () => {
     const markdown = renderSpecIndex(
       'D:/project/output/docs',
@@ -164,6 +199,89 @@ describe('doc-collector renderer', () => {
   it('normalizes might-actions without duplicating prefixes', () => {
     expect(normalizeAction('user might be able to submit the login form by pressing Enter', 'might')).toBe('user might be able to submit the login form by pressing Enter');
     expect(normalizeAction('user can submit the login form by pressing Enter', 'might')).toBe('user might submit the login form by pressing Enter');
+  });
+});
+
+describe('doc-collector screenshots', () => {
+  it('selects section containers from research for cropped screenshots', () => {
+    const research = `
+## Navigation
+
+> Container: '.mainnav-menu'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Projects' | link | { role: 'link', text: 'Projects' } | 'a[href="/"]' |
+
+## Empty Section
+
+> Container: '.empty'
+
+## Content
+
+> Container: '.main-content'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Create' | button | { role: 'button', text: 'Create' } | 'button.primary' |
+`;
+
+    expect(getScreenshotSections(research)).toEqual([
+      { title: 'Navigation', selector: '.mainnav-menu' },
+      { title: 'Content', selector: '.main-content' },
+    ]);
+  });
+
+  it('captures full page and section screenshots from research containers', async () => {
+    const captured: Array<{ selector?: string; path: string; fullPage?: boolean }> = [];
+    const page = {
+      async screenshot(options: { path: string; fullPage?: boolean }) {
+        captured.push(options);
+      },
+      locator(selector: string) {
+        return {
+          first() {
+            return {
+              async screenshot(options: { path: string }) {
+                captured.push({ selector, path: options.path });
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const screenshots = await captureDocumentationScreenshots(
+      { playwrightHelper: { page } } as any,
+      { url: '/users/sign_in' },
+      `
+## Navigation
+
+> Container: '.mainnav-menu'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Projects' | link | { role: 'link', text: 'Projects' } | 'a[href="/"]' |
+
+## Content
+
+> Container: '.main-content'
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Create' | button | { role: 'button', text: 'Create' } | 'button.primary' |
+`,
+      {
+        pageFilePath: 'output/docs/pages/users_sign_in.md',
+        screenshotsDir: 'output/docs/screenshots',
+        config: { docs: { maxSectionScreenshots: 1 } },
+      }
+    );
+
+    expect(screenshots.map((screenshot) => screenshot.kind)).toEqual(['page', 'section']);
+    expect(screenshots[0].relativePath).toBe('../screenshots/users_sign_in_page.png');
+    expect(screenshots[1].relativePath).toBe('../screenshots/users_sign_in_navigation.png');
+    expect(captured.map((item) => item.selector)).toEqual([undefined, '.mainnav-menu']);
   });
 });
 
