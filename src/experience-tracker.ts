@@ -3,12 +3,12 @@ import { basename, dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import { type Tokens, marked } from 'marked';
 import type { ActionResult } from './action-result.js';
-import { isNonReusableCode } from './ai/historian/utils.ts';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
 import { createDebug, tag } from './utils/logger.js';
 import { mdq } from './utils/markdown-query.js';
+import { isNonReusableCode } from './utils/step-analyzer.ts';
 import { extractStatePath } from './utils/url-matcher.js';
 
 const debugLog = createDebug('explorbot:experience');

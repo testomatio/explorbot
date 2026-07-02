@@ -853,6 +853,7 @@ export class Tester extends TaskAgent implements Agent {
 
   private buildScenarioBlock(task: Test, actionResult: ActionResult): string {
     const knowledge = this.getKnowledge(actionResult);
+    const experience = this.getExperience(actionResult);
 
     return dedent`
       <task>
@@ -883,6 +884,8 @@ export class Tester extends TaskAgent implements Agent {
       ${this.buildAvailableFiles()}
 
       ${knowledge}
+
+      ${experience}
     `;
   }
 

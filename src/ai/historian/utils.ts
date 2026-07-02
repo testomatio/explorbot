@@ -1,28 +1,8 @@
-import { isDynamicId } from '../../utils/xpath.ts';
 import type { ToolExecution } from '../conversation.ts';
-
-export function isNonReusableCode(code: string): boolean {
-  if (/\bI\.clickXY\s*\(/.test(code)) return true;
-
-  for (const m of code.matchAll(/#([A-Za-z_][\w-]*)/g)) {
-    if (isDynamicId(m[1])) return true;
-  }
-
-  return false;
-}
+export { isNonReusableCode, stripComments } from '../../utils/step-analyzer.ts';
 
 export function escapeString(str: string): string {
   return str.replace(/'/g, "\\'").replace(/\n/g, ' ');
-}
-
-export function stripComments(code: string): string {
-  return code
-    .split('\n')
-    .filter((line) => {
-      const trimmed = line.trim();
-      return trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('/*') && !trimmed.startsWith('*');
-    })
-    .join('\n');
 }
 
 export function getExecutionLabel(exec: ToolExecution, fallback?: string): string {

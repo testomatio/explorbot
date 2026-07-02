@@ -13,7 +13,7 @@ import { type PlaywrightMethods, WithPlaywright } from './historian/playwright.t
 import { type ScreencastMethods, WithScreencast } from './historian/screencast.ts';
 import type { Provider } from './provider.ts';
 
-export { isNonReusableCode } from './historian/utils.ts';
+export { isNonReusableCode } from '../utils/step-analyzer.ts';
 
 const HistorianBase = WithScreencast(WithPlaywright(WithCodeceptJS(WithExperience(Object as unknown as new (...args: any[]) => object))));
 
