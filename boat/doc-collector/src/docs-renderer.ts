@@ -1,8 +1,9 @@
 import path from 'node:path';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import type { PageDocumentation, StateTransition } from './ai/documentarian.ts';
+import type { DocumentationScreenshot } from './screenshots.ts';
 
-function renderPageDocumentation(state: WebPageState, documentation: PageDocumentation): string {
+function renderPageDocumentation(state: WebPageState, documentation: PageDocumentation, screenshots: DocumentationScreenshot[] = []): string {
   const lines: string[] = [];
   lines.push(`# ${state.url}`);
   lines.push('');
@@ -16,6 +17,18 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
   lines.push('');
   lines.push(ensureSentence(documentation.summary));
   lines.push('');
+
+  if (screenshots.length > 0) {
+    lines.push('## Screenshots');
+    lines.push('');
+    for (const screenshot of screenshots) {
+      lines.push(`![${normalizeInlineText(screenshot.title)}](${screenshot.relativePath})`);
+      if (screenshot.selector) {
+        lines.push(`Section: \`${screenshot.selector}\``);
+      }
+      lines.push('');
+    }
+  }
 
   const interactions = documentation.interactions;
   if (interactions && interactions.length > 0) {

@@ -160,6 +160,7 @@ interface DocbotConfig {
     deniedActionLabels?: string[];
     maxPrimaryCandidates?: number;
     maxInteractions?: number;
+    maxSectionScreenshots?: number;
     minCanActions?: number;
     minInteractiveElements?: number;
     interactive?: boolean;
