@@ -3,13 +3,14 @@ import path from 'node:path';
 import { ExplorBot, type ExplorBotOptions } from '../../../src/explorbot.ts';
 import type { Link, WebPageState } from '../../../src/state-manager.ts';
 import { normalizeUrl } from '../../../src/state-manager.ts';
-import { sanitizeFilename } from '../../../src/utils/strings.ts';
 import { tag } from '../../../src/utils/logger.ts';
+import { sanitizeFilename } from '../../../src/utils/strings.ts';
 import { Documentarian, type PageDocumentation } from './ai/documentarian.ts';
 import { type DocbotConfig, DocbotConfigParser } from './config.ts';
-import { type DocumentedPage, renderPageDocumentation, renderSpecIndex, type SkippedPage } from './docs-renderer.ts';
+import { type DocumentedPage, type SkippedPage, renderPageDocumentation, renderSpecIndex } from './docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from './path-filter.ts';
 import { extractResearchNavigationTargets } from './research-navigation.ts';
+import { type DocumentationScreenshot, captureDocumentationScreenshots } from './screenshots.ts';
 
 class DocBot {
   private explorBot: ExplorBot;
@@ -120,7 +121,7 @@ class DocBot {
           documented.add(pageKey);
           continue;
         }
-        const filePath = this.savePageDocumentation(state, documentation);
+        const filePath = await this.savePageDocumentation(state, documentation, research);
 
         pages.push({
           url: state.url,
@@ -397,10 +398,23 @@ class DocBot {
     return matches.reduce((sum, match) => sum + Number.parseInt(match[1], 10), 0);
   }
 
-  private savePageDocumentation(state: WebPageState, documentation: PageDocumentation): string {
+  private async savePageDocumentation(state: WebPageState, documentation: PageDocumentation, research: string): Promise<string> {
     const pagePath = this.getPageFilePath(state.url);
-    writeFileSync(pagePath, renderPageDocumentation(state, documentation), 'utf8');
+    const screenshots = await this.captureScreenshots(state, research, pagePath);
+    writeFileSync(pagePath, renderPageDocumentation(state, documentation, screenshots), 'utf8');
     return pagePath;
+  }
+
+  private async captureScreenshots(state: WebPageState, research: string, pagePath: string): Promise<DocumentationScreenshot[]> {
+    if (!this.shouldUseScreenshots()) {
+      return [];
+    }
+
+    return captureDocumentationScreenshots(this.explorBot.getExplorer(), state, research, {
+      pageFilePath: pagePath,
+      screenshotsDir: this.getScreenshotsDir(),
+      config: this.config,
+    });
   }
 
   private saveIndex(startPath: string, pages: DocumentedPage[], skipped: SkippedPage[], maxPages: number): string {
@@ -411,6 +425,10 @@ class DocBot {
 
   private getPagesDir(): string {
     return path.join(this.configParser.getOutputDir(), 'pages');
+  }
+
+  private getScreenshotsDir(): string {
+    return path.join(this.configParser.getOutputDir(), 'screenshots');
   }
 
   private getPageFilePath(pageUrl: string): string {
