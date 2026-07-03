@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { isNonReusableCode } from '../../src/ai/historian';
+import { isNonReusableCode } from '../../src/utils/step-analyzer.ts';
 
 describe('isNonReusableCode', () => {
   it('flags I.clickXY calls', () => {

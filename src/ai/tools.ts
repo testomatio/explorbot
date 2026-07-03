@@ -18,7 +18,6 @@ import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
-export const CODECEPT_TOOLS = ['click', 'hover', 'pressKey', 'form'] as const;
 export const ASSERTION_TOOLS = ['verify'] as const;
 
 export function createCodeceptJSTools(explorer: Explorer, task: Task) {

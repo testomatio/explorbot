@@ -221,7 +221,13 @@ export class ExplorBot {
       this.agents.tester = this.createAgent(({ ai, explorer }) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const tools = createAgentTools({ explorer, researcher, navigator });
+        const stateManager = explorer.getStateManager();
+        const experienceTracker = stateManager.getExperienceTracker();
+        const getState = () => {
+          const state = stateManager.getCurrentState();
+          return state ? ActionResult.fromState(state) : null;
+        };
+        const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState });
         return new Tester(explorer, ai, researcher, navigator, tools);
       });
 

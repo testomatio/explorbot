@@ -6,9 +6,9 @@ import { ConfigParser } from '../config.ts';
 import type { StateManager, StateTransition, WebPageState } from '../state-manager.ts';
 import type { Task } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.ts';
+import { isCodeceptToolName } from '../utils/step-analyzer.ts';
 import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
-import { CODECEPT_TOOLS } from './tools.ts';
 
 const debugLog = createDebug('explorbot:quartermaster');
 
@@ -140,7 +140,7 @@ export class Quartermaster {
       const pageAnalysis = this.pageAnalyses.get(stateHash);
 
       const toolExecutions = conversation.getToolExecutions();
-      const codeceptExecutions = toolExecutions.filter((e) => CODECEPT_TOOLS.includes(e.toolName as any));
+      const codeceptExecutions = toolExecutions.filter((e) => isCodeceptToolName(e.toolName));
 
       if (codeceptExecutions.length === 0 && !pageAnalysis?.axeViolations.length) {
         debugLog('No interactions or violations to analyze');
