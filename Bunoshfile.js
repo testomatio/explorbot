@@ -363,8 +363,8 @@ async function gate(name, passed, failureMessage) {
 }
 
 async function requireKey() {
-  const present = Boolean(process.env.OPENROUTER_API_KEY);
-  await gate('OPENROUTER_API_KEY present', present, 'OPENROUTER_API_KEY is not set');
+  const present = Boolean(process.env.GROQ_API_KEY);
+  await gate('GROQ_API_KEY present', present, 'GROQ_API_KEY is not set');
   return present;
 }
 

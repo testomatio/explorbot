@@ -1,7 +1,7 @@
 # Self-regression: runs Explorbot end-to-end with real AI against a local fixture app.
 #
 # Security: this workflow uses the `regression` GitHub environment, which holds the
-# OPENROUTER_API_KEY secret behind a required reviewer. On `pull_request` (including
+# GROQ_API_KEY secret behind a required reviewer. On `pull_request` (including
 # forks) the job pauses at the environment gate BEFORE any secret is exposed. The job
 # then runs the PR's own code, so the reviewer MUST read the PR diff before approving —
 # that review is the security boundary. Do not switch this to `pull_request_target` or
@@ -63,7 +63,7 @@ jobs:
       - name: Run regression scenarios
         run: bunx bunosh regression:${{ github.event.inputs.scenario || 'all' }} --retries ${{ github.event.inputs.retries || '2' }} --variant ${{ github.event.inputs.variant || 'native' }} --seed ${{ github.event.inputs.seed || '42' }}
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
       - name: Post report
         if: always()

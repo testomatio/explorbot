@@ -65,7 +65,7 @@ bunx bunosh regression:smoke
 bunx bunosh regression:serve
 
 # Real-AI runs (need a provider key)
-export OPENROUTER_API_KEY=sk-...
+export GROQ_API_KEY=gsk-...
 bunx bunosh regression:experience --retries 0   # cheapest AI path
 bunx bunosh regression:basic --retries 0
 bunx bunosh regression:all                       # both scenarios, default retries
@@ -83,7 +83,7 @@ bunx bunosh regression:variants --scenario basic --variants native,aria,plain
 
 ## CI and the approval gate
 
-`.github/workflows/regression.yml` runs on `pull_request` and `workflow_dispatch`. The job uses the `regression` GitHub environment, which holds `OPENROUTER_API_KEY` behind a **required reviewer**. Every run — including fork PRs — pauses at the environment gate before the secret is exposed. The job runs the PR's own code, so the reviewer must read the PR diff (workflow, Bunoshfile, fixture, lib) before approving; that review is the security boundary. The workflow never uses `pull_request_target`.
+`.github/workflows/regression.yml` runs on `pull_request` and `workflow_dispatch`. The job uses the `regression` GitHub environment, which holds `GROQ_API_KEY` behind a **required reviewer**. Every run — including fork PRs — pauses at the environment gate before the secret is exposed. The job runs the PR's own code, so the reviewer must read the PR diff (workflow, Bunoshfile, fixture, lib) before approving; that review is the security boundary. The workflow never uses `pull_request_target`.
 
 The report is posted as a sticky PR comment (on `pull_request`) or a `Regression Reports` GitHub Discussion (on `workflow_dispatch`). Fork PRs get a read-only token, so comment posting may fail; the report is also written to the job step summary and uploaded as the `regression-runs` artifact.
 
@@ -96,6 +96,6 @@ The report is posted as a sticky PR comment (on `pull_request`) or a `Regression
 ## Owner prerequisites (one-time)
 
 1. Settings → Environments → create `regression`; add the repo owner as a **Required reviewer**; deployment branch policy "No restriction".
-2. Add the environment secret `OPENROUTER_API_KEY` (a dedicated key with a low spend limit).
+2. Add the environment secret `GROQ_API_KEY` (a dedicated key with a low spend limit).
 3. Create a Discussions category named exactly `Regression Reports`.
 4. Ensure the OpenRouter account has credit for the models in the config template.
