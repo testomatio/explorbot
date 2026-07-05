@@ -12,7 +12,7 @@ export default {
     url: 'http://localhost:3000',
   },
   ai: {
-    model: openrouter('openai/gpt-oss-20b'),
+    model: openrouter('openai/gpt-oss-20b:nitro'),
     agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
   },
   api: {
@@ -83,7 +83,7 @@ export default {
     url: 'http://localhost:3000',
   },
   ai: {
-    model: openrouter('openai/gpt-oss-20b'),
+    model: openrouter('openai/gpt-oss-20b:nitro'),
     agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
   },
   api: {
@@ -196,7 +196,7 @@ Both Chief and Curler use `agenticModel` by default and fall back to `model`. Ov
 
 ```javascript
 ai: {
-  model: openrouter('openai/gpt-oss-20b'),
+  model: openrouter('openai/gpt-oss-20b:nitro'),
   agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
   agents: {
     chief: { model: openrouter('x-ai/grok-4-fast') },

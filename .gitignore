@@ -6,6 +6,9 @@ yarn-error.log*
 pnpm-debug.log*
 bun.lockb
 
+# Regression harness run artifacts
+tests/regression/.runs/
+
 # Environment variables
 .env
 .env.local
