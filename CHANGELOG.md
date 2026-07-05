@@ -3,7 +3,7 @@
 ## 2026-07-05
 
 ### Changes
-- Updated the recommended OpenRouter model set to the faster `:nitro` throughput variants: `openai/gpt-oss-20b:nitro` (`model`), `meta-llama/llama-4-scout:nitro` (`visionModel`), and `minimax/minimax-m2.5:nitro` (`agenticModel`). See the Getting Started and Providers docs.
+- Updated the recommended OpenRouter model set: `openai/gpt-oss-20b:nitro` (`model`), `google/gemma-4-31b-it` (`visionModel`), and `minimax/minimax-m2.5:nitro` (`agenticModel`). See the Getting Started and Providers docs.
 - Added a contributor self-regression harness (`bunosh regression:basic`, `regression:experience`, `regression:all`) that runs Explorbot end-to-end with a real model against a bundled fixture app and checks that research, planning, and test execution still work. See `docs/contributing/regression-tests.md`.
 
 ## 2026-06-26

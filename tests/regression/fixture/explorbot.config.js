@@ -27,7 +27,7 @@ const config = {
 
   ai: {
     model: openrouter('openai/gpt-oss-20b:nitro'),
-    visionModel: openrouter('meta-llama/llama-4-scout:nitro'),
+    visionModel: openrouter('google/gemma-4-31b-it'),
     agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
 
     agents: {
