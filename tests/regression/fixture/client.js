@@ -113,10 +113,4 @@
       p.hidden = p.getAttribute('data-panel') !== key;
     });
   };
-
-  const autoOpen = document.querySelector('[data-open-on-load]');
-  if (autoOpen) {
-    if (autoOpen.showModal) autoOpen.showModal();
-    else autoOpen.hidden = false;
-  }
 })();

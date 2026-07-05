@@ -53,13 +53,12 @@ export function issuesPage(reg: Registry, store: Store, filters: { q?: string; s
   let empty = '';
   if (issues.length === 0) empty = '<p class="empty">No issues match your filter</p>';
 
-  let alert = '';
-  if (opts.error) alert = `<p role="alert" class="alert">${esc(opts.error)}</p>`;
-  let openAttr = '';
-  if (opts.openDrawer) openAttr = ' data-open-on-load';
-
-  const drawer = `
-    <dialog id="new-issue-drawer" class="drawer" aria-label="New Issue"${openAttr}>
+  let drawer = '';
+  if (opts.openDrawer) {
+    let alert = '';
+    if (opts.error) alert = `<p role="alert" class="alert">${esc(opts.error)}</p>`;
+    drawer = `
+    <dialog open id="new-issue-drawer" class="drawer" aria-label="New Issue">
       <h2>New Issue</h2>
       <p>Create an issue and assign labels and people.</p>
       ${alert}
@@ -71,15 +70,16 @@ export function issuesPage(reg: Registry, store: Store, filters: { q?: string; s
         ${reg.multiselect({ label: 'Assignees', name: 'assignees', options: users.map((u) => ({ value: String(u.id), label: u.name })) })}
         <div class="actions">
           ${reg.button({ label: 'Create Issue', submit: true })}
-          <button type="button" data-modal-close="new-issue-drawer">Cancel</button>
+          <a href="/issues" role="button">Cancel</a>
         </div>
       </form>
     </dialog>`;
+  }
 
   const body = `
     <h1>Issues</h1>
     <p>${issues.length} issue(s) shown.</p>
-    <div class="toolbar"><button type="button" class="primary" data-modal-open="new-issue-drawer">New Issue</button></div>
+    <div class="toolbar"><a class="primary" href="/issues?new=1" role="button">New Issue</a></div>
     ${filterForm}
     ${table}
     ${empty}

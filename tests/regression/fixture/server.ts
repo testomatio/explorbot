@@ -90,7 +90,7 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
       assignees: form.getAll('assignees').map(String),
     });
     if (result.error) return html(issuesPage(reg, store, {}, user, { openDrawer: true, error: result.error }), 422);
-    return redirect(`/issues/${result.issue?.id}`);
+    return redirect('/issues');
   }
 
   const statusMatch = path.match(/^\/issues\/(\d+)\/status\/(\w+)$/);

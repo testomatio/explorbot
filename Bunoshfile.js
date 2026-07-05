@@ -251,11 +251,11 @@ export async function regressionSmoke() {
 
   const issues = await (await fetch(`${base}/issues`, { headers: { cookie } })).text();
   await check('authed issue list renders', issues.includes('<table') && issues.includes('New Issue'));
-  await check('new issue is a drawer, not a page', issues.includes('id="new-issue-drawer"') && issues.includes('data-modal-open="new-issue-drawer"'));
+  await check('issue list has no inline create form (drawer only opens on demand)', issues.includes('href="/issues?new=1"') && !issues.includes('id="new-issue-drawer"'));
   const newRedirect = await fetch(`${base}/issues/new`, { headers: { cookie }, redirect: 'manual' });
   await check('legacy /issues/new redirects to the drawer', newRedirect.status === 302 && newRedirect.headers.get('location') === '/issues?new=1');
   const opened = await (await fetch(`${base}/issues?new=1`, { headers: { cookie } })).text();
-  await check('drawer auto-opens with ?new=1', opened.includes('data-open-on-load'));
+  await check('drawer opens on ?new=1 with the create form', opened.includes('id="new-issue-drawer"') && opened.includes('name="title"') && opened.includes('action="/issues/new"'));
 
   const created = await fetch(`${base}/api/issues`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Smoke issue' }) });
   await check('API creates an issue', created.status === 201);
