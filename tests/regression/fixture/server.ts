@@ -1,6 +1,6 @@
 import { handleApi } from './api.ts';
 import { type Variant, type VariantMode, createRegistry } from './components.ts';
-import { activityWidget, issueDetailPage, issuesPage, loginPage, newIssuePage, settingsPage, vaultPage } from './pages.ts';
+import { activityWidget, issueDetailPage, issuesPage, loginPage, settingsPage, vaultPage } from './pages.ts';
 import { type Store, createStore } from './store.ts';
 
 export const VAULT_CODE = 'K7-9284-XRAY-TANGO';
@@ -76,10 +76,10 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
 
   if (path === '/issues' && method === 'GET') {
     const filters = { q: url.searchParams.get('q') || undefined, status: url.searchParams.get('status') || undefined, label: url.searchParams.get('label') || undefined };
-    return html(issuesPage(reg, store, filters, user));
+    return html(issuesPage(reg, store, filters, user, { openDrawer: url.searchParams.get('new') === '1' }));
   }
 
-  if (path === '/issues/new' && method === 'GET') return html(newIssuePage(reg, store, user));
+  if (path === '/issues/new' && method === 'GET') return redirect('/issues?new=1');
   if (path === '/issues/new' && method === 'POST') {
     const form = await req.formData();
     const result = store.createIssue({
@@ -89,7 +89,7 @@ async function handle(req: Request, store: Store, defaultVariant: VariantMode, d
       labels: form.getAll('labels').map(String),
       assignees: form.getAll('assignees').map(String),
     });
-    if (result.error) return html(newIssuePage(reg, store, user, result.error), 422);
+    if (result.error) return html(issuesPage(reg, store, {}, user, { openDrawer: true, error: result.error }), 422);
     return redirect(`/issues/${result.issue?.id}`);
   }
 

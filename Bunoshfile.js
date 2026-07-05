@@ -251,6 +251,11 @@ export async function regressionSmoke() {
 
   const issues = await (await fetch(`${base}/issues`, { headers: { cookie } })).text();
   await check('authed issue list renders', issues.includes('<table') && issues.includes('New Issue'));
+  await check('new issue is a drawer, not a page', issues.includes('id="new-issue-drawer"') && issues.includes('data-modal-open="new-issue-drawer"'));
+  const newRedirect = await fetch(`${base}/issues/new`, { headers: { cookie }, redirect: 'manual' });
+  await check('legacy /issues/new redirects to the drawer', newRedirect.status === 302 && newRedirect.headers.get('location') === '/issues?new=1');
+  const opened = await (await fetch(`${base}/issues?new=1`, { headers: { cookie } })).text();
+  await check('drawer auto-opens with ?new=1', opened.includes('data-open-on-load'));
 
   const created = await fetch(`${base}/api/issues`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Smoke issue' }) });
   await check('API creates an issue', created.status === 201);
@@ -363,8 +368,8 @@ async function gate(name, passed, failureMessage) {
 }
 
 async function requireKey() {
-  const present = Boolean(process.env.GROQ_API_KEY);
-  await gate('GROQ_API_KEY present', present, 'GROQ_API_KEY is not set');
+  const present = Boolean(process.env.OPENROUTER_API_KEY);
+  await gate('OPENROUTER_API_KEY present', present, 'OPENROUTER_API_KEY is not set');
   return present;
 }
 
@@ -396,7 +401,7 @@ async function checkVariants() {
     const fixture = startFixture({ port: 0, variant, seed: 42 });
     const login = await fetch(`${fixture.url}/login`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ email: 'demo@example.com', password: 'hunter2-fixture' }) });
     const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
-    const html = await (await fetch(`${fixture.url}/issues/new`, { headers: { cookie } })).text();
+    const html = await (await fetch(`${fixture.url}/issues?new=1`, { headers: { cookie } })).text();
     fixture.stop();
     if (variant === 'native') await check('native variant renders semantic select', html.includes('multiple') && !html.includes('data-widget="multiselect"'));
     if (variant === 'aria') await check('aria variant renders combobox roles and hidden inputs', html.includes('role="combobox"') && html.includes('data-hidden-inputs'));

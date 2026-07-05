@@ -4,8 +4,8 @@
 
 ### Changes
 - Refreshed the recommended OpenRouter model set (`openai/gpt-oss-20b:nitro`, `minimax/minimax-m2.5:nitro`) in the Getting Started and Providers docs.
-- Documented that the OpenRouter provider's `visionModel` — screenshot analysis via the `see` tool — does not work on AI SDK 7 (its provider targets AI SDK 6 and rejects image inputs). Text-driven exploration is unaffected; use Groq or a direct provider for vision.
-- Added a contributor self-regression harness (`bunosh regression:basic`, `regression:experience`, `regression:all`) that runs Explorbot end-to-end with a real model (Groq) against a bundled fixture app and checks that research, planning, and test execution still work. See `docs/contributing/regression-tests.md`.
+- Temporarily pinned `@openrouter/ai-sdk-provider` to the AI-SDK-7 build from [OpenRouterTeam/ai-sdk-provider#511](https://github.com/OpenRouterTeam/ai-sdk-provider/pull/511) (vendored tarball) so the vision model — screenshot analysis via the `see` tool — works on AI SDK 7; the released provider targets AI SDK 6 and rejected image inputs. Remove the pin once the PR is released. See `vendor/README.md`.
+- Added a contributor self-regression harness (`bunosh regression:basic`, `regression:experience`, `regression:all`) that runs Explorbot end-to-end with a real model against a bundled fixture app and checks that research, planning, and test execution (including vision) still work. See `docs/contributing/regression-tests.md`.
 
 ## 2026-06-26
 

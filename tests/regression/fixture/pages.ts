@@ -30,7 +30,7 @@ export function loginPage(error?: string): string {
   return doc('Sign in · Trackly', body, null, 'login');
 }
 
-export function issuesPage(reg: Registry, store: Store, filters: { q?: string; status?: string; label?: string }, user: PublicUser): string {
+export function issuesPage(reg: Registry, store: Store, filters: { q?: string; status?: string; label?: string }, user: PublicUser, opts: { openDrawer?: boolean; error?: string } = {}): string {
   const labels = store.listLabels();
   const users = store.listUsers();
   const issues = store.listIssues(filters);
@@ -50,38 +50,41 @@ export function issuesPage(reg: Registry, store: Store, filters: { q?: string; s
       <thead><tr><th>#</th><th>Title</th><th>Status</th><th>Priority</th><th>Labels</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
-  const empty = issues.length === 0 ? '<p class="empty">No issues match your filter</p>' : '';
+  let empty = '';
+  if (issues.length === 0) empty = '<p class="empty">No issues match your filter</p>';
+
+  let alert = '';
+  if (opts.error) alert = `<p role="alert" class="alert">${esc(opts.error)}</p>`;
+  let openAttr = '';
+  if (opts.openDrawer) openAttr = ' data-open-on-load';
+
+  const drawer = `
+    <dialog id="new-issue-drawer" class="drawer" aria-label="New Issue"${openAttr}>
+      <h2>New Issue</h2>
+      <p>Create an issue and assign labels and people.</p>
+      ${alert}
+      <form method="post" action="/issues/new">
+        ${reg.textField({ label: 'Title', name: 'title', required: true })}
+        ${reg.textArea({ label: 'Description', name: 'description' })}
+        ${reg.select({ label: 'Priority', name: 'priority', options: PRIORITY_OPTIONS, selected: 'normal' })}
+        ${reg.multiselect({ label: 'Labels', name: 'labels', options: labels.map((l) => ({ value: String(l.id), label: l.name })) })}
+        ${reg.multiselect({ label: 'Assignees', name: 'assignees', options: users.map((u) => ({ value: String(u.id), label: u.name })) })}
+        <div class="actions">
+          ${reg.button({ label: 'Create Issue', submit: true })}
+          <button type="button" data-modal-close="new-issue-drawer">Cancel</button>
+        </div>
+      </form>
+    </dialog>`;
 
   const body = `
     <h1>Issues</h1>
     <p>${issues.length} issue(s) shown.</p>
-    <div class="toolbar"><a class="primary" href="/issues/new" role="button">New Issue</a></div>
+    <div class="toolbar"><button type="button" class="primary" data-modal-open="new-issue-drawer">New Issue</button></div>
     ${filterForm}
     ${table}
-    ${empty}`;
+    ${empty}
+    ${drawer}`;
   return doc('Issues · Trackly', body, user, 'issues');
-}
-
-export function newIssuePage(reg: Registry, store: Store, user: PublicUser, error?: string): string {
-  const labels = store.listLabels();
-  const users = store.listUsers();
-  const alert = error ? `<p role="alert" class="alert">${esc(error)}</p>` : '';
-  const body = `
-    <h1>New Issue</h1>
-    <p>Create an issue and assign labels and people.</p>
-    ${alert}
-    <form method="post" action="/issues/new">
-      ${reg.textField({ label: 'Title', name: 'title', required: true })}
-      ${reg.textArea({ label: 'Description', name: 'description' })}
-      ${reg.select({ label: 'Priority', name: 'priority', options: PRIORITY_OPTIONS, selected: 'normal' })}
-      ${reg.multiselect({ label: 'Labels', name: 'labels', options: labels.map((l) => ({ value: String(l.id), label: l.name })) })}
-      ${reg.multiselect({ label: 'Assignees', name: 'assignees', options: users.map((u) => ({ value: String(u.id), label: u.name })) })}
-      <div class="actions">
-        ${reg.button({ label: 'Create Issue', submit: true })}
-        <a href="/issues" role="button">Cancel</a>
-      </div>
-    </form>`;
-  return doc('New Issue · Trackly', body, user, 'new');
 }
 
 export function issueDetailPage(reg: Registry, store: Store, issue: Issue, user: PublicUser): string {
@@ -239,7 +242,7 @@ function nav(user: PublicUser | null, active: string): string {
     <strong>Trackly</strong>
     <nav>
       ${link('/issues', 'Issues', 'issues')}
-      ${link('/issues/new', 'New Issue', 'new')}
+      ${link('/issues?new=1', 'New Issue', 'new')}
       ${link('/settings', 'Settings', 'settings')}
       <a href="/logout">Logout</a>
     </nav>
@@ -279,6 +282,7 @@ const STYLES = `
   .auth { max-width: 380px; margin: 4rem auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
   .field { margin: .6rem 0; display: flex; flex-direction: column; gap: .25rem; }
   input, textarea, select { padding: .5rem; border: 1px solid #ccc; border-radius: 6px; font: inherit; }
+  select[multiple] { min-height: 5rem; padding: .25rem; }
   button, .ui-btn, a[role=button], [role=button] { display: inline-block; padding: .5rem .9rem; border: 1px solid #d0d7de; border-radius: 6px; background: #f6f8fa; cursor: pointer; text-decoration: none; color: #1a1a1a; }
   button[type=submit], .primary { background: #1f883d; color: #fff; border-color: #1f883d; }
   [data-danger] { background: #cf222e; color: #fff; border-color: #cf222e; }
@@ -295,6 +299,8 @@ const STYLES = `
   .combo { border: 1px solid #d0d7de; border-radius: 6px; padding: .5rem; cursor: pointer; background: #fff; }
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; }
   .overlay .dialog, dialog { background: #fff; padding: 1.5rem; border-radius: 8px; border: none; max-width: 400px; }
+  dialog.drawer { position: fixed; right: 0; top: 0; height: 100%; width: 90%; max-width: 440px; margin: 0; border-radius: 0; overflow-y: auto; box-shadow: -2px 0 12px rgba(0,0,0,.15); }
+  dialog.drawer::backdrop { background: rgba(0,0,0,.35); }
   .tabs nav, .tabs [role=tablist], .tabs .tablist { display: flex; gap: 1rem; border-bottom: 1px solid #eaecef; margin-bottom: 1rem; }
   [aria-current=page], [aria-selected=true] { font-weight: 700; }
   iframe { border: 1px solid #eaecef; border-radius: 6px; }

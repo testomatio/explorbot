@@ -82,7 +82,8 @@ export function createRegistry(opts: { mode: VariantMode; seed?: number }): Regi
       if (v === 'native') {
         const id = `f-${o.name}`;
         const opts = o.options.map((opt) => `<option value="${esc(opt.value)}"${when(selected.includes(opt.value), ' selected')}>${esc(opt.label)}</option>`).join('');
-        return `<div class="field"><label for="${id}">${esc(o.label)}</label><select id="${id}" name="${o.name}" multiple ${tag('multiselect', v)}>${opts}</select></div>`;
+        const rows = Math.min(Math.max(o.options.length, 3), 6);
+        return `<div class="field"><label for="${id}">${esc(o.label)}</label><select id="${id}" name="${o.name}" multiple size="${rows}" ${tag('multiselect', v)}>${opts}</select></div>`;
       }
       const hidden = selected.map((val) => `<input type="hidden" name="${o.name}" value="${esc(val)}">`).join('');
       const chips = selected.map((val) => chipFor(o.options, val)).join('');

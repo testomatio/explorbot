@@ -60,8 +60,6 @@ Explorbot uses three models. Pick each one for speed and cost:
 
 Captain and Pilot barely use tokens, so a smarter `agenticModel` improves results for almost no extra cost. OpenRouter is the simplest start — one key, many models. To use OpenAI, Anthropic, Groq, or others, see [Providers](./reference/providers.md). For every config option, see [Configuration](./reference/configuration.md).
 
-> **Vision on OpenRouter:** the OpenRouter AI SDK provider targets AI SDK 6, so on AI SDK 7 it rejects image inputs — the `visionModel` (screenshot analysis via the `see` tool) does not work through OpenRouter. Text-driven exploration is unaffected. For vision, set `visionModel` to a Groq model (see [Providers](./reference/providers.md)) or a direct provider such as OpenAI or Google.
-
 ## 3. Tell Explorbot how to log in
 
 Most apps need a login. Give Explorbot the credentials once, and it signs in on its own:

@@ -144,3 +144,6 @@ Thumbs.db
 .yarn/install-state.gz
 .pnp.* 
 .dmux/
+
+# Keep the temporarily vendored OpenRouter AI-SDK-7 provider (PR #511)
+!vendor/*.tgz

@@ -36,8 +36,6 @@ export default {
 
 Pick model IDs from [OpenRouter](https://openrouter.ai/) that support structured output and tools.
 
-> **Vision limitation:** the OpenRouter provider targets AI SDK 6; on AI SDK 7 (used by Explorbot) it rejects image inputs, so `visionModel` — screenshot analysis via the `see` tool — does not work through OpenRouter. Use Groq (below) or a direct provider for the vision model. Text-driven exploration is unaffected.
-
 ### Groq
 
 ```bash

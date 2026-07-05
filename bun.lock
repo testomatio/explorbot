@@ -14,7 +14,7 @@
         "@faker-js/faker": "^10.4.0",
         "@inkjs/ui": "^2.0.0",
         "@langfuse/otel": "^4.5.1",
-        "@openrouter/ai-sdk-provider": "^2.3.3",
+        "@openrouter/ai-sdk-provider": "file:./vendor/openrouter-ai-sdk-provider-pr511.tgz",
         "@opentelemetry/api": "^1.9.0",
         "@opentelemetry/auto-instrumentations-node": "^0.67.3",
         "@opentelemetry/instrumentation": "^0.208.0",
@@ -564,7 +564,7 @@
 
     "@open-draft/until": ["@open-draft/until@2.1.0", "", {}, "sha512-U69T3ItWHvLwGg5eJ0n3I62nWuE6ilHlmz7zM0npLBRvPRd7e6NYmg54vvRtP5mZG7kZqZCFVdsTWo7BPtBujg=="],
 
-    "@openrouter/ai-sdk-provider": ["@openrouter/ai-sdk-provider@2.3.3", "", { "peerDependencies": { "ai": "^6.0.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-4fVteGkVedc7fGoA9+qJs4tpYwALezMq14m2Sjub3KmyRlksCbK+WJf67NPdGem8+NZrV2tAN42A1NU3+SiV3w=="],
+    "@openrouter/ai-sdk-provider": ["@openrouter/ai-sdk-provider@./vendor/openrouter-ai-sdk-provider-pr511.tgz", { "peerDependencies": { "ai": "^7.0.0", "zod": "^3.25.76 || ^4.1.8" } }, "sha512-tgsSlJKBCB/ON1NidZin3qjz1GexkJqNJ7YvmyxrBZLC7M6Z/2ZsftqgS5RN4SMoyuuO3uvMD23mnFfO5TUJcw=="],
 
     "@opentelemetry/api": ["@opentelemetry/api@1.9.0", "", {}, "sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg=="],
 
