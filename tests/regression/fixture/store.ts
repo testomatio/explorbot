@@ -85,7 +85,7 @@ export function createStore(): Store {
         const needle = filter.q.toLowerCase();
         result = result.filter((i) => i.title.toLowerCase().includes(needle) || i.description.toLowerCase().includes(needle));
       }
-      return result;
+      return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     },
 
     getIssue(id) {
