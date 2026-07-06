@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-06
+
+### Changes
+- Demo video generator: turn a recorded Explorbot session into a social-media-ready MP4 that plays the browser screencast next to a terminal replaying the session's real log lines at their original pace. It picks a successful, action-dense fragment automatically (max 1.25x speedup, no retries or failures on screen), adds window chrome, shadows, and an abstract background, and supports landscape, square, vertical, or custom dimensions with dark or light terminal themes. Requires `vhs`, `ffmpeg`, and ImageMagick; needs screencasts enabled via `ai.agents.historian.screencast`. See `docs/contributing/demo-videos.md`.
+  ```bash
+  bunx bunosh demo:analyze output/explorbot.log     # list demo-worthy segments
+  bunx bunosh demo:video --size landscape           # render the best one
+  bunx bunosh demo:video "upload a file" --size vertical --terminal-theme light
+  ```
+
 ## 2026-06-26
 
 ### Configuration
