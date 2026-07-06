@@ -114,7 +114,7 @@ export function createRegistry(opts: { mode: VariantMode; seed?: number }): Regi
       const danger = when(o.danger, ' data-danger="1"');
       const confirmForm = `<form method="post" action="${o.confirmAction}"><button type="submit"${danger}>${esc(o.confirmLabel)}</button></form>`;
       if (v === 'native') {
-        return `<button type="button" data-modal-open="${o.id}" ${tag('modal', v)}>${esc(o.triggerLabel)}</button><dialog id="${o.id}"><h2>${esc(o.title)}</h2><p>${esc(o.body)}</p>${confirmForm}<button type="button" data-modal-close="${o.id}">Cancel</button></dialog>`;
+        return `<button type="button" data-modal-open="${o.id}" ${tag('modal', v)}>${esc(o.triggerLabel)}</button><dialog id="${o.id}" hidden><h2>${esc(o.title)}</h2><p>${esc(o.body)}</p>${confirmForm}<button type="button" data-modal-close="${o.id}">Cancel</button></dialog>`;
       }
       if (v === 'aria') {
         return `<button type="button" data-modal-open="${o.id}" ${tag('modal', v)}>${esc(o.triggerLabel)}</button><div id="${o.id}" role="dialog" aria-modal="true" aria-labelledby="${o.id}-t" class="overlay" hidden><div class="dialog"><h2 id="${o.id}-t">${esc(o.title)}</h2><p>${esc(o.body)}</p>${confirmForm}<button type="button" data-modal-close="${o.id}">Cancel</button></div></div>`;

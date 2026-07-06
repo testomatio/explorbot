@@ -21,6 +21,7 @@
     const modalOpen = closest(target, '[data-modal-open]');
     if (modalOpen) {
       const dlg = document.getElementById(modalOpen.getAttribute('data-modal-open'));
+      if (dlg) dlg.hidden = false;
       if (dlg?.showModal) dlg.showModal();
       else if (dlg) dlg.hidden = false;
       return;
@@ -30,7 +31,7 @@
     if (modalClose) {
       const dlg = document.getElementById(modalClose.getAttribute('data-modal-close'));
       if (dlg?.close) dlg.close();
-      else if (dlg) dlg.hidden = true;
+      if (dlg) dlg.hidden = true;
       return;
     }
 
