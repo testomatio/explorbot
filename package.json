@@ -57,7 +57,7 @@
     "@faker-js/faker": "^10.4.0",
     "@inkjs/ui": "^2.0.0",
     "@langfuse/otel": "^4.5.1",
-    "@openrouter/ai-sdk-provider": "^2.3.3",
+    "@openrouter/ai-sdk-provider": "file:./vendor/openrouter-ai-sdk-provider-pr511.tgz",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/auto-instrumentations-node": "^0.67.3",
     "@opentelemetry/instrumentation": "^0.208.0",
