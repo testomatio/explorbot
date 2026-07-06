@@ -51,7 +51,7 @@ const config = {
         enabled: false,
       },
       analyst: {
-        enabled: false,
+        enabled: true,
       },
       historian: {
         enabled: false,

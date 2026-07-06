@@ -39,6 +39,19 @@ export function latestReporterSummary(runDir: string): ReporterSummary | null {
   };
 }
 
+export function readSessionAnalysis(runDir: string): string | null {
+  const dir = join(runDir, 'output', 'reports');
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.md') && !f.endsWith('-tests.md'))
+    .map((f) => join(dir, f))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+  if (files.length === 0) return null;
+  const content = readFileSync(files[0], 'utf-8').trim();
+  if (!content) return null;
+  return content;
+}
+
 export function parseStdoutResults(output: string): StdoutResults | null {
   const clean = stripAnsi(output);
   const match = clean.match(/Results:\s*(\d+)\s*passed,\s*(\d+)\s*failed,\s*(\d+)\s*skipped/i);

@@ -13,7 +13,23 @@ export function buildReport(records: AttemptRecord[]): string {
   }
 
   const table = ['| Scenario | Result | Attempts | Duration |', '|---|---|---|---|', ...rows].join('\n');
-  return [REPORT_MARKER, '# Explorbot Self-Regression', '', commitLine(), '', table, '', '## Attempt details', ...detailLines, ''].join('\n');
+  const parts = [REPORT_MARKER, '# Explorbot Self-Regression', '', commitLine(), '', table, '', '## Attempt details', ...detailLines, ''];
+
+  for (const group of groups) {
+    const analysis = analysisFor(group);
+    if (!analysis) continue;
+    parts.push('---', '', `_Session analysis — ${group.label}:_`, '', analysis, '');
+  }
+
+  return parts.join('\n');
+}
+
+function analysisFor(group: Group): string | null {
+  const passing = group.records.find((r) => r.passed && r.analysis);
+  if (passing?.analysis) return passing.analysis;
+  const latest = [...group.records].reverse().find((r) => r.analysis);
+  if (latest?.analysis) return latest.analysis;
+  return null;
 }
 
 function groupByLabel(records: AttemptRecord[]): Group[] {
@@ -76,6 +92,7 @@ export interface AttemptRecord {
   passed: boolean;
   durationSec: number;
   details: string[];
+  analysis?: string | null;
 }
 
 interface Group {

@@ -8,6 +8,7 @@ import matter from 'gray-matter';
 import yaml from 'js-yaml';
 import { chromium } from 'playwright';
 import { assertBasicRun, assertControlRun, assertSeededRun } from './tests/regression/lib/assertions.ts';
+import { readSessionAnalysis } from './tests/regression/lib/artifacts.ts';
 import { DISCUSSION_CATEGORY, DISCUSSION_MUTATION, DISCUSSION_QUERY, prNumberFromEvent, repoOwnerAndName } from './tests/regression/lib/github.ts';
 import { REPORT_MARKER, buildReport } from './tests/regression/lib/report.ts';
 import { startFixture } from './tests/regression/fixture/server.ts';
@@ -302,7 +303,7 @@ async function runBasicScenario(variant, seed, retries) {
     const res = await shell`timeout 1800 bun ${CLI} explore /issues --headless --max-tests 5 -p ${runDir}`.env(runEnv(fixture.url));
     fixture.stop();
     const outcome = assertBasicRun(runDir, String(res.output || ''));
-    records.push({ label, kind: 'gate', attempt, maxAttempts, passed: outcome.passed, durationSec: elapsed(started), details: outcome.details });
+    records.push({ label, kind: 'gate', attempt, maxAttempts, passed: outcome.passed, durationSec: elapsed(started), details: outcome.details, analysis: readSessionAnalysis(runDir) });
     reportAttempt(label, attempt, maxAttempts, outcome);
     passed = outcome.passed;
   }

@@ -87,6 +87,8 @@ bunx bunosh regression:variants --scenario basic --variants native,aria,plain
 
 The report is posted as a sticky PR comment (on `pull_request`) or a `Regression Reports` GitHub Discussion (on `workflow_dispatch`). Fork PRs get a read-only token, so comment posting may fail; the report is also written to the job step summary and uploaded as the `regression-runs` artifact.
 
+The report also embeds the **Session Analysis** from the fresh-explore run — Explorbot's Analyst agent writes a prose summary of what works, defects, UX issues, and execution issues, which the harness reads from `output/reports/<label>.md` and appends to the comment. The Analyst is enabled in the config template (`ai.agents.analyst.enabled: true`); it adds one AI call per basic run.
+
 ## Tuning
 
 - **Thresholds** (`MIN_PLANNED_TESTS`, `MIN_PASSED`, `MIN_KEYWORD_HITS`, `MIN_FEATURE_GROUPS`) live at the top of `tests/regression/lib/assertions.ts`.
