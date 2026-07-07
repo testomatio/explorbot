@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-07
+
+### Changes
+- Updated `@openrouter/ai-sdk-provider` to [3.0.0](https://github.com/OpenRouterTeam/ai-sdk-provider/releases/tag/3.0.0) — the first release with official Vercel AI SDK 7 support — and removed the temporary vendored PR #511 tarball (`vendor/`). Vision (screenshot analysis via the `see` tool) now works through OpenRouter on the released package.
+
 ## 2026-07-05
 
 ### Changes
