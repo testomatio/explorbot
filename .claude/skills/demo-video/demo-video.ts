@@ -26,11 +26,13 @@ const DEFAULTS = {
   terminalTheme: 'dark' as TerminalTheme,
   successEpilogue: false,
   keepTemp: false,
+  byArea: false,
 };
 
 export async function analyzeDemoCandidates(options: DemoVideoOptions = {}): Promise<CandidateSummary[]> {
   const opts = withDefaults(options);
   const parsed = await parseLog(opts.log, opts.screencasts);
+  if (opts.byArea) return bestPerArea(parsed.runs, opts).map(candidateSummary);
   return selectSegments(parsed.runs, opts.duration, opts.speedMax).map(candidateSummary);
 }
 
@@ -39,6 +41,19 @@ export async function createDemoVideo(options: DemoVideoOptions = {}): Promise<D
   const parsed = await parseLog(opts.log, opts.screencasts);
   const candidate = pickCandidate(parsed.runs, opts);
   return renderCandidate(candidate, opts);
+}
+
+function bestPerArea(runs: TestRun[], opts: ResolvedOptions): Candidate[] {
+  const byArea = new Map<string, Candidate>();
+  for (const run of runs) {
+    const candidate = selectSegments([run], opts.duration, opts.speedMax)[0];
+    if (!candidate) continue;
+    const area = run.webmBasename.replace(/-\d+-.*$/, '');
+    const current = byArea.get(area);
+    if (current && current.score >= candidate.score) continue;
+    byArea.set(area, candidate);
+  }
+  return [...byArea.values()].sort((a, b) => b.score - a.score);
 }
 
 function pickCandidate(runs: TestRun[], opts: ResolvedOptions): Candidate {
@@ -96,8 +111,10 @@ async function renderCandidate(candidate: Candidate, opts: ResolvedOptions): Pro
   const check = await verifyOutput(output, layout, candidate.outDur);
   const frames = await extractCheckFrames(output, candidate.outDur);
   const warnings = [...terminal.warnings];
+  const maxGap = Math.max(0, ...candidate.gaps);
   if (candidate.relaxLevel > 0) warnings.push(`segment required relaxation level ${candidate.relaxLevel} (gaps above default limits)`);
-  if (candidate.uniqueRatio < 0.6) warnings.push(`only ${Math.round(candidate.uniqueRatio * 100)}% of steps are unique — the segment may show retries instead of progress`);
+  if (candidate.uniqueRatio < 0.85) warnings.push(`only ${Math.round(candidate.uniqueRatio * 100)}% of steps are unique — the browser may sit static while the terminal retries selectors (desync look)`);
+  if (maxGap > 7) warnings.push(`${maxGap.toFixed(1)}s gap between actions — the browser may sit still while the terminal waits`);
   if (candidate.outDur < opts.duration - 1) warnings.push(`output is ${candidate.outDur.toFixed(1)}s, shorter than the ${opts.duration}s target (test too short)`);
   if (!run.nameMatchesFile) warnings.push('scenario name does not match webm filename — verify the screencast belongs to this test');
 
@@ -217,6 +234,7 @@ async function runCli(): Promise<void> {
       'terminal-theme': { type: 'string', default: DEFAULTS.terminalTheme },
       'success-epilogue': { type: 'boolean', default: false },
       'keep-temp': { type: 'boolean', default: false },
+      'by-area': { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
     },
   });
@@ -238,6 +256,7 @@ async function runCli(): Promise<void> {
     terminalTheme: parseTerminalTheme(args['terminal-theme']),
     successEpilogue: args['success-epilogue'],
     keepTemp: args['keep-temp'],
+    byArea: args['by-area'],
   };
 
   const command = positionals[0];

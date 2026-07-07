@@ -641,8 +641,9 @@ export class Provider {
             text: prompt,
           },
           {
-            type: 'image',
-            image: imageData,
+            type: 'file',
+            mediaType: 'image/png',
+            data: imageData,
           },
         ],
       },

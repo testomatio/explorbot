@@ -23,7 +23,7 @@ bun .claude/skills/demo-video/demo-video.ts analyze \
   --log output/explorbot.log --screencasts output/screencasts --duration 30
 ```
 
-2. Show the user the top candidates and confirm scenario, duration, and size — or skip straight to `auto` which picks the best one.
+2. Show the user the top candidates and confirm scenario, duration, and size — or skip straight to `auto` which picks the best one. The default ranking clusters into a few dense areas (requirements/runs/plans); add `--by-area` to list the single best window per product area when you want variety. Prefer windows with `uniqueSteps` at or near 100% — a lower ratio is a retry loop that renders as a static browser while the terminal spams clicks, which looks desynced.
 
 3. Render:
 
@@ -64,6 +64,7 @@ Parameters:
 - `--terminal-theme` — `dark` (default) or `light` terminal appearance
 - `--success-epilogue` — if the window doesn't reach the test end, append the real green success line near the end
 - `--keep-temp` — keep the temp workspace (tape, replay script, terminal render) for debugging
+- `--by-area` — `analyze` only: list the best-syncing window per product area instead of the default density-ranked top-N (breadth over depth)
 - `--json` — machine-readable `analyze` output
 
 ## Layouts
@@ -88,6 +89,7 @@ Wide canvases are cropped left/right so side margins never exceed 5% of the fram
 
 - **No candidates** — only successful tests with an existing webm ≥ 10s qualify. Check `Saved screencast:` and `Successful test:` lines exist in the log; use `--start`/`--end` to force a window.
 - **Log/screencast mismatch** — screencast files are overwritten on re-run; only the last `Saved screencast:` occurrence per file matches the file on disk. A `scenario name does not match webm filename` warning means the join is suspect.
+- **Static browser / looks desynced** — timing calibration is almost never the cause. The recording is a retry loop (render warns when `uniqueSteps < 85%`) or has long dead air (warns when a gap exceeds 7s): the browser sits still while the terminal keeps printing. Pick a cleaner scenario — `--by-area` lists candidates with their `uniqueSteps`/`maxGap` so you can avoid these.
 - **VHS parse errors** — VHS tapes cannot contain long absolute `Output` paths; the tool always runs VHS with `cwd` set to the temp dir and a relative output. Use `--keep-temp` and re-run `vhs demo.tape` there to debug.
 - **Terminal drift warning** — if the VHS render duration deviates >1.5s from expected, a corrective `setpts` is applied automatically; the composite is also padded/trimmed so it cannot desync the cut.
 

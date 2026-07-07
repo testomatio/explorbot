@@ -51,7 +51,7 @@ export class Conversation {
 
     this.messages.push({
       role: 'user',
-      content: [{ type: 'image', image: imageData }],
+      content: [{ type: 'file', mediaType: 'image/png', data: imageData }],
     });
   }
 

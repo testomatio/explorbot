@@ -459,6 +459,17 @@ async function checkVariants() {
   }
 }
 
+function escapeIssueRefs(text) {
+  return text.replace(/#(?=\d)/g, '\\#');
+}
+
+function writeCommentBody(reportPath) {
+  const escaped = escapeIssueRefs(readFileSync(reportPath, 'utf-8'));
+  const bodyPath = join(RUNS, 'report.comment.md');
+  writeFileSync(bodyPath, escaped);
+  return bodyPath;
+}
+
 async function postPrComment(reportPath) {
   const pr = prNumberFromEvent();
   const repo = process.env.GITHUB_REPOSITORY;
@@ -466,14 +477,15 @@ async function postPrComment(reportPath) {
     say('No pull request number available; skipping comment.');
     return;
   }
+  const bodyPath = writeCommentBody(reportPath);
   const filter = `[.[] | select(.body | contains("${REPORT_MARKER}"))][0].id`;
   const existing = await shell`gh api repos/${repo}/issues/${pr}/comments --paginate --jq ${filter}`;
   const id = String(existing.output || '').trim();
   if (id && id !== 'null') {
-    await shell`gh api -X PATCH repos/${repo}/issues/comments/${id} -F body=@${reportPath}`;
+    await shell`gh api -X PATCH repos/${repo}/issues/comments/${id} -F body=@${bodyPath}`;
     return;
   }
-  await shell`gh api -X POST repos/${repo}/issues/${pr}/comments -F body=@${reportPath}`;
+  await shell`gh api -X POST repos/${repo}/issues/${pr}/comments -F body=@${bodyPath}`;
 }
 
 async function postDiscussion(reportPath) {
@@ -493,5 +505,6 @@ async function postDiscussion(reportPath) {
   const sha7 = (process.env.GITHUB_SHA || 'local').slice(0, 7);
   const date = new Date().toISOString().slice(0, 10);
   const title = `Regression ${date} — ${sha7}`;
-  await shell`gh api graphql -f query=${DISCUSSION_MUTATION} -F repo=${repoId} -F cat=${category.id} -F title=${title} -F body=@${reportPath}`;
+  const bodyPath = writeCommentBody(reportPath);
+  await shell`gh api graphql -f query=${DISCUSSION_MUTATION} -F repo=${repoId} -F cat=${category.id} -F title=${title} -F body=@${bodyPath}`;
 }
