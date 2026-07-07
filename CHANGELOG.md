@@ -1,14 +1,11 @@
 # Changelog
 
-## 2026-07-06
+## 2026-07-05
 
 ### Changes
-- Demo video generator: turn a recorded Explorbot session into a social-media-ready MP4 that plays the browser screencast next to a terminal replaying the session's real log lines at their original pace. It picks a successful, action-dense fragment automatically (max 1.25x speedup, no retries or failures on screen), adds window chrome, shadows, and an abstract background, and supports landscape, square, vertical, or custom dimensions with dark or light terminal themes. Requires `vhs`, `ffmpeg`, and ImageMagick; needs screencasts enabled via `ai.agents.historian.screencast`. See `docs/contributing/demo-videos.md`.
-  ```bash
-  bunx bunosh demo:analyze output/explorbot.log     # list demo-worthy segments
-  bunx bunosh demo:video --size landscape           # render the best one
-  bunx bunosh demo:video "upload a file" --size vertical --terminal-theme light
-  ```
+- Refreshed the recommended OpenRouter model set (`openai/gpt-oss-20b:nitro`, `minimax/minimax-m2.5:nitro`) in the Getting Started and Providers docs.
+- Temporarily pinned `@openrouter/ai-sdk-provider` to the AI-SDK-7 build from [OpenRouterTeam/ai-sdk-provider#511](https://github.com/OpenRouterTeam/ai-sdk-provider/pull/511) (vendored tarball) so the vision model — screenshot analysis via the `see` tool — works on AI SDK 7; the released provider targets AI SDK 6 and rejected image inputs. Remove the pin once the PR is released. See `vendor/README.md`.
+- Added a contributor self-regression harness (`bunosh regression:basic`, `regression:experience`, `regression:all`) that runs Explorbot end-to-end with a real model against a bundled fixture app and checks that research, planning, and test execution (including vision) still work. See `docs/contributing/regression-tests.md`.
 
 ## 2026-06-26
 

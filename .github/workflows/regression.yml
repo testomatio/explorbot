@@ -1,0 +1,81 @@
+# Self-regression: runs Explorbot end-to-end with real AI against a local fixture app.
+#
+# Security: this workflow uses the `regression` GitHub environment, which holds the
+# OPENROUTER_API_KEY secret behind a required reviewer. On `pull_request` (including
+# forks) the job pauses at the environment gate BEFORE any secret is exposed. The job
+# then runs the PR's own code, so the reviewer MUST read the PR diff before approving —
+# that review is the security boundary. Do not switch this to `pull_request_target` or
+# check out PR head with secrets available.
+name: Regression
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Scenario to run
+        type: choice
+        options: [all, basic, experience, variants]
+        default: all
+      retries:
+        description: Retries per scenario
+        default: '2'
+      variant:
+        description: Widget variant
+        type: choice
+        options: [native, aria, plain, random]
+        default: native
+      seed:
+        description: RNG seed for the random variant
+        default: '42'
+
+concurrency:
+  group: regression-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  discussions: write
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    environment: regression
+    timeout-minutes: 150
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run regression scenarios
+        run: bunx bunosh regression:${{ github.event.inputs.scenario || 'all' }} --retries ${{ github.event.inputs.retries || '2' }} --variant ${{ github.event.inputs.variant || 'native' }} --seed ${{ github.event.inputs.seed || '42' }}
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+      - name: Post report
+        if: always()
+        continue-on-error: true
+        run: bunx bunosh regression:report
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-runs
+          path: tests/regression/.runs
+          if-no-files-found: ignore

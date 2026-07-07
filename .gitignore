@@ -6,6 +6,9 @@ yarn-error.log*
 pnpm-debug.log*
 bun.lockb
 
+# Regression harness run artifacts
+tests/regression/.runs/
+
 # Environment variables
 .env
 .env.local
@@ -141,3 +144,6 @@ Thumbs.db
 .yarn/install-state.gz
 .pnp.* 
 .dmux/
+
+# Keep the temporarily vendored OpenRouter AI-SDK-7 provider (PR #511)
+!vendor/*.tgz

@@ -88,6 +88,8 @@ bun run test:node    # Run Node.js build tests
 
 All checks must pass before you submit a PR.
 
+See [AI integration tests](ai-integration-tests.md) for how agent calls are tested with a mocked LLM, and [regression tests](regression-tests.md) for the end-to-end harness that runs Explorbot with real AI against a local fixture app.
+
 ## Using Claude Code
 
 This project includes Claude Code skills to help with development. See `CLAUDE.md` for the full list.
