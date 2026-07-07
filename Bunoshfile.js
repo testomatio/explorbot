@@ -14,6 +14,7 @@ import { REPORT_MARKER, buildReport } from './tests/regression/lib/report.ts';
 import { startFixture } from './tests/regression/fixture/server.ts';
 import { parsePlansFromMarkdown } from './src/utils/test-plan-markdown.ts';
 import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
+import { analyzeDemoCandidates, createDemoVideo } from './.claude/skills/demo-video/demo-video.ts';
 
 const { exec, shell, writeToFile, task, ai } = global.bunosh;
 
@@ -41,6 +42,54 @@ export async function worktreeCreate(name = '') {
   await exec`ln -sf node_modules ${newDir}/node_modules`;
 
   say(`Created worktree for feature ${worktreeName} in ${newDir}`);
+}
+
+/**
+ * List demo-worthy segments from an Explorbot session log
+ * @param {string} log - Path to explorbot.log
+ * @param {object} options
+ * @param {string} [options.screencasts=output/screencasts] - Directory with .webm screencasts
+ * @param {string} [options.duration=30] - Target video duration in seconds
+ */
+export async function demoAnalyze(log = 'output/explorbot.log', options = { screencasts: 'output/screencasts', duration: 30 }) {
+  const candidates = await analyzeDemoCandidates({ log, screencasts: options.screencasts, duration: options.duration });
+  if (!candidates.length) {
+    yell('No demo-worthy segments found');
+    return;
+  }
+  for (const [i, c] of candidates.entries()) {
+    say(`#${i + 1} [${c.score}] ${c.scenario}`);
+    say(`   ${c.webm}`);
+    say(`   window ${c.windowStart}s → ${c.windowEnd}s, speed ${c.speed}x → ${c.outDur}s, ${c.visualSteps} steps (unique ${c.uniqueSteps}, ${c.successNotes} success notes)`);
+  }
+}
+
+/**
+ * Generate a demo video from an Explorbot run: browser screencast + terminal replaying real logs
+ * @param {string} scenario - Scenario name substring to pick a test (empty = best segment)
+ * @param {object} options
+ * @param {string} [options.log=output/explorbot.log] - Path to explorbot.log
+ * @param {string} [options.screencasts=output/screencasts] - Directory with .webm screencasts
+ * @param {string} [options.duration=30] - Target duration in seconds (max 1.25x speedup)
+ * @param {string} [options.size=landscape] - landscape | square | vertical | WxH
+ * @param {string} [options.output] - Output MP4 path
+ * @param {string} [options.appTitle] - Browser window title (default: app host from log)
+ * @param {string} [options.terminalTheme=dark] - dark | light
+ * @param {string} [options.bgImage=auto] - auto | gradient | none | path | URL
+ */
+export async function demoVideo(scenario = '', options = { log: 'output/explorbot.log', screencasts: 'output/screencasts', duration: 30, size: 'landscape', output: '', appTitle: '', terminalTheme: 'dark', bgImage: 'auto' }) {
+  const summary = await createDemoVideo({ scenario, ...options });
+  say(`Video: ${summary.output}`);
+  say(`Scenario: ${summary.scenario} (${summary.outDur}s @ ${summary.speed}x)`);
+  say(`Background: ${summary.background}`);
+  for (const warning of summary.warnings) {
+    say(`⚠ ${warning}`);
+  }
+  if (!summary.check.ok) {
+    yell(`Output check failed: ${summary.check.issues.join('; ')}`);
+    return;
+  }
+  say(`Check frames: ${summary.frames.map((f) => f.split('/').pop()).join(', ')}`);
 }
 
 /**
