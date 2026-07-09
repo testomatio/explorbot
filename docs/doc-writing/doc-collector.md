@@ -140,6 +140,7 @@ export default {
 | `deniedActionLabels` | built-in list | Skip interactive candidates whose label or locator looks destructive |
 | `maxPrimaryCandidates` | `3` | Maximum non-tab interaction candidates selected from page content/control sections |
 | `maxInteractions` | `5` | Maximum deterministic interactions attempted per page |
+| `maxSectionScreenshots` | `8` | Maximum per-section screenshots captured per page, in addition to the full-page screenshot |
 | `minCanActions` | `1` | Minimum proven actions before a page is considered low-signal |
 | `minInteractiveElements` | `3` | Minimum interactive elements before a page is considered low-signal |
 
@@ -189,6 +190,6 @@ A softer boundary than `subtree`: keep the same scope root, its descendants, and
 
 ## Related Docs
 
-- [commands.md](../guides/commands.md) - terminal command reference
-- [configuration.md](./configuration.md) - main Explorbot configuration
-- [researcher.md](./researcher.md) - researcher behavior
+- [commands.md](../reference/commands.md) - terminal command reference
+- [configuration.md](../reference/configuration.md) - main Explorbot configuration
+- [researcher.md](../web-testing/researcher.md) - researcher behavior

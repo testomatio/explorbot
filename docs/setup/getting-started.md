@@ -11,7 +11,7 @@ npm i explorbot --save
 npx playwright install
 ```
 
-You need Node.js 24+ (or Bun), an AI provider key, and a modern terminal — iTerm2, WARP, Kitty, Ghostty, or Windows Terminal with WSL. For the full compatibility checklist, see [Prerequisites](./reference/prerequisites.md).
+You need Node.js 24+ (or Bun), an AI provider key, and a modern terminal — iTerm2, WARP, Kitty, Ghostty, or Windows Terminal with WSL. For the full compatibility checklist, see [Prerequisites](./prerequisites.md).
 
 ## 2. Configure
 
@@ -58,7 +58,7 @@ Explorbot uses three models. Pick each one for speed and cost:
 | `visionModel` | `ai.visionModel` | screenshot analysis | a vision model (e.g. `google/gemma-4-31b-it`) |
 | `agenticModel` | `ai.agenticModel` | Captain and Pilot — they read short action logs and make the big decisions | a smarter model (e.g. MiniMax 2.5, Grok Fast) |
 
-Captain and Pilot barely use tokens, so a smarter `agenticModel` improves results for almost no extra cost. OpenRouter is the simplest start — one key, many models. To use OpenAI, Anthropic, Groq, or others, see [Providers](./reference/providers.md). For every config option, see [Configuration](./reference/configuration.md).
+Captain and Pilot barely use tokens, so a smarter `agenticModel` improves results for almost no extra cost. OpenRouter is the simplest start — one key, many models. To use OpenAI, Anthropic, Groq, or others, see [Providers](./providers.md). For every config option, see [Configuration](../reference/configuration.md).
 
 ## 3. Tell Explorbot how to log in
 
@@ -77,7 +77,7 @@ npx explorbot start /login --session        # logs in, saves the session
 npx explorbot start /dashboard --session    # restores it, skips login
 ```
 
-Keep real secrets in environment variables, and handle cookie banners, modals, and test data the same way — see [Customization](./guides/customization.md).
+Keep real secrets in environment variables, and handle cookie banners, modals, and test data the same way — see [Customization](../web-testing/customization.md).
 
 ## 4. Pick one feature to test
 
@@ -120,6 +120,6 @@ Every run is saved to `output/`:
 
 ## Next steps
 
-- [Customization](./guides/customization.md) — login, cookie bars, modals, and test data.
-- [Commands](./guides/commands.md) — every command, in the terminal and on the CLI.
-- [Knowledge](./guides/knowledge.md) — teach Explorbot more about your app.
+- [Customization](../web-testing/customization.md) — login, cookie bars, modals, and test data.
+- [Commands](../reference/commands.md) — every command, in the terminal and on the CLI.
+- [Knowledge](../workflow/knowledge.md) — teach Explorbot more about your app.

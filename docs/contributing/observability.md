@@ -6,7 +6,7 @@ Explorbot integrates with [Langfuse](https://langfuse.com) for tracing. Use it t
 
 ## Why Observability?
 
-When Explorbot runs on its own, you need to see:
+Without traces, you only see the final test result and basic logs. When Explorbot runs on its own, you need to see:
 
 - What prompts went to the AI.
 - What tools were called, and with what parameters.
@@ -69,13 +69,15 @@ Explorbot uses the [Vercel AI SDK integration](https://langfuse.com/docs/integra
 
 | Trace | Description |
 |-------|-------------|
-| `tester.loop` | Full test execution cycle |
-| `research` | Page analysis by Researcher agent |
-| `navigator.loop` | Navigation and interaction attempts |
+| `test: <scenario>` | Full test execution cycle |
+| `researcher: <url>` | Page analysis by Researcher agent |
+| `planner: <url>` | Test scenario generation |
+| `driller: <url>` | Component drilling |
 | `ai.generateText` | Text generation calls |
 | `ai.generateObject` | Structured output calls |
 | `codeceptjs.step` | Individual browser actions |
-| `I.click`, `I.fillField`, etc. | Specific CodeceptJS commands |
+
+Navigator has no span of its own — its AI calls appear as `ai.*` spans under the parent trace.
 
 ## Analyzing Sessions
 
@@ -91,32 +93,19 @@ Explorbot uses the [Vercel AI SDK integration](https://langfuse.com/docs/integra
    - Duration
    - Errors
 
-### Export for AI Analysis
-
-Export a session as JSON from Langfuse:
-
-1. Open your Langfuse project.
-2. Find the failed `tester.loop` trace.
-3. Click the **Export** button, or use the API.
-4. Save it as a JSON file, for example `failed-session.json`.
-
-The trace holds the full context: prompts, tool calls, page states, and AI decisions.
-
 ## Debugging with Claude Code
 
 Explorbot includes a Claude Code skill that analyzes failed sessions.
 
 ### Using the Debug Skill
 
-In Claude Code, run:
+Find the failed `test: <scenario>` trace in Langfuse and copy its trace ID. Then, in Claude Code, run:
 
 ```
 /explorbot-debug
 ```
 
-The skill will ask for:
-1. **Langfuse JSON export** — path to your exported trace file
-2. **Or nothing** — it will analyze `output/explorbot.log` instead
+Give it the trace ID — the skill fetches the trace with all its observations via `bun .claude/skills/explorbot-debug/langfuse-export.ts <trace-id>`. The trace holds the full context: prompts, tool calls, page states, and AI decisions. Without a trace ID, the skill analyzes `output/explorbot.log` instead.
 
 ### What the Skill Analyzes
 
@@ -150,39 +139,21 @@ The skill looks for three failure patterns:
 
 4. Can try interactions with browser tools, if available, and record working CodeceptJS code.
 
-### Why Langfuse Matters for Debugging
-
-Without Langfuse, you only see:
-
-- The final test result (pass or fail).
-- Basic logs.
-
-With Langfuse traces, you see:
-
-- The exact prompts the AI received at each step.
-- The page state the AI analyzed.
-- Which tool calls succeeded or failed, and why.
-- Token usage and timing.
-- The full decision chain.
-
-That makes AI behavior debuggable. You can trace where and why it went wrong.
-
 ### Example Workflow
 
 ```bash
 # 1. Test fails
-./bin/explorbot-cli.ts explore --from /admin/users
+./bin/explorbot-cli.ts explore /admin/users
 
-# 2. Open Langfuse, find tester.loop trace, export JSON
-# Save to: ./traces/failed-users-test.json
+# 2. Open Langfuse, find the failed "test: ..." trace, copy its trace ID
 
 # 3. In Claude Code:
 /explorbot-debug
-# Provide path: ./traces/failed-users-test.json
+# Provide the trace ID
 
 # 4. Skill analyzes and suggests Knowledge fix
 # 5. Create knowledge file
-./bin/explorbot-cli.ts know "/admin/users/*" "Use container context for table actions"
+./bin/explorbot-cli.ts learn "/admin/users/*" "Use container context for table actions"
 
 # 6. Re-run test
 ```
@@ -192,13 +163,13 @@ That makes AI behavior debuggable. You can trace where and why it went wrong.
 ### Enable Verbose Logging
 
 ```bash
-./bin/explorbot-cli.ts explore --verbose
+./bin/explorbot-cli.ts explore /admin/users --verbose
 ```
 
 Or set the environment variable:
 
 ```bash
-DEBUG=explorbot:* ./bin/explorbot-cli.ts explore
+DEBUG=explorbot:* ./bin/explorbot-cli.ts explore /admin/users
 ```
 
 This shows detailed logs:
@@ -211,13 +182,13 @@ This shows detailed logs:
 
 ```bash
 # AI provider calls only
-DEBUG=explorbot:provider ./bin/explorbot-cli.ts explore
+DEBUG=explorbot:provider ./bin/explorbot-cli.ts explore /admin/users
 
 # Navigator agent only
-DEBUG=explorbot:navigator ./bin/explorbot-cli.ts explore
+DEBUG=explorbot:navigator ./bin/explorbot-cli.ts explore /admin/users
 
 # Multiple namespaces
-DEBUG=explorbot:tester,explorbot:navigator ./bin/explorbot-cli.ts explore
+DEBUG=explorbot:tester,explorbot:navigator ./bin/explorbot-cli.ts explore /admin/users
 ```
 
 ### Available Namespaces
@@ -245,12 +216,7 @@ Langfuse tracks token usage per call. Use it to:
 
 ## Self-Hosting Langfuse
 
-For privacy or compliance, [self-host Langfuse](https://langfuse.com/docs/deployment/self-host):
-
-```bash
-# Docker
-docker run -d -p 3000:3000 langfuse/langfuse
-```
+For privacy or compliance, you can self-host Langfuse. Langfuse v3 requires docker compose with Postgres, ClickHouse, and Redis — follow the [self-hosting docs](https://langfuse.com/self-hosting).
 
 Then set `baseUrl` in your config:
 

@@ -25,7 +25,7 @@ Log in with these credentials:
 - password: ${env.APP_PASSWORD}
 ```
 
-Explorbot reads this when it opens the login page and signs in on its own. See [Knowledge](./knowledge.md).
+Explorbot reads this when it opens the login page and signs in on its own. See [Knowledge](../workflow/knowledge.md).
 
 ## Stay logged in between runs
 
@@ -126,13 +126,6 @@ Prefer ARIA labels and visible text.
 
 ## Knowledge or hooks?
 
-Reach for a knowledge file first. It is markdown, lives beside your other knowledge, and applies to every agent on matching pages. Use a hook when you need code to run for one agent only, or different behavior for navigation versus testing.
+Reach for a knowledge file first. It is markdown, lives beside your other knowledge, and applies to every agent on matching pages. Use a hook when you need code to run for one agent only, or different behavior for navigation versus testing. For a case-by-case comparison, see the decision table in [Hooks](./hooks.md#when-to-use-hooks-vs-knowledge).
 
-| Problem | Use |
-|---------|-----|
-| Wait or dismiss something on every visit | Knowledge: `wait`, `waitForElement`, `code` |
-| Provide credentials or test data as text | Knowledge body |
-| Run code for one agent only | Hook |
-| Seed or clean data around tests | Hook: `tester.beforeHook` / `afterHook` |
-
-Learn more in [Knowledge](./knowledge.md) and [Hooks](./hooks.md).
+Learn more in [Knowledge](../workflow/knowledge.md) and [Hooks](./hooks.md).

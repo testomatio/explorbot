@@ -40,54 +40,23 @@ Coverage is configured in `bunfig.toml`:
 - **Included Files**: `src/**/*.{ts,tsx,js,jsx}`
 - **Excluded Files**: Test files, TUI components, build artifacts
 
-## Current Coverage Status
-
-From the latest test run:
-
-| Component | Functions | Lines | Status |
-|-----------|-----------|-------|---------|
-| **ExperienceTracker** | 100% | 100% | ✅ Complete |
-| **StateManager** | 77.42% | 68.12% | ⚠️ Good |
-| **ActionResult** | 38.89% | 36.93% | ❌ Needs tests |
-| **Config** | 44.44% | 32.88% | ❌ Needs tests |
-| **Logger** | 31.25% | 59.50% | ❌ Needs tests |
-
 ## Test Structure
 
 ```
 tests/
-├── unit/                    # Unit tests
+├── unit/                    # Unit tests (Bun)
 │   ├── state-manager.test.ts
 │   ├── experience-tracker.test.ts
 │   └── ...
-├── mocks/                   # Test mocks
-│   └── ai-provider.mock.ts
-└── fixtures/                # Test data
+├── integration/             # AI agent tests with mocked LLM
+├── node/                    # Node.js build smoke tests
+├── regression/              # End-to-end runs with real AI
+└── mocks/                   # Test mocks
 ```
+
+This page covers unit tests. The other suites: integration tests exercise AI agents against a mocked LLM via aimock — see [AI integration tests](./ai-integration-tests.md). Node smoke tests in `tests/node/` verify the compiled npm build and run in CI (`bun run test:node`). Regression tests run Explorbot with real AI against a local fixture app — see [regression tests](./regression-tests.md).
 
 ## Writing Tests
-
-### Test Template
-```typescript
-import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
-
-describe('ComponentName', () => {
-  beforeEach(() => {
-    // Setup
-  });
-
-  afterEach(() => {
-    // Cleanup
-  });
-
-  describe('method', () => {
-    it('should do something', () => {
-      // Test implementation
-      expect(actual).toBe(expected);
-    });
-  });
-});
-```
 
 ### Best Practices
 

@@ -20,7 +20,7 @@ If Explorbot struggles on your site, try the built-in extension points first:
 - Hooks run custom logic before and after actions.
 - Configuration adjusts models, timeouts, and browser settings.
 
-See the [knowledge](../guides/knowledge.md), [hooks](../guides/hooks.md), and [configuration](../reference/configuration.md) docs.
+See the [knowledge](../workflow/knowledge.md), [hooks](../web-testing/hooks.md), and [configuration](../reference/configuration.md) docs.
 
 ## Pull Requests
 
@@ -79,20 +79,11 @@ See `CLAUDE.md` for the full guidelines.
 
 ## Testing
 
-```bash
-bun run format       # Format code
-bun run lint         # Check linting
-bun run test:unit    # Run unit tests (Bun)
-bun run test:node    # Run Node.js build tests
-```
-
-All checks must pass before you submit a PR.
-
-See [AI integration tests](ai-integration-tests.md) for how agent calls are tested with a mocked LLM, and [regression tests](regression-tests.md) for the end-to-end harness that runs Explorbot with real AI against a local fixture app.
+Run `bun run format`, `bun run lint`, `bun run test:unit`, and `bun run test:node` before you submit a PR — all checks must pass. See the [testing guide](testing.md) for details, [AI integration tests](ai-integration-tests.md) for mocked-LLM agent tests, and [regression tests](regression-tests.md) for the real-AI end-to-end harness.
 
 ## Using Claude Code
 
-This project includes Claude Code skills to help with development. See `CLAUDE.md` for the full list.
+This project includes Claude Code skills to help with development. See the `.claude/skills/` directory: changelog, demo-video, explorbot-debug, explorbot-fix-session, image-processing, prompt-audit, xpath-testing.
 
 ## Questions?
 

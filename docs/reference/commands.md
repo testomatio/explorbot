@@ -12,26 +12,33 @@ Both share the same code, so behavior and options match.
 | Capability | CLI | TUI | Notes |
 |---|---|---|---|
 | Start interactive session | `npx explorbot start [path]` | — | Boots the TUI |
-| Autonomous exploration | `npx explorbot explore <path>` | `/explore [url]` | Full research → plan → test cycle |
+| Autonomous exploration | `npx explorbot explore <path>` | `/explore [focus]` | Full research → plan → test cycle |
+| Continuous exploration | `npx explorbot freesail [url]` | `/freesail` | Explore page after page until stopped |
 | Research a page | `npx explorbot research <url>` | `/research [url]` | UI analysis only |
 | Generate test plan | `npx explorbot plan <path>` | `/plan [--focus <feature>]` | Writes plan markdown |
+| List saved plans | `npx explorbot plans [plan]` | `/plans [plan]` | Show plans and their tests |
 | Navigate to a URL | `npx explorbot navigate <url>` | `/navigate <target>` | Reachability probe + session capture |
-| Drill page components | `npx explorbot drill <url>` | `/drill` | Learn interactions |
+| Drill page components | `npx explorbot drill <url>` | `/drill [--knowledge <path>] [--max-components <n>]` | Learn interactions |
 | Execute plan tests | `npx explorbot test <planfile> [index]` | `/test [scenario\|number\|*]` | Run scenarios |
 | Re-run generated tests | `npx explorbot rerun <file> [index]` | `/rerun <file> [index]` | With AI auto-healing |
 | List generated tests | `npx explorbot runs [file]` | `/runs [file]` | Index + dry-run |
 | Store domain knowledge | `npx explorbot learn [url] [note]` | `/learn [note]` | Persisted to `knowledge/` |
+| Show stored knowledge | `npx explorbot knows [url]` | `/knows [url]` | List all or match a URL |
+| List stored experience | `npx explorbot experience [filter]` | `/experience [filter]` | Grouped by URL |
+| Compact experience files | `npx explorbot compact [target]` | `/compact [target]` | AI compression |
+| Print page context | `npx explorbot context <url>` | `/context` | Knowledge, experience, elements |
 | Execute CodeceptJS command | `npx explorbot shell <url> <command>` | `I.click(...)` etc. inline | One-shot vs interactive |
 | Load saved plan | `npx explorbot plan:load <file> [index]` | `/plan:load <file>` | Preview a plan |
-| Collect documentation | `npx explorbot docs collect <path-or-url>` | — | See [doc-collector](../reference/doc-collector.md) |
+| Collect documentation | `npx explorbot docs collect <path-or-url>` | — | See [doc-collector](../doc-writing/doc-collector.md) |
 | Extract built-in rules | `npx explorbot extract-rules <agent>` | — | Customizable rules to `rules/` |
+| Create a rule file | `npx explorbot add-rule [agent] [name]` | `/add-rule [agent] [name]` | Writes `rules/<agent>/<name>.md` |
 | Manage persistent browser | `npx explorbot browser {start\|stop\|status}` | — | Share browser across runs |
 | Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*` |
-| Clean output | `npx explorbot clean [--type ...]` | `/clean` | CLI: artifacts. TUI: clear chat. |
+| Clean generated files | `npx explorbot clean [target]` | `/clean [target]` | Same targets both ways |
 
 ## Common CLI Options
 
-Every CLI command that drives a browser accepts these options (`start`, `explore`, `plan`, `navigate`, `drill`, `research`, `test`, `rerun`, `shell`, `context`, `docs collect`):
+Every CLI command that drives a browser accepts these options (`start`, `explore`, `freesail`, `plan`, `navigate`, `drill`, `research`, `test`, `rerun`, `shell`, `docs collect`):
 
 | Option | Description |
 |--------|-------------|
@@ -167,10 +174,10 @@ npx explorbot explore /checkout --max-tests 10 --focus checkout
 ```
 # TUI
 /explore
-/explore /dashboard
+/explore checkout
 ```
 
-With a URL, explorbot navigates there first. When the cycle finishes in the TUI, run `/navigate` or `/explore` again to continue.
+The CLI form navigates to `<path>` first. The TUI form always runs on the current page — positional arguments become the focus feature (same as `--focus`), not a URL. When the cycle finishes in the TUI, run `/navigate` or `/explore` again to continue.
 
 #### Options
 
@@ -269,8 +276,31 @@ For new tests, the planner generates freely. The loaded plan is registered for s
 
 #### See also
 
-- [Test Plans](./test-plans.md) — markdown format for saved plans
-- [Planner](./planner.md) — how new test scenarios are generated
+- [Test Plans](../workflow/test-plans.md) — markdown format for saved plans
+- [Planner](../web-testing/planner.md) — how new test scenarios are generated
+
+### freesail
+
+Explore continuously: run the explore cycle on a page, then let the agent pick the next page and repeat until stopped or `--max-tests` is reached.
+
+```bash
+# CLI
+npx explorbot freesail                      # starts from /
+npx explorbot freesail /dashboard --scope /app --max-tests 20
+```
+
+```
+# TUI
+/freesail
+/freesail --deep
+```
+
+| Option | Description |
+|---|---|
+| `--deep` | Depth-first: prioritize newly discovered pages |
+| `--shallow` | Breadth-first: pick the globally least-visited page |
+| `--scope <prefix>` | Restrict navigation to URLs starting with this prefix |
+| `--max-tests <n>` | Maximum number of tests to run |
 
 ### research
 
@@ -334,6 +364,7 @@ npx explorbot test output/plans/login.md 3        # run test #3
 npx explorbot test output/plans/login.md 1-5      # range
 npx explorbot test output/plans/login.md 1,3,7    # selection
 npx explorbot test output/plans/login.md --grep authentication
+npx explorbot test 3 --from-plan output/plans/login.md   # index first, plan via option
 ```
 
 ```
@@ -348,6 +379,7 @@ npx explorbot test output/plans/login.md --grep authentication
 | Option | Description |
 |---|---|
 | `--grep <pattern>` | Run only tests whose scenario matches the pattern |
+| `--from-plan <file>` | Load this plan file when the first argument is a test index |
 
 ### drill
 
@@ -363,6 +395,7 @@ npx explorbot drill /login --knowledge /login
 ```
 # TUI
 /drill
+/drill --knowledge /login --max-components 10
 ```
 
 | Option | Description |
@@ -413,15 +446,22 @@ npx explorbot rerun output/tests/suite.js --session
 
 Tests without assertions (`I.see`, `I.seeElement`, and so on) are skipped.
 
-See [Rerunning Tests](./rerun.md) for the full workflow and healing configuration.
+See [Rerunning Tests](../web-testing/rerun.md) for the full workflow and healing configuration.
 
 ## Knowledge Management
 
-### knows (TUI)
+### knows
 
 List all knowledge or show matching knowledge for a URL.
 
+```bash
+# CLI
+npx explorbot knows
+npx explorbot knows /login
 ```
+
+```
+# TUI
 /knows
 /knows /login
 ```
@@ -444,6 +484,51 @@ npx explorbot learn /login "Use admin credentials"
 
 Without arguments, `learn` opens an interactive editor. Knowledge is saved to `./knowledge/` and used by agents during exploration.
 
+## Experience Management
+
+### experience
+
+List stored experiences grouped by URL. Pass a URL substring to filter, or a section ref (like `A.1`) to expand one section.
+
+```bash
+# CLI
+npx explorbot experience
+npx explorbot experience /login
+npx explorbot experience A.1
+```
+
+```
+# TUI
+/experience
+/experience /login
+```
+
+| Option | Description |
+|---|---|
+| `--recent` | Only files modified within the last 30 days |
+| `--old` | Only files modified more than 30 days ago |
+
+### compact
+
+Compress stored experience files with the ExperienceCompactor agent. Pass a filename or URL substring to limit scope.
+
+```bash
+# CLI
+npx explorbot compact
+npx explorbot compact /login
+npx explorbot compact --dry-run
+```
+
+```
+# TUI
+/compact
+```
+
+| Option | Description |
+|---|---|
+| `--dry-run` | Preview without running AI or writing files |
+| `--no-merge` | Skip the cross-URL merge step when compacting all |
+
 ## Documentation Collection (CLI only)
 
 ### `npx explorbot docs collect <path-or-url>`
@@ -463,7 +548,7 @@ Output is written to:
 
 Use `docbot.config.*` to set crawl scope, path filters, dynamic-page collapsing, and low-signal page skipping.
 
-See [Documentation Collection](../reference/doc-collector.md) for full configuration, crawl modes, and examples.
+See [Documentation Collection](../doc-writing/doc-collector.md) for full configuration, crawl modes, and examples.
 
 ### `npx explorbot docs init`
 
@@ -474,7 +559,23 @@ npx explorbot docs init
 npx explorbot docs init --path explorbot-testing
 ```
 
-## Plan Management (TUI)
+## Plan Management
+
+### plans
+
+List saved plans, or show the tests of one plan.
+
+```bash
+# CLI
+npx explorbot plans
+npx explorbot plans output/plans/checkout.md
+```
+
+```
+# TUI
+/plans
+/plans checkout
+```
 
 ### `/plan:save [filename]`
 
@@ -497,62 +598,60 @@ Load a previously saved plan.
 
 The CLI form `npx explorbot plan:load <file> [index]` previews a plan file from the shell. Pass an index to see details for one test.
 
-### `/plan:reload`
+### `/plan:reload [feature]`
 
-Reload the current plan file from disk after editing it externally.
+Clear the current plan and regenerate it with the Planner. Pass a feature to change the focus; otherwise the previous focus is reused.
 
 ## Page Inspection (TUI)
 
-### `/aria [--short]`
+### `/context:aria`
 
-Print the ARIA accessibility snapshot of the current page.
+Print the full ARIA accessibility snapshot of the current page.
 
 ```
-/aria
-/aria --short
+/context:aria
 ```
 
 Use it to debug element selectors and read the page structure.
 
-### `/html [--full]`
+### `/context:html`
 
-Print HTML snapshot of the current page.
+Print the combined HTML snapshot of the current page.
 
 ```
-/html
-/html --full
+/context:html
 ```
 
-- Default shows processed HTML
-- `--full` shows complete text content
+Captures fresh page content when the stored snapshot is empty.
 
-### `/data`
+### `/context:data`
 
 Extract structured data (tables, lists) from the current page.
 
 ```
-/data
+/context:data
 ```
 
 AI finds and formats data on the page.
 
-### `/context`, `/context:aria`, `/context:html`, `/context:data`, `/context:knowledge`, `/context:experience`
+### `/context`, `/context:knowledge`, `/context:experience`
 
-Print the agent-facing context for the current page in each form: combined snapshot, ARIA only, HTML only, data only, applicable knowledge, or stored experience.
+Print the agent-facing context for the current page: combined snapshot, applicable knowledge, or stored experience.
+
+The CLI counterpart is `npx explorbot context <url>` — see [below](#npx-explorbot-context-url).
 
 ## Session Commands (TUI)
 
-### `/clean`
+### `/clean [target]`
 
-Clear the Captain agent's conversation history.
+Delete generated files from disk — same targets as the CLI `clean` command below.
 
 ```
 /clean
+/clean plans
 ```
 
-Use it when the agent context grows too large or confused.
-
-The CLI counterpart `npx explorbot clean [--type <kind>]` removes generated artifacts (experiences, plans, tests) from disk. That is a different scope.
+Without a target, it cleans output artifacts and experience files.
 
 ### `/exit`
 
@@ -575,15 +674,17 @@ npx explorbot init --config-path ./explorbot.config.js
 npx explorbot init --force
 ```
 
-### `npx explorbot clean`
+### `npx explorbot clean [target]`
 
-Clean generated files.
+Clean generated files. Targets: `states`, `research`, `plans`, `tests`, `experiences`, `output`.
 
 ```bash
-npx explorbot clean                  # artifacts only
-npx explorbot clean --type experience
-npx explorbot clean --type all
+npx explorbot clean                  # output artifacts + experience files
+npx explorbot clean experiences      # only experience files
+npx explorbot clean plans            # only test plans
 ```
+
+Without a target, cleans everything under `output/` plus the `experience/` directory.
 
 ### `npx explorbot shell <url> <command>`
 
@@ -592,6 +693,26 @@ Run a single CodeceptJS command on a page and exit. Use it for quick checks from
 ```bash
 npx explorbot shell /login "I.see('Sign in')"
 ```
+
+### `npx explorbot context <url>`
+
+Print page context (URL, headings, knowledge, experience, interactive elements) for a URL and exit. It does not take the common browser flags — its options are:
+
+```bash
+npx explorbot context /dashboard
+npx explorbot context /dashboard --full --session auth.json
+```
+
+| Option | Description |
+|--------|-------------|
+| `-p, --path <path>` | Working directory path |
+| `-c, --config <path>` | Path to configuration file |
+| `--session [file]` | Save/restore browser session from file |
+| `--full` | Include HTML and all data |
+| `--compact` | Compact view with summaries |
+| `--attached` | Only auto-attached sections (default) |
+| `--visual` | Annotate elements on screenshot and print screenshot path |
+| `--screenshot` | Alias for `--visual` |
 
 ### `npx explorbot extract-rules <agent>`
 
@@ -603,7 +724,21 @@ npx explorbot extract-rules chief          # extracts to rules/chief/
 npx explorbot extract-rules planner -d ./my-rules  # custom directory
 ```
 
-After extraction, edit the markdown files to change how the agent behaves. See [Configuration: Rules](../reference/configuration.md#rules) for details.
+After extraction, edit the markdown files to change how the agent behaves. See [Configuration: Rules](./configuration.md#rules) for details.
+
+### `npx explorbot add-rule [agent] [name]`
+
+Create a rule file for an agent under `rules/<agent>/`. Without arguments, opens an interactive form. Also available in the TUI as `/add-rule [agent] [name]`.
+
+```bash
+npx explorbot add-rule                                  # interactive
+npx explorbot add-rule tester wait-for-toasts
+npx explorbot add-rule tester admin-creds --url "/admin/*"
+```
+
+| Option | Description |
+|--------|-------------|
+| `--url <pattern>` | URL pattern for this rule |
 
 ## Direct Browser Control (TUI)
 

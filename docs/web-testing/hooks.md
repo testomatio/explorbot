@@ -3,7 +3,7 @@
 Hooks run custom code before or after a specific agent. Use them to prepare and clean up the page per agent.
 
 > [!NOTE]
-> For simple page automation such as waiting or clicking cookie banners, use [Knowledge Files](./knowledge.md) with the `wait`, `waitForElement`, or `code` fields. Reach for hooks when you need different behavior for different agents.
+> For simple page automation such as waiting or clicking cookie banners, use [Knowledge Files](../workflow/knowledge.md) with the `wait`, `waitForElement`, or `code` fields. Reach for hooks when you need different behavior for different agents.
 
 ## When to Use Hooks vs Knowledge
 
@@ -115,6 +115,7 @@ researcher: {
 | `navigator` | After navigation | After page capture | Browser navigation |
 | `researcher` | After navigation | After research complete | Page analysis |
 | `tester` | Before test loop | After test loop | Test execution |
+| `driller` | Before drilling starts | After drilling completes | Component drilling |
 | `captain` | Before handling command | After command complete | User commands |
 
 > [!WARNING]
@@ -232,6 +233,6 @@ beforeHook: {
 
 ## See Also
 
-- [Knowledge Files](./knowledge.md) — page-level automation with `wait`, `waitForElement`, `code`
+- [Knowledge Files](../workflow/knowledge.md) — page-level automation with `wait`, `waitForElement`, `code`
 - [Configuration](../reference/configuration.md) — full configuration reference
-- [Agents](../reference/agents.md) — agent descriptions and workflows
+- [Agents](./agents.md) — agent descriptions and workflows

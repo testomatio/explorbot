@@ -14,7 +14,7 @@ npx explorbot start https://your-app.com
 
 It runs with no babysitting and reports back what it finds. This is vibe-testing.
 
-New here? Read the [Getting Started guide](docs/getting-started.md).
+New here? Read the [Getting Started guide](docs/setup/getting-started.md).
 
 ## Use Cases
 
@@ -54,11 +54,11 @@ Cheap, fast workers do the clicking and reading; smart managers make the calls �
 
 | | | |
 |---|---|---|
-| [Researcher](docs/reference/agents.md) | [Planner](docs/reference/agents.md) | [Tester](docs/reference/agents.md) |
-| [Pilot](docs/reference/agents.md) | [Captain](docs/reference/agents.md) | [Navigator](docs/reference/agents.md) |
-| [Analyst](docs/reference/agents.md) | [Historian](docs/reference/agents.md) | [Fisherman](docs/reference/agents.md) |
+| [Researcher](docs/web-testing/agents.md) | [Planner](docs/web-testing/agents.md) | [Tester](docs/web-testing/agents.md) |
+| [Pilot](docs/web-testing/agents.md) | [Captain](docs/web-testing/agents.md) | [Navigator](docs/web-testing/agents.md) |
+| [Analyst](docs/web-testing/agents.md) | [Historian](docs/web-testing/agents.md) | [Fisherman](docs/web-testing/agents.md) |
 
-See [Agents](docs/reference/agents.md) for what each one does.
+See [Agents](docs/web-testing/agents.md) for what each one does.
 
 ## Core Philosophy
 
@@ -83,7 +83,7 @@ Every run leaves behind:
 - **Videos** — step-by-step screencasts of every run.
 - **Experience** — what Explorbot learned, reused to test smarter next time.
 
-See [Automated Tests](docs/guides/automated-tests.md) for the test output and [Reporting](docs/guides/reporting.md) for reports.
+See [Automated Tests](docs/web-testing/automated-tests.md) for the test output and [Reporting](docs/workflow/reporting.md) for reports.
 
 ## It works with your suite
 
@@ -94,7 +94,7 @@ Explorbot won't replace your regression tests — it covers what they can't. You
 - Node.js 24+ or **Bun**
 - An **AI provider key** — OpenRouter recommended; Groq, Cerebras, OpenAI, Anthropic, and others via the [Vercel AI SDK](https://sdk.vercel.ai/providers)
 - A **modern terminal** — iTerm2, WARP, Kitty, Ghostty, or Windows Terminal with WSL
-- A **compatible web app** — CRUD-heavy apps fit best. See [Prerequisites](docs/reference/prerequisites.md)
+- A **compatible web app** — CRUD-heavy apps fit best. See [Prerequisites](docs/setup/prerequisites.md)
 
 If your CI runs Playwright, it runs Explorbot. No GPUs, no special runners.
 
@@ -123,25 +123,25 @@ npx explorbot start /admin/users
 
 Type `/explore`, and Explorbot runs its loop on its own — research, plan, test, repeat — learning from every run.
 
-That's the gist. The [**Getting Started guide**](docs/getting-started.md) walks through the full setup — choosing models, teaching Explorbot to log in, and picking the right feature to start on.
+That's the gist. The [**Getting Started guide**](docs/setup/getting-started.md) walks through the full setup — choosing models, teaching Explorbot to log in, and picking the right feature to start on.
 
 ## Teaching Explorbot
 
 Explorbot gets better when you tell it about your app:
 
-- **Knowledge** — credentials, form rules, navigation quirks. See [Knowledge](docs/guides/knowledge.md).
+- **Knowledge** — credentials, form rules, navigation quirks. See [Knowledge](docs/workflow/knowledge.md).
 - **Rules** — per-agent, per-page instructions. See [Configuration](docs/reference/configuration.md#rules).
 - **Experience** — learned automatically from what works.
 
-Handling logins, cookie banners, modals, and test data takes a few lines — see [Customization](docs/guides/customization.md).
+Handling logins, cookie banners, modals, and test data takes a few lines — see [Customization](docs/web-testing/customization.md).
 
 ## It also tests REST APIs
 
-Point Explorbot at an OpenAPI spec and it plans and runs API tests too. See [API Testing](docs/guides/api-testing.md).
+Point Explorbot at an OpenAPI spec and it plans and runs API tests too. See [API Testing](docs/api-testing/overview.md).
 
 ## Keep going
 
-When you're ready to go deeper, the [full documentation](docs/README.md) covers everything, starting with the [Getting Started guide](docs/getting-started.md).
+When you're ready to go deeper, the [full documentation](docs/README.md) covers everything, starting with the [Getting Started guide](docs/setup/getting-started.md).
 
 ## FAQ
 
@@ -163,7 +163,7 @@ No. With fast open models (e.g. `openai/gpt-oss-20b` on OpenRouter or Groq), exp
 Not yet.
 
 **Can I build my own agents with it?**
-Yes, use the programmatic API. See [Scripting](docs/contributing/scripting.md).
+Yes, use the programmatic API. See [Scripting](docs/reference/scripting.md).
 
 **Can I do the same in Cursor with Playwright MCP?**
 Good luck running it on CI!

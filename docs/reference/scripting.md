@@ -2,10 +2,13 @@
 
 Use Explorbot programmatically to build testing pipelines. This guide shows how to write scripts that run without the TUI.
 
+> [!NOTE]
+> The npm package does not currently export the programmatic API. The examples below assume you work from a repository checkout (or workspace) and import modules with relative paths. This page will be adjusted when the package adds a public entry point.
+
 ## Basic Setup
 
 ```typescript
-import { ExplorBot } from 'explorbot';
+import { ExplorBot } from './src/explorbot.ts';
 
 const bot = new ExplorBot({
   path: '.',              // Path to explorbot.config.js
@@ -91,14 +94,14 @@ const plan = await bot.agentPlanner().plan('checkout flow');
 Define your own test scenarios:
 
 ```typescript
-import { Plan, Test } from 'explorbot';
+import { Plan, Test } from './src/test-plan.ts';
 
 const plan = new Plan('User Authentication');
 plan.url = '/login';
 
 const test = new Test(
   'Verify login with valid credentials',  // Scenario name
-  'high',                                   // Priority: high, medium, low
+  'high',                                   // Priority: critical, important, high, normal, low
   [                                         // Expected outcomes
     'Username field accepts input',
     'Password field accepts input',
@@ -136,18 +139,6 @@ for (const test of plan.tests) {
   console.log(`${test.scenario}: ${test.isSuccessful ? 'PASSED' : 'FAILED'}`);
   test.getPrintableNotes().forEach(note => console.log(`  ${note}`));
 }
-```
-
-## Full Exploration Cycle
-
-Run research → plan → test automatically:
-
-```typescript
-// This does research, planning, and testing in one call
-await bot.explore();
-
-// Or with feature focus
-await bot.explore('user settings');
 ```
 
 ## Accessing Results
@@ -196,7 +187,8 @@ const loaded = bot.loadPlan('my-custom-plan.md');
 ```typescript
 #!/usr/bin/env bun
 
-import { ExplorBot, Plan, Test } from 'explorbot';
+import { ExplorBot } from './src/explorbot.ts';
+import { Plan, Test } from './src/test-plan.ts';
 
 async function runTests() {
   const bot = new ExplorBot({
@@ -224,7 +216,7 @@ async function runTests() {
 
   plan.addTest(new Test(
     'Login with invalid password',
-    'medium',
+    'normal',
     ['Error message is displayed'],
     '/login'
   ));
@@ -282,26 +274,3 @@ Example GitHub Actions workflow:
 3. Start small. Test one scenario before you build full suites.
 4. Save plans. Load them later to re-run the same tests.
 5. Check `generatedCode`. Tests produce reusable CodeceptJS code.
-
-## FAQ
-
-* **Can I run it in Cursor? or Claude Code?**
-  No, Explorbot is a separate application designed for constant testing. Cursor, Codex, or Claude Code are irrelevant as they are coding agents.
-
-* **Why do you hate Opus?**
-  Opus is great for coding. Here we need a simplest model which can consume a lot of HTML tokens to find relevant ones. Leave more interesting tasks to Opus.
-
-* **Is that expensive?**
-  No, it's not. It would cost you ~$1 for hour of running if you use Groq Cloud with gpt-oss-20b.
-
-* **Does Explorbot have MCP?**
-  Not yet.
-
-* **Can I build my own agents with it?**
-  Yes, use the programmatic API for it.
-
-* **Ok, but I can do same in Cursor and Playwright MCP!**
-  Good luck running it on CI! I also assume you will need to jump to it every 10 seconds to see how it runs the browser.
-
-* **Can this be implemented as a Skill?**
-  No! We use a deterministic system for testing control. LLM takes interaction decisions but there is no "system prompt".

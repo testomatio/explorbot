@@ -43,6 +43,10 @@ While exploring, use the `/learn` command.
 /learn Test user: test@example.com  # Adds to current page
 ```
 
+### API Testing
+
+[API testing](../api-testing/overview.md) shares the same `knowledge/` directory. `npx explorbot api know <endpoint> "<description>"` adds endpoint-scoped notes, stored with an `endpoint:` frontmatter field instead of `url:`.
+
 ## URL Patterns
 
 | Pattern | Matches |
@@ -51,7 +55,7 @@ While exploring, use the `/learn` command.
 | `/admin/*` | Any path starting with `/admin/` |
 | `*` | All pages (general knowledge) |
 | `^/users/\d+` | Regex: `/users/` followed by digits |
-| `~dashboard` | Contains "dashboard" anywhere in URL |
+| `~dashboard~` | Regex: "dashboard" anywhere in URL (tilde on both sides) |
 
 ## Knowledge File Format
 
@@ -77,7 +81,7 @@ Notes:
 
 | Field | Purpose |
 |-------|---------|
-| `url` | URL pattern to match (required) |
+| `url` | URL pattern to match (optional, defaults to `*`) |
 | `title` | Human-readable title (optional) |
 | Custom fields | Any additional metadata for agents |
 
@@ -207,7 +211,7 @@ Settings uses client-side routing. Use pushState to preserve app state.
 ```
 
 > [!TIP]
-> Use knowledge automation for page-specific behavior. For agent-specific logic, such as code that runs only during testing, use [Agent Hooks](./hooks.md) instead.
+> Use knowledge automation for page-specific behavior. For agent-specific logic, such as code that runs only during testing, use [Agent Hooks](../web-testing/hooks.md) instead.
 
 ### Execution Order
 
@@ -301,6 +305,6 @@ Files are named after the URL pattern. Multiple entries for the same URL append 
 
 ## See Also
 
-- [Agent Hooks](./hooks.md) — per-agent custom code execution
+- [Agent Hooks](../web-testing/hooks.md) — per-agent custom code execution
 - [Configuration](../reference/configuration.md) — full configuration reference
-- [Page Interaction](../reference/page-interaction.md) — how agents interact with pages
+- [Page Interaction](../web-testing/page-interaction.md) — how agents interact with pages

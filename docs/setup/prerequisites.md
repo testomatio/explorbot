@@ -12,11 +12,11 @@ It is not a good fit for landing pages, blogs, CMS, or static sites.
 
 ## Page management
 
-Explorbot uses URLs as anchor points when it navigates. Each change in the URL, `title`, or `h1`-`h4` headings creates a new state. This is how Explorbot tracks where it is and analyzes each transition.
+Explorbot uses URLs as anchor points when it navigates. Each change in the URL or the `h1`/`h2` headings creates a new state. This is how Explorbot tracks where it is and analyzes each transition. The `title` and `h3`/`h4` headings are captured too, but they do not define state identity.
 
-If your app does not change the URL on navigation, or skips `title` and `h1`-`h4`, navigation gets harder. Use URLs to identify your application states.
+If your app does not change the URL on navigation, or skips `h1`/`h2` headings, navigation gets harder. Use URLs to identify your application states.
 
-Set edge cases and domain rules in [Knowledge files](../guides/knowledge.md). These attach to page URLs.
+Set edge cases and domain rules in [Knowledge files](../workflow/knowledge.md). These attach to page URLs.
 
 ## Web elements
 
@@ -50,7 +50,7 @@ Give Explorbot an isolated environment that can never touch production data. Thi
 
 Explorbot logs in with a user session and predefined credentials. Give that user limited permissions so it cannot harm the environment.
 
-Do not put real sensitive data in that environment. Credit cards, tokens, and passwords cannot be protected, so use fake ones during sessions.
+Do not put real sensitive data in that environment. Explorbot has no secret redaction: anything the browser sees can end up in logs, AI prompts, and saved artifacts. Use disposable test data.
 
 Explorbot runs with few privileges. Explorbot cannot:
 

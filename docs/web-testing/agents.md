@@ -28,13 +28,15 @@ Commands that use Navigator:
 
 Analyzes pages to find what's actually on them.
 
-The Researcher discovers every interactive element, including content hidden in accordions, dropdowns, and modals. It maps navigation paths and form structures, extracts data from tables and lists, and filters out noise like cookie banners and ads. The result is a complete map of what you can test, with form validation rules documented. You can tune the filtering to focus on what matters.
+The Researcher discovers every interactive element, including content hidden in accordions, dropdowns, and modals. It maps navigation paths and form structures, extracts data from tables and lists, and filters out noise like cookie banners and ads. The result is a complete map of what you can test, with form validation rules documented.
 
 Commands that use Researcher:
 - `npx explorbot research /path` (CLI)
 - `/research [path]` (TUI)
 - `/research --deep` — expand hidden elements
-- `/research --screenshot` — use vision model
+- `/research --data` — extract page data
+
+Explicit research always captures a screenshot; a configured vision model analyzes it.
 
 See [Researcher Agent](./researcher.md) for configuration and usage.
 
@@ -48,7 +50,7 @@ Commands that use Planner:
 - `/plan [--focus <feature>]`
 - `/explore`
 
-See [Planner Agent](../guides/planner.md) for planning styles, customization, and configuration.
+See [Planner Agent](./planner.md) for planning styles, customization, and configuration.
 
 ## Tester Agent
 
@@ -78,49 +80,11 @@ The Pilot intervenes when:
 
 Produces a human-readable session report after `/explore` and `/freesail` runs.
 
-The Analyst reads every test in the session — scenario, expected outcome, final result, notes, and step log. It clusters tests by root cause: three tests that fail on the same dropdown become one defect with three test references, not three rows. Findings are bucketed into Defects, UX issues, and Execution issues, each with reproduce steps and one-line evidence from the test log.
+The Analyst reads every test in the session — scenario, expected outcome, final result, notes, and step log. It clusters findings by root cause: three tests that fail on the same control become one defect with three test references, not three rows. It separates product defects from automation problems, so an element the test could not click is not reported as a bug.
 
-The Analyst writes markdown directly, with no schema-to-render layer. The same text goes to the console, the report file, and the Testomat.io run description.
+The report is plain markdown: a one-to-two sentence headline about the feature state (no test counts), then `## Coverage`, `## What works`, `## Defects` (each with a `[High]`/`[Medium]`/`[Low]` severity tag, reproduce steps, and one-line evidence), `## UX issues`, and `## Execution Issues`. Empty sections are omitted.
 
-When it runs:
-- Automatically at the end of `/explore` (per-run)
-- Automatically on app exit (session-wide, across multiple `/explore` or `/freesail` runs)
-
-Output:
-- Console: the markdown is printed under the test results table
-- File: `output/reports/<mode>-<sessionName>.md` — e.g. `explore-WiseFox42.md`, `freesail-CleverOwl91.md`. Each session gets a unique name, in a different format from per-test sessions, so the two are distinguishable on disk
-- Testomat.io: when the reporter is enabled, the markdown becomes the run description on the cloud dashboard
-
-Report shape:
-
-```markdown
-# Session Analysis
-
-5 tests executed, 1 defect identified — pagination button does not navigate to the next page.
-
-## Defects
-
-### 🔴 Pagination button does not navigate to second page
-Affects: #3
-Reproduce:
-  1. Open /projects/runs
-  2. Click the page-2 pagination control
-Evidence: URL did not change and the listed run IDs stayed identical
-
-## UX issues
-
-- **Filter panel "Apply" button is hidden behind a sticky footer** — #4
-  scroll required before the button is interactable
-
-## Execution Issues
-
-- **Search runs by name** — typed query but list never re-rendered, so the test could not verify whether the filter applied
-- **Export run as PDF** — clicked Export but no download dialog or feedback appeared, so success could not be confirmed
-```
-
-Severity emoji (defects only): 🔴 critical/high, 🟡 medium, 🟢 low.
-
-The report puts defects at the top with reproduce steps already written, so you can skim a 50-test run in seconds. Clustering by root cause keeps near-identical rows out. Execution Issues explain what was unreliable in plain words ("modal trapped focus", "no accessible label", "page reloaded before the assertion ran") instead of dumping log lines.
+It runs automatically at the end of `/explore` (per-run) and on app exit (session-wide, across multiple `/explore` or `/freesail` runs). The same markdown goes to the console, to `output/reports/<mode>-<sessionName>.md`, and — when the reporter is enabled — to the Testomat.io run description.
 
 Configuration:
 
@@ -129,7 +93,7 @@ export default {
   ai: {
     agents: {
       analyst: {
-        // model: openai('gpt-4o'),       // override the default model
+        // model: openai('gpt-4o'),       // override the model
         // systemPrompt: 'Focus on...',   // append guidance to the prompt
         // enabled: false,                // disable the analyst entirely
       },
@@ -138,7 +102,7 @@ export default {
 };
 ```
 
-The agent uses the default model unless you override it. The report file is always written to `output/reports/`; the file has no opt-out, but `enabled: false` turns the agent off so nothing runs.
+The Analyst resolves its model like other agentic tasks: the agent-specific `model`, then `ai.agenticModel`, then `ai.model`.
 
 ## Captain Agent
 
@@ -160,16 +124,13 @@ Use different models for different agents to control cost:
 ```javascript
 export default {
   ai: {
-    model: groq('gpt-oss-20b'),
-    visionModel: groq('llama-scout-4'),
+    model: groq('openai/gpt-oss-20b'),
+    visionModel: groq('meta-llama/llama-4-scout-17b-16e-instruct'),
     agents: {
-      navigator: { model: groq('gpt-oss-20b') },
-      researcher: {
-        model: groq('gpt-oss-20b'),
-        excludeSelectors: ['.cookie-banner'],
-      },
-      planner: { model: groq('gpt-oss-20b') },
-      tester: { model: groq('gpt-oss-20b'), progressCheckInterval: 5 },
+      navigator: { model: groq('openai/gpt-oss-20b') },
+      researcher: { model: groq('openai/gpt-oss-20b') },
+      planner: { model: groq('openai/gpt-oss-20b') },
+      tester: { model: groq('openai/gpt-oss-20b'), progressCheckInterval: 5 },
       pilot: { stepsToReview: 5 },
     },
   },

@@ -16,12 +16,12 @@ export default {
     url: 'http://localhost:3000',
   },
   ai: {
-    model: groq('gpt-oss-20b'),
+    model: groq('openai/gpt-oss-20b'),
   },
 };
 ```
 
-To set up a provider — OpenAI, Anthropic, Groq, Cerebras, Google, or Azure — see [AI providers](./providers.md).
+To set up a provider — OpenAI, Anthropic, Groq, Cerebras, Google, or Azure — see [AI providers](../setup/providers.md).
 
 ## Rules
 
@@ -72,7 +72,7 @@ ai: {
 }
 ```
 
-URL patterns work the same as [knowledge files](../guides/knowledge.md#url-patterns): `*`, `/exact`, `/path/*`, `^regex$`, and glob patterns.
+URL patterns work the same as [knowledge files](../workflow/knowledge.md#url-patterns): `*`, `/exact`, `/path/*`, `^regex$`, and glob patterns.
 
 ### Planning styles
 
@@ -123,10 +123,10 @@ playwright: {
 
 ```javascript
 ai: {
-  model: groq('gpt-oss-20b'),  // Default: fast and smart model
+  model: groq('openai/gpt-oss-20b'),  // Default: fast and smart model
   agents: {
     // Fastest model for summarization
-    'experience-compactor': { model: groq('llama-3.1-8b') },
+    'experience-compactor': { model: groq('llama-3.1-8b-instant') },
   },
 }
 ```
@@ -170,10 +170,15 @@ Each agent takes its own model and system prompt.
 | `planner` | Generates test plans |
 | `researcher` | Analyzes page structure |
 | `navigator` | Handles browser navigation |
+| `pilot` | Supervises test execution, detects stuck patterns |
+| `driller` | Drills page components to learn interactions |
 | `captain` | Orchestrates user commands |
 | `experience-compactor` | Compresses experience data |
 | `quartermaster` | Accessibility analysis |
 | `historian` | Session recording, generates CodeceptJS or Playwright test files |
+| `rerunner` | Heals failing steps when re-running generated tests |
+| `analyst` | Writes the end-of-session markdown report |
+| `fisherman` | Prepares test data through API requests |
 | `chief` | API test planning |
 | `curler` | API test execution |
 
@@ -182,7 +187,7 @@ Each agent takes its own model and system prompt.
 ```javascript
 agents: {
   tester: {
-    model: groq('gpt-oss-20b'),    // Override default model
+    model: groq('openai/gpt-oss-20b'),    // Override default model
     enabled: true,                  // Enable/disable agent
     rules: ['wait-for-toasts'],    // Load rules from rules/tester/
     systemPrompt: '...',           // Append to system prompt (inline)
@@ -201,7 +206,9 @@ agents: {
 | `beforeHook` | `Hook \| HookPatternMap` | Code to run before agent execution |
 | `afterHook` | `Hook \| HookPatternMap` | Code to run after agent execution |
 
-See [Agent hooks](../guides/hooks.md) for hook configuration.
+Some agents take extra options: `pilot` accepts `stepsToReview` (recent steps reviewed per check, default 5); `planner` accepts `styles` (see [Planning styles](#planning-styles)); `rerunner` accepts `healLimit` (max heal attempts, default 3) and `recipes` (custom heal recipes, see [Rerunning Tests](../web-testing/rerun.md)). Researcher and Historian options are documented below.
+
+See [Agent hooks](../web-testing/hooks.md) for hook configuration.
 
 ### Researcher agent options
 
@@ -209,24 +216,22 @@ The Researcher takes all standard agent options plus options that control intera
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `excludeSelectors` | `string[]` | CSS selectors for containers to exclude |
-| `includeSelectors` | `string[]` | CSS selectors for containers to always explore |
-| `focusSections` | `string[]` | CSS selectors that narrow research to a matching element when present (e.g. an open modal or drawer). First match wins. |
-| `stopWords` | `string[]` | Words to filter out (replaces defaults if provided) |
-| `maxElementsToExplore` | `number` | Maximum elements to explore per page (default: 10) |
+| `maxExpandableClicks` | `number` | Maximum expandable elements clicked during deep analysis (default: 10) |
+| `errorPageTimeout` | `number` | Seconds to wait for a loading page to settle before error-page detection (default: 10, `0` disables the wait) |
+| `focusSections` | `string[]` | CSS selectors that narrow research to a matching element when present (e.g. an open modal or drawer). First match wins. Applies only to the per-section fallback used after a truncated research response. |
 
 ```javascript
 ai: {
   agents: {
     researcher: {
-      excludeSelectors: ['.cookie-banner'],
-      stopWords: ['cookie', 'newsletter'],
+      maxExpandableClicks: 15,
+      focusSections: ['[role="dialog"]'],
     },
   },
 }
 ```
 
-See [Researcher agent](./researcher.md) for full documentation and examples.
+See [Researcher agent](../web-testing/researcher.md) for full documentation and examples.
 
 ### Historian agent options
 
@@ -244,9 +249,9 @@ ai: {
 }
 ```
 
-With `'playwright'`, runs are saved as `@playwright/test` `.spec.ts` files using the actual Playwright calls captured at runtime. See [Automated tests](../guides/automated-tests.md).
+With `'playwright'`, runs are saved as `@playwright/test` `.spec.ts` files using the actual Playwright calls captured at runtime. See [Automated tests](../web-testing/automated-tests.md).
 
-See [AI providers](./providers.md) for recommended models and provider setup.
+See [AI providers](../setup/providers.md) for recommended models and provider setup.
 
 ## Playwright settings
 
@@ -286,7 +291,7 @@ playwright: {
 }
 ```
 
-The browser session (cookies, localStorage) is restored when you launch with `--session` — see [commands.md](../guides/commands.md#--session).
+The browser session (cookies, localStorage) is restored when you launch with `--session` — see [commands.md](./commands.md#--session).
 
 ### Loading Indicators
 
@@ -318,9 +323,12 @@ your-project/
 ├── experience/          # Learned patterns (auto-generated)
 │   └── abc123.md
 └── output/              # Test results (auto-generated)
+    ├── states/
     ├── research/
     ├── plans/
-    └── sessions/
+    ├── tests/
+    ├── reports/
+    └── docs/
 ```
 
 Change the paths:
@@ -351,7 +359,7 @@ const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
 
 export default {
   ai: {
-    model: groq('gpt-oss-20b'),
+    model: groq('openai/gpt-oss-20b'),
     langfuse: {
       enabled: true,
       publicKey: process.env.LANGFUSE_PUBLIC_KEY,
@@ -378,7 +386,7 @@ Explorbot looks for a config file in this order:
 Or pass a custom path:
 
 ```bash
-npx explorbot explore --config ./custom/path/config.js
+npx explorbot explore /dashboard --config ./custom/path/config.js
 ```
 
 ## Full configuration reference
@@ -423,11 +431,8 @@ export default {
 
   // AI provider settings
   ai: {
-    model: groq('gpt-oss-20b'),          // Default model instance (required)
-    visionModel: groq('llama-scout-4'),  // Model for screenshot analysis
-    vision: true,                  // Enable vision features
-    maxAttempts: 3,                // Retry attempts for AI calls
-    retryDelay: 1000,              // Delay between retries (ms)
+    model: groq('openai/gpt-oss-20b'),   // Default model instance (required)
+    visionModel: groq('meta-llama/llama-4-scout-17b-16e-instruct'),  // Model for screenshot analysis; setting it enables vision features
     config: {},                    // Additional provider config
     langfuse: {                    // Observability settings
       enabled: true,
@@ -437,7 +442,7 @@ export default {
     },
     agents: {                      // Per-agent configuration
       tester: {
-        model: groq('gpt-oss-20b'),
+        model: groq('openai/gpt-oss-20b'),
         enabled: true,
         rules: ['wait-for-toasts', { '/admin/*': 'admin-creds' }],
         systemPrompt: '...',       // Inline fallback
@@ -447,19 +452,23 @@ export default {
         rules: [{ '/checkout/*': 'payment-rules' }],
       },
       researcher: {                // Researcher-specific options
-        model: groq('gpt-oss-20b'), // Override default model
+        model: groq('openai/gpt-oss-20b'), // Override default model
         enabled: true,             // Enable/disable agent
         systemPrompt: '...',       // Additional instructions
-        excludeSelectors: [],      // CSS selectors to exclude
-        includeSelectors: [],      // CSS selectors to always explore
-        stopWords: [],             // Text patterns to skip (replaces defaults)
-        maxElementsToExplore: 10,  // Max elements per page
+        maxExpandableClicks: 10,   // Max expandable elements clicked in deep analysis
+        errorPageTimeout: 10,      // Seconds to wait for page to settle (0 disables)
+        focusSections: [],         // CSS selectors that narrow per-section research
       },
+      pilot: { stepsToReview: 5 }, // Recent steps the Pilot reviews
       navigator: { /* ... */ },
       captain: { /* ... */ },
+      driller: { /* ... */ },
       'experience-compactor': { /* ... */ },
       quartermaster: { /* ... */ },
       historian: { /* ... */ },
+      fisherman: { /* ... */ },
+      rerunner: { /* ... */ },
+      analyst: { /* ... */ },
     },
   },
 
@@ -500,11 +509,11 @@ export default {
 
 ## See also
 
-- [API testing](../guides/api-testing.md) — API testing setup and commands
-- [AI providers](./providers.md) — provider setup examples
-- [Agents](./agents.md) — agent descriptions and workflows
-- [Agent hooks](../guides/hooks.md) — custom code before and after an agent runs
-- [Researcher agent](./researcher.md) — Researcher configuration and usage
-- [Planner agent](../guides/planner.md) — planning styles and customization
-- [Knowledge files](../guides/knowledge.md) — domain knowledge format
+- [API testing](../api-testing/overview.md) — API testing setup and commands
+- [AI providers](../setup/providers.md) — provider setup examples
+- [Agents](../web-testing/agents.md) — agent descriptions and workflows
+- [Agent hooks](../web-testing/hooks.md) — custom code before and after an agent runs
+- [Researcher agent](../web-testing/researcher.md) — Researcher configuration and usage
+- [Planner agent](../web-testing/planner.md) — planning styles and customization
+- [Knowledge files](../workflow/knowledge.md) — domain knowledge format
 - [Observability](../contributing/observability.md) — Langfuse integration

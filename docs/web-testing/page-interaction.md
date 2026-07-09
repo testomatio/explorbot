@@ -55,11 +55,12 @@ Use this when standard locators fail to find an element, or when a custom contro
 
 When an agent picks a locator, it prefers the most stable option first:
 
-1. ARIA with a container — `I.click({ role: 'button', text: 'Save' }, '.modal')`
-2. Text with a container — `I.click('Save', '.modal')`
+1. Text with a container — `I.click('Save', '.modal')` — simplest and preferred when a container is known
+2. ARIA with a container — `I.click({ role: 'button', text: 'Save' }, '.modal')` — for disambiguation
 3. ARIA alone — `I.click({ role: 'button', text: 'Save' })`
-4. CSS or XPath — `I.click('#save-btn')`
-5. Coordinates — `I.clickXY(400, 300)` (last resort)
+4. Text alone — `I.click('Save')` — only when the text is unique on the page
+5. CSS or XPath — `I.click('#save-btn')`
+6. Coordinates — `I.clickXY(400, 300)` (last resort)
 
 When a locator fails, the agent tries the next strategy, then a visual click. Locators that worked are saved to experience and preferred on the next run.
 
@@ -69,7 +70,7 @@ After every action, Explorbot captures the new page state and compares it with t
 
 ## See also
 
-- [Knowledge files](../guides/knowledge.md) — teach Explorbot about your app
-- [Agent hooks](../guides/hooks.md) — run code before or after an agent
-- [Configuration](./configuration.md) — full configuration reference
+- [Knowledge files](../workflow/knowledge.md) — teach Explorbot about your app
+- [Agent hooks](./hooks.md) — run code before or after an agent
+- [Configuration](../reference/configuration.md) — full configuration reference
 - [Researcher](./researcher.md) — how pages become UI maps

@@ -129,6 +129,6 @@ Commit the file as-is. Passing scenarios run, broken ones are skipped and visibl
 
 ## See also
 
-- [Test Plans](./test-plans.md) — the markdown plans that drive these test files
+- [Test Plans](../workflow/test-plans.md) — the markdown plans that drive these test files
 - [Rerun](./rerun.md) — re-run CodeceptJS tests with auto-healing
 - [Configuration → Historian Agent Options](../reference/configuration.md#historian-agent-options) — the `framework` option

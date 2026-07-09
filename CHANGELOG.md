@@ -1,6 +1,11 @@
 # Changelog
 
-## 2026-07-07
+## 2026-07-10
+
+### Changes
+- Reorganized `docs/` by product area: `setup/` (install, prerequisites, providers), `web-testing/` (agents, researcher, page interaction, customization, hooks, planner, automated tests, rerun), `api-testing/`, `doc-writing/`, `workflow/` (pages shared by web and API testing: knowledge, test plans, planning styles, reporting), and `reference/` (commands, configuration, scripting). All cross-links and the README index updated.
+- Added `docs/workflow/planning-styles.md` — the planning-styles mechanism (built-in styles, cycling, custom style files, `extract-rules`) shared by the web Planner and the API Chief.
+- Corrected stale docs across the set: removed unwired researcher options (`excludeSelectors`, `includeSelectors`, `stopWords`, `maxElementsToExplore`) in favor of the real `maxExpandableClicks` and `errorPageTimeout`; fixed command docs to match the CLI (`clean [target]`, `/context:aria|html|data`, `/explore [focus]`) and added missing commands (`freesail`, `compact`, `experience`, `plans`, `add-rule`, `knows`, `test --from-plan`); corrected defaults (rerun heal iterations 3, research cache 6 hours, style cycle normal → curious → psycho, Node.js ≥ 24); fixed invalid Groq/Cerebras model IDs and the Analyst report format description.
 
 ### Changes
 - Updated `@openrouter/ai-sdk-provider` to [3.0.0](https://github.com/OpenRouterTeam/ai-sdk-provider/releases/tag/3.0.0) — the first release with official Vercel AI SDK 7 support — and removed the temporary vendored PR #511 tarball (`vendor/`). Vision (screenshot analysis via the `see` tool) now works through OpenRouter on the released package.

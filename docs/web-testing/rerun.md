@@ -98,7 +98,7 @@ export default {
     agents: {
       rerunner: {
         healLimit: 3,           // max heals per test (default: 3)
-        healMaxIterations: 10,  // max AI loop iterations per heal (default: 10)
+        healMaxIterations: 3,   // max AI loop iterations per heal (default: 3)
         recipes: {
           // Custom healing recipes (CodeceptJS heal API)
           waitForLoader: {
@@ -122,9 +122,7 @@ Healing prompt rules live in `rules/rerunner/` as markdown files:
 
 | File | Purpose |
 |------|---------|
-| `healing-role.md` | Agent role description |
 | `healing-approach.md` | Step-by-step diagnosis strategy |
-| `healing-tools.md` | Available tools and when to use each |
 
 To override a rule, place a file with the same name in your project's `rules/rerunner/` directory.
 

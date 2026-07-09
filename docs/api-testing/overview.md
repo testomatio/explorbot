@@ -1,6 +1,6 @@
 # API Testing
 
-Explorbot tests REST APIs alongside web applications. The API testing module (codename **api-tester**) plans and runs HTTP test scenarios against your endpoints.
+Explorbot tests REST APIs alongside web applications. The API testing module plans and runs HTTP test scenarios against your endpoints.
 
 ## Quick Start
 
@@ -69,32 +69,13 @@ npx explorbot api test output/plans/users.md *       # run all pending tests
 npx explorbot api explore /users
 ```
 
-Runs every planning style (normal, curious, psycho, hacker), generates tests for each, runs them, and writes a combined report.
+Runs every planning style (normal, curious, psycho, hacker), generates tests for each, runs them, saves one plan file per style in `output/plans/`, and prints total results to the console.
 
 ## Configuration
 
 ### Unified Config
 
-API testing works from your main `explorbot.config.js`. No separate config file is needed. Add an `api` section:
-
-```javascript
-export default {
-  web: {
-    url: 'http://localhost:3000',
-  },
-  ai: {
-    model: openrouter('openai/gpt-oss-20b:nitro'),
-    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
-  },
-  api: {
-    baseEndpoint: 'http://localhost:3000/api/v1',
-    spec: ['http://localhost:3000/api/openapi.json'],
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  },
-};
-```
+API testing works from your main `explorbot.config.js`. No separate config file is needed. Add an `api` section as shown in [Quick Start](#quick-start); the options it accepts are listed below.
 
 ### API Config Options
 
@@ -174,7 +155,7 @@ Planning styles cycle during `explore`:
 | `psycho` | Stress testing, boundary values, extreme inputs |
 | `hacker` | Security-focused: injection, auth bypass, privilege escalation |
 
-Add custom styles in `rules/chief/styles/`.
+Add custom styles in `rules/chief/styles/`. Style cycling and custom styles work the same way as in web planning — see [Planning Styles](../workflow/planning-styles.md).
 
 ### Curler
 
@@ -235,5 +216,5 @@ User IDs are UUIDs.
 ## See Also
 
 - [Configuration](../reference/configuration.md) — full configuration reference
-- [Agents](../reference/agents.md) — agent descriptions and capabilities
+- [Agents](../web-testing/agents.md) — agent descriptions and capabilities
 - [Observability](../contributing/observability.md) — Langfuse tracing for API tests

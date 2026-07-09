@@ -73,9 +73,9 @@ const cerebras = createCerebras({
 
 export default {
   ai: {
-    model: cerebras('gpt-oss-20b'),
-    visionModel: cerebras('llama-scout-4'),
-    agenticModel: cerebras('gpt-oss-20b'),
+    model: cerebras('gpt-oss-120b'),
+    visionModel: cerebras('llama-4-scout-17b-16e-instruct'),
+    agenticModel: cerebras('gpt-oss-120b'),
   },
 };
 ```

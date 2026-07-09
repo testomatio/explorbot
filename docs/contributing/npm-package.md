@@ -5,7 +5,7 @@ Explorbot develops on Bun but ships to npm as a Node.js-compatible package. This
 ## Prerequisites
 
 - Bun (for development and running the build)
-- Node.js >= 18 (for verifying the build output)
+- Node.js >= 24 (for verifying the build output)
 - npm account with publish access to `explorbot` package
 
 ## How the Build Works
@@ -29,7 +29,7 @@ The build runs the TypeScript compiler (`tsc`) with a dedicated `tsconfig.build.
 | `outDir` | `dist` | Compilation output directory |
 | `rewriteRelativeImportExtensions` | `true` | Rewrite `.ts` → `.js` in imports |
 | `declaration` | `false` | No `.d.ts` files (CLI tool, not library) |
-| `sourceMap` | `true` | Source maps for debugging |
+| `sourceMap` | `false` | No source maps in the published package |
 | `skipLibCheck` | `true` | Skip type checking of dependencies |
 
 The build skips type checking (`--noCheck` flag) because Bun is more permissive than `tsc` strict mode. Bun enforces type safety during development.
@@ -53,10 +53,23 @@ Key `package.json` fields:
 {
   "bin": { "explorbot": "./dist/bin/explorbot-cli.js" },
   "main": "dist/src/index.js",
-  "files": ["dist/", "rules/", "assets/sample-files/"],
-  "engines": { "node": ">=18.0.0" }
+  "files": [
+    "dist/",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "bin/**/*.ts",
+    "boat/api-tester/src/**/*.ts",
+    "boat/doc-collector/src/**/*.ts",
+    "boat/doc-collector/bin/**/*.ts",
+    "boat/doc-collector/package.json",
+    "rules/",
+    "assets/sample-files/"
+  ],
+  "engines": { "node": ">=24.0.0" }
 }
 ```
+
+Besides `dist/`, the package ships the raw TypeScript sources — Bun resolves them directly via the `bun` condition in `exports`.
 
 ## Building Locally
 
@@ -85,11 +98,10 @@ npm publish
 
 ## Known Limitations
 
-- **Worker in `src/ai/researcher/cache.ts`** - Creates a Worker from a `.ts` URL, which is Bun-specific. This feature does not work on Node.js.
 - **No type declarations** - The package ships no `.d.ts` files, since it is a CLI tool, not a library.
 
 ## CI/CD
 
-The `test.yml` workflow verifies the npm build on every push. It runs `bun run build:npm`, then `node dist/bin/explorbot-cli.js --help` across Node.js 18, 20, 22, and 24.
+The `test.yml` workflow verifies the npm build on every push. On Node.js 24 it runs `bun run build:npm`, then the Node smoke tests: `node --test tests/node/*.mjs`. The `publish.yml` workflow additionally checks `node dist/bin/explorbot-cli.js --help` before publishing.
 
-The `publish.yml` workflow publishes to npm when you push a version tag (`v*`).
+The `publish.yml` workflow publishes to npm when you push a version tag (`v*` or a bare `1.2.3`-style tag). It overwrites the package version from the tag; tags containing `beta`, `alpha`, `pre`, or `rc` publish to the `beta` dist-tag instead of `latest`.
