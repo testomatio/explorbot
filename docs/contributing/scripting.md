@@ -2,6 +2,14 @@
 
 Use Explorbot programmatically to build testing pipelines. This guide shows how to write scripts that run without the TUI.
 
+Explorbot runs on **Bun**. Importing `explorbot` resolves to the TypeScript source under Bun and to the compiled `dist/` build under Node.js, and the package ships type declarations either way — so run your scripts with `bun run`. The package exposes a single entry point:
+
+```typescript
+import { ExplorBot, Plan, Test } from 'explorbot';
+```
+
+Available exports: `ExplorBot`, `Plan`, `Test`, `TestResult`, `TestStatus`, plus the types `ExplorBotOptions`, `WebPageState`, and `ExplorbotConfig`.
+
 ## Basic Setup
 
 ```typescript
@@ -67,11 +75,11 @@ await bot.agentResearcher().research(state, {
 
 ## Planning
 
-Generate test scenarios automatically:
+Generate test scenarios automatically. `bot.plan()` researches the current page, generates a plan, tracks it as the current plan, and saves it to `output/plans/`:
 
 ```typescript
 // Plan tests for current page
-const plan = await bot.agentPlanner().plan();
+const plan = await bot.plan();
 
 console.log(plan.title);
 console.log(plan.tests.map(t => t.scenario));
@@ -82,8 +90,8 @@ Plan with focus:
 
 ```typescript
 // Focus on specific feature
-const plan = await bot.agentPlanner().plan('checkout flow');
-// Or from CLI: ./bin/explorbot-cli.ts plan /checkout --focus "checkout flow"
+const plan = await bot.plan('checkout flow');
+// Or from CLI: explorbot plan /checkout --focus "checkout flow"
 ```
 
 ## Creating Tests Manually
@@ -140,14 +148,25 @@ for (const test of plan.tests) {
 
 ## Full Exploration Cycle
 
-Run research → plan → test automatically:
+Combine research, planning, and testing. `bot.plan()` already researches the current page, so a full cycle is a plan followed by a test run:
 
 ```typescript
-// This does research, planning, and testing in one call
-await bot.explore();
+await bot.visit('/dashboard');
 
-// Or with feature focus
-await bot.explore('user settings');
+// Research the page and generate a plan
+const plan = await bot.plan('user settings');
+
+// Run every generated test
+const tester = bot.agentTester();
+for (const test of plan.tests) {
+  await tester.test(test);
+}
+```
+
+For turnkey autonomous exploration — invent scenarios and run them in a loop, unattended — use the CLI:
+
+```bash
+explorbot explore /dashboard --focus "user settings"
 ```
 
 ## Accessing Results
