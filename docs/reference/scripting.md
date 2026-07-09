@@ -2,13 +2,18 @@
 
 Use Explorbot programmatically to build testing pipelines. This guide shows how to write scripts that run without the TUI.
 
-> [!NOTE]
-> The npm package does not currently export the programmatic API. The examples below assume you work from a repository checkout (or workspace) and import modules with relative paths. This page will be adjusted when the package adds a public entry point.
+Explorbot runs on **Bun**. Importing `explorbot` resolves to the TypeScript source under Bun and to the compiled `dist/` build under Node.js, and the package ships type declarations either way — so run your scripts with `bun run`. The package exposes a single entry point:
+
+```typescript
+import { ExplorBot, Plan, Test } from 'explorbot';
+```
+
+Available exports: `ExplorBot`, `Plan`, `Test`, `TestResult`, `TestStatus`, plus the types `ExplorBotOptions`, `WebPageState`, and `ExplorbotConfig`.
 
 ## Basic Setup
 
 ```typescript
-import { ExplorBot } from './src/explorbot.ts';
+import { ExplorBot } from 'explorbot';
 
 const bot = new ExplorBot({
   path: '.',              // Path to explorbot.config.js
@@ -70,11 +75,11 @@ await bot.agentResearcher().research(state, {
 
 ## Planning
 
-Generate test scenarios automatically:
+Generate test scenarios automatically. `bot.plan()` researches the current page, generates a plan, tracks it as the current plan, and saves it to `output/plans/`:
 
 ```typescript
 // Plan tests for current page
-const plan = await bot.agentPlanner().plan();
+const plan = await bot.plan();
 
 console.log(plan.title);
 console.log(plan.tests.map(t => t.scenario));
@@ -85,8 +90,8 @@ Plan with focus:
 
 ```typescript
 // Focus on specific feature
-const plan = await bot.agentPlanner().plan('checkout flow');
-// Or from CLI: ./bin/explorbot-cli.ts plan /checkout --focus "checkout flow"
+const plan = await bot.plan('checkout flow');
+// Or from CLI: explorbot plan /checkout --focus "checkout flow"
 ```
 
 ## Creating Tests Manually
@@ -94,7 +99,7 @@ const plan = await bot.agentPlanner().plan('checkout flow');
 Define your own test scenarios:
 
 ```typescript
-import { Plan, Test } from './src/test-plan.ts';
+import { Plan, Test } from 'explorbot';
 
 const plan = new Plan('User Authentication');
 plan.url = '/login';
@@ -139,6 +144,29 @@ for (const test of plan.tests) {
   console.log(`${test.scenario}: ${test.isSuccessful ? 'PASSED' : 'FAILED'}`);
   test.getPrintableNotes().forEach(note => console.log(`  ${note}`));
 }
+```
+
+## Full Exploration Cycle
+
+Combine research, planning, and testing. `bot.plan()` already researches the current page, so a full cycle is a plan followed by a test run:
+
+```typescript
+await bot.visit('/dashboard');
+
+// Research the page and generate a plan
+const plan = await bot.plan('user settings');
+
+// Run every generated test
+const tester = bot.agentTester();
+for (const test of plan.tests) {
+  await tester.test(test);
+}
+```
+
+For turnkey autonomous exploration — invent scenarios and run them in a loop, unattended — use the CLI:
+
+```bash
+explorbot explore /dashboard --focus "user settings"
 ```
 
 ## Accessing Results
@@ -187,8 +215,7 @@ const loaded = bot.loadPlan('my-custom-plan.md');
 ```typescript
 #!/usr/bin/env bun
 
-import { ExplorBot } from './src/explorbot.ts';
-import { Plan, Test } from './src/test-plan.ts';
+import { ExplorBot, Plan, Test } from 'explorbot';
 
 async function runTests() {
   const bot = new ExplorBot({
