@@ -24,6 +24,9 @@ jobs:
         node-version: 24
         registry-url: https://registry.npmjs.org
 
+    - name: Upgrade npm for tokenless (OIDC) publishing
+      run: npm install -g npm@latest
+
     - name: Setup Bun
       uses: oven-sh/setup-bun@v1
       with:
@@ -55,6 +58,4 @@ jobs:
         fi
 
     - name: Publish to npm
-      run: npm publish --provenance --access public --tag ${{ steps.check.outputs.tag }}
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      run: npm publish --access public --tag ${{ steps.check.outputs.tag }}
