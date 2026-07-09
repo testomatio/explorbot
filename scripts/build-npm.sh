@@ -7,6 +7,8 @@ rm -rf "$DIST_DIR"
 
 npx tsc -p tsconfig.build.json --noCheck
 
+bun run scripts/build-types.ts
+
 for dir in rules assets/sample-files; do
   if [ -d "$dir" ]; then
     mkdir -p "$DIST_DIR/$dir"
