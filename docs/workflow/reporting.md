@@ -2,6 +2,8 @@
 
 Explorbot generates test reports with [@testomatio/reporter](https://github.com/testomatio/reporter). Reports include test steps, screenshots, and result messages for every run. The [API tester](../api-testing/basics.md) reports through the same reporter, so the HTML and Testomat.io settings below apply to API runs too.
 
+The [Testomat.io cloud reporter](#testomatio-cloud-report) is the recommended way to review runs, especially on CI: pair it with the [Analyst](#session-analysis) and [screencasts](#screencasts) and each run opens with a written overview you can drill from down to a video of any single test. The [HTML](#html-report-local) and [markdown](#markdown-report-local) reports are the local alternatives. For the full CI setup, see [Continuous Integration](./ci.md#reporting-on-ci).
+
 ## Session analysis
 
 After `/explore` and `/freesail` runs, the [Analyst agent](../web-testing/agents.md#analyst-agent) writes a summary that clusters findings by root cause.
@@ -13,6 +15,24 @@ The same markdown is printed to the console, written to disk, and set as the run
 **On Testomat.io:** the markdown becomes the run description, so the analysis sits next to the test list in the cloud dashboard with no extra setup.
 
 See [Analyst Agent](../web-testing/agents.md#analyst-agent) for the report format and configuration options.
+
+## Screencasts
+
+Explorbot can record a video of every test instead of leaving you a trail of screenshots. Enable it on the Historian agent:
+
+```js
+export default {
+  ai: {
+    agents: {
+      historian: {
+        screencast: true,  // or { size: { width: 1280, height: 720 }, quality: 95 }
+      },
+    },
+  },
+};
+```
+
+Each test gets one video in `output/screencasts/`, with the executed actions overlaid in the corner and the current scenario step shown as a chapter title — the video narrates itself. The file is attached to the test as an artifact, so with [artifact storage configured](#artifacts-in-cloud-reports) it appears on the test in Testomat.io, ready to watch next to the failure message.
 
 ## HTML report (local)
 
@@ -91,9 +111,9 @@ export default {
 
 If set, `TESTOMATIO_RUNGROUP_TITLE` from the environment takes precedence over the config.
 
-## Screenshots in cloud reports
+## Artifacts in cloud reports
 
-Explorbot captures screenshots during a run. To see them in Testomat.io, configure an S3-compatible storage provider under Settings > Artifacts in Testomat.io. Without it, screenshots won't appear in cloud reports.
+Explorbot attaches screenshots to test steps and, when [screencasts](#screencasts) are enabled, a video to every test. To see them in Testomat.io, configure an S3-compatible storage provider under Settings > Artifacts in Testomat.io. Without it, screenshots and screencasts won't appear in cloud reports.
 
 Set these environment variables:
 

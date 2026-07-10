@@ -18,13 +18,41 @@ Three directories, three fates:
 
 - **Commit `knowledge/`.** It's authored by you and versioned like code.
 - **Cache `experience/` and `output/`.** `experience/` carries lessons between runs — fewer repeated failures, faster runs — so a cached CI job gets smarter every night instead of starting from zero. `output/` carries `session.json` plus previous plans and generated tests; with `--configure` the next run reloads a saved plan and re-runs its tests regression-style instead of planning everything fresh (see the [`--configure` reference](../reference/commands.md#explore)).
-- **Upload `output/reports/` and `output/tests/` as artifacts.** Reports are for humans to read after the run; generated tests are code you may want to review and commit.
+- **Upload `output/reports/`, `output/tests/`, and `output/screencasts/` as artifacts.** Reports and screencasts are for humans to review after the run; generated tests are code you may want to review and commit. If you send results to Testomat.io with artifact storage, screencasts are already attached to tests there — see [Reporting on CI](#reporting-on-ci).
 
 ## Exit codes and gating
 
 As covered in [Running Explorbot](../basics/running.md#exit-codes), `explore` exits `1` only when the run itself crashes — bad config, unreachable app, provider failure. Failing tests do not fail the job; they are findings, not crashes. So a green pipeline means "Explorbot ran", not "no bugs found".
 
 To see what it found, read the session report in `output/reports/` — the Analyst writes a markdown summary that clusters defects by root cause. For per-test pass/fail in machine-checkable form, enable the markdown test report or send results to Testomat.io with the `TESTOMATIO` project key; both are described in [Reporting](./reporting.md). API tests are stricter: `api test` and `api explore` exit `1` when any test fails, so they gate natively.
+
+## Reporting on CI
+
+A scheduled run is only worth having if its results are easy to review the next morning. The recommended stack gives you a report you read top-down — start at the overview, drill into a failing test, watch exactly what happened:
+
+1. **Send results to Testomat.io.** Add the `TESTOMATIO` project key as a pipeline secret. Every run lands in the dashboard with steps, statuses, and history — nothing to download from CI.
+2. **Enable artifact storage.** Connect an S3-compatible bucket under Settings > Artifacts in Testomat.io (credentials via `S3_*` pipeline variables — see [artifacts in cloud reports](./reporting.md#artifacts-in-cloud-reports)). Screenshots and screencasts attached to tests upload automatically.
+3. **Record screencasts.** Every test becomes a video with the executed actions and the current scenario step overlaid — reviewing one beats clicking through a screenshot trail.
+4. **Enable the Analyst.** Its summary becomes the run description on Testomat.io, so the run opens with defects clustered by root cause, coverage, and what works.
+
+The two config switches, next to your reporter settings:
+
+```js
+export default {
+  ai: {
+    agents: {
+      historian: { screencast: true },
+      analyst: { enabled: true },
+    },
+  },
+};
+```
+
+The review flow this buys: open the run, read the Analyst overview in the description, scan the failed tests, open one, watch its screencast.
+
+Without the cloud reporter, the fallback is `html: true` and `markdown: true` under `reporter` plus uploading `output/reports/` and `output/screencasts/` as CI artifacts — the pipelines below do. You lose history and the overview-to-video flow, but every run is still reviewable.
+
+**API runs** report through the same reporter, so the same `TESTOMATIO` key covers `api test` and `api explore`. There are no screencasts (no browser) and the Analyst covers web sessions only; upload `output/requests/` as a CI artifact instead — every request and response is logged there as YAML.
 
 ## GitHub Actions
 
@@ -72,6 +100,7 @@ jobs:
           path: |
             output/reports
             output/tests
+            output/screencasts
 ```
 
 The cache key includes the run id, so every run saves an updated cache and the next one restores the latest via `restore-keys`. To report runs to Testomat.io, add `TESTOMATIO: ${{ secrets.TESTOMATIO }}` to the `env` block — see [Reporting](./reporting.md).
@@ -100,6 +129,7 @@ explorbot:
     paths:
       - output/reports/
       - output/tests/
+      - output/screencasts/
 ```
 
 ## Jenkins
@@ -123,7 +153,7 @@ pipeline {
   }
   post {
     always {
-      archiveArtifacts artifacts: 'output/reports/**, output/tests/**', allowEmptyArchive: true
+      archiveArtifacts artifacts: 'output/reports/**, output/tests/**, output/screencasts/**', allowEmptyArchive: true
     }
   }
 }

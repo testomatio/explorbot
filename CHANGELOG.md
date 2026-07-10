@@ -3,6 +3,7 @@
 ## 2026-07-10
 
 ### Changes
+- Documented the recommended CI reporting stack in `docs/workflow/ci.md` and `docs/workflow/reporting.md`: Testomat.io cloud reporter + S3 artifact storage + Historian screencasts (`ai.agents.historian.screencast`) + Analyst run overview — review a run from the Analyst summary down to the screencast of a single test. Added a Screencasts section to the reporting guide and screencast uploads to all CI pipeline examples; HTML/markdown reports documented as the local fallback, API runs covered via the same reporter with `output/requests/` logs.
 - Replaced the `docs/README.md` index with a machine-readable `docs/index.json` manifest listing all 34 pages in reading order, and renamed `docs/setup/` to `docs/basics/`.
 - Getting Started now closes with a glossary of every core concept — state, research, plan, test, knowledge, experience, agents, report — each in a sentence or two with a link to its guide.
 - Added `docs/setup/running.md` (TUI vs headless CLI, exit-code semantics, driving Explorbot from coding agents such as Claude Code) and `docs/workflow/ci.md` (scheduled runs on GitHub Actions/GitLab/Jenkins/Azure with cached `experience/` and `output/` for stable execution).
