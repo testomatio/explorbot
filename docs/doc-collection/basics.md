@@ -65,7 +65,7 @@ Useful flags:
 
 When the run finishes it prints how many pages were documented, how many were skipped, and where the spec index is.
 
-## What you get
+## Output files
 
 ```
 output/docs/

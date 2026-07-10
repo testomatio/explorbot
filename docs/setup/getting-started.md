@@ -110,16 +110,22 @@ When the terminal UI opens, type `/explore`. Explorbot researches the page, plan
 /test        # run the next test
 ```
 
-## What you get
+## The concepts
 
-Every run is saved to `output/`:
+You have now touched everything Explorbot is built on. Here is the whole vocabulary, once:
 
-- `output/tests/` — runnable Playwright or CodeceptJS tests you can commit and run in CI.
-- `output/plans/` — the test scenarios in markdown.
-- `experience/` — what Explorbot learned, reused on the next run.
+- **State** — where the bot is: the page URL plus its main headings (`h1`, `h2`). States anchor navigation, learning, and loop detection.
+- **Research** — reading a page. The Researcher agent maps forms, buttons, tables, and navigation into a UI map the other agents work from. Saved under `output/research/`. See [Researcher](../web-testing/researcher.md).
+- **Plan** — test scenarios invented from research, with priorities and expected outcomes. Markdown you can read and edit, in `output/plans/`. See [Test plans](../workflow/test-plans.md).
+- **Test** — one scenario executed step by step in the real browser. Passing tests are saved as runnable Playwright or CodeceptJS code in `output/tests/`. See [Automated tests](../web-testing/automated-tests.md).
+- **Knowledge** — facts you teach Explorbot: credentials, quirks, hints. Markdown files in `knowledge/`, matched to pages by URL — you wrote your first one in step 3. See [Knowledge](../workflow/knowledge.md).
+- **Experience** — what Explorbot learns by doing: failed attempts and the fixes that worked, saved in `experience/` and reused on every later run. Knowledge you write; experience it earns. See [Learning](../web-testing/basics.md#learning).
+- **Agents** — the AI workers behind each step: Researcher, Planner, Tester, Pilot, and more, each with its own job and model. See [Agents](../web-testing/agents.md).
+- **Report** — the end-of-session summary of defects, UX findings, and coverage in `output/reports/`. See [Reporting](../workflow/reporting.md).
 
 ## Next steps
 
+- [Running Explorbot](./running.md) — the TUI you just used, the headless CLI, and when to use each.
 - [Customization](../web-testing/customization.md) — login, cookie bars, modals, and test data.
 - [Commands](../reference/commands.md) — every command, in the terminal and on the CLI.
 - [Knowledge](../workflow/knowledge.md) — teach Explorbot more about your app.

@@ -76,7 +76,7 @@ npx explorbot api test output/plans/users.md
 
 Curler runs the scenarios and prints how many passed and failed.
 
-## What you get
+## Output files
 
 | Output | Location | What it is |
 |--------|----------|------------|

@@ -71,7 +71,7 @@ npx explorbot explore /admin/projects --max-tests 10 --focus "project management
 
 `--max-tests` caps how many tests run; `--focus` narrows planning to one feature. Both are optional.
 
-## What you get
+## Output files
 
 Every run leaves artifacts behind:
 

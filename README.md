@@ -74,7 +74,7 @@ See [Agents](docs/web-testing/agents.md) for what each one does.
 
 When tuned, Explorbot **runs autonomously for hours**, trying new scenarios on its own. The more it runs, the more it learns.
 
-## What you get
+## Tests, reports, videos
 
 Every run leaves behind:
 
