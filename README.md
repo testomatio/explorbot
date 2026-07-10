@@ -14,7 +14,7 @@ npx explorbot start https://your-app.com
 
 It runs with no babysitting and reports back what it finds. This is vibe-testing.
 
-New here? Read the [Getting Started guide](docs/setup/getting-started.md).
+New here? Read the [Getting Started guide](docs/basics/getting-started.md).
 
 ## Use Cases
 
@@ -94,7 +94,7 @@ Explorbot won't replace your regression tests — it covers what they can't. You
 - Node.js 24+ or **Bun**
 - An **AI provider key** — OpenRouter recommended; Groq, Cerebras, OpenAI, Anthropic, and others via the [Vercel AI SDK](https://sdk.vercel.ai/providers)
 - A **modern terminal** — iTerm2, WARP, Kitty, Ghostty, or Windows Terminal with WSL
-- A **compatible web app** — CRUD-heavy apps fit best. See [Prerequisites](docs/setup/prerequisites.md)
+- A **compatible web app** — CRUD-heavy apps fit best. See [Prerequisites](docs/basics/prerequisites.md)
 
 If your CI runs Playwright, it runs Explorbot. No GPUs, no special runners.
 
@@ -123,7 +123,7 @@ npx explorbot start /admin/users
 
 Type `/explore`, and Explorbot runs its loop on its own — research, plan, test, repeat — learning from every run.
 
-That's the gist. The [**Getting Started guide**](docs/setup/getting-started.md) walks through the full setup — choosing models, teaching Explorbot to log in, and picking the right feature to start on.
+That's the gist. The [**Getting Started guide**](docs/basics/getting-started.md) walks through the full setup — choosing models, teaching Explorbot to log in, and picking the right feature to start on.
 
 ## Teaching Explorbot
 
@@ -141,7 +141,7 @@ Point Explorbot at an OpenAPI spec and it plans and runs API tests too. See [API
 
 ## Keep going
 
-When you're ready to go deeper, the [full documentation](docs/README.md) covers everything, starting with the [Getting Started guide](docs/setup/getting-started.md).
+When you're ready to go deeper, the [full documentation](docs/) covers everything, starting with the [Getting Started guide](docs/basics/getting-started.md).
 
 ## FAQ
 

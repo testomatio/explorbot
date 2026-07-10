@@ -21,7 +21,7 @@ export default {
 };
 ```
 
-To set up a provider — OpenAI, Anthropic, Groq, Cerebras, Google, or Azure — see [AI providers](../setup/providers.md).
+To set up a provider — OpenAI, Anthropic, Groq, Cerebras, Google, or Azure — see [AI providers](../basics/providers.md).
 
 ## Rules
 
@@ -251,7 +251,7 @@ ai: {
 
 With `'playwright'`, runs are saved as `@playwright/test` `.spec.ts` files using the actual Playwright calls captured at runtime. See [Automated tests](../web-testing/automated-tests.md).
 
-See [AI providers](../setup/providers.md) for recommended models and provider setup.
+See [AI providers](../basics/providers.md) for recommended models and provider setup.
 
 ## Playwright settings
 
@@ -510,7 +510,7 @@ export default {
 ## See also
 
 - [API testing](../api-testing/basics.md) — API testing setup and commands
-- [AI providers](../setup/providers.md) — provider setup examples
+- [AI providers](../basics/providers.md) — provider setup examples
 - [Agents](../web-testing/agents.md) — agent descriptions and workflows
 - [Agent hooks](../web-testing/hooks.md) — custom code before and after an agent runs
 - [Researcher agent](../web-testing/researcher.md) — Researcher configuration and usage

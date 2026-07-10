@@ -1,6 +1,6 @@
 # Continuous Integration
 
-Once your Explorbot setup works locally — it logs in, explores, and produces sensible tests — the next step is to run it on a schedule, so the whole app gets re-tested continuously without anyone starting it by hand. This page shows what a CI run needs and gives a worked pipeline for the common providers. If you haven't run Explorbot headlessly yet, read [Running Explorbot](../setup/running.md) first.
+Once your Explorbot setup works locally — it logs in, explores, and produces sensible tests — the next step is to run it on a schedule, so the whole app gets re-tested continuously without anyone starting it by hand. This page shows what a CI run needs and gives a worked pipeline for the common providers. If you haven't run Explorbot headlessly yet, read [Running Explorbot](../basics/running.md) first.
 
 ## What a CI run needs
 
@@ -22,7 +22,7 @@ Three directories, three fates:
 
 ## Exit codes and gating
 
-As covered in [Running Explorbot](../setup/running.md#exit-codes), `explore` exits `1` only when the run itself crashes — bad config, unreachable app, provider failure. Failing tests do not fail the job; they are findings, not crashes. So a green pipeline means "Explorbot ran", not "no bugs found".
+As covered in [Running Explorbot](../basics/running.md#exit-codes), `explore` exits `1` only when the run itself crashes — bad config, unreachable app, provider failure. Failing tests do not fail the job; they are findings, not crashes. So a green pipeline means "Explorbot ran", not "no bugs found".
 
 To see what it found, read the session report in `output/reports/` — the Analyst writes a markdown summary that clusters defects by root cause. For per-test pass/fail in machine-checkable form, enable the markdown test report or send results to Testomat.io with the `TESTOMATIO` project key; both are described in [Reporting](./reporting.md). API tests are stricter: `api test` and `api explore` exit `1` when any test fails, so they gate natively.
 

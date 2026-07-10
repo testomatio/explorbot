@@ -1,0 +1,84 @@
+{
+  "title": "Explorbot Documentation",
+  "description": "Explorbot explores your web app, plans tests, and runs them — no scripts required.",
+  "start": "basics/getting-started.md",
+  "sections": [
+    {
+      "title": "Basics",
+      "dir": "basics",
+      "pages": [
+        { "title": "Getting started", "file": "basics/getting-started.md", "description": "Install to first test in ten minutes" },
+        { "title": "Running Explorbot", "file": "basics/running.md", "description": "Interactive TUI vs headless CLI, and when to use each" },
+        { "title": "Prerequisites", "file": "basics/prerequisites.md", "description": "Check that your app is a good fit" },
+        { "title": "Providers", "file": "basics/providers.md", "description": "Set up an AI provider and pick models" }
+      ]
+    },
+    {
+      "title": "Web testing",
+      "dir": "web-testing",
+      "pages": [
+        { "title": "Basics", "file": "web-testing/basics.md", "description": "The explore loop, states, and your first session" },
+        { "title": "Customization", "file": "web-testing/customization.md", "description": "Make it work on your app: login, cookie bars, modals, test data" },
+        { "title": "Planner", "file": "web-testing/planner.md", "description": "Tune what gets tested" },
+        { "title": "Researcher", "file": "web-testing/researcher.md", "description": "How pages are analyzed, and how to tune it" },
+        { "title": "Page interaction", "file": "web-testing/page-interaction.md", "description": "How agents read and act on a page" },
+        { "title": "Automated tests", "file": "web-testing/automated-tests.md", "description": "The runnable test files you keep" },
+        { "title": "Rerun", "file": "web-testing/rerun.md", "description": "Re-run generated tests with AI healing" },
+        { "title": "Agents", "file": "web-testing/agents.md", "description": "What each agent does under the hood" },
+        { "title": "Hooks", "file": "web-testing/hooks.md", "description": "Run your own code before or after an agent" }
+      ]
+    },
+    {
+      "title": "API testing",
+      "dir": "api-testing",
+      "pages": [
+        { "title": "Basics", "file": "api-testing/basics.md", "description": "Chief and Curler, configuration, your first API test" },
+        { "title": "Planning", "file": "api-testing/planning.md", "description": "Specs, endpoint knowledge, and planning styles" },
+        { "title": "Running tests", "file": "api-testing/running-tests.md", "description": "Executing plans, request logs, autonomous explore" }
+      ]
+    },
+    {
+      "title": "Doc collection",
+      "dir": "doc-collection",
+      "pages": [
+        { "title": "Basics", "file": "doc-collection/basics.md", "description": "Crawl your app and generate page docs" },
+        { "title": "Crawling", "file": "doc-collection/crawling.md", "description": "Choose what gets visited" },
+        { "title": "Interactive mode", "file": "doc-collection/interactive-mode.md", "description": "Document behavior, not just pages" }
+      ]
+    },
+    {
+      "title": "Common workflow",
+      "dir": "workflow",
+      "description": "These pages apply to web and API testing alike",
+      "pages": [
+        { "title": "Knowledge", "file": "workflow/knowledge.md", "description": "Teach Explorbot about your app" },
+        { "title": "Test plans", "file": "workflow/test-plans.md", "description": "The plan file format and how plans are reused" },
+        { "title": "Planning styles", "file": "workflow/planning-styles.md", "description": "Normal, curious, psycho, and your own" },
+        { "title": "Reporting", "file": "workflow/reporting.md", "description": "Local reports and Testomat.io" },
+        { "title": "Continuous integration", "file": "workflow/ci.md", "description": "Scheduled runs with cached experience on any CI" }
+      ]
+    },
+    {
+      "title": "Reference",
+      "dir": "reference",
+      "pages": [
+        { "title": "Commands", "file": "reference/commands.md", "description": "Every CLI and terminal command" },
+        { "title": "Configuration", "file": "reference/configuration.md", "description": "The config file, top to bottom" },
+        { "title": "Scripting", "file": "reference/scripting.md", "description": "The programmatic API" }
+      ]
+    },
+    {
+      "title": "Contributing",
+      "dir": "contributing",
+      "pages": [
+        { "title": "Contributing", "file": "contributing/contributing.md", "description": "How to contribute" },
+        { "title": "Observability", "file": "contributing/observability.md", "description": "Trace and debug AI calls" },
+        { "title": "Testing", "file": "contributing/testing.md", "description": "Run the test suite" },
+        { "title": "AI integration tests", "file": "contributing/ai-integration-tests.md", "description": "How agent tests work" },
+        { "title": "Regression tests", "file": "contributing/regression-tests.md", "description": "The real-AI e2e harness" },
+        { "title": "Demo videos", "file": "contributing/demo-videos.md", "description": "Turn recorded sessions into demo clips" },
+        { "title": "npm package", "file": "contributing/npm-package.md", "description": "Build and publish" }
+      ]
+    }
+  ]
+}

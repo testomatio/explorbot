@@ -32,7 +32,7 @@ export default {
 - **`spec`** (required) — one or more OpenAPI specs, given as HTTP(S) URLs or local file paths, in YAML or JSON. Chief uses the spec to plan; Curler uses it to look up schemas. Both agents refuse to run without one.
 - **`headers`** — sent with every request. This is where API keys and auth tokens go.
 
-See the [full configuration reference](../reference/configuration.md) for every option and [providers](../setup/providers.md) for choosing an AI model.
+See the [full configuration reference](../reference/configuration.md) for every option and [providers](../basics/providers.md) for choosing an AI model.
 
 ### Authenticating
 

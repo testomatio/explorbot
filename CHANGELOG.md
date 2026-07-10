@@ -3,6 +3,7 @@
 ## 2026-07-10
 
 ### Changes
+- Replaced the `docs/README.md` index with a machine-readable `docs/index.json` manifest listing all 34 pages in reading order, and renamed `docs/setup/` to `docs/basics/`.
 - Getting Started now closes with a glossary of every core concept — state, research, plan, test, knowledge, experience, agents, report — each in a sentence or two with a link to its guide.
 - Added `docs/setup/running.md` (TUI vs headless CLI, exit-code semantics, driving Explorbot from coding agents such as Claude Code) and `docs/workflow/ci.md` (scheduled runs on GitHub Actions/GitLab/Jenkins/Azure with cached `experience/` and `output/` for stable execution).
 - Rewrote the API testing and doc collection docs as journey-shaped sections, three pages each: `api-testing/` (basics — Chief/Curler concepts, config, auth via `bootstrap`; planning — specs, `api know`, styles; running-tests — index selection, Curler's toolset, request logs, `api explore`) and `doc-collection/` (basics; crawling — scope, path filters, dynamic-page collapsing; interactive-mode — interaction budgets, safety labels, screenshots). Added `web-testing/basics.md` so all three product sections open with the same concepts-and-configuration page, and reordered the docs index by user journey.

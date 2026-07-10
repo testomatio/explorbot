@@ -2,7 +2,7 @@
 
 Explorbot tests a web app the way a curious QA engineer would: open a page, figure out what it does, invent test scenarios, run them, and remember what happened. You write no test scripts up front — the tests come from the app itself.
 
-This page explains the concepts behind that loop and the minimum configuration to start. If you haven't installed Explorbot yet, do [Getting Started](../setup/getting-started.md) first.
+This page explains the concepts behind that loop and the minimum configuration to start. If you haven't installed Explorbot yet, do [Getting Started](../basics/getting-started.md) first.
 
 ## What it does
 
@@ -49,7 +49,7 @@ export default {
 };
 ```
 
-The three models split the work by cost: `model` does the heavy page reading on every step, `visionModel` analyzes screenshots, and `agenticModel` makes the high-level decisions on short inputs, so it can be smarter without costing much. The full breakdown is in [Getting Started](../setup/getting-started.md); provider setup is in [Providers](../setup/providers.md). Every other option — browser settings, directories, per-agent tuning — lives in the [Configuration reference](../reference/configuration.md).
+The three models split the work by cost: `model` does the heavy page reading on every step, `visionModel` analyzes screenshots, and `agenticModel` makes the high-level decisions on short inputs, so it can be smarter without costing much. The full breakdown is in [Getting Started](../basics/getting-started.md); provider setup is in [Providers](../basics/providers.md). Every other option — browser settings, directories, per-agent tuning — lives in the [Configuration reference](../reference/configuration.md).
 
 ## First run
 
