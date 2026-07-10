@@ -7,6 +7,7 @@ New here? Read [Getting Started](./setup/getting-started.md) — it takes you fr
 ## Setup
 
 - [Getting started](./setup/getting-started.md) — install to first test in ten minutes
+- [Running Explorbot](./setup/running.md) — interactive TUI vs headless CLI, and when to use each
 - [Prerequisites](./setup/prerequisites.md) — check that your app is a good fit
 - [Providers](./setup/providers.md) — set up an AI provider and pick models
 
@@ -42,6 +43,7 @@ These pages apply to web and API testing alike:
 - [Test plans](./workflow/test-plans.md) — the plan file format and how plans are reused
 - [Planning styles](./workflow/planning-styles.md) — normal, curious, psycho, and your own
 - [Reporting](./workflow/reporting.md) — local reports and Testomat.io
+- [Continuous integration](./workflow/ci.md) — scheduled runs with cached experience on any CI
 
 ## Reference
 

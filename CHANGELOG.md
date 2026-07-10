@@ -3,6 +3,7 @@
 ## 2026-07-10
 
 ### Changes
+- Added `docs/setup/running.md` (TUI vs headless CLI, exit-code semantics, driving Explorbot from coding agents such as Claude Code) and `docs/workflow/ci.md` (scheduled runs on GitHub Actions/GitLab/Jenkins/Azure with cached `experience/` and `output/` for stable execution).
 - Rewrote the API testing and doc collection docs as journey-shaped sections, three pages each: `api-testing/` (basics — Chief/Curler concepts, config, auth via `bootstrap`; planning — specs, `api know`, styles; running-tests — index selection, Curler's toolset, request logs, `api explore`) and `doc-collection/` (basics; crawling — scope, path filters, dynamic-page collapsing; interactive-mode — interaction budgets, safety labels, screenshots). Added `web-testing/basics.md` so all three product sections open with the same concepts-and-configuration page, and reordered the docs index by user journey.
 - Reorganized `docs/` by product area: `setup/` (install, prerequisites, providers), `web-testing/` (agents, researcher, page interaction, customization, hooks, planner, automated tests, rerun), `api-testing/`, `doc-writing/`, `workflow/` (pages shared by web and API testing: knowledge, test plans, planning styles, reporting), and `reference/` (commands, configuration, scripting). All cross-links and the README index updated.
 - Added `docs/workflow/planning-styles.md` — the planning-styles mechanism (built-in styles, cycling, custom style files, `extract-rules`) shared by the web Planner and the API Chief.
