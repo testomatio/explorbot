@@ -7,6 +7,21 @@ Explorbot runs the same commands two ways: from your shell (CLI) and inside an i
 
 Both share the same code, so behavior and options match.
 
+## Most used commands
+
+| Goal | Command |
+|------|---------|
+| Start an interactive session | `npx explorbot start /path` |
+| Explore a feature end to end | `npx explorbot explore /path --focus "feature"` |
+| Analyze a page without running tests | `npx explorbot research /path` |
+| Create a focused test plan | `npx explorbot plan /path --focus "user goal and boundaries"` |
+| Run a saved plan | `npx explorbot test output/plans/plan.md` |
+| List generated runnable tests | `npx explorbot runs` |
+| Re-run generated tests with healing | `npx explorbot rerun output/tests/suite.js --session` |
+| Teach Explorbot an app-specific fact | `npx explorbot learn /path "note"` |
+
+Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`, `/test`, `/runs`, or `/rerun`.
+
 ## Command Reference
 
 | Capability | CLI | TUI | Notes |

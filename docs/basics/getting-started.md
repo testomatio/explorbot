@@ -104,11 +104,20 @@ npx explorbot start /admin/projects --show
 
 When the terminal UI opens, type `/explore`. Explorbot researches the page, plans tests, runs them, and repeats. To go one step at a time:
 
+> [!WARNING]
+> Run your first `/explore` against staging, a disposable workspace, or another isolated environment with non-production data. Explorbot can create, edit, and delete records while testing. Make sure the data is safe to change and easy to restore.
+
 ```
 /research    # analyze the current page
 /plan        # propose test scenarios
 /test        # run the next test
 ```
+
+### What a successful run looks like
+
+A completed exploration shows the test totals, a session analysis, the covered features, and any execution issues that need review:
+
+![Successful Explorbot run with two completed tests](../assets/successful-explore-run.png)
 
 ## The concepts
 

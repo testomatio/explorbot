@@ -2,6 +2,15 @@
 
 There are two ways to run Explorbot: an interactive terminal UI where you watch and steer, and plain CLI commands that do one job and exit. Same engine, same config, same artifacts — the difference is whether you are in the loop.
 
+| Use | Choose it when | Start with |
+|-----|----------------|------------|
+| **TUI** | You are learning, steering, or debugging interactively | `npx explorbot start /path` |
+| **CLI** | You want one repeatable task that prints a result and exits | `npx explorbot explore /path` |
+| **Persistent browser** | You run several local commands and want to avoid starting a new browser process each time | `npx explorbot browser start --show` |
+| **CI** | You need unattended, scheduled, or pipeline runs with saved reports | `npx explorbot explore /path --max-tests 10` |
+
+Persistent browser is an optimization for local TUI or CLI work, while CI uses CLI commands. Each command still creates a fresh browser context; use `--session` when cookies and login state must carry over. See [Persistent Browser](../reference/commands.md#persistent-browser) and [Continuous Integration](../workflow/ci.md) for setup details.
+
 ## TUI mode
 
 `npx explorbot start` opens the interactive terminal UI. Pass a path to start on a specific page:
