@@ -45,7 +45,7 @@ While exploring, use the `/learn` command.
 
 ### API Testing
 
-[API testing](../api-testing/overview.md) shares the same `knowledge/` directory. `npx explorbot api know <endpoint> "<description>"` adds endpoint-scoped notes, stored with an `endpoint:` frontmatter field instead of `url:`.
+[API testing](../api-testing/basics.md) shares the same `knowledge/` directory. `npx explorbot api know <endpoint> "<description>"` adds endpoint-scoped notes, stored with an `endpoint:` frontmatter field instead of `url:`.
 
 ## URL Patterns
 

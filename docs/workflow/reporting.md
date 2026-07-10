@@ -1,6 +1,6 @@
 # Test Reporting
 
-Explorbot generates test reports with [@testomatio/reporter](https://github.com/testomatio/reporter). Reports include test steps, screenshots, and result messages for every run. The [API tester](../api-testing/overview.md) reports through the same reporter, so the HTML and Testomat.io settings below apply to API runs too.
+Explorbot generates test reports with [@testomatio/reporter](https://github.com/testomatio/reporter). Reports include test steps, screenshots, and result messages for every run. The [API tester](../api-testing/basics.md) reports through the same reporter, so the HTML and Testomat.io settings below apply to API runs too.
 
 ## Session analysis
 

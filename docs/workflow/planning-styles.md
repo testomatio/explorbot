@@ -2,7 +2,7 @@
 
 A planning style is a markdown rule file that shapes what scenarios get planned. The whole file becomes the planning approach in the agent's prompt — written as instructions to a QA engineer on how to think about test scenarios.
 
-Two agents use styles through the same mechanism: the web [Planner](../web-testing/planner.md) and the API [Chief](../api-testing/overview.md).
+Two agents use styles through the same mechanism: the web [Planner](../web-testing/planner.md) and the API [Chief](../api-testing/basics.md).
 
 ## Built-in Styles
 
@@ -63,5 +63,5 @@ The API Chief has no `styles` config option — customize it by overriding the b
 ## See Also
 
 - [Planner](../web-testing/planner.md) — how web test plans are generated
-- [API Testing](../api-testing/overview.md) — the Chief agent and API commands
+- [API Testing](../api-testing/basics.md) — the Chief agent and API commands
 - [Test Plans](./test-plans.md) — the plan file format

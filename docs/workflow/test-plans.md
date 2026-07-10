@@ -2,7 +2,7 @@
 
 A test plan is a markdown file with a suite of scenarios for the Tester to run. The [Planner](../web-testing/planner.md) generates plans, but the format is plain markdown. You can write plans by hand, edit generated ones, or check them into version control.
 
-Explorbot saves plans to `output/plans/` by default. The same parser loads them whether they were generated or written by hand. [API testing](../api-testing/overview.md) saves and loads its plans in this same format.
+Explorbot saves plans to `output/plans/` by default. The same parser loads them whether they were generated or written by hand. [API testing](../api-testing/basics.md) saves and loads its plans in this same format.
 
 The format is a dialect of the [Testomat.io classical markdown format](https://docs.testomat.io/project/import-export/export-tests/classical-tests-markdown-format/). It adds a `### Prerequisite` block that tells Explorbot which page to open before each test.
 

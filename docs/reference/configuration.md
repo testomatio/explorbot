@@ -509,7 +509,7 @@ export default {
 
 ## See also
 
-- [API testing](../api-testing/overview.md) — API testing setup and commands
+- [API testing](../api-testing/basics.md) — API testing setup and commands
 - [AI providers](../setup/providers.md) — provider setup examples
 - [Agents](../web-testing/agents.md) — agent descriptions and workflows
 - [Agent hooks](../web-testing/hooks.md) — custom code before and after an agent runs

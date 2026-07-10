@@ -137,7 +137,7 @@ Handling logins, cookie banners, modals, and test data takes a few lines — see
 
 ## It also tests REST APIs
 
-Point Explorbot at an OpenAPI spec and it plans and runs API tests too. See [API Testing](docs/api-testing/overview.md).
+Point Explorbot at an OpenAPI spec and it plans and runs API tests too. See [API Testing](docs/api-testing/basics.md).
 
 ## Keep going
 

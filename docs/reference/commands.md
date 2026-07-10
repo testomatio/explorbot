@@ -29,7 +29,7 @@ Both share the same code, so behavior and options match.
 | Print page context | `npx explorbot context <url>` | `/context` | Knowledge, experience, elements |
 | Execute CodeceptJS command | `npx explorbot shell <url> <command>` | `I.click(...)` etc. inline | One-shot vs interactive |
 | Load saved plan | `npx explorbot plan:load <file> [index]` | `/plan:load <file>` | Preview a plan |
-| Collect documentation | `npx explorbot docs collect <path-or-url>` | — | See [doc-collector](../doc-writing/doc-collector.md) |
+| Collect documentation | `npx explorbot docs collect <path-or-url>` | — | See [doc-collector](../doc-collection/basics.md) |
 | Extract built-in rules | `npx explorbot extract-rules <agent>` | — | Customizable rules to `rules/` |
 | Create a rule file | `npx explorbot add-rule [agent] [name]` | `/add-rule [agent] [name]` | Writes `rules/<agent>/<name>.md` |
 | Manage persistent browser | `npx explorbot browser {start\|stop\|status}` | — | Share browser across runs |
@@ -548,7 +548,7 @@ Output is written to:
 
 Use `docbot.config.*` to set crawl scope, path filters, dynamic-page collapsing, and low-signal page skipping.
 
-See [Documentation Collection](../doc-writing/doc-collector.md) for full configuration, crawl modes, and examples.
+See [Documentation Collection](../doc-collection/basics.md) for full configuration, crawl modes, and examples.
 
 ### `npx explorbot docs init`
 

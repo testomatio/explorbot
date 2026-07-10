@@ -12,27 +12,27 @@ New here? Read [Getting Started](./setup/getting-started.md) — it takes you fr
 
 ## Web testing
 
-How it works:
-
-- [Agents](./web-testing/agents.md) — what each agent does
-- [Researcher](./web-testing/researcher.md) — how Explorbot analyzes a page
+- [Basics](./web-testing/basics.md) — the explore loop, states, and your first session
+- [Customization](./web-testing/customization.md) — make it work on your app: login, cookie bars, modals, test data
+- [Planner](./web-testing/planner.md) — tune what gets tested
+- [Researcher](./web-testing/researcher.md) — how pages are analyzed, and how to tune it
 - [Page interaction](./web-testing/page-interaction.md) — how agents read and act on a page
-
-Solve common problems:
-
-- [Customization](./web-testing/customization.md) — login, cookie bars, modals, test data
-- [Hooks](./web-testing/hooks.md) — run code before or after an agent
-- [Planner](./web-testing/planner.md) — how test scenarios are invented
-- [Automated tests](./web-testing/automated-tests.md) — the test files Explorbot writes
+- [Automated tests](./web-testing/automated-tests.md) — the runnable test files you keep
 - [Rerun](./web-testing/rerun.md) — re-run generated tests with AI healing
+- [Agents](./web-testing/agents.md) — what each agent does under the hood
+- [Hooks](./web-testing/hooks.md) — run your own code before or after an agent
 
 ## API testing
 
-- [API testing](./api-testing/overview.md) — test REST APIs with AI agents
+- [Basics](./api-testing/basics.md) — Chief and Curler, configuration, your first API test
+- [Planning](./api-testing/planning.md) — specs, endpoint knowledge, and planning styles
+- [Running tests](./api-testing/running-tests.md) — executing plans, request logs, autonomous explore
 
-## Doc writing
+## Doc collection
 
-- [Doc collector](./doc-writing/doc-collector.md) — generate page specs and docs from your app
+- [Basics](./doc-collection/basics.md) — crawl your app and generate page docs
+- [Crawling](./doc-collection/crawling.md) — choose what gets visited
+- [Interactive mode](./doc-collection/interactive-mode.md) — document behavior, not just pages
 
 ## Common workflow
 
