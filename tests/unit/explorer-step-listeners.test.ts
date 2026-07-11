@@ -1,8 +1,15 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'bun:test';
 import * as codeceptjs from 'codeceptjs';
 import Explorer from '../../src/explorer.ts';
 
 const dispatcher = (codeceptjs as any).event.dispatcher;
+
+function countListeners(event: string): number {
+  if (typeof dispatcher.listeners === 'function') return dispatcher.listeners(event).length;
+  if (typeof dispatcher.listenerCount === 'function') return dispatcher.listenerCount(event);
+  return EventEmitter.listenerCount(dispatcher, event);
+}
 
 function buildExplorer() {
   const explorer = Object.assign(Object.create(Explorer.prototype), {
@@ -31,24 +38,24 @@ function buildTest() {
 describe('Explorer step listener cleanup', () => {
   it('removes step listeners after a test lifecycle', async () => {
     const before = {
-      passed: dispatcher.listenerCount('step.passed'),
-      failed: dispatcher.listenerCount('step.failed'),
-      after: dispatcher.listenerCount('test.after'),
+      passed: countListeners('step.passed'),
+      failed: countListeners('step.failed'),
+      after: countListeners('test.after'),
     };
 
     await buildExplorer().startTest(buildTest());
     dispatcher.emit('test.after');
 
-    expect(dispatcher.listenerCount('step.passed')).toBe(before.passed);
-    expect(dispatcher.listenerCount('step.failed')).toBe(before.failed);
-    expect(dispatcher.listenerCount('test.after')).toBe(before.after);
+    expect(countListeners('step.passed')).toBe(before.passed);
+    expect(countListeners('step.failed')).toBe(before.failed);
+    expect(countListeners('test.after')).toBe(before.after);
   });
 
   it('does not accumulate listeners across repeated startTest cycles', async () => {
     const before = {
-      passed: dispatcher.listenerCount('step.passed'),
-      failed: dispatcher.listenerCount('step.failed'),
-      after: dispatcher.listenerCount('test.after'),
+      passed: countListeners('step.passed'),
+      failed: countListeners('step.failed'),
+      after: countListeners('test.after'),
     };
 
     for (let i = 0; i < 5; i++) {
@@ -56,8 +63,8 @@ describe('Explorer step listener cleanup', () => {
       dispatcher.emit('test.after');
     }
 
-    expect(dispatcher.listenerCount('step.passed')).toBe(before.passed);
-    expect(dispatcher.listenerCount('step.failed')).toBe(before.failed);
-    expect(dispatcher.listenerCount('test.after')).toBe(before.after);
+    expect(countListeners('step.passed')).toBe(before.passed);
+    expect(countListeners('step.failed')).toBe(before.failed);
+    expect(countListeners('test.after')).toBe(before.after);
   });
 });
