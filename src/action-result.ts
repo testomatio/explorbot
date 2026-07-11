@@ -68,6 +68,7 @@ export class ActionResult implements ActionResultData {
   private _screenshot: Buffer | undefined = undefined;
   readonly htmlFile: string | undefined = undefined;
   private _html: string | undefined = undefined;
+  private snapshotCache = new Map<string, string>();
   readonly logFile: string | undefined = undefined;
   private _browserLogs: any[] | undefined = undefined;
   readonly ariaSnapshotFile: string | undefined = undefined;
@@ -151,6 +152,7 @@ export class ActionResult implements ActionResultData {
 
   set html(value: string) {
     this._html = value;
+    this.snapshotCache.clear();
   }
 
   get screenshot(): Buffer | undefined {
@@ -263,12 +265,21 @@ export class ActionResult implements ActionResultData {
 
   async simplifiedHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    return await minifyHtml(htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal));
+    const cacheKey = `simplified:${JSON.stringify(normalizedConfig?.minimal ?? null)}`;
+    const cached = this.snapshotCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+    const simplifiedHtml = await minifyHtml(htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal));
+    this.snapshotCache.set(cacheKey, simplifiedHtml);
+    return simplifiedHtml;
   }
 
   async combinedHtml(htmlConfig?: HtmlConfig & { keepPositions?: boolean }): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
+    const cacheKey = `combined:${!!htmlConfig?.keepPositions}:${JSON.stringify(normalizedConfig?.combined ?? null)}`;
+    const cached = this.snapshotCache.get(cacheKey);
+    if (cached !== undefined) return cached;
     const combinedHtml = await minifyHtml(htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined, { keepPositions: htmlConfig?.keepPositions }));
+    this.snapshotCache.set(cacheKey, combinedHtml);
     debugLog(`----${this.url}----`);
     debugLog(`Combined HTML: \n${combinedHtml}`);
     debugLog('----');
@@ -277,7 +288,12 @@ export class ActionResult implements ActionResultData {
 
   async textHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    return await minifyHtml(htmlTextSnapshot(this.html ?? '', normalizedConfig?.text));
+    const cacheKey = `text:${JSON.stringify(normalizedConfig?.text ?? null)}`;
+    const cached = this.snapshotCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+    const textHtml = await minifyHtml(htmlTextSnapshot(this.html ?? '', normalizedConfig?.text));
+    this.snapshotCache.set(cacheKey, textHtml);
+    return textHtml;
   }
 
   getInteractiveARIA(): string {
