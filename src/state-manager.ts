@@ -88,8 +88,8 @@ export class StateManager {
   private knowledgeDir: string;
   private nextStateId = 1;
 
-  constructor() {
-    this.experienceTracker = new ExperienceTracker();
+  constructor(options: { incognito?: boolean } = {}) {
+    this.experienceTracker = new ExperienceTracker({ disabled: options.incognito });
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
     const configPath = configParser.getConfigPath();
