@@ -74,6 +74,21 @@ When a step fails, the Rerunner agent diagnoses the problem and tries to fix it.
 4. It runs a replacement action, for example waiting for the page to load and then clicking with a corrected locator.
 5. On success, the test continues. On failure, it moves to the next test.
 
+### Healing boundaries
+
+AI healing repairs how an existing step reaches the same intended outcome. It is deliberately not a second exploratory test run.
+
+| Healing can | Healing does not |
+|-------------|------------------|
+| Replace a stale or ambiguous locator | Change the scenario's business intent |
+| Wait for loading or dismiss a blocking transient UI | Turn a failed assertion into a pass |
+| Restore expected navigation or repeat an equivalent interaction | Invent missing credentials, permissions, or test data |
+| Adapt to a small UI structure change | Work around a real product defect or unavailable service |
+
+The healer only has `healLimit` attempts per test and `healMaxIterations` AI iterations per failed step. It should stop when the expected element or state no longer exists, required data is missing, access is denied, or the application behavior contradicts the assertion. In those cases the test remains failed and the trace preserves the evidence for review.
+
+Successful healing updates the generated test file with the replacement step. Review that diff before committing it: healing shows that an equivalent interaction worked now, not that every UI change is safe or intentional.
+
 ### Healing output
 
 During healing, the agent's actions show as substeps:

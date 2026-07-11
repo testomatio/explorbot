@@ -13,6 +13,22 @@ When you run `/plan` or `/explore`, the Planner:
 
 Run it again and the Planner adds new scenarios in a different style. It skips scenarios that already exist.
 
+## Write a useful focus
+
+Focus works best when it names one feature boundary, the user goal, and the behavior that matters. Treat it as a testing brief, not a keyword.
+
+```bash
+npx explorbot plan /checkout --focus "Guest checkout: complete an order with card payment; cover validation, declined payment, retry, and confirmation without testing account registration"
+```
+
+The same focus works in the TUI:
+
+```
+/plan --focus "Guest checkout: complete an order with card payment; cover validation, declined payment, retry, and confirmation without testing account registration"
+```
+
+`checkout` alone leaves the scope ambiguous. The fuller focus tells Planner where the flow starts and ends, which outcomes deserve scenarios, and what to leave out. Keep the focus observable from the current page; put durable product facts or credentials in [Knowledge](../workflow/knowledge.md), not in the focus.
+
 ## Configuration
 
 ```javascript
