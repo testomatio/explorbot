@@ -40,6 +40,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         CRITICAL: All commands MUST target the SAME element using different locators.
         This is a FALLBACK list, NOT a sequence of different clicks.
         If you need to click multiple different elements, make SEPARATE click() calls.
+        Inline create/edit UIs may use icon-only confirm controls near the edited field instead of text buttons. Target the nearest actionable icon/control in the same row or form.
       `,
       inputSchema: z.object({
         commands: z.array(z.string()).describe(dedent`
@@ -470,6 +471,14 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
           if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
             activeNote.screenshot = await action.saveScreenshot();
+          }
+          if (!hasObservablePageChange(toolResult)) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('form', 'Form command executed, but no observable page or form-state change was captured.', {
+              ...toolResult,
+              code: codeBlock,
+              suggestion: 'Treat the field/form action as not completed. Re-locate the editable control, check whether another UI layer is active, then retry and verify the field value before submitting.',
+            });
           }
           activeNote.commit(TestResult.PASSED);
           return successToolResult(
@@ -1005,15 +1014,28 @@ export function createAgentTools({
 
         const action = explorer.createAction();
         const visible = await action.attempt(`I.seeElement(${JSON.stringify(xpath)})`, 'xpathCheck visibility', false);
+        const liveElement = await WebElement.fromPlaywrightLocator(explorer.playwrightHelper.page.locator(`xpath=${xpath}`));
 
         const matchesSummary = result.elements.map((el, i) => `${i + 1}. <${el.tag} ${el.keyAttrs}> text="${el.text}" html: ${el.outerHTML}`).join('\n');
 
         const visibilityNote = visible ? 'Element IS visible in browser — Tester can use this XPath as locator.' : 'Element exists in DOM but is NOT visible. May need scrolling, a click to reveal, or is hidden.';
 
+        const hit = liveElement?.ourAttr('hit') || null;
+        const coveredBy = liveElement?.ourAttr('coveredBy') || null;
+        let resolvedVisibilityNote = visibilityNote;
+        if (hit === 'covered') {
+          resolvedVisibilityNote = `Element exists in DOM and is visible, but is covered by ${coveredBy || 'another UI layer'}. Dismiss or move the covering UI before interacting with it.`;
+        }
+        if (hit === 'offscreen') {
+          resolvedVisibilityNote = 'Element exists in DOM but its interaction point is outside the viewport. Scroll or reveal it before interacting.';
+        }
+
         return successToolResult('xpathCheck', {
           totalFound: result.totalFound,
           matches: matchesSummary,
-          visibilityNote,
+          visibilityNote: resolvedVisibilityNote,
+          hit,
+          coveredBy,
           xpath,
         });
       },
@@ -1161,6 +1183,13 @@ function successToolResult(action: string, data?: Record<string, any>, source?: 
     result.suggestion = data.suggestion ? `${data.suggestion} ${suggestion}` : suggestion;
   }
   return result;
+}
+
+function hasObservablePageChange(data?: Record<string, any>): boolean {
+  if (!data?.pageDiff) return false;
+  if (data.pageDiff.urlChanged === true) return true;
+  if (data.pageDiff.ariaChanges) return true;
+  return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 
 async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
