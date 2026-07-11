@@ -44,6 +44,8 @@ describe('Explorer step listener cleanup', () => {
     };
 
     await buildExplorer().startTest(buildTest());
+    expect(countListeners('step.passed')).toBe(before.passed + 1);
+
     dispatcher.emit('test.after');
 
     expect(countListeners('step.passed')).toBe(before.passed);
