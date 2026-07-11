@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
 import { compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
+import { TTLCache } from './utils/cache.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
@@ -68,6 +69,7 @@ export class ActionResult implements ActionResultData {
   private _screenshot: Buffer | undefined = undefined;
   readonly htmlFile: string | undefined = undefined;
   private _html: string | undefined = undefined;
+  private snapshotCache = new TTLCache<string>();
   readonly logFile: string | undefined = undefined;
   private _browserLogs: any[] | undefined = undefined;
   readonly ariaSnapshotFile: string | undefined = undefined;
@@ -151,6 +153,7 @@ export class ActionResult implements ActionResultData {
 
   set html(value: string) {
     this._html = value;
+    this.snapshotCache.clear();
   }
 
   get screenshot(): Buffer | undefined {
@@ -263,21 +266,26 @@ export class ActionResult implements ActionResultData {
 
   async simplifiedHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    return await minifyHtml(htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal));
+    const cacheKey = `simplified:${JSON.stringify(normalizedConfig?.minimal ?? null)}`;
+    return this.snapshotCache.fetch(cacheKey, () => minifyHtml(htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal)));
   }
 
   async combinedHtml(htmlConfig?: HtmlConfig & { keepPositions?: boolean }): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    const combinedHtml = await minifyHtml(htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined, { keepPositions: htmlConfig?.keepPositions }));
-    debugLog(`----${this.url}----`);
-    debugLog(`Combined HTML: \n${combinedHtml}`);
-    debugLog('----');
-    return combinedHtml;
+    const cacheKey = `combined:${!!htmlConfig?.keepPositions}:${JSON.stringify(normalizedConfig?.combined ?? null)}`;
+    return this.snapshotCache.fetch(cacheKey, async () => {
+      const combinedHtml = await minifyHtml(htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined, { keepPositions: htmlConfig?.keepPositions }));
+      debugLog(`----${this.url}----`);
+      debugLog(`Combined HTML: \n${combinedHtml}`);
+      debugLog('----');
+      return combinedHtml;
+    });
   }
 
   async textHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
-    return await minifyHtml(htmlTextSnapshot(this.html ?? '', normalizedConfig?.text));
+    const cacheKey = `text:${JSON.stringify(normalizedConfig?.text ?? null)}`;
+    return this.snapshotCache.fetch(cacheKey, () => minifyHtml(htmlTextSnapshot(this.html ?? '', normalizedConfig?.text)));
   }
 
   getInteractiveARIA(): string {
