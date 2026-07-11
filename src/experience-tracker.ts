@@ -98,7 +98,10 @@ export class ExperienceTracker {
   }
 
   readExperienceFile(stateHash: string): { content: string; data: any } {
-    const filePath = this.getExperienceFilePath(stateHash);
+    return this.readExperienceFileAt(this.getExperienceFilePath(stateHash));
+  }
+
+  private readExperienceFileAt(filePath: string): { content: string; data: any } {
     const fileContent = readFileSync(filePath, 'utf8');
     const { content, data } = matter(fileContent);
     return { content, data };
@@ -325,21 +328,7 @@ export class ExperienceTracker {
       return aHash.localeCompare(bHash);
     });
 
-    const toc: ExperienceTocEntry[] = [];
-    for (let i = 0; i < sorted.length; i++) {
-      const record = sorted[i];
-      const fileHash = basename(record.filePath, '.md');
-      const url = (record.data as WebPageState)?.url || '';
-      const sections = listTocHeadings(record.content);
-      if (sections.length === 0) continue;
-      toc.push({
-        fileTag: indexToLetters(i),
-        fileHash,
-        url,
-        sections,
-      });
-    }
-    return toc;
+    return this.buildToc(sorted);
   }
 
   getExperienceSection(fileTag: string, sectionIndex: number, state: ActionResult, options?: { includeDescendantExperience?: boolean }): { title: string; url: string; content: string } | null {
@@ -347,14 +336,32 @@ export class ExperienceTracker {
     const entry = toc.find((e) => e.fileTag === fileTag);
     if (!entry) return null;
 
-    const filePath = this.findExperienceFileByHash(entry.fileHash);
-    if (!filePath) return null;
-
-    const { content } = this.readExperienceFile(entry.fileHash);
-    const extracted = extractHeadingSection(content, sectionIndex);
+    const extracted = this.readSectionByHash(entry.fileHash, sectionIndex);
     if (!extracted) return null;
 
     return { title: extracted.title, url: entry.url, content: extracted.body };
+  }
+
+  private buildToc(records: ExperienceFile[]): ExperienceTocEntry[] {
+    const toc: ExperienceTocEntry[] = [];
+    for (const record of records) {
+      const sections = listTocHeadings(record.content);
+      if (sections.length === 0) continue;
+      toc.push({
+        fileTag: indexToLetters(toc.length),
+        fileHash: basename(record.filePath, '.md'),
+        url: (record.data as WebPageState)?.url || '',
+        sections,
+      });
+    }
+    return toc;
+  }
+
+  private readSectionByHash(fileHash: string, sectionIndex: number): { title: string; body: string } | null {
+    const filePath = this.findExperienceFileByHash(fileHash);
+    if (!filePath) return null;
+    const { content } = this.readExperienceFileAt(filePath);
+    return extractHeadingSection(content, sectionIndex);
   }
 
   private findExperienceFileByHash(fileHash: string): string | null {
@@ -401,19 +408,7 @@ export class ExperienceTracker {
       return aUrl.localeCompare(bUrl);
     });
 
-    const toc: ExperienceTocEntry[] = [];
-    for (let i = 0; i < sorted.length; i++) {
-      const record = sorted[i];
-      const sections = listTocHeadings(record.content);
-      if (sections.length === 0) continue;
-      toc.push({
-        fileTag: indexToLetters(toc.length),
-        fileHash: basename(record.filePath, '.md'),
-        url: (record.data as WebPageState)?.url || '',
-        sections,
-      });
-    }
-    return toc;
+    return this.buildToc(sorted);
   }
 
   getExperienceSectionByTag(fileTag: string, sectionIndex: number, filter?: string): { title: string; url: string; content: string; fileHash: string } | null {
@@ -421,11 +416,7 @@ export class ExperienceTracker {
     const entry = toc.find((e) => e.fileTag === fileTag);
     if (!entry) return null;
 
-    const filePath = this.findExperienceFileByHash(entry.fileHash);
-    if (!filePath) return null;
-
-    const { content } = this.readExperienceFile(entry.fileHash);
-    const extracted = extractHeadingSection(content, sectionIndex);
+    const extracted = this.readSectionByHash(entry.fileHash, sectionIndex);
     if (!extracted) return null;
 
     return { title: extracted.title, url: entry.url, content: extracted.body, fileHash: entry.fileHash };
