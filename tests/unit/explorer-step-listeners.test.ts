@@ -1,14 +1,33 @@
-import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'bun:test';
 import * as codeceptjs from 'codeceptjs';
 import Explorer from '../../src/explorer.ts';
 
 const dispatcher = (codeceptjs as any).event.dispatcher;
+const TRACKED_EVENTS = ['step.passed', 'step.failed', 'test.after'];
 
-function countListeners(event: string): number {
-  if (typeof dispatcher.listeners === 'function') return dispatcher.listeners(event).length;
-  if (typeof dispatcher.listenerCount === 'function') return dispatcher.listenerCount(event);
-  return EventEmitter.listenerCount(dispatcher, event);
+// The CodeceptJS dispatcher's listener introspection (listenerCount/listeners) is
+// unreliable under the bun version CI runs, so track live registrations by wrapping
+// on()/off() (which work everywhere). registered[event] holds the handlers currently
+// attached — the leak bug leaves a handler behind because off() used the wrong ref.
+function trackRegistrations(): { registered: Map<string, Set<any>>; restore: () => void } {
+  const registered = new Map<string, Set<any>>(TRACKED_EVENTS.map((event) => [event, new Set()]));
+  const realOn = dispatcher.on.bind(dispatcher);
+  const realOff = dispatcher.off.bind(dispatcher);
+  dispatcher.on = (event: string, fn: any) => {
+    registered.get(event)?.add(fn);
+    return realOn(event, fn);
+  };
+  dispatcher.off = (event: string, fn: any) => {
+    registered.get(event)?.delete(fn);
+    return realOff(event, fn);
+  };
+  return {
+    registered,
+    restore: () => {
+      dispatcher.on = realOn;
+      dispatcher.off = realOff;
+    },
+  };
 }
 
 function buildExplorer() {
@@ -36,37 +55,35 @@ function buildTest() {
 }
 
 describe('Explorer step listener cleanup', () => {
-  it('removes step listeners after a test lifecycle', async () => {
-    const before = {
-      passed: countListeners('step.passed'),
-      failed: countListeners('step.failed'),
-      after: countListeners('test.after'),
-    };
+  it('removes every listener it registers after a test lifecycle', async () => {
+    const { registered, restore } = trackRegistrations();
+    try {
+      await buildExplorer().startTest(buildTest());
+      expect(registered.get('step.passed')!.size).toBe(1);
+      expect(registered.get('test.after')!.size).toBe(1);
 
-    await buildExplorer().startTest(buildTest());
-    expect(countListeners('step.passed')).toBe(before.passed + 1);
+      dispatcher.emit('test.after');
 
-    dispatcher.emit('test.after');
-
-    expect(countListeners('step.passed')).toBe(before.passed);
-    expect(countListeners('step.failed')).toBe(before.failed);
-    expect(countListeners('test.after')).toBe(before.after);
+      expect(registered.get('step.passed')!.size).toBe(0);
+      expect(registered.get('step.failed')!.size).toBe(0);
+      expect(registered.get('test.after')!.size).toBe(0);
+    } finally {
+      restore();
+    }
   });
 
   it('does not accumulate listeners across repeated startTest cycles', async () => {
-    const before = {
-      passed: countListeners('step.passed'),
-      failed: countListeners('step.failed'),
-      after: countListeners('test.after'),
-    };
-
-    for (let i = 0; i < 5; i++) {
-      await buildExplorer().startTest(buildTest());
-      dispatcher.emit('test.after');
+    const { registered, restore } = trackRegistrations();
+    try {
+      for (let i = 0; i < 5; i++) {
+        await buildExplorer().startTest(buildTest());
+        dispatcher.emit('test.after');
+      }
+      expect(registered.get('step.passed')!.size).toBe(0);
+      expect(registered.get('step.failed')!.size).toBe(0);
+      expect(registered.get('test.after')!.size).toBe(0);
+    } finally {
+      restore();
     }
-
-    expect(countListeners('step.passed')).toBe(before.passed);
-    expect(countListeners('step.failed')).toBe(before.failed);
-    expect(countListeners('test.after')).toBe(before.after);
   });
 });
