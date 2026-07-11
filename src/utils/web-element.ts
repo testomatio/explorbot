@@ -47,6 +47,10 @@ export class WebElement {
     return this.attrs[EXPLORBOT_ATTRS.eidx] || this.attrs.eidx || null;
   }
 
+  ourAttr(name: keyof typeof EXPLORBOT_ATTRS): string | undefined {
+    return this.attrs[EXPLORBOT_ATTRS[name]];
+  }
+
   get isNavigationLink(): boolean {
     if (this.tag !== 'a') return false;
     const href = this.attrs.href || '';
