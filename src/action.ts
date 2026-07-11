@@ -303,11 +303,11 @@ class Action {
 
       if (isPlaywright) {
         const page = this.playwrightHelper.page;
-        const asyncFn = new Function('page', `return (async () => { ${sanitizedCode} })()`);
+        const asyncFn = createSandboxedFunction(['page'], `return (async () => { ${sanitizedCode} })()`);
         await asyncFn(page);
         await sleep(this.config.action?.delay || 500);
       } else {
-        const codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', 'faker', sanitizedCode);
+        const codeFunction = createSandboxedFunction(['I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', 'faker'], sanitizedCode);
         codeFunction(this.actor, tryTo, retryTo, within, hopeThat, step, faker);
         await recorder.add(() => sleep(this.config.action?.delay || 500));
         await recorder.promise();
@@ -366,7 +366,7 @@ class Action {
         if (!sanitizedCode) {
           throw new Error('No valid I.* commands found in code block');
         }
-        codeFunction = new Function('I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', sanitizedCode);
+        codeFunction = createSandboxedFunction(['I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step'], sanitizedCode);
       }
       codeFunction(this.actor, tryTo, retryTo, within, hopeThat, step);
       await recorder.promise();
@@ -480,12 +480,19 @@ async function captureTitle(page: any, actor: any): Promise<string> {
   return '';
 }
 
-function sanitizeCodeBlock(code: string): string {
+const SHADOWED_GLOBALS = ['process', 'global', 'globalThis', 'fetch', 'Bun', 'require', 'module', 'exports'];
+
+export function sanitizeCodeBlock(code: string): string {
   return code
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => line.startsWith('I.') || line.startsWith('page.') || line.startsWith('await '))
+    .filter((line) => line.startsWith('I.') || line.startsWith('page.') || line.startsWith('await page.') || line.startsWith('await I.'))
     .join('\n');
+}
+
+export function createSandboxedFunction(argNames: string[], body: string): (...args: any[]) => any {
+  const fn = new Function(...argNames, ...SHADOWED_GLOBALS, `'use strict';\n${body}`);
+  return (...args: any[]) => fn(...args);
 }
 
 function hasPlaywrightCommands(code: string): boolean {
