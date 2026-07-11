@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
 import { ConfigParser } from '../config.ts';
-import { ExperienceTracker } from '../experience-tracker.ts';
+import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
@@ -21,7 +21,7 @@ import { WithSessionDedup } from './planner/session-dedup.ts';
 import { getActiveStyle, getStyles } from './planner/styles.ts';
 import { WithSubPages, getPlannedByStateHash, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
 import type { Provider } from './provider.js';
-import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
+import { POSSIBLE_SECTIONS, type Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
 import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
@@ -63,13 +63,13 @@ export class Planner extends PlannerBase implements Agent {
   researcher: Researcher;
   private fisherman: Fisherman | null = null;
 
-  constructor(explorer: Explorer, provider: Provider) {
+  constructor(explorer: Explorer, provider: Provider, researcher: Researcher) {
     super();
     this.explorer = explorer;
     this.provider = provider;
-    this.researcher = new Researcher(explorer, provider);
+    this.researcher = researcher;
     this.stateManager = explorer.getStateManager();
-    this.experienceTracker = new ExperienceTracker();
+    this.experienceTracker = explorer.getStateManager().getExperienceTracker();
   }
 
   setFisherman(fisherman: Fisherman): void {
@@ -171,6 +171,9 @@ export class Planner extends PlannerBase implements Agent {
 
     const tags = ['planner'];
     if (style) tags.push(style);
+
+    const existingTestScenarios = this.getExistingTestFileScenarios(state.url);
+
     const result = await Observability.run(`planner: ${state.url}`, { tags, sessionId: state.url }, async () => {
       const actionResult = ActionResult.fromState(state);
       const conversation = await this.buildConversation(actionResult, style, parentPlan, feature);
@@ -211,7 +214,6 @@ export class Planner extends PlannerBase implements Agent {
       const defaultStartUrl = this.getDefaultStartUrl(state);
       if (parentPlan) this.currentPlan.parentPlan = parentPlan;
       const allPreviousScenarios = this.getPreviousSessionScenarios();
-      const existingTestScenarios = this.getExistingTestFileScenarios(state.url);
       for (const s of existingTestScenarios) allPreviousScenarios.add(s);
       for (const t of tests) {
         if (allPreviousScenarios.has(t.scenario.toLowerCase())) continue;
@@ -266,6 +268,7 @@ export class Planner extends PlannerBase implements Agent {
   }
 
   private getExistingTestFileScenarios(currentUrl?: string): Set<string> {
+    this.lastSuite = null;
     if (!currentUrl) return new Set<string>();
     try {
       this.lastSuite = new Suite(currentUrl);

@@ -124,9 +124,7 @@ describe('Planner with aimock', () => {
     clearSessionDedup();
     clearStyleCache();
 
-    planner = new Planner(createMockExplorer(), provider);
-    planner.researcher = { research: async () => taskBoardUiMap } as any;
-    (planner as any).experienceTracker = { getSuccessfulExperience: () => [] };
+    planner = new Planner(createMockExplorer(), provider, { research: async () => taskBoardUiMap } as any);
 
     mock.on({}, { content: JSON.stringify(defaultScenarios) });
   });
@@ -149,6 +147,25 @@ describe('Planner with aimock', () => {
     expect(first.expected).toEqual(['New task card appears in To Do column', 'Success notification is shown']);
     expect(first.plannedSteps).toEqual(['Click Create Task button', 'Fill in Task title', 'Select Assignee', 'Click Save']);
     expect(first.startUrl).toBe('/tasks/board');
+  });
+
+  it('loads the existing test suite before building the conversation', async () => {
+    const order: string[] = [];
+    const origLoad = (planner as any).getExistingTestFileScenarios.bind(planner);
+    const origBuild = (planner as any).buildConversation.bind(planner);
+    (planner as any).getExistingTestFileScenarios = (...args: any[]) => {
+      order.push('load');
+      return origLoad(...args);
+    };
+    (planner as any).buildConversation = (...args: any[]) => {
+      order.push('build');
+      return origBuild(...args);
+    };
+
+    await planner.plan();
+
+    expect(order.indexOf('load')).toBe(0);
+    expect(order.indexOf('build')).toBeGreaterThan(order.indexOf('load'));
   });
 
   it('passes UI map elements in page_research prompt', async () => {
