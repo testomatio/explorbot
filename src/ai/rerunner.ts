@@ -40,7 +40,7 @@ export class Rerunner extends TaskAgent implements Agent {
   private agentTools: any;
   private healedSteps: Array<{ test: string; original: string; healed: string }> = [];
   private traceDir = '';
-  private pluginsWired = false;
+  private static pluginsWired = false;
 
   constructor(explorer: Explorer, provider: Provider, agentTools?: any) {
     super();
@@ -233,12 +233,11 @@ export class Rerunner extends TaskAgent implements Agent {
       healMod.addRecipe(name, recipe);
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const outputDir = (global as any).output_dir || 'output';
-    this.traceDir = `${outputDir}/rerun_${timestamp}`;
+    this.traceDir = `${outputDir}/rerun-traces`;
 
-    if (this.pluginsWired) return;
-    this.pluginsWired = true;
+    if (Rerunner.pluginsWired) return;
+    Rerunner.pluginsWired = true;
 
     healMod.connectToEvents();
 
@@ -296,7 +295,7 @@ export class Rerunner extends TaskAgent implements Agent {
     });
 
     const aiTrace = aiTracePlugin.default || aiTracePlugin;
-    aiTrace(this.rerunnerConfig.aiTrace || { output: `${outputDir}/rerun-traces` });
+    aiTrace(this.rerunnerConfig.aiTrace || { output: this.traceDir });
 
     import('@testomatio/reporter/codecept')
       .then((mod) => {
@@ -308,9 +307,9 @@ export class Rerunner extends TaskAgent implements Agent {
 
   private teardownHealing(): void {
     const healMod = heal.default || heal;
-    healMod.recipes['explorbot-ai-healer'] = undefined;
+    Reflect.deleteProperty(healMod.recipes, 'explorbot-ai-healer');
     for (const name of Object.keys(this.rerunnerConfig.recipes || {})) {
-      healMod.recipes[name] = undefined;
+      Reflect.deleteProperty(healMod.recipes, name);
     }
   }
 
