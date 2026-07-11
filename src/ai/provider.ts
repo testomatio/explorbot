@@ -31,10 +31,10 @@ function extractCachedTokens(usage: any): number {
   return typeof fromRaw === 'number' ? fromRaw : 0;
 }
 
-function rejectAfterIdle(ms: number, signal: { cancelled: boolean }, controller: AbortController): Promise<never> {
+function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: AbortController): Promise<never> {
   return new Promise((_, reject) => {
     const tick = () => {
-      if (signal.cancelled) return;
+      if (cancel.cancelled) return;
       if (executionController.isAwaitingInput()) {
         setTimeout(tick, ms);
         return;
@@ -44,6 +44,12 @@ function rejectAfterIdle(ms: number, signal: { cancelled: boolean }, controller:
     };
     setTimeout(tick, ms);
   });
+}
+
+function combinedAbortSignal(controller: AbortController): AbortSignal {
+  const global = executionController.getAbortSignal();
+  if (!global) return controller.signal;
+  return AbortSignal.any([controller.signal, global]);
 }
 
 export class Provider {
@@ -359,7 +365,6 @@ export class Provider {
         ...optionsWithoutStop,
         stopWhen: stopConditions,
         model,
-        abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
@@ -369,7 +374,7 @@ export class Provider {
         const timeout = config.timeout || 30000;
         const cancel = { cancelled: false };
         const controller = new AbortController();
-        const combinedSignal = AbortSignal.any([controller.signal, executionController.getAbortSignal()].filter(Boolean) as AbortSignal[]);
+        const combinedSignal = combinedAbortSignal(controller);
         try {
           const result = (await Promise.race([
             generateText({
@@ -377,7 +382,7 @@ export class Provider {
               ...config,
               abortSignal: combinedSignal,
             }),
-            rejectAfterIdle(timeout, cancel, controller),
+            abortAfterIdle(timeout, cancel, controller),
           ])) as any;
           const hasToolCall = (result.toolCalls?.length || 0) > 0;
           if (!result.text && !hasToolCall && result.finishReason === 'length') {
@@ -448,7 +453,6 @@ export class Provider {
         ...(this.config.config || {}),
         ...options,
         model: modelToUse,
-        abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
@@ -460,7 +464,7 @@ export class Provider {
         const timeout = config.timeout || 30000;
         const cancel = { cancelled: false };
         const controller = new AbortController();
-        const combinedSignal = AbortSignal.any([controller.signal, executionController.getAbortSignal()].filter(Boolean) as AbortSignal[]);
+        const combinedSignal = combinedAbortSignal(controller);
         try {
           return (await Promise.race([
             generateObject({
@@ -468,7 +472,7 @@ export class Provider {
               ...config,
               abortSignal: combinedSignal,
             }),
-            rejectAfterIdle(timeout, cancel, controller),
+            abortAfterIdle(timeout, cancel, controller),
           ])) as any;
         } finally {
           cancel.cancelled = true;
