@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { beforeAll, describe, expect, it } from 'bun:test';
 import * as codeceptjs from 'codeceptjs';
 import heal from 'codeceptjs/lib/heal';
@@ -6,6 +7,12 @@ import { Rerunner } from '../../src/ai/rerunner.ts';
 
 const dispatcher = (codeceptjs as any).event.dispatcher;
 const healMod = (heal as any).default || heal;
+
+function countListeners(event: string): number {
+  if (typeof dispatcher.listeners === 'function') return dispatcher.listeners(event).length;
+  if (typeof dispatcher.listenerCount === 'function') return dispatcher.listenerCount(event);
+  return EventEmitter.listenerCount(dispatcher, event);
+}
 
 beforeAll(() => {
   // codeceptjs/lib/output has no `warn` in this build; the aiTrace plugin calls it
@@ -19,8 +26,8 @@ function buildRerunner(): any {
 
 function counts() {
   return {
-    stepAfter: dispatcher.listenerCount('step.after'),
-    testBefore: dispatcher.listenerCount('test.before'),
+    stepAfter: countListeners('step.after'),
+    testBefore: countListeners('test.before'),
   };
 }
 
