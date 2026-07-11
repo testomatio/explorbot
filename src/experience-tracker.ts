@@ -8,6 +8,7 @@ import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
 import { createDebug, tag } from './utils/logger.js';
 import { mdq } from './utils/markdown-query.js';
+import { redactSecrets } from './utils/secrets.js';
 import { isNonReusableCode } from './utils/step-analyzer.ts';
 import { extractStatePath } from './utils/url-matcher.js';
 
@@ -109,7 +110,7 @@ export class ExperienceTracker {
       return;
     }
     const filePath = this.getExperienceFilePath(stateHash);
-    const fileContent = matter.stringify(content, frontmatter || {});
+    const fileContent = matter.stringify(redactSecrets(content), frontmatter || {});
     writeFileSync(filePath, fileContent, 'utf8');
   }
 

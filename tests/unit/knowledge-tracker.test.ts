@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import { ConfigParser } from '../../src/config';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
+import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
 
 const knowledgeDir = '/tmp/explorbot-test-knowledge';
 
@@ -123,6 +124,33 @@ describe('KnowledgeTracker', () => {
 
       expect(content[0]).toContain('value:');
       expect(content[0]).not.toContain('${config.');
+    });
+
+    it('should block credential-named config keys from interpolating', () => {
+      (ConfigParser.getInstance() as any).config.ai.apiKey = 'sk-should-not-leak';
+      writeKnowledgeFile('page.md', '/page', 'key: ${config.ai.apiKey}');
+
+      const tracker = new KnowledgeTracker();
+      const content = tracker.getKnowledgeForUrl('/page');
+
+      expect(content[0]).not.toContain('sk-should-not-leak');
+      expect(content[0]).not.toContain('${config.');
+    });
+
+    it('should register env secrets so they are redacted at sinks', () => {
+      clearRegisteredSecrets();
+      process.env.APP_PASSWORD = 'hunter2secret';
+
+      writeKnowledgeFile('login.md', '/login', 'password: ${env.APP_PASSWORD}');
+
+      const tracker = new KnowledgeTracker();
+      const content = tracker.getKnowledgeForUrl('/login');
+
+      expect(content[0]).toContain('password: hunter2secret');
+      expect(redactSecrets('typed hunter2secret into the field')).toBe('typed ***REDACTED*** into the field');
+
+      process.env.APP_PASSWORD = undefined;
+      clearRegisteredSecrets();
     });
   });
 });
