@@ -31,7 +31,7 @@ function extractCachedTokens(usage: any): number {
   return typeof fromRaw === 'number' ? fromRaw : 0;
 }
 
-function rejectAfterIdle(ms: number, signal: { cancelled: boolean }): Promise<never> {
+function rejectAfterIdle(ms: number, signal: { cancelled: boolean }, controller: AbortController): Promise<never> {
   return new Promise((_, reject) => {
     const tick = () => {
       if (signal.cancelled) return;
@@ -39,6 +39,7 @@ function rejectAfterIdle(ms: number, signal: { cancelled: boolean }): Promise<ne
         setTimeout(tick, ms);
         return;
       }
+      controller.abort();
       reject(new Error('AI request timeout'));
     };
     setTimeout(tick, ms);
@@ -367,13 +368,16 @@ export class Provider {
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
         const cancel = { cancelled: false };
+        const controller = new AbortController();
+        const combinedSignal = AbortSignal.any([controller.signal, executionController.getAbortSignal()].filter(Boolean) as AbortSignal[]);
         try {
           const result = (await Promise.race([
             generateText({
               messages,
               ...config,
+              abortSignal: combinedSignal,
             }),
-            rejectAfterIdle(timeout, cancel),
+            rejectAfterIdle(timeout, cancel, controller),
           ])) as any;
           const hasToolCall = (result.toolCalls?.length || 0) > 0;
           if (!result.text && !hasToolCall && result.finishReason === 'length') {
@@ -455,13 +459,16 @@ export class Provider {
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
         const cancel = { cancelled: false };
+        const controller = new AbortController();
+        const combinedSignal = AbortSignal.any([controller.signal, executionController.getAbortSignal()].filter(Boolean) as AbortSignal[]);
         try {
           return (await Promise.race([
             generateObject({
               messages,
               ...config,
+              abortSignal: combinedSignal,
             }),
-            rejectAfterIdle(timeout, cancel),
+            rejectAfterIdle(timeout, cancel, controller),
           ])) as any;
         } finally {
           cancel.cancelled = true;
