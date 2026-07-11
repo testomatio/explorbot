@@ -125,4 +125,29 @@ describe('KnowledgeTracker', () => {
       expect(content[0]).not.toContain('${config.');
     });
   });
+
+  describe('recursive scan', () => {
+    it('loads knowledge from nested subdirectories', () => {
+      mkdirSync(`${knowledgeDir}/subdir`, { recursive: true });
+      writeFileSync(`${knowledgeDir}/subdir/nested.md`, matter.stringify('Nested note', { url: '/nested-page' }), 'utf8');
+
+      const tracker = new KnowledgeTracker();
+      const content = tracker.getKnowledgeForUrl('/nested-page');
+
+      expect(content[0]).toContain('Nested note');
+    });
+  });
+
+  describe('addKnowledge cache invalidation', () => {
+    it('sees knowledge added via addKnowledge on the same instance', () => {
+      const tracker = new KnowledgeTracker();
+      expect(tracker.getMatchingKnowledge('/login')).toHaveLength(0);
+
+      tracker.addKnowledge('/login', 'Use admin credentials');
+
+      const matched = tracker.getMatchingKnowledge('/login');
+      expect(matched.length).toBeGreaterThan(0);
+      expect(matched[0].content).toContain('Use admin credentials');
+    });
+  });
 });
