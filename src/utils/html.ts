@@ -85,8 +85,10 @@ const HIDDEN_CLASSES = new Set(['hidden', 'invisible', 'd-none', 'hide', 'dn', '
 
 export const EXPLORBOT_ATTRS = {
   area: 'data-explorbot-area',
+  coveredBy: 'data-explorbot-covered-by',
   context: 'data-explorbot-context',
   eidx: 'data-explorbot-eidx',
+  hit: 'data-explorbot-hit',
   variant: 'data-explorbot-variant',
 } as const;
 
@@ -169,14 +171,49 @@ export type ComponentScopeExtractionConfig = {
   limits: typeof HTML_EXTRACTION_LIMITS;
 };
 
+export function captureHtmlForSnapshot(): string {
+  const clone = document.documentElement.cloneNode(true) as HTMLElement;
+  const liveControls = Array.from(document.querySelectorAll('input, textarea, select')) as Array<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>;
+  const clonedControls = Array.from(clone.querySelectorAll('input, textarea, select')) as HTMLElement[];
+
+  for (let i = 0; i < liveControls.length; i++) {
+    const source = liveControls[i];
+    const target = clonedControls[i];
+    if (!target) continue;
+
+    if (source instanceof HTMLInputElement || source instanceof HTMLTextAreaElement) {
+      target.setAttribute('data-explorbot-value', source.value);
+    }
+
+    if (source instanceof HTMLInputElement && (source.type === 'checkbox' || source.type === 'radio')) {
+      let checked = 'false';
+      if (source.checked) checked = 'true';
+      target.setAttribute('data-explorbot-checked', checked);
+    }
+
+    if (source instanceof HTMLSelectElement) {
+      target.setAttribute(
+        'data-explorbot-value',
+        Array.from(source.selectedOptions)
+          .map((option) => option.value)
+          .join(',')
+      );
+    }
+  }
+
+  return clone.outerHTML;
+}
+
 export function extractElementData(el: Element, config?: ElementExtractionConfig) {
   const cfg =
     config ||
     ({
       attrs: {
         area: 'data-explorbot-area',
+        coveredBy: 'data-explorbot-covered-by',
         context: 'data-explorbot-context',
         eidx: 'data-explorbot-eidx',
+        hit: 'data-explorbot-hit',
         variant: 'data-explorbot-variant',
       },
       codeEditorMarkers: ['monaco', 'codemirror', 'ace', 'ace_editor', 'code'],
@@ -244,6 +281,45 @@ export function extractElementData(el: Element, config?: ElementExtractionConfig
     if (tagName === 'a' && target.getAttribute('href')) tokens.add('navigates');
 
     return Array.from(tokens).slice(0, 8);
+  }
+
+  function describeOverlappingElement(target: Element): string {
+    const parts = [target.tagName.toLowerCase()];
+    const role = target.getAttribute('role');
+    const ariaLabel = target.getAttribute('aria-label');
+    const id = target.getAttribute('id');
+    const className = (target.getAttribute('class') || '').split(/\s+/).filter(Boolean).slice(0, 3).join('.');
+
+    if (id) parts.push(`#${id.slice(0, 40)}`);
+    if (className) parts.push(`.${className.slice(0, 80)}`);
+    if (role) parts.push(`[role="${role.slice(0, 40)}"]`);
+    if (ariaLabel) parts.push(`[aria-label="${ariaLabel.slice(0, 80)}"]`);
+
+    return parts.join('');
+  }
+
+  function inspectHitTarget(target: Element, rect: DOMRect): { hit: string; coveredBy?: string } {
+    const viewportPoints = [
+      { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      { x: rect.left + Math.min(rect.width - 1, Math.max(1, rect.width * 0.25)), y: rect.top + Math.min(rect.height - 1, Math.max(1, rect.height * 0.25)) },
+      { x: rect.left + Math.min(rect.width - 1, Math.max(1, rect.width * 0.75)), y: rect.top + Math.min(rect.height - 1, Math.max(1, rect.height * 0.75)) },
+    ].filter((point) => point.x >= 0 && point.y >= 0 && point.x <= window.innerWidth && point.y <= window.innerHeight);
+
+    if (viewportPoints.length === 0) {
+      return { hit: 'offscreen' };
+    }
+
+    for (const point of viewportPoints) {
+      const top = document.elementFromPoint(point.x, point.y);
+      if (!top) continue;
+      if (top === target || target.contains(top)) {
+        return { hit: 'target' };
+      }
+    }
+
+    const centerPoint = viewportPoints[0];
+    const top = document.elementFromPoint(centerPoint.x, centerPoint.y);
+    return { hit: 'covered', coveredBy: top ? describeOverlappingElement(top) : undefined };
   }
 
   function isEmbeddedCodeEditorFrame(target: Element): boolean {
@@ -354,6 +430,9 @@ export function extractElementData(el: Element, config?: ElementExtractionConfig
   allAttrs[cfg.attrs.area] = areaHints.join('|');
   allAttrs[cfg.attrs.context] = findContextLabel(el);
   allAttrs[cfg.attrs.variant] = collectVariantHints(el).join('|');
+  const hitTarget = inspectHitTarget(el, rect);
+  allAttrs[cfg.attrs.hit] = hitTarget.hit;
+  if (hitTarget.coveredBy) allAttrs[cfg.attrs.coveredBy] = hitTarget.coveredBy;
 
   return {
     tag: el.tagName.toLowerCase(),
