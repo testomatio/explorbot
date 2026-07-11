@@ -1,12 +1,8 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
-import { faker } from '@faker-js/faker';
 import { context, trace } from '@opentelemetry/api';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
-import { hopeThat, retryTo, tryTo, within } from 'codeceptjs/lib/effects';
-import step from 'codeceptjs/steps';
-import dedent from 'dedent';
 import { ActionResult } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.js';
@@ -23,7 +19,7 @@ import { extractCodeBlocks } from './utils/code-extractor.js';
 import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { waitForPageReadiness } from './utils/page-readiness.ts';
-import { createSandboxedFunction, hasPlaywrightCommands, sanitizeCodeBlock } from './utils/sandbox.ts';
+import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
 import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
 
@@ -304,12 +300,10 @@ class Action {
 
       if (isPlaywright) {
         const page = this.playwrightHelper.page;
-        const asyncFn = createSandboxedFunction(['page'], `return (async () => { ${sanitizedCode} })()`);
-        await asyncFn(page);
+        await playwrightSandbox(page, sanitizedCode);
         await sleep(this.config.action?.delay || 500);
       } else {
-        const codeFunction = createSandboxedFunction(['I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step', 'faker'], sanitizedCode);
-        codeFunction(this.actor, tryTo, retryTo, within, hopeThat, step, faker);
+        codeceptJSSandbox(this.actor, sanitizedCode);
         await recorder.add(() => sleep(this.config.action?.delay || 500));
         await recorder.promise();
       }
@@ -359,17 +353,15 @@ class Action {
     try {
       debugLog('Executing expectation:', codeString);
 
-      let codeFunction: any;
       if (typeof codeOrFunction === 'function') {
-        codeFunction = codeOrFunction;
+        codeceptJSSandbox(this.actor, codeOrFunction);
       } else {
         const sanitizedCode = sanitizeCodeBlock(codeString);
         if (!sanitizedCode) {
           throw new Error('No valid I.* commands found in code block');
         }
-        codeFunction = createSandboxedFunction(['I', 'tryTo', 'retryTo', 'within', 'hopeThat', 'step'], sanitizedCode);
+        codeceptJSSandbox(this.actor, sanitizedCode);
       }
-      codeFunction(this.actor, tryTo, retryTo, within, hopeThat, step);
       await recorder.promise();
       debugLog('Expectation executed successfully');
 
