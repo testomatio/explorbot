@@ -921,12 +921,15 @@ export function createAgentTools({
           });
         }
 
+        let previousState: ActionResult | null = null;
+        if (currentState) previousState = ActionResult.fromState(currentState);
+
         const action = explorer.createAction();
         const success = await action.attempt(`I.amOnPage(${JSON.stringify(targetUrl)})`, `${reason} (BACK to ${targetUrl})`);
 
         if (success) {
-          const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-          const toolResult = await previousState.toToolResult(previousState, `I.amOnPage("${targetUrl}")`);
+          const newState = ActionResult.fromState(stateManager.getCurrentState()!);
+          const toolResult = await newState.toToolResult(previousState, `I.amOnPage("${targetUrl}")`);
           return successToolResult('back', {
             ...toolResult,
             message: `Navigated back to ${targetUrl}`,
@@ -1273,7 +1276,7 @@ async function disambiguateElements(error: Error | null | undefined, explanation
 }
 
 function getNotFoundSuggestion(errorMessage: string): string | null {
-  if (!errorMessage.includes('was not found') && !errorMessage.includes('not found by text|CSS|XPath')) {
+  if (!errorMessage.includes('not found')) {
     return null;
   }
 
