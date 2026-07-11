@@ -49,6 +49,9 @@ export class SessionAnalyst implements Agent {
       ## Severity (defects only)
       [High] blocks a core flow · [Medium] degrades a flow but workaround exists · [Low] cosmetic / edge case
 
+      ## Naming tests
+      Reference every test by its full label wrapped in backticks: \`\`\`ET-<number> <test title>\`\`\` — the \`ref\` and \`scenario\` from its \`<test>\` block. Backticks only, never bold. Never write a bare \`#2\`.
+
       ## Format
 
       # Session Analysis
@@ -60,22 +63,22 @@ export class SessionAnalyst implements Agent {
       - Features: <capabilities>
 
       ## What works
-      - **<feature>** — #2, #7, #8
+      - **<feature>** — \`ET-2 <title>\`, \`ET-7 <title>\`
 
       ## Defects
 
       ### [Medium] <plain-English bug title>
-      Affects: #3, #5
+      Affects: \`ET-3 <title>\`, \`ET-5 <title>\`
       Reproduce:
         1. <concrete UI step>
         2. <next>
       Evidence: <one short observation>
 
       ## UX issues
-      - **<feature>** — <what's confusing> (#7)
+      - **<feature>** — <what's confusing> (\`ET-7 <title>\`)
 
       ## Execution Issues
-      - **#2 <scenario>** — <≤10 words, what was unreliable>
+      - \`ET-2 <title>\` — <≤10 words, what was unreliable>
 
       ## Brevity rules
 
@@ -143,7 +146,7 @@ export class SessionAnalyst implements Agent {
       : 'verification_status: none';
 
     return dedent`
-      <test ref="#${ref}">
+      <test ref="ET-${ref}">
       url: ${test.startUrl || '/'}
       scenario: ${test.scenario}
       result: ${test.result || 'unknown'}
