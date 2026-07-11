@@ -105,9 +105,13 @@ export function WithSections<T extends Constructor>(Base: T) {
         </section_format>
 
         <rules>
-        - Every element with eidx MUST appear in the table.
+        - List only elements physically inside this section's declared container.
+        - Do not copy global toolbar, navigation, list, or detail elements into this section unless they are descendants of this section container.
+        - Every element with eidx inside this section's container MUST appear in the table.
         - Every row needs CSS; ARIA may be "-" for icon-only buttons.
         - ARIA locator JSON uses keys "role" and "text" (NOT "name").
+        - Elements marked data-explorbot-hit="covered" or "offscreen" are not directly actionable; describe the covering or focused UI first.
+        - In split-pane pages, entity detail panels are active detail context; include close/back/pin controls in the detail panel section when present.
         </rules>
 
         ${generalLocatorRuleText}
