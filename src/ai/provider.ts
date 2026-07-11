@@ -11,7 +11,7 @@ import { Stats } from '../stats.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
-import { Conversation } from './conversation.js';
+import { Conversation, toToolExecution } from './conversation.js';
 
 const debugLog = createDebug('explorbot:provider');
 const promptLog = createDebug('explorbot:provider:out');
@@ -207,20 +207,25 @@ export class Provider {
 
     const runTelemetry = Observability.getTelemetry();
 
-    if (!options.telemetry) {
+    let optionTelemetry = options.telemetry;
+    if (options.telemetryFunctionId && !optionTelemetry?.functionId) {
+      optionTelemetry = { ...optionTelemetry, functionId: options.telemetryFunctionId };
+    }
+
+    if (!optionTelemetry) {
       return runTelemetry;
     }
 
     if (!runTelemetry) {
-      return options.telemetry;
+      return optionTelemetry;
     }
 
     return {
       ...runTelemetry,
-      ...options.telemetry,
+      ...optionTelemetry,
       metadata: {
         ...runTelemetry.metadata,
-        ...options.telemetry.metadata,
+        ...optionTelemetry.metadata,
       },
     };
   }
@@ -254,12 +259,8 @@ export class Provider {
     const toolCalls = response.toolCalls || [];
     const toolResults = response.toolResults || [];
 
-    const toolExecutions = toolCalls.map((call: any, index: number) => ({
-      toolName: call.toolName || '',
-      input: call.input,
-      output: toolResults[index]?.output,
-      wasSuccessful: toolResults[index]?.output?.success || false,
-    }));
+    const resultsById = new Map(toolResults.map((r: any) => [r.toolCallId, r]));
+    const toolExecutions = toolCalls.map((call: any) => toToolExecution(call.toolName || '', call.input, resultsById.get(call.toolCallId)?.output));
 
     return { conversation, response, toolExecutions };
   }

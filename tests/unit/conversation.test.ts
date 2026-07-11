@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { Conversation } from '../../src/ai/conversation';
+import { Conversation, toToolExecution } from '../../src/ai/conversation';
 
 describe('Conversation', () => {
   describe('cleanupTag', () => {
@@ -403,6 +403,30 @@ describe('Conversation', () => {
 
       const output: any = (conversation.messages[0].content as any)[0].output.value;
       expect(output.pageDiff.htmlParts).toBeDefined();
+    });
+  });
+
+  describe('toToolExecution', () => {
+    it('unwraps the {type:json, value} envelope', () => {
+      const exec = toToolExecution('click', { locator: 'Save' }, { type: 'json', value: { success: true, url: '/x' } });
+      expect(exec.output).toEqual({ success: true, url: '/x' });
+      expect(exec.wasSuccessful).toBe(true);
+    });
+
+    it('defaults missing success to true', () => {
+      const exec = toToolExecution('getVisitedStates', {}, { states: ['/a', '/b'] });
+      expect(exec.wasSuccessful).toBe(true);
+    });
+
+    it('respects explicit success: false', () => {
+      const exec = toToolExecution('click', { locator: 'Save' }, { success: false, message: 'not found' });
+      expect(exec.wasSuccessful).toBe(false);
+    });
+
+    it('handles a missing output', () => {
+      const exec = toToolExecution('click', { locator: 'Save' }, undefined);
+      expect(exec.wasSuccessful).toBe(true);
+      expect(exec.output).toBeUndefined();
     });
   });
 });
