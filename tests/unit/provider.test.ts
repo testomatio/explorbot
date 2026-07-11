@@ -1,9 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { ModelMessage } from 'ai';
+import { MockLanguageModelV3 } from 'ai/test';
 import { AiError, Provider } from '../../src/ai/provider.js';
 import { ConfigParser } from '../../src/config.js';
 import type { AIConfig } from '../../src/config.js';
+import { executionController } from '../../src/execution-controller.js';
 import { MockAIProvider } from '../mocks/ai-provider.mock.js';
+
+function buildHangingModel(capture: { signal?: AbortSignal }): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    provider: 'test',
+    modelId: 'hanging-model',
+    doGenerate: async (params: any) => {
+      capture.signal = params.abortSignal;
+      return await new Promise((_resolve, reject) => {
+        params.abortSignal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    },
+  });
+}
 
 function makeToolCallMessage(calls: Array<{ id: string; name: string; input: any }>): ModelMessage {
   return {
@@ -350,6 +365,42 @@ describe('Provider', () => {
       ];
       const result = (provider as any).tryReduceMessages(messages, 2);
       expect(result).toBeNull();
+    });
+  });
+
+  describe('abort on idle timeout', () => {
+    it('aborts the in-flight request when the idle timeout fires', async () => {
+      const capture: { signal?: AbortSignal } = {};
+      const model = buildHangingModel(capture);
+      const messages: ModelMessage[] = [{ role: 'user', content: 'hi' }];
+
+      const rejected = await provider
+        .generateWithTools(messages, model, {}, { timeout: 20, maxRetries: 1 })
+        .then(() => false)
+        .catch(() => true);
+
+      expect(rejected).toBe(true);
+      expect(capture.signal?.aborted).toBe(true);
+    });
+
+    it('propagates the global execution abort through the combined signal', async () => {
+      executionController.startExecution();
+      const capture: { signal?: AbortSignal } = {};
+      const model = buildHangingModel(capture);
+      const messages: ModelMessage[] = [{ role: 'user', content: 'hi' }];
+
+      const pending = provider.generateWithTools(messages, model, {}, { timeout: 60000, maxRetries: 1 });
+      while (!capture.signal) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      executionController.interrupt();
+
+      const rejected = await pending.then(() => false).catch(() => true);
+      const aborted = capture.signal?.aborted === true;
+      executionController.reset();
+
+      expect(rejected).toBe(true);
+      expect(aborted).toBe(true);
     });
   });
 });

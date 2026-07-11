@@ -31,18 +31,25 @@ function extractCachedTokens(usage: any): number {
   return typeof fromRaw === 'number' ? fromRaw : 0;
 }
 
-function rejectAfterIdle(ms: number, signal: { cancelled: boolean }): Promise<never> {
+function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: AbortController): Promise<never> {
   return new Promise((_, reject) => {
     const tick = () => {
-      if (signal.cancelled) return;
+      if (cancel.cancelled) return;
       if (executionController.isAwaitingInput()) {
         setTimeout(tick, ms);
         return;
       }
+      controller.abort();
       reject(new Error('AI request timeout'));
     };
     setTimeout(tick, ms);
   });
+}
+
+function combinedAbortSignal(controller: AbortController): AbortSignal {
+  const executionSignal = executionController.getAbortSignal();
+  if (!executionSignal) return controller.signal;
+  return AbortSignal.any([controller.signal, executionSignal]);
 }
 
 export class Provider {
@@ -358,7 +365,6 @@ export class Provider {
         ...optionsWithoutStop,
         stopWhen: stopConditions,
         model,
-        abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
@@ -367,13 +373,16 @@ export class Provider {
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
         const cancel = { cancelled: false };
+        const controller = new AbortController();
+        const combinedSignal = combinedAbortSignal(controller);
         try {
           const result = (await Promise.race([
             generateText({
               messages,
               ...config,
+              abortSignal: combinedSignal,
             }),
-            rejectAfterIdle(timeout, cancel),
+            abortAfterIdle(timeout, cancel, controller),
           ])) as any;
           const hasToolCall = (result.toolCalls?.length || 0) > 0;
           if (!result.text && !hasToolCall && result.finishReason === 'length') {
@@ -444,7 +453,6 @@ export class Provider {
         ...(this.config.config || {}),
         ...options,
         model: modelToUse,
-        abortSignal: executionController.getAbortSignal(),
       },
       options.agentName
     );
@@ -455,13 +463,16 @@ export class Provider {
       const response = await withRetry(async () => {
         const timeout = config.timeout || 30000;
         const cancel = { cancelled: false };
+        const controller = new AbortController();
+        const combinedSignal = combinedAbortSignal(controller);
         try {
           return (await Promise.race([
             generateObject({
               messages,
               ...config,
+              abortSignal: combinedSignal,
             }),
-            rejectAfterIdle(timeout, cancel),
+            abortAfterIdle(timeout, cancel, controller),
           ])) as any;
         } finally {
           cancel.cancelled = true;
