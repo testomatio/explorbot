@@ -40,6 +40,15 @@ describe('StateManager', () => {
     it('should have zero listeners initially', () => {
       expect(stateManager.getListenerCount()).toBe(0);
     });
+
+    it('disables the experience tracker in incognito mode', () => {
+      const incognito = new StateManager({ incognito: true });
+      expect((incognito.getExperienceTracker() as any).disabled).toBe(true);
+    });
+
+    it('leaves the experience tracker enabled by default', () => {
+      expect((stateManager.getExperienceTracker() as any).disabled).toBe(false);
+    });
   });
 
   describe('updateState', () => {
