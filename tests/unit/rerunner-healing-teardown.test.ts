@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { beforeAll, describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import * as codeceptjs from 'codeceptjs';
+import Container from 'codeceptjs/lib/container';
 import heal from 'codeceptjs/lib/heal';
 import codeceptOutput from 'codeceptjs/lib/output';
 import { Rerunner } from '../../src/ai/rerunner.ts';
@@ -14,10 +15,17 @@ function countListeners(event: string): number {
   return EventEmitter.listenerCount(dispatcher, event);
 }
 
+// setupPlugins() registers the aiTrace plugin, which reads Container.helpers() and
+// codeceptjs output. Without a live codeceptjs container (this unit env) helpers is
+// null and output.warn is absent, so aiTrace throws. Neutralize both so it disables
+// itself (finds no helper -> warns -> returns) instead of crashing.
+const originalHelpers = (Container as any).helpers;
 beforeAll(() => {
-  // codeceptjs/lib/output has no `warn` in this build; the aiTrace plugin calls it
-  // only when no browser helper is registered (never in a real rerun).
   (codeceptOutput as any).warn ||= () => {};
+  (Container as any).helpers = () => ({});
+});
+afterAll(() => {
+  (Container as any).helpers = originalHelpers;
 });
 
 function buildRerunner(): any {
