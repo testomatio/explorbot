@@ -47,9 +47,9 @@ function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: 
 }
 
 function combinedAbortSignal(controller: AbortController): AbortSignal {
-  const global = executionController.getAbortSignal();
-  if (!global) return controller.signal;
-  return AbortSignal.any([controller.signal, global]);
+  const executionSignal = executionController.getAbortSignal();
+  if (!executionSignal) return controller.signal;
+  return AbortSignal.any([controller.signal, executionSignal]);
 }
 
 export class Provider {

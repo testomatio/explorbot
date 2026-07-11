@@ -5,7 +5,6 @@ import { ActionResult } from './action-result.js';
 import { ConfigParser, outputPath } from './config.js';
 import { ExperienceTracker } from './experience-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
-import { htmlTextSnapshot } from './utils/html.js';
 import { createDebug, tag } from './utils/logger.js';
 import { extractStatePath } from './utils/url-matcher.js';
 
@@ -126,13 +125,6 @@ export class StateManager {
    * Emit state change event to all listeners
    */
   private emitStateChange(event: StateTransition): void {
-    // Log HTML content when state changes
-    if (event.toState.html && event.toState.html !== event.fromState?.html) {
-      let htmlContent = event?.toState?.html ?? '';
-      htmlContent = htmlTextSnapshot(htmlContent);
-      // tag('html').log(`Page HTML for ${event.toState.url}:\n${htmlContent}`);
-    }
-
     this.stateChangeListeners.forEach((listener) => {
       try {
         listener(event);
