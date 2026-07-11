@@ -1,4 +1,3 @@
-import { EventEmitter } from 'node:events';
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import * as codeceptjs from 'codeceptjs';
 import Container from 'codeceptjs/lib/container';
@@ -9,10 +8,23 @@ import { Rerunner } from '../../src/ai/rerunner.ts';
 const dispatcher = (codeceptjs as any).event.dispatcher;
 const healMod = (heal as any).default || heal;
 
-function countListeners(event: string): number {
-  if (typeof dispatcher.listeners === 'function') return dispatcher.listeners(event).length;
-  if (typeof dispatcher.listenerCount === 'function') return dispatcher.listenerCount(event);
-  return EventEmitter.listenerCount(dispatcher, event);
+// The CodeceptJS dispatcher's listener introspection is unreliable under CI's bun,
+// so count how many times a handler is REGISTERED by wrapping on() (which works
+// everywhere). The once-guard must register step.after exactly once no matter how
+// many setup/teardown cycles run.
+function trackOnCalls(): { onCounts: Map<string, number>; restore: () => void } {
+  const onCounts = new Map<string, number>();
+  const realOn = dispatcher.on.bind(dispatcher);
+  dispatcher.on = (event: string, fn: any) => {
+    onCounts.set(event, (onCounts.get(event) ?? 0) + 1);
+    return realOn(event, fn);
+  };
+  return {
+    onCounts,
+    restore: () => {
+      dispatcher.on = realOn;
+    },
+  };
 }
 
 // setupPlugins() registers the aiTrace plugin, which reads Container.helpers() and
@@ -32,35 +44,32 @@ function buildRerunner(): any {
   return new Rerunner({ getConfig: () => ({ ai: { agents: {} } }) } as any, {} as any);
 }
 
-function counts() {
-  return {
-    stepAfter: countListeners('step.after'),
-    testBefore: countListeners('test.before'),
-  };
-}
-
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
 describe('Rerunner healing plugin wiring', () => {
   it('wires process-wide handlers only once across repeated setup/teardown cycles', async () => {
-    const rerunner = buildRerunner();
-    const baseline = counts();
+    (Rerunner as any).pluginsWired = false;
+    const { onCounts, restore } = trackOnCalls();
+    try {
+      const rerunner = buildRerunner();
 
-    rerunner.setupPlugins();
-    rerunner.teardownHealing();
-    await settle();
-    const afterFirst = counts();
+      rerunner.setupPlugins();
+      rerunner.teardownHealing();
+      await settle();
+      const afterFirst = onCounts.get('step.after') ?? 0;
 
-    rerunner.setupPlugins();
-    rerunner.teardownHealing();
-    rerunner.setupPlugins();
-    rerunner.teardownHealing();
-    await settle();
-    const afterThird = counts();
+      rerunner.setupPlugins();
+      rerunner.teardownHealing();
+      rerunner.setupPlugins();
+      rerunner.teardownHealing();
+      await settle();
+      const afterThird = onCounts.get('step.after') ?? 0;
 
-    expect(afterFirst.stepAfter).toBeGreaterThan(baseline.stepAfter);
-    expect(afterThird.stepAfter).toBe(afterFirst.stepAfter);
-    expect(afterThird.testBefore).toBe(afterFirst.testBefore);
+      expect(afterFirst).toBe(1);
+      expect(afterThird).toBe(1);
+    } finally {
+      restore();
+    }
   });
 
   it('re-installs recipes on setup and clears them on teardown', () => {
