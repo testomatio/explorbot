@@ -8,7 +8,7 @@ export function buildReport(records: AttemptRecord[]): string {
   for (const group of groups) {
     rows.push(`| ${group.label} | ${resultCell(group)} | ${group.attemptsUsed}/${group.maxAttempts} | ${fmtDuration(group.durationSec)} |`);
     for (const rec of group.records) {
-      detailLines.push(`- ${group.label} #${rec.attempt} — ${passLabel(rec)}: ${rec.details.join('; ')}`);
+      detailLines.push(`- ${group.label} attempt ${rec.attempt} — ${passLabel(rec)}: ${rec.details.join('; ')}`);
     }
   }
 
