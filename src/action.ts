@@ -70,7 +70,7 @@ class Action {
     }
   }
 
-  async capturePageState({ includeScreenshot = false }: { includeScreenshot?: boolean } = {}): Promise<ActionResult> {
+  async capturePageState({ includeScreenshot = false, codeBlock }: { includeScreenshot?: boolean; codeBlock?: string } = {}): Promise<ActionResult> {
     try {
       const currentState = this.stateManager.getCurrentState();
       const stateHash = currentState?.hash || 'screenshot';
@@ -163,7 +163,7 @@ class Action {
         ariaSnapshotFile,
         iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
-      this.stateManager.updateState(result);
+      this.stateManager.updateState(result, codeBlock);
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -308,12 +308,11 @@ class Action {
         await recorder.promise();
       }
 
-      const pageState = await this.capturePageState();
       if (executedSteps.length > 0) {
         codeString = executedSteps.join('\n');
       }
 
-      this.stateManager.updateState(pageState, codeString);
+      const pageState = await this.capturePageState({ codeBlock: codeString });
 
       this.actionResult = pageState;
       this.assertionSteps = assertionSteps;
