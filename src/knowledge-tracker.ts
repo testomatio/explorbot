@@ -8,17 +8,20 @@ import { createDebug } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
 
-interface Knowledge {
+export interface Knowledge {
   filePath: string;
   url: string;
   content: string;
   [key: string]: any;
 }
 
+const KNOWLEDGE_REFRESH_MS = 30000;
+
 export class KnowledgeTracker {
   private knowledgeDir: string;
   private knowledgeFiles: Knowledge[] = [];
   private isLoaded = false;
+  private lastLoadedAt = 0;
 
   constructor() {
     const configParser = ConfigParser.getInstance();
@@ -38,7 +41,7 @@ export class KnowledgeTracker {
   }
 
   private loadKnowledgeFiles(): void {
-    if (this.isLoaded) return;
+    if (this.isLoaded && Date.now() - this.lastLoadedAt < KNOWLEDGE_REFRESH_MS) return;
 
     this.knowledgeFiles = [];
 
@@ -46,9 +49,9 @@ export class KnowledgeTracker {
       return;
     }
 
-    const files = readdirSync(this.knowledgeDir)
-      .filter((file) => file.endsWith('.md'))
-      .map((file) => join(this.knowledgeDir, file));
+    const files = readdirSync(this.knowledgeDir, { recursive: true })
+      .filter((file) => typeof file === 'string' && file.endsWith('.md'))
+      .map((file) => join(this.knowledgeDir, file as string));
 
     for (const filePath of files) {
       try {
@@ -68,6 +71,7 @@ export class KnowledgeTracker {
     }
 
     this.isLoaded = true;
+    this.lastLoadedAt = Date.now();
   }
 
   getRelevantKnowledge(state: ActionResult): Knowledge[] {
@@ -126,6 +130,8 @@ export class KnowledgeTracker {
       const fileContent = matter.stringify(newContent, frontmatter);
       writeFileSync(filePath, fileContent, 'utf8');
     }
+
+    this.isLoaded = false;
 
     return { filename, filePath, isNewFile };
   }
