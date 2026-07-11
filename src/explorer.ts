@@ -727,17 +727,22 @@ class Explorer {
 
     this.watchActiveTestPage();
 
+    const onStepPassed = (step: any) => stepHandler(step, 'passed');
+    const onStepFailed = (step: any, error: any) => {
+      stepHandler(step, 'failed', error?.message || String(error), error?.stack);
+    };
+    const onTestAfter = () => {
+      codeceptjs.event.dispatcher.off('step.passed', onStepPassed);
+      codeceptjs.event.dispatcher.off('step.failed', onStepFailed);
+      codeceptjs.event.dispatcher.off('test.after', onTestAfter);
+      this.unwatchActiveTestPages();
+    };
+
     codeceptjs.event.dispatcher.emit('test.before', codeceptjsTest);
     codeceptjs.event.dispatcher.emit('test.start', codeceptjsTest);
-    codeceptjs.event.dispatcher.on('step.passed', (step: any) => stepHandler(step, 'passed'));
-    codeceptjs.event.dispatcher.on('step.failed', (step: any, error: any) => {
-      stepHandler(step, 'failed', error?.message || String(error), error?.stack);
-    });
-    codeceptjs.event.dispatcher.on('test.after', () => {
-      codeceptjs.event.dispatcher.off('step.passed', stepHandler);
-      codeceptjs.event.dispatcher.off('step.failed', stepHandler);
-      this.unwatchActiveTestPages();
-    });
+    codeceptjs.event.dispatcher.on('step.passed', onStepPassed);
+    codeceptjs.event.dispatcher.on('step.failed', onStepFailed);
+    codeceptjs.event.dispatcher.on('test.after', onTestAfter);
 
     return true;
   }
