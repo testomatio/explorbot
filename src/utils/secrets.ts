@@ -1,4 +1,5 @@
 const MIN_SECRET_LENGTH = 4;
+const SECRET_NAME_TOKENS = ['password', 'passwd', 'secret', 'token', 'apikey', 'api_key', 'credential', 'private_key', 'privatekey', 'access_key'];
 const secretValues = new Set<string>();
 
 export function registerSecret(value: string): void {
@@ -10,7 +11,7 @@ export function registerSecret(value: string): void {
 export function redactSecrets(text: string): string {
   if (!text) return text;
   let result = text;
-  for (const value of secretValues) {
+  for (const value of [...secretValues].sort((a, b) => b.length - a.length)) {
     if (!result.includes(value)) continue;
     result = result.split(value).join('***REDACTED***');
   }
@@ -20,8 +21,6 @@ export function redactSecrets(text: string): string {
 export function clearRegisteredSecrets(): void {
   secretValues.clear();
 }
-
-const SECRET_NAME_TOKENS = ['password', 'passwd', 'secret', 'token', 'apikey', 'api_key', 'credential', 'private_key', 'privatekey', 'access_key'];
 
 export function isSecretName(name: string): boolean {
   const lower = name.toLowerCase();

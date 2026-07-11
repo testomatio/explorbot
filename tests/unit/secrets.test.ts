@@ -26,6 +26,12 @@ describe('secrets', () => {
     expect(redactSecrets('topsecret and topsecret again')).toBe('***REDACTED*** and ***REDACTED*** again');
   });
 
+  it('redacts a longer secret fully even when a registered secret is its substring', () => {
+    registerSecret('hunter2');
+    registerSecret('hunter2extended');
+    expect(redactSecrets('login with hunter2extended now')).toBe('login with ***REDACTED*** now');
+  });
+
   it('detects credential-named keys', () => {
     expect(isSecretName('APP_PASSWORD')).toBe(true);
     expect(isSecretName('ai.apiKey')).toBe(true);
