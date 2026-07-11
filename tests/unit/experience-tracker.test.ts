@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
 import { ExperienceTracker } from '../../src/experience-tracker';
@@ -302,6 +304,61 @@ describe('ExperienceTracker', () => {
 
         expect(data.url).toBe(testCase.expectedPath);
       }
+    });
+  });
+
+  describe('section lookup across directories', () => {
+    const secondaryRoot = '/tmp/explorbot-secondary-exp';
+    const secondaryExpDir = join(secondaryRoot, 'experience');
+    const savedInitialCwd = process.env.INITIAL_CWD;
+    const secondaryHash = 'secondarystate';
+    const sectionBody = ['## ACTION: do a thing', '', '```js', "I.click('Save')", '```', ''].join('\n');
+
+    beforeEach(() => {
+      rmSync(secondaryRoot, { recursive: true, force: true });
+      mkdirSync(secondaryExpDir, { recursive: true });
+      writeFileSync(join(secondaryExpDir, `${secondaryHash}.md`), matter.stringify(sectionBody, { url: '/secondary-page' }), 'utf8');
+      process.env.INITIAL_CWD = secondaryRoot;
+    });
+
+    afterEach(() => {
+      process.env.INITIAL_CWD = savedInitialCwd;
+      rmSync(secondaryRoot, { recursive: true, force: true });
+    });
+
+    it('reads a section from a secondary experience directory via getExperienceSectionByTag', () => {
+      const toc = experienceTracker.listAllExperienceToc();
+      const entry = toc.find((e) => e.fileHash === secondaryHash);
+      expect(entry).toBeDefined();
+
+      const section = experienceTracker.getExperienceSectionByTag(entry!.fileTag, 1);
+      expect(section).not.toBeNull();
+      expect(section!.content).toContain("I.click('Save')");
+    });
+
+    it('reads a section from a secondary directory via getExperienceSection when the state matches', () => {
+      const state = new ActionResult({ url: '/secondary-page' });
+      const toc = experienceTracker.getExperienceTableOfContents(state);
+      const entry = toc.find((e) => e.fileHash === secondaryHash);
+      expect(entry).toBeDefined();
+
+      const section = experienceTracker.getExperienceSection(entry!.fileTag, 1, state);
+      expect(section).not.toBeNull();
+      expect(section!.content).toContain("I.click('Save')");
+    });
+  });
+
+  describe('table-of-contents lettering', () => {
+    it('assigns contiguous fileTags when a zero-section file sorts first', () => {
+      const url = '/lettering-page';
+      writeFileSync(join(testDir, 'aaa.md'), matter.stringify('Just a note, no headings here.', { url }), 'utf8');
+      writeFileSync(join(testDir, 'bbb.md'), matter.stringify(['## ACTION: do it', '', '```js', "I.click('x')", '```', ''].join('\n'), { url }), 'utf8');
+
+      const toc = experienceTracker.getExperienceTableOfContents(new ActionResult({ url }));
+
+      expect(toc).toHaveLength(1);
+      expect(toc[0].fileHash).toBe('bbb');
+      expect(toc[0].fileTag).toBe('A');
     });
   });
 });
