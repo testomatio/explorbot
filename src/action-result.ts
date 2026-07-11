@@ -267,13 +267,13 @@ export class ActionResult implements ActionResultData {
   async simplifiedHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
     const cacheKey = `simplified:${JSON.stringify(normalizedConfig?.minimal ?? null)}`;
-    return this.snapshotCache.getOrCompute(cacheKey, () => minifyHtml(htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal)));
+    return this.snapshotCache.fetch(cacheKey, () => minifyHtml(htmlMinimalUISnapshot(this.html ?? '', normalizedConfig?.minimal)));
   }
 
   async combinedHtml(htmlConfig?: HtmlConfig & { keepPositions?: boolean }): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
     const cacheKey = `combined:${!!htmlConfig?.keepPositions}:${JSON.stringify(normalizedConfig?.combined ?? null)}`;
-    return this.snapshotCache.getOrCompute(cacheKey, async () => {
+    return this.snapshotCache.fetch(cacheKey, async () => {
       const combinedHtml = await minifyHtml(htmlCombinedSnapshot(this.html ?? '', normalizedConfig?.combined, { keepPositions: htmlConfig?.keepPositions }));
       debugLog(`----${this.url}----`);
       debugLog(`Combined HTML: \n${combinedHtml}`);
@@ -285,7 +285,7 @@ export class ActionResult implements ActionResultData {
   async textHtml(htmlConfig?: HtmlConfig): Promise<string> {
     const normalizedConfig = this.normalizeHtmlConfig(htmlConfig);
     const cacheKey = `text:${JSON.stringify(normalizedConfig?.text ?? null)}`;
-    return this.snapshotCache.getOrCompute(cacheKey, () => minifyHtml(htmlTextSnapshot(this.html ?? '', normalizedConfig?.text)));
+    return this.snapshotCache.fetch(cacheKey, () => minifyHtml(htmlTextSnapshot(this.html ?? '', normalizedConfig?.text)));
   }
 
   getInteractiveARIA(): string {

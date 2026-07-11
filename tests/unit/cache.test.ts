@@ -9,15 +9,15 @@ describe('TTLCache', () => {
     expect(cache.get('missing')).toBeUndefined();
   });
 
-  it('computes only on miss with getOrCompute', async () => {
+  it('computes only on miss with fetch', async () => {
     const cache = new TTLCache<string>();
     let calls = 0;
     const compute = async () => {
       calls++;
       return 'value';
     };
-    expect(await cache.getOrCompute('k', compute)).toBe('value');
-    expect(await cache.getOrCompute('k', compute)).toBe('value');
+    expect(await cache.fetch('k', compute)).toBe('value');
+    expect(await cache.fetch('k', compute)).toBe('value');
     expect(calls).toBe(1);
   });
 

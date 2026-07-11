@@ -20,7 +20,7 @@ export class TTLCache<T> {
     this.store.set(key, { value, at: Date.now() });
   }
 
-  async getOrCompute(key: string, compute: () => Promise<T>): Promise<T> {
+  async fetch(key: string, compute: () => Promise<T>): Promise<T> {
     const cached = this.get(key);
     if (cached !== undefined) return cached;
     const value = await compute();
