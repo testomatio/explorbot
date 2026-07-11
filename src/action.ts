@@ -23,6 +23,7 @@ import { extractCodeBlocks } from './utils/code-extractor.js';
 import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { waitForPageReadiness } from './utils/page-readiness.ts';
+import { createSandboxedFunction, hasPlaywrightCommands, sanitizeCodeBlock } from './utils/sandbox.ts';
 import { safeFilename } from './utils/strings.ts';
 import { throttle } from './utils/throttle.ts';
 
@@ -485,27 +486,6 @@ async function captureTitle(page: any, actor: any): Promise<string> {
   return '';
 }
 
-const SHADOWED_GLOBALS = ['process', 'global', 'globalThis', 'fetch', 'Bun', 'require', 'module', 'exports'];
-
-export function sanitizeCodeBlock(code: string): string {
-  return code
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('I.') || line.startsWith('page.') || line.startsWith('await page.') || line.startsWith('await I.'))
-    .join('\n');
-}
-
-export function createSandboxedFunction(argNames: string[], body: string): (...args: any[]) => any {
-  const fn = new Function(...argNames, ...SHADOWED_GLOBALS, `'use strict';\n${body}`);
-  return (...args: any[]) => fn(...args);
-}
-
-function hasPlaywrightCommands(code: string): boolean {
-  return code.split('\n').some((line) => {
-    const trimmed = line.trim();
-    return trimmed.startsWith('page.') || trimmed.startsWith('await page.');
-  });
-}
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

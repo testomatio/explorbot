@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { createSandboxedFunction, sanitizeCodeBlock } from '../../src/action';
+import { createSandboxedFunction, sanitizeCodeBlock } from '../../src/utils/sandbox';
 
 describe('sanitizeCodeBlock', () => {
   it('keeps allowed command heads', () => {
