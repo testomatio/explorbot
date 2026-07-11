@@ -21,7 +21,7 @@ import { WithSessionDedup } from './planner/session-dedup.ts';
 import { getActiveStyle, getStyles } from './planner/styles.ts';
 import { WithSubPages, getPlannedByStateHash, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
 import type { Provider } from './provider.js';
-import { POSSIBLE_SECTIONS, Researcher } from './researcher.ts';
+import { POSSIBLE_SECTIONS, type Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
 import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
@@ -268,6 +268,7 @@ export class Planner extends PlannerBase implements Agent {
   }
 
   private getExistingTestFileScenarios(currentUrl?: string): Set<string> {
+    this.lastSuite = null;
     if (!currentUrl) return new Set<string>();
     try {
       this.lastSuite = new Suite(currentUrl);
