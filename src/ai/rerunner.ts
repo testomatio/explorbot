@@ -40,6 +40,7 @@ export class Rerunner extends TaskAgent implements Agent {
   private agentTools: any;
   private healedSteps: Array<{ test: string; original: string; healed: string }> = [];
   private traceDir = '';
+  private pluginsWired = false;
 
   constructor(explorer: Explorer, provider: Provider, agentTools?: any) {
     super();
@@ -219,7 +220,6 @@ export class Rerunner extends TaskAgent implements Agent {
 
   private setupPlugins(): void {
     const healMod = heal.default || heal;
-    healMod.connectToEvents();
 
     healMod.addRecipe('explorbot-ai-healer', {
       priority: 10,
@@ -233,21 +233,30 @@ export class Rerunner extends TaskAgent implements Agent {
       healMod.addRecipe(name, recipe);
     }
 
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const outputDir = (global as any).output_dir || 'output';
+    this.traceDir = `${outputDir}/rerun_${timestamp}`;
+
+    if (this.pluginsWired) return;
+    this.pluginsWired = true;
+
+    healMod.connectToEvents();
+
     let currentTest: any = null;
     let healTries = 0;
     let isHealing = false;
     let caughtError: any = null;
-    const healLimit = this.healLimit;
 
     codeceptjs.event.dispatcher.on('test.before', (test: any) => {
       currentTest = test;
       healTries = 0;
       caughtError = null;
+      isHealing = false;
     });
 
     codeceptjs.event.dispatcher.on('step.after', (step: any) => {
       if (isHealing) return;
-      if (healTries >= healLimit) return;
+      if (healTries >= this.healLimit) return;
       if (!healMod.hasCorrespondingRecipes(step)) return;
 
       codeceptjs.recorder.catchWithoutStop(async (err: any) => {
@@ -286,12 +295,8 @@ export class Rerunner extends TaskAgent implements Agent {
       factor: 1.5,
     });
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const outputDir = (global as any).output_dir || 'output';
-    this.traceDir = `${outputDir}/rerun_${timestamp}`;
-
     const aiTrace = aiTracePlugin.default || aiTracePlugin;
-    aiTrace(this.rerunnerConfig.aiTrace || { output: this.traceDir });
+    aiTrace(this.rerunnerConfig.aiTrace || { output: `${outputDir}/rerun-traces` });
 
     import('@testomatio/reporter/codecept')
       .then((mod) => {
