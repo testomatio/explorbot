@@ -5,7 +5,6 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { clearActivity, setActivity } from '../activity.ts';
-import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';

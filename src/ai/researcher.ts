@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { setActivity } from '../activity.ts';
