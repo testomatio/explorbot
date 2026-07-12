@@ -80,8 +80,8 @@ class Explorer {
     this.aiProvider = aiProvider;
     this.options = options;
     this.initializeContainer();
-    this.knowledgeTracker = new KnowledgeTracker();
-    this.stateManager = new StateManager({ knowledgeTracker: this.knowledgeTracker });
+    this.knowledgeTracker = KnowledgeTracker.getInstance();
+    this.stateManager = new StateManager();
     this.reporter = new Reporter(config.reporter, this.stateManager);
   }
 

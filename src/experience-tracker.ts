@@ -43,7 +43,7 @@ export class ExperienceTracker {
     const config = configParser.getConfig();
     const configPath = configParser.getConfigPath();
     this.disabled = options.disabled ?? false;
-    this.knowledgeTracker = new KnowledgeTracker();
+    this.knowledgeTracker = KnowledgeTracker.getInstance();
 
     // Resolve experience directory relative to the config file location (project root)
     if (configPath) {

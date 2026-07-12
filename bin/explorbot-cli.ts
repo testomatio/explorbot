@@ -511,7 +511,7 @@ program
 
       if (url && description) {
         const { KnowledgeTracker } = await import('../src/knowledge-tracker.js');
-        const tracker = new KnowledgeTracker();
+        const tracker = KnowledgeTracker.getInstance();
         const result = tracker.addKnowledge(url, description);
         const action = result.isNewFile ? 'Created' : 'Updated';
         console.log(`Knowledge ${action} in: ${result.filename}`);

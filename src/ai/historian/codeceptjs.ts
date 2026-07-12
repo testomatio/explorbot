@@ -108,7 +108,7 @@ export function WithCodeceptJS<T extends Constructor>(Base: T) {
     }
 
     private getKnowledgeLines(url: string, indent = '  '): string[] {
-      const knowledgeTracker = new KnowledgeTracker();
+      const knowledgeTracker = KnowledgeTracker.getInstance();
       const state = new ActionResult({ url });
       const { wait, waitForElement, code } = knowledgeTracker.getStateParameters(state, ['wait', 'waitForElement', 'code']);
 

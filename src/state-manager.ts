@@ -77,9 +77,9 @@ export class StateManager {
   private knowledgeTracker: KnowledgeTracker;
   private nextStateId = 1;
 
-  constructor(options: { knowledgeTracker?: KnowledgeTracker } = {}) {
+  constructor() {
     this.experienceTracker = new ExperienceTracker();
-    this.knowledgeTracker = options.knowledgeTracker || new KnowledgeTracker();
+    this.knowledgeTracker = KnowledgeTracker.getInstance();
   }
 
   getExperienceTracker(): ExperienceTracker {

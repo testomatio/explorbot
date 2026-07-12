@@ -21,6 +21,7 @@ describe('KnowledgeTracker', () => {
       dirs: { knowledge: 'explorbot-test-knowledge' },
     };
     (configParser as any).configPath = '/tmp/config.js';
+    KnowledgeTracker.resetForTesting();
   });
 
   afterEach(() => {
@@ -41,7 +42,7 @@ describe('KnowledgeTracker', () => {
 
       writeKnowledgeFile('login.md', '/login', 'email: ${env.TEST_LOGIN}\npassword: ${env.TEST_PASSWORD}');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/login');
 
       expect(content[0]).toContain('email: admin@example.com');
@@ -56,7 +57,7 @@ describe('KnowledgeTracker', () => {
 
       writeKnowledgeFile('login.md', '/login', 'token: ${env.NONEXISTENT_VAR}');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/login');
 
       expect(content[0]).toContain('token:');
@@ -66,7 +67,7 @@ describe('KnowledgeTracker', () => {
     it('should leave unknown namespaces untouched', () => {
       writeKnowledgeFile('page.md', '/page', 'value: ${custom.baseUrl}');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/page');
 
       expect(content[0]).toContain('${custom.baseUrl}');
@@ -75,7 +76,7 @@ describe('KnowledgeTracker', () => {
     it('should leave expressions without namespace untouched', () => {
       writeKnowledgeFile('page.md', '/page', 'value: ${somevar}');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/page');
 
       expect(content[0]).toContain('${somevar}');
@@ -86,7 +87,7 @@ describe('KnowledgeTracker', () => {
 
       writeKnowledgeFile('login.md', '/login', 'Login as ${env.TEST_USER} on the main page\nThen check dashboard');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/login');
 
       expect(content[0]).toContain('Login as testuser on the main page');
@@ -98,7 +99,7 @@ describe('KnowledgeTracker', () => {
     it('should replace ${config.*} with config values', () => {
       writeKnowledgeFile('page.md', '/page', 'Base URL: ${config.playwright.url}\nBrowser: ${config.playwright.browser}');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/page');
 
       expect(content[0]).toContain('Base URL: http://localhost:3000');
@@ -108,7 +109,7 @@ describe('KnowledgeTracker', () => {
     it('should replace missing config paths with empty string', () => {
       writeKnowledgeFile('page.md', '/page', 'value: ${config.nonexistent.path}');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/page');
 
       expect(content[0]).toContain('value:');
@@ -118,7 +119,7 @@ describe('KnowledgeTracker', () => {
     it('should replace object config values with empty string', () => {
       writeKnowledgeFile('page.md', '/page', 'value: ${config.playwright}');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/page');
 
       expect(content[0]).toContain('value:');
@@ -131,7 +132,7 @@ describe('KnowledgeTracker', () => {
       mkdirSync(`${knowledgeDir}/subdir`, { recursive: true });
       writeFileSync(`${knowledgeDir}/subdir/nested.md`, matter.stringify('Nested note', { url: '/nested-page' }), 'utf8');
 
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       const content = tracker.getKnowledgeForUrl('/nested-page');
 
       expect(content[0]).toContain('Nested note');
@@ -140,7 +141,7 @@ describe('KnowledgeTracker', () => {
 
   describe('addKnowledge cache invalidation', () => {
     it('sees knowledge added via addKnowledge on the same instance', () => {
-      const tracker = new KnowledgeTracker();
+      const tracker = KnowledgeTracker.getInstance();
       expect(tracker.getMatchingKnowledge('/login')).toHaveLength(0);
 
       tracker.addKnowledge('/login', 'Use admin credentials');

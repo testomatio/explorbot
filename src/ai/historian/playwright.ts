@@ -146,7 +146,7 @@ export function WithPlaywright<T extends Constructor>(Base: T) {
     }
 
     private getPlaywrightKnowledgeLines(url: string, indent = '    '): string[] {
-      const knowledgeTracker = new KnowledgeTracker();
+      const knowledgeTracker = KnowledgeTracker.getInstance();
       const state = new ActionResult({ url });
       const { wait, waitForElement } = knowledgeTracker.getStateParameters(state, ['wait', 'waitForElement']);
 

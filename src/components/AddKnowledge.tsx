@@ -20,7 +20,7 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ initialUrl = '', onComplete
 
   useEffect(() => {
     try {
-      const knowledgeTracker = new KnowledgeTracker();
+      const knowledgeTracker = KnowledgeTracker.getInstance();
       const urls = knowledgeTracker.getExistingUrls();
       setSuggestedUrls(urls);
     } catch (error) {
@@ -31,7 +31,7 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ initialUrl = '', onComplete
   useEffect(() => {
     if (urlPattern.trim()) {
       try {
-        const knowledgeTracker = new KnowledgeTracker();
+        const knowledgeTracker = KnowledgeTracker.getInstance();
         const knowledge = knowledgeTracker.getKnowledgeForUrl(urlPattern);
         setExistingKnowledge(knowledge);
       } catch (error) {
@@ -49,7 +49,7 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ initialUrl = '', onComplete
     }
 
     try {
-      const knowledgeTracker = new KnowledgeTracker();
+      const knowledgeTracker = KnowledgeTracker.getInstance();
       const result = knowledgeTracker.addKnowledge(urlPattern.trim(), description.trim());
       const action = result.isNewFile ? 'Created' : 'Updated';
       console.log(`\nKnowledge ${action} in: ${result.filename}`);

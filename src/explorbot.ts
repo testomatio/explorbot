@@ -135,7 +135,7 @@ export class ExplorBot {
     if (this.explorer) {
       return this.explorer.getKnowledgeTracker();
     }
-    return new KnowledgeTracker();
+    return KnowledgeTracker.getInstance();
   }
 
   getExperienceTracker(): ExperienceTracker {
