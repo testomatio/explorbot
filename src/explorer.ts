@@ -14,8 +14,7 @@ import { visuallyAnnotateContainers } from './ai/researcher/coordinates.ts';
 import { RequestStore } from './api/request-store.ts';
 import { XhrCapture } from './api/xhr-capture.ts';
 import type { ExplorbotConfig } from './config.js';
-import { ConfigParser, outputPath } from './config.js';
-import type { UserResolveFunction } from './explorbot.js';
+import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Reporter } from './reporter.ts';
@@ -64,7 +63,6 @@ class Explorer {
   private stateManager!: StateManager;
   private knowledgeTracker!: KnowledgeTracker;
   config: ExplorbotConfig;
-  private userResolveFn: UserResolveFunction | null = null;
   private options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string };
   private reporter!: Reporter;
   private otherTabs: TabInfo[] = [];
@@ -164,15 +162,7 @@ class Explorer {
   }
 
   public getConfig(): ExplorbotConfig {
-    if (!this.config) {
-      throw new Error('Configuration not loaded. Call run() first.');
-    }
     return this.config;
-  }
-
-  public getConfigPath(): string | null {
-    const configParser = ConfigParser.getInstance();
-    return configParser.getConfigPath();
   }
 
   public getAIProvider(): AIProvider {
@@ -181,10 +171,6 @@ class Explorer {
 
   public getStateManager(): StateManager {
     return this.stateManager;
-  }
-
-  public getCurrentUrl(): string {
-    return this.stateManager.getCurrentState()!.url || '?';
   }
 
   public getKnowledgeTracker(): KnowledgeTracker {
@@ -225,10 +211,6 @@ class Explorer {
   async start() {
     if (this.isStarted) {
       return;
-    }
-
-    if (!this.config) {
-      await this.initializeContainer();
     }
 
     await codeceptjs.recorder.start();
@@ -459,11 +441,6 @@ class Explorer {
     }
   }
 
-  async reload() {
-    await this.closeOtherTabs();
-    await this.playwrightHelper.page.reload();
-  }
-
   private resolveBrowserUrl(url?: string): string | null {
     if (!url) return null;
     try {
@@ -606,10 +583,6 @@ class Explorer {
 
   clearOtherTabsInfo(): void {
     this.otherTabs = [];
-  }
-
-  setUserResolve(userResolveFn: UserResolveFunction): void {
-    this.userResolveFn = userResolveFn;
   }
 
   private listenToStateChanged(): void {
@@ -760,10 +733,6 @@ class Explorer {
     return true;
   }
 
-  async ensureActiveTestPageAvailable(): Promise<boolean> {
-    return this.ensurePageAvailable();
-  }
-
   async handleExecutionError(error: unknown): Promise<BrowserExecutionErrorResult> {
     const message = error instanceof Error ? error.message : String(error);
     tag('error').log(`Browser execution error: ${message}`);
@@ -871,26 +840,6 @@ class Explorer {
       if (this.testDialogHandler) page.off('dialog', this.testDialogHandler);
     }
     this.observedTestPages.clear();
-  }
-
-  async hasPlaywrightLocator(locatorFn: (page: any) => any, opts: { multiple?: boolean; contents?: boolean; success?: (locator: any) => Promise<void> | void } = {}): Promise<boolean> {
-    try {
-      const pwLocator = locatorFn(this.playwrightHelper.page);
-      const count = await pwLocator.count();
-      if (opts.multiple ? count === 0 : count !== 1) return false;
-      if (opts.contents) {
-        const html = await pwLocator.first().innerHTML();
-        if (!html?.trim()) return false;
-      }
-      if (opts.success) await opts.success(pwLocator);
-      return true;
-    } catch (error) {
-      if (this.isFatalBrowserError(error)) {
-        tag('warning').log(`hasPlaywrightLocator: ${error instanceof Error ? error.message : error}`);
-        await this.recoverFromBrowserError();
-      }
-      return false;
-    }
   }
 
   async playwrightLocatorCount(locatorFn: (page: any) => any): Promise<number> {

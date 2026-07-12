@@ -92,7 +92,6 @@ export class ExplorBot {
       if (!this.options.incognito) {
         await this.agentExperienceCompactor().autocompact();
       }
-      if (this.userResolveFn) this.explorer.setUserResolve(this.userResolveFn);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('\nFailed to start:', message);
