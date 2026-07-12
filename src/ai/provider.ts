@@ -22,6 +22,8 @@ export class ContextLengthError extends Error {}
 
 let telemetryRegistered = false;
 
+const CONTEXT_LENGTH_PATTERNS = ['reduce the length', 'context length', 'maximum context', 'token limit', 'too many tokens', 'max_tokens', 'context_length_exceeded', 'output truncated at maxtokens'];
+
 function extractCachedTokens(usage: any): number {
   if (!usage) return 0;
   const direct = usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens;
@@ -76,7 +78,6 @@ export class Provider {
     },
   };
 
-  static readonly CONTEXT_LENGTH_PATTERNS = ['reduce the length', 'context length', 'maximum context', 'token limit', 'too many tokens', 'max_tokens', 'context_length_exceeded', 'output truncated at maxtokens'];
   lastConversation: Conversation | null = null;
 
   constructor(config: AIConfig) {
@@ -144,12 +145,12 @@ export class Provider {
     return parts.length > 0 ? parts.join('\n\n') : undefined;
   }
 
-  getProviderOptionsForAgent(agentName: string): Record<string, any> | undefined {
+  private getProviderOptionsForAgent(agentName: string): Record<string, any> | undefined {
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     return agentConfig?.providerOptions;
   }
 
-  getReasoningForAgent(agentName?: string): string | undefined {
+  private getReasoningForAgent(agentName?: string): string | undefined {
     if (!agentName) return undefined;
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     return agentConfig?.reasoning;
@@ -510,7 +511,7 @@ export class Provider {
 
   static isContextLengthError(error: any): boolean {
     const msg = (error?.message || error?.toString() || '').toLowerCase();
-    return Provider.CONTEXT_LENGTH_PATTERNS.some((p) => msg.includes(p));
+    return CONTEXT_LENGTH_PATTERNS.some((p) => msg.includes(p));
   }
 
   static trimMessagesForRetry(messages: ModelMessage[]): ModelMessage[] | null {
