@@ -7,6 +7,12 @@ export interface ToolExecution {
   wasSuccessful: boolean;
 }
 
+export function toToolExecution(toolName: string, input: any, rawOutput: any): ToolExecution {
+  let output = rawOutput;
+  if (rawOutput?.type === 'json' && rawOutput?.value) output = rawOutput.value;
+  return { toolName, input, output, wasSuccessful: output?.success !== false };
+}
+
 export function toolExecutionLabel(input: Record<string, any> | undefined): string {
   return input?.explanation || input?.assertion || input?.reason || input?.request || '';
 }
@@ -17,14 +23,12 @@ const AUTO_COMPACT_TARGETED_HTML_CUTOFF = 500;
 export class Conversation {
   messages: ModelMessage[];
   model: any;
-  telemetryFunctionId?: string;
   protectedPrefixCount = 0;
   private autoTrimRules: Map<string, number>;
 
-  constructor(messages: ModelMessage[] = [], model?: any, telemetryFunctionId?: string) {
+  constructor(messages: ModelMessage[] = [], model?: any) {
     this.messages = messages;
     this.model = model || '';
-    this.telemetryFunctionId = telemetryFunctionId;
     this.autoTrimRules = new Map();
   }
 
@@ -67,7 +71,7 @@ export class Conversation {
   }
 
   clone(): Conversation {
-    return new Conversation([...this.messages], this.model, this.telemetryFunctionId);
+    return new Conversation([...this.messages], this.model);
   }
 
   cleanupTag(tagName: string, replacement: string, keepLast = 0): void {
@@ -223,14 +227,7 @@ export class Conversation {
       if (!Array.isArray(message.content)) continue;
       for (const part of message.content) {
         if (part.type !== 'tool-result') continue;
-        const rawOutput = part.output as Record<string, any>;
-        const output = rawOutput?.type === 'json' && rawOutput?.value ? rawOutput.value : rawOutput;
-        executions.push({
-          toolName: part.toolName,
-          input: toolCalls.get(part.toolCallId) || {},
-          output,
-          wasSuccessful: output?.success !== false,
-        });
+        executions.push(toToolExecution(part.toolName, toolCalls.get(part.toolCallId) || {}, part.output));
       }
     }
 

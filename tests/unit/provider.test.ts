@@ -368,6 +368,20 @@ describe('Provider', () => {
     });
   });
 
+  describe('getTelemetry', () => {
+    it('honors the telemetryFunctionId option shorthand', () => {
+      (provider as any).telemetryEnabled = true;
+      const telemetry = (provider as any).getTelemetry({ telemetryFunctionId: 'researcher.textContent' });
+      expect(telemetry?.functionId).toBe('researcher.textContent');
+    });
+
+    it('lets an explicit telemetry.functionId win over the shorthand', () => {
+      (provider as any).telemetryEnabled = true;
+      const telemetry = (provider as any).getTelemetry({ telemetry: { functionId: 'explicit' }, telemetryFunctionId: 'shorthand' });
+      expect(telemetry?.functionId).toBe('explicit');
+    });
+  });
+
   describe('abort on idle timeout', () => {
     it('aborts the in-flight request when the idle timeout fires', async () => {
       const capture: { signal?: AbortSignal } = {};
