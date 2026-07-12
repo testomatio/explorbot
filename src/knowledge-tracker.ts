@@ -15,13 +15,10 @@ export interface Knowledge {
   [key: string]: any;
 }
 
-const KNOWLEDGE_REFRESH_MS = 30000;
-
 export class KnowledgeTracker {
   private knowledgeDir: string;
   private knowledgeFiles: Knowledge[] = [];
   private isLoaded = false;
-  private lastLoadedAt = 0;
 
   constructor() {
     const configParser = ConfigParser.getInstance();
@@ -41,7 +38,7 @@ export class KnowledgeTracker {
   }
 
   private loadKnowledgeFiles(): void {
-    if (this.isLoaded && Date.now() - this.lastLoadedAt < KNOWLEDGE_REFRESH_MS) return;
+    if (this.isLoaded) return;
 
     this.knowledgeFiles = [];
 
@@ -71,7 +68,6 @@ export class KnowledgeTracker {
     }
 
     this.isLoaded = true;
-    this.lastLoadedAt = Date.now();
   }
 
   getRelevantKnowledge(state: ActionResult): Knowledge[] {

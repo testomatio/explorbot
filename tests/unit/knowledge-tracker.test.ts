@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
@@ -148,23 +148,6 @@ describe('KnowledgeTracker', () => {
       const matched = tracker.getMatchingKnowledge('/login');
       expect(matched.length).toBeGreaterThan(0);
       expect(matched[0].content).toContain('Use admin credentials');
-    });
-
-    it('refreshes files written to disk by another instance after the TTL elapses', () => {
-      const tracker = new KnowledgeTracker();
-      expect(tracker.getMatchingKnowledge('/ttl-page')).toHaveLength(0);
-
-      writeFileSync(`${knowledgeDir}/ttl.md`, matter.stringify('Fresh note', { url: '/ttl-page' }), 'utf8');
-      expect(tracker.getMatchingKnowledge('/ttl-page')).toHaveLength(0);
-
-      setSystemTime(new Date(Date.now() + 31000));
-      try {
-        const matched = tracker.getMatchingKnowledge('/ttl-page');
-        expect(matched.length).toBeGreaterThan(0);
-        expect(matched[0].content).toContain('Fresh note');
-      } finally {
-        setSystemTime();
-      }
     });
   });
 });
