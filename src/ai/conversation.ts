@@ -21,14 +21,12 @@ const AUTO_COMPACT_ARIA_CHANGES_CUTOFF = 500;
 const AUTO_COMPACT_TARGETED_HTML_CUTOFF = 500;
 
 export class Conversation {
-  id: string;
   messages: ModelMessage[];
   model: any;
   protectedPrefixCount = 0;
   private autoTrimRules: Map<string, number>;
 
   constructor(messages: ModelMessage[] = [], model?: any) {
-    this.id = this.generateId();
     this.messages = messages;
     this.model = model || '';
     this.autoTrimRules = new Map();
@@ -42,20 +40,6 @@ export class Conversation {
     this.messages.push({
       role: 'user',
       content: this.applyAutoTrim(text),
-    });
-  }
-
-  addUserImage(image: string): void {
-    if (!image || image.trim() === '') {
-      console.warn('Warning: Attempting to add empty image to conversation');
-      return;
-    }
-
-    const imageData = image.startsWith('data:') ? image : `data:image/png;base64,${image}`;
-
-    this.messages.push({
-      role: 'user',
-      content: [{ type: 'file', mediaType: 'image/png', data: imageData }],
     });
   }
 
@@ -224,10 +208,6 @@ export class Conversation {
     }
 
     return result;
-  }
-
-  private generateId(): string {
-    return `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
   getToolExecutions(): ToolExecution[] {

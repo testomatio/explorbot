@@ -73,7 +73,6 @@ function createMockExplorer(state = fakeState) {
     runWithBrowserRecovery: async (_label: string, operation: () => Promise<any>) => operation(),
     createAction: () => ({
       capturePageState: async () => ActionResult.fromState(state),
-      caputrePageWithScreenshot: async () => ActionResult.fromState(state),
     }),
     playwrightLocatorCount: async () => 1,
     playwrightHelper: { page: {} },

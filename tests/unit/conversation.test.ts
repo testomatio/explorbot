@@ -81,7 +81,7 @@ describe('Conversation', () => {
     it('should not affect non-string message content', () => {
       const conversation = new Conversation();
       conversation.addUserText('Text with <page_html>content</page_html>');
-      conversation.addUserImage('base64encodedimage');
+      conversation.messages.push({ role: 'user', content: [{ type: 'text', text: 'x' }] });
       conversation.addUserText('Another <page_html>content</page_html>');
 
       conversation.cleanupTag('page_html', '...cleaned...');
@@ -300,7 +300,7 @@ describe('Conversation', () => {
 
     it('should ignore non-string message content', () => {
       const conversation = new Conversation();
-      conversation.addUserImage('base64encodedimage');
+      conversation.messages.push({ role: 'user', content: [{ type: 'text', text: 'x' }] });
 
       expect(conversation.hasTag('any_tag')).toBe(false);
     });

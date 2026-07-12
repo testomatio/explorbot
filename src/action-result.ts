@@ -166,16 +166,6 @@ export class ActionResult implements ActionResultData {
     return undefined;
   }
 
-  get browserLogsContent(): any[] {
-    if (this._browserLogs !== undefined) {
-      return this._browserLogs;
-    }
-    if (this.logFile) {
-      return ActionResult.loadBrowserLogsFromFile(this.logFile);
-    }
-    return [];
-  }
-
   get ariaSnapshot(): string | null {
     if (this._ariaSnapshot !== undefined) {
       return this._ariaSnapshot;
@@ -525,58 +515,6 @@ export class ActionResult implements ActionResultData {
     return stateString;
   }
 
-  private saveBrowserLogs(): void {
-    const logs = this.browserLogsContent;
-    if (!logs || logs.length === 0) return;
-
-    try {
-      const outputDir = 'output';
-      const stateHash = this.getStateHash();
-      const filename = `${stateHash}.log`;
-      const filePath = join(outputDir, filename);
-
-      // Ensure output directory exists
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      // Format logs for saving
-      const formattedLogs = logs.map((log: any) => {
-        const timestamp = new Date().toISOString();
-        const level = (log.type || log.level || 'LOG').toUpperCase();
-        const message = log.text || log.message || String(log);
-        return `[${timestamp}] ${level}: ${message}`;
-      });
-
-      // Save log content to file
-      const logContent = `${formattedLogs.join('\n')}\n`;
-      fs.writeFileSync(filePath, logContent, 'utf8');
-    } catch (error) {
-      // Silently fail to avoid breaking the main flow
-      console.error('Failed to save browser logs:', error);
-    }
-  }
-
-  private saveHtmlOutput(): void {
-    try {
-      const outputDir = 'output';
-      const stateHash = this.getStateHash();
-      const filename = `${stateHash}.html`;
-      const filePath = join(outputDir, filename);
-
-      // Ensure output directory exists
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      // Save HTML content to file
-      fs.writeFileSync(filePath, this.html, 'utf8');
-    } catch (error) {
-      // Silently fail to avoid breaking the main flow
-      console.error('Failed to save HTML output:', error);
-    }
-  }
-
   async diff(previousState: ActionResult | null): Promise<Diff> {
     return new Diff(this, previousState);
   }
@@ -714,10 +652,6 @@ export class Diff {
   }
 
   get ariaChanged(): string | null {
-    return this._ariaDiffResult;
-  }
-
-  get ariaRemoved(): string | null {
     return this._ariaDiffResult;
   }
 
