@@ -44,7 +44,7 @@ export class ContextCommand extends BaseCommand {
 
     const actionResult = await explorer.createAction().capturePageState({ includeScreenshot: isVisual });
     const experienceTracker = explorer.getStateManager().getExperienceTracker();
-    const knowledgeTracker = this.explorBot.getKnowledgeTracker();
+    const knowledgeTracker = this.explorBot.knowledgeTracker();
 
     let mode: ContextMode = 'compact';
     if (opts.full) {

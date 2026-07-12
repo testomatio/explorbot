@@ -77,13 +77,17 @@ export class StateManager {
   private knowledgeTracker: KnowledgeTracker;
   private nextStateId = 1;
 
-  constructor() {
-    this.experienceTracker = new ExperienceTracker();
-    this.knowledgeTracker = KnowledgeTracker.getInstance();
+  constructor(experienceTracker: ExperienceTracker, knowledgeTracker: KnowledgeTracker) {
+    this.experienceTracker = experienceTracker;
+    this.knowledgeTracker = knowledgeTracker;
   }
 
   getExperienceTracker(): ExperienceTracker {
     return this.experienceTracker;
+  }
+
+  getKnowledgeTracker(): KnowledgeTracker {
+    return this.knowledgeTracker;
   }
 
   /**

@@ -22,7 +22,7 @@ export class CompactCommand extends BaseCommand {
     const dryRun = !!opts.dryRun;
     const merge = opts.merge !== false;
 
-    const tracker = this.explorBot.getExperienceTracker();
+    const tracker = this.explorBot.experienceTracker();
     const files = this.resolveTarget(tracker, target);
 
     if (files === null) {
@@ -73,7 +73,7 @@ export class CompactCommand extends BaseCommand {
   private async runFullSweep(compactor: ReturnType<typeof this.explorBot.agentExperienceCompactor>, merge: boolean): Promise<{ merged: number; compacted: number }> {
     if (!merge) {
       tag('info').log('Compacting all experience files (merge skipped)…');
-      const compacted = await compactor.compactFiles(this.explorBot.getExperienceTracker().getAllExperience());
+      const compacted = await compactor.compactFiles(this.explorBot.experienceTracker().getAllExperience());
       return { merged: 0, compacted };
     }
 

@@ -16,12 +16,11 @@ export interface Knowledge {
 }
 
 export class KnowledgeTracker {
-  private static instance: KnowledgeTracker | undefined;
   private knowledgeDir: string;
   private knowledgeFiles: Knowledge[] = [];
   private isLoaded = false;
 
-  private constructor() {
+  constructor() {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
     const configPath = configParser.getConfigPath();
@@ -36,17 +35,6 @@ export class KnowledgeTracker {
     if (!existsSync(this.knowledgeDir)) {
       mkdirSync(this.knowledgeDir, { recursive: true });
     }
-  }
-
-  static getInstance(): KnowledgeTracker {
-    if (!KnowledgeTracker.instance) {
-      KnowledgeTracker.instance = new KnowledgeTracker();
-    }
-    return KnowledgeTracker.instance;
-  }
-
-  static resetForTesting(): void {
-    KnowledgeTracker.instance = undefined;
   }
 
   private loadKnowledgeFiles(): void {

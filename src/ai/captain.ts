@@ -37,7 +37,7 @@ export class Captain extends CaptainBase implements Agent {
   constructor(explorBot: ExplorBot) {
     super();
     this.explorBot = explorBot;
-    this.experienceTracker = new ExperienceTracker();
+    this.experienceTracker = explorBot.experienceTracker();
   }
 
   setCommandExecutor(fn: (cmd: string) => Promise<void>, descriptions: { name: string; description: string; options: string }[]): void {

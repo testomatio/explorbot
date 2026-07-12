@@ -6,6 +6,7 @@ import { ExperienceCompactor } from '../../src/ai/experience-compactor.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { ExperienceTracker, RECENT_WINDOW_DAYS } from '../../src/experience-tracker.ts';
+import { KnowledgeTracker } from '../../src/knowledge-tracker.ts';
 
 function extractPromptText(entry: any): string {
   if (!entry?.body?.messages) return '';
@@ -55,7 +56,7 @@ describe('ExperienceCompactor with aimock', () => {
     mock.resetMatchCounts();
     mock.clearFixtures();
 
-    tracker = new ExperienceTracker();
+    tracker = new ExperienceTracker(new KnowledgeTracker());
     experienceDir = (tracker as any).experienceDir as string;
     if (existsSync(experienceDir)) {
       rmSync(experienceDir, { recursive: true, force: true });

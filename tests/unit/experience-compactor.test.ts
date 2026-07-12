@@ -5,6 +5,7 @@ import { ExperienceCompactor } from '../../src/ai/experience-compactor';
 import type { Provider } from '../../src/ai/provider';
 import { ConfigParser } from '../../src/config';
 import { ExperienceTracker } from '../../src/experience-tracker';
+import { KnowledgeTracker } from '../../src/knowledge-tracker';
 
 class MockProvider {
   private responses: any[] = [];
@@ -69,7 +70,7 @@ describe('ExperienceCompactor', () => {
     (configParser as any).config = mockConfig;
     (configParser as any).configPath = '/tmp/config.js';
 
-    experienceTracker = new ExperienceTracker();
+    experienceTracker = new ExperienceTracker(new KnowledgeTracker());
     mockProvider = new MockProvider();
     compactor = new ExperienceCompactor(mockProvider as unknown as Provider, experienceTracker);
   });

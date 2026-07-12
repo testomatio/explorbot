@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ActionResult } from '../../action-result.ts';
 import { ConfigParser } from '../../config.ts';
-import { KnowledgeTracker } from '../../knowledge-tracker.ts';
+import type { StateManager } from '../../state-manager.ts';
 import type { Plan } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
 import { relativeToCwd } from '../../utils/next-steps.ts';
@@ -21,6 +21,7 @@ export interface CodeceptJSMethods {
 export function WithCodeceptJS<T extends Constructor>(Base: T) {
   return class extends Base {
     declare savedFiles: Set<string>;
+    declare stateManager?: StateManager;
 
     toCode(conversation: Conversation, scenario: string): string {
       const toolExecutions = conversation.getToolExecutions();
@@ -108,7 +109,8 @@ export function WithCodeceptJS<T extends Constructor>(Base: T) {
     }
 
     private getKnowledgeLines(url: string, indent = '  '): string[] {
-      const knowledgeTracker = KnowledgeTracker.getInstance();
+      const knowledgeTracker = this.stateManager?.getKnowledgeTracker();
+      if (!knowledgeTracker) return [];
       const state = new ActionResult({ url });
       const { wait, waitForElement, code } = knowledgeTracker.getStateParameters(state, ['wait', 'waitForElement', 'code']);
 

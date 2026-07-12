@@ -74,8 +74,8 @@ class Navigator implements Agent {
   constructor(explorer: Explorer, provider: Provider, experienceTracker?: ExperienceTracker) {
     this.provider = provider;
     this.explorer = explorer;
-    this.knowledgeTracker = KnowledgeTracker.getInstance();
-    this.experienceTracker = experienceTracker || new ExperienceTracker();
+    this.knowledgeTracker = explorer.getKnowledgeTracker();
+    this.experienceTracker = experienceTracker || explorer.getStateManager().getExperienceTracker();
     this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 

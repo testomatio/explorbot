@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
+import { ExperienceTracker } from '../../src/experience-tracker';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
 import { StateManager, type StateTransition, type WebPageState } from '../../src/state-manager';
 
@@ -23,9 +24,9 @@ describe('StateManager', () => {
     const configParser = ConfigParser.getInstance();
     (configParser as any).config = mockConfig;
     (configParser as any).configPath = '/tmp/explorbot-test/config.js';
-    KnowledgeTracker.resetForTesting();
 
-    stateManager = new StateManager();
+    const knowledgeTracker = new KnowledgeTracker();
+    stateManager = new StateManager(new ExperienceTracker(knowledgeTracker), knowledgeTracker);
   });
 
   afterEach(() => {
@@ -66,8 +67,8 @@ describe('StateManager', () => {
 
       writeFileSync(`${smKnowledgeDir}/page.md`, matter.stringify('Secret: ${env.SM_TEST_VAR}', { url: '/sm-page' }), 'utf8');
 
-      KnowledgeTracker.resetForTesting();
-      const sm = new StateManager();
+      const knowledgeTracker = new KnowledgeTracker();
+      const sm = new StateManager(new ExperienceTracker(knowledgeTracker), knowledgeTracker);
       sm.updateState(new ActionResult({ url: '/sm-page', html: '<html><body>x</body></html>' }));
 
       const knowledge = sm.getRelevantKnowledge();

@@ -17,7 +17,7 @@ export class ContextKnowledgeCommand extends BaseCommand {
     }
 
     const actionResult = ActionResult.fromState(state);
-    const knowledgeTracker = this.explorBot.getKnowledgeTracker();
+    const knowledgeTracker = this.explorBot.knowledgeTracker();
     const knowledge = knowledgeTracker.getRelevantKnowledge(actionResult);
 
     if (knowledge.length === 0) {

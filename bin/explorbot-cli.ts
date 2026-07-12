@@ -509,9 +509,10 @@ program
         path: options.path || process.cwd(),
       });
 
+      const { KnowledgeTracker } = await import('../src/knowledge-tracker.js');
+      const tracker = new KnowledgeTracker();
+
       if (url && description) {
-        const { KnowledgeTracker } = await import('../src/knowledge-tracker.js');
-        const tracker = KnowledgeTracker.getInstance();
         const result = tracker.addKnowledge(url, description);
         const action = result.isNewFile ? 'Created' : 'Updated';
         console.log(`Knowledge ${action} in: ${result.filename}`);
@@ -519,7 +520,7 @@ program
       }
 
       const AddKnowledge = (await import('../src/components/AddKnowledge.js')).default;
-      render(React.createElement(AddKnowledge, { initialUrl: url || '' }), {
+      render(React.createElement(AddKnowledge, { initialUrl: url || '', knowledgeTracker: tracker }), {
         exitOnCtrlC: false,
         patchConsole: false,
       });

@@ -208,7 +208,9 @@ mock.module('codeceptjs/lib/listener/store.js', () => ({
 import { isTemplateMatch } from '../../src/ai/planner/subpages.ts';
 import { AIProvider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
+import { ExperienceTracker } from '../../src/experience-tracker.ts';
 import Explorer from '../../src/explorer.ts';
+import { KnowledgeTracker } from '../../src/knowledge-tracker.ts';
 import { Reporter } from '../../src/reporter.ts';
 import { isDynamicSegment } from '../../src/utils/url-matcher.ts';
 
@@ -320,7 +322,8 @@ describe('Explorer', () => {
     vi.spyOn(Reporter.prototype, 'finishRun').mockResolvedValue();
     vi.spyOn(Reporter.prototype, 'reportTest').mockResolvedValue();
 
-    explorer = new Explorer(config, new AIProvider(config.ai), { headless: true });
+    const knowledgeTracker = new KnowledgeTracker();
+    explorer = new Explorer(config, new AIProvider(config.ai), { headless: true }, new ExperienceTracker(knowledgeTracker), knowledgeTracker);
     await explorer.start();
   });
 

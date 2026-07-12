@@ -28,10 +28,10 @@ export class Historian extends HistorianBase {
   declare playwright: { recorder: PlaywrightRecorder; helper: any } | undefined;
   declare savedFiles: Set<string>;
 
-  constructor(provider: Provider, experienceTracker?: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager, config?: ExplorbotConfig, playwright?: { recorder: PlaywrightRecorder; helper: any }) {
+  constructor(provider: Provider, experienceTracker: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager, config?: ExplorbotConfig, playwright?: { recorder: PlaywrightRecorder; helper: any }) {
     super();
     this.provider = provider;
-    this.experienceTracker = experienceTracker || new ExperienceTracker();
+    this.experienceTracker = experienceTracker;
     this.reporter = reporter;
     this.stateManager = stateManager;
     this.config = config;

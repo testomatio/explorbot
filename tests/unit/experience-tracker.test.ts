@@ -5,6 +5,7 @@ import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
 import { ExperienceTracker } from '../../src/experience-tracker';
+import { KnowledgeTracker } from '../../src/knowledge-tracker';
 
 describe('ExperienceTracker', () => {
   let experienceTracker: ExperienceTracker;
@@ -28,7 +29,7 @@ describe('ExperienceTracker', () => {
     (configParser as any).config = mockConfig;
     (configParser as any).configPath = '/tmp/config.js';
 
-    experienceTracker = new ExperienceTracker();
+    experienceTracker = new ExperienceTracker(new KnowledgeTracker());
   });
 
   afterEach(() => {
@@ -264,7 +265,7 @@ describe('ExperienceTracker', () => {
     });
 
     it('respects disabled flag', () => {
-      const disabledTracker = new ExperienceTracker({ disabled: true });
+      const disabledTracker = new ExperienceTracker(new KnowledgeTracker(), { disabled: true });
       const state = makeState();
       disabledTracker.writeFlow(state, sampleBody);
       const stateHash = state.getStateHash();

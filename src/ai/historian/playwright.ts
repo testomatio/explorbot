@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ActionResult } from '../../action-result.ts';
 import { ConfigParser } from '../../config.ts';
-import { KnowledgeTracker } from '../../knowledge-tracker.ts';
+import type { StateManager } from '../../state-manager.ts';
 import { type PlaywrightRecorder, type TraceCall, renderAssertion, renderCall } from '../../playwright-recorder.ts';
 import type { Plan } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
@@ -25,6 +25,7 @@ export function WithPlaywright<T extends Constructor>(Base: T) {
   return class extends Base {
     declare playwright: { recorder: PlaywrightRecorder; helper: any } | undefined;
     declare savedFiles: Set<string>;
+    declare stateManager?: StateManager;
 
     async toPlaywrightCode(conversation: Conversation, scenario: string): Promise<string> {
       const toolExecutions = conversation.getToolExecutions();
@@ -146,7 +147,8 @@ export function WithPlaywright<T extends Constructor>(Base: T) {
     }
 
     private getPlaywrightKnowledgeLines(url: string, indent = '    '): string[] {
-      const knowledgeTracker = KnowledgeTracker.getInstance();
+      const knowledgeTracker = this.stateManager?.getKnowledgeTracker();
+      if (!knowledgeTracker) return [];
       const state = new ActionResult({ url });
       const { wait, waitForElement } = knowledgeTracker.getStateParameters(state, ['wait', 'waitForElement']);
 

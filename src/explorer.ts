@@ -15,6 +15,7 @@ import { RequestStore } from './api/request-store.ts';
 import { XhrCapture } from './api/xhr-capture.ts';
 import type { ExplorbotConfig } from './config.js';
 import { ConfigParser } from './config.js';
+import type { ExperienceTracker } from './experience-tracker.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Reporter } from './reporter.ts';
@@ -75,13 +76,13 @@ class Explorer {
   private testConsoleHandler: ((message: any) => void) | null = null;
   private testDialogHandler: ((dialog: any) => void) | null = null;
 
-  constructor(config: ExplorbotConfig, aiProvider: AIProvider, options?: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string }) {
+  constructor(config: ExplorbotConfig, aiProvider: AIProvider, options: { show?: boolean; headless?: boolean; incognito?: boolean; session?: string } | undefined, experienceTracker: ExperienceTracker, knowledgeTracker: KnowledgeTracker) {
     this.config = config;
     this.aiProvider = aiProvider;
     this.options = options;
     this.initializeContainer();
-    this.knowledgeTracker = KnowledgeTracker.getInstance();
-    this.stateManager = new StateManager();
+    this.knowledgeTracker = knowledgeTracker;
+    this.stateManager = new StateManager(experienceTracker, knowledgeTracker);
     this.reporter = new Reporter(config.reporter, this.stateManager);
   }
 
