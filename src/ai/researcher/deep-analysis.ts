@@ -98,7 +98,6 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
 
       const diff = await current.diff(previous);
-      await diff.calculate();
 
       if (!diff.ariaChanged && diff.htmlParts.length === 0) {
         debugLog(`No diff between current and previous state for overlay "${focusArea.name}"`);
@@ -365,7 +364,6 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
             await this.explorer.capturePageState();
             const hoverAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
             const hoverDiff = await hoverAR.diff(previousState);
-            await hoverDiff.calculate();
             const hoverHtmlSize = hoverDiff.htmlParts.reduce((sum, p) => sum + p.subtree.length, 0);
             const hoverRevealed = hoverDiff.ariaChanged && hoverHtmlSize > 500;
 
@@ -422,7 +420,6 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         await this.explorer.createAction().capturePageState();
         const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
         diff = await currAR.diff(previousState);
-        await diff.calculate();
       } catch (err) {
         tag('warning').log(`State capture failed after click: ${err instanceof Error ? err.message : err}`);
         await this._restorePageState(state.url, originalAria);

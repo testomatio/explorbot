@@ -570,6 +570,15 @@ export function parseAriaLocator(ariaStr: string): { role: string; text: string 
   return { role: match[1], text: match[2] };
 }
 
+export const LARGE_ARIA_CHANGE_THRESHOLD = 50;
+
+export function countAriaChanges(ariaChanges: string): number {
+  const addedCount = (ariaChanges.match(/\n {4}- /g) || []).length;
+  const removedMatch = ariaChanges.match(/removed: (\d+) interactive/);
+  const removedCount = removedMatch ? Number.parseInt(removedMatch[1]) : 0;
+  return addedCount + removedCount;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { ActionResult, type ToolResultMetadata } from '../action-result.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
-import { extractFocusedElement } from '../utils/aria.ts';
+import { LARGE_ARIA_CHANGE_THRESHOLD, countAriaChanges, extractFocusedElement } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
@@ -1155,13 +1155,6 @@ function transformContainsCommand(command: string): string {
   return command;
 }
 
-function countAriaChanges(ariaChanges: string): number {
-  const addedCount = (ariaChanges.match(/\n {4}- /g) || []).length;
-  const removedMatch = ariaChanges.match(/removed: (\d+) interactive/);
-  const removedCount = removedMatch ? Number.parseInt(removedMatch[1]) : 0;
-  return addedCount + removedCount;
-}
-
 function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
   const result: Record<string, any> = { success: true, action, ...data };
   if (source?.playwrightGroupId) {
@@ -1175,7 +1168,7 @@ function successToolResult(action: string, data?: Record<string, any>, source?: 
     const ariaChanges = data.pageDiff.ariaChanges || '';
     const urlChanged = data.pageDiff.urlChanged === true;
     const hasHtmlParts = Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
-    if (countAriaChanges(ariaChanges) >= 50) {
+    if (countAriaChanges(ariaChanges) >= LARGE_ARIA_CHANGE_THRESHOLD) {
       suggestion = `MAJOR PAGE CHANGE. Page entered a different mode. Check htmlParts and iframes in pageDiff before next action. ${suggestion}`;
     } else if (!urlChanged && !ariaChanges && !hasHtmlParts) {
       suggestion = 'Action ran without error but produced no observable change (URL, ARIA and HTML all unchanged). The locator likely matched a non-interactive ancestor or an element outside the intended control. Re-locate via xpathCheck() or verify with see() before treating this as success.';
