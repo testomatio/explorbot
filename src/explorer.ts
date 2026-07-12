@@ -359,8 +359,8 @@ class Explorer {
     return this.runWithBrowserRecovery('executeAction', () => this.createAction().execute(code));
   }
 
-  async attemptAction(code: string, originalMessage?: string, experience = true): Promise<boolean> {
-    return this.runWithBrowserRecovery('attemptAction', () => this.createAction().attempt(code, originalMessage, experience));
+  async attemptAction(code: string, originalMessage?: string): Promise<boolean> {
+    return this.runWithBrowserRecovery('attemptAction', () => this.createAction().attempt(code, originalMessage));
   }
 
   getPlaywrightRecorder(): PlaywrightRecorder {

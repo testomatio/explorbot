@@ -359,7 +359,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           const isCoordinateClick = el.commands[0].startsWith('I.clickXY(');
           if (!isCoordinateClick) {
             const hoverCmd = el.commands[0].replace('I.click(', 'I.moveCursorTo(');
-            await this.explorer.attemptAction(hoverCmd, undefined, false);
+            await this.explorer.attemptAction(hoverCmd, undefined);
             await new Promise((r) => setTimeout(r, 500));
 
             await this.explorer.capturePageState();
@@ -405,7 +405,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       let clickCode: string | null = null;
       const action = this.explorer.createAction();
       for (const cmd of commands) {
-        if (await action.attempt(cmd, undefined, false)) {
+        if (await action.attempt(cmd, undefined)) {
           clickCode = cmd;
           break;
         }

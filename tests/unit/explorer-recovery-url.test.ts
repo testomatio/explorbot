@@ -126,7 +126,7 @@ describe('Explorer recovery URL resolution', () => {
       },
     });
 
-    const result = await explorer.attemptAction('I.click("Menu")', undefined, false);
+    const result = await explorer.attemptAction('I.click("Menu")', undefined);
 
     expect(result).toBe(true);
     expect(attempts).toBe(2);

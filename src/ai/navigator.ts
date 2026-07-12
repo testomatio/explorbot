@@ -764,7 +764,7 @@ class Navigator implements Agent {
 
           await this.explorer.switchToMainFrame();
 
-          const verified = await action.attempt(codeBlock, message, false);
+          const verified = await action.attempt(codeBlock, message);
 
           if (verified) {
             tag('success').log('Verification passed');
