@@ -196,7 +196,7 @@ export class ExplorBot {
         return state ? ActionResult.fromState(state) : null;
       };
       const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState, supervisor: true });
-      return new Pilot(ai, tools, researcher, explorer, experienceTracker);
+      return new Pilot(ai, tools, researcher, explorer);
     }));
   }
 

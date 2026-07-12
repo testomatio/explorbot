@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { ExplorbotConfig } from '../config.ts';
-import { ExperienceTracker } from '../experience-tracker.ts';
+import type { ExperienceTracker } from '../experience-tracker.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { Reporter } from '../reporter.ts';
 import type { StateManager } from '../state-manager.ts';

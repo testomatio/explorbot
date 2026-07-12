@@ -1,6 +1,6 @@
 import { ActionResult } from './action-result.js';
-import { ExperienceTracker } from './experience-tracker.js';
-import { KnowledgeTracker, type Knowledge } from './knowledge-tracker.js';
+import type { ExperienceTracker } from './experience-tracker.js';
+import type { KnowledgeTracker, Knowledge } from './knowledge-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
 import { createDebug } from './utils/logger.js';
 import { extractStatePath } from './utils/url-matcher.js';
