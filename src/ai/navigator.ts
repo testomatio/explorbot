@@ -483,17 +483,10 @@ class Navigator implements Agent {
   }
 
   private buildExperienceTools(): { learnExperience: unknown } | undefined {
-    const stateManager = this.explorer.getStateManager();
-    const getState = () => {
-      const s = stateManager.getCurrentState();
-      return s ? ActionResult.fromState(s) : null;
-    };
     const { learnExperience } = createAgentTools({
       explorer: this.explorer,
       researcher: null as unknown as Researcher,
       navigator: this,
-      experienceTracker: this.experienceTracker,
-      getState,
     });
     if (!learnExperience) return undefined;
     return { learnExperience };

@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { ActionResult } from './action-result.ts';
 import { Captain } from './ai/captain.ts';
 import { Driller } from './ai/driller.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
@@ -189,13 +188,7 @@ export class ExplorBot {
     return (this.agents.pilot ||= this.createAgent(({ ai, explorer }) => {
       const researcher = this.agentResearcher();
       const navigator = this.agentNavigator();
-      const stateManager = explorer.getStateManager();
-      const experienceTracker = stateManager.getExperienceTracker();
-      const getState = () => {
-        const state = stateManager.getCurrentState();
-        return state ? ActionResult.fromState(state) : null;
-      };
-      const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState, supervisor: true });
+      const tools = createAgentTools({ explorer, researcher, navigator, supervisor: true });
       return new Pilot(ai, tools, researcher, explorer);
     }));
   }
@@ -205,13 +198,7 @@ export class ExplorBot {
       this.agents.tester = this.createAgent(({ ai, explorer }) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const stateManager = explorer.getStateManager();
-        const experienceTracker = stateManager.getExperienceTracker();
-        const getState = () => {
-          const state = stateManager.getCurrentState();
-          return state ? ActionResult.fromState(state) : null;
-        };
-        const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState });
+        const tools = createAgentTools({ explorer, researcher, navigator });
         return new Tester(explorer, ai, researcher, navigator, tools);
       });
 
@@ -267,7 +254,7 @@ export class ExplorBot {
       this.agents.rerunner = this.createAgent(({ ai, explorer }) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const tools = createAgentTools({ explorer, researcher, navigator });
+        const tools = createAgentTools({ explorer, researcher, navigator, withExperience: false });
         return new Rerunner(explorer, ai, tools);
       });
       this.agents.rerunner.setHistorian(this.agentHistorian());
