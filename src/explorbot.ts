@@ -172,7 +172,7 @@ export class ExplorBot {
 
   agentNavigator(): Navigator {
     return (this.agents.navigator ||= this.createAgent(({ ai, explorer }) => {
-      return new Navigator(explorer, ai, explorer.getStateManager().getExperienceTracker());
+      return new Navigator(explorer, ai);
     }));
   }
 
