@@ -143,7 +143,7 @@ async function attemptInteraction(explorer: Explorer, candidate: InteractionCand
   const action = explorer.createAction();
 
   for (const command of buildClickCommands(candidate.element, candidate.container)) {
-    const success = await action.attempt(command, buildPurpose(candidate), false);
+    const success = await action.attempt(command, buildPurpose(candidate));
     if (success) {
       return true;
     }
@@ -155,7 +155,7 @@ async function attemptInteraction(explorer: Explorer, candidate: InteractionCand
 async function restoreInteractionState(explorer: Explorer, restoreUrl: string, primaryCommand?: string | null): Promise<void> {
   if (primaryCommand) {
     const action = explorer.createAction();
-    const restored = await action.attempt(primaryCommand, `Restore initial state on ${restoreUrl}`, false);
+    const restored = await action.attempt(primaryCommand, `Restore initial state on ${restoreUrl}`);
     if (restored) {
       await wait(TAB_WAIT_MS);
       return;
@@ -163,7 +163,7 @@ async function restoreInteractionState(explorer: Explorer, restoreUrl: string, p
   }
 
   const action = explorer.createAction();
-  await action.attempt(`I.amOnPage(${JSON.stringify(restoreUrl)})`, `Restore page ${restoreUrl}`, false);
+  await action.attempt(`I.amOnPage(${JSON.stringify(restoreUrl)})`, `Restore page ${restoreUrl}`);
 }
 
 function buildTransition(candidate: InteractionCandidate, beforeState: WebPageState, afterState: WebPageState, changes: InteractionChanges): DocStateTransition {

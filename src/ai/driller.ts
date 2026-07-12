@@ -606,11 +606,11 @@ export class Driller extends TaskAgent implements Agent {
     const action = this.explorer.createAction();
 
     if (currentState?.url !== originalState.url) {
-      await action.attempt(`I.amOnPage(${JSON.stringify(targetUrl)})`, `${reason} (restore URL)`, false);
+      await action.attempt(`I.amOnPage(${JSON.stringify(targetUrl)})`, `${reason} (restore URL)`);
       return;
     }
 
-    await action.attempt('I.pressKey("Escape")', `${reason} (restore state)`, false);
+    await action.attempt('I.pressKey("Escape")', `${reason} (restore state)`);
   }
 
   private async saveToExperience(state: ActionResult, results: InteractionResult[]): Promise<void> {

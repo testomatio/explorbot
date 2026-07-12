@@ -54,7 +54,6 @@ export class ExplorBot {
   private config!: ExplorbotConfig;
   private options: ExplorBotOptions;
   private userResolveFn: UserResolveFunction | null = null;
-  public needsInput = false;
   private currentPlan?: Plan;
   private planFeature?: string;
   lastPlanError: Error | null = null;
@@ -92,7 +91,6 @@ export class ExplorBot {
       if (!this.options.incognito) {
         await this.agentExperienceCompactor().autocompact();
       }
-      if (this.userResolveFn) this.explorer.setUserResolve(this.userResolveFn);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('\nFailed to start:', message);
@@ -154,13 +152,6 @@ export class ExplorBot {
   getOptions(): ExplorBotOptions {
     return this.options;
   }
-  isReady(): boolean {
-    return this.explorer?.isStarted;
-  }
-
-  getConfigParser(): ConfigParser {
-    return this.configParser;
-  }
 
   getProvider(): AIProvider {
     return this.provider;
@@ -173,11 +164,8 @@ export class ExplorBot {
       config: this.config,
     });
 
-    const agentEmoji = (agent as any).emoji || '';
     const agentName = (agent as any).constructor.name.toLowerCase();
     tag('debug').log(`Created ${agentName} agent`);
-
-    // Agent is stored by the calling method using a string key
 
     return agent;
   }
@@ -188,7 +176,7 @@ export class ExplorBot {
 
   agentNavigator(): Navigator {
     return (this.agents.navigator ||= this.createAgent(({ ai, explorer }) => {
-      return new Navigator(explorer, ai, this.agentExperienceCompactor(), explorer.getStateManager().getExperienceTracker());
+      return new Navigator(explorer, ai, explorer.getStateManager().getExperienceTracker());
     }));
   }
 
@@ -246,10 +234,6 @@ export class ExplorBot {
   agentCaptain(): Captain {
     if (!this.agents.captain) {
       this.agents.captain = new Captain(this);
-
-      const qm = this.agentQuartermaster();
-      if (qm) this.agents.captain.setQuartermaster(qm);
-      this.agents.captain.setHistorian(this.agentHistorian());
     }
     return this.agents.captain;
   }
@@ -290,8 +274,6 @@ export class ExplorBot {
         const tools = createAgentTools({ explorer, researcher, navigator });
         return new Rerunner(explorer, ai, tools);
       });
-      const qm = this.agentQuartermaster();
-      if (qm) this.agents.rerunner.setQuartermaster(qm);
       this.agents.rerunner.setHistorian(this.agentHistorian());
     }
     return this.agents.rerunner;

@@ -6,7 +6,7 @@ import type Action from '../action.ts';
 import { ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
-import { type WebPageState, normalizeUrl } from '../state-manager.js';
+import { normalizeUrl } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
@@ -15,7 +15,6 @@ import { RulesLoader } from '../utils/rules-loader.ts';
 import { extractStatePath } from '../utils/url-matcher.js';
 import type { Agent } from './agent.js';
 import type { Conversation } from './conversation.js';
-import { ExperienceCompactor } from './experience-compactor.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
@@ -27,7 +26,6 @@ const debugLog = createDebug('explorbot:navigator');
 class Navigator implements Agent {
   emoji = '🧭';
   private provider: Provider;
-  private experienceCompactor: ExperienceCompactor;
   private knowledgeTracker: KnowledgeTracker;
   private experienceTracker: ExperienceTracker;
   private hooksRunner: HooksRunner;
@@ -73,10 +71,9 @@ class Navigator implements Agent {
   `;
   private explorer: Explorer;
 
-  constructor(explorer: Explorer, provider: Provider, experienceCompactor: ExperienceCompactor, experienceTracker?: ExperienceTracker) {
+  constructor(explorer: Explorer, provider: Provider, experienceTracker?: ExperienceTracker) {
     this.provider = provider;
     this.explorer = explorer;
-    this.experienceCompactor = experienceCompactor;
     this.knowledgeTracker = new KnowledgeTracker();
     this.experienceTracker = experienceTracker || new ExperienceTracker();
     this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
@@ -764,7 +761,7 @@ class Navigator implements Agent {
 
           await this.explorer.switchToMainFrame();
 
-          const verified = await action.attempt(codeBlock, message, false);
+          const verified = await action.attempt(codeBlock, message);
 
           if (verified) {
             tag('success').log('Verification passed');

@@ -1,10 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { ActionResult } from './action-result.js';
-import { outputPath } from './config.js';
 import { ExperienceTracker } from './experience-tracker.js';
 import { KnowledgeTracker, type Knowledge } from './knowledge-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
-import { createDebug, tag } from './utils/logger.js';
+import { createDebug } from './utils/logger.js';
 import { extractStatePath } from './utils/url-matcher.js';
 
 const debugLog = createDebug('explorbot:state');
@@ -116,11 +114,6 @@ export class StateManager {
     });
   }
 
-  /**
-   * Extract state path from full URL
-   * Removes domain, port, protocol
-   * Keeps path, query, and hash: /path/to/page?tab=users#section
-   */
   /**
    * Update current state from ActionResult and record transition if state changed
    */
@@ -333,24 +326,6 @@ export class StateManager {
   /**
    * Get all context for current state (knowledge + experience)
    */
-  getCurrentContext(): {
-    state: WebPageState;
-    knowledge: Knowledge[];
-    experience: string[];
-    recentTransitions: StateTransition[];
-  } {
-    if (!this.currentState) {
-      throw new Error('No current state available');
-    }
-
-    return {
-      state: this.currentState,
-      knowledge: this.getRelevantKnowledge(),
-      experience: this.getRelevantExperience(),
-      recentTransitions: this.getRecentTransitions(),
-    };
-  }
-
   /**
    * Check if we've been in this state before
    */
@@ -386,45 +361,6 @@ export class StateManager {
    * If the last transition changed URL, returns the fromState (for URL change detection).
    * Otherwise returns the most recent toState with content (for diffing).
    */
-  getPreviousState(): WebPageState | null {
-    if (this.stateHistory.length === 0) return null;
-
-    const lastTransition = this.stateHistory[this.stateHistory.length - 1];
-
-    if (lastTransition.fromState?.url !== lastTransition.toState?.url) {
-      return lastTransition.fromState;
-    }
-
-    for (let i = this.stateHistory.length - 1; i >= 0; i--) {
-      const toState = this.stateHistory[i].toState;
-
-      if (!toState) continue;
-      if (toState.id === this.currentState?.id) continue;
-
-      if (toState.html || toState.ariaSnapshot) {
-        return toState;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Load HTML content from file
-   */
-  loadHtmlFromFile(htmlFile: string): string | null {
-    try {
-      const filePath = outputPath('states', htmlFile);
-      if (existsSync(filePath)) {
-        return readFileSync(filePath, 'utf8');
-      }
-      return null;
-    } catch (error) {
-      debugLog('Failed to load HTML from file:', error);
-      return null;
-    }
-  }
-
   /**
    * Clear state history (useful for testing or reset)
    * Note: This preserves the current state, only clears navigation history

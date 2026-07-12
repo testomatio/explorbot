@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { Conversation } from '../../src/ai/conversation';
+import { Conversation, toToolExecution } from '../../src/ai/conversation';
 
 describe('Conversation', () => {
   describe('cleanupTag', () => {
@@ -81,7 +81,7 @@ describe('Conversation', () => {
     it('should not affect non-string message content', () => {
       const conversation = new Conversation();
       conversation.addUserText('Text with <page_html>content</page_html>');
-      conversation.addUserImage('base64encodedimage');
+      conversation.messages.push({ role: 'user', content: [{ type: 'text', text: 'x' }] });
       conversation.addUserText('Another <page_html>content</page_html>');
 
       conversation.cleanupTag('page_html', '...cleaned...');
@@ -300,7 +300,7 @@ describe('Conversation', () => {
 
     it('should ignore non-string message content', () => {
       const conversation = new Conversation();
-      conversation.addUserImage('base64encodedimage');
+      conversation.messages.push({ role: 'user', content: [{ type: 'text', text: 'x' }] });
 
       expect(conversation.hasTag('any_tag')).toBe(false);
     });
@@ -403,6 +403,30 @@ describe('Conversation', () => {
 
       const output: any = (conversation.messages[0].content as any)[0].output.value;
       expect(output.pageDiff.htmlParts).toBeDefined();
+    });
+  });
+
+  describe('toToolExecution', () => {
+    it('unwraps the {type:json, value} envelope', () => {
+      const exec = toToolExecution('click', { locator: 'Save' }, { type: 'json', value: { success: true, url: '/x' } });
+      expect(exec.output).toEqual({ success: true, url: '/x' });
+      expect(exec.wasSuccessful).toBe(true);
+    });
+
+    it('defaults missing success to true', () => {
+      const exec = toToolExecution('getVisitedStates', {}, { states: ['/a', '/b'] });
+      expect(exec.wasSuccessful).toBe(true);
+    });
+
+    it('respects explicit success: false', () => {
+      const exec = toToolExecution('click', { locator: 'Save' }, { success: false, message: 'not found' });
+      expect(exec.wasSuccessful).toBe(false);
+    });
+
+    it('handles a missing output', () => {
+      const exec = toToolExecution('click', { locator: 'Save' }, undefined);
+      expect(exec.wasSuccessful).toBe(true);
+      expect(exec.output).toBeUndefined();
     });
   });
 });

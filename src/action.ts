@@ -5,23 +5,17 @@ import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
 import { ActionResult } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
-import { ExperienceCompactor } from './ai/experience-compactor.js';
-import { Navigator } from './ai/navigator.js';
-import type { Provider } from './ai/provider.js';
 import { ConfigParser, outputPath } from './config.js';
 import type { ExplorbotConfig } from './config.js';
-import type { UserResolveFunction } from './explorbot.ts';
 import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
-import { extractCodeBlocks } from './utils/code-extractor.js';
 import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { waitForPageReadiness } from './utils/page-readiness.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
 import { safeFilename } from './utils/strings.ts';
-import { throttle } from './utils/throttle.ts';
 
 const debugLog = createDebug('explorbot:action');
 const CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS = 3;
@@ -34,7 +28,6 @@ class Action {
 
   // action info
   private action: string | null = null;
-  private expectation: string | null = null;
   public lastError: Error | null = null;
   public playwrightHelper: any;
   public playwrightGroupId: string | null = null;
@@ -48,10 +41,6 @@ class Action {
     this.config = ConfigParser.getInstance().getConfig();
     this.playwrightHelper = container.helpers('Playwright');
     this.recorder = recorder;
-  }
-
-  async caputrePageWithScreenshot(): Promise<ActionResult> {
-    return this.capturePageState({ includeScreenshot: true });
   }
 
   async saveScreenshot(): Promise<string | undefined> {
@@ -339,64 +328,7 @@ class Action {
     return this;
   }
 
-  async expect(codeOrFunction: string | ((I: CodeceptJS.I) => void)): Promise<Action> {
-    const codeString = typeof codeOrFunction === 'string' ? codeOrFunction : codeOrFunction.toString();
-    this.expectation = codeString.toString();
-    const expectationPreview = sanitizeCodeBlock(codeString)
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .slice(0, 2)
-      .join(' ');
-    tag('step').log(`Expecting: ${expectationPreview || 'assertion'}`);
-    try {
-      debugLog('Executing expectation:', codeString);
-
-      if (typeof codeOrFunction === 'function') {
-        codeceptJSSandbox(this.actor, codeOrFunction);
-      } else {
-        const sanitizedCode = sanitizeCodeBlock(codeString);
-        if (!sanitizedCode) {
-          throw new Error('No valid I.* commands found in code block');
-        }
-        codeceptJSSandbox(this.actor, sanitizedCode);
-      }
-      await recorder.promise();
-      debugLog('Expectation executed successfully');
-
-      // Get current state from state manager
-      const currentState = this.stateManager.getCurrentState();
-      if (currentState) {
-        // Create ActionResult from current state for compatibility
-        this.actionResult = new ActionResult({
-          url: currentState.fullUrl || '',
-          title: currentState.title,
-          timestamp: currentState.timestamp,
-          html: '', // Empty HTML for expectation state
-        });
-      }
-
-      return this;
-    } catch (err) {
-      tag('error').log('Expectation failed:', errorToString(err));
-      this.lastError = err as Error;
-      await recorder.reset();
-      await recorder.start();
-      debugLog('Expectation failed:', errorToString(err));
-    } finally {
-      clearActivity();
-    }
-
-    return this;
-  }
-
-  public async waitForInteraction(): Promise<Action> {
-    // start with basic approach
-    await this.actor.wait(0.5);
-    return this;
-  }
-
-  public async attempt(codeBlock: string, originalMessage?: string, experience = true): Promise<boolean> {
+  public async attempt(codeBlock: string, originalMessage?: string): Promise<boolean> {
     try {
       debugLog('Resolution attempt...');
       setActivity('🦾 Acting in browser...', 'action');
@@ -404,19 +336,9 @@ class Action {
       if (!this.actionResult) {
         this.actionResult = ActionResult.fromState(this.stateManager.getCurrentState()!);
       }
-      const prevActionResult = this.actionResult;
       this.lastError = null;
       await this.execute(codeBlock);
 
-      if (!this.expectation && originalMessage) {
-        this.expectation = originalMessage;
-      }
-
-      if (!this.expectation) {
-        return true;
-      }
-
-      debugLog('Resolved Expectation:', this.expectation);
       return true;
     } catch (error) {
       this.lastError = error as Error;
@@ -428,14 +350,6 @@ class Action {
 
   getActor(): CodeceptJS.I {
     return this.actor;
-  }
-
-  setActor(actor: CodeceptJS.I): void {
-    this.actor = actor;
-  }
-
-  getCurrentState(): ActionResult | null {
-    return this.actionResult;
   }
 
   getActionResult(): ActionResult | null {

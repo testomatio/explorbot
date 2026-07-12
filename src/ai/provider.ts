@@ -11,7 +11,7 @@ import { Stats } from '../stats.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
-import { Conversation } from './conversation.js';
+import { Conversation, toToolExecution } from './conversation.js';
 
 const debugLog = createDebug('explorbot:provider');
 const promptLog = createDebug('explorbot:provider:out');
@@ -21,6 +21,8 @@ class AiError extends Error {}
 export class ContextLengthError extends Error {}
 
 let telemetryRegistered = false;
+
+const CONTEXT_LENGTH_PATTERNS = ['reduce the length', 'context length', 'maximum context', 'token limit', 'too many tokens', 'max_tokens', 'context_length_exceeded', 'output truncated at maxtokens'];
 
 function extractCachedTokens(usage: any): number {
   if (!usage) return 0;
@@ -76,7 +78,6 @@ export class Provider {
     },
   };
 
-  static readonly CONTEXT_LENGTH_PATTERNS = ['reduce the length', 'context length', 'maximum context', 'token limit', 'too many tokens', 'max_tokens', 'context_length_exceeded', 'output truncated at maxtokens'];
   lastConversation: Conversation | null = null;
 
   constructor(config: AIConfig) {
@@ -144,12 +145,12 @@ export class Provider {
     return parts.length > 0 ? parts.join('\n\n') : undefined;
   }
 
-  getProviderOptionsForAgent(agentName: string): Record<string, any> | undefined {
+  private getProviderOptionsForAgent(agentName: string): Record<string, any> | undefined {
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     return agentConfig?.providerOptions;
   }
 
-  getReasoningForAgent(agentName?: string): string | undefined {
+  private getReasoningForAgent(agentName?: string): string | undefined {
     if (!agentName) return undefined;
     const agentConfig = this.config.agents?.[agentName as keyof typeof this.config.agents];
     return agentConfig?.reasoning;
@@ -213,20 +214,25 @@ export class Provider {
 
     const runTelemetry = Observability.getTelemetry();
 
-    if (!options.telemetry) {
+    let optionTelemetry = options.telemetry;
+    if (options.telemetryFunctionId && !optionTelemetry?.functionId) {
+      optionTelemetry = { ...optionTelemetry, functionId: options.telemetryFunctionId };
+    }
+
+    if (!optionTelemetry) {
       return runTelemetry;
     }
 
     if (!runTelemetry) {
-      return options.telemetry;
+      return optionTelemetry;
     }
 
     return {
       ...runTelemetry,
-      ...options.telemetry,
+      ...optionTelemetry,
       metadata: {
         ...runTelemetry.metadata,
-        ...options.telemetry.metadata,
+        ...optionTelemetry.metadata,
       },
     };
   }
@@ -260,12 +266,8 @@ export class Provider {
     const toolCalls = response.toolCalls || [];
     const toolResults = response.toolResults || [];
 
-    const toolExecutions = toolCalls.map((call: any, index: number) => ({
-      toolName: call.toolName || '',
-      input: call.input,
-      output: toolResults[index]?.output,
-      wasSuccessful: toolResults[index]?.output?.success || false,
-    }));
+    const resultsById = new Map(toolResults.map((r: any) => [r.toolCallId, r]));
+    const toolExecutions = toolCalls.map((call: any) => toToolExecution(call.toolName || '', call.input, resultsById.get(call.toolCallId)?.output));
 
     return { conversation, response, toolExecutions };
   }
@@ -510,7 +512,7 @@ export class Provider {
 
   static isContextLengthError(error: any): boolean {
     const msg = (error?.message || error?.toString() || '').toLowerCase();
-    return Provider.CONTEXT_LENGTH_PATTERNS.some((p) => msg.includes(p));
+    return CONTEXT_LENGTH_PATTERNS.some((p) => msg.includes(p));
   }
 
   static trimMessagesForRetry(messages: ModelMessage[]): ModelMessage[] | null {

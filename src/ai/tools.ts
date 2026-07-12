@@ -86,8 +86,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
         for (let i = 0; i < commands.length; i++) {
           const command = transformContainsCommand(commands[i]);
-          const isLast = i === commands.length - 1;
-          const success = await action.attempt(command, explanation, isLast);
+          const success = await action.attempt(command, explanation);
 
           attempts.push({
             command,
@@ -120,7 +119,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           retryCommands.push(`I.click('${disambiguated.xpath.replace(/'/g, "\\'")}')`);
 
           for (const retryCmd of retryCommands) {
-            if (!(await action.attempt(retryCmd, explanation, true))) {
+            if (!(await action.attempt(retryCmd, explanation))) {
               attempts.push({ command: retryCmd, success: false, error: action.lastError?.toString() });
               continue;
             }
@@ -209,7 +208,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
 
         for (const command of commands) {
-          const success = await action.attempt(command, explanation, true);
+          const success = await action.attempt(command, explanation);
           attempts.push({
             command,
             success,
@@ -1016,7 +1015,7 @@ export function createAgentTools({
         }
 
         const action = explorer.createAction();
-        const visible = await action.attempt(`I.seeElement(${JSON.stringify(xpath)})`, 'xpathCheck visibility', false);
+        const visible = await action.attempt(`I.seeElement(${JSON.stringify(xpath)})`, 'xpathCheck visibility');
         const liveElement = await WebElement.fromPlaywrightLocator(explorer.playwrightHelper.page.locator(`xpath=${xpath}`));
 
         const matchesSummary = result.elements.map((el, i) => `${i + 1}. <${el.tag} ${el.keyAttrs}> text="${el.text}" html: ${el.outerHTML}`).join('\n');

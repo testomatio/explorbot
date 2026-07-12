@@ -18,7 +18,7 @@ import type { Agent } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { WithSessionDedup } from './planner/session-dedup.ts';
-import { getActiveStyle, getStyles } from './planner/styles.ts';
+import { getActiveStyle } from './planner/styles.ts';
 import { WithSubPages, getPlannedByStateHash, getRegisteredPlan, registerPlan } from './planner/subpages.ts';
 import type { Provider } from './provider.js';
 import { POSSIBLE_SECTIONS, type Researcher } from './researcher.ts';
