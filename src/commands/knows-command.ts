@@ -23,7 +23,7 @@ export class KnowsCommand extends BaseCommand {
 
   async execute(args: string, limit = 0): Promise<void> {
     const url = args.trim();
-    const tracker = this.explorBot.getKnowledgeTracker();
+    const tracker = this.explorBot.knowledgeTracker();
 
     if (!url) {
       const allKnowledge = tracker.listAllKnowledge();

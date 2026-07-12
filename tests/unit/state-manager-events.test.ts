@@ -3,6 +3,8 @@ import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { ActionResult } from '../../src/action-result.js';
 import { ConfigParser } from '../../src/config.js';
+import { ExperienceTracker } from '../../src/experience-tracker.js';
+import { KnowledgeTracker } from '../../src/knowledge-tracker.js';
 import { StateManager } from '../../src/state-manager.js';
 
 describe('StateManager Events', () => {
@@ -14,7 +16,8 @@ describe('StateManager Events', () => {
 
     // Set up test config
     ConfigParser.setupTestConfig();
-    stateManager = new StateManager();
+    const knowledgeTracker = new KnowledgeTracker();
+    stateManager = new StateManager(new ExperienceTracker(knowledgeTracker), knowledgeTracker);
   });
 
   afterEach(() => {

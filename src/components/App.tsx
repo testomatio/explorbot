@@ -142,7 +142,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       if (!mounted) return;
       setChecklistData({
         config: explorBot.getConfig(),
-        knowledgeTracker: explorBot.getKnowledgeTracker(),
+        knowledgeTracker: explorBot.knowledgeTracker(),
       });
       setShowWelcome(true);
       setShowInput(true);
@@ -334,7 +334,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
         {showSessionTimer && <SessionTimer startedAt={sessionStartedAtRef.current} />}
       </Box>
 
-      {showWelcome && <WelcomeCommands hasKnowledge={explorBot.getKnowledgeTracker().listAllKnowledge().length > 0} />}
+      {showWelcome && <WelcomeCommands hasKnowledge={explorBot.knowledgeTracker().listAllKnowledge().length > 0} />}
       {showInput && <Box height={1} />}
       {interruptPrompt && showInput && (
         <Box paddingX={1}>

@@ -1,15 +1,16 @@
 import { Box, Text, useInput } from 'ink';
 import React, { useEffect, useState } from 'react';
-import { KnowledgeTracker } from '../knowledge-tracker.js';
+import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import InputReadline from './InputReadline.js';
 
 interface AddKnowledgeProps {
   initialUrl?: string;
+  knowledgeTracker: KnowledgeTracker;
   onComplete?: () => void;
   onCancel?: () => void;
 }
 
-const AddKnowledge: React.FC<AddKnowledgeProps> = ({ initialUrl = '', onComplete, onCancel }) => {
+const AddKnowledge: React.FC<AddKnowledgeProps> = ({ initialUrl = '', knowledgeTracker, onComplete, onCancel }) => {
   const [urlPattern, setUrlPattern] = useState(initialUrl);
   const [description, setDescription] = useState('');
   const [activeField, setActiveField] = useState<'url' | 'description'>(initialUrl ? 'description' : 'url');
@@ -20,18 +21,16 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ initialUrl = '', onComplete
 
   useEffect(() => {
     try {
-      const knowledgeTracker = new KnowledgeTracker();
       const urls = knowledgeTracker.getExistingUrls();
       setSuggestedUrls(urls);
     } catch (error) {
       console.error('Failed to load suggestions:', error);
     }
-  }, []);
+  }, [knowledgeTracker]);
 
   useEffect(() => {
     if (urlPattern.trim()) {
       try {
-        const knowledgeTracker = new KnowledgeTracker();
         const knowledge = knowledgeTracker.getKnowledgeForUrl(urlPattern);
         setExistingKnowledge(knowledge);
       } catch (error) {
@@ -41,7 +40,7 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ initialUrl = '', onComplete
     } else {
       setExistingKnowledge([]);
     }
-  }, [urlPattern]);
+  }, [urlPattern, knowledgeTracker]);
 
   const handleSave = () => {
     if (!urlPattern.trim() || !description.trim()) {
@@ -49,7 +48,6 @@ const AddKnowledge: React.FC<AddKnowledgeProps> = ({ initialUrl = '', onComplete
     }
 
     try {
-      const knowledgeTracker = new KnowledgeTracker();
       const result = knowledgeTracker.addKnowledge(urlPattern.trim(), description.trim());
       const action = result.isNewFile ? 'Created' : 'Updated';
       console.log(`\nKnowledge ${action} in: ${result.filename}`);

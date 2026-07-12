@@ -20,7 +20,7 @@ export class ExperienceCommand extends BaseCommand {
     }
     const recency = opts.recent ? 'recent' : opts.old ? 'old' : undefined;
 
-    const tracker = this.explorBot.getExperienceTracker();
+    const tracker = this.explorBot.experienceTracker();
     const [first, second] = remaining;
 
     const combinedRef = first?.match(/^([A-Z]+)[.\-]?(\d+)$/i);

@@ -13,12 +13,14 @@ export class LearnCommand extends BaseCommand {
 
     if (!note) {
       const AddKnowledge = (await import('../components/AddKnowledge.js')).default;
-      const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+      const explorer = this.explorBot.getExplorer();
+      const state = explorer.getStateManager().getCurrentState();
       const initialUrl = state?.url || '';
 
       const { unmount } = render(
         React.createElement(AddKnowledge, {
           initialUrl,
+          knowledgeTracker: explorer.getKnowledgeTracker(),
           onComplete: () => unmount(),
           onCancel: () => unmount(),
         }),

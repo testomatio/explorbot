@@ -8,7 +8,7 @@ import { createDebug } from './utils/logger.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
 
-interface Knowledge {
+export interface Knowledge {
   filePath: string;
   url: string;
   content: string;
@@ -46,9 +46,9 @@ export class KnowledgeTracker {
       return;
     }
 
-    const files = readdirSync(this.knowledgeDir)
-      .filter((file) => file.endsWith('.md'))
-      .map((file) => join(this.knowledgeDir, file));
+    const files = readdirSync(this.knowledgeDir, { recursive: true })
+      .filter((file) => typeof file === 'string' && file.endsWith('.md'))
+      .map((file) => join(this.knowledgeDir, file as string));
 
     for (const filePath of files) {
       try {
@@ -126,6 +126,8 @@ export class KnowledgeTracker {
       const fileContent = matter.stringify(newContent, frontmatter);
       writeFileSync(filePath, fileContent, 'utf8');
     }
+
+    this.isLoaded = false;
 
     return { filename, filePath, isNewFile };
   }

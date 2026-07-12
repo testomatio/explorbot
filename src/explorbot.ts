@@ -61,6 +61,8 @@ export class ExplorBot {
   private agents: Record<string, any> = {};
   private sessionPlans: Plan[] = [];
   private lastReportedTestCount = 0;
+  private _experienceTracker?: ExperienceTracker;
+  private _knowledgeTracker?: KnowledgeTracker;
 
   constructor(options: ExplorBotOptions = {}) {
     this.options = options;
@@ -86,7 +88,7 @@ export class ExplorBot {
 
     try {
       await this.startProviderOnly();
-      this.explorer = new Explorer(this.config, this.provider, this.options);
+      this.explorer = new Explorer(this.config, this.provider, this.options, this.experienceTracker(), this.knowledgeTracker());
       await this.explorer.start();
       if (!this.options.incognito) {
         await this.agentExperienceCompactor().autocompact();
@@ -131,18 +133,12 @@ export class ExplorBot {
     return this.explorer;
   }
 
-  getKnowledgeTracker(): KnowledgeTracker {
-    if (this.explorer) {
-      return this.explorer.getKnowledgeTracker();
-    }
-    return new KnowledgeTracker();
+  knowledgeTracker(): KnowledgeTracker {
+    return (this._knowledgeTracker ||= new KnowledgeTracker());
   }
 
-  getExperienceTracker(): ExperienceTracker {
-    if (this.explorer) {
-      return this.explorer.getStateManager().getExperienceTracker();
-    }
-    return new ExperienceTracker();
+  experienceTracker(): ExperienceTracker {
+    return (this._experienceTracker ||= new ExperienceTracker(this.knowledgeTracker()));
   }
 
   getConfig(): ExplorbotConfig {
@@ -176,7 +172,7 @@ export class ExplorBot {
 
   agentNavigator(): Navigator {
     return (this.agents.navigator ||= this.createAgent(({ ai, explorer }) => {
-      return new Navigator(explorer, ai, explorer.getStateManager().getExperienceTracker());
+      return new Navigator(explorer, ai);
     }));
   }
 
@@ -239,7 +235,7 @@ export class ExplorBot {
   }
 
   agentExperienceCompactor(): ExperienceCompactor {
-    return (this.agents.experienceCompactor ||= new ExperienceCompactor(this.provider, this.getExperienceTracker()));
+    return (this.agents.experienceCompactor ||= new ExperienceCompactor(this.provider, this.experienceTracker()));
   }
 
   agentQuartermaster(): Quartermaster | null {
