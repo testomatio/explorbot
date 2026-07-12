@@ -82,8 +82,8 @@ class Explorer {
     this.aiProvider = aiProvider;
     this.options = options;
     this.initializeContainer();
-    this.stateManager = new StateManager({ incognito: this.options?.incognito });
     this.knowledgeTracker = new KnowledgeTracker();
+    this.stateManager = new StateManager({ knowledgeTracker: this.knowledgeTracker });
     this.reporter = new Reporter(config.reporter, this.stateManager);
   }
 

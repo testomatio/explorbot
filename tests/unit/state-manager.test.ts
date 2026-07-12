@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result';
 import { ConfigParser } from '../../src/config';
 import { StateManager, type StateTransition, type WebPageState } from '../../src/state-manager';
@@ -39,6 +41,35 @@ describe('StateManager', () => {
 
     it('should have zero listeners initially', () => {
       expect(stateManager.getListenerCount()).toBe(0);
+    });
+  });
+
+  describe('getRelevantKnowledge', () => {
+    const smKnowledgeDir = '/tmp/explorbot-sm-knowledge';
+    const savedVar = process.env.SM_TEST_VAR;
+
+    afterEach(() => {
+      process.env.SM_TEST_VAR = savedVar;
+      rmSync(smKnowledgeDir, { recursive: true, force: true });
+    });
+
+    it('interpolates ${env.*} in knowledge via the delegated KnowledgeTracker', () => {
+      rmSync(smKnowledgeDir, { recursive: true, force: true });
+      mkdirSync(smKnowledgeDir, { recursive: true });
+
+      const configParser = ConfigParser.getInstance();
+      (configParser as any).config = { playwright: { browser: 'chromium' }, ai: { model: 'test' }, dirs: { knowledge: 'explorbot-sm-knowledge' } };
+      (configParser as any).configPath = '/tmp/config.js';
+      process.env.SM_TEST_VAR = 'interpolated-value';
+
+      writeFileSync(`${smKnowledgeDir}/page.md`, matter.stringify('Secret: ${env.SM_TEST_VAR}', { url: '/sm-page' }), 'utf8');
+
+      const sm = new StateManager();
+      sm.updateState(new ActionResult({ url: '/sm-page', html: '<html><body>x</body></html>' }));
+
+      const knowledge = sm.getRelevantKnowledge();
+      expect(knowledge[0].content).toContain('interpolated-value');
+      expect(knowledge[0].content).not.toContain('${env.');
     });
   });
 

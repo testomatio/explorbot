@@ -1,9 +1,8 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import matter from 'gray-matter';
+import { existsSync, readFileSync } from 'node:fs';
 import { ActionResult } from './action-result.js';
-import { ConfigParser, outputPath } from './config.js';
+import { outputPath } from './config.js';
 import { ExperienceTracker } from './experience-tracker.js';
+import { KnowledgeTracker, type Knowledge } from './knowledge-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
 import { createDebug, tag } from './utils/logger.js';
 import { extractStatePath } from './utils/url-matcher.js';
@@ -69,37 +68,20 @@ export interface StateTransition {
 
 export type StateChangeListener = (event: StateTransition) => void;
 
-export interface Knowledge extends WebPageState {
-  /** File path */
-  filePath: string;
-  /** Markdown content */
-  content: string;
-}
+export type { Knowledge };
 
 export class StateManager {
   private currentState: WebPageState | null = null;
   private stateHistory: StateTransition[] = [];
   private allVisitedUrls: Set<string> = new Set();
-  private knowledgeCache: Knowledge[] = [];
-  private lastKnowledgeScan: Date | null = null;
   private stateChangeListeners: StateChangeListener[] = [];
   private experienceTracker!: ExperienceTracker;
-  private knowledgeDir: string;
+  private knowledgeTracker: KnowledgeTracker;
   private nextStateId = 1;
 
-  constructor() {
+  constructor(options: { knowledgeTracker?: KnowledgeTracker } = {}) {
     this.experienceTracker = new ExperienceTracker();
-    const configParser = ConfigParser.getInstance();
-    const config = configParser.getConfig();
-    const configPath = configParser.getConfigPath();
-
-    // Resolve knowledge directory relative to the config file location (project root)
-    if (configPath) {
-      const projectRoot = dirname(configPath);
-      this.knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
-    } else {
-      this.knowledgeDir = config.dirs?.knowledge || 'knowledge';
-    }
+    this.knowledgeTracker = options.knowledgeTracker || new KnowledgeTracker();
   }
 
   getExperienceTracker(): ExperienceTracker {
@@ -328,64 +310,13 @@ export class StateManager {
   }
 
   /**
-   * Scan knowledge directory for .md files and cache them
-   */
-  private scanKnowledgeFiles(): void {
-    const now = new Date();
-
-    // Only rescan every 30 seconds to avoid excessive file I/O
-    if (this.lastKnowledgeScan && now.getTime() - this.lastKnowledgeScan.getTime() < 30000) {
-      return;
-    }
-
-    this.knowledgeCache = [];
-
-    if (!existsSync(this.knowledgeDir)) {
-      debugLog(`Knowledge directory not found: ${this.knowledgeDir}`);
-      return;
-    }
-
-    try {
-      const files = readdirSync(this.knowledgeDir, { recursive: true })
-        .filter((file) => typeof file === 'string' && file.endsWith('.md'))
-        .map((file) => join(this.knowledgeDir, file as string));
-
-      for (const filePath of files) {
-        try {
-          const fileContent = readFileSync(filePath, 'utf8');
-          const parsed = matter(fileContent);
-
-          const urlPattern = parsed.data.url || parsed.data.path || '*';
-
-          this.knowledgeCache.push({
-            filePath,
-            url: urlPattern,
-            ...parsed.data,
-            content: parsed.content,
-          });
-
-          debugLog(`Loaded knowledge file: ${filePath} (pattern: ${urlPattern})`);
-        } catch (error) {
-          debugLog(`Failed to load knowledge file ${filePath}:`, error);
-        }
-      }
-
-      this.lastKnowledgeScan = now;
-      debugLog(`Scanned ${this.knowledgeCache.length} knowledge files`);
-    } catch (error) {
-      debugLog('Failed to scan knowledge directory:', error);
-    }
-  }
-  /**
    * Get relevant knowledge files for current state
    */
   getRelevantKnowledge(): Knowledge[] {
     if (!this.currentState) return [];
 
-    this.scanKnowledgeFiles();
-
     const actionResult = ActionResult.fromState(this.currentState);
-    return this.knowledgeCache.filter((knowledge) => actionResult.isMatchedBy(knowledge));
+    return this.knowledgeTracker.getRelevantKnowledge(actionResult);
   }
 
   /**
@@ -527,8 +458,6 @@ export class StateManager {
     this.stateHistory = [];
     this.allVisitedUrls.clear();
     this.stateChangeListeners = [];
-    this.knowledgeCache = [];
-    this.lastKnowledgeScan = null;
     this.nextStateId = 1;
 
     // Clean up experience tracker if it has cleanup method
