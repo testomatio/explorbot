@@ -44,10 +44,6 @@ export class Fisherman implements Agent {
     return this.mode !== 'disabled';
   }
 
-  getMode(): string {
-    return this.mode;
-  }
-
   async ensureReady(scopeUrl?: string): Promise<void> {
     await this.detectMode(scopeUrl);
     this.spec ??= await this.specLoader();
