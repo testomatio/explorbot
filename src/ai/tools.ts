@@ -88,18 +88,13 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           const command = transformContainsCommand(commands[i]);
           const success = await action.attempt(command, explanation);
 
-          attempts.push({
-            command,
-            success,
-            ...(action.lastError && { error: action.lastError.toString() }),
-          });
+          const attempt: { command: string; success: boolean; error?: string } = { command, success };
+          if (action.lastError) attempt.error = action.lastError.toString();
+          attempts.push(attempt);
 
           if (success) {
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
-            if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-              activeNote.screenshot = await action.saveScreenshot();
-            }
-            activeNote.commit(TestResult.PASSED);
+            await commitNote(activeNote, TestResult.PASSED, toolResult, action);
             return successToolResult('click', { ...toolResult, attempts, code: command }, action);
           }
         }
@@ -124,19 +119,13 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               continue;
             }
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, retryCmd);
-            if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-              activeNote.screenshot = await action.saveScreenshot();
-            }
-            activeNote.commit(TestResult.PASSED);
+            await commitNote(activeNote, TestResult.PASSED, toolResult, action);
             return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true }, action);
           }
         }
 
         const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
-        if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-          activeNote.screenshot = await action.saveScreenshot();
-        }
-        activeNote.commit(TestResult.FAILED);
+        await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
         let suggestion = "Try xpathCheck() to find the element's actual position, see() for visual analysis, or visualClick() to click by visual appearance.";
         const lastError = attempts[attempts.length - 1]?.error || '';
@@ -209,11 +198,9 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
         for (const command of commands) {
           const success = await action.attempt(command, explanation);
-          attempts.push({
-            command,
-            success,
-            ...(action.lastError && { error: action.lastError.toString() }),
-          });
+          const attempt: { command: string; success: boolean; error?: string } = { command, success };
+          if (action.lastError) attempt.error = action.lastError.toString();
+          attempts.push(attempt);
 
           if (!success) continue;
 
@@ -282,10 +269,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, key);
 
             if (!action.lastError) {
-              if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-                activeNote.screenshot = await action.saveScreenshot();
-              }
-              activeNote.commit(TestResult.PASSED);
+              await commitNote(activeNote, TestResult.PASSED, toolResult, action);
               return successToolResult(
                 'pressKey',
                 {
@@ -299,10 +283,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             }
 
             const errorMsg = `pressKey fallback to type() failed: ${action.lastError?.toString()}`;
-            if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-              activeNote.screenshot = await action.saveScreenshot();
-            }
-            activeNote.commit(TestResult.FAILED);
+            await commitNote(activeNote, TestResult.FAILED, toolResult, action);
             return failedToolResult('pressKey', errorMsg, {
               ...toolResult,
               code: typeCommand,
@@ -339,10 +320,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, key);
 
           if (!action.lastError) {
-            if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-              activeNote.screenshot = await action.saveScreenshot();
-            }
-            activeNote.commit(TestResult.PASSED);
+            await commitNote(activeNote, TestResult.PASSED, toolResult, action);
             return successToolResult(
               'pressKey',
               {
@@ -355,10 +333,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           }
 
           const errorMsg = `pressKey() failed: ${action.lastError?.toString()}`;
-          if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-            activeNote.screenshot = await action.saveScreenshot();
-          }
-          activeNote.commit(TestResult.FAILED);
+          await commitNote(activeNote, TestResult.FAILED, toolResult, action);
           return failedToolResult('pressKey', errorMsg, {
             ...toolResult,
             code: pressKeyCommand,
@@ -367,7 +342,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         } catch (error) {
           throwIfFatalBrowserError(error);
           activeNote.commit(TestResult.FAILED);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           return failedToolResult('pressKey', `PressKey tool failed: ${errorMessage}`);
         }
       },
@@ -443,10 +418,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
           if (action.lastError) {
             const message = action.lastError ? String(action.lastError) : 'Unknown error';
-            if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-              activeNote.screenshot = await action.saveScreenshot();
-            }
-            activeNote.commit(TestResult.FAILED);
+            await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
             let formSuggestion = 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and form() tools.';
             if (message.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN)) {
@@ -468,9 +440,6 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
             );
           }
 
-          if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
-            activeNote.screenshot = await action.saveScreenshot();
-          }
           if (!hasObservablePageChange(toolResult)) {
             activeNote.commit(TestResult.FAILED);
             return failedToolResult('form', 'Form command executed, but no observable page or form-state change was captured.', {
@@ -479,7 +448,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
               suggestion: 'Treat the field/form action as not completed. Re-locate the editable control, check whether another UI layer is active, then retry and verify the field value before submitting.',
             });
           }
-          activeNote.commit(TestResult.PASSED);
+          await commitNote(activeNote, TestResult.PASSED, toolResult, action);
           return successToolResult(
             'form',
             {
@@ -494,7 +463,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         } catch (error) {
           throwIfFatalBrowserError(error);
           activeNote.commit(TestResult.FAILED);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           return failedToolResult('form', `Form tool failed: ${errorMessage}`);
         }
       },
@@ -502,12 +471,8 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
   };
 }
 
-export function createSpecialContextTools(explorer: Explorer, context: 'iframe') {
+export function createIframeTools(explorer: Explorer) {
   const stateManager = explorer.getStateManager();
-
-  if (context !== 'iframe') {
-    return {};
-  }
 
   return {
     exitIframe: tool({
@@ -542,12 +507,37 @@ export function createSpecialContextTools(explorer: Explorer, context: 'iframe')
           });
         } catch (error) {
           throwIfFatalBrowserError(error);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           return failedToolResult('exitIframe', `Failed to exit iframe: ${errorMessage}`);
         }
       },
     }),
   };
+}
+
+export function createLearnExperienceTool({ experienceTracker, getState }: { experienceTracker: ExperienceTracker; getState: () => ActionResult | null }) {
+  return tool({
+    description: dedent`
+      Read the full body of a specific experience section listed in <experience>.
+      The TOC shows entries like "A.1 ## FLOW: ..." or "A.2 ## ACTION: ...". Pass the fileTag and sectionIndex.
+      Only call when a TOC entry looks directly relevant to the current step.
+    `,
+    inputSchema: z.object({
+      fileTag: z.string().describe('File tag from the TOC, e.g. "A", "B", "AA"'),
+      sectionIndex: z.number().int().positive().describe('1-based section index within that file'),
+    }),
+    execute: async ({ fileTag, sectionIndex }) => {
+      const state = getState();
+      if (!state) {
+        return { error: 'No current page state available.' };
+      }
+      const section = experienceTracker.getExperienceSection(fileTag, sectionIndex, state);
+      if (!section) {
+        return { error: 'Section not found. Experience may have been updated; re-read the latest TOC.' };
+      }
+      return section;
+    },
+  });
 }
 
 export function createAgentTools({
@@ -608,7 +598,7 @@ export function createAgentTools({
           });
         } catch (error) {
           throwIfFatalBrowserError(error);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           visionDisabled = true;
           tag('warning').log('⚠️ Vision model is not available. Visual checks are disabled for this session.');
           return failedToolResult('see', `See tool failed: ${errorMessage}`, {
@@ -657,7 +647,7 @@ export function createAgentTools({
             reminder: 'Context provided. Do not call context() again until you perform actions or suspect page changed.',
           });
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           return failedToolResult('context', `Context tool failed: ${errorMessage}`);
         }
       },
@@ -708,7 +698,7 @@ export function createAgentTools({
           });
         } catch (error) {
           throwIfFatalBrowserError(error);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           return failedToolResult('verify', `Verify tool failed: ${errorMessage}`, {
             error: errorMessage,
           });
@@ -764,7 +754,7 @@ export function createAgentTools({
           });
         } catch (error) {
           throwIfFatalBrowserError(error);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           return failedToolResult('research', `Research tool failed: ${errorMessage}`, {
             error: errorMessage,
           });
@@ -809,7 +799,7 @@ export function createAgentTools({
           });
         } catch (error) {
           throwIfFatalBrowserError(error);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           return failedToolResult('interact', `Interact tool failed: ${errorMessage}`, {
             error: errorMessage,
           });
@@ -889,7 +879,7 @@ export function createAgentTools({
           });
         } catch (error) {
           throwIfFatalBrowserError(error);
-          const errorMessage = error instanceof Error ? error.toString() : 'Unknown error occurred';
+          const errorMessage = errorText(error);
           visionDisabled = true;
           tag('warning').log('⚠️ Vision model is not available. Visual clicks are disabled for this session.');
           return failedToolResult('visualClick', `visualClick tool failed: ${errorMessage}`, {
@@ -944,10 +934,9 @@ export function createAgentTools({
           });
         }
 
-        return failedToolResult('back', `Failed to navigate back to ${targetUrl}`, {
-          suggestion: 'Try reset() to return to the starting page.',
-          ...(action.lastError && { error: action.lastError.toString() }),
-        });
+        const failData: Record<string, any> = { suggestion: 'Try reset() to return to the starting page.' };
+        if (action.lastError) failData.error = action.lastError.toString();
+        return failedToolResult('back', `Failed to navigate back to ${targetUrl}`, failData);
       },
     }),
 
@@ -965,7 +954,7 @@ export function createAgentTools({
             return true;
           })
           .map((s, i) => ({ index: i, url: s.url, title: s.title, h1: s.h1 }));
-        return { success: true, states };
+        return successToolResult('getVisitedStates', { states });
       },
     }),
 
@@ -1045,28 +1034,7 @@ export function createAgentTools({
   };
 
   if (experienceTracker && getState) {
-    tools.learnExperience = tool({
-      description: dedent`
-        Read the full body of a specific experience section listed in <experience>.
-        The TOC shows entries like "A.1 ## FLOW: ..." or "A.2 ## ACTION: ...". Pass the fileTag and sectionIndex.
-        Only call when a TOC entry looks directly relevant to the current step.
-      `,
-      inputSchema: z.object({
-        fileTag: z.string().describe('File tag from the TOC, e.g. "A", "B", "AA"'),
-        sectionIndex: z.number().int().positive().describe('1-based section index within that file'),
-      }),
-      execute: async ({ fileTag, sectionIndex }) => {
-        const state = getState();
-        if (!state) {
-          return { error: 'No current page state available.' };
-        }
-        const section = experienceTracker.getExperienceSection(fileTag, sectionIndex, state);
-        if (!section) {
-          return { error: 'Section not found. Experience may have been updated; re-read the latest TOC.' };
-        }
-        return section;
-      },
-    });
+    tools.learnExperience = createLearnExperienceTool({ experienceTracker, getState });
   }
 
   if (supervisor) {
@@ -1160,6 +1128,18 @@ function countAriaChanges(ariaChanges: string): number {
   const removedMatch = ariaChanges.match(/removed: (\d+) interactive/);
   const removedCount = removedMatch ? Number.parseInt(removedMatch[1]) : 0;
   return addedCount + removedCount;
+}
+
+function errorText(error: unknown): string {
+  if (error instanceof Error) return error.toString();
+  return 'Unknown error occurred';
+}
+
+async function commitNote(activeNote: any, result: TestResult, toolResult: any, action: any): Promise<void> {
+  if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
+    activeNote.screenshot = await action.saveScreenshot();
+  }
+  activeNote.commit(result);
 }
 
 function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
