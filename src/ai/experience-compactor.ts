@@ -1,11 +1,11 @@
 import { unlinkSync } from 'node:fs';
 import dedent from 'dedent';
-import { type Tokens, marked } from 'marked';
 import { z } from 'zod';
 import { type ExperienceFile, type ExperienceTracker, RECENT_WINDOW_DAYS } from '../experience-tracker.js';
 import { Observability } from '../observability.js';
 import { createDebug, log, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.js';
+import { isNonReusableCode } from '../utils/step-analyzer.js';
 import { generalizeUrl, hasDynamicUrlSegment } from '../utils/url-matcher.js';
 import type { Agent } from './agent.js';
 import type { Provider } from './provider.js';
@@ -438,28 +438,9 @@ export class ExperienceCompactor implements Agent {
 }
 
 function listSections(content: string): { title: string; raw: string }[] {
-  const tokens = marked.lexer(content);
-  const sections: { title: string; raw: string }[] = [];
-
-  let currentHeading: string | null = null;
-  let currentRaw = '';
-
-  const flush = () => {
-    if (currentHeading !== null) sections.push({ title: currentHeading, raw: currentRaw });
-  };
-
-  for (const token of tokens) {
-    const raw = (token as any).raw || '';
-    if (token.type === 'heading' && (token as Tokens.Heading).depth === 2) {
-      flush();
-      currentHeading = (token as Tokens.Heading).text.trim();
-      currentRaw = raw;
-      continue;
-    }
-    if (currentHeading !== null) currentRaw += raw;
-  }
-  flush();
-  return sections;
+  const sections = mdq(content).query('section2').each();
+  const metas = mdq(content).query('section2').meta();
+  return sections.map((q, i) => ({ title: metas[i].text.trim(), raw: q.text() }));
 }
 
 function dropEmptySections(content: string): string {
@@ -483,7 +464,7 @@ function dropNonReusableSections(content: string): string {
 
   for (const section of sections) {
     const raw = section.text();
-    if (!/\bI\.clickXY\s*\(/.test(raw)) continue;
+    if (!isNonReusableCode(raw)) continue;
     result = result.replace(raw, '');
   }
 

@@ -280,29 +280,43 @@ export class Planner extends PlannerBase implements Agent {
   }
 
   private cleanExperienceFlows(text: string): string | null {
-    const seenTitles = new Set<string>();
     let result = text;
 
-    for (const section of [...mdq(text).query('section2').each(), ...mdq(text).query('section3').each()]) {
-      const heading = section.query('heading').text().trim();
-      const body = mdq(section.text())
-        .query('heading')
-        .replace('')
-        .replace(/^---\s*$/gm, '')
-        .trim();
-
-      if (!body || seenTitles.has(heading)) {
-        result = result.replace(section.text(), '');
-        continue;
+    while (true) {
+      const sections = [...mdq(result).query('section2').each(), ...mdq(result).query('section3').each()];
+      const seenTitles = new Set<string>();
+      let removed = false;
+      for (const section of sections) {
+        const heading = section.query('heading').text().trim();
+        const withoutHeadings = mdq(section.text()).query('heading').replace('');
+        const body = mdq(withoutHeadings).query('hr').replace('').trim();
+        if (body && !seenTitles.has(heading)) {
+          seenTitles.add(heading);
+          continue;
+        }
+        result = section.replace('');
+        removed = true;
+        break;
       }
-      seenTitles.add(heading);
+      if (!removed) break;
+    }
 
-      const blockquotes = section.query('blockquote').each();
-      if (blockquotes.length <= 10) continue;
-      for (const bq of blockquotes.slice(10)) {
-        result = result.replace(bq.text(), '');
+    const trimmedTitles = new Set<string>();
+    while (true) {
+      const sections = [...mdq(result).query('section2').each(), ...mdq(result).query('section3').each()];
+      let trimmed = false;
+      for (const section of sections) {
+        const heading = section.query('heading').text().trim();
+        if (trimmedTitles.has(heading)) continue;
+        const count = section.query('blockquote').count();
+        if (count <= 10) continue;
+        const kept = mdq(section.text()).query('blockquote[10:]').replace('');
+        result = section.replace(`${kept.trimEnd()}\n> ... and ${count - 10} more discoveries\n`);
+        trimmedTitles.add(heading);
+        trimmed = true;
+        break;
       }
-      result = result.replace(section.text().trim(), `${section.text().trim()}\n> ... and ${blockquotes.length - 10} more discoveries`);
+      if (!trimmed) break;
     }
 
     return result.trim() || null;
@@ -381,15 +395,16 @@ export class Planner extends PlannerBase implements Agent {
       deep: true,
     });
     let plannerResearch = mdq(research).query('code').replace('');
-    for (const table of mdq(plannerResearch).query('table').each()) {
-      const rawTable = table.text();
+    const tableCount = mdq(plannerResearch).query('table').count();
+    for (let i = 0; i < tableCount; i++) {
+      const table = mdq(plannerResearch).query('table').each()[i];
       const rows = table.toJson();
       if (rows.length === 0 || !rows[0].Element) continue;
       const elementWithType = rows.map((r) => ({
         Element: r.Element,
         Type: r.Type || '',
       }));
-      plannerResearch = plannerResearch.replace(rawTable, jsonToTable(elementWithType, ['Element', 'Type']));
+      plannerResearch = table.replace(jsonToTable(elementWithType, ['Element', 'Type']));
     }
 
     const hasFocusedOverlay = hasFocusedSection(plannerResearch);

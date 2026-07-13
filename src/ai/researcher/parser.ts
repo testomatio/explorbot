@@ -94,7 +94,7 @@ export function extractContainerFromBlockquote(sectionMarkdown: string): string 
 }
 
 export function parseResearchSections(markdown: string): ResearchSection[] {
-  const hasExtendedResearch = markdown.includes('\n# Extended Research') || markdown.startsWith('# Extended Research');
+  const hasExtendedResearch = mdq(markdown).query('section1(~"Extended Research")').count() > 0;
 
   return parseSections(markdown)
     .filter((s) => !SKIP_SECTIONS.has(s.name.toLowerCase()) && !s.name.toLowerCase().includes('data:'))

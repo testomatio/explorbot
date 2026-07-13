@@ -459,6 +459,15 @@ export class MarkdownQuery {
   each(): MarkdownQuery[] {
     return this.matches.map((m) => new MarkdownQuery(this.source, [m]));
   }
+
+  meta(): Array<{ type: string; depth: number | null; text: string }> {
+    return this.matches.map((range) => {
+      const token = range.token as any;
+      let depth: number | null = null;
+      if (token.type === 'heading') depth = token.depth;
+      return { type: token.type, depth, text: getTokenText(range.token) };
+    });
+  }
 }
 
 export function mdq(source: string): MarkdownQuery {

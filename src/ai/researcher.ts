@@ -315,11 +315,9 @@ export class Researcher extends ResearcherBase implements Agent {
         researchFile = saveResearch(stateHash, result.text, combinedHtml);
       }
 
-      const summaryMatch = result.text.match(/## Summary\s*\n+([\s\S]*?)(?=\n##|$)/i);
-      if (summaryMatch) {
-        const summaryLine = summaryMatch[1].trim().split('\n')[0].trim().slice(0, 200);
-        if (summaryLine) this.experienceTracker.updateSummary(this.actionResult!, summaryLine);
-      }
+      const summaryText = mdq(result.text).query('section2(/^summary/)').query('paragraph[0]').text().trim();
+      const summaryLine = summaryText.split('\n')[0]?.trim().slice(0, 200);
+      if (summaryLine) this.experienceTracker.updateSummary(this.actionResult!, summaryLine);
 
       tag('multiline').log(formatResearchSummary(result.text, { visionUsed: this.hasScreenshotToAnalyze }));
       tag('success').log('Research complete');

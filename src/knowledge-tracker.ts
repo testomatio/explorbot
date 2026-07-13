@@ -5,6 +5,7 @@ import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { getCliName } from './utils/cli-name.ts';
 import { createDebug } from './utils/logger.js';
+import { mdq } from './utils/markdown-query.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
 
@@ -190,7 +191,7 @@ export class KnowledgeTracker {
 
     return this.knowledgeFiles.map((knowledge) => {
       const content = knowledge.content.trim();
-      const firstLine = content.split('\n')[0]?.trim() || '';
+      const firstLine = mdq(content).meta()[0]?.text.split('\n')[0]?.trim() || '';
       return {
         url: knowledge.url,
         firstLine,
