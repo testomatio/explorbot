@@ -6,6 +6,7 @@ import { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
+import { formatHeadings } from '../utils/context-formatter.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { startLogCapture, stopLogCapture, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
@@ -164,11 +165,7 @@ export class Captain extends CaptainBase implements Agent {
     const knowledge = this.getKnowledge(actionResult);
     const experience = this.getExperience(actionResult);
 
-    const headingLines: string[] = [];
-    if (state.h1) headingLines.push(`H1: ${state.h1}`);
-    if (state.h2) headingLines.push(`H2: ${state.h2}`);
-    if (state.h3) headingLines.push(`H3: ${state.h3}`);
-    if (state.h4) headingLines.push(`H4: ${state.h4}`);
+    const headingLines = formatHeadings(state);
     const headingsBlock = headingLines.join('\n');
 
     let pageSummary = '';

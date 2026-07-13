@@ -17,6 +17,7 @@ import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Stats } from '../stats.ts';
 import { Task, Test, TestResult } from '../test-plan.ts';
+import { formatHeadings } from '../utils/context-formatter.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
@@ -481,11 +482,7 @@ export class Rerunner extends TaskAgent implements Agent {
     const state = this.explorer.getStateManager().getCurrentState();
     const actionResult = state ? ActionResult.fromState(state) : null;
 
-    const headings: string[] = [];
-    if (state?.h1) headings.push(`H1: ${state.h1}`);
-    if (state?.h2) headings.push(`H2: ${state.h2}`);
-    if (state?.h3) headings.push(`H3: ${state.h3}`);
-    if (state?.h4) headings.push(`H4: ${state.h4}`);
+    const headings = formatHeadings(state || {});
 
     return dedent`
       A test step failed and needs healing.

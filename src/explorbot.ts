@@ -28,6 +28,7 @@ import { WebPageState } from './state-manager.ts';
 import { Stats } from './stats.ts';
 import type { Suite } from './suite.ts';
 import { Plan, type Test } from './test-plan.ts';
+import { browserErrorMessage } from './utils/browser-errors.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
 import { relativeToCwd } from './utils/next-steps.ts';
 import { sanitizeFilename } from './utils/strings.ts';
@@ -94,7 +95,7 @@ export class ExplorBot {
         await this.agentExperienceCompactor().autocompact();
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = browserErrorMessage(error);
       console.error('\nFailed to start:', message);
       process.exit(1);
     }
@@ -487,7 +488,7 @@ export class ExplorBot {
 
       this.lastReportedTestCount = tests.length;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = browserErrorMessage(error);
       tag('warning').log(`Session analysis failed: ${message}`);
     }
   }

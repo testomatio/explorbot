@@ -10,10 +10,10 @@ import type { ExplorbotConfig } from './config.js';
 import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
-import { isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
+import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
-import { waitForPageReadiness } from './utils/page-readiness.ts';
+import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
 import { safeFilename } from './utils/strings.ts';
 
@@ -155,7 +155,7 @@ class Action {
       this.stateManager.updateState(result, codeBlock);
       return result;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = browserErrorMessage(err);
       if (isFatalBrowserError(err)) throw err;
       debugLog('capturePageState failed with non-fatal error:', msg);
       const url = this.playwrightHelper.page?.url?.() || '';
@@ -389,10 +389,6 @@ async function captureTitle(page: any, actor: any): Promise<string> {
   if (page?.title) return page.title();
   if (actor?.grabTitle) return actor.grabTitle();
   return '';
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const ASSERTION_STEP_NAMES = new Set(['see', 'dontSee', 'seeElement', 'dontSeeElement', 'seeInField', 'dontSeeInField', 'seeInCurrentUrl', 'dontSeeInCurrentUrl']);

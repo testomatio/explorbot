@@ -7,6 +7,7 @@ import { TTLCache } from './utils/cache.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
+import { slugify } from './utils/strings.ts';
 import { extractStatePath, matchesUrl } from './utils/url-matcher.ts';
 
 const debugLog = createDebug('explorbot:state');
@@ -497,13 +498,7 @@ export class ActionResult implements ActionResultData {
       }
     }
 
-    let stateString = parts
-      .map((part) => part.substring(0, 100))
-      .join('_')
-      .replace(/[^a-zA-Z0-9_]/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_|_$/g, '')
-      .toLowerCase();
+    let stateString = slugify(parts.map((part) => part.substring(0, 100)).join('_'));
 
     if (stateString.length > 200) {
       stateString = stateString.substring(0, 200);

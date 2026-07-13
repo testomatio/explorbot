@@ -21,10 +21,10 @@ import { PlaywrightRecorder } from './playwright-recorder.ts';
 import { Reporter } from './reporter.ts';
 import { StateManager } from './state-manager.js';
 import { Test, TestResult } from './test-plan.ts';
-import { BrowserRecoveryError, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
+import { BrowserRecoveryError, browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { ELEMENT_EXTRACTION_CONFIG, getElementDataExtractorSource } from './utils/html.ts';
 import { createDebug, log, tag } from './utils/logger.js';
-import { waitForPageReadiness } from './utils/page-readiness.ts';
+import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import { WebElement } from './utils/web-element.ts';
 
 declare global {
@@ -90,8 +90,7 @@ class Explorer {
     try {
       // Use project root for output directory, not current working directory
       const configParser = ConfigParser.getInstance();
-      const configPath = configParser.getConfigPath();
-      const projectRoot = configPath ? path.dirname(configPath) : process.cwd();
+      const projectRoot = configParser.getProjectRoot();
       (global as any).output_dir = path.join(projectRoot, 'output', 'states');
       (global as any).codecept_dir = projectRoot;
 
@@ -154,8 +153,7 @@ class Explorer {
     };
 
     if (this.config.stepsFile) {
-      const configPath = ConfigParser.getInstance().getConfigPath();
-      const projectRoot = configPath ? path.dirname(configPath) : process.cwd();
+      const projectRoot = ConfigParser.getInstance().getProjectRoot();
       codeceptConfig.include = { I: path.resolve(projectRoot, this.config.stepsFile) };
     }
 
@@ -371,7 +369,7 @@ class Explorer {
       try {
         await action.execute(`I.amOnPage(${serializedUrl})`);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = browserErrorMessage(err);
         if (!RECOVERABLE_NAVIGATION_ERRORS.test(msg)) throw err;
         tag('warning').log(`Navigation warning (continuing after load): ${msg.split('\n')[0]}`);
         await this.waitForPageReadiness();
@@ -420,7 +418,7 @@ class Explorer {
       return result;
     } catch (error) {
       if (this.isFatalBrowserError(error)) {
-        tag('warning').log(`getEidxInContainer: ${error instanceof Error ? error.message : error}`);
+        tag('warning').log(`getEidxInContainer: ${browserErrorMessage(error)}`);
         await this.recoverFromBrowserError();
       }
       return [];
@@ -435,7 +433,7 @@ class Explorer {
       return await el.first().getAttribute(ELEMENT_EXTRACTION_CONFIG.attrs.eidx);
     } catch (error) {
       if (this.isFatalBrowserError(error)) {
-        tag('warning').log(`getEidxByLocator: ${error instanceof Error ? error.message : error}`);
+        tag('warning').log(`getEidxByLocator: ${browserErrorMessage(error)}`);
         await this.recoverFromBrowserError();
       }
       return null;
@@ -486,7 +484,7 @@ class Explorer {
       await this.playwrightHelper.page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
       return this.waitForPageReadiness();
     } catch (err) {
-      tag('error').log(`Browser recovery failed: ${err instanceof Error ? err.message : err}`);
+      tag('error').log(`Browser recovery failed: ${browserErrorMessage(err)}`);
       return false;
     }
   }
@@ -530,7 +528,7 @@ class Explorer {
       tag('success').log('Browser restarted');
       return true;
     } catch (err) {
-      tag('error').log(`Browser restart failed: ${err instanceof Error ? err.message : err}`);
+      tag('error').log(`Browser restart failed: ${browserErrorMessage(err)}`);
       return false;
     }
   }
@@ -562,7 +560,7 @@ class Explorer {
       return await page.evaluate(() => window.top !== window.self);
     } catch (error) {
       if (this.isFatalBrowserError(error)) {
-        tag('warning').log(`isInsideIframe: ${error instanceof Error ? error.message : error}`);
+        tag('warning').log(`isInsideIframe: ${browserErrorMessage(error)}`);
         await this.recoverFromBrowserError();
       }
       return false;
@@ -735,7 +733,7 @@ class Explorer {
   }
 
   async handleExecutionError(error: unknown): Promise<BrowserExecutionErrorResult> {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = browserErrorMessage(error);
     tag('error').log(`Browser execution error: ${message}`);
 
     if (error instanceof Error && error.name === 'AbortError') {
@@ -849,7 +847,7 @@ class Explorer {
       return await pwLocator.count();
     } catch (error) {
       if (this.isFatalBrowserError(error)) {
-        tag('warning').log(`playwrightLocatorCount: ${error instanceof Error ? error.message : error}`);
+        tag('warning').log(`playwrightLocatorCount: ${browserErrorMessage(error)}`);
         await this.recoverFromBrowserError();
       }
       throw error;
@@ -871,7 +869,7 @@ class Explorer {
 
       this.stateManager.updateStateFromBasic(newUrl, newTitle, 'navigation');
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await sleep(500);
     });
   }
 
