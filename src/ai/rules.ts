@@ -2,7 +2,7 @@ import dedent from 'dedent';
 
 export const recommendedCodeceptCommands = ['I.click', 'I.type', 'I.fillField', 'I.see', 'I.seeElement'] as const;
 
-export const locatorRule = dedent`
+const locatorPriorityPart = dedent`
   <locator_priority>
   Use the following priority when selecting locators:
 
@@ -19,10 +19,12 @@ export const locatorRule = dedent`
      Example: '#login-btn', '[data-testid="submit"]', 'form#login input[name="email"]'
 
   4. XPath (last resort) - for complex hierarchy or when CSS can't express the path
-     Always start with //, never use positional indices like [1], [2]
+     Always start with //. Avoid positional indices like [1], [2] except as a last-resort disambiguator
      Example: '//form[@id="login"]//input[@name="email"]'
   </locator_priority>
+`;
 
+export const contextSimplificationRule = dedent`
   <context_simplification>
   When container is available from UI map sections:
   - Text + container is simplest and PREFERRED: I.click('Save', '.modal')
@@ -30,7 +32,9 @@ export const locatorRule = dedent`
   - ALWAYS use context parameter unless locator is XPath or unique ID
   - No need for complex ARIA when container narrows scope sufficiently
   </context_simplification>
+`;
 
+const locatorRuleTail = dedent`
   <disambiguation>
   When multiple elements could match the request, select based on intent:
   1. Match the context of recent actions - if filling a form, use elements in that same form
@@ -48,8 +52,8 @@ export const locatorRule = dedent`
   - Use aria-label value if present: { "role": "button", "text": "Close" } (from aria-label="Close")
   - Use title attribute if present: { "role": "button", "text": "Settings" } (from title="Settings")
   - If no accessible name exists, mark ARIA as "-" and use CSS/XPath:
-    * CSS: use partial href a[href*="settings"] or SVG icon class a:has(svg.md-icon-cog)
-    * XPath: use contains(@href,"settings") or SVG class //a[.//svg[contains(@class,"md-icon-cog")]]
+    * CSS: use partial href a[href*="settings"] or SVG icon class a:has(svg.icon-settings)
+    * XPath: use contains(@href,"settings") or SVG class //a[.//svg[contains(@class,"icon-settings")]]
   - In inline create/edit rows, confirmation can be an icon-only control near the edited field instead of a text Save button. Anchor the locator to the same row/form as the field and target the adjacent confirm icon/control.
   - NEVER use empty text: { "role": "button", "text": "" } is INVALID and useless
 
@@ -81,9 +85,9 @@ export const locatorRule = dedent`
   - Vue: data-v-* attributes
   Avoid locators that seem to have generated ids or class names (long random numbers, uuids, hashes, etc)
   Prefer text or ARIA locators over href-based ones. But for icon-only links with no accessible name, use:
-  - Partial href match: a[href*="settings"], a[href*="requirements"] (use path segments, not full URLs)
-  - SVG icon class: a:has(svg.md-icon-cog), button:has(svg.md-icon-plus) (target the SVG class inside the link/button)
-  Avoid full absolute href like a[href="/projects/imr_manual12/settings"] — use generic path segments instead
+  - Partial href match: a[href*="settings"], a[href*="reports"] (use path segments, not full URLs)
+  - SVG icon class: a:has(svg.icon-settings), button:has(svg.icon-add) (target the SVG class inside the link/button)
+  Avoid full absolute href like a[href="/items/12345/settings"] — use generic path segments instead
   Avoid CSS framework utility classes as containers (Tailwind: flex, grid, space-x-*, justify-*, items-*, w-*, h-*, p-*, m-*, etc; Bootstrap: col-*, row, d-flex, etc)
   Prefer semantic class names, roles, data attributes, or element hierarchy for containers
 
@@ -95,7 +99,7 @@ export const locatorRule = dedent`
 
   <xpath_rules>
   XPath locators must start with //.
-  XPath should use positional indices [1], [2], [3] and contains(., "text") for disambiguation.
+  XPath may use positional indices [1], [2] and contains(., "text") as a last-resort disambiguator when attribute/text strategies are exhausted.
   XPath should rely less on class names — prefer element hierarchy, position, and text content.
   XPath and CSS MUST provide different strategies for finding the same element.
   </xpath_rules>
@@ -107,21 +111,25 @@ export const locatorRule = dedent`
     '#content-top #user_name'
     '#content-top form input[name="name"]'
     'a.nav-item[href*="settings"]' // icon-only link matched by partial href
-    'a.nav-item:has(svg.md-icon-cog)' // icon-only link matched by SVG icon class
+    'a.nav-item:has(svg.icon-settings)' // icon-only link matched by SVG icon class
     '//nav//a[contains(@href,"settings")]' // XPath for icon-only nav link
   </good locator example>
 
   <bad locator example>
-    'a.filter-tab:nth-of-type(1)' // WRONG: positional in CSS, use :has-text("Manual") instead
-    '//a[contains(@class,"filter-tab") and contains(@class,"active")]' // WRONG: XPath repeats CSS approach, use positional //a[contains(@class,"filter-tab")][1]
+    'a.filter-tab:nth-of-type(1)' // WRONG: positional in CSS, use :has-text("Active") instead
+    '//a[contains(@class,"filter-tab") and contains(@class,"active")]' // WRONG: XPath repeats CSS approach, provide a different strategy e.g. //a[contains(@class,"filter-tab")][1]
     '//table//tbody/tr[1]//button[contains(@onclick,'fn()')]' // onclick is not semantic attribute
     '//html/body/vue-button-123' // vue-framework specific locator
-    'link "New Template"'  // WRONG: malformed string, use {"role":"link","text":"New Template"}
-    'a[href="/projects/imr_manual12/settings"]' // WRONG: full absolute href, use a[href*="settings"] instead
+    'link "New Item"'  // WRONG: malformed string, use {"role":"link","text":"New Item"}
+    'a[href="/items/12345/settings"]' // WRONG: full absolute href, use a[href*="settings"] instead
   </bad locator example>
 
   HTML locators must be valid JS strings
 `;
+
+export const locatorRule = [locatorPriorityPart, contextSimplificationRule, locatorRuleTail].join('\n\n');
+
+export const locatorRuleWithoutContextSimplification = [locatorPriorityPart, locatorRuleTail].join('\n\n');
 
 export const fileUploadRule = dedent`
   <file_upload>

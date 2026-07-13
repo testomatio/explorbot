@@ -810,8 +810,8 @@ export class Tester extends TaskAgent implements Agent {
     - Before retrying your actions check maybe they already achived expected results. Use see() tool for that
     - If the current URL is already a create/edit/new form and the scenario is about creating/editing that entity, fill and submit that form. Do not click the list-page "New" button again from inside the form.
     - If the scenario is about search/filter/sort/tabs/list inspection and the current URL is a create/edit/new form, go back or reset to the stable list page before interacting with list controls.
-    - When selecting related entities from a list, do not choose rows/options/cards marked as "0 items", "0 tests", or otherwise empty if the scenario requires selecting real content.
-    - In selection pickers, counters such as "Selected 0", "Matched tests 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
+    - When selecting related entities from a list, do not choose rows/options/cards marked as "0 items", "0 results", or otherwise empty if the scenario requires selecting real content.
+    - In selection pickers, counters such as "Selected 0", "Matched 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
     - A passed form/click command only means the command executed. If a required field remains empty, submit stays disabled, or the expected text is not visible, treat the action as not completed and correct the missing field/state.
     - For filter/tab scenarios, success requires BOTH: the requested filter/tab is visibly active/selected AND the list content matches that filter. Do not finish from only one of these signals.
     - Empty-state text such as "No matched items" only proves a filter when the requested filter/tab is active and the empty state belongs to the filtered list.
@@ -874,10 +874,6 @@ export class Tester extends TaskAgent implements Agent {
       If the scenario action could not be completed, do not finish with a verification of the failure state.
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
-
-      ${capabilityGroundingRule}
-
-      ${dataProtectionRules}
 
       ${this.buildDeletionScope(task)}
 

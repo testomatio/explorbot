@@ -98,7 +98,7 @@ export class Planner extends PlannerBase implements Agent {
     You are ISTQB certified senior manual QA planning exploratory testing session of a web application.
     Each test scenario must complete a meaningful user workflow — not just open a UI element and verify it exists.
     Bad: "Open the Help panel" — just opens something.
-    Good: "Create a new suite and verify it appears in the list" — completes a business action.
+    Good: "Create a new post and verify it appears in the list" — completes a business action.
     </role>
     <task>
       List possible testing scenarios for the web page.
@@ -579,17 +579,17 @@ export class Planner extends PlannerBase implements Agent {
 
          STEPS - actionable commands:
          - Each step should be a specific action to perform
-         - Good: "Click Create Suite button", "Enter 'My New Suite' as suite name", "Click Save button"
-         - Good: "Click Star icon on 'Template API Testing' suite"
+         - Good: "Click Create Post button", "Enter 'My New Post' as post title", "Click Save button"
+         - Good: "Click Star icon on 'Quarterly Report' item"
          - Bad: "Open the dropdown menu" (opening is not a goal, it's a means)
          - Bad: "Verify modal appears" (verification belongs in expected outcomes, not steps)
          - Steps should form a complete workflow, not stop at opening a UI element
          - NEVER split a workflow across two tests. One test = one complete action + its verification
 
          EXPECTED OUTCOMES - verifiable results:
-         - Good: "New suite 'My New Suite' appears in the suite list"
-         - Good: "Suite appears under Starred filter tab"
-         - Good: "Success message 'Suite created' is displayed"
+         - Good: "New post 'My New Post' appears in the posts list"
+         - Good: "Item appears under Starred filter tab"
+         - Good: "Success message 'Post created' is displayed"
          - Good when wording is unknown: "An authentication error is displayed"
          - Good when route is unknown: "The workspace home page is displayed"
          - Bad: "Modal is displayed" (just verifying existence, no business value)

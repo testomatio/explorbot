@@ -31,7 +31,7 @@ import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
-import { locatorRule } from './rules.ts';
+import { locatorRuleWithoutContextSimplification } from './rules.ts';
 import { TaskAgent, isInteractive } from './task-agent.ts';
 import { createCodeceptJSTools } from './tools.ts';
 
@@ -1191,4 +1191,4 @@ function isInteractiveElement(element: WebElement): boolean {
   return false;
 }
 
-const drillLocatorRule = locatorRule.replace(/<context_simplification>[\s\S]*?<\/context_simplification>/, '').trim();
+const drillLocatorRule = locatorRuleWithoutContextSimplification;
