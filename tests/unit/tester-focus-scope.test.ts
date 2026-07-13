@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { Tester } from '../../src/ai/tester.ts';
+import { renderExperienceToc } from '../../src/experience-tracker.ts';
 import { Test } from '../../src/test-plan.ts';
 
 function buildTester(): Tester {
@@ -9,10 +10,12 @@ function buildTester(): Tester {
     getStateManager: () => ({
       getExperienceTracker: () => ({
         getExperienceTableOfContents: () => [],
+        renderExperienceTocFor: () => '',
       }),
     }),
     getKnowledgeTracker: () => ({
       getRelevantKnowledge: () => [],
+      renderRelevantKnowledge: () => '',
     }),
     getCurrentIframeInfo: () => null,
     hasOtherTabs: () => false,
@@ -29,22 +32,25 @@ function buildTester(): Tester {
 }
 
 function buildTesterWithExperience(): Tester {
+  const experienceToc = [
+    {
+      fileTag: 'A',
+      fileHash: 'abc123',
+      url: '/page',
+      sections: [{ index: 1, level: 2, title: 'FLOW: create item' }],
+    },
+  ];
   const explorer: any = {
     getConfig: () => ({ files: {} }),
     getStateManager: () => ({
       getExperienceTracker: () => ({
-        getExperienceTableOfContents: () => [
-          {
-            fileTag: 'A',
-            fileHash: 'abc123',
-            url: '/page',
-            sections: [{ index: 1, level: 2, title: 'FLOW: create item' }],
-          },
-        ],
+        getExperienceTableOfContents: () => experienceToc,
+        renderExperienceTocFor: () => renderExperienceToc(experienceToc),
       }),
     }),
     getKnowledgeTracker: () => ({
       getRelevantKnowledge: () => [],
+      renderRelevantKnowledge: () => '',
     }),
   };
   const provider: any = {};

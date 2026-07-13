@@ -15,7 +15,7 @@ import { diffAriaSnapshots } from '../utils/aria.ts';
 import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { isBodyEmpty } from '../utils/html.ts';
-import { createDebug, pluralize, tag } from '../utils/logger.js';
+import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import type { Agent } from './agent.js';
@@ -470,23 +470,7 @@ export class Researcher extends ResearcherBase implements Agent {
     if (!this.actionResult) throw new Error('actionResult is not set');
 
     const html = await this.actionResult.combinedHtml();
-    const knowledgeFiles = this.stateManager.getRelevantKnowledge();
-
-    let knowledge = '';
-    if (knowledgeFiles.length > 0) {
-      const knowledgeContent = knowledgeFiles
-        .map((k) => k.content)
-        .filter((k) => !!k)
-        .join('\n\n');
-
-      tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')} for: ${this.actionResult.url}`);
-      knowledge = `
-        <hint>
-        Here is relevant knowledge for this page:
-
-        ${knowledgeContent}
-        </hint>`;
-    }
+    const knowledge = this.explorer.getKnowledgeTracker().renderRelevantKnowledge(this.actionResult);
 
     const ariaSnapshot = this.actionResult.getCompactARIA();
 

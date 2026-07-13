@@ -3,7 +3,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
 import type Action from '../action.ts';
-import { ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
+import type { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import { KnowledgeTracker } from '../knowledge-tracker.js';
 import { normalizeUrl } from '../state-manager.js';
@@ -191,18 +191,8 @@ class Navigator implements Agent {
     const action = opts?.action ?? this.explorer.createAction();
     const expectedUrl = opts?.expectedUrl;
 
-    let knowledge = '';
+    const knowledge = this.knowledgeTracker.renderRelevantKnowledge(actionResult);
     let experience = '';
-
-    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(actionResult);
-    if (relevantKnowledge.length > 0) {
-      const knowledgeContent = relevantKnowledge.map((k) => k.content).join('\n\n');
-      knowledge = `
-      <hint>
-      Here is relevant knowledge for this page:
-      ${knowledgeContent}
-      </hint>`;
-    }
 
     if (!actionResult.isInsideIframe) {
       const successful = this.experienceTracker.getSuccessfulExperience(actionResult);
@@ -638,26 +628,11 @@ class Navigator implements Agent {
       return { verified: cachedVerification, successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
-    let knowledge = '';
+    const knowledge = this.knowledgeTracker.renderRelevantKnowledge(actionResult);
     let experience = '';
 
-    const relevantKnowledge = this.knowledgeTracker.getRelevantKnowledge(actionResult);
-    if (relevantKnowledge.length > 0) {
-      const knowledgeContent = relevantKnowledge.map((k) => k.content).join('\n\n');
-      knowledge = `
-      <hint>
-      Here is relevant knowledge for this page:
-      ${knowledgeContent}
-      </hint>`;
-    }
-
     if (!actionResult.isInsideIframe) {
-      const toc = this.experienceTracker.getExperienceTableOfContents(actionResult);
-      if (toc.length > 0) {
-        const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
-        tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections) for: ${actionResult.url}`);
-        experience = renderExperienceToc(toc);
-      }
+      experience = this.experienceTracker.renderExperienceTocFor(actionResult);
     }
 
     const priorVerifications = Object.entries(actionResult.verifications ?? {});
