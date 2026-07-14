@@ -8,9 +8,10 @@ import { sanitizeFilename } from '../../../src/utils/strings.ts';
 import { Documentarian, type PageDocumentation } from './ai/documentarian.ts';
 import { type DocbotConfig, DocbotConfigParser } from './config.ts';
 import { type DocumentedPage, type SkippedPage, renderPageDocumentation, renderSpecIndex } from './docs-renderer.ts';
+import { renderMermaidBody } from './state-diagram.ts';
 import { getDocPageKey, shouldCrawlDocPath } from './path-filter.ts';
 import { extractResearchNavigationTargets } from './research-navigation.ts';
-import { type DocumentationScreenshot, captureDocumentationScreenshots } from './screenshots.ts';
+import { type DocumentationScreenshot, captureDocumentationScreenshots, captureInteractionScreenshot } from './screenshots.ts';
 
 class DocBot {
   private explorBot: ExplorBot;
@@ -111,7 +112,17 @@ class DocBot {
           screenshot: this.shouldUseScreenshots(),
           force: true,
         });
-        const documentation = await this.documentarian.document(state, research);
+        const pagePath = this.getPageFilePath(state.url);
+        const documentation = await this.documentarian.document(state, research, async (interactionState, transition) => {
+          if (!this.shouldUseScreenshots()) {
+            return null;
+          }
+          return captureInteractionScreenshot(this.explorBot.getExplorer(), interactionState, transition, {
+            pageFilePath: pagePath,
+            screenshotsDir: this.getScreenshotsDir(),
+            config: this.config,
+          });
+        });
         const lowSignalReason = this.getLowSignalReason(documentation, research);
         if (lowSignalReason) {
           skipped.push({
@@ -134,6 +145,7 @@ class DocBot {
           mightActions: documentation.might.map((item) => item.action),
           interactionActions: (documentation.interactions || []).map((item) => item.action),
           qualityNotes: documentation.qualityNotes || [],
+          interactions: documentation.interactions || [],
           filePath,
         });
         documented.add(pageKey);
@@ -159,12 +171,13 @@ class DocBot {
       }
     }
 
-    const indexPath = this.saveIndex(effectiveStartPath, pages, skipped, effectiveMaxPages);
+    const { indexPath, diagramPath } = this.saveIndex(effectiveStartPath, pages, skipped, effectiveMaxPages);
 
     return {
       pages,
       skipped,
       indexPath,
+      diagramPath,
       outputDir: this.configParser.getOutputDir(),
     };
   }
@@ -385,6 +398,10 @@ class DocBot {
       return null;
     }
 
+    if ((documentation.interactions || []).length > 0) {
+      return null;
+    }
+
     const interactiveCount = this.countInteractiveElements(research);
     if (interactiveCount >= minInteractiveElements) {
       return null;
@@ -417,10 +434,13 @@ class DocBot {
     });
   }
 
-  private saveIndex(startPath: string, pages: DocumentedPage[], skipped: SkippedPage[], maxPages: number): string {
-    const indexPath = path.join(this.configParser.getOutputDir(), 'spec.md');
-    writeFileSync(indexPath, renderSpecIndex(this.configParser.getOutputDir(), startPath, pages, skipped, maxPages), 'utf8');
-    return indexPath;
+  private saveIndex(startPath: string, pages: DocumentedPage[], skipped: SkippedPage[], maxPages: number): { indexPath: string; diagramPath: string } {
+    const outputDir = this.configParser.getOutputDir();
+    const indexPath = path.join(outputDir, 'index.md');
+    writeFileSync(indexPath, renderSpecIndex(outputDir, startPath, pages, skipped, maxPages), 'utf8');
+    const diagramPath = path.join(outputDir, 'state-diagram.mmd');
+    writeFileSync(diagramPath, renderMermaidBody(outputDir, pages), 'utf8');
+    return { indexPath, diagramPath };
   }
 
   private getPagesDir(): string {
@@ -461,6 +481,7 @@ interface CollectionResult {
   pages: DocumentedPage[];
   skipped: SkippedPage[];
   indexPath: string;
+  diagramPath: string;
   outputDir: string;
 }
 

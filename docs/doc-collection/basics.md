@@ -69,12 +69,15 @@ When the run finishes it prints how many pages were documented, how many were sk
 
 ```
 output/docs/
-├── spec.md         # index of everything documented
-├── pages/          # one markdown file per page
-└── screenshots/    # full-page and section captures
+├── index.md         # state map and index of everything documented
+├── state-diagram.mmd # raw Mermaid state-transition artifact (reusable by other agents)
+├── pages/           # one markdown file per page
+└── screenshots/     # full-page and section captures
 ```
 
-`spec.md` opens with run stats (start page, pages documented, pages skipped), then lists every page with its purpose and capabilities, linking to the page files. Pages that were skipped are listed at the bottom with reasons.
+`index.md` opens with run stats and a Mermaid state-transition map, then lists every page with its purpose and capabilities. Page nodes in the diagram link to their documentation. Transient dialogs, modals, tabs, and expanded screen areas appear as child states when interactive collection observes them. Pages that were skipped are listed at the bottom with reasons.
+
+`state-diagram.mmd` is the same state-transition map as a standalone Mermaid file (no markdown fences), so other agents can embed or post-process it without re-rendering `index.md`.
 
 Each page file follows the same shape:
 
