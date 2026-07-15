@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
-import { createAgentTools } from '../../src/ai/tools.ts';
+import { createAgentTools, createCodeceptJSTools } from '../../src/ai/tools.ts';
 
 describe('createAgentTools experience', () => {
   it('adds learnExperience when experience tracker and state reader are provided', async () => {
@@ -33,5 +33,43 @@ describe('createAgentTools experience', () => {
       url: '/page',
       content: '## FLOW: use prior success',
     });
+  });
+});
+
+describe('createCodeceptJSTools page change suggestions', () => {
+  it('reports major page changes only when the URL stays the same', async () => {
+    for (const urlChanged of [false, true]) {
+      const previous = {
+        url: '/detail',
+        html: '<main></main>',
+        ariaSnapshot: Array.from({ length: 60 }, (_, index) => `- button "Old ${index}"`).join('\n'),
+      };
+      const current = {
+        url: urlChanged ? '/list' : '/detail',
+        html: '<main></main>',
+        ariaSnapshot: Array.from({ length: 60 }, (_, index) => `- button "New ${index}"`).join('\n'),
+      };
+      let state = previous;
+      const tools = createCodeceptJSTools(
+        {
+          getStateManager: () => ({ getCurrentState: () => state }),
+          createAction: () => ({
+            attempt: async () => {
+              state = current;
+              return true;
+            },
+            saveScreenshot: async () => undefined,
+          }),
+        } as any,
+        {
+          startNote: () => ({ commit: () => undefined }),
+        } as any
+      );
+
+      const result = await tools.click.execute({ commands: ['I.click("Continue")'], explanation: 'Continue' });
+
+      expect(result.pageDiff.ariaChangeCount).toBe(120);
+      expect(result.suggestion.includes('MAJOR PAGE CHANGE')).toBe(!urlChanged);
+    }
   });
 });
