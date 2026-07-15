@@ -394,7 +394,6 @@ class Navigator implements Agent {
             if (freshState.getStateHash() !== prevHash) {
               try {
                 const diff = await freshState.diff(prevActionResult);
-                await diff.calculate();
                 ariaChanges = diff.ariaChanged;
               } catch (err) {
                 debugLog('Failed to compute pageDiff for failed URL verification:', err);
