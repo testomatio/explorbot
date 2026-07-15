@@ -5,17 +5,15 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { clearActivity, setActivity } from '../activity.ts';
-import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
-import type { StateTransition, WebPageState } from '../state-manager.ts';
+import type { StateTransition } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
-import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
+import { type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
 import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
-import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
@@ -58,7 +56,6 @@ export class Tester extends TaskAgent implements Agent {
   researcher: Researcher;
   navigator: Navigator;
   agentTools: any;
-  executionLogFile: string | null = null;
   private previousUrl: string | null = null;
   private previousStateHash: string | null = null;
   private pageStateHash: string | null = null;
@@ -150,10 +147,6 @@ export class Tester extends TaskAgent implements Agent {
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
     conversation.markLastMessageCacheable();
     this.currentConversation = conversation;
-
-    const outputDir = ConfigParser.getInstance().getOutputDir();
-    this.executionLogFile = join(outputDir, `tester_${task.sessionName}.md`);
-    // Note: Markdown saving functionality removed from Conversation class
 
     const scenarioBlock = this.buildScenarioBlock(task, initialState);
     conversation.addUserText(scenarioBlock);
@@ -526,7 +519,6 @@ export class Tester extends TaskAgent implements Agent {
     const currentStateHash = currentState.hash;
 
     const isNewUrl = this.previousUrl !== currentUrl;
-    const isStateChanged = !isNewUrl && this.previousStateHash !== currentStateHash;
 
     this.previousUrl = currentUrl;
     this.previousStateHash = currentStateHash;
@@ -641,27 +633,6 @@ export class Tester extends TaskAgent implements Agent {
       }
     }
 
-    // if (isStateChanged) {
-    //   const combinedHtml = await currentState.combinedHtml();
-    //   context += dedent`
-    //     Context (state changed):
-
-    //     <page>
-    //     CURRENT URL: ${currentState.url}
-    //     CURRENT TITLE: ${currentState.title}
-    //     </page>
-
-    //     <page_html>
-    //     ${combinedHtml}
-    //     </page_html>
-
-    //     <page_aria>
-    //     ${currentState.ariaSnapshot}
-    //     </page_aria>
-    //   `;
-    //   return context;
-    // }
-
     if (context) return context;
 
     if (iteration % 5) return '';
@@ -678,38 +649,6 @@ export class Tester extends TaskAgent implements Agent {
       ${currentState.getInteractiveARIA()}
       </page_aria>
     `;
-  }
-
-  private async promptLogStep(task: Test): Promise<string> {
-    let logPrompt = dedent`
-      <task>
-        Add a note explaining what you achieved with previous action.
-        Use tools to interact with the page to achieve the scenario goal or expected outcomes.
-        Call record tool to explain the last action
-        Format: record([<action performed>, <what has changed>, <what you expect to do next>]) 
-      </task>
-    `;
-
-    if (task.getPrintableNotes()) {
-      logPrompt = dedent`
-        Your interaction log notes:
-        <notes>
-        ${task.getPrintableNotes()}
-        </notes>
-
-        <rules>
-        Use your previous interaction notes to guide your next actions.
-        Do not perform the same checks.
-        </rules>
-      `;
-    }
-
-    const remaining = task.getRemainingExpectations();
-    if (remaining.length > 0) {
-      logPrompt += `\nExpected steps to check: ${remaining.join(', ')}`;
-    }
-
-    return logPrompt;
   }
 
   private finishTest(task: Test): void {

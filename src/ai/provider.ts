@@ -179,6 +179,50 @@ export class Provider {
     if (reasoning) config.reasoning ??= reasoning;
   }
 
+  private buildGenerateConfig(defaults: Record<string, any>, overrides: Record<string, any>, options: any): Record<string, any> {
+    const telemetry = this.getTelemetry(options);
+    const config = this.mergeProviderOptions(
+      {
+        ...defaults,
+        allowSystemInMessages: true,
+        ...(this.config.config || {}),
+        ...options,
+        ...overrides,
+      },
+      options.agentName
+    );
+    this.finalizeConfig(config, options, telemetry);
+    return config;
+  }
+
+  private recordUsage(agentName: string, modelName: string, usage: any): void {
+    if (!usage) return;
+    Stats.recordTokens(agentName, modelName, {
+      input: usage.inputTokens ?? usage.promptTokens ?? 0,
+      output: usage.outputTokens ?? usage.completionTokens ?? 0,
+      total: usage.totalTokens ?? 0,
+      cached: extractCachedTokens(usage),
+    });
+  }
+
+  private async raceWithIdleTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+    const cancel = { cancelled: false };
+    const controller = new AbortController();
+    const combinedSignal = combinedAbortSignal(controller);
+    try {
+      return await Promise.race([fn(combinedSignal), abortAfterIdle(timeoutMs, cancel, controller)]);
+    } finally {
+      cancel.cancelled = true;
+    }
+  }
+
+  private async recoverFromContextLength(error: any, messages: ModelMessage[], options: any, retry: (messages: ModelMessage[], options: any) => Promise<any>): Promise<any> {
+    const reduced = this.tryReduceMessages(messages, options._contextRetryLevel || 0);
+    if (!reduced) throw new ContextLengthError(error.message || error.toString());
+    tag('warning').log('Context length exceeded, retrying with reduced messages...');
+    return retry(reduced.messages, { ...options, _contextRetryLevel: reduced.nextLevel });
+  }
+
   private initLangfuse() {
     const langfuseConfig = this.config.langfuse;
     const publicKey = langfuseConfig?.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
@@ -277,19 +321,7 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName}`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
-    const telemetry = this.getTelemetry(options);
-    const config = this.mergeProviderOptions(
-      {
-        maxOutputTokens: 16384,
-        allowSystemInMessages: true,
-        ...(this.config.config || {}),
-        ...options,
-        model,
-        abortSignal: executionController.getAbortSignal(),
-      },
-      options.agentName
-    );
-    this.finalizeConfig(config, options, telemetry);
+    const config = this.buildGenerateConfig({ maxOutputTokens: 16384 }, { model, abortSignal: executionController.getAbortSignal() }, options);
 
     promptLog(messages[messages.length - 1].content);
     try {
@@ -311,14 +343,7 @@ export class Provider {
       clearActivity();
       responseLog(response.text);
 
-      if (response.usage) {
-        Stats.recordTokens(options.agentName || 'unknown', modelName, {
-          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
-          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
-          total: response.usage.totalTokens ?? 0,
-          cached: extractCachedTokens(response.usage),
-        });
-      }
+      this.recordUsage(options.agentName || 'unknown', modelName, response.usage);
 
       return response;
     } catch (error: any) {
@@ -326,12 +351,7 @@ export class Provider {
       if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
       if (Provider.isContextLengthError(error)) {
-        const reduced = this.tryReduceMessages(messages, options._contextRetryLevel || 0);
-        if (reduced) {
-          tag('warning').log('Context length exceeded, retrying with reduced messages...');
-          return this.chat(reduced.messages, model, { ...options, _contextRetryLevel: reduced.nextLevel });
-        }
-        throw new ContextLengthError(error.message || error.toString());
+        return this.recoverFromContextLength(error, messages, options, (m, o) => this.chat(m, model, o));
       }
       const message = error.message || error.toString();
       if (message !== 'No response text from AI') {
@@ -351,49 +371,19 @@ export class Provider {
     promptLog('Available tools:', toolNames);
     promptLog(messages[messages.length - 1].content);
 
-    const telemetry = this.getTelemetry(options);
     const maxRoundtrips = options.maxToolRoundtrips ?? 5;
     const extraStop = options.stopWhen;
     const stopConditions: any[] = [isStepCount(maxRoundtrips)];
     if (extraStop) stopConditions.push(extraStop);
-    const { stopWhen: _ignoredStopWhen, ...optionsWithoutStop } = options;
-    const config = this.mergeProviderOptions(
-      {
-        tools,
-        maxOutputTokens: 16384,
-        toolChoice: 'auto',
-        allowSystemInMessages: true,
-        ...(this.config.config || {}),
-        ...optionsWithoutStop,
-        stopWhen: stopConditions,
-        model,
-      },
-      options.agentName
-    );
-    this.finalizeConfig(config, options, telemetry);
+    const config = this.buildGenerateConfig({ tools, maxOutputTokens: 16384, toolChoice: 'auto' }, { stopWhen: stopConditions, model }, options);
     try {
       const response = await withRetry(async () => {
-        const timeout = config.timeout || 30000;
-        const cancel = { cancelled: false };
-        const controller = new AbortController();
-        const combinedSignal = combinedAbortSignal(controller);
-        try {
-          const result = (await Promise.race([
-            generateText({
-              messages,
-              ...config,
-              abortSignal: combinedSignal,
-            }),
-            abortAfterIdle(timeout, cancel, controller),
-          ])) as any;
-          const hasToolCall = (result.toolCalls?.length || 0) > 0;
-          if (!result.text && !hasToolCall && result.finishReason === 'length') {
-            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
-          }
-          return result;
-        } finally {
-          cancel.cancelled = true;
+        const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
+        const hasToolCall = (result.toolCalls?.length || 0) > 0;
+        if (!result.text && !hasToolCall && result.finishReason === 'length') {
+          throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
         }
+        return result;
       }, this.getRetryOptions(options));
 
       clearActivity();
@@ -408,14 +398,7 @@ export class Provider {
 
       responseLog(response.text);
 
-      if (response.usage) {
-        Stats.recordTokens(options.agentName || 'unknown', modelName, {
-          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
-          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
-          total: response.usage.totalTokens ?? 0,
-          cached: extractCachedTokens(response.usage),
-        });
-      }
+      this.recordUsage(options.agentName || 'unknown', modelName, response.usage);
 
       return response;
     } catch (error: any) {
@@ -426,12 +409,7 @@ export class Provider {
       if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
       if (Provider.isContextLengthError(error)) {
-        const reduced = this.tryReduceMessages(messages, options._contextRetryLevel || 0);
-        if (reduced) {
-          tag('warning').log('Context length exceeded, retrying with reduced messages...');
-          return this.generateWithTools(reduced.messages, model, tools, { ...options, _contextRetryLevel: reduced.nextLevel });
-        }
-        throw new ContextLengthError(error.message || error.toString());
+        return this.recoverFromContextLength(error, messages, options, (m, o) => this.generateWithTools(m, model, tools, o));
       }
       if (error.constructor?.name === 'AI_APICallError') {
         responseLog(error.message);
@@ -447,51 +425,18 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName} for structured output`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
-    const telemetry = this.getTelemetry(options);
-    const config = this.mergeProviderOptions(
-      {
-        schema,
-        allowSystemInMessages: true,
-        ...(this.config.config || {}),
-        ...options,
-        model: modelToUse,
-      },
-      options.agentName
-    );
-    this.finalizeConfig(config, options, telemetry);
+    const config = this.buildGenerateConfig({ schema }, { model: modelToUse }, options);
 
     try {
       promptLog(messages[messages.length - 1].content);
       const response = await withRetry(async () => {
-        const timeout = config.timeout || 30000;
-        const cancel = { cancelled: false };
-        const controller = new AbortController();
-        const combinedSignal = combinedAbortSignal(controller);
-        try {
-          return (await Promise.race([
-            generateObject({
-              messages,
-              ...config,
-              abortSignal: combinedSignal,
-            }),
-            abortAfterIdle(timeout, cancel, controller),
-          ])) as any;
-        } finally {
-          cancel.cancelled = true;
-        }
+        return (await this.raceWithIdleTimeout((signal) => generateObject({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
       }, this.getRetryOptions(options));
 
       clearActivity();
       responseLog(response.object);
 
-      if (response.usage) {
-        Stats.recordTokens(options.agentName || 'unknown', modelName, {
-          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
-          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
-          total: response.usage.totalTokens ?? 0,
-          cached: extractCachedTokens(response.usage),
-        });
-      }
+      this.recordUsage(options.agentName || 'unknown', modelName, response.usage);
 
       return response;
     } catch (error: any) {
@@ -499,12 +444,7 @@ export class Provider {
       if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
       if (Provider.isContextLengthError(error)) {
-        const reduced = this.tryReduceMessages(messages, options._contextRetryLevel || 0);
-        if (reduced) {
-          tag('warning').log('Context length exceeded, retrying with reduced messages...');
-          return this.generateObject(reduced.messages, schema, model, { ...options, _contextRetryLevel: reduced.nextLevel });
-        }
-        throw new ContextLengthError(error.message || error.toString());
+        return this.recoverFromContextLength(error, messages, options, (m, o) => this.generateObject(m, schema, model, o));
       }
       throw new AiError(error.message || error.toString());
     }
@@ -683,13 +623,7 @@ export class Provider {
       clearActivity();
       responseLog(response.text);
 
-      if (response.usage) {
-        Stats.recordTokens('vision', this.getModelName(this.config.visionModel), {
-          input: response.usage.inputTokens ?? response.usage.promptTokens ?? 0,
-          output: response.usage.outputTokens ?? response.usage.completionTokens ?? 0,
-          total: response.usage.totalTokens ?? 0,
-        });
-      }
+      this.recordUsage('vision', this.getModelName(this.config.visionModel), response.usage);
 
       return response;
     } catch (error: any) {

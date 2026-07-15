@@ -76,7 +76,6 @@ describe('ExperienceCompactor', () => {
   });
 
   afterEach(() => {
-    experienceTracker.cleanup();
     mockProvider.reset();
 
     if (existsSync(testDir)) {

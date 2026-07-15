@@ -21,7 +21,6 @@ import { formatHeadings } from '../utils/context-formatter.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
-import { loadTestSuites, printTestList } from '../utils/test-files.ts';
 import type { Agent } from './agent.ts';
 import { toolExecutionLabel } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
@@ -39,7 +38,7 @@ export class Rerunner extends TaskAgent implements Agent {
   private explorer: Explorer;
   private provider: Provider;
   private agentTools: any;
-  private healedSteps: Array<{ test: string; original: string; healed: string }> = [];
+  private healedSteps: Array<{ original: string; healed: string }> = [];
   private traceDir = '';
   private static pluginsWired = false;
 
@@ -76,10 +75,6 @@ export class Rerunner extends TaskAgent implements Agent {
 
   private get healMaxIterations(): number {
     return this.rerunnerConfig.healMaxIterations ?? 3;
-  }
-
-  listTests(testsDir: string): void {
-    printTestList(loadTestSuites(testsDir));
   }
 
   async rerun(filePath: string, options?: { testIndices?: number[] }): Promise<RerunResult> {
@@ -437,7 +432,7 @@ export class Rerunner extends TaskAgent implements Agent {
         throw new Error(`Could not heal: ${failedCode}`);
       }
 
-      this.healedSteps.push({ test: '', original: failedCode, healed: healedCommand });
+      this.healedSteps.push({ original: failedCode, healed: healedCommand });
       console.log(chalk.green(`    ${figureSet.tick} Healed: ${healedCommand}`));
     };
   }

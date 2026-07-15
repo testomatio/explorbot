@@ -15,8 +15,6 @@ const debugLog = createDebug('explorbot:experience-compactor');
 
 export const COMPACT_MAX_LENGTH = 5000;
 
-export type { ExperienceFile };
-
 interface MergeGroup {
   pattern: string;
   files: ExperienceFile[];

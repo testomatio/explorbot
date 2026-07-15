@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { ActionResult } from '../action-result.ts';
-import { ConfigParser } from '../config.ts';
+import { outputPath } from '../config.ts';
 import type { StateManager, StateTransition, WebPageState } from '../state-manager.ts';
 import type { Task } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -11,36 +11,6 @@ import type { Conversation, ToolExecution } from './conversation.ts';
 import type { Provider } from './provider.ts';
 
 const debugLog = createDebug('explorbot:quartermaster');
-
-interface AxeViolation {
-  id: string;
-  impact: 'critical' | 'serious' | 'moderate' | 'minor';
-  description: string;
-  helpUrl: string;
-  nodes: Array<{ html: string; target: string[] }>;
-}
-
-interface PageAnalysis {
-  url: string;
-  stateHash: string;
-  timestamp: string;
-  axeViolations: AxeViolation[];
-}
-
-interface SemanticIssue {
-  type: 'unclear_intention' | 'confusing_naming' | 'hard_to_interact';
-  element: string;
-  issue: string;
-  suggestion: string;
-}
-
-interface AnalysisReport {
-  scenario: string;
-  timestamp: string;
-  url: string;
-  axeViolations: AxeViolation[];
-  semanticIssues: SemanticIssue[];
-}
 
 export class Quartermaster {
   private provider: Provider;
@@ -55,13 +25,12 @@ export class Quartermaster {
     this.provider = provider;
     this.model = options?.model;
 
-    const configParser = ConfigParser.getInstance();
-    this.outputDir = join(configParser.getOutputDir(), 'a11y');
+    this.outputDir = outputPath('a11y');
   }
 
   start(playwrightHelper: any, stateManager: StateManager): void {
     this.playwrightHelper = playwrightHelper;
-    this.ensureDirectory();
+    mkdirSync(this.outputDir, { recursive: true });
 
     this.unsubscribe = stateManager.onStateChange((event) => {
       this.onPageChange(event);
@@ -76,12 +45,6 @@ export class Quartermaster {
       this.unsubscribe = null;
     }
     debugLog('Quartermaster stopped');
-  }
-
-  private ensureDirectory(): void {
-    if (!existsSync(this.outputDir)) {
-      mkdirSync(this.outputDir, { recursive: true });
-    }
   }
 
   private onPageChange(event: StateTransition): void {
@@ -283,4 +246,34 @@ Focus on what would confuse a real user or caused the agent to make mistakes.`;
 
     return content;
   }
+}
+
+interface AxeViolation {
+  id: string;
+  impact: 'critical' | 'serious' | 'moderate' | 'minor';
+  description: string;
+  helpUrl: string;
+  nodes: Array<{ html: string; target: string[] }>;
+}
+
+interface PageAnalysis {
+  url: string;
+  stateHash: string;
+  timestamp: string;
+  axeViolations: AxeViolation[];
+}
+
+interface SemanticIssue {
+  type: 'unclear_intention' | 'confusing_naming' | 'hard_to_interact';
+  element: string;
+  issue: string;
+  suggestion: string;
+}
+
+interface AnalysisReport {
+  scenario: string;
+  timestamp: string;
+  url: string;
+  axeViolations: AxeViolation[];
+  semanticIssues: SemanticIssue[];
 }

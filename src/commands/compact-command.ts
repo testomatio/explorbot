@@ -1,6 +1,7 @@
 import { basename } from 'node:path';
 import chalk from 'chalk';
-import { COMPACT_MAX_LENGTH, type ExperienceFile } from '../ai/experience-compactor.js';
+import { COMPACT_MAX_LENGTH } from '../ai/experience-compactor.js';
+import type { ExperienceFile } from '../experience-tracker.js';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import { tag } from '../utils/logger.js';
 import { BaseCommand, type Suggestion } from './base-command.js';

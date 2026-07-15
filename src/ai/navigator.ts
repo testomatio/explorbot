@@ -3,9 +3,9 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
 import type Action from '../action.ts';
-import { ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
+import { type ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
-import { KnowledgeTracker } from '../knowledge-tracker.js';
+import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import { normalizeUrl } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
@@ -483,17 +483,10 @@ class Navigator implements Agent {
   }
 
   private buildExperienceTools(): { learnExperience: unknown } | undefined {
-    const stateManager = this.explorer.getStateManager();
-    const getState = () => {
-      const s = stateManager.getCurrentState();
-      return s ? ActionResult.fromState(s) : null;
-    };
     const { learnExperience } = createAgentTools({
       explorer: this.explorer,
       researcher: null as unknown as Researcher,
       navigator: this,
-      experienceTracker: this.experienceTracker,
-      getState,
     });
     if (!learnExperience) return undefined;
     return { learnExperience };

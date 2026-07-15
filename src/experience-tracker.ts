@@ -111,21 +111,6 @@ export class ExperienceTracker {
     writeFileSync(filePath, fileContent, 'utf8');
   }
 
-  hasRecentExperience(stateHash: string, prefix = ''): boolean {
-    if (this.disabled) {
-      return false;
-    }
-    if (prefix) {
-      stateHash = `${prefix}_${stateHash}`;
-    }
-    const filePath = this.getExperienceFilePath(stateHash);
-    if (!existsSync(filePath)) {
-      return false;
-    }
-    const stats = statSync(filePath);
-    return stats.mtime.getTime() > Date.now() - 1000 * 60 * 60 * 24;
-  }
-
   private getExperienceFilePath(stateHash: string): string {
     return join(this.experienceDir, `${stateHash}.md`);
   }
@@ -262,14 +247,6 @@ export class ExperienceTracker {
         if (lines.length <= maxLines) return experience;
         return { ...experience, content: lines.slice(0, maxLines).join('\n') };
       });
-  }
-
-  /**
-   * Clean up experience tracker (for testing)
-   */
-  cleanup(): void {
-    // Clear any in-memory state if needed
-    // The actual files will be cleaned up by test cleanup
   }
 
   getSuccessfulExperience(state: ActionResult, options?: { includeDescendants?: boolean; stripCode?: boolean }): string[] {

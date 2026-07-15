@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
-import { ExperienceTracker } from '../experience-tracker.js';
+import type { ExperienceTracker } from '../experience-tracker.js';
 import type { ExplorBot } from '../explorbot.ts';
 import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
@@ -63,7 +63,7 @@ export class Captain extends CaptainBase implements Agent {
   }
 
   protected getKnowledgeTracker() {
-    return this.explorBot.getExplorer().getKnowledgeTracker();
+    return this.explorBot.knowledgeTracker();
   }
 
   protected getProvider(): Provider {
@@ -144,15 +144,6 @@ export class Captain extends CaptainBase implements Agent {
       return this.resetConversation();
     }
     return this.conversation;
-  }
-
-  getConversation(): Conversation | null {
-    return this.conversation;
-  }
-
-  cleanConversation(): void {
-    this.conversation = null;
-    tag('info').log('Conversation cleaned');
   }
 
   private async getPageContext(): Promise<string> {

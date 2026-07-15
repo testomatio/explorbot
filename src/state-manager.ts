@@ -1,6 +1,6 @@
 import { ActionResult } from './action-result.js';
-import { ExperienceTracker } from './experience-tracker.js';
-import { KnowledgeTracker, type Knowledge } from './knowledge-tracker.js';
+import type { ExperienceTracker } from './experience-tracker.js';
+import type { KnowledgeTracker, Knowledge } from './knowledge-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
 import { createDebug } from './utils/logger.js';
 import { slugify } from './utils/strings.js';
@@ -394,11 +394,6 @@ export class StateManager {
     this.allVisitedUrls.clear();
     this.stateChangeListeners = [];
     this.nextStateId = 1;
-
-    // Clean up experience tracker if it has cleanup method
-    if (this.experienceTracker && typeof this.experienceTracker.cleanup === 'function') {
-      this.experienceTracker.cleanup();
-    }
 
     debugLog('StateManager cleanup completed');
   }

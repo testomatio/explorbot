@@ -14,6 +14,10 @@ export function slugify(text: string): string {
     .toLowerCase();
 }
 
+export function normalizeInlineText(text: string): string {
+  return text.normalize('NFKC').replace(/\s+/g, ' ').trim();
+}
+
 export function sanitizeFilename(name: string): string {
   return name
     .toLowerCase()
