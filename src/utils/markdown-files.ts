@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import matter from 'gray-matter';
 
-export function loadMarkdownFiles(dir: string, options: { recursive?: boolean } = {}): MarkdownFile[] {
+export function loadMarkdownFiles(dir: string, options: { recursive?: boolean; onError?: (filePath: string, error: unknown) => void } = {}): MarkdownFile[] {
   if (!existsSync(dir)) return [];
 
   const results: MarkdownFile[] = [];
@@ -14,7 +14,9 @@ export function loadMarkdownFiles(dir: string, options: { recursive?: boolean } 
     try {
       const parsed = matter(readFileSync(filePath, 'utf8'));
       results.push({ filePath, content: parsed.content, data: parsed.data, mtime: statSync(filePath).mtime });
-    } catch {}
+    } catch (error) {
+      options.onError?.(filePath, error);
+    }
   }
 
   return results;

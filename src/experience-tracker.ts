@@ -228,7 +228,11 @@ export class ExperienceTracker {
       }
 
       try {
-        allFiles.push(...loadMarkdownFiles(experienceDir));
+        allFiles.push(
+          ...loadMarkdownFiles(experienceDir, {
+            onError: (filePath, error) => debugLog(`Failed to read experience file ${filePath}:`, error),
+          })
+        );
       } catch (error) {
         debugLog(`Failed to read experience directory ${experienceDir}:`, error);
       }
