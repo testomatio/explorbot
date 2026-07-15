@@ -2,7 +2,7 @@ import dedent from 'dedent';
 
 export const recommendedCodeceptCommands = ['I.click', 'I.type', 'I.fillField', 'I.see', 'I.seeElement'] as const;
 
-const locatorPriorityPart = dedent`
+const locatorPriorityRule = dedent`
   <locator_priority>
   Use the following priority when selecting locators:
 
@@ -24,7 +24,7 @@ const locatorPriorityPart = dedent`
   </locator_priority>
 `;
 
-export const contextSimplificationRule = dedent`
+const contextSimplificationRule = dedent`
   <context_simplification>
   When container is available from UI map sections:
   - Text + container is simplest and PREFERRED: I.click('Save', '.modal')
@@ -34,7 +34,7 @@ export const contextSimplificationRule = dedent`
   </context_simplification>
 `;
 
-const locatorRuleTail = dedent`
+const locatorStrategyRule = dedent`
   <disambiguation>
   When multiple elements could match the request, select based on intent:
   1. Match the context of recent actions - if filling a form, use elements in that same form
@@ -127,9 +127,9 @@ const locatorRuleTail = dedent`
   HTML locators must be valid JS strings
 `;
 
-export const locatorRule = [locatorPriorityPart, contextSimplificationRule, locatorRuleTail].join('\n\n');
+export const locatorRule = [locatorPriorityRule, contextSimplificationRule, locatorStrategyRule].join('\n\n');
 
-export const locatorRuleWithoutContextSimplification = [locatorPriorityPart, locatorRuleTail].join('\n\n');
+export const drillLocatorRule = [locatorPriorityRule, locatorStrategyRule].join('\n\n');
 
 export const fileUploadRule = dedent`
   <file_upload>

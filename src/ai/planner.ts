@@ -341,6 +341,7 @@ export class Planner extends PlannerBase implements Agent {
       If there are subpages (pages with same URL path) plan testing of those subpages as well
       If you plan to test CRUD operations, plan them in correct order: create, read, update.
       Do not invent specific route names, success messages, validation texts, badge counts, or welcome messages unless they are visible in research, visited pages, or prior observed flows.
+      When validation placement or wording was not observed, require feedback associated with the invalid input without inventing a specific location or message.
       If exact wording is unknown, describe the expected result generically, for example "an authentication error is shown" or "the user stays on the login page" instead of guessing the literal text.
       If exact redirect destination is unknown, describe the destination by visible page identity, for example "the dashboard page opens" or "the current workspace home page opens" instead of inventing a URL slug.
       Only propose scenarios whose prerequisites are evident from page research, visited pages, or API data preparation context.
