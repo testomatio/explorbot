@@ -667,6 +667,15 @@ Not a section.
       const result = mdq(md).query('section').replace('REPLACED\n');
       expect(result).toBe('REPLACED\n');
     });
+
+    it('should replace each match without stale offsets', () => {
+      const md = '## Short\n\nText\n\n## Much Longer Heading\n\nMore\n';
+      const result = mdq(md)
+        .query('h2')
+        .replaceEach((heading, index) => `## ${index + 1}: ${heading.meta()[0].text}\n\n`);
+
+      expect(result).toBe('## 1: Short\n\nText\n\n## 2: Much Longer Heading\n\nMore\n');
+    });
   });
 
   describe('composable chaining', () => {

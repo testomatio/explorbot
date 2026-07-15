@@ -281,42 +281,35 @@ export class Planner extends PlannerBase implements Agent {
 
   private cleanExperienceFlows(text: string): string | null {
     let result = text;
-
-    while (true) {
-      const sections = [...mdq(result).query('section2').each(), ...mdq(result).query('section3').each()];
-      const seenTitles = new Set<string>();
-      let removed = false;
-      for (const section of sections) {
-        const heading = section.query('heading').text().trim();
-        const withoutHeadings = mdq(section.text()).query('heading').replace('');
-        const body = mdq(withoutHeadings).query('hr').replace('').trim();
-        if (body && !seenTitles.has(heading)) {
-          seenTitles.add(heading);
-          continue;
-        }
-        result = section.replace('');
-        removed = true;
-        break;
-      }
-      if (!removed) break;
+    const seenTitles = new Set<string>();
+    for (const selector of ['section2', 'section3']) {
+      result = mdq(result)
+        .query(selector)
+        .replaceEach((section) => {
+          const heading = section.query('heading').text().trim();
+          const withoutHeadings = mdq(section.text()).query('heading').replace('');
+          const body = mdq(withoutHeadings).query('hr').replace('').trim();
+          if (body && !seenTitles.has(heading)) {
+            seenTitles.add(heading);
+            return section.text();
+          }
+          return '';
+        });
     }
 
     const trimmedTitles = new Set<string>();
-    while (true) {
-      const sections = [...mdq(result).query('section2').each(), ...mdq(result).query('section3').each()];
-      let trimmed = false;
-      for (const section of sections) {
-        const heading = section.query('heading').text().trim();
-        if (trimmedTitles.has(heading)) continue;
-        const count = section.query('blockquote').count();
-        if (count <= 10) continue;
-        const kept = mdq(section.text()).query('blockquote[10:]').replace('');
-        result = section.replace(`${kept.trimEnd()}\n> ... and ${count - 10} more discoveries\n`);
-        trimmedTitles.add(heading);
-        trimmed = true;
-        break;
-      }
-      if (!trimmed) break;
+    for (const selector of ['section2', 'section3']) {
+      result = mdq(result)
+        .query(selector)
+        .replaceEach((section) => {
+          const heading = section.query('heading').text().trim();
+          if (trimmedTitles.has(heading)) return section.text();
+          const count = section.query('blockquote').count();
+          if (count <= 10) return section.text();
+          const kept = mdq(section.text()).query('blockquote[10:]').replace('');
+          trimmedTitles.add(heading);
+          return `${kept.trimEnd()}\n> ... and ${count - 10} more discoveries\n`;
+        });
     }
 
     return result.trim() || null;
@@ -395,17 +388,17 @@ export class Planner extends PlannerBase implements Agent {
       deep: true,
     });
     let plannerResearch = mdq(research).query('code').replace('');
-    const tableCount = mdq(plannerResearch).query('table').count();
-    for (let i = 0; i < tableCount; i++) {
-      const table = mdq(plannerResearch).query('table').each()[i];
-      const rows = table.toJson();
-      if (rows.length === 0 || !rows[0].Element) continue;
-      const elementWithType = rows.map((r) => ({
-        Element: r.Element,
-        Type: r.Type || '',
-      }));
-      plannerResearch = table.replace(jsonToTable(elementWithType, ['Element', 'Type']));
-    }
+    plannerResearch = mdq(plannerResearch)
+      .query('table')
+      .replaceEach((table) => {
+        const rows = table.toJson();
+        if (rows.length === 0 || !rows[0].Element) return table.text();
+        const elementWithType = rows.map((r) => ({
+          Element: r.Element,
+          Type: r.Type || '',
+        }));
+        return jsonToTable(elementWithType, ['Element', 'Type']);
+      });
 
     const hasFocusedOverlay = hasFocusedSection(plannerResearch);
     const focusNote = hasFocusedOverlay ? "IMPORTANT: One section is marked as **Focused** — this is the user's current focus area. Concentrate testing on the Focused section FIRST — test all interactions inside it before planning tests for the rest of the page." : '';

@@ -813,8 +813,9 @@ export class Tester extends TaskAgent implements Agent {
     - When selecting related entities from a list, do not choose rows/options/cards marked as "0 items", "0 tests", or otherwise empty if the scenario requires selecting real content.
     - In selection pickers, counters such as "Selected 0", "Matched tests 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
     - A passed form/click command only means the command executed. If a required field remains empty, submit stays disabled, or the expected text is not visible, treat the action as not completed and correct the missing field/state.
-    - For filter/tab scenarios, success requires BOTH: the requested filter/tab is visibly active/selected AND the list content matches that filter. Do not finish from only one of these signals.
-    - Empty-state text such as "No matched items" only proves a filter when the requested filter/tab is active and the empty state belongs to the filtered list.
+    - For filter/tab scenarios, success requires BOTH: the requested state is evidenced by a selected control, URL/query, or another explicit state indicator AND the list content matches that state. Do not finish from only one of these signals.
+    - Once the requested control state and matching content are visible, finish the scenario instead of repeating the interaction to obtain a different kind of state indicator.
+    - Empty-state text such as "No matched items" only proves a filter when the requested state is explicit and the empty state belongs to the filtered list.
     - When filling complex form with lot of actions performed, use see() to look which fields were filled and which are not
     - When verify() fails, use see() to visually confirm the result — visual confirmation is equally valid evidence
     - For visual state verification (active tabs, selected items, counts, colors), prefer see() over DOM-based verify()

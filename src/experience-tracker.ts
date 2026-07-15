@@ -522,20 +522,14 @@ function generateActionContent(title: string, code: string, explanation?: string
 }
 
 function renderAsHowTo(content: string): string {
-  let result = content;
-  for (const { marker, suffix } of [
-    { marker: 'FLOW:', suffix: 'multi-step' },
-    { marker: 'ACTION:', suffix: 'single-step' },
-  ]) {
-    while (true) {
-      const headings = mdq(result).query('h2').meta();
-      const idx = headings.findIndex((h) => h.text.trim().startsWith(marker));
-      if (idx === -1) break;
-      const title = headings[idx].text.trim().slice(marker.length).trim();
-      result = mdq(result).query(`h2[${idx}]`).replace(`## HOW to ${title} (${suffix})\n\n`);
-    }
-  }
-  return result;
+  return mdq(content)
+    .query('h2')
+    .replaceEach((heading) => {
+      const text = heading.meta()[0]?.text.trim() || '';
+      if (text.startsWith('FLOW:')) return `## HOW to ${text.slice(5).trim()} (multi-step)\n\n`;
+      if (text.startsWith('ACTION:')) return `## HOW to ${text.slice(7).trim()} (single-step)\n\n`;
+      return heading.text();
+    });
 }
 
 export interface ExperienceFile {

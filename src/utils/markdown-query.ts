@@ -408,6 +408,10 @@ export class MarkdownQuery {
   }
 
   replace(content: string): string {
+    return this.replaceEach(() => content);
+  }
+
+  replaceEach(replacer: (match: MarkdownQuery, index: number) => string): string {
     const sorted = [...this.matches].sort((a, b) => a.start - b.start);
 
     const kept: MatchedRange[] = [];
@@ -418,10 +422,11 @@ export class MarkdownQuery {
       lastEnd = range.start + range.length;
     }
 
+    const replacements = kept.map((range, index) => replacer(new MarkdownQuery(this.source, [range]), index));
     let result = this.source;
     for (let i = kept.length - 1; i >= 0; i--) {
       const range = kept[i];
-      result = result.slice(0, range.start) + content + result.slice(range.start + range.length);
+      result = result.slice(0, range.start) + replacements[i] + result.slice(range.start + range.length);
     }
 
     return result;
