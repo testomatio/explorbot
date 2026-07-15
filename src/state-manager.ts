@@ -400,11 +400,6 @@ export class StateManager {
     this.stateChangeListeners = [];
     this.nextStateId = 1;
 
-    // Clean up experience tracker if it has cleanup method
-    if (this.experienceTracker && typeof this.experienceTracker.cleanup === 'function') {
-      this.experienceTracker.cleanup();
-    }
-
     debugLog('StateManager cleanup completed');
   }
 }

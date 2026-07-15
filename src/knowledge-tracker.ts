@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';

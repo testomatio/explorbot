@@ -145,15 +145,6 @@ export class Captain extends CaptainBase implements Agent {
     return this.conversation;
   }
 
-  getConversation(): Conversation | null {
-    return this.conversation;
-  }
-
-  cleanConversation(): void {
-    this.conversation = null;
-    tag('info').log('Conversation cleaned');
-  }
-
   private async getPageContext(): Promise<string> {
     const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
     if (!state) {

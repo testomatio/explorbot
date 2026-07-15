@@ -13,8 +13,6 @@ import { type PlaywrightMethods, WithPlaywright } from './historian/playwright.t
 import { type ScreencastMethods, WithScreencast } from './historian/screencast.ts';
 import type { Provider } from './provider.ts';
 
-export { isNonReusableCode } from '../utils/step-analyzer.ts';
-
 const HistorianBase = WithScreencast(WithPlaywright(WithCodeceptJS(WithExperience(Object as unknown as new (...args: any[]) => object))));
 
 export interface Historian extends ExperienceMethods, CodeceptJSMethods, PlaywrightMethods, ScreencastMethods {}
@@ -52,11 +50,10 @@ export class Historian extends HistorianBase {
     return this.isPlaywrightFramework() ? this.savePlaywrightPlanToFile(plan) : this.saveCodeceptPlanToFile(plan);
   }
 
-  rewriteScenarioInFile(filePath: string, healedSteps: Array<{ test: string; original: string; healed: string }>): void {
+  rewriteScenarioInFile(filePath: string, healedSteps: Array<{ original: string; healed: string }>): void {
     let content = readFileSync(filePath, 'utf-8');
 
     for (const step of healedSteps) {
-      if (!content.includes(step.original)) continue;
       content = content.replace(step.original, step.healed);
     }
 
