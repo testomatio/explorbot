@@ -483,7 +483,7 @@ export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false):
   return renderTree(tree);
 };
 
-export const diffAriaSnapshots = (previous: string | null, current: string | null): string | null => {
+export const diffAriaSnapshots = (previous: string | null, current: string | null): AriaDiff => {
   const flat = (snap: string | null): FlatEntry[] => {
     let tree = parseSnapshot(snap);
     tree = unwrapIgnored(tree);
@@ -500,7 +500,9 @@ export const diffAriaSnapshots = (previous: string | null, current: string | nul
   const currTotals = countBy(curr.map((e) => e.summary));
   const byCount = diffByCount(prevTotals, currTotals);
   const renames = detectRenames(prev, curr, prevTotals, currTotals);
-  return formatDiff([...byCount.added, ...renames.added], [...byCount.removed, ...renames.removed], toggled);
+  const added = [...byCount.added, ...renames.added];
+  const removed = [...byCount.removed, ...renames.removed];
+  return { text: formatDiff(added, removed, toggled), count: added.length + removed.length + toggled.length };
 };
 
 export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
@@ -572,16 +574,14 @@ export function parseAriaLocator(ariaStr: string): { role: string; text: string 
 
 export const LARGE_ARIA_CHANGE_THRESHOLD = 50;
 
-export function countAriaChanges(ariaChanges: string): number {
-  const addedCount = (ariaChanges.match(/\n {4}- /g) || []).length;
-  const removedMatch = ariaChanges.match(/removed: (\d+) interactive/);
-  const removedCount = removedMatch ? Number.parseInt(removedMatch[1]) : 0;
-  return addedCount + removedCount;
-}
-
 // ─────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────
+
+export interface AriaDiff {
+  text: string | null;
+  count: number;
+}
 
 type AriaNode = {
   role: string;

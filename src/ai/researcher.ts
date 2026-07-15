@@ -781,7 +781,7 @@ export class Researcher extends ResearcherBase implements Agent {
     const beforeAria = this.stateManager.getCurrentState()?.ariaSnapshot || null;
 
     await this.explorer.executeAction('I.clickXY(0, 0)');
-    if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null)) return;
+    if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null).text) return;
 
     await this.explorer.executeAction(`I.pressKey('Escape')`);
   }

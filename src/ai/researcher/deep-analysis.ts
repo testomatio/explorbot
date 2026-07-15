@@ -450,7 +450,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         await (this as any).cancelInUi();
         await this.explorer.capturePageState();
         const currentAria = this.stateManager.getCurrentState()?.ariaSnapshot || '';
-        if (!diffAriaSnapshots(originalAria, currentAria)) return;
+        if (!diffAriaSnapshots(originalAria, currentAria).text) return;
       } catch (err) {
         tag('warning').log(`State capture failed after cancelInUi: ${err instanceof Error ? err.message : err}`);
       }

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
-import { LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, countAriaChanges, diffAriaSnapshots } from './utils/aria.ts';
+import { LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
 import { TTLCache } from './utils/cache.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
@@ -38,6 +38,7 @@ export interface PageDiff {
   previousUrl?: string;
   currentUrl: string;
   ariaChanges?: string | null;
+  ariaChangeCount?: number;
   htmlParts?: HtmlDiffPart[];
   iframes?: string;
 }
@@ -527,6 +528,7 @@ export class ActionResult implements ActionResultData {
 
     if (diff.ariaChanged) {
       pageDiff.ariaChanges = diff.ariaChanged;
+      pageDiff.ariaChangeCount = diff.ariaChangeCount;
     }
 
     if (diff.htmlParts.length > 0) {
@@ -545,7 +547,7 @@ export class ActionResult implements ActionResultData {
     }
 
     if (pageDiff.ariaChanges && this.iframeSnapshots.length > 0) {
-      if (countAriaChanges(pageDiff.ariaChanges) >= LARGE_ARIA_CHANGE_THRESHOLD) {
+      if (diff.ariaChangeCount >= LARGE_ARIA_CHANGE_THRESHOLD) {
         pageDiff.iframes = this.iframeSnapshots.map((snap) => `iframe src="${snap.src}":\n${snap.html}`).join('\n\n');
       }
     }
@@ -583,6 +585,7 @@ function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
 export class Diff {
   private _htmlDiffResult: HtmlDiffResult | null = null;
   private _ariaDiffResult: string | null = null;
+  private _ariaChangeCount = 0;
   private _isSameUrl: boolean;
 
   constructor(
@@ -625,6 +628,10 @@ export class Diff {
     return this._ariaDiffResult;
   }
 
+  get ariaChangeCount(): number {
+    return this._ariaChangeCount;
+  }
+
   get htmlDiff(): HtmlDiffResult | null {
     return this._htmlDiffResult;
   }
@@ -636,6 +643,8 @@ export class Diff {
       this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
     }
 
-    this._ariaDiffResult = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);
+    const ariaDiff = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);
+    this._ariaDiffResult = ariaDiff.text;
+    this._ariaChangeCount = ariaDiff.count;
   }
 }
