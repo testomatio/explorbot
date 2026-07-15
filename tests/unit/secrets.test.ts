@@ -36,6 +36,12 @@ describe('secrets', () => {
     expect(isSecretName('APP_PASSWORD')).toBe(true);
     expect(isSecretName('ai.apiKey')).toBe(true);
     expect(isSecretName('SESSION_TOKEN')).toBe(true);
+    expect(isSecretName('JWT_SIGNING_KEY')).toBe(true);
+    expect(isSecretName('AUTH_HEADER')).toBe(true);
+    expect(isSecretName('BEARER_VALUE')).toBe(true);
+    expect(isSecretName('AUTHORIZATION')).toBe(true);
+    expect(isSecretName('TLS_CERT')).toBe(true);
+    expect(isSecretName('CLIENT_CERTIFICATE')).toBe(true);
     expect(isSecretName('BASE_URL')).toBe(false);
     expect(isSecretName('playwright.browser')).toBe(false);
   });

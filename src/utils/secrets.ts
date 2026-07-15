@@ -1,5 +1,5 @@
 const MIN_SECRET_LENGTH = 4;
-const SECRET_NAME_TOKENS = ['password', 'passwd', 'secret', 'token', 'apikey', 'api_key', 'credential', 'private_key', 'privatekey', 'access_key'];
+const SECRET_NAME_TOKENS = ['password', 'passwd', 'secret', 'token', 'apikey', 'api_key', 'credential', 'private_key', 'privatekey', 'access_key', 'jwt', 'auth', 'bearer', 'authorization', 'cert', 'certificate'];
 const secretValues = new Set<string>();
 
 export function registerSecret(value: string): void {
