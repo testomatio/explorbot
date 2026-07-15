@@ -33,8 +33,6 @@ describe('ExperienceTracker', () => {
   });
 
   afterEach(() => {
-    experienceTracker.cleanup();
-
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }

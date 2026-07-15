@@ -554,16 +554,14 @@ export function createAgentTools({
   explorer,
   researcher,
   navigator,
-  experienceTracker,
-  getState,
   supervisor,
+  withExperience,
 }: {
   explorer: Explorer;
   researcher: Researcher;
   navigator: Navigator;
-  experienceTracker?: ExperienceTracker;
-  getState?: () => ActionResult | null;
   supervisor?: boolean;
+  withExperience?: boolean;
 }): any {
   let visionDisabled = false;
 
@@ -1044,7 +1042,7 @@ export function createAgentTools({
     }),
   };
 
-  if (experienceTracker && getState) {
+  if (withExperience !== false) {
     tools.learnExperience = tool({
       description: dedent`
         Read the full body of a specific experience section listed in <experience>.
@@ -1056,11 +1054,12 @@ export function createAgentTools({
         sectionIndex: z.number().int().positive().describe('1-based section index within that file'),
       }),
       execute: async ({ fileTag, sectionIndex }) => {
-        const state = getState();
-        if (!state) {
+        const stateManager = explorer.getStateManager();
+        const currentState = stateManager.getCurrentState();
+        if (!currentState) {
           return { error: 'No current page state available.' };
         }
-        const section = experienceTracker.getExperienceSection(fileTag, sectionIndex, state);
+        const section = stateManager.getExperienceTracker().getExperienceSection(fileTag, sectionIndex, ActionResult.fromState(currentState));
         if (!section) {
           return { error: 'Section not found. Experience may have been updated; re-read the latest TOC.' };
         }

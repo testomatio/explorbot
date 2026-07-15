@@ -3,7 +3,9 @@ import path from 'node:path';
 import { parseResearchSections } from '../../../src/ai/researcher/parser.ts';
 import type Explorer from '../../../src/explorer.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
+import { detectFocusArea } from '../../../src/utils/aria.ts';
 import { safeFilename, sanitizeFilename } from '../../../src/utils/strings.ts';
+import type { DocStateTransition } from './ai/tools.ts';
 import type { DocbotConfig } from './config.ts';
 
 const DEFAULT_MAX_SECTION_SCREENSHOTS = 8;
@@ -59,6 +61,36 @@ export function getScreenshotSections(research: string): ScreenshotSection[] {
   return sections;
 }
 
+export async function captureInteractionScreenshot(explorer: Explorer, state: WebPageState, transition: DocStateTransition, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {
+  const page = explorer.playwrightHelper?.page;
+  if (!page) {
+    return null;
+  }
+
+  mkdirSync(options.screenshotsDir, { recursive: true });
+  const pageName = sanitizeFilename(state.url || 'page') || 'page';
+  const stateName = sanitizeFilename(transition.targetState?.label || transition.action) || 'state';
+  const filePath = path.join(options.screenshotsDir, safeFilename(`${pageName}_${stateName}`, '.png'));
+  const focus = detectFocusArea(state.ariaSnapshot || null);
+
+  try {
+    if (focus.detected) {
+      await page.locator('[role="dialog"], [role="alertdialog"], [aria-modal="true"]').last().screenshot({ path: filePath });
+    } else {
+      await page.screenshot({ path: filePath });
+    }
+  } catch {
+    return null;
+  }
+
+  return {
+    title: transition.targetState?.label || transition.action,
+    path: filePath,
+    relativePath: toMarkdownPath(options.pageFilePath, filePath),
+    kind: 'state',
+  };
+}
+
 async function captureFullPageScreenshot(page: any, pageName: string, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {
   const filePath = path.join(options.screenshotsDir, safeFilename(`${pageName}_page`, '.png'));
   try {
@@ -110,7 +142,7 @@ export interface DocumentationScreenshot {
   title: string;
   path: string;
   relativePath: string;
-  kind: 'page' | 'section';
+  kind: 'page' | 'section' | 'state';
   selector?: string;
 }
 

@@ -3,7 +3,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { ConfigParser } from '../config.ts';
-import { type ExperienceTracker, renderExperienceToc } from '../experience-tracker.ts';
+import { renderExperienceToc } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
@@ -32,14 +32,12 @@ export class Pilot implements Agent {
   private researcher: Researcher;
   private explorer: Explorer;
   private fisherman: Fisherman | null = null;
-  private experienceTracker: ExperienceTracker | null;
 
-  constructor(provider: Provider, agentTools: any, researcher: Researcher, explorer: Explorer, experienceTracker?: ExperienceTracker) {
+  constructor(provider: Provider, agentTools: any, researcher: Researcher, explorer: Explorer) {
     this.provider = provider;
     this.agentTools = agentTools;
     this.researcher = researcher;
     this.explorer = explorer;
-    this.experienceTracker = experienceTracker || null;
   }
 
   setFisherman(fisherman: Fisherman): void {
@@ -603,11 +601,10 @@ export class Pilot implements Agent {
   }
 
   private getExperienceToc(): string {
-    if (!this.experienceTracker) return '';
     const state = this.explorer.getStateManager().getCurrentState();
     if (!state) return '';
     const actionResult = ActionResult.fromState(state);
-    const toc = this.experienceTracker.getExperienceTableOfContents(actionResult);
+    const toc = this.explorer.getStateManager().getExperienceTracker().getExperienceTableOfContents(actionResult);
     return renderExperienceToc(toc);
   }
 

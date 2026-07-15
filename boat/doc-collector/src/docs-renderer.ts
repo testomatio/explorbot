@@ -1,7 +1,9 @@
 import path from 'node:path';
-import type { WebPageState } from '../../../src/state-manager.ts';
+import { type WebPageState } from '../../../src/state-manager.ts';
 import type { PageDocumentation, StateTransition } from './ai/documentarian.ts';
 import type { DocumentationScreenshot } from './screenshots.ts';
+import { buildStateGraph, renderMermaidFromGraph, renderStateMapFromGraph, type DocumentedPage, type SkippedPage } from './state-diagram.ts';
+import { normalizeInlineText } from '../../../src/utils/strings.ts';
 
 function renderPageDocumentation(state: WebPageState, documentation: PageDocumentation, screenshots: DocumentationScreenshot[] = []): string {
   const lines: string[] = [];
@@ -46,6 +48,10 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
         for (const cap of transition.newCapabilities) {
           lines.push(`- ${cap}`);
         }
+        lines.push('');
+      }
+      if (transition.screenshot) {
+        lines.push(`![${normalizeInlineText(transition.screenshot.title)}](${transition.screenshot.relativePath})`);
         lines.push('');
       }
     }
@@ -109,6 +115,18 @@ function renderSpecIndex(outputDir: string, startPath: string, pages: Documented
   lines.push(`Pages skipped: ${skipped.length}`);
   lines.push(`Max pages: ${maxPages}`);
   lines.push('');
+  const graph = buildStateGraph(outputDir, pages);
+  lines.push('## State Transitions');
+  lines.push('');
+  lines.push(`\`\`\`mermaid\n${renderMermaidFromGraph(graph)}\n\`\`\``);
+  lines.push('');
+  const stateMap = renderStateMapFromGraph(graph);
+  if (stateMap) {
+    lines.push('### State Index');
+    lines.push('');
+    lines.push(stateMap);
+    lines.push('');
+  }
   lines.push('## Pages');
   lines.push('');
 
@@ -225,29 +243,6 @@ function ensureSentence(text: string): string {
     return trimmed;
   }
   return `${trimmed}.`;
-}
-
-function normalizeInlineText(text: string): string {
-  return text.normalize('NFKC').replace(/\s+/g, ' ').trim();
-}
-
-interface DocumentedPage {
-  url: string;
-  title: string;
-  summary: string;
-  canCount: number;
-  mightCount: number;
-  interactionCount: number;
-  canActions: string[];
-  mightActions: string[];
-  interactionActions: string[];
-  qualityNotes: string[];
-  filePath: string;
-}
-
-interface SkippedPage {
-  url: string;
-  reason: string;
 }
 
 export { renderPageDocumentation, renderSpecIndex, ensureSentence, normalizeAction };

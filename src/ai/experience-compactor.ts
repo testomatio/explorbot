@@ -12,8 +12,6 @@ import type { Provider } from './provider.js';
 
 const debugLog = createDebug('explorbot:experience-compactor');
 
-export type { ExperienceFile };
-
 interface MergeGroup {
   pattern: string;
   files: ExperienceFile[];

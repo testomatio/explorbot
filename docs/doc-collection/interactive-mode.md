@@ -39,7 +39,7 @@ URLs discovered through clicks join the crawl queue, so interactive mode can rea
 The collector does not click everything:
 
 - **Tabs first.** If research found a tab group (2 to 6 tabs), each tab is clicked to capture the page's alternate states.
-- **Then primary actions.** Up to `maxPrimaryCandidates` (default 3) of the most promising links and buttons from the page's content and control sections. Navigation menus, headers, footers, and modal overlays are excluded — clicking those documents the site chrome, not this page.
+- **Then primary actions.** Up to `maxPrimaryCandidates` (default 3) of the most promising links and buttons from the page's content and control sections. Navigation menus, headers, and footers are excluded. Controls that open dialogs or change a local screen area are recorded as child states; controls inside an already open overlay are not explored recursively.
 - **Hard cap.** `maxInteractions` (default 5) limits total clicks per page, tabs included.
 
 Raise the numbers for control-dense pages you want covered deeply; lower them to speed up large crawls:
@@ -67,7 +67,7 @@ Some crawled pages have nothing worth documenting: empty states, redirect stubs,
 - it yields fewer proven actions than `minCanActions` (default 1), and
 - research found fewer interactive elements than `minInteractiveElements` (default 3)
 
-Skipped pages appear at the end of `spec.md` with the reason. This filter applies in static and interactive mode alike. If real pages are being dropped, lower the thresholds; `minCanActions: 0` keeps every page.
+Skipped pages appear at the end of `index.md` with the reason. This filter applies in static and interactive mode alike. If real pages are being dropped, lower the thresholds; `minCanActions: 0` keeps every page.
 
 ## Screenshots
 
@@ -77,6 +77,8 @@ Screenshots are on by default (`screenshot: true`) in both modes. For every docu
 - one screenshot per section the [Researcher](../web-testing/researcher.md) identified — a sidebar, a data table, a filter bar — capped by `maxSectionScreenshots` (default 8)
 
 Images land in `output/docs/screenshots/` and are embedded in the page files, each section shot labeled with the CSS selector it was taken from.
+
+Interactive states are captured before the collector restores the original page. A dialog is cropped to its active overlay when semantic dialog markup is available; other changed screen areas receive a viewport screenshot.
 
 ```ts
 docs: {
