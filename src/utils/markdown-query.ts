@@ -408,6 +408,10 @@ export class MarkdownQuery {
   }
 
   replace(content: string): string {
+    return this.replaceEach(() => content);
+  }
+
+  replaceEach(replacer: (match: MarkdownQuery, index: number) => string): string {
     const sorted = [...this.matches].sort((a, b) => a.start - b.start);
 
     const kept: MatchedRange[] = [];
@@ -418,10 +422,11 @@ export class MarkdownQuery {
       lastEnd = range.start + range.length;
     }
 
+    const replacements = kept.map((range, index) => replacer(new MarkdownQuery(this.source, [range]), index));
     let result = this.source;
     for (let i = kept.length - 1; i >= 0; i--) {
       const range = kept[i];
-      result = result.slice(0, range.start) + content + result.slice(range.start + range.length);
+      result = result.slice(0, range.start) + replacements[i] + result.slice(range.start + range.length);
     }
 
     return result;
@@ -458,6 +463,15 @@ export class MarkdownQuery {
 
   each(): MarkdownQuery[] {
     return this.matches.map((m) => new MarkdownQuery(this.source, [m]));
+  }
+
+  meta(): Array<{ type: string; depth: number | null; text: string }> {
+    return this.matches.map((range) => {
+      const token = range.token as any;
+      let depth: number | null = null;
+      if (token.type === 'heading') depth = token.depth;
+      return { type: token.type, depth, text: getTokenText(range.token) };
+    });
   }
 }
 

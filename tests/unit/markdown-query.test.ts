@@ -592,6 +592,51 @@ Not a section.
     });
   });
 
+  describe('meta', () => {
+    it('returns heading type, depth, and unwrapped text', () => {
+      const metas = mdq(sampleMarkdown).query('h2').meta();
+      expect(metas).toHaveLength(3);
+      expect(metas[0]).toEqual({ type: 'heading', depth: 2, text: 'API' });
+      expect(metas[1].text).toBe('Settings');
+      expect(metas[2].text).toBe('FAQ');
+      expect(metas.every((m) => !m.text.includes('#'))).toBe(true);
+    });
+
+    it('returns section heading depth and title without markup', () => {
+      const metas = mdq(sampleMarkdown).query('section("API")').meta();
+      expect(metas).toHaveLength(1);
+      expect(metas[0]).toEqual({ type: 'heading', depth: 2, text: 'API' });
+    });
+
+    it('returns h3 section depth', () => {
+      const metas = mdq(sampleMarkdown).query('section3(~"Auth")').meta();
+      expect(metas).toHaveLength(1);
+      expect(metas[0].depth).toBe(3);
+      expect(metas[0].text).toBe('Authentication');
+    });
+
+    it('returns code body without fences and null depth', () => {
+      const metas = mdq(sampleMarkdown).query('code').meta();
+      expect(metas).toHaveLength(2);
+      expect(metas[0].type).toBe('code');
+      expect(metas[0].depth).toBeNull();
+      expect(metas[0].text).toContain('const token = getToken()');
+      expect(metas[0].text).not.toContain('```');
+    });
+
+    it('returns paragraph text with null depth', () => {
+      const metas = mdq(sampleMarkdown).query('paragraph(~"intro")').meta();
+      expect(metas).toHaveLength(1);
+      expect(metas[0].type).toBe('paragraph');
+      expect(metas[0].depth).toBeNull();
+      expect(metas[0].text).toContain('intro paragraph');
+    });
+
+    it('returns empty array when no matches', () => {
+      expect(mdq(sampleMarkdown).query('h6').meta()).toEqual([]);
+    });
+  });
+
   describe('replace', () => {
     it('should replace matched content', () => {
       const result = mdq(sampleMarkdown).query('heading("FAQ")').replace('## Questions\n');
@@ -621,6 +666,15 @@ Not a section.
       const md = '## Parent\n\n### Child\n\nContent\n';
       const result = mdq(md).query('section').replace('REPLACED\n');
       expect(result).toBe('REPLACED\n');
+    });
+
+    it('should replace each match without stale offsets', () => {
+      const md = '## Short\n\nText\n\n## Much Longer Heading\n\nMore\n';
+      const result = mdq(md)
+        .query('h2')
+        .replaceEach((heading, index) => `## ${index + 1}: ${heading.meta()[0].text}\n\n`);
+
+      expect(result).toBe('## 1: Short\n\nText\n\n## 2: Much Longer Heading\n\nMore\n');
     });
   });
 

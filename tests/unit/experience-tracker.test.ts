@@ -368,6 +368,32 @@ describe('ExperienceTracker', () => {
     });
   });
 
+  describe('getSuccessfulExperience rendering', () => {
+    it('rewrites FLOW/ACTION headings to HOW to phrasing', () => {
+      const state = new ActionResult({ html: '<html></html>', url: 'https://example.com/howto', title: 'HowTo' });
+      const body = ['## FLOW: create a test', '', '* Click create', '', '```js', 'I.click("Create")', '```', '', '---', '', '## ACTION: save the form', '', '```js', 'I.click("Save")', '```', ''].join('\n');
+      experienceTracker.writeExperienceFile(state.getStateHash(), body, { url: '/howto', title: 'HowTo' });
+
+      const combined = experienceTracker.getSuccessfulExperience(state).join('\n');
+
+      expect(combined).toContain('## HOW to create a test (multi-step)');
+      expect(combined).toContain('## HOW to save the form (single-step)');
+      expect(combined).not.toContain('## FLOW:');
+      expect(combined).not.toContain('## ACTION:');
+    });
+
+    it('rewrites and terminates when a title contains the marker', () => {
+      const state = new ActionResult({ html: '<html></html>', url: 'https://example.com/edge', title: 'Edge' });
+      const body = ['## FLOW: undo FLOW: steps', '', '* step', '', '---', ''].join('\n');
+      experienceTracker.writeExperienceFile(state.getStateHash(), body, { url: '/edge', title: 'Edge' });
+
+      const combined = experienceTracker.getSuccessfulExperience(state).join('\n');
+
+      expect(combined).toContain('## HOW to undo FLOW: steps (multi-step)');
+      expect(combined).not.toContain('## FLOW:');
+    });
+  });
+
   describe('table-of-contents lettering', () => {
     it('assigns contiguous fileTags when a zero-section file sorts first', () => {
       const url = '/lettering-page';

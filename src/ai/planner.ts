@@ -280,29 +280,36 @@ export class Planner extends PlannerBase implements Agent {
   }
 
   private cleanExperienceFlows(text: string): string | null {
-    const seenTitles = new Set<string>();
     let result = text;
+    const seenTitles = new Set<string>();
+    for (const selector of ['section2', 'section3']) {
+      result = mdq(result)
+        .query(selector)
+        .replaceEach((section) => {
+          const heading = section.query('heading').text().trim();
+          const withoutHeadings = mdq(section.text()).query('heading').replace('');
+          const body = mdq(withoutHeadings).query('hr').replace('').trim();
+          if (body && !seenTitles.has(heading)) {
+            seenTitles.add(heading);
+            return section.text();
+          }
+          return '';
+        });
+    }
 
-    for (const section of [...mdq(text).query('section2').each(), ...mdq(text).query('section3').each()]) {
-      const heading = section.query('heading').text().trim();
-      const body = mdq(section.text())
-        .query('heading')
-        .replace('')
-        .replace(/^---\s*$/gm, '')
-        .trim();
-
-      if (!body || seenTitles.has(heading)) {
-        result = result.replace(section.text(), '');
-        continue;
-      }
-      seenTitles.add(heading);
-
-      const blockquotes = section.query('blockquote').each();
-      if (blockquotes.length <= 10) continue;
-      for (const bq of blockquotes.slice(10)) {
-        result = result.replace(bq.text(), '');
-      }
-      result = result.replace(section.text().trim(), `${section.text().trim()}\n> ... and ${blockquotes.length - 10} more discoveries`);
+    const trimmedTitles = new Set<string>();
+    for (const selector of ['section2', 'section3']) {
+      result = mdq(result)
+        .query(selector)
+        .replaceEach((section) => {
+          const heading = section.query('heading').text().trim();
+          if (trimmedTitles.has(heading)) return section.text();
+          const count = section.query('blockquote').count();
+          if (count <= 10) return section.text();
+          const kept = mdq(section.text()).query('blockquote[10:]').replace('');
+          trimmedTitles.add(heading);
+          return `${kept.trimEnd()}\n> ... and ${count - 10} more discoveries\n`;
+        });
     }
 
     return result.trim() || null;
@@ -382,16 +389,17 @@ export class Planner extends PlannerBase implements Agent {
       deep: true,
     });
     let plannerResearch = mdq(research).query('code').replace('');
-    for (const table of mdq(plannerResearch).query('table').each()) {
-      const rawTable = table.text();
-      const rows = table.toJson();
-      if (rows.length === 0 || !rows[0].Element) continue;
-      const elementWithType = rows.map((r) => ({
-        Element: r.Element,
-        Type: r.Type || '',
-      }));
-      plannerResearch = plannerResearch.replace(rawTable, jsonToTable(elementWithType, ['Element', 'Type']));
-    }
+    plannerResearch = mdq(plannerResearch)
+      .query('table')
+      .replaceEach((table) => {
+        const rows = table.toJson();
+        if (rows.length === 0 || !rows[0].Element) return table.text();
+        const elementWithType = rows.map((r) => ({
+          Element: r.Element,
+          Type: r.Type || '',
+        }));
+        return jsonToTable(elementWithType, ['Element', 'Type']);
+      });
 
     const hasFocusedOverlay = hasFocusedSection(plannerResearch);
     const focusNote = hasFocusedOverlay ? "IMPORTANT: One section is marked as **Focused** — this is the user's current focus area. Concentrate testing on the Focused section FIRST — test all interactions inside it before planning tests for the rest of the page." : '';

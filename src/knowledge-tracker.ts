@@ -7,6 +7,7 @@ import { ConfigParser } from './config.js';
 import { getCliName } from './utils/cli-name.ts';
 import { createDebug, pluralize, tag } from './utils/logger.js';
 import { loadMarkdownFiles } from './utils/markdown-files.js';
+import { mdq } from './utils/markdown-query.js';
 import { isSecretName, registerSecret } from './utils/secrets.js';
 import { slugify } from './utils/strings.js';
 
@@ -186,7 +187,7 @@ export class KnowledgeTracker {
 
     return this.knowledgeFiles.map((knowledge) => {
       const content = knowledge.content.trim();
-      const firstLine = content.split('\n')[0]?.trim() || '';
+      const firstLine = mdq(content).meta()[0]?.text.split('\n')[0]?.trim() || '';
       return {
         url: knowledge.url,
         firstLine,

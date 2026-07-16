@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import matter from 'gray-matter';
-import { type Tokens, marked } from 'marked';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
@@ -159,7 +158,12 @@ export class ExperienceTracker {
     this.ensureExperienceFile(state);
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
-    if (content.includes(action.code)) {
+    if (
+      mdq(content)
+        .query('code')
+        .meta()
+        .some((m) => m.text.trim() === action.code.trim())
+    ) {
       debugLog('Skipping duplicate action', action.code);
       return;
     }
@@ -187,7 +191,12 @@ export class ExperienceTracker {
     const stateHash = state.getStateHash();
     const { content, data } = this.readExperienceFile(stateHash);
 
-    if (content.includes(body)) {
+    if (
+      mdq(content)
+        .query('section2')
+        .each()
+        .some((s) => s.text().trim() === body.trim())
+    ) {
       debugLog('Skipping duplicate flow body');
       return;
     }
@@ -244,9 +253,14 @@ export class ExperienceTracker {
         });
       })
       .map((experience) => {
-        const lines = experience.content.split('\n');
-        if (lines.length <= maxLines) return experience;
-        return { ...experience, content: lines.slice(0, maxLines).join('\n') };
+        if (experience.content.split('\n').length <= maxLines) return experience;
+        let content = experience.content;
+        while (content.split('\n').length > maxLines) {
+          const sections = mdq(content).query('section2').each();
+          if (sections.length <= 1) break;
+          content = sections[sections.length - 1].replace('');
+        }
+        return { ...experience, content };
       });
   }
 
@@ -393,49 +407,22 @@ export class ExperienceTracker {
 }
 
 function listTocHeadings(content: string): { index: number; level: 2 | 3; title: string }[] {
-  const tokens = marked.lexer(content);
-  const result: { index: number; level: 2 | 3; title: string }[] = [];
-  let index = 0;
-  for (const token of tokens) {
-    if (token.type !== 'heading') continue;
-    const heading = token as Tokens.Heading;
-    if (heading.depth !== 2 && heading.depth !== 3) continue;
-    index++;
-    result.push({ index, level: heading.depth as 2 | 3, title: heading.text });
-  }
-  return result;
+  return mdq(content)
+    .query('heading')
+    .meta()
+    .filter((m) => m.depth === 2 || m.depth === 3)
+    .map((m, i) => ({ index: i + 1, level: m.depth as 2 | 3, title: m.text }));
 }
 
 function extractHeadingSection(content: string, sectionIndex: number): { title: string; body: string } | null {
-  const tokens = marked.lexer(content);
-  const matching: { tokenIdx: number; depth: number; text: string }[] = [];
-
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    if (token.type !== 'heading') continue;
-    const heading = token as Tokens.Heading;
-    if (heading.depth !== 2 && heading.depth !== 3) continue;
-    matching.push({ tokenIdx: i, depth: heading.depth, text: heading.text });
-  }
+  const sections = mdq(content).query('section').each();
+  const metas = mdq(content).query('section').meta();
+  const matching = metas.map((meta, i) => ({ meta, section: sections[i] })).filter((entry) => entry.meta.depth === 2 || entry.meta.depth === 3);
 
   if (sectionIndex < 1 || sectionIndex > matching.length) return null;
 
   const target = matching[sectionIndex - 1];
-  let endTokenIdx = tokens.length;
-  for (let j = target.tokenIdx + 1; j < tokens.length; j++) {
-    const token = tokens[j];
-    if (token.type !== 'heading') continue;
-    if ((token as Tokens.Heading).depth <= target.depth) {
-      endTokenIdx = j;
-      break;
-    }
-  }
-
-  const body = tokens
-    .slice(target.tokenIdx, endTokenIdx)
-    .map((t) => (t as any).raw || '')
-    .join('');
-  return { title: target.text, body };
+  return { title: target.meta.text, body: target.section.text() };
 }
 
 function indexToLetters(index: number): string {
@@ -504,23 +491,14 @@ function generateActionContent(title: string, code: string, explanation?: string
 }
 
 function renderAsHowTo(content: string): string {
-  const tokens = marked.lexer(content);
-  let result = '';
-  for (const token of tokens) {
-    if (token.type === 'heading' && (token as Tokens.Heading).depth === 2) {
-      const text = (token as Tokens.Heading).text.trim();
-      if (text.startsWith('FLOW:')) {
-        result += `## HOW to ${text.slice(5).trim()} (multi-step)\n\n`;
-        continue;
-      }
-      if (text.startsWith('ACTION:')) {
-        result += `## HOW to ${text.slice(7).trim()} (single-step)\n\n`;
-        continue;
-      }
-    }
-    result += (token as any).raw || '';
-  }
-  return result;
+  return mdq(content)
+    .query('h2')
+    .replaceEach((heading) => {
+      const text = heading.meta()[0]?.text.trim() || '';
+      if (text.startsWith('FLOW:')) return `## HOW to ${text.slice(5).trim()} (multi-step)\n\n`;
+      if (text.startsWith('ACTION:')) return `## HOW to ${text.slice(7).trim()} (single-step)\n\n`;
+      return heading.text();
+    });
 }
 
 export interface ExperienceFile {
