@@ -362,6 +362,18 @@ export class ConfigParser {
     return path.join(path.dirname(configPath), config.dirs?.output || 'output');
   }
 
+  public getProjectRoot(): string {
+    const configPath = this.getConfigPath();
+    if (configPath) return path.dirname(configPath);
+    return process.cwd();
+  }
+
+  public resolveProjectDir(relativeDir: string): string {
+    const configPath = this.getConfigPath();
+    if (!configPath) return relativeDir;
+    return path.join(path.dirname(configPath), relativeDir);
+  }
+
   public getStatesDir(): string {
     return outputPath('states');
   }

@@ -29,6 +29,15 @@ function indent(text: string): string {
     .join('\n');
 }
 
+export function formatHeadings(headings: { h1?: string; h2?: string; h3?: string; h4?: string }): string[] {
+  const lines: string[] = [];
+  if (headings.h1) lines.push(`H1: ${headings.h1}`);
+  if (headings.h2) lines.push(`H2: ${headings.h2}`);
+  if (headings.h3) lines.push(`H3: ${headings.h3}`);
+  if (headings.h4) lines.push(`H4: ${headings.h4}`);
+  return lines;
+}
+
 export type ContextMode = 'attached' | 'compact' | 'full';
 
 export function formatContextSummary(data: ContextData, mode: ContextMode = 'compact'): string {
@@ -51,11 +60,7 @@ function formatContextAttached(data: ContextData): string {
   }
   lines.push('');
 
-  const headingLines: string[] = [];
-  if (data.headings.h1) headingLines.push(`H1: ${data.headings.h1}`);
-  if (data.headings.h2) headingLines.push(`H2: ${data.headings.h2}`);
-  if (data.headings.h3) headingLines.push(`H3: ${data.headings.h3}`);
-  if (data.headings.h4) headingLines.push(`H4: ${data.headings.h4}`);
+  const headingLines = formatHeadings(data.headings);
 
   if (headingLines.length > 0) {
     lines.push(section('HEADINGS') + chalk.gray(' (Auto-attached)'));
@@ -116,11 +121,7 @@ function formatContextCompact(data: ContextData): string {
   }
   lines.push('');
 
-  const headingLines: string[] = [];
-  if (data.headings.h1) headingLines.push(`H1: ${data.headings.h1}`);
-  if (data.headings.h2) headingLines.push(`H2: ${data.headings.h2}`);
-  if (data.headings.h3) headingLines.push(`H3: ${data.headings.h3}`);
-  if (data.headings.h4) headingLines.push(`H4: ${data.headings.h4}`);
+  const headingLines = formatHeadings(data.headings);
 
   if (headingLines.length > 0) {
     lines.push(section('HEADINGS') + chalk.gray(' (Auto-attached)'));
@@ -177,11 +178,7 @@ function formatContextFull(data: ContextData): string {
   }
   lines.push('');
 
-  const headingLines: string[] = [];
-  if (data.headings.h1) headingLines.push(`H1: ${data.headings.h1}`);
-  if (data.headings.h2) headingLines.push(`H2: ${data.headings.h2}`);
-  if (data.headings.h3) headingLines.push(`H3: ${data.headings.h3}`);
-  if (data.headings.h4) headingLines.push(`H4: ${data.headings.h4}`);
+  const headingLines = formatHeadings(data.headings);
 
   if (headingLines.length > 0) {
     lines.push(section('HEADINGS') + chalk.gray(' (Auto-attached)'));

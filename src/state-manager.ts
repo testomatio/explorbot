@@ -3,6 +3,7 @@ import type { ExperienceTracker } from './experience-tracker.js';
 import type { KnowledgeTracker, Knowledge } from './knowledge-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
 import { createDebug } from './utils/logger.js';
+import { slugify } from './utils/strings.js';
 import { extractStatePath } from './utils/url-matcher.js';
 
 const debugLog = createDebug('explorbot:state');
@@ -209,13 +210,7 @@ export class StateManager {
       parts.push(`title_${title}`);
     }
 
-    return parts
-      .join('_')
-      .replace(/[^a-zA-Z0-9_]/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_|_$/g, '')
-      .toLowerCase()
-      .substring(0, 200);
+    return slugify(parts.join('_')).substring(0, 200);
   }
 
   /**

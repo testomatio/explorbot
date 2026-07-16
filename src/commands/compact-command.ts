@@ -1,11 +1,10 @@
 import { basename } from 'node:path';
 import chalk from 'chalk';
+import { COMPACT_MAX_LENGTH } from '../ai/experience-compactor.js';
 import type { ExperienceFile } from '../experience-tracker.js';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import { tag } from '../utils/logger.js';
 import { BaseCommand, type Suggestion } from './base-command.js';
-
-const COMPACT_THRESHOLD = 5000;
 
 export class CompactCommand extends BaseCommand {
   name = 'compact';
@@ -62,7 +61,7 @@ export class CompactCommand extends BaseCommand {
   private buildDryRunSuggestions(compactor: ReturnType<typeof this.explorBot.agentExperienceCompactor>, files: ExperienceFile[], target?: string): Suggestion[] {
     const wouldTouch = files.filter((f) => {
       const stripped = compactor.stripNonUsefulEntries(f.content);
-      return stripped !== f.content || stripped.length >= COMPACT_THRESHOLD || compactor.isRecent(f);
+      return stripped !== f.content || stripped.length >= COMPACT_MAX_LENGTH || compactor.isRecent(f);
     });
     if (wouldTouch.length === 0) return [];
     const argsPart = target ? ` ${target}` : '';
@@ -119,7 +118,7 @@ export class CompactCommand extends BaseCommand {
       const charsRemoved = chars - strippedChars;
       const willStrip = stripped !== file.content;
       const willReview = compactor.isRecent(file);
-      const willAi = strippedChars >= COMPACT_THRESHOLD;
+      const willAi = strippedChars >= COMPACT_MAX_LENGTH;
 
       if (willStrip) wouldStrip++;
       if (willReview) wouldAiReview++;
@@ -148,7 +147,7 @@ export class CompactCommand extends BaseCommand {
     lines.push(`  ${chalk.dim('Files matched:')}      ${chalk.bold(String(files.length))}`);
     lines.push(`  ${chalk.dim('Would strip:')}        ${chalk.bold(String(wouldStrip))} ${chalk.dim('(remove legacy / FAILED / Visual click, rename to FLOW/ACTION)')}`);
     lines.push(`  ${chalk.dim('Would ai-review:')}    ${chalk.bold(String(wouldAiReview))} ${chalk.dim('(recent files ≤30d — quality/reusability check)')}`);
-    lines.push(`  ${chalk.dim('Would ai-compact:')}   ${chalk.bold(String(wouldAiCompact))} ${chalk.dim(`(over ${COMPACT_THRESHOLD} chars after strip)`)}`);
+    lines.push(`  ${chalk.dim('Would ai-compact:')}   ${chalk.bold(String(wouldAiCompact))} ${chalk.dim(`(over ${COMPACT_MAX_LENGTH} chars after strip)`)}`);
     lines.push(`  ${chalk.dim('Total chars:')}        ${chalk.bold(String(totalChars))}`);
 
     tag('info').log(lines.join('\n'));

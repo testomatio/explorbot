@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import matter from 'gray-matter';
 import { type Tokens, marked } from 'marked';
 import type { ActionResult } from './action-result.js';
@@ -7,6 +7,7 @@ import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
 import { createDebug, pluralize, tag } from './utils/logger.js';
+import { loadMarkdownFiles } from './utils/markdown-files.js';
 import { mdq } from './utils/markdown-query.js';
 import { redactSecrets } from './utils/secrets.js';
 import { isNonReusableCode } from './utils/step-analyzer.ts';
@@ -42,17 +43,11 @@ export class ExperienceTracker {
   constructor(knowledgeTracker: KnowledgeTracker, options: { disabled?: boolean } = {}) {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
-    const configPath = configParser.getConfigPath();
     this.disabled = options.disabled ?? false;
     this.knowledgeTracker = knowledgeTracker;
 
     // Resolve experience directory relative to the config file location (project root)
-    if (configPath) {
-      const projectRoot = dirname(configPath);
-      this.experienceDir = join(projectRoot, config.dirs?.experience || 'experience');
-    } else {
-      this.experienceDir = config.dirs?.experience || 'experience';
-    }
+    this.experienceDir = configParser.resolveProjectDir(config.dirs?.experience || 'experience');
 
     if (!this.disabled) {
       this.ensureDirectory(this.experienceDir);
@@ -219,25 +214,11 @@ export class ExperienceTracker {
       }
 
       try {
-        const files = readdirSync(experienceDir)
-          .filter((file: string) => file.endsWith('.md'))
-          .map((file: string) => join(experienceDir, file));
-
-        for (const file of files) {
-          try {
-            const content = readFileSync(file, 'utf8');
-            const parsed = matter(content);
-            const mtime = statSync(file).mtime;
-            allFiles.push({
-              filePath: file,
-              data: parsed.data,
-              content: parsed.content,
-              mtime,
-            });
-          } catch (error) {
-            debugLog(`Failed to read experience file ${file}:`, error);
-          }
-        }
+        allFiles.push(
+          ...loadMarkdownFiles(experienceDir, {
+            onError: (filePath, error) => debugLog(`Failed to read experience file ${filePath}:`, error),
+          })
+        );
       } catch (error) {
         debugLog(`Failed to read experience directory ${experienceDir}:`, error);
       }
