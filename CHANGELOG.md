@@ -3,6 +3,9 @@
 ## 2026-07-17
 
 ### Changes
+- [Captain] Answers now finish as soon as the request is fulfilled — previously every completed request triggered one extra AI call with the full conversation context that produced nothing, roughly doubling token usage per request.
+- [Captain] No longer attaches the full page HTML to every request. Only the ARIA snapshot is kept fresh in the conversation; the AI fetches HTML on demand via the context() tool when it actually needs it.
+- [Captain] The slash-command tool now lists only command names instead of the full help text of every command, shrinking the prompt sent on each request.
 - Fixed startup failing with `AI connection failed: Invalid 'max_output_tokens'` on models that reject a one-token response. The check that verifies your AI credentials at startup no longer caps the reply length, so it works with every provider regardless of their minimum.
 
 ## 2026-07-10

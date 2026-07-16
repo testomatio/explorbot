@@ -221,10 +221,9 @@ export class Captain extends CaptainBase implements Agent {
   }
 
   private async reinjectContextIfNeeded(conversation: Conversation, currentState: WebPageState): Promise<void> {
-    if (conversation.hasTag('page_html', 5)) return Promise.resolve();
+    if (conversation.hasTag('page_aria', 5)) return;
 
     const actionResult = ActionResult.fromState(currentState);
-    const html = await actionResult.combinedHtml();
     const context = dedent`
         Context:
 
@@ -236,13 +235,8 @@ export class Captain extends CaptainBase implements Agent {
         <page_aria>
         ${actionResult.getInteractiveARIA()}
         </page_aria>
-
-        <page_html>
-        ${html}
-        </page_html>
       `;
     conversation.addUserText(context);
-    return Promise.resolve();
   }
 
   private coreTools(task: Task, onDone: (summary: string) => void) {
@@ -273,15 +267,8 @@ export class Captain extends CaptainBase implements Agent {
       runCommand: tool({
         description: dedent`
           Execute a TUI command. Returns log output from command execution.
-          Use only when the user explicitly asks to run a slash command.
-          Never use this to analyze files, reports, logs, plans, generated tests, knowledge, or experience.
-          Never run a slash command unless the user request itself starts with that slash command.
-          ${this.commandDescriptions
-            .map((c) => {
-              const opts = c.options ? ` (${c.options})` : '';
-              return `${c.name} — ${c.description}${opts}`;
-            })
-            .join('\n')}
+          Use only when the user request itself starts with a slash command; pass it through verbatim.
+          Available commands: ${this.commandDescriptions.map((c) => c.name).join(', ')}
         `,
         inputSchema: z.object({
           command: z.string().describe('Slash command to execute, e.g. "/research", "/plan authentication", "/test brave-fox123"'),
@@ -477,6 +464,7 @@ export class Captain extends CaptainBase implements Agent {
         const result = await this.explorBot.getProvider().invokeConversation(conversation, tools, {
           maxToolRoundtrips: 5,
           toolChoice: 'auto',
+          stopWhen: () => isDone,
         });
 
         if (!result) {
