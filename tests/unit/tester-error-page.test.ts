@@ -45,10 +45,12 @@ describe('Tester error page handling', () => {
         clearHistory: () => {},
         getExperienceTracker: () => ({
           getExperienceTableOfContents: () => [],
+          renderExperienceTocFor: () => '',
         }),
       }),
       getKnowledgeTracker: () => ({
         getRelevantKnowledge: () => [],
+        renderRelevantKnowledge: () => '',
       }),
       getRequestStore: () => null,
       playwrightHelper: {
@@ -101,10 +103,12 @@ describe('Tester error page handling', () => {
         clearHistory: () => {},
         getExperienceTracker: () => ({
           getExperienceTableOfContents: () => [],
+          renderExperienceTocFor: () => '',
         }),
       }),
       getKnowledgeTracker: () => ({
         getRelevantKnowledge: () => [],
+        renderRelevantKnowledge: () => '',
       }),
       getRequestStore: () => null,
       hasOtherTabs: () => false,

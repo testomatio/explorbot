@@ -30,7 +30,7 @@ import { WebElement } from '../utils/web-element.ts';
 import type { Agent } from './agent.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
-import { locatorRule } from './rules.ts';
+import { drillLocatorRule } from './rules.ts';
 import { TaskAgent, isInteractive } from './task-agent.ts';
 import { createCodeceptJSTools } from './tools.ts';
 
@@ -1179,5 +1179,3 @@ function isInteractiveElement(element: WebElement): boolean {
   if (element.attrs['aria-haspopup'] || element.attrs['aria-expanded'] || element.attrs['aria-controls']) return true;
   return false;
 }
-
-const drillLocatorRule = locatorRule.replace(/<context_simplification>[\s\S]*?<\/context_simplification>/, '').trim();

@@ -6,7 +6,7 @@ import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
-import { createDebug, tag } from './utils/logger.js';
+import { createDebug, pluralize, tag } from './utils/logger.js';
 import { loadMarkdownFiles } from './utils/markdown-files.js';
 import { mdq } from './utils/markdown-query.js';
 import { redactSecrets } from './utils/secrets.js';
@@ -288,6 +288,16 @@ export class ExperienceTracker {
     });
 
     return this.buildToc(sorted);
+  }
+
+  renderExperienceTocFor(state: ActionResult): string {
+    const toc = this.getExperienceTableOfContents(state);
+    if (toc.length === 0) return '';
+
+    const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
+    debugLog(`injecting experience TOC (${toc.length} files, ${totalSections} sections)`);
+    tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections)`);
+    return renderExperienceToc(toc);
   }
 
   getExperienceSection(fileTag: string, sectionIndex: number, state: ActionResult, options?: { includeDescendantExperience?: boolean }): { title: string; url: string; content: string } | null {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
+import { ActionResult } from '../../src/action-result.js';
 import { ConfigParser } from '../../src/config';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
 import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
@@ -34,6 +35,26 @@ describe('KnowledgeTracker', () => {
     const fileContent = matter.stringify(content, { url });
     writeFileSync(`${knowledgeDir}/${filename}`, fileContent, 'utf8');
   }
+
+  describe('renderRelevantKnowledge', () => {
+    it('returns empty string when no knowledge matches the page', () => {
+      const tracker = new KnowledgeTracker();
+      const state = new ActionResult({ url: '/nothing-here', html: '<html></html>' });
+      expect(tracker.renderRelevantKnowledge(state)).toBe('');
+    });
+
+    it('renders a tagged knowledge block for a matching page', () => {
+      writeKnowledgeFile('login.md', '/login', 'Use admin credentials');
+      const tracker = new KnowledgeTracker();
+      const state = new ActionResult({ url: '/login', html: '<html></html>' });
+
+      const rendered = tracker.renderRelevantKnowledge(state);
+
+      expect(rendered).toContain('<knowledge>');
+      expect(rendered).toContain('Use admin credentials');
+      expect(rendered).toContain('</knowledge>');
+    });
+  });
 
   describe('interpolateVars', () => {
     it('should replace ${env.VAR} with environment variable value', () => {
