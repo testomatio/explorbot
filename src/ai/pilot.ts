@@ -109,7 +109,7 @@ export class Pilot implements Agent {
         .string()
         .nullable()
         .describe(
-          'REQUIRED whenever decision is "pass" — a one-sentence natural-language claim about the current page that, if true, proves the scenario goal (e.g., "New test suite \\"Foo\\" is visible in the suites list"). NOT code: do not write I.*, expect(), .then(), grabTitle, or any JavaScript. Navigator translates the claim into CodeceptJS assertions and runs them; passing assertions are saved to the generated test file. Also use when evidence is insufficient before deciding pass/fail. Leave null for "continue", "fail", or "skipped".'
+          'REQUIRED whenever decision is "pass" — a one-sentence natural-language claim about the current page that, if true, proves the scenario goal (e.g., "New item \\"Foo\\" is visible in the items list"). NOT code: do not write I.*, expect(), .then(), grabTitle, or any JavaScript. Navigator translates the claim into CodeceptJS assertions and runs them; passing assertions are saved to the generated test file. Also use when evidence is insufficient before deciding pass/fail. Leave null for "continue", "fail", or "skipped".'
         ),
     });
 
@@ -145,7 +145,7 @@ export class Pilot implements Agent {
       - Mixed evidence + final state shows success → pass. Mixed + final state unclear → continue with guidance.
 
       When deciding "pass", you MUST also set requestVerification to a one-sentence natural-language
-      claim about the current page (e.g., "New test suite Foo is visible in the suites list"). NOT
+      claim about the current page (e.g., "New item Foo is visible in the items list"). NOT
       code — do not write I.*, expect(), .then(), or any JavaScript. Choose the strongest single
       piece of evidence (a unique element/text that exists ONLY because the scenario succeeded).
       Navigator translates the claim into CodeceptJS assertions; without it the generated test has
@@ -426,10 +426,6 @@ export class Pilot implements Agent {
         Plan the test execution for this scenario.
 
         FIRST: Decide if precondition() is needed.
-
-        ${capabilityGroundingRule}
-
-        ${dataProtectionRules}
 
         Call precondition() WHEN:
         - The scenario edits/deletes/modifies an item, and you want a DISPOSABLE item to act on safely
@@ -1053,8 +1049,8 @@ export class Pilot implements Agent {
 
       ${dataProtectionRules}
 
-      Describe WHAT to create, not what exists. RIGHT: precondition("1 test"). WRONG:
-      precondition("1 test suite named Updated Suite with existing tests"). Keep descriptions short.
+      Describe WHAT to create, not what exists. RIGHT: precondition("1 post"). WRONG:
+      precondition("1 post named Updated Post with existing comments"). Keep descriptions short.
 
       Response format:
       PROGRESS: <1 sentence assessment>
