@@ -19,7 +19,7 @@ import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
 import { isInteractive } from './task-agent.js';
-import { createAgentTools } from './tools.ts';
+import { createLearnExperienceTool } from './tools.ts';
 
 const debugLog = createDebug('explorbot:navigator');
 
@@ -472,13 +472,13 @@ class Navigator implements Agent {
   }
 
   private buildExperienceTools(): { learnExperience: unknown } | undefined {
-    const { learnExperience } = createAgentTools({
-      explorer: this.explorer,
-      researcher: null as unknown as Researcher,
-      navigator: this,
-    });
-    if (!learnExperience) return undefined;
-    return { learnExperience };
+    if (!this.experienceTracker) return undefined;
+    const stateManager = this.explorer.getStateManager();
+    const getState = () => {
+      const s = stateManager.getCurrentState();
+      return s ? ActionResult.fromState(s) : null;
+    };
+    return { learnExperience: createLearnExperienceTool({ getExperienceTracker: () => this.experienceTracker, getState }) };
   }
 
   async freeSail(opts?: { strategy?: 'deep' | 'shallow'; scope?: string; visitedUrls?: Set<string> }, actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
