@@ -3,6 +3,9 @@
 ## 2026-07-17
 
 ### Changes
+- [Pilot] Pilot's instructions and its list of available tools now stay identical across every call in a session, with the scenario details moved to the end. Providers can reuse the prompt they already processed instead of re-reading it on each call, which lowers the cost of long test runs.
+- [Planner] Planning rules and output format instructions now come before the page research, so planning more tests for the same page reuses an already-processed prompt.
+- When a click matches several elements, the follow-up question that picks the right one now uses the default model instead of the more expensive agentic model.
 - Fixed startup failing with `AI connection failed: Invalid 'max_output_tokens'` on models that reject a one-token response. The check that verifies your AI credentials at startup no longer caps the reply length, so it works with every provider regardless of their minimum.
 
 ## 2026-07-10

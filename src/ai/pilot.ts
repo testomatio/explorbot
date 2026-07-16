@@ -154,7 +154,7 @@ export class Pilot implements Agent {
     const messages = [
       {
         role: 'system' as const,
-        content: this.buildVerdictSystemPrompt(type, task),
+        content: this.buildVerdictSystemPrompt(task),
       },
       { role: 'user' as const, content: userContent },
     ];
@@ -301,10 +301,8 @@ export class Pilot implements Agent {
     }
   }
 
-  private buildSharedEvidenceRules(task: Test): string {
+  private buildSharedEvidenceRules(): string {
     return dedent`
-      SCENARIO: ${task.scenario}
-
       EVIDENCE PRIORITY (strict):
       1) Final observable state proving the scenario goal
       2) verify()/see() results in the LAST few actions before stop/finish
@@ -337,6 +335,12 @@ export class Pilot implements Agent {
 
       Expected results are MILESTONES, not the goal. Never fail because a milestone (toast, icon, styling)
       didn't match if the scenario goal IS accomplished.
+    `;
+  }
+
+  private buildTaskContext(task: Test): string {
+    return dedent`
+      SCENARIO: ${task.scenario}
 
       ${this.buildDeletionScope(task)}
 
@@ -351,7 +355,7 @@ export class Pilot implements Agent {
       iteration's work, but server-side side effects (records created, forms submitted) persist.
       Unnecessary resets create duplicate data and infinite loops.
 
-      ${this.buildSharedEvidenceRules(task)}
+      ${this.buildSharedEvidenceRules()}
 
       DECISION:
       - "allow": current page cannot host the scenario, irrecoverable error, or no path back.
@@ -368,17 +372,19 @@ export class Pilot implements Agent {
       to verify, how to record. Do not suggest repeating actions that already succeeded.
       If progress is blocked only because the page lacks target data for the scenario, prefer precondition()
       over repeated UI attempts.
+
+      ${this.buildTaskContext(task)}
     `;
   }
 
-  private buildVerdictSystemPrompt(type: string, task: Test): string {
+  private buildVerdictSystemPrompt(task: Test): string {
     return dedent`
-      You are Pilot — final decision maker for test pass/fail. Tester requested ${type}. Review the
-      evidence and commit to a verdict; "continue" only when evidence is genuinely insufficient.
+      You are Pilot — final decision maker for test pass/fail. Review the evidence and commit to a
+      verdict; "continue" only when evidence is genuinely insufficient.
 
       ${capabilityGroundingRule}
 
-      ${this.buildSharedEvidenceRules(task)}
+      ${this.buildSharedEvidenceRules()}
 
       DECISION:
       - "pass": scenario goal is fully accomplished. Set requestVerification to a one-sentence claim about
@@ -397,6 +403,8 @@ export class Pilot implements Agent {
       reason field: one short sentence, maximum 120 characters. Do NOT restate the decision
       ("scenario goal achieved/not achieved"). State what happened: what was verified, what failed,
       or what evidence was found.
+
+      ${this.buildTaskContext(task)}
     `;
   }
 
@@ -474,9 +482,6 @@ export class Pilot implements Agent {
       .slice(-this.stepsToReview);
     const actionsContext = this.formatActions(toolCalls);
 
-    this.conversation.cleanupTag('page_summary', '...trimmed...', 1);
-    this.conversation.cleanupTag('recent_actions', '...trimmed...', 2);
-
     return this.sendToPilot(
       dedent`
         Navigated to new page.
@@ -498,7 +503,8 @@ export class Pilot implements Agent {
 
         First: evaluate whether this navigation makes sense for the scenario goal. If the page is unrelated, instruct Tester to back() or reset(). Then plan next steps.
       `,
-      'pilot.reviewNewPage'
+      'pilot.reviewNewPage',
+      { task }
     );
   }
 
@@ -514,8 +520,6 @@ export class Pilot implements Agent {
     const toolCalls = testerConversation.getToolExecutions().slice(-this.stepsToReview);
     const actionsContext = this.formatActions(toolCalls);
     const stateContext = this.buildStateContext(currentState);
-
-    this.conversation.cleanupTag('recent_actions', '...trimmed...', 2);
 
     const hasFailures = toolCalls.length === 0 || toolCalls.some((t) => !t.wasSuccessful);
 
@@ -554,7 +558,7 @@ export class Pilot implements Agent {
     return `CHECKED: ${checked.length > 0 ? checked.join(', ') : 'none'}\nREMAINING: ${remaining.length > 0 ? remaining.join(', ') : 'none'}`;
   }
 
-  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number; task?: Test } = {}): Promise<string> {
+  private async sendToPilot(userText: string, functionId: string, opts: { tools?: boolean; maxToolRoundtrips?: number; task: Test }): Promise<string> {
     debugLog(`sendToPilot: ${functionId}, tools: ${!!opts.tools}, roundtrips: ${opts.maxToolRoundtrips ?? 0}`);
 
     let finalUserText = userText;
@@ -565,19 +569,14 @@ export class Pilot implements Agent {
       }
     }
     this.conversation!.addUserText(finalUserText);
-    let tools: any;
-    if (opts.tools) {
-      tools = this.pickPlanningTools();
-    }
 
-    if (opts.tools && opts.task) {
-      tools = { ...tools, ...this.buildPreconditionTool(opts.task) };
-    }
+    const tools = { ...this.pickPlanningTools(), ...this.buildPreconditionTool(opts.task) };
 
     const result = await this.provider.invokeConversation(this.conversation!, tools, {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
+      toolChoice: opts.tools ? 'auto' : 'none',
       agentName: 'pilot',
-      stopWhen: opts.task ? () => opts.task!.hasFinished : undefined,
+      stopWhen: () => opts.task.hasFinished,
       telemetry: { functionId },
     });
     const text = result?.response?.text || '';
@@ -975,16 +974,6 @@ export class Pilot implements Agent {
     return dedent`
       You are Pilot — a supervisor that detects problems and intervenes only when needed.
 
-      SCENARIO: ${task.scenario}
-      START URL: ${initialState.url}
-      PAGE: ${initialState.title || ''} | ${initialState.h1 || ''}
-
-      EXPECTED RESULTS:
-      ${task.expected.map((e) => `- ${e}`).join('\n')}
-
-      PLANNED STEPS:
-      ${stepsText}
-
       Your job: plan, review new pages, detect stuck patterns, suggest concrete next steps. Track which
       expectations are checked. When things go well, encourage briefly and let Tester continue. The current
       page is usually richer than the page summary lists — prefer exploring it before navigating away.
@@ -1054,6 +1043,16 @@ export class Pilot implements Agent {
       NEXT: <specific actionable instruction for Tester>
 
       Keep user-facing reasons concise: one short sentence, maximum 120 characters, evidence only, no repeated verdict wording.
+
+      SCENARIO: ${task.scenario}
+      START URL: ${initialState.url}
+      PAGE: ${initialState.title || ''} | ${initialState.h1 || ''}
+
+      EXPECTED RESULTS:
+      ${task.expected.map((e) => `- ${e}`).join('\n')}
+
+      PLANNED STEPS:
+      ${stepsText}
     `;
   }
 }
