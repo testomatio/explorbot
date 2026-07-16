@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import dedent from 'dedent';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { getCliName } from './utils/cli-name.ts';
-import { createDebug } from './utils/logger.js';
+import { createDebug, pluralize, tag } from './utils/logger.js';
 import { isSecretName, registerSecret } from './utils/secrets.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
@@ -77,6 +78,25 @@ export class KnowledgeTracker {
     return this.knowledgeFiles.filter((knowledge) => {
       return state.isMatchedBy(knowledge);
     });
+  }
+
+  renderRelevantKnowledge(state: ActionResult): string {
+    const knowledgeFiles = this.getRelevantKnowledge(state);
+    if (knowledgeFiles.length === 0) return '';
+
+    const knowledgeContent = knowledgeFiles
+      .map((k) => k.content)
+      .filter((k) => !!k)
+      .join('\n\n');
+
+    tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
+    return dedent`
+      <knowledge>
+      Here is relevant knowledge for this page:
+
+      ${knowledgeContent}
+      </knowledge>
+    `;
   }
 
   addKnowledge(urlPattern: string, description: string): { filename: string; filePath: string; isNewFile: boolean } {

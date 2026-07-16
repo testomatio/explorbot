@@ -3,7 +3,6 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { ConfigParser } from '../config.ts';
-import { renderExperienceToc } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
@@ -599,9 +598,7 @@ export class Pilot implements Agent {
   private getExperienceToc(): string {
     const state = this.explorer.getStateManager().getCurrentState();
     if (!state) return '';
-    const actionResult = ActionResult.fromState(state);
-    const toc = this.explorer.getStateManager().getExperienceTracker().getExperienceTableOfContents(actionResult);
-    return renderExperienceToc(toc);
+    return this.explorer.getStateManager().getExperienceTracker().renderExperienceTocFor(ActionResult.fromState(state));
   }
 
   private pickPlanningTools() {
