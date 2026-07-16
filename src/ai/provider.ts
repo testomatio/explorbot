@@ -97,7 +97,6 @@ export class Provider {
       await generateText({
         model: this.config.model,
         prompt: 'hi',
-        maxOutputTokens: 1,
       });
     } catch (error: any) {
       throw new AiError(`AI connection failed: ${error.message}`);
