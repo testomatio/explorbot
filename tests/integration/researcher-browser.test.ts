@@ -94,7 +94,7 @@ describe('Researcher with real browser + aimock', () => {
     };
     return {
       getStateManager: () => mockStateManager,
-      getKnowledgeTracker: () => ({ getRelevantKnowledge: () => [] }),
+      getKnowledgeTracker: () => ({ getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '' }),
       getConfig: () => ConfigParser.getInstance().getConfig(),
       visit: async () => {},
       annotateElements: async () => (await annotatePageElements(page)).elements,

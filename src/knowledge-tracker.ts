@@ -1,10 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import dedent from 'dedent';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { getCliName } from './utils/cli-name.ts';
-import { createDebug } from './utils/logger.js';
+import { createDebug, pluralize, tag } from './utils/logger.js';
+import { loadMarkdownFiles } from './utils/markdown-files.js';
+import { isSecretName, registerSecret } from './utils/secrets.js';
+import { slugify } from './utils/strings.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
 
@@ -23,14 +27,7 @@ export class KnowledgeTracker {
   constructor() {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
-    const configPath = configParser.getConfigPath();
-
-    if (configPath) {
-      const projectRoot = dirname(configPath);
-      this.knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
-    } else {
-      this.knowledgeDir = config.dirs?.knowledge || 'knowledge';
-    }
+    this.knowledgeDir = configParser.resolveProjectDir(config.dirs?.knowledge || 'knowledge');
 
     if (!existsSync(this.knowledgeDir)) {
       mkdirSync(this.knowledgeDir, { recursive: true });
@@ -42,29 +39,13 @@ export class KnowledgeTracker {
 
     this.knowledgeFiles = [];
 
-    if (!existsSync(this.knowledgeDir)) {
-      return;
-    }
-
-    const files = readdirSync(this.knowledgeDir, { recursive: true })
-      .filter((file) => typeof file === 'string' && file.endsWith('.md'))
-      .map((file) => join(this.knowledgeDir, file as string));
-
-    for (const filePath of files) {
-      try {
-        const fileContent = readFileSync(filePath, 'utf8');
-        const parsed = matter(fileContent);
-        const urlPattern = parsed.data.url || parsed.data.path || '*';
-
-        this.knowledgeFiles.push({
-          filePath,
-          url: urlPattern,
-          content: this.interpolateVars(parsed.content),
-          ...parsed.data,
-        });
-      } catch (error) {
-        // Skip invalid files
-      }
+    for (const entry of loadMarkdownFiles(this.knowledgeDir, { recursive: true })) {
+      this.knowledgeFiles.push({
+        filePath: entry.filePath,
+        url: entry.data.url || entry.data.path || '*',
+        content: this.interpolateVars(entry.content),
+        ...entry.data,
+      });
     }
 
     this.isLoaded = true;
@@ -78,25 +59,40 @@ export class KnowledgeTracker {
     });
   }
 
+  renderRelevantKnowledge(state: ActionResult): string {
+    const knowledgeFiles = this.getRelevantKnowledge(state);
+    if (knowledgeFiles.length === 0) return '';
+
+    const knowledgeContent = knowledgeFiles
+      .map((k) => k.content)
+      .filter((k) => !!k)
+      .join('\n\n');
+
+    tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
+    return dedent`
+      <knowledge>
+      Here is relevant knowledge for this page:
+
+      ${knowledgeContent}
+      </knowledge>
+    `;
+  }
+
   addKnowledge(urlPattern: string, description: string): { filename: string; filePath: string; isNewFile: boolean } {
     const configParser = ConfigParser.getInstance();
-    const config = configParser.getConfig();
     const configPath = configParser.getConfigPath();
 
     if (!configPath) {
       throw new Error(`No explorbot configuration found. Please run "${getCliName()} init" first.`);
     }
 
-    const projectRoot = dirname(configPath);
-    const knowledgeDir = join(projectRoot, config.dirs?.knowledge || 'knowledge');
-
-    if (!existsSync(knowledgeDir)) {
-      mkdirSync(knowledgeDir, { recursive: true });
+    if (!existsSync(this.knowledgeDir)) {
+      mkdirSync(this.knowledgeDir, { recursive: true });
     }
 
     const normalizedUrl = this.normalizeUrl(urlPattern);
     const filename = this.generateFilename(normalizedUrl);
-    const filePath = join(knowledgeDir, filename);
+    const filePath = join(this.knowledgeDir, filename);
 
     const isNewFile = !existsSync(filePath);
 
@@ -140,9 +136,14 @@ export class KnowledgeTracker {
       const namespace = expr.slice(0, dotIndex);
       const key = expr.slice(dotIndex + 1);
 
-      if (namespace === 'env') return process.env[key] ?? '';
+      if (namespace === 'env') {
+        const value = process.env[key] ?? '';
+        if (isSecretName(key)) registerSecret(value);
+        return value;
+      }
 
       if (namespace === 'config') {
+        if (isSecretName(key)) return '';
         const config = ConfigParser.getInstance().getConfig();
         const value = key.split('.').reduce((obj: any, k) => obj?.[k], config);
         if (value !== undefined && typeof value !== 'object') return String(value);
@@ -154,12 +155,7 @@ export class KnowledgeTracker {
   }
 
   private generateFilename(url: string): string {
-    let filename = url
-      .replace(/https?:\/\//g, '')
-      .replace(/[^a-zA-Z0-9_]/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_|_$/g, '')
-      .toLowerCase();
+    let filename = slugify(url.replace(/https?:\/\//g, ''));
 
     if (!filename || filename === '*') {
       filename = 'general';

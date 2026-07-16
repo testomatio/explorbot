@@ -1,4 +1,5 @@
 import { unlinkSync } from 'node:fs';
+import { basename } from 'node:path';
 import dedent from 'dedent';
 import { type Tokens, marked } from 'marked';
 import { z } from 'zod';
@@ -12,7 +13,7 @@ import type { Provider } from './provider.js';
 
 const debugLog = createDebug('explorbot:experience-compactor');
 
-export type { ExperienceFile };
+export const COMPACT_MAX_LENGTH = 5000;
 
 interface MergeGroup {
   pattern: string;
@@ -23,7 +24,6 @@ export class ExperienceCompactor implements Agent {
   emoji = '🗜️';
   private provider: Provider;
   private experienceTracker: ExperienceTracker;
-  private MAX_LENGTH = 5000;
 
   constructor(provider: Provider, experienceTracker: ExperienceTracker) {
     this.provider = provider;
@@ -32,7 +32,7 @@ export class ExperienceCompactor implements Agent {
 
   async compactExperience(experience: string): Promise<string> {
     const stripped = this.stripNonUsefulEntries(experience);
-    if (stripped.length < this.MAX_LENGTH) {
+    if (stripped.length < COMPACT_MAX_LENGTH) {
       return stripped;
     }
 
@@ -129,7 +129,7 @@ export class ExperienceCompactor implements Agent {
       if (!url || url.startsWith('~')) continue;
       const generalized = generalizeUrl(url);
       if (generalized === url) continue;
-      const stateHash = file.filePath.split('/').pop()?.replace('.md', '') || '';
+      const stateHash = basename(file.filePath, '.md');
       const newData = { ...file.data, url: `~${generalized}~`, mergedFrom: [url] };
       this.experienceTracker.writeExperienceFile(stateHash, file.content, newData);
       tag('substep').log(`Generalized URL: ${url} → ~${generalized}~`);
@@ -139,7 +139,7 @@ export class ExperienceCompactor implements Agent {
   }
 
   async compactFiles(files: ExperienceFile[], options?: { skipSmall?: boolean }): Promise<number> {
-    const workingSet = options?.skipSmall ? files.filter((f) => f.content.length >= this.MAX_LENGTH) : files;
+    const workingSet = options?.skipSmall ? files.filter((f) => f.content.length >= COMPACT_MAX_LENGTH) : files;
 
     let compactedCount = 0;
     const total = workingSet.length;
@@ -151,7 +151,7 @@ export class ExperienceCompactor implements Agent {
 
     for (let i = 0; i < workingSet.length; i++) {
       const experience = workingSet[i];
-      const shortName = experience.filePath.split('/').pop() || experience.filePath;
+      const shortName = basename(experience.filePath);
       const willReview = this.isRecent(experience);
 
       if (total > 1 && willReview) {
@@ -164,8 +164,8 @@ export class ExperienceCompactor implements Agent {
         content = await this.reviewExperienceQuality(content, experience.data);
       }
 
-      if (content.length >= this.MAX_LENGTH) {
-        if (total > 1) tag('substep').log(`[${i + 1}/${total}] compacting ${shortName} (over ${this.MAX_LENGTH} chars)`);
+      if (content.length >= COMPACT_MAX_LENGTH) {
+        if (total > 1) tag('substep').log(`[${i + 1}/${total}] compacting ${shortName} (over ${COMPACT_MAX_LENGTH} chars)`);
         const prompt = this.buildCompactionPrompt(content);
         const model = this.provider.getModelForAgent('experience-compactor');
         const response = await this.provider.chat(
@@ -181,7 +181,7 @@ export class ExperienceCompactor implements Agent {
 
       if (content === experience.content) continue;
 
-      const stateHash = experience.filePath.split('/').pop()?.replace('.md', '') || '';
+      const stateHash = basename(experience.filePath, '.md');
       this.experienceTracker.writeExperienceFile(stateHash, content, experience.data);
       debugLog('Experience file compacted:', experience.filePath);
       compactedCount++;
@@ -314,7 +314,7 @@ export class ExperienceCompactor implements Agent {
     const [targetFile, ...sourceFiles] = group.files;
     const combinedContent = group.files.map((f) => f.content).join('\n\n---\n\n');
 
-    const targetStateHash = targetFile.filePath.split('/').pop()?.replace('.md', '') || '';
+    const targetStateHash = basename(targetFile.filePath, '.md');
     const newFrontmatter = {
       ...targetFile.data,
       url: group.pattern,
@@ -350,7 +350,7 @@ export class ExperienceCompactor implements Agent {
       <rules>
       - Use markdown h2 headers only (##) - NO XML tags or wrappers in output
       - Merge similar flows to remove duplicates
-      - Keep output under ${this.MAX_LENGTH} characters
+      - Keep output under ${COMPACT_MAX_LENGTH} characters
       - Be explicit and short - no proposals or explanations
 
       KEEP only:

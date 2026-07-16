@@ -1,13 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import matter from 'gray-matter';
 import { type Tokens, marked } from 'marked';
 import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
-import { createDebug, tag } from './utils/logger.js';
+import { createDebug, pluralize, tag } from './utils/logger.js';
+import { loadMarkdownFiles } from './utils/markdown-files.js';
 import { mdq } from './utils/markdown-query.js';
+import { redactSecrets } from './utils/secrets.js';
 import { isNonReusableCode } from './utils/step-analyzer.ts';
 import { extractStatePath } from './utils/url-matcher.js';
 
@@ -41,17 +43,11 @@ export class ExperienceTracker {
   constructor(knowledgeTracker: KnowledgeTracker, options: { disabled?: boolean } = {}) {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
-    const configPath = configParser.getConfigPath();
     this.disabled = options.disabled ?? false;
     this.knowledgeTracker = knowledgeTracker;
 
     // Resolve experience directory relative to the config file location (project root)
-    if (configPath) {
-      const projectRoot = dirname(configPath);
-      this.experienceDir = join(projectRoot, config.dirs?.experience || 'experience');
-    } else {
-      this.experienceDir = config.dirs?.experience || 'experience';
-    }
+    this.experienceDir = configParser.resolveProjectDir(config.dirs?.experience || 'experience');
 
     if (!this.disabled) {
       this.ensureDirectory(this.experienceDir);
@@ -112,23 +108,8 @@ export class ExperienceTracker {
       return;
     }
     const filePath = this.getExperienceFilePath(stateHash);
-    const fileContent = matter.stringify(content, frontmatter || {});
+    const fileContent = matter.stringify(redactSecrets(content), frontmatter || {});
     writeFileSync(filePath, fileContent, 'utf8');
-  }
-
-  hasRecentExperience(stateHash: string, prefix = ''): boolean {
-    if (this.disabled) {
-      return false;
-    }
-    if (prefix) {
-      stateHash = `${prefix}_${stateHash}`;
-    }
-    const filePath = this.getExperienceFilePath(stateHash);
-    if (!existsSync(filePath)) {
-      return false;
-    }
-    const stats = statSync(filePath);
-    return stats.mtime.getTime() > Date.now() - 1000 * 60 * 60 * 24;
   }
 
   private getExperienceFilePath(stateHash: string): string {
@@ -233,25 +214,11 @@ export class ExperienceTracker {
       }
 
       try {
-        const files = readdirSync(experienceDir)
-          .filter((file: string) => file.endsWith('.md'))
-          .map((file: string) => join(experienceDir, file));
-
-        for (const file of files) {
-          try {
-            const content = readFileSync(file, 'utf8');
-            const parsed = matter(content);
-            const mtime = statSync(file).mtime;
-            allFiles.push({
-              filePath: file,
-              data: parsed.data,
-              content: parsed.content,
-              mtime,
-            });
-          } catch (error) {
-            debugLog(`Failed to read experience file ${file}:`, error);
-          }
-        }
+        allFiles.push(
+          ...loadMarkdownFiles(experienceDir, {
+            onError: (filePath, error) => debugLog(`Failed to read experience file ${filePath}:`, error),
+          })
+        );
       } catch (error) {
         debugLog(`Failed to read experience directory ${experienceDir}:`, error);
       }
@@ -281,14 +248,6 @@ export class ExperienceTracker {
         if (lines.length <= maxLines) return experience;
         return { ...experience, content: lines.slice(0, maxLines).join('\n') };
       });
-  }
-
-  /**
-   * Clean up experience tracker (for testing)
-   */
-  cleanup(): void {
-    // Clear any in-memory state if needed
-    // The actual files will be cleaned up by test cleanup
   }
 
   getSuccessfulExperience(state: ActionResult, options?: { includeDescendants?: boolean; stripCode?: boolean }): string[] {
@@ -329,6 +288,16 @@ export class ExperienceTracker {
     });
 
     return this.buildToc(sorted);
+  }
+
+  renderExperienceTocFor(state: ActionResult): string {
+    const toc = this.getExperienceTableOfContents(state);
+    if (toc.length === 0) return '';
+
+    const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
+    debugLog(`injecting experience TOC (${toc.length} files, ${totalSections} sections)`);
+    tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections)`);
+    return renderExperienceToc(toc);
   }
 
   getExperienceSection(fileTag: string, sectionIndex: number, state: ActionResult, options?: { includeDescendantExperience?: boolean }): { title: string; url: string; content: string } | null {

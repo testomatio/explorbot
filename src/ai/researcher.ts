@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { setActivity } from '../activity.ts';
@@ -15,7 +14,7 @@ import { diffAriaSnapshots } from '../utils/aria.ts';
 import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { isBodyEmpty } from '../utils/html.ts';
-import { createDebug, pluralize, tag } from '../utils/logger.js';
+import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import type { Agent } from './agent.js';
@@ -470,23 +469,7 @@ export class Researcher extends ResearcherBase implements Agent {
     if (!this.actionResult) throw new Error('actionResult is not set');
 
     const html = await this.actionResult.combinedHtml();
-    const knowledgeFiles = this.stateManager.getRelevantKnowledge();
-
-    let knowledge = '';
-    if (knowledgeFiles.length > 0) {
-      const knowledgeContent = knowledgeFiles
-        .map((k) => k.content)
-        .filter((k) => !!k)
-        .join('\n\n');
-
-      tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')} for: ${this.actionResult.url}`);
-      knowledge = `
-        <hint>
-        Here is relevant knowledge for this page:
-
-        ${knowledgeContent}
-        </hint>`;
-    }
+    const knowledge = this.explorer.getKnowledgeTracker().renderRelevantKnowledge(this.actionResult);
 
     const ariaSnapshot = this.actionResult.getCompactARIA();
 
@@ -542,39 +525,6 @@ export class Researcher extends ResearcherBase implements Agent {
 
 
     `;
-  }
-
-  async textContent(state: WebPageState): Promise<string> {
-    const actionResult = ActionResult.fromState(state);
-    const html = await actionResult.combinedHtml();
-
-    const prompt = dedent`
-      Transform into markdown.
-      Identify headers, footers, asides, special application parts and main contant.
-      Content should be in markdown format. If it is content: tables must be tables, lists must be lists.
-      Navigation elements should be represented as standalone blocks after the content.
-      Do not summarize content, just transform it into markdown.
-      It is important to list all the content text
-      If it is link it must be linked
-      You can summarize footers/navigation/aside elements.
-      But main conteint should be kept as text and formatted as markdown based on its current markup.
-      Links to external web sites should be avoided in output.
-
-      Break down into sections:
-
-      ## Content Area
-
-      ## Navigation Area
-
-      <page_html>
-      ${html}
-      </page_html>
-    `;
-
-    const model = this.provider.getModelForAgent('researcher');
-    const r = await this.provider.chat([{ role: 'user', content: prompt }], model, { agentName: 'researcher', telemetryFunctionId: 'researcher.textContent' });
-
-    return r.text;
   }
 
   private getScreenshotFromState(state: WebPageState): { actionResult: ActionResult; image: Buffer } | null {
@@ -781,7 +731,7 @@ export class Researcher extends ResearcherBase implements Agent {
     const beforeAria = this.stateManager.getCurrentState()?.ariaSnapshot || null;
 
     await this.explorer.executeAction('I.clickXY(0, 0)');
-    if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null)) return;
+    if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null).text) return;
 
     await this.explorer.executeAction(`I.pressKey('Escape')`);
   }

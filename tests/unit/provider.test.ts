@@ -382,6 +382,36 @@ describe('Provider', () => {
     });
   });
 
+  describe('context length recovery', () => {
+    it('reduces messages and retries when a context-length error is thrown', async () => {
+      let calls = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'ctx-model',
+        doGenerate: async () => {
+          calls++;
+          if (calls === 1) throw new Error('context length exceeded');
+          return {
+            text: 'recovered',
+            finishReason: 'stop' as const,
+            usage: { inputTokens: 5, outputTokens: 5 },
+            content: [{ type: 'text' as const, text: 'recovered' }],
+          };
+        },
+      });
+      const messages: ModelMessage[] = [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: `<data>${'x'.repeat(5000)}</data>` },
+        { role: 'assistant', content: 'response' },
+      ];
+
+      const response = await provider.chat(messages, model, { maxRetries: 1 });
+
+      expect(response.text).toBe('recovered');
+      expect(calls).toBe(2);
+    });
+  });
+
   describe('abort on idle timeout', () => {
     it('aborts the in-flight request when the idle timeout fires', async () => {
       const capture: { signal?: AbortSignal } = {};

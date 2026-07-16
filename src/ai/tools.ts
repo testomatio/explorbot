@@ -1,11 +1,11 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import { ActionResult, type ToolResultMetadata } from '../action-result.ts';
+import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
-import { extractFocusedElement } from '../utils/aria.ts';
+import { LARGE_ARIA_CHANGE_THRESHOLD, extractFocusedElement } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
@@ -515,7 +515,7 @@ export function createIframeTools(explorer: Explorer) {
   };
 }
 
-export function createLearnExperienceTool({ experienceTracker, getState }: { experienceTracker: ExperienceTracker; getState: () => ActionResult | null }) {
+export function createLearnExperienceTool({ getExperienceTracker, getState }: { getExperienceTracker: () => ExperienceTracker; getState: () => ActionResult | null }) {
   return tool({
     description: dedent`
       Read the full body of a specific experience section listed in <experience>.
@@ -531,7 +531,7 @@ export function createLearnExperienceTool({ experienceTracker, getState }: { exp
       if (!state) {
         return { error: 'No current page state available.' };
       }
-      const section = experienceTracker.getExperienceSection(fileTag, sectionIndex, state);
+      const section = getExperienceTracker().getExperienceSection(fileTag, sectionIndex, state);
       if (!section) {
         return { error: 'Section not found. Experience may have been updated; re-read the latest TOC.' };
       }
@@ -544,16 +544,14 @@ export function createAgentTools({
   explorer,
   researcher,
   navigator,
-  experienceTracker,
-  getState,
   supervisor,
+  withExperience,
 }: {
   explorer: Explorer;
   researcher: Researcher;
   navigator: Navigator;
-  experienceTracker?: ExperienceTracker;
-  getState?: () => ActionResult | null;
   supervisor?: boolean;
+  withExperience?: boolean;
 }): any {
   let visionDisabled = false;
 
@@ -1033,8 +1031,15 @@ export function createAgentTools({
     }),
   };
 
-  if (experienceTracker && getState) {
-    tools.learnExperience = createLearnExperienceTool({ experienceTracker, getState });
+  if (withExperience !== false) {
+    tools.learnExperience = createLearnExperienceTool({
+      getExperienceTracker: () => explorer.getStateManager().getExperienceTracker(),
+      getState: () => {
+        const stateManager = explorer.getStateManager();
+        const currentState = stateManager.getCurrentState();
+        return currentState ? ActionResult.fromState(currentState) : null;
+      },
+    });
   }
 
   if (supervisor) {
@@ -1123,13 +1128,6 @@ function transformContainsCommand(command: string): string {
   return command;
 }
 
-function countAriaChanges(ariaChanges: string): number {
-  const addedCount = (ariaChanges.match(/\n {4}- /g) || []).length;
-  const removedMatch = ariaChanges.match(/removed: (\d+) interactive/);
-  const removedCount = removedMatch ? Number.parseInt(removedMatch[1]) : 0;
-  return addedCount + removedCount;
-}
-
 function errorText(error: unknown): string {
   if (error instanceof Error) return error.toString();
   return 'Unknown error occurred';
@@ -1155,7 +1153,7 @@ function successToolResult(action: string, data?: Record<string, any>, source?: 
     const ariaChanges = data.pageDiff.ariaChanges || '';
     const urlChanged = data.pageDiff.urlChanged === true;
     const hasHtmlParts = Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
-    if (countAriaChanges(ariaChanges) >= 50) {
+    if (isMajorPageChange(data.pageDiff)) {
       suggestion = `MAJOR PAGE CHANGE. Page entered a different mode. Check htmlParts and iframes in pageDiff before next action. ${suggestion}`;
     } else if (!urlChanged && !ariaChanges && !hasHtmlParts) {
       suggestion = 'Action ran without error but produced no observable change (URL, ARIA and HTML all unchanged). The locator likely matched a non-interactive ancestor or an element outside the intended control. Re-locate via xpathCheck() or verify with see() before treating this as success.';
@@ -1165,6 +1163,10 @@ function successToolResult(action: string, data?: Record<string, any>, source?: 
     result.suggestion = data.suggestion ? `${data.suggestion} ${suggestion}` : suggestion;
   }
   return result;
+}
+
+export function isMajorPageChange(pageDiff: PageDiff): boolean {
+  return pageDiff.urlChanged !== true && (pageDiff.ariaChangeCount ?? 0) >= LARGE_ARIA_CHANGE_THRESHOLD;
 }
 
 function hasObservablePageChange(data?: Record<string, any>): boolean {

@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, rmSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
+import { ActionResult } from '../../src/action-result.js';
 import { ConfigParser } from '../../src/config';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
+import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
 
 const knowledgeDir = '/tmp/explorbot-test-knowledge';
 
@@ -33,6 +35,26 @@ describe('KnowledgeTracker', () => {
     const fileContent = matter.stringify(content, { url });
     writeFileSync(`${knowledgeDir}/${filename}`, fileContent, 'utf8');
   }
+
+  describe('renderRelevantKnowledge', () => {
+    it('returns empty string when no knowledge matches the page', () => {
+      const tracker = new KnowledgeTracker();
+      const state = new ActionResult({ url: '/nothing-here', html: '<html></html>' });
+      expect(tracker.renderRelevantKnowledge(state)).toBe('');
+    });
+
+    it('renders a tagged knowledge block for a matching page', () => {
+      writeKnowledgeFile('login.md', '/login', 'Use admin credentials');
+      const tracker = new KnowledgeTracker();
+      const state = new ActionResult({ url: '/login', html: '<html></html>' });
+
+      const rendered = tracker.renderRelevantKnowledge(state);
+
+      expect(rendered).toContain('<knowledge>');
+      expect(rendered).toContain('Use admin credentials');
+      expect(rendered).toContain('</knowledge>');
+    });
+  });
 
   describe('interpolateVars', () => {
     it('should replace ${env.VAR} with environment variable value', () => {
@@ -123,6 +145,33 @@ describe('KnowledgeTracker', () => {
 
       expect(content[0]).toContain('value:');
       expect(content[0]).not.toContain('${config.');
+    });
+
+    it('should block credential-named config keys from interpolating', () => {
+      (ConfigParser.getInstance() as any).config.ai.apiKey = 'sk-should-not-leak';
+      writeKnowledgeFile('page.md', '/page', 'key: ${config.ai.apiKey}');
+
+      const tracker = new KnowledgeTracker();
+      const content = tracker.getKnowledgeForUrl('/page');
+
+      expect(content[0]).not.toContain('sk-should-not-leak');
+      expect(content[0]).not.toContain('${config.');
+    });
+
+    it('should register env secrets so they are redacted at sinks', () => {
+      clearRegisteredSecrets();
+      process.env.APP_PASSWORD = 'hunter2secret';
+
+      writeKnowledgeFile('login.md', '/login', 'password: ${env.APP_PASSWORD}');
+
+      const tracker = new KnowledgeTracker();
+      const content = tracker.getKnowledgeForUrl('/login');
+
+      expect(content[0]).toContain('password: hunter2secret');
+      expect(redactSecrets('typed hunter2secret into the field')).toBe('typed ***REDACTED*** into the field');
+
+      process.env.APP_PASSWORD = undefined;
+      clearRegisteredSecrets();
     });
   });
 

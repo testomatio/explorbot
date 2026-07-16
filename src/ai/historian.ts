@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { ExplorbotConfig } from '../config.ts';
-import { ExperienceTracker } from '../experience-tracker.ts';
+import type { ExperienceTracker } from '../experience-tracker.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { Reporter } from '../reporter.ts';
 import type { StateManager } from '../state-manager.ts';
@@ -12,8 +12,6 @@ import { type ExperienceMethods, WithExperience } from './historian/experience.t
 import { type PlaywrightMethods, WithPlaywright } from './historian/playwright.ts';
 import { type ScreencastMethods, WithScreencast } from './historian/screencast.ts';
 import type { Provider } from './provider.ts';
-
-export { isNonReusableCode } from '../utils/step-analyzer.ts';
 
 const HistorianBase = WithScreencast(WithPlaywright(WithCodeceptJS(WithExperience(Object as unknown as new (...args: any[]) => object))));
 
@@ -52,11 +50,10 @@ export class Historian extends HistorianBase {
     return this.isPlaywrightFramework() ? this.savePlaywrightPlanToFile(plan) : this.saveCodeceptPlanToFile(plan);
   }
 
-  rewriteScenarioInFile(filePath: string, healedSteps: Array<{ test: string; original: string; healed: string }>): void {
+  rewriteScenarioInFile(filePath: string, healedSteps: Array<{ original: string; healed: string }>): void {
     let content = readFileSync(filePath, 'utf-8');
 
     for (const step of healedSteps) {
-      if (!content.includes(step.original)) continue;
       content = content.replace(step.original, step.healed);
     }
 

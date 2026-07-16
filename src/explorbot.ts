@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { ActionResult } from './action-result.ts';
 import { Captain } from './ai/captain.ts';
 import { Driller } from './ai/driller.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
@@ -28,6 +27,7 @@ import { WebPageState } from './state-manager.ts';
 import { Stats } from './stats.ts';
 import type { Suite } from './suite.ts';
 import { Plan, type Test } from './test-plan.ts';
+import { browserErrorMessage } from './utils/browser-errors.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
 import { relativeToCwd } from './utils/next-steps.ts';
 import { sanitizeFilename } from './utils/strings.ts';
@@ -94,7 +94,7 @@ export class ExplorBot {
         await this.agentExperienceCompactor().autocompact();
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = browserErrorMessage(error);
       console.error('\nFailed to start:', message);
       process.exit(1);
     }
@@ -189,14 +189,8 @@ export class ExplorBot {
     return (this.agents.pilot ||= this.createAgent(({ ai, explorer }) => {
       const researcher = this.agentResearcher();
       const navigator = this.agentNavigator();
-      const stateManager = explorer.getStateManager();
-      const experienceTracker = stateManager.getExperienceTracker();
-      const getState = () => {
-        const state = stateManager.getCurrentState();
-        return state ? ActionResult.fromState(state) : null;
-      };
-      const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState, supervisor: true });
-      return new Pilot(ai, tools, researcher, explorer, experienceTracker);
+      const tools = createAgentTools({ explorer, researcher, navigator, supervisor: true });
+      return new Pilot(ai, tools, researcher, explorer);
     }));
   }
 
@@ -205,13 +199,7 @@ export class ExplorBot {
       this.agents.tester = this.createAgent(({ ai, explorer }) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const stateManager = explorer.getStateManager();
-        const experienceTracker = stateManager.getExperienceTracker();
-        const getState = () => {
-          const state = stateManager.getCurrentState();
-          return state ? ActionResult.fromState(state) : null;
-        };
-        const tools = createAgentTools({ explorer, researcher, navigator, experienceTracker, getState });
+        const tools = createAgentTools({ explorer, researcher, navigator });
         return new Tester(explorer, ai, researcher, navigator, tools);
       });
 
@@ -267,7 +255,7 @@ export class ExplorBot {
       this.agents.rerunner = this.createAgent(({ ai, explorer }) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const tools = createAgentTools({ explorer, researcher, navigator });
+        const tools = createAgentTools({ explorer, researcher, navigator, withExperience: false });
         return new Rerunner(explorer, ai, tools);
       });
       this.agents.rerunner.setHistorian(this.agentHistorian());
@@ -487,7 +475,7 @@ export class ExplorBot {
 
       this.lastReportedTestCount = tests.length;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = browserErrorMessage(error);
       tag('warning').log(`Session analysis failed: ${message}`);
     }
   }

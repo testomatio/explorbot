@@ -5,7 +5,7 @@ import type Explorer from '../../../../src/explorer.ts';
 import type { WebPageState } from '../../../../src/state-manager.ts';
 import { tag } from '../../../../src/utils/logger.ts';
 import type { DocbotConfig } from '../config.ts';
-import { collectDocInteractions } from './tools.ts';
+import { type CaptureInteractionState, type DocStateTransition, collectDocInteractions } from './tools.ts';
 
 class Documentarian {
   private provider: AIProvider;
@@ -18,7 +18,7 @@ class Documentarian {
     this.explorer = explorer;
   }
 
-  async document(state: WebPageState, research: string): Promise<PageDocumentation> {
+  async document(state: WebPageState, research: string, captureState?: CaptureInteractionState): Promise<PageDocumentation> {
     const interactiveEnabled = this.config.docs?.interactive === true && this.explorer;
     if (!interactiveEnabled) {
       tag('info').log('Documentarian: Using static mode (interactive disabled or no explorer)');
@@ -26,7 +26,7 @@ class Documentarian {
     }
 
     tag('info').log('Documentarian: Using interactive mode with tools');
-    return this.documentWithInteraction(state, research);
+    return this.documentWithInteraction(state, research, captureState);
   }
 
   private async documentStatic(state: WebPageState, research: string): Promise<PageDocumentation> {
@@ -41,12 +41,13 @@ class Documentarian {
     }
   }
 
-  private async documentWithInteraction(state: WebPageState, research: string): Promise<PageDocumentation> {
+  private async documentWithInteraction(state: WebPageState, research: string, captureState?: CaptureInteractionState): Promise<PageDocumentation> {
+    let meaningfulInteractions: StateTransition[] = [];
     try {
       tag('info').log('Starting interactive exploration...');
 
-      const deterministicInteractions = await collectDocInteractions(this.explorer!, state, research, this.config);
-      const meaningfulInteractions = this.getMeaningfulInteractions(deterministicInteractions);
+      const deterministicInteractions = await collectDocInteractions(this.explorer!, state, research, this.config, captureState);
+      meaningfulInteractions = this.getMeaningfulInteractions(deterministicInteractions);
       if (meaningfulInteractions.length > 0) {
         tag('success').log(`Collected ${meaningfulInteractions.length} deterministic interactions`);
         return await this.generateDocumentationWithInteractions(state, research, meaningfulInteractions);
@@ -61,7 +62,20 @@ class Documentarian {
       return this.documentStatic(state, research);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      tag('warning').log(`Interactive documentation failed: ${message}. Falling back to static.`);
+      tag('warning').log(`Interactive documentation failed: ${message}.`);
+      if (meaningfulInteractions.length > 0) {
+        tag('info').log(`Preserving ${meaningfulInteractions.length} observed interaction(s) without AI summary.`);
+        return this.normalizeDocumentation(
+          {
+            summary: `Observed ${meaningfulInteractions.length} interaction(s); AI-generated summary was unavailable.`,
+            can: [],
+            might: [],
+            interactions: meaningfulInteractions,
+          },
+          state,
+          research
+        );
+      }
       return this.documentStatic(state, research);
     }
   }
@@ -354,26 +368,7 @@ const pageDocumentationSchema = z.object({
   interactions: z.array(stateTransitionSchema).nullable(),
 });
 
-type StateTransition = {
-  action: string;
-  before: string;
-  after: string;
-  targetUrl?: string | null;
-  discoveredUrls?: string[] | null;
-  newCapabilities?: string[] | null;
-  element?: {
-    role: string;
-    name: string;
-    section: string;
-    container?: string | null;
-    locator?: string | null;
-  } | null;
-  changes?: {
-    urlChanged: boolean;
-    newElements: number;
-    removedElements: number;
-  } | null;
-};
+type StateTransition = DocStateTransition;
 type PageDocumentation = Omit<z.infer<typeof pageDocumentationSchema>, 'interactions'> & {
   interactions?: StateTransition[];
   qualityNotes?: string[];

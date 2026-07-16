@@ -1,6 +1,7 @@
 import { type ResearchElement, parseResearchSections } from '../../../../src/ai/researcher/parser.ts';
 import type Explorer from '../../../../src/explorer.ts';
 import type { WebPageState } from '../../../../src/state-manager.ts';
+import { detectFocusArea } from '../../../../src/utils/aria.ts';
 import type { DocbotConfig } from '../config.ts';
 
 export interface DocStateTransition {
@@ -12,6 +13,8 @@ export interface DocStateTransition {
   newCapabilities?: string[];
   element?: InteractionElement;
   changes?: InteractionChanges;
+  targetState?: InteractionState;
+  screenshot?: InteractionScreenshot;
 }
 
 interface InteractionCandidate {
@@ -35,6 +38,19 @@ interface InteractionChanges {
   removedElements: number;
 }
 
+export interface InteractionState {
+  kind: 'page' | 'dialog' | 'modal' | 'section';
+  label: string;
+  url: string;
+}
+
+export interface InteractionScreenshot {
+  title: string;
+  relativePath: string;
+}
+
+export type CaptureInteractionState = (state: WebPageState, transition: DocStateTransition) => Promise<InteractionScreenshot | null>;
+
 const DEFAULT_MAX_PRIMARY_CANDIDATES = 3;
 const DEFAULT_MAX_INTERACTIONS = 5;
 const MAX_LINKS = 15;
@@ -42,14 +58,14 @@ const DEFAULT_WAIT_MS = 700;
 const TAB_WAIT_MS = 500;
 const DEFAULT_DENIED_ACTION_LABELS = ['delete', 'remove', 'destroy', 'archive', 'discard', 'logout', 'sign out', 'signout', 'sign_out', 'erase', 'drop'];
 
-export async function collectDocInteractions(explorer: Explorer, state: WebPageState, research: string, config: DocbotConfig = {}): Promise<DocStateTransition[]> {
+export async function collectDocInteractions(explorer: Explorer, state: WebPageState, research: string, config: DocbotConfig = {}, captureState?: CaptureInteractionState): Promise<DocStateTransition[]> {
   const sections = parseResearchSections(research);
   const transitions: DocStateTransition[] = [];
   const maxInteractions = getPositiveConfigNumber(config.docs?.maxInteractions, DEFAULT_MAX_INTERACTIONS);
   const tabGroup = findTabGroup(sections);
 
   if (tabGroup) {
-    transitions.push(...(await exploreTabGroup(explorer, tabGroup, state.url, maxInteractions)));
+    transitions.push(...(await exploreTabGroup(explorer, tabGroup, state.url, maxInteractions, captureState)));
   }
 
   for (const candidate of findActionCandidates(sections, config)) {
@@ -57,7 +73,7 @@ export async function collectDocInteractions(explorer: Explorer, state: WebPageS
       break;
     }
 
-    const transition = await executeInteraction(explorer, candidate, state.url, DEFAULT_WAIT_MS);
+    const transition = await executeInteraction(explorer, candidate, state.url, DEFAULT_WAIT_MS, captureState);
     if (!transition) {
       continue;
     }
@@ -76,7 +92,7 @@ export function pickDocActionCandidates(research: string, config: DocbotConfig =
   }));
 }
 
-async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: ResearchElement[]; container?: string; sectionName: string }, restoreUrl: string, maxInteractions: number): Promise<DocStateTransition[]> {
+async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: ResearchElement[]; container?: string; sectionName: string }, restoreUrl: string, maxInteractions: number, captureState?: CaptureInteractionState): Promise<DocStateTransition[]> {
   const transitions: DocStateTransition[] = [];
 
   for (const element of tabGroup.elements) {
@@ -93,7 +109,8 @@ async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: Researc
         sectionName: tabGroup.sectionName,
       },
       restoreUrl,
-      TAB_WAIT_MS
+      TAB_WAIT_MS,
+      captureState
     );
     if (!transition) {
       continue;
@@ -106,7 +123,7 @@ async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: Researc
   return transitions;
 }
 
-async function executeInteraction(explorer: Explorer, candidate: InteractionCandidate, restoreUrl: string, waitMs: number): Promise<DocStateTransition | null> {
+async function executeInteraction(explorer: Explorer, candidate: InteractionCandidate, restoreUrl: string, waitMs: number, captureState?: CaptureInteractionState): Promise<DocStateTransition | null> {
   const beforeState = explorer.getStateManager().getCurrentState();
   if (!beforeState) {
     return null;
@@ -132,7 +149,14 @@ async function executeInteraction(explorer: Explorer, candidate: InteractionCand
     removedElements: ariaChanges.removedCount,
   });
 
-  if (urlChanged) {
+  if (captureState && isMeaningfulStateTransition(transition)) {
+    const screenshot = await captureState(afterState, transition);
+    if (screenshot) {
+      transition.screenshot = screenshot;
+    }
+  }
+
+  if (urlChanged || ariaChanges.newCount > 0) {
     await restoreInteractionState(explorer, restoreUrl);
   }
 
@@ -175,6 +199,7 @@ function buildTransition(candidate: InteractionCandidate, beforeState: WebPageSt
     newCapabilities: collectDiscoveryNotes(afterState, changes),
     element: buildInteractionElement(candidate),
     changes,
+    targetState: describeTargetState(beforeState, afterState, candidate),
   };
 
   if (changes.urlChanged) {
@@ -182,6 +207,38 @@ function buildTransition(candidate: InteractionCandidate, beforeState: WebPageSt
   }
 
   return transition;
+}
+
+function describeTargetState(beforeState: WebPageState, afterState: WebPageState, candidate: InteractionCandidate): InteractionState {
+  const beforeFocus = detectFocusArea(beforeState.ariaSnapshot || null);
+  const afterFocus = detectFocusArea(afterState.ariaSnapshot || null);
+  if (afterFocus.detected && (!beforeFocus.detected || beforeFocus.name !== afterFocus.name)) {
+    return {
+      kind: afterFocus.type || 'dialog',
+      label: afterFocus.name || candidate.element.name.trim(),
+      url: afterState.url,
+    };
+  }
+
+  const beforePath = beforeState.url.split('?')[0].split('#')[0];
+  const afterPath = afterState.url.split('?')[0].split('#')[0];
+  const headings = collectHeadings(afterState);
+  let kind: InteractionState['kind'] = 'page';
+  if (beforePath === afterPath) {
+    kind = 'section';
+  }
+  return {
+    kind,
+    label: headings[0] || afterState.title || candidate.element.name.trim(),
+    url: afterState.url,
+  };
+}
+
+function isMeaningfulStateTransition(transition: DocStateTransition): boolean {
+  if (transition.targetUrl || transition.changes?.urlChanged) {
+    return true;
+  }
+  return (transition.changes?.newElements || 0) > 0;
 }
 
 function buildInteractionElement(candidate: InteractionCandidate): InteractionElement {

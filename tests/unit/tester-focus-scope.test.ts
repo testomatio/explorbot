@@ -1,25 +1,31 @@
 import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { Tester } from '../../src/ai/tester.ts';
+import { renderExperienceToc } from '../../src/experience-tracker.ts';
 import { Test } from '../../src/test-plan.ts';
 
 function buildTester(): Tester {
   const explorer: any = {
     getConfig: () => ({}),
     getStateManager: () => ({
+      getCurrentState: () => null,
       getExperienceTracker: () => ({
         getExperienceTableOfContents: () => [],
+        renderExperienceTocFor: () => '',
       }),
     }),
     getKnowledgeTracker: () => ({
       getRelevantKnowledge: () => [],
+      renderRelevantKnowledge: () => '',
     }),
     getCurrentIframeInfo: () => null,
     hasOtherTabs: () => false,
     getOtherTabsInfo: () => [],
     clearOtherTabsInfo: () => {},
   };
-  const provider: any = {};
+  const provider: any = {
+    getSystemPromptForAgent: () => '',
+  };
   const researcher: any = {
     research: async () => '',
     researchOverlay: async () => null,
@@ -29,22 +35,25 @@ function buildTester(): Tester {
 }
 
 function buildTesterWithExperience(): Tester {
+  const experienceToc = [
+    {
+      fileTag: 'A',
+      fileHash: 'abc123',
+      url: '/page',
+      sections: [{ index: 1, level: 2, title: 'FLOW: create item' }],
+    },
+  ];
   const explorer: any = {
     getConfig: () => ({ files: {} }),
     getStateManager: () => ({
       getExperienceTracker: () => ({
-        getExperienceTableOfContents: () => [
-          {
-            fileTag: 'A',
-            fileHash: 'abc123',
-            url: '/page',
-            sections: [{ index: 1, level: 2, title: 'FLOW: create item' }],
-          },
-        ],
+        getExperienceTableOfContents: () => experienceToc,
+        renderExperienceTocFor: () => renderExperienceToc(experienceToc),
       }),
     }),
     getKnowledgeTracker: () => ({
       getRelevantKnowledge: () => [],
+      renderRelevantKnowledge: () => '',
     }),
   };
   const provider: any = {};
@@ -61,6 +70,16 @@ function buildState(ariaSnapshot: string, url = '/page'): ActionResult {
     ariaSnapshot,
   });
 }
+
+describe('Tester evidence rules', () => {
+  it('accepts explicit URL filter state and rejects inferred validation associations', () => {
+    const prompt = buildTester().getSystemMessage();
+
+    expect(prompt).toContain('selected control, URL/query, or another explicit state indicator');
+    expect(prompt).toContain('finish the scenario instead of repeating the interaction');
+    expect(prompt).toContain('Do not infer the affected field from DOM order or proximity alone');
+  });
+});
 
 describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
   it('emits <focus_scope> when ARIA snapshot contains a dialog', async () => {

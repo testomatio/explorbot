@@ -55,6 +55,7 @@ function createMockExplorer(state = fakeState) {
   };
   const mockKnowledgeTracker = {
     getRelevantKnowledge: () => [],
+    renderRelevantKnowledge: () => '',
   };
   const mockStateManager = {
     getCurrentState: () => state,

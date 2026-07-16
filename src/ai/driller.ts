@@ -28,10 +28,9 @@ import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { Agent } from './agent.ts';
-import type { Conversation } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
-import { locatorRule } from './rules.ts';
+import { drillLocatorRule } from './rules.ts';
 import { TaskAgent, isInteractive } from './task-agent.ts';
 import { createCodeceptJSTools } from './tools.ts';
 
@@ -85,7 +84,6 @@ export class Driller extends TaskAgent implements Agent {
   private navigator: Navigator;
   private hooksRunner: HooksRunner;
   private currentPlan?: Plan;
-  private currentConversation: Conversation | null = null;
   private allResults: InteractionResult[] = [];
   private verifiedAction: { componentId: string; toolName: string; code?: string; canonicalCode?: string } | null = null;
   private pendingNestedContext: string | null = null;
@@ -323,7 +321,6 @@ export class Driller extends TaskAgent implements Agent {
     this.verifiedAction = null;
     this.pendingNestedContext = null;
     const conversation = this.provider.startConversation(this.getSystemMessage(component), 'driller');
-    this.currentConversation = conversation;
     conversation.addUserText(await this.buildComponentPrompt(originalState, component));
 
     let finished = false;
@@ -789,14 +786,6 @@ export class Driller extends TaskAgent implements Agent {
       tag('step').log(`  ${status} ${componentTest.component?.name || test.scenario}`);
     }
   }
-
-  getCurrentPlan(): Plan | undefined {
-    return this.currentPlan;
-  }
-
-  getConversation(): Conversation | null {
-    return this.currentConversation;
-  }
 }
 
 function formatAriaNode(node: Record<string, unknown>): string {
@@ -1190,5 +1179,3 @@ function isInteractiveElement(element: WebElement): boolean {
   if (element.attrs['aria-haspopup'] || element.attrs['aria-expanded'] || element.attrs['aria-controls']) return true;
   return false;
 }
-
-const drillLocatorRule = locatorRule.replace(/<context_simplification>[\s\S]*?<\/context_simplification>/, '').trim();

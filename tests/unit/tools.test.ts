@@ -59,7 +59,7 @@ describe('createIframeTools', () => {
 describe('createLearnExperienceTool', () => {
   it('reports missing state when getState returns null', async () => {
     const tool = createLearnExperienceTool({
-      experienceTracker: { getExperienceSection: () => 'body' } as any,
+      getExperienceTracker: () => ({ getExperienceSection: () => 'body' }) as any,
       getState: () => null,
     });
 
@@ -70,7 +70,7 @@ describe('createLearnExperienceTool', () => {
 
   it('returns the resolved section when present', async () => {
     const tool = createLearnExperienceTool({
-      experienceTracker: { getExperienceSection: () => '## FLOW: login' } as any,
+      getExperienceTracker: () => ({ getExperienceSection: () => '## FLOW: login' }) as any,
       getState: () => ({}) as any,
     });
 
