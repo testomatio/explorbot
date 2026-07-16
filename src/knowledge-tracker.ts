@@ -6,6 +6,7 @@ import { ConfigParser } from './config.js';
 import { getCliName } from './utils/cli-name.ts';
 import { createDebug } from './utils/logger.js';
 import { loadMarkdownFiles } from './utils/markdown-files.js';
+import { isSecretName, registerSecret } from './utils/secrets.js';
 import { slugify } from './utils/strings.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
@@ -115,9 +116,14 @@ export class KnowledgeTracker {
       const namespace = expr.slice(0, dotIndex);
       const key = expr.slice(dotIndex + 1);
 
-      if (namespace === 'env') return process.env[key] ?? '';
+      if (namespace === 'env') {
+        const value = process.env[key] ?? '';
+        if (isSecretName(key)) registerSecret(value);
+        return value;
+      }
 
       if (namespace === 'config') {
+        if (isSecretName(key)) return '';
         const config = ConfigParser.getInstance().getConfig();
         const value = key.split('.').reduce((obj: any, k) => obj?.[k], config);
         if (value !== undefined && typeof value !== 'object') return String(value);

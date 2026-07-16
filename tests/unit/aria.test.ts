@@ -7,7 +7,8 @@ describe('aria', () => {
 
     const diff = diffAriaSnapshots(snapshot, snapshot);
 
-    expect(diff).toBeNull();
+    expect(diff.text).toBeNull();
+    expect(diff.count).toBe(0);
   });
 
   it('produces YAML diff with counts', () => {
@@ -16,7 +17,7 @@ describe('aria', () => {
 
     const diff = diffAriaSnapshots(before, after);
 
-    expect(diff).toBe(['ariaDiff:', '  added:', '    - option "Three" (x2)', '  removed:', '    - option "One"', '    - option "Two"'].join('\n'));
+    expect(diff.text).toBe(['ariaDiff:', '  added:', '    - option "Three" (x2)', '  removed:', '    - option "One"', '    - option "Two"'].join('\n'));
   });
 
   it('marks modified nodes as added', () => {
@@ -25,19 +26,19 @@ describe('aria', () => {
 
     const diff = diffAriaSnapshots(before, after);
 
-    expect(diff).toBe(['ariaDiff:', '  added:', '    - button "Submit" [disabled]', '  removed:', '    - button "Submit"'].join('\n'));
+    expect(diff.text).toBe(['ariaDiff:', '  added:', '    - button "Submit" [disabled]', '  removed:', '    - button "Submit"'].join('\n'));
   });
 
   it('reports a checked checkbox as a toggle, not as added/removed', () => {
     const diff = diffAriaSnapshots('- checkbox "Accept"', '- checkbox "Accept" [checked]');
 
-    expect(diff).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Accept": unchecked -> checked', '  added: []', '  removed: []'].join('\n'));
+    expect(diff.text).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Accept": unchecked -> checked', '  added: []', '  removed: []'].join('\n'));
   });
 
   it('reports an unchecked checkbox as a toggle in the reverse direction', () => {
     const diff = diffAriaSnapshots('- checkbox "Accept" [checked]', '- checkbox "Accept"');
 
-    expect(diff).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Accept": checked -> unchecked', '  added: []', '  removed: []'].join('\n'));
+    expect(diff.text).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Accept": checked -> unchecked', '  added: []', '  removed: []'].join('\n'));
   });
 
   it('keeps the toggle line even when other changes overflow the top-10 cap', () => {
@@ -46,9 +47,9 @@ describe('aria', () => {
 
     const diff = diffAriaSnapshots(before, after);
 
-    expect(diff).toContain('  toggled:');
-    expect(diff).toContain('    - checkbox "Toggle Me": unchecked -> checked');
-    expect(diff).toContain('+ 2 more interactive elements');
+    expect(diff.text).toContain('  toggled:');
+    expect(diff.text).toContain('    - checkbox "Toggle Me": unchecked -> checked');
+    expect(diff.text).toContain('+ 2 more interactive elements');
   });
 
   it('only flags the toggled control, leaving an identical untouched sibling alone', () => {
@@ -57,28 +58,29 @@ describe('aria', () => {
 
     const diff = diffAriaSnapshots(before, after);
 
-    expect(diff).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Item": unchecked -> checked', '  added: []', '  removed: []'].join('\n'));
+    expect(diff.text).toBe(['ariaDiff:', '  toggled:', '    - checkbox "Item": unchecked -> checked', '  added: []', '  removed: []'].join('\n'));
   });
 
   it('renders expanded, pressed, and selected transitions', () => {
-    expect(diffAriaSnapshots('- button "Menu"', '- button "Menu" [expanded]')).toContain('    - button "Menu": collapsed -> expanded');
-    expect(diffAriaSnapshots('- button "Bold"', '- button "Bold" [pressed]')).toContain('    - button "Bold": unpressed -> pressed');
-    expect(diffAriaSnapshots('- option "One"', '- option "One" [selected]')).toContain('    - option "One": unselected -> selected');
+    expect(diffAriaSnapshots('- button "Menu"', '- button "Menu" [expanded]').text).toContain('    - button "Menu": collapsed -> expanded');
+    expect(diffAriaSnapshots('- button "Bold"', '- button "Bold" [pressed]').text).toContain('    - button "Bold": unpressed -> pressed');
+    expect(diffAriaSnapshots('- option "One"', '- option "One" [selected]').text).toContain('    - option "One": unselected -> selected');
   });
 
-  it('truncates added/removed sections to top 10 with overflow summary', () => {
+  it('truncates added/removed sections to top 10 but counts every change past the cap', () => {
     const before = Array.from({ length: 12 }, (_, i) => `- button "Old${i}"`).join('\n');
     const after = Array.from({ length: 12 }, (_, i) => `- button "New${i}"`).join('\n');
 
     const diff = diffAriaSnapshots(before, after);
 
-    expect(diff).not.toBeNull();
-    const dashLines = (diff!.match(/^ {4}- /gm) || []).length;
+    expect(diff.text).not.toBeNull();
+    const dashLines = (diff.text!.match(/^ {4}- /gm) || []).length;
     expect(dashLines).toBe(20);
-    const overflowLines = diff!.match(/^ {4}\+ 2 more interactive elements$/gm) || [];
+    const overflowLines = diff.text!.match(/^ {4}\+ 2 more interactive elements$/gm) || [];
     expect(overflowLines.length).toBe(2);
-    expect(diff).toContain('  added:');
-    expect(diff).toContain('  removed:');
+    expect(diff.text).toContain('  added:');
+    expect(diff.text).toContain('  removed:');
+    expect(diff.count).toBe(24);
   });
 
   it('ignores purely reordered nodes', () => {
@@ -87,7 +89,8 @@ describe('aria', () => {
 
     const diff = diffAriaSnapshots(before, after);
 
-    expect(diff).toBeNull();
+    expect(diff.text).toBeNull();
+    expect(diff.count).toBe(0);
   });
 
   it('compactAriaSnapshot interactive-only mode removes headings and text', () => {

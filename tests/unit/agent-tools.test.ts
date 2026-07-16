@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
-import { createAgentTools } from '../../src/ai/tools.ts';
+import { createAgentTools, isMajorPageChange } from '../../src/ai/tools.ts';
 
 describe('createAgentTools experience', () => {
   it('adds learnExperience by default and reads from the shared experience tracker', async () => {
@@ -40,5 +40,13 @@ describe('createAgentTools experience', () => {
   it('omits learnExperience when withExperience is false', () => {
     const tools = createAgentTools({ explorer: {} as any, researcher: {} as any, navigator: {} as any, withExperience: false });
     expect(tools.learnExperience).toBeUndefined();
+  });
+});
+
+describe('isMajorPageChange', () => {
+  it('requires the threshold without URL navigation', () => {
+    expect(isMajorPageChange({ currentUrl: '/page', urlChanged: false, ariaChangeCount: 49 })).toBe(false);
+    expect(isMajorPageChange({ currentUrl: '/page', urlChanged: false, ariaChangeCount: 50 })).toBe(true);
+    expect(isMajorPageChange({ currentUrl: '/next', urlChanged: true, ariaChangeCount: 50 })).toBe(false);
   });
 });

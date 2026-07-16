@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
-import { compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
+import { LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
 import { TTLCache } from './utils/cache.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
@@ -39,6 +39,7 @@ export interface PageDiff {
   previousUrl?: string;
   currentUrl: string;
   ariaChanges?: string | null;
+  ariaChangeCount?: number;
   htmlParts?: HtmlDiffPart[];
   iframes?: string;
 }
@@ -72,11 +73,10 @@ export class ActionResult implements ActionResultData {
   private _html: string | undefined = undefined;
   private snapshotCache = new TTLCache<string>();
   readonly logFile: string | undefined = undefined;
-  private _browserLogs: any[] | undefined = undefined;
   readonly ariaSnapshotFile: string | undefined = undefined;
   private _ariaSnapshot: string | null | undefined = undefined;
   private _lastExtractedHtml: string | undefined = undefined;
-  notes: any;
+  notes: string[] = [];
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
 
@@ -108,14 +108,11 @@ export class ActionResult implements ActionResultData {
       this.ariaSnapshotFile = data.ariaSnapshotFile;
     }
 
-    // Store HTML and browser logs in private properties if provided
+    // Store HTML in a private property if provided
     if (data.html !== undefined) {
       this._html = data.html;
     }
 
-    if (data.browserLogs !== undefined) {
-      this._browserLogs = data.browserLogs;
-    }
     if (data.screenshot !== undefined) {
       this._screenshot = data.screenshot;
     }
@@ -123,7 +120,7 @@ export class ActionResult implements ActionResultData {
       this._ariaSnapshot = data.ariaSnapshot;
     }
 
-    if (!this.fullUrl && this.url && this.url !== '') {
+    if (!this.fullUrl && this.url) {
       this.fullUrl = this.url;
     }
 
@@ -135,7 +132,7 @@ export class ActionResult implements ActionResultData {
       this.links = extractLinks(this._html);
     }
 
-    if (this.url && this.url !== '') {
+    if (this.url) {
       this.url = extractStatePath(this.url);
     }
   }
@@ -215,14 +212,14 @@ export class ActionResult implements ActionResultData {
   }
 
   isSameUrl(state: WebPageState): boolean {
-    if (!this.url || this.url === '') {
+    if (!this.url) {
       return false;
     }
     return extractStatePath(state.url) === extractStatePath(this.url);
   }
 
   isMatchedBy(state: WebPageState): boolean {
-    if (!this.url || this.url === '') {
+    if (!this.url) {
       return false;
     }
 
@@ -340,26 +337,26 @@ export class ActionResult implements ActionResultData {
     return new ActionResult(actionResultData);
   }
 
-  private static loadHtmlFromFile(htmlFile: string): string | null {
+  private static loadStateFile(file: string): string | null {
     try {
-      const filePath = outputPath('states', htmlFile);
-      if (fs.existsSync(filePath)) {
-        return fs.readFileSync(filePath, 'utf8');
-      }
-      return null;
+      const filePath = outputPath('states', file);
+      if (!fs.existsSync(filePath)) return null;
+      return fs.readFileSync(filePath, 'utf8');
     } catch (error) {
-      console.error('Failed to load HTML from file:', error);
+      console.error('Failed to load state file:', error);
       return null;
     }
+  }
+
+  private static loadHtmlFromFile(htmlFile: string): string | null {
+    return ActionResult.loadStateFile(htmlFile);
   }
 
   private static loadScreenshotFromFile(screenshotFile: string): Buffer | undefined {
     try {
       const filePath = outputPath('states', screenshotFile);
-      if (fs.existsSync(filePath)) {
-        return fs.readFileSync(filePath);
-      }
-      return undefined;
+      if (!fs.existsSync(filePath)) return undefined;
+      return fs.readFileSync(filePath);
     } catch (error) {
       console.error('Failed to load screenshot from file:', error);
       return undefined;
@@ -367,58 +364,38 @@ export class ActionResult implements ActionResultData {
   }
 
   private static loadBrowserLogsFromFile(logFile: string): any[] {
-    try {
-      const filePath = outputPath('states', logFile);
-      if (fs.existsSync(filePath)) {
-        const logContent = fs.readFileSync(filePath, 'utf8');
-        return logContent
-          .split('\n')
-          .filter((line) => line.trim())
-          .map((line) => {
-            const match = line.match(/\[([^\]]+)\] (\w+): (.+)/);
-            if (match) {
-              return {
-                timestamp: match[1],
-                type: match[2].toLowerCase(),
-                text: match[3],
-                level: match[2].toLowerCase(),
-                message: match[3],
-              };
-            }
-            return { text: line, type: 'log', level: 'log', message: line };
-          });
-      }
-      return [];
-    } catch (error) {
-      console.error('Failed to load browser logs from file:', error);
-      return [];
-    }
+    const logContent = ActionResult.loadStateFile(logFile);
+    if (!logContent) return [];
+    return logContent
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => {
+        const match = line.match(/\[([^\]]+)\] (\w+): (.+)/);
+        if (match) {
+          return {
+            timestamp: match[1],
+            type: match[2].toLowerCase(),
+            text: match[3],
+            level: match[2].toLowerCase(),
+            message: match[3],
+          };
+        }
+        return { text: line, type: 'log', level: 'log', message: line };
+      });
   }
 
   private static loadAriaSnapshotFromFile(ariaSnapshotFile: string): string | null {
-    try {
-      const filePath = outputPath('states', ariaSnapshotFile);
-      if (!fs.existsSync(filePath)) {
-        return null;
-      }
-
-      const content = fs.readFileSync(filePath, 'utf8');
-      const trimmed = content.trim();
-      if (!trimmed) {
-        return null;
-      }
-
-      return trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`;
-    } catch (error) {
-      console.error('Failed to load aria snapshot from file:', error);
-      return null;
-    }
+    const content = ActionResult.loadStateFile(ariaSnapshotFile);
+    if (!content) return null;
+    const trimmed = content.trim();
+    if (!trimmed) return null;
+    return trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`;
   }
 
   toAiContext(): string {
     const parts: string[] = [];
 
-    if (this.url && this.url !== '') {
+    if (this.url) {
       parts.push(`<url>${this.url}</url>`);
     }
 
@@ -464,7 +441,7 @@ export class ActionResult implements ActionResultData {
   }
 
   get relativeUrl(): string | null {
-    if (!this.url || this.url === '') return null;
+    if (!this.url) return null;
 
     try {
       const urlObj = new URL(this.url);
@@ -489,14 +466,8 @@ export class ActionResult implements ActionResultData {
 
     this.extractHeadings(this.html);
 
-    const headings = ['h1', 'h2'];
-
-    for (const heading of headings) {
-      const value = this[heading as keyof this] as string;
-      if (value) {
-        parts.push(`${heading}_${value}`);
-      }
-    }
+    if (this.h1) parts.push(`h1_${this.h1}`);
+    if (this.h2) parts.push(`h2_${this.h2}`);
 
     let stateString = slugify(parts.map((part) => part.substring(0, 100)).join('_'));
 
@@ -511,7 +482,7 @@ export class ActionResult implements ActionResultData {
   }
 
   async diff(previousState: ActionResult | null): Promise<Diff> {
-    return new Diff(this, previousState);
+    return Diff.create(this, previousState);
   }
 
   async toToolResult(previousState: ActionResult | null, locator: string): Promise<ToolResultMetadata> {
@@ -543,7 +514,6 @@ export class ActionResult implements ActionResultData {
     }
 
     const diff = await this.diff(previousState);
-    await diff.calculate();
 
     const pageDiff: PageDiff = {
       urlChanged,
@@ -553,6 +523,7 @@ export class ActionResult implements ActionResultData {
 
     if (diff.ariaChanged) {
       pageDiff.ariaChanges = diff.ariaChanged;
+      pageDiff.ariaChangeCount = diff.ariaChangeCount;
     }
 
     if (diff.htmlParts.length > 0) {
@@ -571,10 +542,7 @@ export class ActionResult implements ActionResultData {
     }
 
     if (pageDiff.ariaChanges && this.iframeSnapshots.length > 0) {
-      const addedCount = (pageDiff.ariaChanges.match(/\n {4}- /g) || []).length;
-      const removedMatch = pageDiff.ariaChanges.match(/removed: (\d+) interactive/);
-      const removedCount = removedMatch ? Number.parseInt(removedMatch[1]) : 0;
-      if (addedCount + removedCount >= 50) {
+      if (diff.ariaChangeCount >= LARGE_ARIA_CHANGE_THRESHOLD) {
         pageDiff.iframes = this.iframeSnapshots.map((snap) => `iframe src="${snap.src}":\n${snap.html}`).join('\n\n');
       }
     }
@@ -612,20 +580,25 @@ function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
 export class Diff {
   private _htmlDiffResult: HtmlDiffResult | null = null;
   private _ariaDiffResult: string | null = null;
+  private _ariaChangeCount = 0;
   private _isSameUrl: boolean;
-  private _urlChanged: boolean;
 
   constructor(
     private current: ActionResult,
     private previous: ActionResult | null
   ) {
     this._isSameUrl = previous ? current.isSameUrl({ url: previous.url }) : false;
-    this._urlChanged = !this._isSameUrl;
+  }
+
+  static async create(current: ActionResult, previous: ActionResult | null): Promise<Diff> {
+    const diff = new Diff(current, previous);
+    await diff.calculate();
+    return diff;
   }
 
   hasChanges(): boolean {
     if (!this.previous) return false;
-    if (this._urlChanged) return true;
+    if (!this._isSameUrl) return true;
 
     const hasHtmlChanges = this._htmlDiffResult && (this._htmlDiffResult.parts.length > 0 || this._htmlDiffResult.added.length > 0 || this._htmlDiffResult.removed.length > 0);
     const hasAriaChanges = this._ariaDiffResult !== null;
@@ -638,7 +611,7 @@ export class Diff {
   }
 
   urlHasChanged(): boolean {
-    return this._urlChanged;
+    return !this._isSameUrl;
   }
 
   get htmlParts(): HtmlDiffPart[] {
@@ -650,12 +623,12 @@ export class Diff {
     return this._ariaDiffResult;
   }
 
-  get htmlDiff(): HtmlDiffResult | null {
-    return this._htmlDiffResult;
+  get ariaChangeCount(): number {
+    return this._ariaChangeCount;
   }
 
-  get ariaDiff(): string | null {
-    return this._ariaDiffResult;
+  get htmlDiff(): HtmlDiffResult | null {
+    return this._htmlDiffResult;
   }
 
   async calculate(): Promise<void> {
@@ -665,6 +638,8 @@ export class Diff {
       this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
     }
 
-    this._ariaDiffResult = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);
+    const ariaDiff = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);
+    this._ariaDiffResult = ariaDiff.text;
+    this._ariaChangeCount = ariaDiff.count;
   }
 }
