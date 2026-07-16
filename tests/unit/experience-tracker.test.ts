@@ -33,8 +33,6 @@ describe('ExperienceTracker', () => {
   });
 
   afterEach(() => {
-    experienceTracker.cleanup();
-
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
@@ -44,6 +42,27 @@ describe('ExperienceTracker', () => {
     it('should create experience tracker with proper directory setup', () => {
       expect(experienceTracker).toBeInstanceOf(ExperienceTracker);
       expect(existsSync(testDir)).toBe(true);
+    });
+  });
+
+  describe('renderExperienceTocFor', () => {
+    it('returns empty string when no experience matches the page', () => {
+      const state = new ActionResult({ url: 'https://example.com/empty', html: '<html></html>', title: 'Empty' });
+      expect(experienceTracker.renderExperienceTocFor(state)).toBe('');
+    });
+
+    it('renders the experience TOC for a page with recorded experience', () => {
+      const actionResult = new ActionResult({
+        html: '<html><body>Dashboard</body></html>',
+        url: 'https://example.com/dashboard',
+        title: 'Dashboard',
+      });
+      experienceTracker.writeAction(actionResult, { title: 'Navigate to dashboard', code: 'I.click("Dashboard")' });
+
+      const rendered = experienceTracker.renderExperienceTocFor(actionResult);
+
+      expect(rendered).toContain('<experience>');
+      expect(rendered).toContain('ACTION: navigate to dashboard');
     });
   });
 

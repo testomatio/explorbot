@@ -1,10 +1,6 @@
-import dedent from 'dedent';
 import type { ActionResult } from '../action-result.js';
-import { type ExperienceTracker, renderExperienceToc } from '../experience-tracker.js';
+import type { ExperienceTracker } from '../experience-tracker.js';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
-import { createDebug, pluralize, tag } from '../utils/logger.js';
-
-const debugLog = createDebug('explorbot:task-agent');
 import { Historian } from './historian.js';
 import type { Navigator } from './navigator.js';
 import type { Provider } from './provider.js';
@@ -35,34 +31,11 @@ export abstract class TaskAgent {
   protected abstract getProvider(): Provider;
 
   protected getKnowledge(actionResult: ActionResult): string {
-    const knowledgeFiles = this.getKnowledgeTracker().getRelevantKnowledge(actionResult);
-
-    if (knowledgeFiles.length === 0) return '';
-
-    const knowledgeContent = knowledgeFiles
-      .map((k) => k.content)
-      .filter((k) => !!k)
-      .join('\n\n');
-
-    tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
-    return dedent`
-      <knowledge>
-      Here is relevant knowledge for this page:
-
-      ${knowledgeContent}
-      </knowledge>
-    `;
+    return this.getKnowledgeTracker().renderRelevantKnowledge(actionResult);
   }
 
   protected getExperience(actionResult: ActionResult): string {
-    const tracker = this.getExperienceTracker();
-    const toc = tracker.getExperienceTableOfContents(actionResult);
-    if (toc.length === 0) return '';
-
-    const totalSections = toc.reduce((sum, entry) => sum + entry.sections.length, 0);
-    debugLog(`injecting experience TOC (${toc.length} files, ${totalSections} sections)`);
-    tag('operation').log(`Found ${toc.length} experience ${pluralize(toc.length, 'file')} (${totalSections} sections)`);
-    return renderExperienceToc(toc);
+    return this.getExperienceTracker().renderExperienceTocFor(actionResult);
   }
 
   setHistorian(historian: Historian): void {

@@ -4,6 +4,7 @@ import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts'
 import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
 import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
+import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
 import { captureDocumentationScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
@@ -194,6 +195,156 @@ describe('doc-collector renderer', () => {
     expect(markdown).toContain('- Coverage is complete for the visible sign-in form.');
     expect(markdown).toContain('## Skipped');
     expect(markdown).toContain('/users/auth/google_oauth2. Reason: redirected into external auth flow.');
+  });
+
+  it('renders a clickable acyclic Mermaid state map with transient states', () => {
+    const markdown = renderSpecIndex(
+      'D:/project/output/docs',
+      '/suites',
+      [
+        {
+          url: '/suites',
+          title: 'Suites',
+          summary: 'Test suites',
+          canCount: 1,
+          mightCount: 0,
+          interactionCount: 2,
+          canActions: [],
+          mightActions: [],
+          interactionActions: [],
+          qualityNotes: [],
+          interactions: [
+            {
+              action: 'Clicked button: Import tests',
+              before: 'Suites',
+              after: 'Import tests',
+              targetState: { kind: 'dialog', label: 'Import tests', url: '/suites' },
+              screenshot: { title: 'Import tests', relativePath: '../screenshots/suites_import_tests.png' },
+            },
+            {
+              action: 'Clicked link: Suite',
+              before: 'Suites',
+              after: 'Suite details',
+              targetUrl: '/suites/123',
+              targetState: { kind: 'page', label: 'Suite details', url: '/suites/123' },
+            },
+          ],
+          filePath: 'D:/project/output/docs/pages/suites.md',
+        },
+        {
+          url: '/suites/123',
+          title: 'Suite details',
+          summary: 'Suite details',
+          canCount: 1,
+          mightCount: 0,
+          interactionCount: 1,
+          canActions: [],
+          mightActions: [],
+          interactionActions: [],
+          qualityNotes: [],
+          interactions: [
+            {
+              action: 'Clicked link: Back',
+              before: 'Suite details',
+              after: 'Suites',
+              targetUrl: '/suites',
+              targetState: { kind: 'page', label: 'Suites', url: '/suites' },
+            },
+          ],
+          filePath: 'D:/project/output/docs/pages/suite-details.md',
+        },
+      ],
+      [],
+      20
+    );
+
+    expect(markdown).toContain('```mermaid');
+    expect(markdown).toContain('page0 -->|"Clicked button: Import tests"| state0');
+    expect(markdown).toContain('page0 -->|"Clicked link: Suite"| page1');
+    expect(markdown).not.toContain('page1 -->|"Clicked link: Back"| page0');
+    expect(markdown).toContain('page1 -.->|"Clicked link: Back"| page0');
+    expect(markdown).toContain('subgraph sg_page0');
+    expect(markdown).toContain('state0{{"');
+    expect(markdown).toContain('classDef dialog');
+    expect(markdown).toContain('class state0 dialog');
+    expect(markdown).toContain('click page0 "pages/suites.md" "Open Suites"');
+    expect(markdown).toContain('click state0 "screenshots/suites_import_tests.png" "Open state screenshot"');
+    expect(markdown).toContain('| State | Type | Open |');
+    expect(markdown).toContain('[open page](pages/suites.md)');
+    expect(markdown).toContain('[view screenshot](screenshots/suites_import_tests.png)');
+  });
+
+  it('renders a reverse transition as a dotted back-edge without keyword matching', () => {
+    const mermaid = renderMermaidBody('D:/project/output/docs', [
+      {
+        url: '/x',
+        title: 'X',
+        summary: 'X',
+        canCount: 1,
+        mightCount: 0,
+        interactionCount: 1,
+        canActions: [],
+        mightActions: [],
+        interactionActions: [],
+        qualityNotes: [],
+        interactions: [{ action: 'Open Y', before: 'X', after: 'Y', targetState: { kind: 'page', label: 'Y', url: '/y' } }],
+        filePath: 'D:/project/output/docs/pages/x.md',
+      },
+      {
+        url: '/y',
+        title: 'Y',
+        summary: 'Y',
+        canCount: 1,
+        mightCount: 0,
+        interactionCount: 1,
+        canActions: [],
+        mightActions: [],
+        interactionActions: [],
+        qualityNotes: [],
+        interactions: [{ action: 'Open X', before: 'Y', after: 'X', targetState: { kind: 'page', label: 'X', url: '/x' } }],
+        filePath: 'D:/project/output/docs/pages/y.md',
+      },
+    ]);
+
+    expect(mermaid).toContain('page0 -->|"Open Y"| page1');
+    expect(mermaid).toContain('page1 -.->|"Open X"| page0');
+  });
+
+  it('exposes a fence-free Mermaid artifact via renderMermaidBody', () => {
+    const mermaid = renderMermaidBody('D:/project/output/docs', [
+      {
+        url: '/a',
+        title: 'Page A',
+        summary: 'A',
+        canCount: 1,
+        mightCount: 0,
+        interactionCount: 1,
+        canActions: [],
+        mightActions: [],
+        interactionActions: [],
+        qualityNotes: [],
+        interactions: [{ action: 'Open B', before: 'A', after: 'B', targetState: { kind: 'page', label: 'B', url: '/b' } }],
+        filePath: 'D:/project/output/docs/pages/a.md',
+      },
+      {
+        url: '/b',
+        title: 'Page B',
+        summary: 'B',
+        canCount: 1,
+        mightCount: 0,
+        interactionCount: 0,
+        canActions: [],
+        mightActions: [],
+        interactionActions: [],
+        qualityNotes: [],
+        interactions: [],
+        filePath: 'D:/project/output/docs/pages/b.md',
+      },
+    ]);
+
+    expect(mermaid.startsWith('flowchart TD')).toBe(true);
+    expect(mermaid).not.toContain('```');
+    expect(mermaid).toContain('page0 -->|"Open B"| page1');
   });
 
   it('normalizes might-actions without duplicating prefixes', () => {
@@ -569,6 +720,96 @@ describe('documentarian interactive mode', () => {
     expect(result.can).toHaveLength(1);
   });
 
+  it('records a named dialog as a transient target state', async () => {
+    const states = [
+      { url: '/suites', title: 'Suites', h1: 'Suites', ariaSnapshot: '- heading "Suites"\n- button "Import tests"' },
+      { url: '/suites', title: 'Suites', h1: 'Suites', ariaSnapshot: '- heading "Suites"\n- dialog "Import tests":\n  - heading "Import tests"' },
+    ];
+    let stateIndex = 0;
+    const provider = {
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Suites page',
+            can: [{ action: 'user can import tests', scope: 'page-level', evidence: 'dialog observed' }],
+            might: [],
+            interactions: null,
+          },
+        };
+      },
+    } as any;
+    const explorer = {
+      getStateManager() {
+        return { getCurrentState: () => states[stateIndex] };
+      },
+      createAction() {
+        return {
+          async attempt(command: string) {
+            stateIndex = command.startsWith('I.amOnPage') ? 0 : 1;
+            return true;
+          },
+        };
+      },
+    } as any;
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer);
+    const result = await documentarian.document(
+      states[0],
+      `## Content Controls
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Import tests' | button | { role: 'button', text: 'Import tests' } | 'button.import' |`
+    );
+
+    expect(result.interactions?.[0]?.targetState).toEqual({ kind: 'dialog', label: 'Import tests', url: '/suites' });
+    expect(stateIndex).toBe(0);
+  });
+
+  it('classifies pagination as a section of the same page', async () => {
+    const states = [
+      { url: '/films', title: 'Films', h1: 'Films', ariaSnapshot: '- heading "Films"\n- link "Page 2"' },
+      { url: '/films?page=2', title: 'Films', h1: 'Films', ariaSnapshot: '- heading "Films"\n- link "Item B"' },
+    ];
+    let stateIndex = 0;
+    const provider = {
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Films page',
+            can: [{ action: 'user can browse films', scope: 'list of items', evidence: 'film tiles visible' }],
+            might: [],
+            interactions: null,
+          },
+        };
+      },
+    } as any;
+    const explorer = {
+      getStateManager() {
+        return { getCurrentState: () => states[stateIndex] };
+      },
+      createAction() {
+        return {
+          async attempt(command: string) {
+            stateIndex = command.startsWith('I.amOnPage') ? 0 : 1;
+            return true;
+          },
+        };
+      },
+    } as any;
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer);
+    const result = await documentarian.document(
+      states[0],
+      `## Content
+
+| Element | Type | ARIA | CSS |
+|------|------|------|------|
+| 'Page 2' | link | { role: 'link', text: 'Page 2' } | 'a.page-next' |`
+    );
+
+    expect(result.interactions?.[0]?.targetState?.kind).toBe('section');
+    expect(result.interactions?.[0]?.targetState?.url).toBe('/films?page=2');
+  });
+
   it('uses static mode when explorer is not provided', async () => {
     const provider = {
       async generateObject() {
@@ -739,7 +980,7 @@ describe('documentarian interactive mode', () => {
     expect(result.summary).toBe('Static fallback');
   });
 
-  it('falls back to static mode when interactive documentation fails JSON validation', async () => {
+  it('preserves observed interactions when interactive documentation fails JSON validation', async () => {
     const provider = {
       async generateObject(messages: Array<{ role: string; content: string }>) {
         const prompt = messages[1].content;
@@ -815,8 +1056,8 @@ describe('documentarian interactive mode', () => {
 `
     );
 
-    expect(result.summary).toBe('Static fallback');
-    expect((result as any).interactions).toBeUndefined();
+    expect(result.summary).toBe('Observed 1 interaction(s); AI-generated summary was unavailable.');
+    expect(result.interactions).toHaveLength(1);
   });
 
   it('does not call tool fallback when deterministic interactions are unavailable', async () => {

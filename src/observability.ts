@@ -1,4 +1,5 @@
 import { type Span, trace } from '@opentelemetry/api';
+import { redactSecrets } from './utils/secrets.js';
 
 type TelemetryMetadata = Record<string, unknown>;
 
@@ -84,7 +85,7 @@ function buildRootSpanAttributes(name: string, metadata: TelemetryMetadata): Rec
     attributes['langfuse.trace.tags'] = metadata.tags as string[];
   }
   if (metadata.input !== undefined) {
-    attributes['langfuse.trace.input'] = JSON.stringify(metadata.input);
+    attributes['langfuse.trace.input'] = redactSecrets(JSON.stringify(metadata.input));
   }
 
   return attributes;

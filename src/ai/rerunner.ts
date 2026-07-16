@@ -17,10 +17,10 @@ import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Stats } from '../stats.ts';
 import { Task, Test, TestResult } from '../test-plan.ts';
+import { formatHeadings } from '../utils/context-formatter.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
-import { loadTestSuites, printTestList } from '../utils/test-files.ts';
 import type { Agent } from './agent.ts';
 import { toolExecutionLabel } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
@@ -38,7 +38,7 @@ export class Rerunner extends TaskAgent implements Agent {
   private explorer: Explorer;
   private provider: Provider;
   private agentTools: any;
-  private healedSteps: Array<{ test: string; original: string; healed: string }> = [];
+  private healedSteps: Array<{ original: string; healed: string }> = [];
   private traceDir = '';
   private static pluginsWired = false;
 
@@ -75,10 +75,6 @@ export class Rerunner extends TaskAgent implements Agent {
 
   private get healMaxIterations(): number {
     return this.rerunnerConfig.healMaxIterations ?? 3;
-  }
-
-  listTests(testsDir: string): void {
-    printTestList(loadTestSuites(testsDir));
   }
 
   async rerun(filePath: string, options?: { testIndices?: number[] }): Promise<RerunResult> {
@@ -436,7 +432,7 @@ export class Rerunner extends TaskAgent implements Agent {
         throw new Error(`Could not heal: ${failedCode}`);
       }
 
-      this.healedSteps.push({ test: '', original: failedCode, healed: healedCommand });
+      this.healedSteps.push({ original: failedCode, healed: healedCommand });
       console.log(chalk.green(`    ${figureSet.tick} Healed: ${healedCommand}`));
     };
   }
@@ -481,11 +477,7 @@ export class Rerunner extends TaskAgent implements Agent {
     const state = this.explorer.getStateManager().getCurrentState();
     const actionResult = state ? ActionResult.fromState(state) : null;
 
-    const headings: string[] = [];
-    if (state?.h1) headings.push(`H1: ${state.h1}`);
-    if (state?.h2) headings.push(`H2: ${state.h2}`);
-    if (state?.h3) headings.push(`H3: ${state.h3}`);
-    if (state?.h4) headings.push(`H4: ${state.h4}`);
+    const headings = formatHeadings(state || {});
 
     return dedent`
       A test step failed and needs healing.

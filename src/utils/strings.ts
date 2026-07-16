@@ -6,6 +6,18 @@ export function truncateJson(input: any): string {
   return str.length <= 80 ? str : `${str.slice(0, 77)}...`;
 }
 
+export function slugify(text: string): string {
+  return text
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .toLowerCase();
+}
+
+export function normalizeInlineText(text: string): string {
+  return text.normalize('NFKC').replace(/\s+/g, ' ').trim();
+}
+
 export function sanitizeFilename(name: string): string {
   return name
     .toLowerCase()

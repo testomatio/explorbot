@@ -38,7 +38,7 @@ function createMockExplorer(configOverrides: Record<string, unknown> = {}, playw
   };
   return {
     getStateManager: () => stateManager,
-    getKnowledgeTracker: () => ({ getRelevantKnowledge: () => [] }),
+    getKnowledgeTracker: () => ({ getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '' }),
     getConfig: () => config,
     visit: async () => {},
     annotateElements: async () => [],
