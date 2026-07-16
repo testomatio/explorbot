@@ -5,17 +5,15 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { clearActivity, setActivity } from '../activity.ts';
-import { ConfigParser } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
 import { Observability } from '../observability.ts';
-import type { StateTransition, WebPageState } from '../state-manager.ts';
+import type { StateTransition } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
-import { type Note, type Test, TestResult, type TestResultType } from '../test-plan.ts';
+import { type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
 import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
-import { codeToMarkdown } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
@@ -58,7 +56,6 @@ export class Tester extends TaskAgent implements Agent {
   researcher: Researcher;
   navigator: Navigator;
   agentTools: any;
-  executionLogFile: string | null = null;
   private previousUrl: string | null = null;
   private previousStateHash: string | null = null;
   private pageStateHash: string | null = null;
@@ -150,10 +147,6 @@ export class Tester extends TaskAgent implements Agent {
     const conversation = this.provider.startConversation(this.getSystemMessage(), 'tester');
     conversation.markLastMessageCacheable();
     this.currentConversation = conversation;
-
-    const outputDir = ConfigParser.getInstance().getOutputDir();
-    this.executionLogFile = join(outputDir, `tester_${task.sessionName}.md`);
-    // Note: Markdown saving functionality removed from Conversation class
 
     const scenarioBlock = this.buildScenarioBlock(task, initialState);
     conversation.addUserText(scenarioBlock);
@@ -526,7 +519,6 @@ export class Tester extends TaskAgent implements Agent {
     const currentStateHash = currentState.hash;
 
     const isNewUrl = this.previousUrl !== currentUrl;
-    const isStateChanged = !isNewUrl && this.previousStateHash !== currentStateHash;
 
     this.previousUrl = currentUrl;
     this.previousStateHash = currentStateHash;
@@ -641,27 +633,6 @@ export class Tester extends TaskAgent implements Agent {
       }
     }
 
-    // if (isStateChanged) {
-    //   const combinedHtml = await currentState.combinedHtml();
-    //   context += dedent`
-    //     Context (state changed):
-
-    //     <page>
-    //     CURRENT URL: ${currentState.url}
-    //     CURRENT TITLE: ${currentState.title}
-    //     </page>
-
-    //     <page_html>
-    //     ${combinedHtml}
-    //     </page_html>
-
-    //     <page_aria>
-    //     ${currentState.ariaSnapshot}
-    //     </page_aria>
-    //   `;
-    //   return context;
-    // }
-
     if (context) return context;
 
     if (iteration % 5) return '';
@@ -678,38 +649,6 @@ export class Tester extends TaskAgent implements Agent {
       ${currentState.getInteractiveARIA()}
       </page_aria>
     `;
-  }
-
-  private async promptLogStep(task: Test): Promise<string> {
-    let logPrompt = dedent`
-      <task>
-        Add a note explaining what you achieved with previous action.
-        Use tools to interact with the page to achieve the scenario goal or expected outcomes.
-        Call record tool to explain the last action
-        Format: record([<action performed>, <what has changed>, <what you expect to do next>]) 
-      </task>
-    `;
-
-    if (task.getPrintableNotes()) {
-      logPrompt = dedent`
-        Your interaction log notes:
-        <notes>
-        ${task.getPrintableNotes()}
-        </notes>
-
-        <rules>
-        Use your previous interaction notes to guide your next actions.
-        Do not perform the same checks.
-        </rules>
-      `;
-    }
-
-    const remaining = task.getRemainingExpectations();
-    if (remaining.length > 0) {
-      logPrompt += `\nExpected steps to check: ${remaining.join(', ')}`;
-    }
-
-    return logPrompt;
   }
 
   private finishTest(task: Test): void {
@@ -810,11 +749,13 @@ export class Tester extends TaskAgent implements Agent {
     - Before retrying your actions check maybe they already achived expected results. Use see() tool for that
     - If the current URL is already a create/edit/new form and the scenario is about creating/editing that entity, fill and submit that form. Do not click the list-page "New" button again from inside the form.
     - If the scenario is about search/filter/sort/tabs/list inspection and the current URL is a create/edit/new form, go back or reset to the stable list page before interacting with list controls.
-    - When selecting related entities from a list, do not choose rows/options/cards marked as "0 items", "0 tests", or otherwise empty if the scenario requires selecting real content.
-    - In selection pickers, counters such as "Selected 0", "Matched tests 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
+    - When selecting related entities from a list, do not choose rows/options/cards marked as "0 items", "0 results", or otherwise empty if the scenario requires selecting real content.
+    - In selection pickers, counters such as "Selected 0", "Matched 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
     - A passed form/click command only means the command executed. If a required field remains empty, submit stays disabled, or the expected text is not visible, treat the action as not completed and correct the missing field/state.
-    - For filter/tab scenarios, success requires BOTH: the requested filter/tab is visibly active/selected AND the list content matches that filter. Do not finish from only one of these signals.
-    - Empty-state text such as "No matched items" only proves a filter when the requested filter/tab is active and the empty state belongs to the filtered list.
+    - For filter/tab scenarios, success requires BOTH: the requested state is evidenced by a selected control, URL/query, or another explicit state indicator AND the list content matches that state. Do not finish from only one of these signals.
+    - Once the requested control state and matching content are both visible, finish the scenario instead of repeating the interaction. Do not require an aggregate count change unless a baseline was observed immediately before the action.
+    - Empty-state text such as "No matched items" only proves a filter when the requested filter state is explicit and the empty state belongs to the filtered list.
+    - Associate validation feedback with a field only through explicit evidence such as the field label in the message, an accessibility relationship, focus on the invalid control, or visual confirmation. Do not infer the affected field from DOM order or proximity alone.
     - When filling complex form with lot of actions performed, use see() to look which fields were filled and which are not
     - When verify() fails, use see() to visually confirm the result — visual confirmation is equally valid evidence
     - For visual state verification (active tabs, selected items, counts, colors), prefer see() over DOM-based verify()
@@ -874,10 +815,6 @@ export class Tester extends TaskAgent implements Agent {
       If the scenario action could not be completed, do not finish with a verification of the failure state.
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
-
-      ${capabilityGroundingRule}
-
-      ${dataProtectionRules}
 
       ${this.buildDeletionScope(task)}
 

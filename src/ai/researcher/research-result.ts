@@ -46,24 +46,6 @@ export class ResearchResult {
     }));
   }
 
-  updateSection(sectionName: string, locators: Locator[]): void {
-    const sections = parseResearchSections(this.text);
-    const section = sections.find((s) => s.name === sectionName);
-    if (!section) return;
-
-    for (const el of section.elements) {
-      const elLocators = locators.filter((l) => l.element === el.name);
-      for (const loc of elLocators) {
-        const value = loc.valid === false ? null : loc.locator || null;
-        if (loc.type === 'css') el.css = value;
-        if (loc.type === 'xpath') el.xpath = value;
-        if (loc.type === 'aria') el.aria = value ? parseAriaLocator(value) : null;
-      }
-    }
-
-    this.rebuildSectionInText(section);
-  }
-
   rebuildSectionInText(section: ResearchSection): void {
     if (section.elements.length === 0) return;
     const newTable = rebuildSectionMarkdown(section);

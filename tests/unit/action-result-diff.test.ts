@@ -69,8 +69,7 @@ describe('ActionResult Diff', () => {
       ariaSnapshot: 'button "Click me"\nbutton "New Button"',
     });
 
-    const diff = new Diff(current, previous);
-    await diff.calculate();
+    const diff = await Diff.create(current, previous);
 
     expect(diff.htmlDiff).not.toBeNull();
     expect(diff.htmlParts.length).toBeGreaterThan(0);
@@ -87,8 +86,7 @@ describe('ActionResult Diff', () => {
       html: '<html><body><h1>Page 2</h1></body></html>',
     });
 
-    const diff = new Diff(current, previous);
-    await diff.calculate();
+    const diff = await Diff.create(current, previous);
 
     expect(diff.htmlDiff).toBeNull();
     expect(diff.htmlParts).toEqual([]);
@@ -107,10 +105,8 @@ describe('ActionResult Diff', () => {
       ariaSnapshot: '- button "Click me"\n- button "New Button"',
     });
 
-    const diff = new Diff(current, previous);
-    await diff.calculate();
+    const diff = await Diff.create(current, previous);
 
-    expect(diff.ariaDiff).not.toBeNull();
     expect(diff.ariaChanged).not.toBeNull();
   });
 
@@ -127,8 +123,7 @@ describe('ActionResult Diff', () => {
       ariaSnapshot: 'button "Click me"\nbutton "New Button"',
     });
 
-    const diff = new Diff(current, previous);
-    await diff.calculate();
+    const diff = await Diff.create(current, previous);
 
     expect(diff.hasChanges()).toBe(true);
   });
@@ -146,9 +141,27 @@ describe('ActionResult Diff', () => {
       ariaSnapshot: 'button "Click me"',
     });
 
-    const diff = new Diff(current, previous);
-    await diff.calculate();
+    const diff = await Diff.create(current, previous);
 
     expect(diff.hasChanges()).toBe(false);
+  });
+
+  test('ActionResult.diff() is pre-calculated (hasChanges truthful without manual calculate)', async () => {
+    const previous = new ActionResult({
+      url: '/page1',
+      html: '<html><body><h1>Page 1</h1></body></html>',
+      ariaSnapshot: '- button "Click me"',
+    });
+
+    const current = new ActionResult({
+      url: '/page1',
+      html: '<html><body><h1>Page 1</h1></body></html>',
+      ariaSnapshot: '- button "Click me"\n- button "New Button"',
+    });
+
+    const diff = await current.diff(previous);
+
+    expect(diff.hasChanges()).toBe(true);
+    expect(diff.ariaChanged).not.toBeNull();
   });
 });

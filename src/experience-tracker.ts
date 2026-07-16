@@ -8,6 +8,7 @@ import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
 import { createDebug, pluralize, tag } from './utils/logger.js';
 import { mdq } from './utils/markdown-query.js';
+import { redactSecrets } from './utils/secrets.js';
 import { isNonReusableCode } from './utils/step-analyzer.ts';
 import { extractStatePath } from './utils/url-matcher.js';
 
@@ -112,23 +113,8 @@ export class ExperienceTracker {
       return;
     }
     const filePath = this.getExperienceFilePath(stateHash);
-    const fileContent = matter.stringify(content, frontmatter || {});
+    const fileContent = matter.stringify(redactSecrets(content), frontmatter || {});
     writeFileSync(filePath, fileContent, 'utf8');
-  }
-
-  hasRecentExperience(stateHash: string, prefix = ''): boolean {
-    if (this.disabled) {
-      return false;
-    }
-    if (prefix) {
-      stateHash = `${prefix}_${stateHash}`;
-    }
-    const filePath = this.getExperienceFilePath(stateHash);
-    if (!existsSync(filePath)) {
-      return false;
-    }
-    const stats = statSync(filePath);
-    return stats.mtime.getTime() > Date.now() - 1000 * 60 * 60 * 24;
   }
 
   private getExperienceFilePath(stateHash: string): string {
@@ -281,14 +267,6 @@ export class ExperienceTracker {
         if (lines.length <= maxLines) return experience;
         return { ...experience, content: lines.slice(0, maxLines).join('\n') };
       });
-  }
-
-  /**
-   * Clean up experience tracker (for testing)
-   */
-  cleanup(): void {
-    // Clear any in-memory state if needed
-    // The actual files will be cleaned up by test cleanup
   }
 
   getSuccessfulExperience(state: ActionResult, options?: { includeDescendants?: boolean; stripCode?: boolean }): string[] {

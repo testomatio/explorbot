@@ -1,28 +1,30 @@
 import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
-import { createAgentTools } from '../../src/ai/tools.ts';
+import { createAgentTools, isMajorPageChange } from '../../src/ai/tools.ts';
 
 describe('createAgentTools experience', () => {
-  it('adds learnExperience when experience tracker and state reader are provided', async () => {
+  it('adds learnExperience by default and reads from the shared experience tracker', async () => {
     const state = new ActionResult({
       url: '/page',
       title: 'Page',
       html: '<html></html>',
       ariaSnapshot: '',
     });
-    const tools = createAgentTools({
-      explorer: {} as any,
-      researcher: {} as any,
-      navigator: {} as any,
-      getState: () => state,
-      experienceTracker: {
-        getExperienceSection: (fileTag: string, sectionIndex: number, currentState: ActionResult) => ({
-          title: `section ${fileTag}.${sectionIndex}`,
-          url: currentState.url,
-          content: '## FLOW: use prior success',
-        }),
-      } as any,
-    });
+    const experienceTracker = {
+      getExperienceSection: (fileTag: string, sectionIndex: number, currentState: ActionResult) => ({
+        title: `section ${fileTag}.${sectionIndex}`,
+        url: currentState.url,
+        content: '## FLOW: use prior success',
+      }),
+    };
+    const explorer = {
+      getStateManager: () => ({
+        getCurrentState: () => state,
+        getExperienceTracker: () => experienceTracker,
+      }),
+    } as any;
+
+    const tools = createAgentTools({ explorer, researcher: {} as any, navigator: {} as any });
 
     expect(tools.learnExperience).toBeDefined();
 
@@ -33,5 +35,18 @@ describe('createAgentTools experience', () => {
       url: '/page',
       content: '## FLOW: use prior success',
     });
+  });
+
+  it('omits learnExperience when withExperience is false', () => {
+    const tools = createAgentTools({ explorer: {} as any, researcher: {} as any, navigator: {} as any, withExperience: false });
+    expect(tools.learnExperience).toBeUndefined();
+  });
+});
+
+describe('isMajorPageChange', () => {
+  it('requires the threshold without URL navigation', () => {
+    expect(isMajorPageChange({ currentUrl: '/page', urlChanged: false, ariaChangeCount: 49 })).toBe(false);
+    expect(isMajorPageChange({ currentUrl: '/page', urlChanged: false, ariaChangeCount: 50 })).toBe(true);
+    expect(isMajorPageChange({ currentUrl: '/next', urlChanged: true, ariaChangeCount: 50 })).toBe(false);
   });
 });

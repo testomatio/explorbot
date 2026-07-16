@@ -158,7 +158,7 @@ function extractKeyFields(body: any, result: Record<string, any> = {}, depth = 0
   }
 
   for (const [key, value] of Object.entries(body)) {
-    if (value === null || value === undefined) continue;
+    if (value == null) continue;
     if (typeof value === 'object') {
       extractKeyFields(value, result, depth + 1);
       continue;
