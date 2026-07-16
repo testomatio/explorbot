@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-17
+
+### Changes
+- Fixed startup failing with `AI connection failed: Invalid 'max_output_tokens'` on models that reject a one-token response. The check that verifies your AI credentials at startup no longer caps the reply length, so it works with every provider regardless of their minimum.
+
 ## 2026-07-10
 
 ### Changes
