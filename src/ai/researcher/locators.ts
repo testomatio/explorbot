@@ -6,6 +6,7 @@ import { parseAriaLocator } from '../../utils/aria.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
 import { WebElement } from '../../utils/web-element.ts';
+import { isDynamicId } from '../../utils/xpath.ts';
 import type { Conversation } from '../conversation.ts';
 import type { Provider } from '../provider.js';
 import { locatorRule as generalLocatorRuleText } from '../rules.js';
@@ -38,7 +39,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
     declare provider: Provider;
     declare actionResult: ActionResult | undefined;
 
-    async testLocators(locators: Locator[]): Promise<void> {
+    async testLocators(locators: Locator[], opts: { scope?: boolean } = {}): Promise<void> {
       let broken = 0;
       for (const loc of locators) {
         if (executionController.isInterrupted()) break;
@@ -65,6 +66,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
             return base.locator(loc.locator);
           });
           loc.valid = count === 1;
+          if (opts.scope && count > 1) loc.valid = true;
           loc.pwLocator = buildPwLocatorString(loc);
           if (!loc.valid) {
             loc.error = count === 0 ? '0 elements' : `${count} elements`;
@@ -209,6 +211,59 @@ export function WithLocators<T extends Constructor>(Base: T) {
       await this.validateContainers(result);
     }
 
+    async resolveContainers(result: ResearchResult): Promise<Locator[]> {
+      const containerLocs = result.containerLocators;
+      await this.testLocators(containerLocs, { scope: true });
+      for (const loc of containerLocs.filter((l) => l.valid === false)) {
+        if (await this.recoverContainerFromChildren(result, loc.locator)) loc.valid = true;
+      }
+      return containerLocs.filter((l) => l.valid === false);
+    }
+
+    private async recoverContainerFromChildren(result: ResearchResult, css: string): Promise<boolean> {
+      const sections = parseResearchSections(result.text).filter((s) => s.containerCss === css);
+      let recovered = false;
+
+      for (const section of sections) {
+        const eidxList = section.elements.map((el) => el.eidx).filter(Boolean) as string[];
+        if (eidxList.length < 2) continue;
+
+        const ancestor = await this.explorer.runWithBrowserRecovery('recoverContainerFromChildren', () => WebElement.commonAncestor(this.explorer.playwrightHelper.page, eidxList));
+        if (!ancestor) continue;
+
+        const candidates: string[] = [];
+        const id = ancestor.attrs.id;
+        if (id && !isDynamicId(id)) candidates.push(`#${id}`);
+        for (const cls of ancestor.filteredClasses) {
+          if (!/^[\w-]+$/.test(cls)) continue;
+          candidates.push(`${ancestor.tag}.${cls}`);
+        }
+
+        let unique: string | null = null;
+        let multiple: string | null = null;
+        for (const candidate of candidates) {
+          let count = 0;
+          try {
+            count = await this.explorer.playwrightLocatorCount((page) => page.locator(candidate));
+          } catch {}
+          if (count === 1) {
+            unique = candidate;
+            break;
+          }
+          if (count > 1 && !multiple) multiple = candidate;
+        }
+
+        const newCss = unique || multiple;
+        if (!newCss) continue;
+
+        debugLog(`Recovered container: '${css}' → '${newCss}' in "${section.name}"`);
+        this.updateSectionContainer(result, section, newCss);
+        recovered = true;
+      }
+
+      return recovered;
+    }
+
     private async validateContainers(result: ResearchResult): Promise<void> {
       const sections = parseResearchSections(result.text);
 
@@ -275,7 +330,8 @@ export interface Locator {
 }
 
 export interface LocatorMethods {
-  testLocators(locators: Locator[]): Promise<void>;
+  testLocators(locators: Locator[], opts?: { scope?: boolean }): Promise<void>;
   fixBrokenSections(result: ResearchResult, conversation: Conversation): Promise<void>;
   backfillBrokenLocators(result: ResearchResult): Promise<void>;
+  resolveContainers(result: ResearchResult): Promise<Locator[]>;
 }
