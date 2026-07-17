@@ -13,7 +13,7 @@ export class DrillCommand extends BaseCommand {
     const knowledgePath = this.parseKnowledgeArg(args);
     const maxComponents = this.parseMaxArg(args);
 
-    const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
     if (!state) {
       throw new Error('No active page to drill');
     }

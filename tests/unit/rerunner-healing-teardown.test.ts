@@ -41,7 +41,7 @@ afterAll(() => {
 });
 
 function buildRerunner(): any {
-  return new Rerunner({ getConfig: () => ({ ai: { agents: {} } }) } as any, {} as any);
+  return new Rerunner({ explorer: {}, ai: {}, config: { ai: { agents: {} } }, stateManager: {}, knowledgeTracker: {}, requestStore: {}, playwrightRecorder: {} } as any, {} as any);
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50));

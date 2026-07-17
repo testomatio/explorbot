@@ -35,7 +35,7 @@ export class FreesailCommand extends BaseCommand {
       async (ctx) => {
         if (maxTests != null && testsRun >= maxTests) ctx.stop();
 
-        const stateManager = this.explorBot.getExplorer().getStateManager();
+        const stateManager = this.explorBot.stateManager();
         const state = stateManager.getCurrentState();
 
         if (state && !Researcher.getCachedResearch(state)) {

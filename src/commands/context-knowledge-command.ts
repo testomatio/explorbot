@@ -10,7 +10,7 @@ export class ContextKnowledgeCommand extends BaseCommand {
 
   async execute(_args: string): Promise<void> {
     const explorer = this.explorBot.getExplorer();
-    const state = explorer.getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
 
     if (!state) {
       throw new Error('No active page');

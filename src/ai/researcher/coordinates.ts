@@ -4,6 +4,7 @@ import type { ActionResult } from '../../action-result.js';
 import type Explorer from '../../explorer.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
+import { eidxByLocator } from '../../utils/web-eidx.ts';
 import { WebElement } from '../../utils/web-element.ts';
 import type { Provider } from '../provider.js';
 import { type Constructor, debugLog } from './mixin.ts';
@@ -81,7 +82,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
     }
 
     async visuallyAnnotateElements(opts?: { containers?: Array<{ css: string; label: string }> }): Promise<number> {
-      return this.explorer.visuallyAnnotateElements(opts);
+      return this.explorer.withPage((page) => visuallyAnnotateContainers(page, opts?.containers || []));
     }
 
     private async _analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult> {
@@ -177,7 +178,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
           let eidx = el.eidx || null;
           if (!eidx) {
             const locator = el.css || el.xpath || (el.aria ? `role=${el.aria.role}[name="${el.aria.text}"]` : null);
-            if (locator) eidx = await this.explorer.getEidxByLocator(locator, section.containerCss);
+            if (locator) eidx = await this.explorer.withPage((page) => eidxByLocator(page, locator, section.containerCss));
           }
           if (!eidx) continue;
 
@@ -202,7 +203,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
       }
       if (eidxWithoutCoords.length === 0) return;
 
-      const webElements = await this.explorer.runWithBrowserRecovery('backfillCoordinates', () => WebElement.fromEidxList(this.explorer.playwrightHelper.page, eidxWithoutCoords));
+      const webElements = await this.explorer.withPage((page) => WebElement.fromEidxList(page, eidxWithoutCoords));
       if (webElements.length === 0) return;
 
       const rectMap = new Map(webElements.map((w) => [w.eidx!, w]));

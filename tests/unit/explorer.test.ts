@@ -206,12 +206,14 @@ mock.module('codeceptjs/lib/listener/store.js', () => ({
 }));
 
 import { isTemplateMatch } from '../../src/ai/planner/subpages.ts';
-import { AIProvider } from '../../src/ai/provider.ts';
+import { RequestStore } from '../../src/api/request-store.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { ExperienceTracker } from '../../src/experience-tracker.ts';
 import Explorer from '../../src/explorer.ts';
 import { KnowledgeTracker } from '../../src/knowledge-tracker.ts';
+import { PlaywrightRecorder } from '../../src/playwright-recorder.ts';
 import { Reporter } from '../../src/reporter.ts';
+import { StateManager } from '../../src/state-manager.ts';
 import { isDynamicSegment } from '../../src/utils/url-matcher.ts';
 
 describe('isDynamicSegment', () => {
@@ -290,6 +292,7 @@ describe('isTemplateMatch', () => {
 
 describe('Explorer', () => {
   let explorer: Explorer;
+  let stateManager: StateManager;
   const baseUrl = 'mock://explorer.test/';
 
   beforeAll(async () => {
@@ -323,12 +326,22 @@ describe('Explorer', () => {
     vi.spyOn(Reporter.prototype, 'reportTest').mockResolvedValue();
 
     const knowledgeTracker = new KnowledgeTracker();
-    explorer = new Explorer(config, new AIProvider(config.ai), { headless: true }, new ExperienceTracker(knowledgeTracker), knowledgeTracker);
+    stateManager = new StateManager(new ExperienceTracker(knowledgeTracker), knowledgeTracker);
+    explorer = new Explorer(
+      config,
+      { headless: true },
+      {
+        stateManager,
+        knowledgeTracker,
+        reporter: new Reporter(undefined, stateManager),
+        requestStore: new RequestStore(config.dirs?.output || 'output'),
+        playwrightRecorder: new PlaywrightRecorder(),
+      }
+    );
     await explorer.start();
   });
 
   beforeEach(() => {
-    const stateManager = explorer.getStateManager();
     stateManager.updateStateFromBasic(baseUrl, 'Initial', 'manual');
   });
 
@@ -339,16 +352,16 @@ describe('Explorer', () => {
   });
 
   it('visit loads target page and updates state', async () => {
-    const action = await explorer.visit(baseUrl);
-    const currentState = explorer.getStateManager().getCurrentState();
+    const result = await explorer.visit(baseUrl);
+    const currentState = stateManager.getCurrentState();
     expect(currentState?.fullUrl).toBe(baseUrl);
     expect(currentState?.h1).toBe('Text on Page');
-    expect(action.getActionResult()?.html).toContain('Welcome to Explorbot');
+    expect(result.html).toContain('Welcome to Explorbot');
   });
 
-  it('createAction executes assertions against current page', async () => {
+  it('action executes assertions against current page', async () => {
     await explorer.visit(baseUrl);
-    const action = explorer.createAction();
+    const action = explorer.action();
     await action.execute('I.see("Text on Page")');
     expect(action.getActionResult()?.html).toContain('Text on Page');
   });

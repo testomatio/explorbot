@@ -16,7 +16,7 @@ export class PathCommand extends BaseCommand {
   async execute(args: string): Promise<void> {
     const { opts } = this.parseArgs(args);
     const showLinks = !!opts.links;
-    const stateManager = this.explorBot.getExplorer().getStateManager();
+    const stateManager = this.explorBot.stateManager();
     const history = stateManager.getStateHistory();
 
     if (history.length === 0) {

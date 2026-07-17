@@ -14,8 +14,8 @@ import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError }
 import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
-import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
 import { safeFilename } from './utils/strings.ts';
+import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
 
 const debugLog = createDebug('explorbot:action');
 const CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS = 3;
@@ -33,14 +33,16 @@ class Action {
   public playwrightGroupId: string | null = null;
   public assertionSteps: Array<{ name: string; args: any[] }> = [];
   private recorder?: PlaywrightRecorder;
+  private recovery: RecoveryRunner;
   private mainDocumentStatus: number | undefined = undefined;
 
-  constructor(actor: CodeceptJS.I, stateManager: StateManager, recorder?: PlaywrightRecorder) {
+  constructor(actor: CodeceptJS.I, stateManager: StateManager, recorder?: PlaywrightRecorder, recovery?: RecoveryRunner) {
     this.actor = actor;
     this.stateManager = stateManager;
     this.config = ConfigParser.getInstance().getConfig();
     this.playwrightHelper = container.helpers('Playwright');
     this.recorder = recorder;
+    this.recovery = recovery || ((fn) => fn());
   }
 
   async saveScreenshot(): Promise<string | undefined> {
@@ -59,7 +61,15 @@ class Action {
     }
   }
 
-  async capturePageState({ includeScreenshot = false, codeBlock }: { includeScreenshot?: boolean; codeBlock?: string } = {}): Promise<ActionResult> {
+  async capturePageState(opts: { includeScreenshot?: boolean; codeBlock?: string } = {}): Promise<ActionResult> {
+    return this.recovery(() => this.captureOnce(opts));
+  }
+
+  async execute(code: string): Promise<Action> {
+    return this.recovery(() => this.executeOnce(code));
+  }
+
+  private async captureOnce({ includeScreenshot = false, codeBlock }: { includeScreenshot?: boolean; codeBlock?: string } = {}): Promise<ActionResult> {
     try {
       const currentState = this.stateManager.getCurrentState();
       const stateHash = currentState?.hash || 'screenshot';
@@ -260,7 +270,7 @@ class Action {
     }
   }
 
-  async execute(code: string): Promise<Action> {
+  private async executeOnce(code: string): Promise<Action> {
     let error: Error | null = null;
 
     setActivity('🔎 Browsing...', 'action');
@@ -301,7 +311,7 @@ class Action {
         codeString = executedSteps.join('\n');
       }
 
-      const pageState = await this.capturePageState({ codeBlock: codeString });
+      const pageState = await this.captureOnce({ codeBlock: codeString });
 
       this.actionResult = pageState;
       this.assertionSteps = assertionSteps;
@@ -365,6 +375,8 @@ class Action {
 }
 
 export default Action;
+
+export type RecoveryRunner = <T>(fn: () => Promise<T>) => Promise<T>;
 
 function errorToString(error: any): string {
   if (error.cliMessage) {

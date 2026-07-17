@@ -720,11 +720,11 @@ addCommonOptions(program.command('shell <url> <command>').description('Execute a
     await explorBot.start();
     await explorBot.agentNavigator().visit(url);
 
-    const action = explorBot.getExplorer().createAction();
+    const action = explorBot.getExplorer().action();
     await action.execute(command);
 
     log('Command executed successfully');
-    const state = explorBot.getExplorer().getStateManager().getCurrentState();
+    const state = explorBot.stateManager().getCurrentState();
     if (state) log(`URL: ${state.url}`);
 
     await explorBot.stop();

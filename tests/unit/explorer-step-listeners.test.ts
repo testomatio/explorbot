@@ -33,12 +33,10 @@ function trackRegistrations(): { registered: Map<string, Set<any>>; restore: () 
 function buildExplorer() {
   const explorer = Object.assign(Object.create(Explorer.prototype), {
     reporter: { reportTestStart: async () => {} },
-    stateManager: { getCurrentState: () => null },
-    otherTabs: [],
+    stateManager: { getCurrentState: () => null, otherTabs: [] },
     playwrightHelper: { page: { isClosed: () => false } },
   }) as any;
   explorer.closeOtherTabs = async () => {};
-  explorer.ensurePageAvailable = async () => true;
   explorer.watchActiveTestPage = () => {};
   explorer.unwatchActiveTestPages = () => {};
   return explorer as Explorer;
@@ -58,7 +56,7 @@ describe('Explorer step listener cleanup', () => {
   it('removes every listener it registers after a test lifecycle', async () => {
     const { registered, restore } = trackRegistrations();
     try {
-      await buildExplorer().startTest(buildTest());
+      await buildExplorer().beginTest(buildTest());
       expect(registered.get('step.passed')!.size).toBe(1);
       expect(registered.get('test.after')!.size).toBe(1);
 
@@ -76,7 +74,7 @@ describe('Explorer step listener cleanup', () => {
     const { registered, restore } = trackRegistrations();
     try {
       for (let i = 0; i < 5; i++) {
-        await buildExplorer().startTest(buildTest());
+        await buildExplorer().beginTest(buildTest());
         dispatcher.emit('test.after');
       }
       expect(registered.get('step.passed')!.size).toBe(0);

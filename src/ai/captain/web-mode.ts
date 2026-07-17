@@ -9,9 +9,10 @@ export function WithWebMode<T extends Constructor>(Base: T) {
   return class extends Base {
     webModeTools(ctx: ModeContext): Record<string, any> {
       const explorer = ctx.explorBot.getExplorer();
-      const codeceptTools = createCodeceptJSTools(explorer, ctx.task);
+      const toolDeps = { explorer, stateManager: ctx.explorBot.stateManager(), ai: ctx.explorBot.getProvider() };
+      const codeceptTools = createCodeceptJSTools(toolDeps, ctx.task);
       const agentTools = createAgentTools({
-        explorer,
+        ...toolDeps,
         researcher: ctx.explorBot.agentResearcher(),
         navigator: ctx.explorBot.agentNavigator(),
       });
@@ -27,7 +28,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
             try {
               debugLog('navigate', destination);
               await ctx.explorBot.agentNavigator().visit(destination);
-              const stateManager = ctx.explorBot.getExplorer().getStateManager();
+              const stateManager = ctx.explorBot.stateManager();
               const state = stateManager.getCurrentState();
               return { success: true, url: state?.url, title: state?.title };
             } catch (error: any) {
@@ -45,48 +46,42 @@ export function WithWebMode<T extends Constructor>(Base: T) {
             - closeTabs: Close all browser tabs except the current one
             - reload: Reload the current page
             - screenshot: Take a screenshot of current page
-            - recover: Recover from a closed/crashed page using Explorer recovery
-            - restart: Restart the browser when page/context recovery is not enough
+            - recover: Recover from a closed/crashed page, escalating to a full browser restart when needed
             - openFreshTab: Open a fresh tab in the current browser context
           `,
           inputSchema: z.object({
-            action: z.enum(['status', 'evaluate', 'closeTabs', 'reload', 'screenshot', 'recover', 'restart', 'openFreshTab']).describe('Browser action to perform'),
+            action: z.enum(['status', 'evaluate', 'closeTabs', 'reload', 'screenshot', 'recover', 'openFreshTab']).describe('Browser action to perform'),
             code: z.string().optional().describe('JavaScript code for evaluate action'),
           }),
           execute: async ({ action, code }) => {
             const explorer = ctx.explorBot.getExplorer();
 
             if (action === 'status') {
-              const page = explorer.playwrightHelper?.page;
+              const page = explorer.page;
               const pages = page?.context?.().pages?.() || [];
               return {
                 success: true,
                 hasPage: !!page,
-                isClosed: page?.isClosed?.() || false,
-                url: page && !page.isClosed?.() ? await page.url() : null,
-                title: page && !page.isClosed?.() ? await page.title().catch(() => null) : null,
+                isClosed: !page,
+                url: page ? await page.url() : null,
+                title: page ? await page.title().catch(() => null) : null,
                 tabs: pages.length,
               };
             }
 
             if (action === 'recover') {
-              const recovered = await explorer.recoverFromBrowserError();
-              return { success: recovered, message: recovered ? 'Browser page recovered' : 'Browser recovery failed' };
-            }
-
-            if (action === 'restart') {
-              const restarted = await explorer.restartBrowser();
-              return { success: restarted, message: restarted ? 'Browser restarted' : 'Browser restart failed' };
+              const { ok } = await explorer.recover();
+              return { success: ok, message: ok ? 'Browser page recovered' : 'Browser recovery failed' };
             }
 
             if (action === 'openFreshTab') {
               await ctx.explorBot.openFreshTab();
-              const state = explorer.getStateManager().getCurrentState();
+              const state = ctx.explorBot.stateManager().getCurrentState();
               return { success: true, url: state?.url, title: state?.title };
             }
 
-            const page = explorer.playwrightHelper?.page;
-            if (!page || page.isClosed?.()) return { success: false, message: 'No browser page available. Try browser({ action: "recover" }) first.' };
+            const page = explorer.page;
+            if (!page) return { success: false, message: 'No browser page available. Try browser({ action: "recover" }) first.' };
 
             if (action === 'evaluate') {
               if (!code) return { success: false, message: 'Code required for evaluate action' };

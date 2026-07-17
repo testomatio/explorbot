@@ -2,13 +2,14 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ActionResult } from '../../action-result.ts';
 import { ConfigParser } from '../../config.ts';
-import type { StateManager } from '../../state-manager.ts';
+import type Explorer from '../../explorer.ts';
 import { type PlaywrightRecorder, type TraceCall, renderAssertion, renderCall } from '../../playwright-recorder.ts';
+import type { StateManager } from '../../state-manager.ts';
 import type { Plan } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
 import { relativeToCwd } from '../../utils/next-steps.ts';
-import { safeFilename } from '../../utils/strings.ts';
 import { CODECEPT_TOOLS } from '../../utils/step-analyzer.ts';
+import { safeFilename } from '../../utils/strings.ts';
 import type { Conversation } from '../conversation.ts';
 import { ASSERTION_TOOLS } from '../tools.ts';
 import type { Constructor } from './mixin.ts';
@@ -23,7 +24,7 @@ export interface PlaywrightMethods {
 
 export function WithPlaywright<T extends Constructor>(Base: T) {
   return class extends Base {
-    declare playwright: { recorder: PlaywrightRecorder; helper: any } | undefined;
+    declare playwright: { recorder: PlaywrightRecorder; explorer: Explorer } | undefined;
     declare savedFiles: Set<string>;
     declare stateManager?: StateManager;
 

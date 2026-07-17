@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import type { AgentDeps } from './ai/agent.ts';
 import { Captain } from './ai/captain.ts';
 import { Driller } from './ai/driller.ts';
 import { ExperienceCompactor } from './ai/experience-compactor.ts';
@@ -23,7 +24,9 @@ import { ConfigParser } from './config.ts';
 import { ExperienceTracker } from './experience-tracker.ts';
 import Explorer from './explorer.ts';
 import { KnowledgeTracker } from './knowledge-tracker.ts';
-import { WebPageState } from './state-manager.ts';
+import { PlaywrightRecorder } from './playwright-recorder.ts';
+import { Reporter } from './reporter.ts';
+import { StateManager, WebPageState } from './state-manager.ts';
 import { Stats } from './stats.ts';
 import type { Suite } from './suite.ts';
 import { Plan, type Test } from './test-plan.ts';
@@ -63,6 +66,10 @@ export class ExplorBot {
   private lastReportedTestCount = 0;
   private _experienceTracker?: ExperienceTracker;
   private _knowledgeTracker?: KnowledgeTracker;
+  private _stateManager?: StateManager;
+  private _reporter?: Reporter;
+  private _requestStore?: RequestStore;
+  private _playwrightRecorder?: PlaywrightRecorder;
 
   constructor(options: ExplorBotOptions = {}) {
     this.options = options;
@@ -74,7 +81,7 @@ export class ExplorBot {
   }
 
   get isExploring(): boolean {
-    return this.explorer?.isStarted;
+    return !!this.explorer;
   }
 
   setUserResolve(fn: UserResolveFunction): void {
@@ -82,13 +89,19 @@ export class ExplorBot {
   }
 
   async start(): Promise<void> {
-    if (this.explorer?.isStarted) {
+    if (this.explorer) {
       return;
     }
 
     try {
       await this.startProviderOnly();
-      this.explorer = new Explorer(this.config, this.provider, this.options, this.experienceTracker(), this.knowledgeTracker());
+      this.explorer = new Explorer(this.config, this.options, {
+        stateManager: this.stateManager(),
+        knowledgeTracker: this.knowledgeTracker(),
+        reporter: this.reporter(),
+        requestStore: this.requestStore(),
+        playwrightRecorder: this.playwrightRecorder(),
+      });
       await this.explorer.start();
       if (!this.options.incognito) {
         await this.agentExperienceCompactor().autocompact();
@@ -126,7 +139,7 @@ export class ExplorBot {
   }
 
   getCurrentState(): WebPageState | null {
-    return this.explorer?.getStateManager().getCurrentState() ?? null;
+    return this._stateManager?.getCurrentState() ?? null;
   }
 
   getExplorer(): Explorer {
@@ -141,6 +154,22 @@ export class ExplorBot {
     return (this._experienceTracker ||= new ExperienceTracker(this.knowledgeTracker()));
   }
 
+  stateManager(): StateManager {
+    return (this._stateManager ||= new StateManager(this.experienceTracker(), this.knowledgeTracker()));
+  }
+
+  reporter(): Reporter {
+    return (this._reporter ||= new Reporter(this.config.reporter, this.stateManager()));
+  }
+
+  requestStore(): RequestStore {
+    return (this._requestStore ||= new RequestStore(this.configParser.getOutputDir()));
+  }
+
+  playwrightRecorder(): PlaywrightRecorder {
+    return (this._playwrightRecorder ||= new PlaywrightRecorder());
+  }
+
   getConfig(): ExplorbotConfig {
     return this.config;
   }
@@ -153,11 +182,15 @@ export class ExplorBot {
     return this.provider;
   }
 
-  createAgent<T>(factory: (deps: { explorer: Explorer; ai: AIProvider; config: ExplorbotConfig }) => T): T {
+  createAgent<T>(factory: (deps: AgentDeps) => T): T {
     const agent = factory({
       explorer: this.explorer,
       ai: this.provider,
       config: this.config,
+      stateManager: this.stateManager(),
+      knowledgeTracker: this.knowledgeTracker(),
+      requestStore: this.requestStore(),
+      playwrightRecorder: this.playwrightRecorder(),
     });
 
     const agentName = (agent as any).constructor.name.toLowerCase();
@@ -167,18 +200,16 @@ export class ExplorBot {
   }
 
   agentResearcher(): Researcher {
-    return (this.agents.researcher ||= this.createAgent(({ ai, explorer }) => new Researcher(explorer, ai)));
+    return (this.agents.researcher ||= this.createAgent((deps) => new Researcher(deps)));
   }
 
   agentNavigator(): Navigator {
-    return (this.agents.navigator ||= this.createAgent(({ ai, explorer }) => {
-      return new Navigator(explorer, ai);
-    }));
+    return (this.agents.navigator ||= this.createAgent((deps) => new Navigator(deps)));
   }
 
   agentPlanner(): Planner {
     if (!this.agents.planner) {
-      this.agents.planner = this.createAgent(({ ai, explorer }) => new Planner(explorer, ai, this.agentResearcher()));
+      this.agents.planner = this.createAgent((deps) => new Planner(deps, this.agentResearcher()));
       const fisherman = this.agentFisherman();
       if (fisherman) this.agents.planner.setFisherman(fisherman);
     }
@@ -186,21 +217,21 @@ export class ExplorBot {
   }
 
   agentPilot(): Pilot {
-    return (this.agents.pilot ||= this.createAgent(({ ai, explorer }) => {
+    return (this.agents.pilot ||= this.createAgent((deps) => {
       const researcher = this.agentResearcher();
       const navigator = this.agentNavigator();
-      const tools = createAgentTools({ explorer, researcher, navigator, supervisor: true });
-      return new Pilot(ai, tools, researcher, explorer);
+      const tools = createAgentTools({ ...deps, researcher, navigator, supervisor: true });
+      return new Pilot(deps, tools, researcher);
     }));
   }
 
   agentTester(): Tester {
     if (!this.agents.tester) {
-      this.agents.tester = this.createAgent(({ ai, explorer }) => {
+      this.agents.tester = this.createAgent((deps) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const tools = createAgentTools({ explorer, researcher, navigator });
-        return new Tester(explorer, ai, researcher, navigator, tools);
+        const tools = createAgentTools({ ...deps, researcher, navigator });
+        return new Tester(deps, researcher, navigator, tools);
       });
 
       const qm = this.agentQuartermaster();
@@ -234,29 +265,27 @@ export class ExplorBot {
       this.agents.quartermaster = new Quartermaster(this.provider, {
         model: config?.model,
       });
-      this.agents.quartermaster.start(this.explorer.playwrightHelper, this.explorer.getStateManager());
+      this.agents.quartermaster.start(this.explorer, this.stateManager());
     }
     return this.agents.quartermaster;
   }
 
   agentHistorian(): Historian {
-    return (this.agents.historian ||= this.createAgent(({ ai, explorer, config }) => {
-      const experienceTracker = explorer.getStateManager().getExperienceTracker();
-      const reporter = explorer.getReporter();
-      return new Historian(ai, experienceTracker, reporter, explorer.getStateManager(), config, {
-        recorder: explorer.getPlaywrightRecorder(),
-        helper: explorer.playwrightHelper,
+    return (this.agents.historian ||= this.createAgent(({ ai, explorer, config, stateManager, playwrightRecorder }) => {
+      return new Historian(ai, this.experienceTracker(), this.reporter(), stateManager, config, {
+        recorder: playwrightRecorder,
+        explorer,
       });
     }));
   }
 
   agentRerunner(): Rerunner {
     if (!this.agents.rerunner) {
-      this.agents.rerunner = this.createAgent(({ ai, explorer }) => {
+      this.agents.rerunner = this.createAgent((deps) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const tools = createAgentTools({ explorer, researcher, navigator, withExperience: false });
-        return new Rerunner(explorer, ai, tools);
+        const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
+        return new Rerunner(deps, tools);
       });
       this.agents.rerunner.setHistorian(this.agentHistorian());
     }
@@ -264,9 +293,9 @@ export class ExplorBot {
   }
 
   agentDriller(): Driller {
-    return (this.agents.driller ||= this.createAgent(({ ai, explorer }) => {
+    return (this.agents.driller ||= this.createAgent((deps) => {
       const navigator = this.agentNavigator();
-      return new Driller(explorer, ai, navigator);
+      return new Driller(deps, navigator);
     }));
   }
 
@@ -283,7 +312,7 @@ export class ExplorBot {
     if (!this.agents.fisherman) {
       const apiConfig = this.config.api;
       const outputDir = this.configParser.getOutputDir();
-      const requestStore = this.explorer.getRequestStore() || new RequestStore(outputDir);
+      const requestStore = this.requestStore();
       const baseEndpoint = apiConfig?.baseEndpoint || this.config.playwright.url;
       const configHeaders = apiConfig?.headers || {};
       const apiClient = new ApiClient(baseEndpoint);
@@ -298,7 +327,11 @@ export class ExplorBot {
         }
       };
 
-      const cookieProvider = () => this.explorer.extractCookies();
+      const cookieProvider = async (): Promise<Record<string, string>> => {
+        const cookies = await this.explorer.withPage((page) => page.context().cookies()).catch(() => []);
+        if (!cookies.length) return {};
+        return { Cookie: cookies.map((c: any) => `${c.name}=${c.value}`).join('; ') };
+      };
 
       this.agents.fisherman = this.createAgent(({ ai }) => {
         return new Fisherman(ai, apiClient, requestStore, specLoader, baseEndpoint, cookieProvider, configHeaders, hasApiConfig);
@@ -332,7 +365,7 @@ export class ExplorBot {
     }
 
     if (!opts.extend && this.currentPlan?.url) {
-      const currentUrl = this.explorer?.getStateManager().getCurrentState()?.url;
+      const currentUrl = this._stateManager?.getCurrentState()?.url;
       if (currentUrl && currentUrl !== this.currentPlan.url) {
         tag('info').log('Different page detected, clearing previous plan');
         this.clearPlan();
@@ -385,7 +418,7 @@ export class ExplorBot {
   }
 
   generatePlanFilename(feature?: string): string {
-    const state = this.explorer?.getStateManager().getCurrentState();
+    const state = this._stateManager?.getCurrentState();
     const urlPath = state?.url || '/';
     const urlPart = sanitizeFilename(urlPath) || 'root';
     const suffix = '.md';
@@ -465,7 +498,7 @@ export class ExplorBot {
       const filePath = this.agentSessionAnalyst().writeReport(markdown);
       tag('info').log(`Session report saved: ${relativeToCwd(filePath)}`);
 
-      const reporter = this.explorer?.getReporter();
+      const reporter = this._reporter;
       if (reporter?.isEnabled()) {
         let description = markdown;
         const modelsTable = Stats.modelsTable(this.provider.getConfiguredModels());

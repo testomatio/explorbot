@@ -1,5 +1,6 @@
 import dedent from 'dedent';
 import type { ActionResult } from '../../action-result.js';
+import type { ExplorbotConfig } from '../../config.ts';
 import { executionController } from '../../execution-controller.ts';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
@@ -20,6 +21,7 @@ export function WithSections<T extends Constructor>(Base: T) {
     declare explorer: Explorer;
     declare provider: Provider;
     declare stateManager: StateManager;
+    declare config: ExplorbotConfig;
     declare actionResult: ActionResult | undefined;
 
     async researchBySections(): Promise<string> {
@@ -64,11 +66,11 @@ export function WithSections<T extends Constructor>(Base: T) {
     }
 
     private async _detectFocusCss(): Promise<string | null> {
-      const focusSections = (this.explorer.getConfig().ai?.agents?.researcher as any)?.focusSections as string[] | undefined;
+      const focusSections = (this.config.ai?.agents?.researcher as any)?.focusSections as string[] | undefined;
       if (!focusSections?.length) return null;
 
       for (const css of focusSections) {
-        const count = await this.explorer.playwrightLocatorCount((page: any) => page.locator(css)).catch(() => 0);
+        const count = await this.explorer.withPage((page) => page.locator(css).count()).catch(() => 0);
         if (count > 0) return css;
       }
       return null;

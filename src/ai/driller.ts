@@ -3,13 +3,9 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
-import type { ExperienceTracker } from '../experience-tracker.ts';
-import type Explorer from '../explorer.ts';
-import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Observability } from '../observability.ts';
 import { Plan, Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
-import { HooksRunner } from '../utils/hooks-runner.ts';
 import {
   EXPLORBOT_ATTRS,
   HTML_COMPOSITE_AREA_HINTS,
@@ -26,8 +22,10 @@ import {
 } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
+import { annotatePageElements } from '../utils/web-annotate.ts';
+import { eidxInContainer } from '../utils/web-eidx.ts';
 import { WebElement } from '../utils/web-element.ts';
-import type { Agent } from './agent.ts';
+import type { Agent, AgentDeps } from './agent.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import { drillLocatorRule } from './rules.ts';
@@ -79,10 +77,7 @@ interface DrillOptions {
 export class Driller extends TaskAgent implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
   emoji = 'D';
-  private explorer: Explorer;
-  private provider: Provider;
   private navigator: Navigator;
-  private hooksRunner: HooksRunner;
   private currentPlan?: Plan;
   private allResults: InteractionResult[] = [];
   private verifiedAction: { componentId: string; toolName: string; code?: string; canonicalCode?: string } | null = null;
@@ -90,32 +85,17 @@ export class Driller extends TaskAgent implements Agent {
 
   MAX_COMPONENT_ITERATIONS = 12;
 
-  constructor(explorer: Explorer, provider: Provider, navigator: Navigator) {
-    super();
-    this.explorer = explorer;
-    this.provider = provider;
+  constructor(deps: AgentDeps, navigator: Navigator) {
+    super(deps);
     this.navigator = navigator;
-    this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 
   protected getNavigator(): Navigator {
     return this.navigator;
   }
 
-  protected getExperienceTracker(): ExperienceTracker {
-    return this.explorer.getStateManager().getExperienceTracker();
-  }
-
-  protected getKnowledgeTracker(): KnowledgeTracker {
-    return this.explorer.getKnowledgeTracker();
-  }
-
-  protected getProvider(): Provider {
-    return this.provider;
-  }
-
   getSystemMessage(component?: ComponentInfo): string {
-    const currentUrl = this.explorer.getStateManager().getCurrentState()?.url;
+    const currentUrl = this.stateManager.getCurrentState()?.url;
     const customPrompt = this.provider.getSystemPromptForAgent('driller', currentUrl);
 
     return dedent`
@@ -159,7 +139,7 @@ export class Driller extends TaskAgent implements Agent {
 
   async drill(opts: DrillOptions = {}): Promise<Plan> {
     const { knowledgePath, maxComponents = 30, interactive = isInteractive() } = opts;
-    const currentState = this.explorer.getStateManager().getCurrentState();
+    const currentState = this.stateManager.getCurrentState();
     if (!currentState) throw new Error('No page state available');
 
     const sessionName = `driller_${Date.now().toString(36)}`;
@@ -207,15 +187,15 @@ export class Driller extends TaskAgent implements Agent {
 
   private async captureAnnotatedState(): Promise<ActionResult> {
     setActivity(`${this.emoji} Capturing annotated page state...`, 'action');
-    const action = this.explorer.createAction();
+    const action = this.explorer.action();
     try {
       const annotated = await Promise.race([
-        this.explorer.annotateElements(),
+        this.explorer.withPage(annotatePageElements),
         new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('annotateElements timeout')), 15000);
         }),
       ]);
-      return action.capturePageState({ ariaSnapshot: annotated.ariaSnapshot });
+      return action.capturePageState();
     } catch (error) {
       tag('warning').log(`Annotated capture failed, falling back to plain page state: ${error instanceof Error ? error.message : error}`);
       return action.capturePageState();
@@ -226,9 +206,10 @@ export class Driller extends TaskAgent implements Agent {
 
   private async collectComponents(state: ActionResult, maxComponents: number): Promise<ComponentInfo[]> {
     setActivity(`${this.emoji} Collecting components...`, 'action');
-    const page = this.explorer.playwrightHelper.page;
-    const eidxList = await this.explorer.getEidxInContainer(null);
-    const webElements = await WebElement.fromEidxList(page, eidxList);
+    const webElements = await this.explorer.withPage(async (page) => {
+      const eidxList = await eidxInContainer(page, null);
+      return WebElement.fromEidxList(page, eidxList);
+    });
     const ariaNodes = collectInteractiveNodes(state.ariaSnapshot);
     const scored = webElements
       .filter((element) => isDrillableElement(element))
@@ -324,7 +305,7 @@ export class Driller extends TaskAgent implements Agent {
     conversation.addUserText(await this.buildComponentPrompt(originalState, component));
 
     let finished = false;
-    const actionTools = this.createVerifiedActionTools(createCodeceptJSTools(this.explorer, test), component);
+    const actionTools = this.createVerifiedActionTools(createCodeceptJSTools(this.toolDeps, test), component);
     const tools = { ...actionTools, ...this.createDrillFlowTools(originalState, test, interactive) };
 
     await loop(
@@ -333,7 +314,7 @@ export class Driller extends TaskAgent implements Agent {
         setActivity(`${this.emoji} Drilling ${component.name}...`, 'action');
 
         if (iteration > 1) {
-          const currentState = ActionResult.fromState(this.explorer.getStateManager().getCurrentState() || originalState);
+          const currentState = ActionResult.fromState(this.stateManager.getCurrentState() || originalState);
           conversation.addUserText(await this.buildContextUpdate(currentState, component));
           if (this.pendingNestedContext) {
             conversation.addUserText(this.pendingNestedContext);
@@ -577,7 +558,7 @@ export class Driller extends TaskAgent implements Agent {
         execute: async ({ reason }) => {
           await this.restoreOriginalState(originalState, reason);
           await this.captureAnnotatedState();
-          const currentState = this.explorer.getStateManager().getCurrentState();
+          const currentState = this.stateManager.getCurrentState();
           return { success: true, url: currentState?.url || originalState.url };
         },
       }),
@@ -598,9 +579,9 @@ export class Driller extends TaskAgent implements Agent {
   }
 
   private async restoreOriginalState(originalState: ActionResult, reason: string): Promise<void> {
-    const currentState = this.explorer.getStateManager().getCurrentState();
+    const currentState = this.stateManager.getCurrentState();
     const targetUrl = originalState.fullUrl || originalState.url;
-    const action = this.explorer.createAction();
+    const action = this.explorer.action();
 
     if (currentState?.url !== originalState.url) {
       await action.attempt(`I.amOnPage(${JSON.stringify(targetUrl)})`, `${reason} (restore URL)`);
@@ -665,7 +646,7 @@ export class Driller extends TaskAgent implements Agent {
     const overlayHtml = await this.getVisibleOverlayHtml();
     if (!overlayHtml) return null;
 
-    const state = this.explorer.getStateManager().getCurrentState();
+    const state = this.stateManager.getCurrentState();
     if (!state) return null;
     const currentState = ActionResult.fromState(state);
     return dedent`
@@ -686,40 +667,42 @@ export class Driller extends TaskAgent implements Agent {
   }
 
   private async getVisibleOverlayHtml(): Promise<string> {
-    const page = this.explorer.playwrightHelper.page;
-    return page.evaluate(
-      ({ extractorSource, config }) => {
-        const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
-        return extract(config);
-      },
-      {
-        extractorSource: getVisibleOverlayHtmlExtractorSource(),
-        config: {
-          interactiveContentSelector: HTML_SELECTORS.interactiveContent,
-          limits: HTML_EXTRACTION_LIMITS,
-          overlaySelectors: HTML_SELECTORS.semanticOverlays,
-          visibilityLimits: HTML_VISIBILITY_LIMITS,
+    return this.explorer.withPage((page) =>
+      page.evaluate(
+        ({ extractorSource, config }) => {
+          const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
+          return extract(config);
         },
-      }
+        {
+          extractorSource: getVisibleOverlayHtmlExtractorSource(),
+          config: {
+            interactiveContentSelector: HTML_SELECTORS.interactiveContent,
+            limits: HTML_EXTRACTION_LIMITS,
+            overlaySelectors: HTML_SELECTORS.semanticOverlays,
+            visibilityLimits: HTML_VISIBILITY_LIMITS,
+          },
+        }
+      )
     );
   }
 
   private async getComponentScopeHtml(component: ComponentInfo, originalState: ActionResult): Promise<string> {
-    const page = this.explorer.playwrightHelper.page;
-    const scopedHtml = await page.evaluate(
-      ({ eidx, extractorSource, config }) => {
-        const extract = new Function(`return ${extractorSource}`)() as (eidx: string, config: any) => string;
-        return extract(eidx, config);
-      },
-      {
-        eidx: component.eidx,
-        extractorSource: getComponentScopeHtmlExtractorSource(),
-        config: {
-          eidxAttr: EXPLORBOT_ATTRS.eidx,
-          interactiveControlSelector: HTML_SELECTORS.interactiveControl,
-          limits: HTML_EXTRACTION_LIMITS,
+    const scopedHtml = await this.explorer.withPage((page) =>
+      page.evaluate(
+        ({ eidx, extractorSource, config }) => {
+          const extract = new Function(`return ${extractorSource}`)() as (eidx: string, config: any) => string;
+          return extract(eidx, config);
         },
-      }
+        {
+          eidx: component.eidx,
+          extractorSource: getComponentScopeHtmlExtractorSource(),
+          config: {
+            eidxAttr: EXPLORBOT_ATTRS.eidx,
+            interactiveControlSelector: HTML_SELECTORS.interactiveControl,
+            limits: HTML_EXTRACTION_LIMITS,
+          },
+        }
+      )
     );
 
     if (scopedHtml) return scopedHtml;

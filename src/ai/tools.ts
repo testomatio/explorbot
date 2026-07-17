@@ -3,13 +3,13 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
-import type Explorer from '../explorer.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { LARGE_ARIA_CHANGE_THRESHOLD, extractFocusedElement } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
+import type { ToolDeps } from './agent.ts';
 import { Navigator } from './navigator.ts';
 import type { AIProvider } from './provider.ts';
 import { Researcher } from './researcher.ts';
@@ -18,11 +18,16 @@ import { isInteractive } from './task-agent.ts';
 
 const debugLog = createDebug('explorbot:tools');
 
+interface AgentToolDeps extends ToolDeps {
+  researcher: Researcher;
+  navigator: Navigator;
+  supervisor?: boolean;
+  withExperience?: boolean;
+}
+
 export const ASSERTION_TOOLS = ['verify'] as const;
 
-export function createCodeceptJSTools(explorer: Explorer, task: Task) {
-  const stateManager = explorer.getStateManager();
-
+export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, task: Task) {
   return {
     click: tool({
       description: dedent`
@@ -81,7 +86,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         });
 
         const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-        const action = explorer.createAction();
+        const action = explorer.action();
         const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
 
         for (let i = 0; i < commands.length; i++) {
@@ -101,7 +106,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
         let disambiguated = null;
         if (attempts.some((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))) {
-          disambiguated = await disambiguateElements(action.lastError, explanation, explorer.getAIProvider());
+          disambiguated = await disambiguateElements(action.lastError, explanation, ai);
         }
 
         if (disambiguated) {
@@ -193,7 +198,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
         });
 
         const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-        const action = explorer.createAction();
+        const action = explorer.action();
         const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
 
         for (const command of commands) {
@@ -263,7 +268,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
           if (!isSingleChar && !isStandardKey) {
             const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-            const action = explorer.createAction();
+            const action = explorer.action();
             const typeCommand = `I.type(${JSON.stringify(key)})`;
             await action.attempt(typeCommand, explanation);
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, key);
@@ -306,7 +311,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
           }
 
           const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-          const action = explorer.createAction();
+          const action = explorer.action();
 
           let pressKeyCommand: string;
           if (modifier) {
@@ -406,12 +411,11 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
           const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
           const formLocator = codeLines[0] || 'form';
-          const action = explorer.createAction();
-          const wasInIframe = await explorer.isInsideIframe();
+          const action = explorer.action();
           await action.attempt(codeBlock, explanation);
 
-          if (action.lastError && !wasInIframe && (await explorer.isInsideIframe())) {
-            await explorer.switchToMainFrame();
+          if (action.lastError && !previousState.isInsideIframe) {
+            await explorer.exitIframe();
           }
 
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, formLocator);
@@ -422,7 +426,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
 
             let formSuggestion = 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and form() tools.';
             if (message.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN)) {
-              const disambiguated = await disambiguateElements(action.lastError, explanation, explorer.getAIProvider());
+              const disambiguated = await disambiguateElements(action.lastError, explanation, ai);
               if (disambiguated) {
                 formSuggestion = `Multiple elements matched. Add step.opts({ elementIndex: ${disambiguated.position} }) to the failing command. Fallback locator: ${disambiguated.xpath}`;
               }
@@ -471,9 +475,7 @@ export function createCodeceptJSTools(explorer: Explorer, task: Task) {
   };
 }
 
-export function createIframeTools(explorer: Explorer) {
-  const stateManager = explorer.getStateManager();
-
+export function createIframeTools({ explorer, stateManager }: ToolDeps) {
   return {
     exitIframe: tool({
       description: dedent`
@@ -495,9 +497,9 @@ export function createIframeTools(explorer: Explorer) {
             });
           }
 
-          await explorer.switchToMainFrame();
+          await explorer.exitIframe();
 
-          const nextState = await explorer.capturePageState();
+          const nextState = await explorer.capture();
           const toolResult = await nextState.toToolResult(previousState, 'I.switchTo()');
 
           return successToolResult('exitIframe', {
@@ -540,19 +542,7 @@ export function createLearnExperienceTool({ getExperienceTracker, getState }: { 
   });
 }
 
-export function createAgentTools({
-  explorer,
-  researcher,
-  navigator,
-  supervisor,
-  withExperience,
-}: {
-  explorer: Explorer;
-  researcher: Researcher;
-  navigator: Navigator;
-  supervisor?: boolean;
-  withExperience?: boolean;
-}): any {
+export function createAgentTools({ explorer, stateManager, ai, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
   let visionDisabled = false;
 
   const tools: Record<string, any> = {
@@ -577,7 +567,7 @@ export function createAgentTools({
         }
 
         try {
-          const actionResult = await explorer.capturePageWithScreenshot();
+          const actionResult = await explorer.capture({ screenshot: true });
 
           if (!actionResult.screenshot) {
             return failedToolResult('see', 'Failed to capture screenshot for analysis');
@@ -625,7 +615,6 @@ export function createAgentTools({
       }),
       execute: async ({ reason }) => {
         try {
-          const stateManager = explorer.getStateManager();
           const currentState = stateManager.getCurrentState();
 
           if (!currentState) {
@@ -666,7 +655,7 @@ export function createAgentTools({
       }),
       execute: async ({ assertion }) => {
         try {
-          const currentState = explorer.getStateManager().getCurrentState();
+          const currentState = stateManager.getCurrentState();
           const verifications = currentState?.verifications;
 
           if (verifications?.[assertion] !== undefined) {
@@ -677,7 +666,7 @@ export function createAgentTools({
             });
           }
 
-          const actionResult = await explorer.capturePageState();
+          const actionResult = await explorer.capture();
           const result = await navigator.verifyState(assertion, actionResult);
 
           if (result.verified) {
@@ -727,7 +716,6 @@ export function createAgentTools({
       }),
       execute: async ({ reason }) => {
         try {
-          const stateManager = explorer.getStateManager();
           const currentState = stateManager.getCurrentState();
 
           if (!currentState) {
@@ -771,7 +759,6 @@ export function createAgentTools({
       }),
       execute: async ({ instruction }) => {
         try {
-          const stateManager = explorer.getStateManager();
           const currentState = stateManager.getCurrentState();
 
           if (!currentState) {
@@ -826,7 +813,6 @@ export function createAgentTools({
         }
 
         try {
-          const stateManager = explorer.getStateManager();
           const currentState = stateManager.getCurrentState();
 
           if (!currentState) {
@@ -834,8 +820,8 @@ export function createAgentTools({
           }
 
           const previousState = ActionResult.fromState(currentState);
-          const action = explorer.createAction();
-          const actionResult = await explorer.capturePageWithScreenshot();
+          const action = explorer.action();
+          const actionResult = await explorer.capture({ screenshot: true });
 
           if (!actionResult.screenshot) {
             return failedToolResult('visualClick', 'Failed to capture screenshot for visual analysis');
@@ -897,7 +883,6 @@ export function createAgentTools({
         reason: z.string().describe('Why you need to go back'),
       }),
       execute: async ({ reason }) => {
-        const stateManager = explorer.getStateManager();
         const currentState = stateManager.getCurrentState();
         const currentUrl = currentState?.fullUrl || currentState?.url;
         const history = stateManager.getStateHistory();
@@ -920,7 +905,7 @@ export function createAgentTools({
         let previousState: ActionResult | null = null;
         if (currentState) previousState = ActionResult.fromState(currentState);
 
-        const action = explorer.createAction();
+        const action = explorer.action();
         const success = await action.attempt(`I.amOnPage(${JSON.stringify(targetUrl)})`, `${reason} (BACK to ${targetUrl})`);
 
         if (success) {
@@ -942,7 +927,7 @@ export function createAgentTools({
       description: 'List all previously visited page states (deduped by URL). Use to find pages to navigate back to.',
       inputSchema: z.object({}),
       execute: async () => {
-        const history = explorer.getStateManager().getStateHistory();
+        const history = stateManager.getStateHistory();
         const seen = new Set<string>();
         const states = history
           .map((t) => t.toState)
@@ -975,7 +960,6 @@ export function createAgentTools({
         reason: z.string().describe('What element you are looking for and why'),
       }),
       execute: async ({ xpath, reason }) => {
-        const stateManager = explorer.getStateManager();
         const currentState = stateManager.getCurrentState();
 
         if (!currentState) {
@@ -1001,9 +985,9 @@ export function createAgentTools({
           });
         }
 
-        const action = explorer.createAction();
+        const action = explorer.action();
         const visible = await action.attempt(`I.seeElement(${JSON.stringify(xpath)})`, 'xpathCheck visibility');
-        const liveElement = await WebElement.fromPlaywrightLocator(explorer.playwrightHelper.page.locator(`xpath=${xpath}`));
+        const liveElement = await explorer.withPage((page) => WebElement.fromPlaywrightLocator(page.locator(`xpath=${xpath}`)));
 
         const matchesSummary = result.elements.map((el, i) => `${i + 1}. <${el.tag} ${el.keyAttrs}> text="${el.text}" html: ${el.outerHTML}`).join('\n');
 
@@ -1033,9 +1017,8 @@ export function createAgentTools({
 
   if (withExperience !== false) {
     tools.learnExperience = createLearnExperienceTool({
-      getExperienceTracker: () => explorer.getStateManager().getExperienceTracker(),
+      getExperienceTracker: () => stateManager.getExperienceTracker(),
       getState: () => {
-        const stateManager = explorer.getStateManager();
         const currentState = stateManager.getCurrentState();
         return currentState ? ActionResult.fromState(currentState) : null;
       },

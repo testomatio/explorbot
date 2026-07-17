@@ -15,14 +15,17 @@ function buildActionResult(browserLogs: any[] = [], ariaSnapshot = ''): ActionRe
 }
 
 function buildPilotWithStore(store: RequestStore | null, hasOtherTabs = false): Pilot {
-  const explorer: any = {
-    getRequestStore: () => store,
-    hasOtherTabs: () => hasOtherTabs,
-    getOtherTabsInfo: () => [],
+  const otherTabs = [];
+  if (hasOtherTabs) otherTabs.push({ url: 'about:blank', title: 'tab' });
+  const deps: any = {
+    ai: {},
+    explorer: {},
+    stateManager: { otherTabs },
+    requestStore: store || new RequestStore('output'),
+    playwrightRecorder: {},
   };
-  const provider: any = {};
   const researcher: any = {};
-  return new Pilot(provider, {}, researcher, explorer);
+  return new Pilot(deps, {}, researcher);
 }
 
 function makeFailure(method: string, path: string, status: number, counter: number): RequestResult {

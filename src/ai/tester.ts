@@ -5,18 +5,17 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { clearActivity, setActivity } from '../activity.ts';
-import type { ExperienceTracker } from '../experience-tracker.ts';
-import type Explorer from '../explorer.ts';
+import type { RequestStore } from '../api/request-store.ts';
+import type { TestRun } from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateTransition } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult, type TestResultType } from '../test-plan.ts';
 import { detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
 import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
-import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
-import type { Agent } from './agent.ts';
+import type { Agent, AgentDeps } from './agent.ts';
 import type { Captain } from './captain.ts';
 import type { Conversation } from './conversation.ts';
 import { Navigator } from './navigator.ts';
@@ -44,8 +43,8 @@ export class Tester extends TaskAgent implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'hover', 'pressKey', 'form'];
   protected readonly SPECIAL_CONTEXT_ACTION_TOOLS = ['exitIframe'];
   emoji = '🧪';
-  private explorer: Explorer;
-  private provider: Provider;
+  private requestStore: RequestStore;
+  private testRun: TestRun | null = null;
   private currentConversation: Conversation | null = null;
   private pilot: Pilot | null = null;
   private captain: Captain | null = null;
@@ -60,36 +59,21 @@ export class Tester extends TaskAgent implements Agent {
   private previousStateHash: string | null = null;
   private pageStateHash: string | null = null;
   private pageActionResult: ActionResult | null = null;
-  private hooksRunner: HooksRunner;
   private seenUiMapUrls = new Set<string>();
   private lastAnalyzedStateHash: string | null = null;
   private stalledIterations = 0;
   private readonly MAX_STALLED_ITERATIONS = 3;
 
-  constructor(explorer: Explorer, provider: Provider, researcher: Researcher, navigator: Navigator, agentTools?: any) {
-    super();
-    this.explorer = explorer;
-    this.provider = provider;
+  constructor(deps: AgentDeps, researcher: Researcher, navigator: Navigator, agentTools?: any) {
+    super(deps);
+    this.requestStore = deps.requestStore;
     this.researcher = researcher;
     this.navigator = navigator;
     this.agentTools = agentTools;
-    this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
   }
 
   protected getNavigator(): Navigator {
     return this.navigator;
-  }
-
-  protected getExperienceTracker(): ExperienceTracker {
-    return this.explorer.getStateManager().getExperienceTracker();
-  }
-
-  protected getKnowledgeTracker() {
-    return this.explorer.getKnowledgeTracker();
-  }
-
-  protected getProvider(): Provider {
-    return this.provider;
   }
 
   setPilot(pilot: Pilot): void {
@@ -101,11 +85,11 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private getCurrentState(): ActionResult {
-    return ActionResult.fromState(this.explorer.getStateManager().getCurrentState()!);
+    return ActionResult.fromState(this.stateManager.getCurrentState()!);
   }
 
   private get progressCheckInterval(): number {
-    return (this.explorer.getConfig().ai?.agents?.tester as any)?.progressCheckInterval ?? 3;
+    return (this.config.ai?.agents?.tester as any)?.progressCheckInterval ?? 3;
   }
 
   getConversation(): Conversation | null {
@@ -114,7 +98,7 @@ export class Tester extends TaskAgent implements Agent {
 
   async test(task: Test): Promise<{ success: boolean }> {
     Stats.tests++;
-    const state = this.explorer.getStateManager().getCurrentState();
+    const state = this.stateManager.getCurrentState();
     if (!state) throw new Error('No state found');
 
     setActivity(`🧪 Testing: ${task.scenario}`, 'action');
@@ -126,20 +110,20 @@ export class Tester extends TaskAgent implements Agent {
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
     this.stalledIterations = 0;
-    this.explorer.getStateManager().clearHistory();
+    this.stateManager.clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
 
-    const requestStore = this.explorer.getRequestStore();
-    requestStore?.clear();
-    const offFailedRequest = requestStore?.onFailedRequest((r) => {
+    const requestStore = this.requestStore;
+    requestStore.clear();
+    const offFailedRequest = requestStore.onFailedRequest((r) => {
       task.addNote(`Network error: ${r.method} ${r.path} → ${r.status}`, TestResult.FAILED);
     });
 
     const initialState = ActionResult.fromState(state);
     if (isErrorPage(initialState)) {
       task.start();
-      await this.explorer.startTest(task);
+      this.testRun = await this.explorer.beginTest(task);
       offFailedRequest?.();
       return await this.abortStartedTestOnErrorPage(task, initialState);
     }
@@ -196,7 +180,8 @@ export class Tester extends TaskAgent implements Agent {
 
     debugLog('Starting test execution with tools');
 
-    if (!(await this.explorer.startTest(task))) {
+    this.testRun = await this.explorer.beginTest(task);
+    if (!this.testRun.started) {
       offFailedRequest?.();
       await this.cleanupStartedTest(task);
       return { success: task.isSuccessful };
@@ -214,7 +199,7 @@ export class Tester extends TaskAgent implements Agent {
       }
     }
 
-    const startState = this.explorer.getStateManager().getCurrentState();
+    const startState = this.stateManager.getCurrentState();
     if (startState) {
       task.addUrlNote(startState);
       const startActionResult = ActionResult.fromState(startState);
@@ -226,14 +211,14 @@ export class Tester extends TaskAgent implements Agent {
     const currentUrl = startState?.url || task.startUrl || '';
     await this.hooksRunner.runBeforeHook('tester', currentUrl);
 
-    const offStateChange = this.explorer.getStateManager().onStateChange((event: StateTransition) => {
+    const offStateChange = this.stateManager.onStateChange((event: StateTransition) => {
       if (task.hasFinished) return;
       if (event.toState?.url === event.fromState?.url) return;
       if (event.toState) task.addUrlNote(event.toState, event.fromState || undefined);
       task.states.push(event.toState);
     });
 
-    const codeceptjsTools = createCodeceptJSTools(this.explorer, task);
+    const codeceptjsTools = createCodeceptJSTools(this.toolDeps, task);
     let assertionPerformed = false;
     let extensions = 0;
     let shouldContinue = true;
@@ -244,7 +229,7 @@ export class Tester extends TaskAgent implements Agent {
       await loop(
         async ({ stop, pause, iteration, userInput }) => {
           debugLog('iteration', iteration);
-          if (!(await this.explorer.ensurePageAvailable())) {
+          if (!(await this.explorer.recover()).ok) {
             task.addNote('Browser page is unavailable');
             task.finish(TestResult.FAILED);
             stop();
@@ -258,12 +243,12 @@ export class Tester extends TaskAgent implements Agent {
             ...this.agentTools,
           };
           if (currentState.isInsideIframe) {
-            Object.assign(tools, createIframeTools(this.explorer));
+            Object.assign(tools, createIframeTools(this.toolDeps));
           }
 
           debugLog(`Test ${task.scenario} iteration ${iteration}`);
 
-          if (this.explorer.getStateManager().isInDeadLoop()) {
+          if (this.stateManager.isInDeadLoop()) {
             task.addNote('Dead loop detected. Stopped');
             stop();
             return;
@@ -412,7 +397,7 @@ export class Tester extends TaskAgent implements Agent {
 
       if (task.hasFinished) break;
 
-      if (!(await this.explorer.ensurePageAvailable())) break;
+      if (!(await this.explorer.recover()).ok) break;
 
       const finalState = this.getCurrentState();
       const wantsContinue = await this.pilot!.finalReview(task, finalState, conversation, this.navigator);
@@ -431,7 +416,7 @@ export class Tester extends TaskAgent implements Agent {
       shouldContinue = true;
     }
 
-    const finalUrl = this.explorer.getStateManager().getCurrentState()?.url || currentUrl;
+    const finalUrl = this.stateManager.getCurrentState()?.url || currentUrl;
     await this.hooksRunner.runAfterHook('tester', finalUrl);
 
     await this.getHistorian().saveSession(task, initialState, conversation);
@@ -443,7 +428,7 @@ export class Tester extends TaskAgent implements Agent {
     offStateChange();
     offFailedRequest?.();
     await this.finishTest(task);
-    await this.explorer.stopTest(task, this.buildStopTestMeta(task));
+    await this.testRun?.stop(this.buildStopTestMeta(task));
 
     return {
       success: task.isSuccessful,
@@ -559,7 +544,7 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (currentState.isInsideIframe) {
-      const iframeInfo = currentState.iframeURL || this.explorer.getCurrentIframeInfo() || 'iframe context active';
+      const iframeInfo = currentState.iframeURL || 'iframe context active';
       context += dedent`
         <iframe_context>
         INSIDE IFRAME: ${iframeInfo}
@@ -568,10 +553,10 @@ export class Tester extends TaskAgent implements Agent {
       `;
     }
 
-    if (this.explorer.hasOtherTabs()) {
-      const otherTabs = this.explorer.getOtherTabsInfo();
+    const otherTabs = this.stateManager.otherTabs;
+    if (otherTabs.length > 0) {
       context += multipleTabsRule(otherTabs);
-      this.explorer.clearOtherTabsInfo();
+      this.stateManager.otherTabs = [];
     }
 
     if (isNewUrl) {
@@ -675,7 +660,7 @@ export class Tester extends TaskAgent implements Agent {
     task.addNote(error.message, TestResult.FAILED, actionResult.screenshotFile, actionResult.fullUrl || actionResult.url);
     task.finish(TestResult.FAILED);
     this.finishTest(task);
-    await this.explorer.stopTest(task, this.buildStopTestMeta(task));
+    await this.testRun?.stop(this.buildStopTestMeta(task));
     clearActivity(true);
     return { success: false };
   }
@@ -790,7 +775,7 @@ export class Tester extends TaskAgent implements Agent {
 
     ${dataProtectionRules}
 
-    ${this.provider.getSystemPromptForAgent('tester', this.explorer.getStateManager().getCurrentState()?.url) || ''}
+    ${this.provider.getSystemPromptForAgent('tester', this.stateManager.getCurrentState()?.url) || ''}
     `;
   }
 
@@ -837,7 +822,7 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private buildAvailableFiles(): string {
-    const userFiles = this.explorer.getConfig().files || {};
+    const userFiles = this.config.files || {};
     const codeceptDir = (global as any).codecept_dir || process.cwd();
     const lines: string[] = [];
 
@@ -896,10 +881,10 @@ export class Tester extends TaskAgent implements Agent {
         }),
         execute: async ({ reason }) => {
           if (this.getCurrentState().isInsideIframe) {
-            await this.explorer.switchToMainFrame();
+            await this.explorer.exitIframe();
           }
 
-          const currentState = this.explorer.getStateManager().getCurrentState();
+          const currentState = this.stateManager.getCurrentState();
           const currentUrl = currentState?.fullUrl || currentState?.url;
           if (currentUrl === resetUrl!) {
             return {
@@ -927,7 +912,7 @@ export class Tester extends TaskAgent implements Agent {
           const explanation = reason ? `${reason} (RESET)` : 'Resetting to initial page';
           const targetUrl = resetUrl!;
           task.addNote(explanation);
-          const resetAction = this.explorer.createAction();
+          const resetAction = this.explorer.action();
           const success = await resetAction.attempt(`I.amOnPage(${JSON.stringify(targetUrl)})`, explanation);
 
           if (success) {
@@ -1076,7 +1061,7 @@ export class Tester extends TaskAgent implements Agent {
             mappedStatus = TestResult.FAILED;
           }
 
-          const screenshotFile = this.explorer.getStateManager().getCurrentState()?.screenshotFile;
+          const screenshotFile = this.stateManager.getCurrentState()?.screenshotFile;
 
           for (const noteText of input.notes) {
             task.addNote(noteText, mappedStatus, screenshotFile);
@@ -1117,7 +1102,7 @@ export class Tester extends TaskAgent implements Agent {
     const message = error instanceof Error ? error.message : String(error);
     if (!task.hasFinished) task.addNote(`Execution error: ${message}`);
 
-    const result = await this.explorer.handleExecutionError(error);
+    const result = await this.explorer.recover(error);
     tag('info').log(`Browser supervisor: ${result.action} - ${result.message}`);
     task.addNote(result.message);
 
@@ -1152,7 +1137,7 @@ export class Tester extends TaskAgent implements Agent {
 
   private async cleanupStartedTest(task: Test): Promise<void> {
     await this.finishTest(task);
-    await this.explorer.stopTest(task, {
+    await this.testRun?.stop({
       startUrl: task.startUrl,
       style: task.style,
       sessionName: task.sessionName,

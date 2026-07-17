@@ -1,23 +1,22 @@
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { setActivity } from '../activity.ts';
-import { ConfigParser, outputPath } from '../config.ts';
+import { ConfigParser, type ExplorbotConfig, outputPath } from '../config.ts';
 import { executionController } from '../execution-controller.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
-import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { diffAriaSnapshots } from '../utils/aria.ts';
 import { ErrorPageError, detectPageCondition } from '../utils/error-page.ts';
-import { HooksRunner } from '../utils/hooks-runner.ts';
 import { isBodyEmpty } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { mdq } from '../utils/markdown-query.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
-import type { Agent } from './agent.js';
+import { annotatePageElements } from '../utils/web-annotate.ts';
+import type { Agent, AgentDeps } from './agent.js';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
 import { findSimilarResearch, getCachedResearch, saveResearch } from './researcher/cache.ts';
@@ -55,20 +54,16 @@ export class Researcher extends ResearcherBase implements Agent {
   declare explorer: Explorer;
   declare provider: Provider;
   declare stateManager: StateManager;
+  declare config: ExplorbotConfig;
   private experienceTracker!: ExperienceTracker;
   private hasScreenshotToAnalyze = false;
   declare actionResult: ActionResult | undefined;
-  private hooksRunner!: HooksRunner;
 
-  constructor(explorer: Explorer, provider: Provider) {
-    super();
-    this.explorer = explorer;
-    this.provider = provider;
-    this.stateManager = explorer.getStateManager();
-    this.experienceTracker = this.stateManager.getExperienceTracker();
-    this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
+  constructor(deps: AgentDeps) {
+    super(deps);
+    this.experienceTracker = deps.stateManager.getExperienceTracker();
 
-    const ai = explorer.getConfig().ai;
+    const ai = deps.config.ai;
     if (ai) {
       ai.agents ??= {};
       ai.agents.researcher ??= {};
@@ -78,18 +73,6 @@ export class Researcher extends ResearcherBase implements Agent {
 
   protected getNavigator(): Navigator {
     throw new Error('not implemented');
-  }
-
-  protected getExperienceTracker(): ExperienceTracker {
-    return this.experienceTracker;
-  }
-
-  protected getKnowledgeTracker(): KnowledgeTracker {
-    return this.explorer.getKnowledgeTracker();
-  }
-
-  protected getProvider(): Provider {
-    return this.provider;
   }
 
   static getCachedResearch(state: WebPageState): string {
@@ -110,7 +93,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
   async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; _retriesLeft?: number } = {}): Promise<string> {
     const { screenshot = false, force = false, deep = false, data = false, fix = true } = opts;
-    const maxRetries = (this.explorer.getConfig().ai?.agents?.researcher as any)?.retries ?? 2;
+    const maxRetries = (this.config.ai?.agents?.researcher as any)?.retries ?? 2;
     let retriesLeft = opts._retriesLeft ?? maxRetries;
     this.actionResult = ActionResult.fromState(state);
     const stateHash = state.hash || this.actionResult.getStateHash();
@@ -134,9 +117,9 @@ export class Researcher extends ResearcherBase implements Agent {
       await this.ensureNavigated(displayUrl, screenshot && this.provider.hasVision());
       await this.hooksRunner.runBeforeHook('researcher', state.url);
 
-      const annotatedElements = await this.explorer.annotateElements();
+      const { elements: annotatedElements } = await this.explorer.withPage(annotatePageElements);
       debugLog(`Annotated ${annotatedElements.length} interactive elements with eidx`);
-      this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot && this.provider.hasVision() });
+      this.actionResult = await this.explorer.capture({ screenshot: screenshot && this.provider.hasVision() });
 
       const condition = detectPageCondition(this.actionResult!);
       if (condition === 'error') {
@@ -245,7 +228,7 @@ export class Researcher extends ResearcherBase implements Agent {
       // Must run BEFORE visuallyAnnotateContainers — annotation overlays inject z-index 99998+ which would pollute the scoring.
       if (!interrupted() && this.hasScreenshotToAnalyze) {
         const sections = parseResearchSections(result.text);
-        const focused = await this.explorer.runWithBrowserRecovery('detectFocusedSection', () => detectFocusedSection(this.explorer.playwrightHelper.page, sections));
+        const focused = await this.explorer.withPage((page) => detectFocusedSection(page, sections));
         if (focused) markSectionAsFocused(result, focused);
       }
 
@@ -258,7 +241,7 @@ export class Researcher extends ResearcherBase implements Agent {
         const freshBroken = freshContainerLocs.filter((l) => l.valid === false).map((l) => l.locator);
         const containers = validContainers.filter((c) => !freshBroken.includes(c.css));
         await this.visuallyAnnotateElements({ containers });
-        this.actionResult = await this.explorer.capturePageWithScreenshot();
+        this.actionResult = await this.explorer.capture({ screenshot: true });
         const visualResult = await this.analyzeScreenshotForVisualProps();
         if (visualResult.elements.size > 0) {
           await this.mergeVisualData(result, visualResult.elements);
@@ -334,8 +317,7 @@ export class Researcher extends ResearcherBase implements Agent {
   private async ensureNavigated(url: string, screenshot?: boolean): Promise<void> {
     if (!this.actionResult) {
       debugLog('No action result, navigating to URL');
-      await this.explorer.visit(url);
-      this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot });
+      this.actionResult = await this.explorer.visit(url, { screenshot });
       return;
     }
 
@@ -345,7 +327,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
     if (!isEmpty && isOnCurrentState) {
       if ((!this.actionResult.screenshot && screenshot) || !this.actionResult.ariaSnapshot) {
-        this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot });
+        this.actionResult = await this.explorer.capture({ screenshot });
       }
       return;
     }
@@ -353,8 +335,7 @@ export class Researcher extends ResearcherBase implements Agent {
     if (isEmpty && isOnCurrentState) {
       debugLog('HTML body empty on current URL, waiting for content');
       tag('step').log('Page body is empty, waiting for content...');
-      await this.explorer.visit(url);
-      this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot ?? false });
+      this.actionResult = await this.explorer.visit(url, { screenshot: screenshot ?? false });
       await this.waitUntilSettled(screenshot ?? false);
       return;
     }
@@ -362,22 +343,21 @@ export class Researcher extends ResearcherBase implements Agent {
     debugLog('Not on current state, navigating to URL');
     tag('step').log('Navigating to URL...');
 
-    await this.explorer.visit(url);
-    this.actionResult = await this.explorer.capturePageState({ includeScreenshot: screenshot ?? false });
+    this.actionResult = await this.explorer.visit(url, { screenshot: screenshot ?? false });
   }
 
   private async waitUntilSettled(screenshot: boolean): Promise<boolean> {
-    const errorPageTimeout = (this.explorer.getConfig().ai?.agents?.researcher as any)?.errorPageTimeout ?? 10;
+    const errorPageTimeout = (this.config.ai?.agents?.researcher as any)?.errorPageTimeout ?? 10;
     if (errorPageTimeout <= 0) return false;
 
     const includeScreenshot = screenshot && this.provider.hasVision();
 
     try {
-      await this.explorer.runWithBrowserRecovery('waitUntilSettled', () => this.explorer.playwrightHelper.page?.waitForLoadState('networkidle', { timeout: errorPageTimeout * 1000 }));
+      await this.explorer.withPage((page) => page.waitForLoadState('networkidle', { timeout: errorPageTimeout * 1000 }));
     } catch {}
 
-    await this.explorer.annotateElements();
-    this.actionResult = await this.explorer.capturePageState({ includeScreenshot });
+    await this.explorer.withPage(annotatePageElements);
+    this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
 
     let condition = detectPageCondition(this.actionResult!);
     if (condition === 'error') {
@@ -387,8 +367,8 @@ export class Researcher extends ResearcherBase implements Agent {
 
     for (let i = 0; i < 3; i++) {
       await new Promise((r) => setTimeout(r, 1000));
-      await this.explorer.annotateElements();
-      this.actionResult = await this.explorer.capturePageState({ includeScreenshot });
+      await this.explorer.withPage(annotatePageElements);
+      this.actionResult = await this.explorer.capture({ screenshot: includeScreenshot });
       condition = detectPageCondition(this.actionResult!);
       if (condition === 'error') {
         throw new ErrorPageError(this.actionResult!.url, this.actionResult!.title, this.actionResult!.httpStatus);
@@ -400,7 +380,7 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   private getConfiguredSections(): Record<string, string> {
-    const configSections = (this.explorer.getConfig().ai?.agents?.researcher as any)?.sections as string[] | undefined;
+    const configSections = (this.config.ai?.agents?.researcher as any)?.sections as string[] | undefined;
     if (!configSections?.length) return POSSIBLE_SECTIONS;
     const filtered: Record<string, string> = {};
     for (const key of configSections) {
@@ -467,7 +447,7 @@ export class Researcher extends ResearcherBase implements Agent {
     if (!this.actionResult) throw new Error('actionResult is not set');
 
     const html = await this.actionResult.combinedHtml();
-    const knowledge = this.explorer.getKnowledgeTracker().renderRelevantKnowledge(this.actionResult);
+    const knowledge = this.knowledgeTracker.renderRelevantKnowledge(this.actionResult);
 
     const ariaSnapshot = this.actionResult.getCompactARIA();
 
@@ -728,9 +708,9 @@ export class Researcher extends ResearcherBase implements Agent {
   async cancelInUi() {
     const beforeAria = this.stateManager.getCurrentState()?.ariaSnapshot || null;
 
-    await this.explorer.executeAction('I.clickXY(0, 0)');
+    await this.explorer.action().execute('I.clickXY(0, 0)');
     if (diffAriaSnapshots(beforeAria, this.stateManager.getCurrentState()?.ariaSnapshot || null).text) return;
 
-    await this.explorer.executeAction(`I.pressKey('Escape')`);
+    await this.explorer.action().execute(`I.pressKey('Escape')`);
   }
 }

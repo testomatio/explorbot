@@ -27,7 +27,7 @@ export class ResearchCommand extends BaseCommand {
       await this.explorBot.agentNavigator().visit(target);
     }
 
-    const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
     if (!state) {
       throw new Error('No active page to research');
     }

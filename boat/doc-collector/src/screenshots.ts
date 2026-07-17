@@ -11,7 +11,7 @@ import type { DocbotConfig } from './config.ts';
 const DEFAULT_MAX_SECTION_SCREENSHOTS = 8;
 
 export async function captureDocumentationScreenshots(explorer: Explorer, state: WebPageState, research: string, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot[]> {
-  const page = explorer.playwrightHelper?.page;
+  const page = explorer.page;
   if (!page) {
     return [];
   }
@@ -62,7 +62,7 @@ export function getScreenshotSections(research: string): ScreenshotSection[] {
 }
 
 export async function captureInteractionScreenshot(explorer: Explorer, state: WebPageState, transition: DocStateTransition, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {
-  const page = explorer.playwrightHelper?.page;
+  const page = explorer.page;
   if (!page) {
     return null;
   }
