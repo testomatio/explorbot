@@ -167,12 +167,6 @@ class Explorer {
     return this.runWithRecovery('page operation', () => fn(this.playwrightHelper.page));
   }
 
-  async exitIframe(): Promise<void> {
-    if (!this.playwrightHelper.frame) return;
-    debugLog('Switching to main frame');
-    await this.playwrightHelper.switchTo();
-  }
-
   async recover(error?: unknown): Promise<Recovery> {
     if (error) return this.recoverFromExecutionError(error);
 

@@ -880,9 +880,7 @@ export class Tester extends TaskAgent implements Agent {
           reason: z.string().optional().describe('Explanation why reset is the only option'),
         }),
         execute: async ({ reason }) => {
-          if (this.getCurrentState().isInsideIframe) {
-            await this.explorer.exitIframe();
-          }
+          await this.explorer.action().exitIframe();
 
           const currentState = this.stateManager.getCurrentState();
           const currentUrl = currentState?.fullUrl || currentState?.url;

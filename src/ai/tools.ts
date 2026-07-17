@@ -414,10 +414,6 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           const action = explorer.action();
           await action.attempt(codeBlock, explanation);
 
-          if (action.lastError && !previousState.isInsideIframe) {
-            await explorer.exitIframe();
-          }
-
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, formLocator);
 
           if (action.lastError) {
@@ -497,9 +493,9 @@ export function createIframeTools({ explorer, stateManager }: ToolDeps) {
             });
           }
 
-          await explorer.exitIframe();
-
-          const nextState = await explorer.capture();
+          const action = explorer.action();
+          await action.execute('I.switchTo()');
+          const nextState = action.getActionResult()!;
           const toolResult = await nextState.toToolResult(previousState, 'I.switchTo()');
 
           return successToolResult('exitIframe', {

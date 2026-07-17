@@ -346,7 +346,7 @@ class Navigator implements Agent {
         codeBlockIndex++;
         totalAttempts++;
 
-        await this.explorer.exitIframe();
+        await action.exitIframe();
 
         const prevActionResult = action.actionResult ?? actionResult;
         const prevHash = prevActionResult.getStateHash();
@@ -731,7 +731,7 @@ class Navigator implements Agent {
             return;
           }
 
-          await this.explorer.exitIframe();
+          await action.exitIframe();
 
           const verified = await action.attempt(codeBlock, message);
 

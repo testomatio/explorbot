@@ -339,6 +339,7 @@ class Action {
   }
 
   public async attempt(codeBlock: string, originalMessage?: string): Promise<boolean> {
+    const wasInFrame = !!this.playwrightHelper.frame;
     try {
       debugLog('Resolution attempt...');
       setActivity('🦾 Acting in browser...', 'action');
@@ -353,9 +354,16 @@ class Action {
     } catch (error) {
       this.lastError = error as Error;
       if (isFatalBrowserError(error)) throw error;
+      if (!wasInFrame) await this.exitIframe().catch(() => {});
       debugLog(`Attempt failed: ${codeBlock}: ${errorToString(error) || this.lastError?.toString()}`);
       return false;
     }
+  }
+
+  async exitIframe(): Promise<void> {
+    if (!this.playwrightHelper.frame) return;
+    debugLog('Switching to main frame');
+    await this.playwrightHelper.switchTo();
   }
 
   getActor(): CodeceptJS.I {

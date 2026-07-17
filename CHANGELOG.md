@@ -5,6 +5,7 @@
 ### Changes
 - Browser crash recovery now applies to every browser operation. Previously some interactions and page lookups could fail permanently when the page or browser crashed mid-session; now every action, capture, and element query automatically reattaches the page or restarts the browser and retries once before giving up.
 - [Captain] The `browser` tool's `restart` action was merged into `recover` — recovering a page now escalates to a full browser restart automatically when needed, so there is no separate action to choose.
+- Failed page actions that accidentally entered an iframe now return to the main page automatically. Previously only failed form actions did this; now it applies to every action, so a failed click or keypress can no longer leave the session stuck inside an iframe.
 - [Pilot] Pilot's instructions and its list of available tools now stay identical across every call in a session, with the scenario details moved to the end. Providers can reuse the prompt they already processed instead of re-reading it on each call, which lowers the cost of long test runs.
 - [Planner] Planning rules and output format instructions now come before the page research, so planning more tests for the same page reuses an already-processed prompt.
 - When a click matches several elements, the follow-up question that picks the right one now uses the default model instead of the more expensive agentic model.
