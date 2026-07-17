@@ -230,7 +230,7 @@ class Explorer {
     return { started: true, stop: (meta) => this.finishTest(test, meta) };
   }
 
-  async openFreshTab(): Promise<void> {
+  async openTab(): Promise<void> {
     const oldPage = this.playwrightHelper?.page;
     if (!oldPage) return;
 

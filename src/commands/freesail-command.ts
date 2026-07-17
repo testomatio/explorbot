@@ -70,7 +70,7 @@ export class FreesailCommand extends BaseCommand {
         }
 
         tag('info').log(`Navigating to: ${suggestion.target} - ${suggestion.reason}`);
-        await this.explorBot.openFreshTab();
+        await this.explorBot.openTab();
         await this.explorBot.visit(suggestion.target);
         this.explorBot.clearPlan();
       },

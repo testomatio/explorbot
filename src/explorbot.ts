@@ -134,8 +134,8 @@ export class ExplorBot {
     return this.agentNavigator().visit(url);
   }
 
-  async openFreshTab(): Promise<void> {
-    await this.explorer.openFreshTab();
+  async openTab(): Promise<void> {
+    await this.explorer.openTab();
   }
 
   getCurrentState(): WebPageState | null {

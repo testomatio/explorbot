@@ -47,10 +47,10 @@ export function WithWebMode<T extends Constructor>(Base: T) {
             - reload: Reload the current page
             - screenshot: Take a screenshot of current page
             - recover: Recover from a closed/crashed page, escalating to a full browser restart when needed
-            - openFreshTab: Open a fresh tab in the current browser context
+            - openTab: Open a fresh tab in the current browser context
           `,
           inputSchema: z.object({
-            action: z.enum(['status', 'evaluate', 'closeTabs', 'reload', 'screenshot', 'recover', 'openFreshTab']).describe('Browser action to perform'),
+            action: z.enum(['status', 'evaluate', 'closeTabs', 'reload', 'screenshot', 'recover', 'openTab']).describe('Browser action to perform'),
             code: z.string().optional().describe('JavaScript code for evaluate action'),
           }),
           execute: async ({ action, code }) => {
@@ -74,8 +74,8 @@ export function WithWebMode<T extends Constructor>(Base: T) {
               return { success: ok, message: ok ? 'Browser page recovered' : 'Browser recovery failed' };
             }
 
-            if (action === 'openFreshTab') {
-              await ctx.explorBot.openFreshTab();
+            if (action === 'openTab') {
+              await ctx.explorBot.openTab();
               const state = ctx.explorBot.stateManager().getCurrentState();
               return { success: true, url: state?.url, title: state?.title };
             }
