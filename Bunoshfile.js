@@ -46,13 +46,22 @@ export async function worktreeCreate(name = '') {
 }
 
 /**
- * Regenerate provider docs (docs/basics/providers.md) from models.json
+ * Regenerate generated docs: provider blocks from models.json, EXPLORBOT_* tables from src/config.ts
  * @param {object} options
  * @param {boolean} [options.check=false] - Fail if the docs are stale instead of rewriting them (for CI/release)
  */
-export async function docsModels(options = { check: false }) {
-  const doc = resolve('docs/basics/providers.md');
-  const original = readFileSync(doc, 'utf8');
+export async function docsSync(options = { check: false }) {
+  const stale = [...syncProviderDocs(options.check), ...syncEnvDocs(options.check)];
+
+  if (!stale.length) return say('Generated docs already current');
+  if (!options.check) return say(`Updated ${stale.join(', ')}`);
+
+  throw new Error(`Stale: ${stale.join(', ')}. Run \`bunosh docs:sync\` and commit.`);
+}
+
+function syncProviderDocs(check) {
+  const path = 'docs/basics/providers.md';
+  const original = readFileSync(resolve(path), 'utf8');
   let updated = original;
 
   const models = JSON.parse(readFileSync(resolve('models.json'), 'utf8'));
@@ -71,21 +80,12 @@ export async function docsModels(options = { check: false }) {
     updated = updated.replace(new RegExp(`(<!-- START provider:${provider} -->)[\\s\\S]*?(<!-- END provider:${provider} -->)`), (_m, start, end) => `${start}\n${block}\n${end}`);
   }
 
-  if (updated === original) return say('docs/basics/providers.md already current');
-  if (options.check) {
-    yell('docs/basics/providers.md is out of date. Run `bunosh docs:models` and commit.');
-    process.exit(1);
-  }
-  writeFileSync(doc, updated);
-  say('Updated docs/basics/providers.md from models.json');
+  if (updated === original) return [];
+  if (!check) writeFileSync(resolve(path), updated);
+  return [path];
 }
 
-/**
- * Regenerate the EXPLORBOT_* env var tables in docs from src/config.ts
- * @param {object} options
- * @param {boolean} [options.check=false] - Fail if the docs are stale instead of rewriting them (for CI/release)
- */
-export async function docsEnv(options = { check: false }) {
+function syncEnvDocs(check) {
   const docs = [
     { path: 'docs/workflow/agentic-usage.md', withRequired: true },
     { path: 'docs/reference/commands.md', withRequired: false },
@@ -93,8 +93,7 @@ export async function docsEnv(options = { check: false }) {
 
   const stale = [];
   for (const { path, withRequired } of docs) {
-    const doc = resolve(path);
-    const original = readFileSync(doc, 'utf8');
+    const original = readFileSync(resolve(path), 'utf8');
 
     const header = withRequired ? '| Variable | Required | Meaning |\n|---|---|---|' : '| Variable | Meaning |\n|---|---|';
     const rows = EXPLORBOT_ENV_VARS.map((v) => {
@@ -106,15 +105,10 @@ export async function docsEnv(options = { check: false }) {
     if (updated === original) continue;
 
     stale.push(path);
-    if (!options.check) writeFileSync(doc, updated);
+    if (!check) writeFileSync(resolve(path), updated);
   }
 
-  if (!stale.length) return say('env var docs already current');
-  if (options.check) {
-    yell(`Out of date: ${stale.join(', ')}. Run \`bunosh docs:env\` and commit.`);
-    process.exit(1);
-  }
-  say(`Updated ${stale.join(', ')} from src/config.ts`);
+  return stale;
 }
 
 /**

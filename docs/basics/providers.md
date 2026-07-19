@@ -2,7 +2,7 @@
 
 Explorbot connects to AI providers through the [Vercel AI SDK](https://sdk.vercel.ai/). Use any supported provider, and mix providers across different models.
 
-> The `export default` config block inside each `<!-- START/END provider -->` marker is generated from [`models.json`](../../models.json). After editing that file, run `bunosh docs:models`. Everything else — including the import blocks — is hand-written.
+> The `export default` config block inside each `<!-- START/END provider -->` marker is generated from [`models.json`](../../models.json). After editing that file, run `bunosh docs:sync`. Everything else — including the import blocks — is hand-written.
 
 ## Requirements
 
