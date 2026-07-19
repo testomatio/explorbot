@@ -5,7 +5,7 @@ import { parseEnv } from 'node:util';
 import matter from 'gray-matter';
 import { log } from './utils/logger.js';
 
-const PROVIDERS: Record<string, () => Promise<(modelId: string) => any>> = {
+export const PROVIDERS: Record<string, () => Promise<(modelId: string) => any>> = {
   openai: async () => (await import('@ai-sdk/openai')).createOpenAI(),
   anthropic: async () => (await import('@ai-sdk/anthropic')).createAnthropic(),
   google: async () => (await import('@ai-sdk/google')).createGoogleGenerativeAI(),
@@ -253,6 +253,19 @@ const config: ExplorbotConfig = {
 type RuleEntry = string | Record<string, string>;
 
 export const EXPLORBOT_CONFIG_PATHS = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts'];
+
+export const EXPLORBOT_ENV_VARS: EnvVar[] = [
+  { name: 'EXPLORBOT_AI_PROVIDER', required: true, description: 'Provider name; fills every model role from its recommended models. Turns on config-free mode' },
+  { name: 'EXPLORBOT_AI_MODEL', description: 'Pins the main model — a model id for the provider, or a standalone provider/model-id' },
+  { name: 'EXPLORBOT_URL', required: true, description: 'Base URL to test; the API boat reads it as the base endpoint' },
+  { name: 'EXPLORBOT_VISION_MODEL', description: 'Screenshot analysis; overrides the provider recommendation' },
+  { name: 'EXPLORBOT_AGENTIC_MODEL', description: 'Captain and Pilot decisions; overrides the provider recommendation' },
+  { name: 'EXPLORBOT_OUTPUT', description: 'Output root for states, plans, research, and reports. Defaults to a fresh temp directory' },
+  { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
+  { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
+  { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
+  { name: 'EXPLORBOT_NO_BANNER', description: 'Suppress the startup banner, for machine-readable output' },
+];
 
 export type {
   ExplorbotConfig,
@@ -696,4 +709,10 @@ export async function createModel(provider: string, modelId: string): Promise<an
 
 type ModelRole = 'model' | 'visionModel' | 'agenticModel';
 
-export type { ModelRole };
+interface EnvVar {
+  name: string;
+  description: string;
+  required?: boolean;
+}
+
+export type { ModelRole, EnvVar };

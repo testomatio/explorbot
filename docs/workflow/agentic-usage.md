@@ -18,19 +18,24 @@ No `init`, no config file, no project directory, no model IDs to look up. A conf
 
 ### Variables
 
+<!-- START env -->
 | Variable | Required | Meaning |
 |---|---|---|
-| `EXPLORBOT_AI_PROVIDER` | yes | A provider name; fills every role from its recommended models. Setting it turns on this mode |
-| `EXPLORBOT_AI_MODEL` | no | Pins the main `model` — a model id for the provider, or a standalone `provider/model-id` that turns on this mode by itself |
-| `EXPLORBOT_URL` | yes | Base URL to test. The [API boat](../api-testing/basics.md) reads it as the base endpoint |
-| `EXPLORBOT_VISION_MODEL` | no | Screenshot analysis. A provider name or `provider/model-id`; overrides the provider recommendation |
-| `EXPLORBOT_AGENTIC_MODEL` | no | Captain and Pilot decisions. A provider name or `provider/model-id`; overrides the provider recommendation |
-| `EXPLORBOT_OUTPUT` | no | Output root. Defaults to a fresh temp directory |
+| `EXPLORBOT_AI_PROVIDER` | yes | Provider name; fills every model role from its recommended models. Turns on config-free mode |
+| `EXPLORBOT_AI_MODEL` | no | Pins the main model — a model id for the provider, or a standalone provider/model-id |
+| `EXPLORBOT_URL` | yes | Base URL to test; the API boat reads it as the base endpoint |
+| `EXPLORBOT_VISION_MODEL` | no | Screenshot analysis; overrides the provider recommendation |
+| `EXPLORBOT_AGENTIC_MODEL` | no | Captain and Pilot decisions; overrides the provider recommendation |
+| `EXPLORBOT_OUTPUT` | no | Output root for states, plans, research, and reports. Defaults to a fresh temp directory |
 | `EXPLORBOT_KNOWLEDGE` | no | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | no | Path to a knowledge markdown file |
 | `EXPLORBOT_API_SPEC` | no | OpenAPI spec path for the API boat |
+| `EXPLORBOT_NO_BANNER` | no | Suppress the startup banner, for machine-readable output |
+<!-- END env -->
 
-`EXPLORBOT_URL` is optional when the command itself carries an absolute URL, as `docs collect https://…` does.
+`EXPLORBOT_URL` is optional when the command itself carries an absolute URL, as `docs collect https://…` does. The [API boat](../api-testing/basics.md) reads it as the base endpoint.
+
+This table is generated from the registry in `src/config.ts`, which also feeds `explorbot --help` — so `npx explorbot --help` lists the same variables on any command, and an agent can discover them without reading these docs.
 
 ### Naming models
 

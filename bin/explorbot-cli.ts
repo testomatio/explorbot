@@ -9,7 +9,7 @@ import { render } from 'ink';
 import React from 'react';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
-import { ConfigParser } from '../src/config.js';
+import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
@@ -877,27 +877,28 @@ import { createDocsCommands } from '../boat/doc-collector/src/cli.ts';
 program.addCommand(createApiCommands('api'));
 program.addCommand(createDocsCommands('docs'));
 
-program.addHelpText(
-  'after',
-  `
+const envHelp = () => {
+  const width = Math.max(...EXPLORBOT_ENV_VARS.map((v) => v.name.length));
+  const rows = EXPLORBOT_ENV_VARS.map((v) => `  ${v.name.padEnd(width)}  ${v.description}`).join('\n');
+
+  return `
 Environment variables (config-free one-liner mode):
   Set EXPLORBOT_AI_PROVIDER to run without an explorbot.config.js. A config file always wins.
 
-  EXPLORBOT_AI_PROVIDER    provider name; fills every role from its recommended models
-  EXPLORBOT_AI_MODEL       model id for that provider, or provider/model-id on its own
-  EXPLORBOT_URL            base URL to test; API boat uses it as the base endpoint
-  EXPLORBOT_VISION_MODEL   screenshot analysis; overrides the provider recommendation
-  EXPLORBOT_AGENTIC_MODEL  Captain and Pilot decisions; overrides the provider recommendation
-  EXPLORBOT_OUTPUT         output root (default: a fresh temp directory)
-  EXPLORBOT_KNOWLEDGE      inline knowledge applied to every page
-  EXPLORBOT_KNOWLEDGE_FILE path to a knowledge markdown file
-  EXPLORBOT_API_SPEC       OpenAPI spec path for the API boat
+${rows}
 
-  Providers: openai, anthropic, google, groq, mistral, openrouter, sambanova
+  Providers: ${Object.keys(PROVIDERS).join(', ')}
   Example:
     EXPLORBOT_URL=https://app.example.com EXPLORBOT_AI_PROVIDER=openrouter \\
       ${cli} explore /login --max-tests 3
-`
-);
+`;
+};
+
+const addEnvHelp = (cmd: Command) => {
+  cmd.addHelpText('after', envHelp);
+  for (const sub of cmd.commands) addEnvHelp(sub);
+};
+
+addEnvHelp(program);
 
 program.parse();

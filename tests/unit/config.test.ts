@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigParser, materializeKnowledge, resolveModel, resolveOutputRoot } from '../../src/config.ts';
+import { ConfigParser, EXPLORBOT_ENV_VARS, materializeKnowledge, resolveModel, resolveOutputRoot } from '../../src/config.ts';
 
 describe('ConfigParser runtime baseUrl overrides', () => {
   beforeEach(() => {
@@ -276,5 +276,31 @@ describe('ConfigParser environment mode', () => {
   it('writes no knowledge dir when neither knowledge var is set', () => {
     materializeKnowledge(scratchDir);
     expect(existsSync(join(scratchDir, 'knowledge'))).toBe(false);
+  });
+});
+
+describe('EXPLORBOT_ENV_VARS registry', () => {
+  it('documents every EXPLORBOT_ variable the code reads', () => {
+    const sources = ['src/config.ts', 'bin/explorbot-cli.ts', 'boat/api-tester/src/config.ts', 'boat/doc-collector/src/cli.ts'];
+    const used = new Set<string>();
+
+    for (const source of sources) {
+      const code = readFileSync(source, 'utf8');
+      for (const match of code.matchAll(/process\.env\.(EXPLORBOT_[A-Z_]+)/g)) {
+        used.add(match[1]);
+      }
+    }
+
+    const documented = new Set(EXPLORBOT_ENV_VARS.map((v) => v.name));
+    const undocumented = [...used].filter((name) => !documented.has(name));
+
+    expect(undocumented).toEqual([]);
+  });
+
+  it('lists no variable the code never reads', () => {
+    const code = ['src/config.ts', 'bin/explorbot-cli.ts', 'boat/api-tester/src/config.ts'].map((f) => readFileSync(f, 'utf8')).join('\n');
+    const unused = EXPLORBOT_ENV_VARS.filter((v) => !code.includes(`process.env.${v.name}`));
+
+    expect(unused.map((v) => v.name)).toEqual([]);
   });
 });

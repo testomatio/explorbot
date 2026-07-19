@@ -38,6 +38,9 @@ jobs:
     - name: Verify provider docs are up to date
       run: bunx bunosh docs:models --check
 
+    - name: Verify env var docs are up to date
+      run: bunx bunosh docs:env --check
+
     - name: Run unit tests
       run: bun test tests/unit/
 

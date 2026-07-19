@@ -15,6 +15,7 @@ import { startFixture } from './tests/regression/fixture/server.ts';
 import { parsePlansFromMarkdown } from './src/utils/test-plan-markdown.ts';
 import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
 import { analyzeDemoCandidates, createDemoVideo } from './.claude/skills/demo-video/demo-video.ts';
+import { EXPLORBOT_ENV_VARS } from './src/config.ts';
 
 const { exec, shell, writeToFile, task, ai } = global.bunosh;
 
@@ -77,6 +78,43 @@ export async function docsModels(options = { check: false }) {
   }
   writeFileSync(doc, updated);
   say('Updated docs/basics/providers.md from models.json');
+}
+
+/**
+ * Regenerate the EXPLORBOT_* env var tables in docs from src/config.ts
+ * @param {object} options
+ * @param {boolean} [options.check=false] - Fail if the docs are stale instead of rewriting them (for CI/release)
+ */
+export async function docsEnv(options = { check: false }) {
+  const docs = [
+    { path: 'docs/workflow/agentic-usage.md', withRequired: true },
+    { path: 'docs/reference/commands.md', withRequired: false },
+  ];
+
+  const stale = [];
+  for (const { path, withRequired } of docs) {
+    const doc = resolve(path);
+    const original = readFileSync(doc, 'utf8');
+
+    const header = withRequired ? '| Variable | Required | Meaning |\n|---|---|---|' : '| Variable | Meaning |\n|---|---|';
+    const rows = EXPLORBOT_ENV_VARS.map((v) => {
+      if (withRequired) return `| \`${v.name}\` | ${v.required ? 'yes' : 'no'} | ${v.description} |`;
+      return `| \`${v.name}\` | ${v.description} |`;
+    }).join('\n');
+
+    const updated = original.replace(/(<!-- START env -->)[\s\S]*?(<!-- END env -->)/, (_m, start, end) => `${start}\n${header}\n${rows}\n${end}`);
+    if (updated === original) continue;
+
+    stale.push(path);
+    if (!options.check) writeFileSync(doc, updated);
+  }
+
+  if (!stale.length) return say('env var docs already current');
+  if (options.check) {
+    yell(`Out of date: ${stale.join(', ')}. Run \`bunosh docs:env\` and commit.`);
+    process.exit(1);
+  }
+  say(`Updated ${stale.join(', ')} from src/config.ts`);
 }
 
 /**
