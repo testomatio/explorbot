@@ -1,0 +1,30 @@
+{
+  "openrouter": {
+    "model": "openai/gpt-oss-20b:nitro",
+    "visionModel": "google/gemma-4-31b-it:nitro",
+    "agenticModel": "google/gemma-4-31b-it:nitro"
+  },
+  "groq": {
+    "model": "openai/gpt-oss-20b",
+    "visionModel": "qwen/qwen3.6-27b",
+    "agenticModel": "qwen/qwen3.6-27b"
+  },
+  "openai": {
+    "model": "gpt-5.4-nano",
+    "visionModel": "gpt-5.4-nano",
+    "agenticModel": "gpt-5.6-luna"
+  },
+  "anthropic": {
+    "agenticModel": "claude-haiku-4-5-20251001"
+  },
+  "mistral": {
+    "model": "mistral-small-latest",
+    "visionModel": "mistral-small-latest",
+    "agenticModel": "mistral-large-latest"
+  },
+  "google": {
+    "model": "gemini-3.1-flash-lite",
+    "visionModel": "gemini-3.1-flash-lite",
+    "agenticModel": "gemini-3.5-flash"
+  }
+}

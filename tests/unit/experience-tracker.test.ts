@@ -291,6 +291,20 @@ describe('ExperienceTracker', () => {
       const filePath = `/tmp/experience/${stateHash}.md`;
       expect(existsSync(filePath)).toBe(false);
     });
+
+    it('respects experience.disabled from config', () => {
+      const configParser = ConfigParser.getInstance();
+      (configParser as any).config.experience = { disabled: true };
+
+      try {
+        const disabledTracker = new ExperienceTracker(new KnowledgeTracker());
+        const state = makeState();
+        disabledTracker.writeFlow(state, sampleBody);
+        expect(existsSync(`/tmp/experience/${state.getStateHash()}.md`)).toBe(false);
+      } finally {
+        (configParser as any).config.experience = undefined;
+      }
+    });
   });
 
   describe('file path extraction', () => {

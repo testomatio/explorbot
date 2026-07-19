@@ -43,7 +43,8 @@ interface CLIOptions {
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
-  const sessionFile = options.session === true ? path.join(path.resolve(options.path || process.cwd()), 'output', 'session.json') : options.session;
+  const sessionDir = process.env.EXPLORBOT_OUTPUT ? path.resolve(process.env.EXPLORBOT_OUTPUT) : path.join(path.resolve(options.path || process.cwd()), 'output');
+  const sessionFile = options.session === true ? path.join(sessionDir, 'session.json') : options.session;
 
   return {
     from,
@@ -875,5 +876,28 @@ import { createApiCommands } from '../boat/api-tester/src/cli.ts';
 import { createDocsCommands } from '../boat/doc-collector/src/cli.ts';
 program.addCommand(createApiCommands('api'));
 program.addCommand(createDocsCommands('docs'));
+
+program.addHelpText(
+  'after',
+  `
+Environment variables (config-free one-liner mode):
+  Set EXPLORBOT_AI_PROVIDER to run without an explorbot.config.js. A config file always wins.
+
+  EXPLORBOT_AI_PROVIDER    provider name; fills every role from its recommended models
+  EXPLORBOT_AI_MODEL       model id for that provider, or provider/model-id on its own
+  EXPLORBOT_URL            base URL to test; API boat uses it as the base endpoint
+  EXPLORBOT_VISION_MODEL   screenshot analysis; overrides the provider recommendation
+  EXPLORBOT_AGENTIC_MODEL  Captain and Pilot decisions; overrides the provider recommendation
+  EXPLORBOT_OUTPUT         output root (default: a fresh temp directory)
+  EXPLORBOT_KNOWLEDGE      inline knowledge applied to every page
+  EXPLORBOT_KNOWLEDGE_FILE path to a knowledge markdown file
+  EXPLORBOT_API_SPEC       OpenAPI spec path for the API boat
+
+  Providers: openai, anthropic, google, groq, mistral, openrouter, sambanova
+  Example:
+    EXPLORBOT_URL=https://app.example.com EXPLORBOT_AI_PROVIDER=openrouter \\
+      ${cli} explore /login --max-tests 3
+`
+);
 
 program.parse();

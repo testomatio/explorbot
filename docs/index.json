@@ -55,7 +55,8 @@
         { "title": "Test plans", "file": "workflow/test-plans.md", "description": "The plan file format and how plans are reused" },
         { "title": "Planning styles", "file": "workflow/planning-styles.md", "description": "Normal, curious, psycho, and your own" },
         { "title": "Reporting", "file": "workflow/reporting.md", "description": "Local reports and Testomat.io" },
-        { "title": "Continuous integration", "file": "workflow/ci.md", "description": "Scheduled runs with cached experience on any CI" }
+        { "title": "Continuous integration", "file": "workflow/ci.md", "description": "Scheduled runs with cached experience on any CI" },
+        { "title": "Agentic usage", "file": "workflow/agentic-usage.md", "description": "Drive Explorbot from a coding agent: config-free runs and agent-written plans" }
       ]
     },
     {

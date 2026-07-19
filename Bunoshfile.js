@@ -45,6 +45,41 @@ export async function worktreeCreate(name = '') {
 }
 
 /**
+ * Regenerate provider docs (docs/basics/providers.md) from models.json
+ * @param {object} options
+ * @param {boolean} [options.check=false] - Fail if the docs are stale instead of rewriting them (for CI/release)
+ */
+export async function docsModels(options = { check: false }) {
+  const doc = resolve('docs/basics/providers.md');
+  const original = readFileSync(doc, 'utf8');
+  let updated = original;
+
+  const models = JSON.parse(readFileSync(resolve('models.json'), 'utf8'));
+  for (const [provider, roles] of Object.entries(models)) {
+    const config = Object.entries(roles)
+      .map(([role, id]) => `    ${role}: ${provider}('${id}'),`)
+      .join('\n');
+    let block = `\`\`\`javascript\nexport default {\n  ai: {\n${config}\n  },\n};\n\`\`\``;
+
+    const missing = ['model', 'visionModel', 'agenticModel'].filter((role) => !roles[role]);
+    if (missing.length) {
+      const list = missing.map((role) => `\`${role}\``).join(' and ');
+      block += `\n\n> [!NOTE]\n> This provider currently doesn't serve ${list}, which is required for Explorbot to run at optimal cost and speed.\n> It is recommended to pair it with another AI provider.`;
+    }
+
+    updated = updated.replace(new RegExp(`(<!-- START provider:${provider} -->)[\\s\\S]*?(<!-- END provider:${provider} -->)`), (_m, start, end) => `${start}\n${block}\n${end}`);
+  }
+
+  if (updated === original) return say('docs/basics/providers.md already current');
+  if (options.check) {
+    yell('docs/basics/providers.md is out of date. Run `bunosh docs:models` and commit.');
+    process.exit(1);
+  }
+  writeFileSync(doc, updated);
+  say('Updated docs/basics/providers.md from models.json');
+}
+
+/**
  * List demo-worthy segments from an Explorbot session log
  * @param {string} log - Path to explorbot.log
  * @param {object} options

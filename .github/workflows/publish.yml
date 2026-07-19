@@ -35,6 +35,9 @@ jobs:
     - name: Install dependencies
       run: bun install
 
+    - name: Verify provider docs are up to date
+      run: bunx bunosh docs:models --check
+
     - name: Run unit tests
       run: bun test tests/unit/
 

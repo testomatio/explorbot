@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-07-19
+
+### Environment Variables
+
+Explorbot can now run without an `explorbot.config.js`. Set `EXPLORBOT_AI_PROVIDER` and the configuration is built from the environment instead — for CI one-liners, demos, and coding agents driving Explorbot as a terminal command. A config file always wins when one is present, so nothing changes for existing projects.
+
+```bash
+EXPLORBOT_URL=https://app.example.com \
+EXPLORBOT_AI_PROVIDER=openrouter \
+EXPLORBOT_KNOWLEDGE="Log in as admin@example.com / secret123" \
+  npx explorbot explore /login --max-tests 3
+```
+
+- **`EXPLORBOT_AI_PROVIDER`** — A provider name that fills every model role from that provider's recommended models, so there are no model IDs to look up and the run follows the recommendations as they change. Setting this turns on config-free mode. Providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`, each using its conventional API-key variable.
+- **`EXPLORBOT_AI_MODEL`** — Pins the main `model`. With `EXPLORBOT_AI_PROVIDER` set it is the model id for that provider, used verbatim; on its own it must be `provider/model-id`, split on the first slash so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`.
+- **`EXPLORBOT_URL`** — Base URL to test. The API boat reads it as the base endpoint. Optional when the command already carries an absolute URL, as `docs collect https://…` does.
+- **`EXPLORBOT_VISION_MODEL`** — Model for screenshot analysis, overriding the provider recommendation. Takes a provider name or `provider/model-id`.
+- **`EXPLORBOT_AGENTIC_MODEL`** — Model for Captain and Pilot decisions, overriding the provider recommendation. Takes a provider name or `provider/model-id`. Combine providers by role, for example `EXPLORBOT_AI_PROVIDER=groq` with `EXPLORBOT_AGENTIC_MODEL=anthropic`.
+- **`EXPLORBOT_OUTPUT`** — Output root for states, plans, research, and reports. Defaults to a fresh temp directory, so nothing is written to your project.
+- **`EXPLORBOT_KNOWLEDGE`** — Inline knowledge text applied to every page, the quickest way to hand over credentials.
+- **`EXPLORBOT_KNOWLEDGE_FILE`** — Path to a knowledge markdown file; its frontmatter is preserved, so it can target specific URLs.
+- **`EXPLORBOT_API_SPEC`** — OpenAPI spec path for the API boat.
+
+Config-free runs do not write experience and run with the Historian off, so no generated test files appear and a run leaves no state behind. Point `EXPLORBOT_OUTPUT` at a stable directory, or use a config file, when you want learning to accumulate across runs.
+
+### Configuration
+- **`experience.disabled`** — Stop writing experience files while still reading any that exist. Default: `false`.
+
+### Changes
+- Added `docs/workflow/agentic-usage.md` — driving Explorbot from a coding agent: the config-free one-liner API, and handing Explorbot a test plan the agent wrote itself (`npx explorbot test plan.md '*'`). Plan files are input only and are never rewritten, so they live in version control next to the code they cover.
+- `npx explorbot --help` now lists the `EXPLORBOT_*` variables with an example, so an agent can discover the config-free mode without reading the docs.
+- The recommended model IDs in `models.json` are now read at runtime, not just when regenerating the provider docs — they are what a bare provider name resolves to. `models.json` ships with the npm package.
+- Documented every AI provider in `docs/basics/providers.md`, with the recommended-model block for each generated from `models.json` by `bunosh docs:models` and verified in CI on release. Added Mistral as a supported provider — `mistral-small-latest` for the `model` and `visionModel` roles (it reads screenshots), `mistral-large-latest` for `agenticModel`.
+- CodeceptJS screenshots now follow `dirs.output` instead of always landing in `output/states`.
+- Bare `--session` writes to `$EXPLORBOT_OUTPUT/session.json` when that variable is set. In a temp-directory run the path is not known when the flag is parsed, so pass an explicit `--session <file>` there.
+
 ## 2026-07-17
 
 ### Changes
