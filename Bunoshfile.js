@@ -17,7 +17,7 @@ import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/
 import { analyzeDemoCandidates, createDemoVideo } from './.claude/skills/demo-video/demo-video.ts';
 import { EXPLORBOT_ENV_VARS } from './src/config.ts';
 
-const { exec, shell, writeToFile, task, ai } = global.bunosh;
+const { exec, shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
 
 const CLI = resolve('bin/explorbot-cli.ts');
 const REG_ROOT = resolve('tests/regression');
@@ -45,18 +45,24 @@ export async function worktreeCreate(name = '') {
   say(`Created worktree for feature ${worktreeName} in ${newDir}`);
 }
 
+const ENV_DOCS = [
+  { path: 'docs/workflow/agentic-usage.md', withRequired: true },
+  { path: 'docs/reference/commands.md', withRequired: false },
+];
+
 /**
  * Regenerate generated docs: provider blocks from models.json, EXPLORBOT_* tables from src/config.ts
  * @param {object} options
  * @param {boolean} [options.check=false] - Fail if the docs are stale instead of rewriting them (for CI/release)
  */
 export async function docsSync(options = { check: false }) {
-  const stale = [...syncProviderDocs(options.check), ...syncEnvDocs(options.check)];
+  stopOnFail();
 
-  if (!stale.length) return say('Generated docs already current');
-  if (!options.check) return say(`Updated ${stale.join(', ')}`);
+  await task('docs/basics/providers.md', () => syncProviderDocs(options.check));
 
-  throw new Error(`Stale: ${stale.join(', ')}. Run \`bunosh docs:sync\` and commit.`);
+  for (const doc of ENV_DOCS) {
+    await task(doc.path, () => syncEnvDoc(doc, options.check));
+  }
 }
 
 function syncProviderDocs(check) {
@@ -80,35 +86,32 @@ function syncProviderDocs(check) {
     updated = updated.replace(new RegExp(`(<!-- START provider:${provider} -->)[\\s\\S]*?(<!-- END provider:${provider} -->)`), (_m, start, end) => `${start}\n${block}\n${end}`);
   }
 
-  if (updated === original) return [];
-  if (!check) writeFileSync(resolve(path), updated);
-  return [path];
+  return applyGenerated(path, original, updated, check);
 }
 
-function syncEnvDocs(check) {
-  const docs = [
-    { path: 'docs/workflow/agentic-usage.md', withRequired: true },
-    { path: 'docs/reference/commands.md', withRequired: false },
-  ];
+function syncEnvDoc({ path, withRequired }, check) {
+  const original = readFileSync(resolve(path), 'utf8');
 
-  const stale = [];
-  for (const { path, withRequired } of docs) {
-    const original = readFileSync(resolve(path), 'utf8');
+  let header = '| Variable | Meaning |\n|---|---|';
+  if (withRequired) header = '| Variable | Required | Meaning |\n|---|---|---|';
 
-    const header = withRequired ? '| Variable | Required | Meaning |\n|---|---|---|' : '| Variable | Meaning |\n|---|---|';
-    const rows = EXPLORBOT_ENV_VARS.map((v) => {
-      if (withRequired) return `| \`${v.name}\` | ${v.required ? 'yes' : 'no'} | ${v.description} |`;
-      return `| \`${v.name}\` | ${v.description} |`;
-    }).join('\n');
+  const rows = EXPLORBOT_ENV_VARS.map((v) => {
+    if (!withRequired) return `| \`${v.name}\` | ${v.description} |`;
+    if (v.required) return `| \`${v.name}\` | yes | ${v.description} |`;
+    return `| \`${v.name}\` | no | ${v.description} |`;
+  }).join('\n');
 
-    const updated = original.replace(/(<!-- START env -->)[\s\S]*?(<!-- END env -->)/, (_m, start, end) => `${start}\n${header}\n${rows}\n${end}`);
-    if (updated === original) continue;
+  const updated = original.replace(/(<!-- START env -->)[\s\S]*?(<!-- END env -->)/, (_m, start, end) => `${start}\n${header}\n${rows}\n${end}`);
 
-    stale.push(path);
-    if (!check) writeFileSync(resolve(path), updated);
-  }
+  return applyGenerated(path, original, updated, check);
+}
 
-  return stale;
+function applyGenerated(path, original, updated, check) {
+  if (updated === original) return 'already current';
+  if (check) throw new Error('stale — run `bunosh docs:sync` and commit');
+
+  writeFileSync(resolve(path), updated);
+  return 'regenerated';
 }
 
 /**
