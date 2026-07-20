@@ -226,14 +226,6 @@ export class Researcher extends ResearcherBase implements Agent {
 
         const toTest = result.locators.filter((l) => l.valid === null);
         await this.testLocators(toTest);
-
-        const brokenCount = result.locators.filter((l) => l.valid === false).length;
-        const brokenRatio = result.locators.length > 0 ? brokenCount / result.locators.length : 0;
-        if (brokenRatio > 0.8 && retriesLeft > 0) {
-          tag('warning').log(`${Math.round(brokenRatio * 100)}% locators broken, waiting 3s and retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
-          await new Promise((r) => setTimeout(r, 3000));
-          return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
-        }
       }
 
       // Stage 3: Fix broken sections via AI conversation continuation
