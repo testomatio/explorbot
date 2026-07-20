@@ -1270,7 +1270,7 @@ async function disambiguateElements(error: Error | null | undefined, explanation
         },
       ],
       schema,
-      provider.getAgenticModel(),
+      provider.getModelForAgent(),
       { agentName: 'disambiguator', timeout: 15000 }
     );
 

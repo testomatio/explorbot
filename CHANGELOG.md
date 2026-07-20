@@ -3,6 +3,9 @@
 ## 2026-07-17
 
 ### Changes
+- [Pilot] Pilot's instructions and its list of available tools now stay identical across every call in a session, with the scenario details moved to the end. Providers can reuse the prompt they already processed instead of re-reading it on each call, which lowers the cost of long test runs.
+- [Planner] Planning rules and output format instructions now come before the page research, so planning more tests for the same page reuses an already-processed prompt.
+- When a click matches several elements, the follow-up question that picks the right one now uses the default model instead of the more expensive agentic model.
 - [Captain] Answers now finish as soon as the request is fulfilled — previously every completed request triggered one extra AI call with the full conversation context that produced nothing, roughly doubling token usage per request.
 - [Captain] No longer attaches the full page HTML to every request. Only the ARIA snapshot is kept fresh in the conversation; the AI fetches HTML on demand via the context() tool when it actually needs it.
 - [Captain] The slash-command tool now lists only command names instead of the full help text of every command, shrinking the prompt sent on each request.
