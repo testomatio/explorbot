@@ -3,6 +3,9 @@
 ## 2026-07-17
 
 ### Changes
+- [Captain] Answers now finish as soon as the request is fulfilled — previously every completed request triggered one extra AI call with the full conversation context that produced nothing, roughly doubling token usage per request.
+- [Captain] No longer attaches the full page HTML to every request. Only the ARIA snapshot is kept fresh in the conversation; the AI fetches HTML on demand via the context() tool when it actually needs it.
+- [Captain] The slash-command tool now lists only command names instead of the full help text of every command, shrinking the prompt sent on each request.
 - Research is significantly faster on pages where the AI picks an imprecise container selector. Previously, if more than 80% of the researched locators failed validation, Explorbot threw away the finished UI map and regenerated it from scratch — roughly doubling the time spent on the page. Because a single bad container marks all of its child elements broken, this triggered easily, and the re-research usually just corrected the container anyway. Broken locators now go straight to the repair step that fixes them in place, cutting research on affected pages by about a third.
 - Fixed startup failing with `AI connection failed: Invalid 'max_output_tokens'` on models that reject a one-token response. The check that verifies your AI credentials at startup no longer caps the reply length, so it works with every provider regardless of their minimum.
 
