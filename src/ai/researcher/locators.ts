@@ -222,7 +222,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
 
     private async recoverContainerFromChildren(result: ResearchResult, css: string): Promise<boolean> {
       const sections = parseResearchSections(result.text).filter((s) => s.containerCss === css);
-      let recovered = false;
+      let recovered = 0;
 
       for (const section of sections) {
         const eidxList = section.elements.map((el) => el.eidx).filter(Boolean) as string[];
@@ -258,10 +258,11 @@ export function WithLocators<T extends Constructor>(Base: T) {
 
         debugLog(`Recovered container: '${css}' → '${newCss}' in "${section.name}"`);
         this.updateSectionContainer(result, section, newCss);
-        recovered = true;
+        recovered++;
       }
 
-      return recovered;
+      if (recovered > 0 && recovered < sections.length) debugLog(`Container '${css}' recovered in ${recovered}/${sections.length} sections, still broken for the rest`);
+      return recovered > 0 && recovered === sections.length;
     }
 
     private async validateContainers(result: ResearchResult): Promise<void> {
