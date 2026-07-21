@@ -374,16 +374,10 @@ export class Planner extends PlannerBase implements Agent {
       ${dataProtectionRules}
       ${fileUploadRule}
       </rules>
-
-      ${this.buildApproach(style)}
-
-      <context>
-      URL: ${state.url || 'Unknown'}
-      Title: ${state.title || 'Unknown'}
-      </context>
     `;
 
     conversation.addUserText(planningPrompt);
+    conversation.addUserText(this.getTasksMessage());
     const currentState = this.stateManager.getCurrentState();
     const research = await this.researcher.research(currentState || state, {
       deep: true,
@@ -415,6 +409,15 @@ export class Planner extends PlannerBase implements Agent {
 
       ${plannerResearch}
       </page_research>
+    `);
+
+    conversation.addUserText(dedent`
+      ${this.buildApproach(style)}
+
+      <context>
+      URL: ${state.url || 'Unknown'}
+      Title: ${state.title || 'Unknown'}
+      </context>
     `);
 
     if (this.fisherman) {
@@ -568,8 +571,11 @@ export class Planner extends PlannerBase implements Agent {
       `);
     }
 
-    const hasCurrentPlan = !!this.currentPlan;
-    const tasksMessage = dedent`
+    return conversation;
+  }
+
+  private getTasksMessage(): string {
+    return dedent`
     <task>
       Provide testing scenarios as structured data with the following requirements:
       1. Create a short, descriptive plan name that summarizes what will be tested (e.g., "User Authentication Testing", "Product Catalog Navigation", "Form Validation Tests")
@@ -615,12 +621,8 @@ export class Planner extends PlannerBase implements Agent {
          - Do not wrap text in ** or * quotes, ( or ) brackets.
          - Avoid using emojis or special characters.
       7. Only tests that can be tested from web UI should be proposed.
-      ${hasCurrentPlan ? '8. CRITICAL: Return ONLY NEW scenarios not in the existing tests list. Return empty array if no new tests needed.' : `8. At least ${this.MIN_TASKS} tests should be proposed.`}
+      8. For a fresh plan propose at least ${this.MIN_TASKS} tests; when expanding an existing plan return ONLY new scenarios not in the tested list, and an empty array if none remain.
     </task>
     `;
-
-    conversation.addUserText(tasksMessage);
-
-    return conversation;
   }
 }
