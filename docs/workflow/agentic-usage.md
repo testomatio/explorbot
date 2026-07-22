@@ -104,7 +104,7 @@ Config-free runs are built to leave no trace in the working directory:
 - **Experience is not written.** Nothing accumulates between runs, so a run is reproducible. Reading existing experience still works if the directory has any.
 - **The Historian is off.** No generated CodeceptJS or Playwright test files. Plans and reports are still written.
 
-For a long-lived agent that should learn across runs, point `EXPLORBOT_OUTPUT` at a stable directory or switch to a real config file.
+For a long-lived agent that should learn across runs, use a real config file with experience writing enabled. A stable `EXPLORBOT_OUTPUT` preserves run artifacts, but config-free mode still does not write experience.
 
 ### Reading results
 

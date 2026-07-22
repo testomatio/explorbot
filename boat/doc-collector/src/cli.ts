@@ -5,11 +5,6 @@ import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
 import { DocBot, type DocbotOptions } from './docbot.ts';
 
 function buildOptions(options: any): DocbotOptions {
-  let session = options.session;
-  if (options.session === true) {
-    session = 'output/session.json';
-  }
-
   return {
     verbose: options.verbose || options.debug,
     config: options.config,
@@ -17,7 +12,7 @@ function buildOptions(options: any): DocbotOptions {
     show: options.show,
     headless: options.headless,
     incognito: options.incognito,
-    session,
+    session: options.session,
     docsConfig: options.docsConfig,
   };
 }

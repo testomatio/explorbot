@@ -43,9 +43,6 @@ interface CLIOptions {
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
-  const sessionDir = process.env.EXPLORBOT_OUTPUT ? path.resolve(process.env.EXPLORBOT_OUTPUT) : path.join(path.resolve(options.path || process.cwd()), 'output');
-  const sessionFile = options.session === true ? path.join(sessionDir, 'session.json') : options.session;
-
   return {
     from,
     verbose: options.verbose || options.debug,
@@ -54,7 +51,7 @@ function buildExplorBotOptions(from: string | undefined, options: CLIOptions): E
     show: options.show,
     headless: options.headless,
     incognito: options.incognito,
-    session: sessionFile,
+    session: options.session,
   } as ExplorBotOptions;
 }
 
@@ -691,7 +688,7 @@ program
         path: options.path,
         config: options.config,
         headless: true,
-        session: options.session === true ? 'output/session.json' : options.session,
+        session: options.session,
       };
 
       const explorBot = new ExplorBot(mainOptions);

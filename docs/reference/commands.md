@@ -77,7 +77,7 @@ npx explorbot navigate /login --session             # probe + capture auth in on
 npx explorbot research /dashboard --session auth.json   # reuse captured auth
 ```
 
-Without a file path, the flag defaults to `output/session.json`, or to `$EXPLORBOT_OUTPUT/session.json` when that variable is set. In a temp-directory run the temp path is not known when the flag is parsed, so pass an explicit `--session <file>`.
+Without a file path, the flag defaults to `session.json` inside the resolved configuration's output directory. In config-free mode that is the temporary or explicitly configured `EXPLORBOT_OUTPUT` directory.
 
 ## Environment Variables
 

@@ -42,7 +42,7 @@ export interface ExplorBotOptions {
   show?: boolean;
   headless?: boolean;
   incognito?: boolean;
-  session?: string;
+  session?: string | boolean;
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -88,7 +88,8 @@ export class ExplorBot {
 
     try {
       await this.startProviderOnly();
-      this.explorer = new Explorer(this.config, this.provider, this.options, this.experienceTracker(), this.knowledgeTracker());
+      const explorerOptions = { ...this.options, session: typeof this.options.session === 'string' ? this.options.session : undefined };
+      this.explorer = new Explorer(this.config, this.provider, explorerOptions, this.experienceTracker(), this.knowledgeTracker());
       await this.explorer.start();
       if (!this.options.incognito) {
         await this.agentExperienceCompactor().autocompact();
@@ -103,6 +104,7 @@ export class ExplorBot {
   async startProviderOnly(): Promise<void> {
     if (this.provider) return;
     this.config = await this.configParser.loadConfig(this.options);
+    if (this.options.session === true) this.options.session = path.join(this.configParser.getOutputDir(), 'session.json');
     this.provider = new AIProvider(this.config.ai);
     await this.provider.validateConnection();
   }
