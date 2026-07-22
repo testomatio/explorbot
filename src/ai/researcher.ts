@@ -208,11 +208,10 @@ export class Researcher extends ResearcherBase implements Agent {
       }
 
       if (!interrupted()) {
-        const containerLocs = result.containerLocators;
-        await this.testLocators(containerLocs);
-        const brokenContainers = containerLocs.filter((l) => l.valid === false);
-        if (containerLocs.length > 0 && brokenContainers.length === containerLocs.length && retriesLeft > 0) {
-          tag('warning').log(`All ${containerLocs.length} containers broken, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
+        const brokenContainers = await this.resolveContainers(result);
+        const containerCount = result.containers.length;
+        if (containerCount > 0 && brokenContainers.length === containerCount && retriesLeft > 0) {
+          tag('warning').log(`All ${containerCount} containers broken, retrying research (${maxRetries - retriesLeft + 1}/${maxRetries})...`);
           await new Promise((r) => setTimeout(r, 2000));
           return this.research(state, { ...opts, force: true, _retriesLeft: retriesLeft - 1 } as any);
         }
@@ -246,7 +245,7 @@ export class Researcher extends ResearcherBase implements Agent {
         const validContainers = extractValidContainers(result.text);
         result.parseLocators();
         const freshContainerLocs = result.containerLocators;
-        await this.testLocators(freshContainerLocs);
+        await this.testLocators(freshContainerLocs, { scope: true });
         const freshBroken = freshContainerLocs.filter((l) => l.valid === false).map((l) => l.locator);
         const containers = validContainers.filter((c) => !freshBroken.includes(c.css));
         await this.visuallyAnnotateElements({ containers });

@@ -39,6 +39,8 @@ Config-free runs do not write experience and run with the Historian off, so no g
 ## 2026-07-17
 
 ### Changes
+- Research no longer discards whole sections of a page when a container matches more than one element. A container only narrows down where child elements are looked up, so a selector matching every navigation bar or every card on the page is now perfectly usable — each child element inside it is still required to be unique. Previously such a section was declared broken and every element in it was sent back to the AI for repair.
+- When a container matches nothing on the page, Explorbot now repairs it by looking at the elements it found inside it and working out their real wrapper, instead of asking the AI to guess a new selector. The section is fixed instantly and keeps working locators for its elements. When several sections share the same broken container and only some of them can be repaired this way, the remaining sections are still sent to the AI repair step instead of being wrongly treated as fixed.
 - [Pilot] Pilot's instructions and its list of available tools now stay identical across every call in a session, with the scenario details moved to the end. Providers can reuse the prompt they already processed instead of re-reading it on each call, which lowers the cost of long test runs.
 - [Planner] Planning rules and output format instructions now come before the page research, so planning more tests for the same page reuses an already-processed prompt.
 - When a click matches several elements, the follow-up question that picks the right one now uses the default model instead of the more expensive agentic model.
