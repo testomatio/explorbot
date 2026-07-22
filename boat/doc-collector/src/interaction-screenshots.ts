@@ -83,7 +83,10 @@ async function markChangedElements(page: Page, beforeState: WebPageState, state:
 
   for (const selector of selectors) {
     try {
-      await page.locator(selector).first().evaluate((element, attribute) => element.setAttribute(attribute, 'true'), TARGET_ATTRIBUTE);
+      await page
+        .locator(selector)
+        .first()
+        .evaluate((element, attribute) => element.setAttribute(attribute, 'true'), TARGET_ATTRIBUTE);
     } catch {}
   }
 }

@@ -197,7 +197,13 @@ function buildTransition(candidate: InteractionCandidate, beforeState: WebPageSt
     action: describeAction(candidate),
     before: summarizeInteractiveState(beforeState),
     after: summarizeInteractiveState(afterState),
-    discoveredUrls: [...new Set(collectLinks(afterState).map((link) => link.url).filter((url) => !existingUrls.has(url)))],
+    discoveredUrls: [
+      ...new Set(
+        collectLinks(afterState)
+          .map((link) => link.url)
+          .filter((url) => !existingUrls.has(url))
+      ),
+    ],
     newCapabilities: collectDiscoveryNotes(afterState, changes),
     element: buildInteractionElement(candidate),
     changes,

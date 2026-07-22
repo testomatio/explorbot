@@ -93,7 +93,6 @@ async function captureViewport(page: any, filePath: string): Promise<boolean> {
   }
 }
 
-
 async function captureFullPageScreenshot(page: any, pageName: string, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {
   const filePath = path.join(options.screenshotsDir, safeFilename(`${pageName}_page`, '.png'));
   try {
