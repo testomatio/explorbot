@@ -389,6 +389,10 @@ Or pass a custom path:
 npx explorbot explore /dashboard --config ./custom/path/config.js
 ```
 
+### Running without a config file
+
+When no config file is found and `EXPLORBOT_AI_PROVIDER` is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables. Output goes to a temp directory, experience is not written, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
+
 ## Full configuration reference
 
 ```javascript
@@ -503,6 +507,12 @@ export default {
     knowledge: 'knowledge',        // Domain knowledge files
     experience: 'experience',      // Learned patterns
     output: 'output',              // Test results and logs
+  },
+
+  // Experience recording
+  experience: {
+    disabled: true,                // Stop writing experience; reading still works
+    maxReadLines: 100,             // Lines of experience injected into prompts
   },
 };
 ```

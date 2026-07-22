@@ -91,7 +91,7 @@ class Explorer {
       // Use project root for output directory, not current working directory
       const configParser = ConfigParser.getInstance();
       const projectRoot = configParser.getProjectRoot();
-      (global as any).output_dir = path.join(projectRoot, 'output', 'states');
+      (global as any).output_dir = configParser.getStatesDir();
       (global as any).codecept_dir = projectRoot;
 
       configParser.validateConfig(this.config);

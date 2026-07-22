@@ -9,7 +9,7 @@ import { render } from 'ink';
 import React from 'react';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
-import { ConfigParser } from '../src/config.js';
+import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
@@ -43,8 +43,6 @@ interface CLIOptions {
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
-  const sessionFile = options.session === true ? path.join(path.resolve(options.path || process.cwd()), 'output', 'session.json') : options.session;
-
   return {
     from,
     verbose: options.verbose || options.debug,
@@ -53,7 +51,7 @@ function buildExplorBotOptions(from: string | undefined, options: CLIOptions): E
     show: options.show,
     headless: options.headless,
     incognito: options.incognito,
-    session: sessionFile,
+    session: options.session,
   } as ExplorBotOptions;
 }
 
@@ -690,7 +688,7 @@ program
         path: options.path,
         config: options.config,
         headless: true,
-        session: options.session === true ? 'output/session.json' : options.session,
+        session: options.session,
       };
 
       const explorBot = new ExplorBot(mainOptions);
@@ -875,5 +873,29 @@ import { createApiCommands } from '../boat/api-tester/src/cli.ts';
 import { createDocsCommands } from '../boat/doc-collector/src/cli.ts';
 program.addCommand(createApiCommands('api'));
 program.addCommand(createDocsCommands('docs'));
+
+const envHelp = () => {
+  const width = Math.max(...EXPLORBOT_ENV_VARS.map((v) => v.name.length));
+  const rows = EXPLORBOT_ENV_VARS.map((v) => `  ${v.name.padEnd(width)}  ${v.description}`).join('\n');
+
+  return `
+Environment variables (config-free one-liner mode):
+  Set EXPLORBOT_AI_PROVIDER to run without an explorbot.config.js. A config file always wins.
+
+${rows}
+
+  Providers: ${Object.keys(PROVIDERS).join(', ')}
+  Example:
+    EXPLORBOT_URL=https://app.example.com EXPLORBOT_AI_PROVIDER=openrouter \\
+      ${cli} explore /login --max-tests 3
+`;
+};
+
+const addEnvHelp = (cmd: Command) => {
+  cmd.addHelpText('after', envHelp);
+  for (const sub of cmd.commands) addEnvHelp(sub);
+};
+
+addEnvHelp(program);
 
 program.parse();

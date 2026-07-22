@@ -16,7 +16,7 @@
   "bin": {
     "explorbot": "./dist/bin/explorbot-cli.js"
   },
-  "files": ["dist/", "src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts", "boat/api-tester/src/**/*.ts", "boat/doc-collector/src/**/*.ts", "boat/doc-collector/bin/**/*.ts", "boat/doc-collector/package.json", "rules/", "assets/sample-files/"],
+  "files": ["dist/", "src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts", "boat/api-tester/src/**/*.ts", "boat/doc-collector/src/**/*.ts", "boat/doc-collector/bin/**/*.ts", "boat/doc-collector/package.json", "rules/", "assets/sample-files/", "models.json"],
   "scripts": {
     "build": "bun run build:bin",
     "build:bin": "bun build bin/explorbot-cli.ts --outdir bin --target node --external commander --format esm",
@@ -51,7 +51,9 @@
   "author": "",
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0",
+    "@ai-sdk/google": "^4.0.18",
     "@ai-sdk/groq": "^4.0",
+    "@ai-sdk/mistral": "^4.0.13",
     "@ai-sdk/openai": "^4.0",
     "@ai-sdk/otel": "^1.0.2",
     "@axe-core/playwright": "^4.11.0",
