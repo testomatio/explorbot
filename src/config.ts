@@ -1,7 +1,21 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
-import path, { dirname, join, resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path, { basename, dirname, join, resolve } from 'node:path';
 import { parseEnv } from 'node:util';
+import matter from 'gray-matter';
 import { log } from './utils/logger.js';
+
+export const PROVIDERS: Record<string, () => Promise<(modelId: string) => any>> = {
+  openai: async () => (await import('@ai-sdk/openai')).createOpenAI(),
+  anthropic: async () => (await import('@ai-sdk/anthropic')).createAnthropic(),
+  google: async () => (await import('@ai-sdk/google')).createGoogleGenerativeAI(),
+  groq: async () => (await import('@ai-sdk/groq')).createGroq(),
+  mistral: async () => (await import('@ai-sdk/mistral')).createMistral(),
+  openrouter: async () => (await import('@openrouter/ai-sdk-provider')).createOpenRouter(),
+  sambanova: async () => (await import('sambanova-ai-provider')).createSambaNova(),
+};
+
+let cachedOutputRoot: string | null = null;
 
 interface PlaywrightConfig {
   browser: 'chromium' | 'firefox' | 'webkit';
@@ -216,6 +230,7 @@ interface ExplorbotConfig {
   };
   experience?: {
     maxReadLines?: number;
+    disabled?: boolean;
   };
   reporter?: ReporterConfig;
   api?: ApiConfig;
@@ -238,6 +253,19 @@ const config: ExplorbotConfig = {
 type RuleEntry = string | Record<string, string>;
 
 export const EXPLORBOT_CONFIG_PATHS = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts'];
+
+export const EXPLORBOT_ENV_VARS: EnvVar[] = [
+  { name: 'EXPLORBOT_AI_PROVIDER', required: true, description: 'Provider name; fills every model role from its recommended models. Turns on config-free mode' },
+  { name: 'EXPLORBOT_AI_MODEL', description: 'Pins the main model — a model id for the provider, or a standalone provider/model-id' },
+  { name: 'EXPLORBOT_URL', required: true, description: 'Base URL to test; the API boat reads it as the base endpoint' },
+  { name: 'EXPLORBOT_VISION_MODEL', description: 'Screenshot analysis; overrides the provider recommendation' },
+  { name: 'EXPLORBOT_AGENTIC_MODEL', description: 'Captain and Pilot decisions; overrides the provider recommendation' },
+  { name: 'EXPLORBOT_OUTPUT', description: 'Output root for states, plans, research, and reports. Defaults to a fresh temp directory' },
+  { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
+  { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
+  { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
+  { name: 'EXPLORBOT_NO_BANNER', description: 'Suppress the startup banner, for machine-readable output' },
+];
 
 export type {
   ExplorbotConfig,
@@ -268,6 +296,7 @@ export type {
 
 export class ConfigParser {
   private static instance: ConfigParser;
+  private static recommended: Record<string, Record<string, string>> | null = null;
   private config: ExplorbotConfig | null = null;
   private configPath: string | null = null;
   private runtimeBaseUrlOverride: string | null = null;
@@ -278,6 +307,11 @@ export class ConfigParser {
     const resolved = resolve(filePath);
     if (!existsSync(resolved)) return;
     Object.assign(process.env, parseEnv(readFileSync(resolved, 'utf8')));
+  }
+
+  public static recommendedModels(): Record<string, Record<string, string>> {
+    ConfigParser.recommended ||= JSON.parse(readFileSync(new URL('../models.json', import.meta.url), 'utf8'));
+    return ConfigParser.recommended!;
   }
 
   public static getInstance(): ConfigParser {
@@ -312,22 +346,31 @@ export class ConfigParser {
     try {
       const resolvedPath = options?.config || this.findConfigFile();
 
-      if (!resolvedPath) {
-        throw new Error('No configuration file found. Please create explorbot.config.js or explorbot.config.ts');
+      let loadedConfig: ExplorbotConfig | null = null;
+      let sourcePath = resolvedPath;
+
+      if (resolvedPath) {
+        const configModule = await this.loadConfigModule(resolvedPath);
+        loadedConfig = configModule.default || configModule;
+
+        if (!loadedConfig) {
+          throw new Error('Configuration file is empty or invalid');
+        }
+
+        log(`Configuration loaded from: ${resolvedPath}`);
       }
 
-      const configModule = await this.loadConfigModule(resolvedPath);
-      const loadedConfig = configModule.default || configModule;
+      if (!resolvedPath) {
+        const outputRoot = resolveOutputRoot();
+        loadedConfig = await this.buildEnvConfig(options?.baseUrl, outputRoot);
+        sourcePath = join(outputRoot, 'explorbot.config.js');
 
-      if (!loadedConfig) {
-        throw new Error('Configuration file is empty or invalid');
+        log(`Configuration built from EXPLORBOT_* environment variables. Output: ${outputRoot}`);
       }
 
       this.config = this.resolveConfig(loadedConfig as ExplorbotConfig, options);
       this.runtimeBaseUrlOverride = options?.baseUrl || null;
-      this.configPath = resolvedPath;
-
-      log(`Configuration loaded from: ${resolvedPath}`);
+      this.configPath = sourcePath;
 
       // Restore original directory after successful config load
       if (options?.path && originalCwd !== process.cwd()) {
@@ -388,6 +431,7 @@ export class ConfigParser {
 
   // For testing purposes only
   public static resetForTesting(): void {
+    cachedOutputRoot = null;
     if (ConfigParser.instance) {
       ConfigParser.instance.config = null;
       ConfigParser.instance.configPath = null;
@@ -440,6 +484,52 @@ export class ConfigParser {
     } catch (error) {
       // Ignore cleanup errors
     }
+  }
+
+  private async buildEnvConfig(baseUrl: string | undefined, outputRoot: string): Promise<ExplorbotConfig> {
+    const provider = process.env.EXPLORBOT_AI_PROVIDER;
+    const modelSpec = process.env.EXPLORBOT_AI_MODEL;
+    if (!provider && !modelSpec) {
+      throw new Error('No configuration file found. Please create explorbot.config.js or set EXPLORBOT_URL and EXPLORBOT_AI_PROVIDER environment variables');
+    }
+    if (modelSpec && !provider && !modelSpec.includes('/')) {
+      throw new Error('EXPLORBOT_AI_MODEL needs a provider — set EXPLORBOT_AI_PROVIDER, or write it as "provider/model-id"');
+    }
+
+    const url = process.env.EXPLORBOT_URL || baseUrl;
+    if (!url) {
+      throw new Error('No URL to explore. Set EXPLORBOT_URL or pass a URL to the command');
+    }
+
+    materializeKnowledge(outputRoot);
+
+    let model: any;
+    if (provider && modelSpec) model = await createModel(provider, modelSpec);
+    if (provider && !modelSpec) model = await resolveModel(provider, 'model');
+    if (!provider) model = await resolveModel(modelSpec!, 'model');
+
+    const ai: AIConfig = {
+      model,
+      agents: { historian: { enabled: false } },
+    };
+
+    let recommended: Record<string, string> = {};
+    if (provider) recommended = ConfigParser.recommendedModels()[provider] || {};
+
+    const visionSpec = process.env.EXPLORBOT_VISION_MODEL;
+    if (visionSpec) ai.visionModel = await resolveModel(visionSpec, 'visionModel');
+    if (!visionSpec && recommended.visionModel) ai.visionModel = await resolveModel(provider!, 'visionModel');
+
+    const agenticSpec = process.env.EXPLORBOT_AGENTIC_MODEL;
+    if (agenticSpec) ai.agenticModel = await resolveModel(agenticSpec, 'agenticModel');
+    if (!agenticSpec && recommended.agenticModel) ai.agenticModel = await resolveModel(provider!, 'agenticModel');
+
+    return {
+      playwright: { browser: 'chromium', url, show: false },
+      ai,
+      dirs: { knowledge: 'knowledge', experience: 'experience', output: '.' },
+      experience: { disabled: true },
+    };
   }
 
   private findConfigFile(): string | null {
@@ -554,3 +644,75 @@ export class ConfigParser {
 export function outputPath(...segments: string[]): string {
   return path.join(ConfigParser.getInstance().getOutputDir(), ...segments);
 }
+
+export async function resolveModel(spec: string, role: ModelRole = 'model'): Promise<any> {
+  const separator = spec.indexOf('/');
+  if (separator > 0) {
+    return createModel(spec.slice(0, separator), spec.slice(separator + 1));
+  }
+
+  const recommended = ConfigParser.recommendedModels()[spec];
+  if (!recommended) {
+    throw new Error(`No recommended models for "${spec}". Write it as "provider/model-id", or use a provider with recommendations: ${Object.keys(ConfigParser.recommendedModels()).join(', ')}`);
+  }
+
+  const modelId = recommended[role];
+  if (!modelId) {
+    throw new Error(`Provider "${spec}" has no recommended ${role}. Set it explicitly as "provider/model-id".`);
+  }
+
+  return createModel(spec, modelId);
+}
+
+export function resolveOutputRoot(): string {
+  if (cachedOutputRoot) return cachedOutputRoot;
+
+  const configured = process.env.EXPLORBOT_OUTPUT;
+  if (!configured) {
+    cachedOutputRoot = mkdtempSync(join(tmpdir(), 'explorbot-'));
+    return cachedOutputRoot;
+  }
+
+  cachedOutputRoot = resolve(configured);
+  mkdirSync(cachedOutputRoot, { recursive: true });
+  return cachedOutputRoot;
+}
+
+export function materializeKnowledge(outputRoot: string): void {
+  const inline = process.env.EXPLORBOT_KNOWLEDGE;
+  const knowledgeFile = process.env.EXPLORBOT_KNOWLEDGE_FILE;
+  if (!inline && !knowledgeFile) return;
+
+  const knowledgeDir = join(outputRoot, 'knowledge');
+  mkdirSync(knowledgeDir, { recursive: true });
+
+  if (inline) {
+    writeFileSync(join(knowledgeDir, 'global.md'), matter.stringify(inline, { url: '*', endpoint: '*' }));
+  }
+
+  if (!knowledgeFile) return;
+
+  const source = resolve(knowledgeFile);
+  if (!existsSync(source)) {
+    throw new Error(`Knowledge file from EXPLORBOT_KNOWLEDGE_FILE not found: ${source}`);
+  }
+  copyFileSync(source, join(knowledgeDir, basename(source)));
+}
+
+export async function createModel(provider: string, modelId: string): Promise<any> {
+  const factory = PROVIDERS[provider];
+  if (!factory) {
+    throw new Error(`Unknown AI provider "${provider}". Supported providers: ${Object.keys(PROVIDERS).join(', ')}`);
+  }
+  return (await factory())(modelId);
+}
+
+type ModelRole = 'model' | 'visionModel' | 'agenticModel';
+
+interface EnvVar {
+  name: string;
+  description: string;
+  required?: boolean;
+}
+
+export type { ModelRole, EnvVar };

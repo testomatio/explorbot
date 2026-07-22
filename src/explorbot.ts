@@ -45,7 +45,7 @@ export interface ExplorBotOptions {
   show?: boolean;
   headless?: boolean;
   incognito?: boolean;
-  session?: string;
+  session?: string | boolean;
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -95,7 +95,8 @@ export class ExplorBot {
 
     try {
       await this.startProviderOnly();
-      this.explorer = new Explorer(this.config, this.options, {
+      const explorerOptions = { ...this.options, session: typeof this.options.session === 'string' ? this.options.session : undefined };
+      this.explorer = new Explorer(this.config, explorerOptions, {
         stateManager: this.stateManager(),
         knowledgeTracker: this.knowledgeTracker(),
         reporter: this.reporter(),
@@ -116,6 +117,7 @@ export class ExplorBot {
   async startProviderOnly(): Promise<void> {
     if (this.provider) return;
     this.config = await this.configParser.loadConfig(this.options);
+    if (this.options.session === true) this.options.session = path.join(this.configParser.getOutputDir(), 'session.json');
     this.provider = new AIProvider(this.config.ai);
     await this.provider.validateConnection();
   }
@@ -236,7 +238,7 @@ export class ExplorBot {
 
       const qm = this.agentQuartermaster();
       if (qm) this.agents.tester.setQuartermaster(qm);
-      this.agents.tester.setHistorian(this.agentHistorian());
+      if (this.isHistorianEnabled()) this.agents.tester.setHistorian(this.agentHistorian());
       this.agents.tester.setPilot(this.agentPilot());
       this.agents.tester.setCaptain(this.agentCaptain());
 
@@ -287,7 +289,7 @@ export class ExplorBot {
         const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
         return new Rerunner(deps, tools);
       });
-      this.agents.rerunner.setHistorian(this.agentHistorian());
+      if (this.isHistorianEnabled()) this.agents.rerunner.setHistorian(this.agentHistorian());
     }
     return this.agents.rerunner;
   }
@@ -511,5 +513,9 @@ export class ExplorBot {
       const message = browserErrorMessage(error);
       tag('warning').log(`Session analysis failed: ${message}`);
     }
+  }
+
+  private isHistorianEnabled(): boolean {
+    return this.config.ai?.agents?.historian?.enabled !== false;
   }
 }

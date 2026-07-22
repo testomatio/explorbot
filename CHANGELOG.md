@@ -5,15 +5,57 @@
 ### Changes
 - Fixed a test being reported as started when the browser could not be recovered before it began. Browser recovery now runs before the test starts, so a failed recovery no longer leaves a started-but-never-finished test in the report.
 
+## 2026-07-19
+
+### Environment Variables
+
+Explorbot can now run without an `explorbot.config.js`. Set `EXPLORBOT_AI_PROVIDER` and the configuration is built from the environment instead — for CI one-liners, demos, and coding agents driving Explorbot as a terminal command. A config file always wins when one is present, so nothing changes for existing projects.
+
+```bash
+EXPLORBOT_URL=https://app.example.com \
+EXPLORBOT_AI_PROVIDER=openrouter \
+EXPLORBOT_KNOWLEDGE="Log in as admin@example.com / secret123" \
+  npx explorbot explore /login --max-tests 3
+```
+
+- **`EXPLORBOT_AI_PROVIDER`** — A provider name that fills every model role from that provider's recommended models, so there are no model IDs to look up and the run follows the recommendations as they change. Setting this turns on config-free mode. Providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`, each using its conventional API-key variable.
+- **`EXPLORBOT_AI_MODEL`** — Pins the main `model`. With `EXPLORBOT_AI_PROVIDER` set it is the model id for that provider, used verbatim; on its own it must be `provider/model-id`, split on the first slash so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`.
+- **`EXPLORBOT_URL`** — Base URL to test. The API boat reads it as the base endpoint. Optional when the command already carries an absolute URL, as `docs collect https://…` does.
+- **`EXPLORBOT_VISION_MODEL`** — Model for screenshot analysis, overriding the provider recommendation. Takes a provider name or `provider/model-id`.
+- **`EXPLORBOT_AGENTIC_MODEL`** — Model for Captain and Pilot decisions, overriding the provider recommendation. Takes a provider name or `provider/model-id`. Combine providers by role, for example `EXPLORBOT_AI_PROVIDER=groq` with `EXPLORBOT_AGENTIC_MODEL=anthropic`.
+- **`EXPLORBOT_OUTPUT`** — Output root for states, plans, research, and reports. Defaults to a fresh temp directory, so nothing is written to your project.
+- **`EXPLORBOT_KNOWLEDGE`** — Inline knowledge text applied to every page, the quickest way to hand over credentials.
+- **`EXPLORBOT_KNOWLEDGE_FILE`** — Path to a knowledge markdown file; its frontmatter is preserved, so it can target specific URLs.
+- **`EXPLORBOT_API_SPEC`** — OpenAPI spec path for the API boat.
+
+Config-free runs do not write experience and run with the Historian off, so no generated test files appear and a run leaves no state behind. Point `EXPLORBOT_OUTPUT` at a stable directory, or use a config file, when you want learning to accumulate across runs.
+
+### Configuration
+- **`experience.disabled`** — Stop writing experience files while still reading any that exist. Default: `false`.
+
+### Changes
+- Added `docs/workflow/agentic-usage.md` — driving Explorbot from a coding agent: the config-free one-liner API, and handing Explorbot a test plan the agent wrote itself (`npx explorbot test plan.md '*'`). Plan files are input only and are never rewritten, so they live in version control next to the code they cover.
+- `npx explorbot --help` now lists the `EXPLORBOT_*` variables with an example, so an agent can discover the config-free mode without reading the docs.
+- The recommended model IDs in `models.json` are now read at runtime, not just when regenerating the provider docs — they are what a bare provider name resolves to. `models.json` ships with the npm package.
+- Documented every AI provider in `docs/basics/providers.md`, with the recommended-model block for each generated from `models.json` by `bunosh docs:sync` and verified in CI on release. Added Mistral as a supported provider — `mistral-small-latest` for the `model` and `visionModel` roles (it reads screenshots), `mistral-large-latest` for `agenticModel`.
+- CodeceptJS screenshots now follow `dirs.output` instead of always landing in `output/states`.
+- Bare `--session` writes to `$EXPLORBOT_OUTPUT/session.json` when that variable is set. In a temp-directory run the path is not known when the flag is parsed, so pass an explicit `--session <file>` there.
+
 ## 2026-07-17
 
 ### Changes
 - Browser crash recovery now applies to every browser operation. Previously some interactions and page lookups could fail permanently when the page or browser crashed mid-session; now every action, capture, and element query automatically reattaches the page or restarts the browser and retries once before giving up.
 - [Captain] The `browser` tool's `restart` action was merged into `recover` — recovering a page now escalates to a full browser restart automatically when needed, so there is no separate action to choose.
 - Failed page actions that accidentally entered an iframe now return to the main page automatically. Previously only failed form actions did this; now it applies to every action, so a failed click or keypress can no longer leave the session stuck inside an iframe.
+- Research no longer discards whole sections of a page when a container matches more than one element. A container only narrows down where child elements are looked up, so a selector matching every navigation bar or every card on the page is now perfectly usable — each child element inside it is still required to be unique. Previously such a section was declared broken and every element in it was sent back to the AI for repair.
+- When a container matches nothing on the page, Explorbot now repairs it by looking at the elements it found inside it and working out their real wrapper, instead of asking the AI to guess a new selector. The section is fixed instantly and keeps working locators for its elements. When several sections share the same broken container and only some of them can be repaired this way, the remaining sections are still sent to the AI repair step instead of being wrongly treated as fixed.
 - [Pilot] Pilot's instructions and its list of available tools now stay identical across every call in a session, with the scenario details moved to the end. Providers can reuse the prompt they already processed instead of re-reading it on each call, which lowers the cost of long test runs.
 - [Planner] Planning rules and output format instructions now come before the page research, so planning more tests for the same page reuses an already-processed prompt.
 - When a click matches several elements, the follow-up question that picks the right one now uses the default model instead of the more expensive agentic model.
+- [Captain] Answers now finish as soon as the request is fulfilled — previously every completed request triggered one extra AI call with the full conversation context that produced nothing, roughly doubling token usage per request.
+- [Captain] No longer attaches the full page HTML to every request. Only the ARIA snapshot is kept fresh in the conversation; the AI fetches HTML on demand via the context() tool when it actually needs it.
+- [Captain] The slash-command tool now lists only command names instead of the full help text of every command, shrinking the prompt sent on each request.
+- Research is significantly faster on pages where the AI picks an imprecise container selector. Previously, if more than 80% of the researched locators failed validation, Explorbot threw away the finished UI map and regenerated it from scratch — roughly doubling the time spent on the page. Because a single bad container marks all of its child elements broken, this triggered easily, and the re-research usually just corrected the container anyway. Broken locators now go straight to the repair step that fixes them in place, cutting research on affected pages by about a third.
 - Fixed startup failing with `AI connection failed: Invalid 'max_output_tokens'` on models that reject a one-token response. The check that verifies your AI credentials at startup no longer caps the reply length, so it works with every provider regardless of their minimum.
 
 ## 2026-07-10
