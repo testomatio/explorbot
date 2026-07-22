@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-22
+
+### Changes
+- Fixed a test being reported as started when the browser could not be recovered before it began. Browser recovery now runs before the test starts, so a failed recovery no longer leaves a started-but-never-finished test in the report.
+
 ## 2026-07-17
 
 ### Changes

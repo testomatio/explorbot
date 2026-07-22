@@ -183,15 +183,15 @@ class Explorer {
   }
 
   async beginTest(test: Test): Promise<TestRun> {
+    if (!this.page && !(await this.recoverOrRestart())) {
+      return { started: false, stop: async () => {} };
+    }
+
     this._activeTest = test;
     test.start();
     await this.reporter.reportTestStart(test);
     await this.closeOtherTabs();
     this.stateManager.otherTabs = [];
-    if (!this.page && !(await this.recoverOrRestart())) {
-      this._activeTest = null;
-      return { started: false, stop: async () => {} };
-    }
 
     const codeceptjsTest = toCodeceptjsTest(test);
 
