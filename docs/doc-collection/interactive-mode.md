@@ -87,3 +87,15 @@ docs: {
 ```
 
 Set `screenshot: false` to turn captures off entirely. This also disables screenshot-assisted research, which makes the run cheaper and faster but text-only.
+
+Interaction screenshots focus on the visible area changed by an action. DocBot first captures a newly opened dialog, then combines ARIA and DOM differences to find the smallest live container that covers the change. If the change belongs to the whole document or cannot be located safely, it captures the current viewport.
+
+## Error handling
+
+`ignoreErrors` controls page-level crawl failures. `true` keeps the current best-effort behavior and skips every failed page, `false` stops the crawl on the first error, and an array skips only errors whose code, name, or message contains one of the listed strings.
+
+```ts
+docs: {
+  ignoreErrors: ['timeout', 'navigation interrupted'],
+}
+```

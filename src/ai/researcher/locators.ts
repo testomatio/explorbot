@@ -228,7 +228,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
         const eidxList = section.elements.map((el) => el.eidx).filter(Boolean) as string[];
         if (eidxList.length < 2) continue;
 
-        const ancestor = await this.explorer.runWithBrowserRecovery('recoverContainerFromChildren', () => WebElement.commonAncestor(this.explorer.playwrightHelper.page, eidxList));
+        const ancestor = await this.explorer.withPage((page) => WebElement.commonAncestor(page, eidxList));
         if (!ancestor) continue;
 
         const candidates: string[] = [];

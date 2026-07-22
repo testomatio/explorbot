@@ -91,6 +91,7 @@ export function createDocsCommands(name = 'docs'): Command {
             output: 'docs',
             screenshot: true,
             interactive: false,
+            ignoreErrors: true,
             collapseDynamicPages: true,
             scope: 'site',
             includePaths: [],

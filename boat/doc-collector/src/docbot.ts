@@ -113,11 +113,11 @@ class DocBot {
           force: true,
         });
         const pagePath = this.getPageFilePath(state.url);
-        const documentation = await this.documentarian.document(state, research, async (interactionState, transition) => {
+        const documentation = await this.documentarian.document(state, research, async (beforeState, interactionState, transition) => {
           if (!this.shouldUseScreenshots()) {
             return null;
           }
-          return captureInteractionScreenshot(this.explorBot.getExplorer(), interactionState, transition, {
+          return captureInteractionScreenshot(this.explorBot.getExplorer(), beforeState, interactionState, transition, {
             pageFilePath: pagePath,
             screenshotsDir: this.getScreenshotsDir(),
             config: this.config,
@@ -163,6 +163,9 @@ class DocBot {
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        if (!this.shouldIgnoreError(error)) {
+          throw error;
+        }
         tag('warning').log(`Skipping ${target}: ${reason}`);
         skipped.push({
           url: target,
@@ -408,6 +411,28 @@ class DocBot {
     }
 
     return `low-signal page: only ${documentation.can.length} proven actions and ${interactiveCount} interactive elements`;
+  }
+
+  private shouldIgnoreError(error: unknown): boolean {
+    const ignoreErrors = this.config.docs?.ignoreErrors;
+    if (ignoreErrors === undefined || ignoreErrors === true) return true;
+    if (ignoreErrors === false) return false;
+
+    const details = [error instanceof Error ? error.name : '', error instanceof Error ? error.message : String(error)];
+    if (typeof error === 'object' && error && 'code' in error) {
+      details.push(String(error.code));
+    }
+    const normalized = details
+      .join(' ')
+      .toLowerCase()
+      .replaceAll(/[\W_]+/g, ' ');
+    return ignoreErrors.some((pattern) => {
+      const normalizedPattern = pattern
+        .trim()
+        .toLowerCase()
+        .replaceAll(/[\W_]+/g, ' ');
+      return normalizedPattern.length > 0 && normalized.includes(normalizedPattern);
+    });
   }
 
   private countInteractiveElements(research: string): number {

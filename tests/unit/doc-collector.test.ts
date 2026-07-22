@@ -6,7 +6,7 @@ import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
-import { captureDocumentationScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
+import { captureDocumentationScreenshots, captureInteractionScreenshot, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
 import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
 
 describe('doc-collector path filter', () => {
@@ -434,9 +434,189 @@ describe('doc-collector screenshots', () => {
     expect(screenshots[1].relativePath).toBe('../screenshots/users_sign_in_navigation.png');
     expect(captured.map((item) => item.selector)).toEqual([undefined, '.mainnav-menu']);
   });
+
+  it('captures the smallest live container covering ARIA changes', async () => {
+    const calls: Array<{ clip?: { x: number; y: number; width: number; height: number } }> = [];
+    let evaluations = 0;
+    const clip = { x: 20, y: 30, width: 400, height: 300 };
+    const page = {
+      async screenshot(options: any) {
+        calls.push(options);
+      },
+      getByRole() {
+        return {
+          async all() {
+            return [
+              {
+                async evaluate() {},
+              },
+            ];
+          },
+        };
+      },
+      async evaluate() {
+        evaluations++;
+        return evaluations === 1 ? clip : undefined;
+      },
+    };
+
+    const result = await captureInteractionScreenshot(
+      { page } as any,
+      { url: '/dashboard', ariaSnapshot: '- button "Old"' },
+      { url: '/dashboard', ariaSnapshot: '- button "Old"\n- link "New item"' },
+      { action: 'Clicked tab: Details', before: 'before', after: 'after', targetState: { kind: 'section', label: 'Details', url: '/dashboard' }, element: { role: 'tab', name: 'Details', section: 'Tabs', container: '.tabs' } },
+      { pageFilePath: 'output/docs/pages/dashboard.md', screenshotsDir: 'output/docs/screenshots', config: {} }
+    );
+
+    expect(result?.kind).toBe('state');
+    expect(calls[0].clip).toEqual(clip);
+  });
+
+  it('uses the reverse DOM diff to capture a container after content is removed', async () => {
+    const calls: Array<{ selector?: string }> = [];
+    const markedSelectors: string[] = [];
+    const page = {
+      async screenshot(options: any) {
+        calls.push(options);
+      },
+      locator(selector: string) {
+        return {
+          first() {
+            return {
+              async evaluate() {
+                markedSelectors.push(selector);
+              },
+              async screenshot() {
+                calls.push({ selector });
+              },
+            };
+          },
+        };
+      },
+      async evaluate() {
+        return undefined;
+      },
+    };
+
+    const result = await captureInteractionScreenshot(
+      { page } as any,
+      { url: '/search', html: '<main><section class="results"><article>One</article><article>Two</article></section></main>' },
+      { url: '/search', html: '<main><section class="results"><article>One</article></section></main>' },
+      { action: 'Clicked button: Clear', before: 'before', after: 'after' },
+      { pageFilePath: 'output/docs/pages/dashboard.md', screenshotsDir: 'output/docs/screenshots', config: {} }
+    );
+
+    expect(result?.kind).toBe('state');
+    expect(markedSelectors.length).toBeGreaterThan(0);
+    expect(calls).toEqual([{ selector: markedSelectors[0] }]);
+  });
+
+  it('falls back to the viewport when changes only share the document root', async () => {
+    const calls: Array<{ viewport?: boolean }> = [];
+    const page = {
+      async screenshot() {
+        calls.push({ viewport: true });
+      },
+      getByRole: () => ({ all: async () => [{ evaluate: async () => {} }] }),
+      async evaluate() {
+        return false;
+      },
+    };
+
+    const result = await captureInteractionScreenshot(
+      { page } as any,
+      { url: '/dashboard', ariaSnapshot: '- link "Report"' },
+      { url: '/reports/1', ariaSnapshot: '- heading "Report"\n- button "Download"' },
+      { action: 'Clicked link: Report', before: 'before', after: 'after' },
+      { pageFilePath: 'output/docs/pages/dashboard.md', screenshotsDir: 'output/docs/screenshots', config: {} }
+    );
+
+    expect(result?.kind).toBe('state');
+    expect(calls).toEqual([{ viewport: true }]);
+  });
+
+  it('uses the viewport when the only changed container is the document root', async () => {
+    const calls: string[] = [];
+    const page = {
+      async screenshot() {
+        calls.push('viewport');
+      },
+      locator(selector: string) {
+        return {
+          async evaluateAll() {},
+          first() {
+            return {
+              async evaluate() {
+                return true;
+              },
+              async screenshot() {
+                calls.push(selector);
+              },
+            };
+          },
+        };
+      },
+    };
+
+    await captureInteractionScreenshot(
+      { page } as any,
+      { url: '/products', html: '<main><h1>Products</h1><section>Catalog</section></main>' },
+      { url: '/account', html: '<main><h1>Account</h1><form><button>Save</button></form></main>' },
+      { action: 'Clicked link: Account', before: 'before', after: 'after' },
+      { pageFilePath: 'output/docs/pages/products.md', screenshotsDir: 'output/docs/screenshots', config: {} }
+    );
+
+    expect(calls).toEqual(['viewport']);
+  });
+
+  it('captures a newly visible dialog before calculating other changes', async () => {
+    const calls: string[] = [];
+    const page = {
+      locator(selector: string) {
+        return {
+          last() {
+            return {
+              async screenshot() {
+                calls.push(selector);
+              },
+            };
+          },
+        };
+      },
+    };
+
+    const result = await captureInteractionScreenshot(
+      { page } as any,
+      { url: '/dashboard', ariaSnapshot: '- button "Open"' },
+      { url: '/dashboard', ariaSnapshot: '- dialog "Settings"\n  - button "Close"' },
+      { action: 'Clicked button: Open', before: 'before', after: 'after' },
+      { pageFilePath: 'output/docs/pages/dashboard.md', screenshotsDir: 'output/docs/screenshots', config: {} }
+    );
+
+    expect(result?.kind).toBe('state');
+    expect(calls).toEqual(['[role="dialog"]:visible, [role="alertdialog"]:visible, [aria-modal="true"]:visible']);
+  });
 });
 
 describe('doc-collector scope and signal', () => {
+  it('supports all, none, and selected page error ignoring', () => {
+    const bot = new DocBot();
+
+    (bot as any).config = { docs: { ignoreErrors: true } };
+    expect((bot as any).shouldIgnoreError('Navigation timeout')).toBe(true);
+
+    (bot as any).config = { docs: { ignoreErrors: false } };
+    expect((bot as any).shouldIgnoreError('Navigation timeout')).toBe(false);
+
+    (bot as any).config = { docs: { ignoreErrors: ['timeout', 'connection refused'] } };
+    expect((bot as any).shouldIgnoreError(new Error('Navigation TIMEOUT after 30s'))).toBe(true);
+    expect((bot as any).shouldIgnoreError(Object.assign(new Error('Navigation failed'), { code: 'ERR_CONNECTION_REFUSED' }))).toBe(true);
+    expect((bot as any).shouldIgnoreError(new Error('Page crashed'))).toBe(false);
+
+    (bot as any).config = { docs: { ignoreErrors: [''] } };
+    expect((bot as any).shouldIgnoreError(new Error('Page crashed'))).toBe(false);
+  });
+
   it('keeps subtree scope around the start page', () => {
     const bot = new DocBot();
     (bot as any).config = { docs: { scope: 'subtree' } };
@@ -837,7 +1017,7 @@ describe('documentarian interactive mode', () => {
       { action: 'Clicked link: Item A', before: '1', after: '2', targetUrl: '/items/a' },
       { action: 'Clicked button: Save', before: '1', after: '2', changes: { urlChanged: false, newElements: 2, removedElements: 0 } },
       { action: 'Clicked tab: Merged', before: '1', after: '2', discoveredUrls: ['/branches/merged'] },
-      { action: 'Clicked button: No change', before: '1', after: '1', changes: { urlChanged: false, newElements: 0, removedElements: 0 } },
+      { action: 'Clicked button: No change', before: '1', after: '1', discoveredUrls: [], changes: { urlChanged: false, newElements: 0, removedElements: 0 } },
     ]);
 
     expect(interactions).toHaveLength(3);

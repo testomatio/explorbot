@@ -94,6 +94,9 @@ class Documentarian {
       if ((interaction.changes?.newElements || 0) > 0) {
         return true;
       }
+      if ((interaction.changes?.removedElements || 0) > 0) {
+        return true;
+      }
       return (interaction.discoveredUrls || []).length > 0;
     });
   }

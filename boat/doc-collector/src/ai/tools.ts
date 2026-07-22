@@ -49,7 +49,7 @@ export interface InteractionScreenshot {
   relativePath: string;
 }
 
-export type CaptureInteractionState = (state: WebPageState, transition: DocStateTransition) => Promise<InteractionScreenshot | null>;
+export type CaptureInteractionState = (beforeState: WebPageState, state: WebPageState, transition: DocStateTransition) => Promise<InteractionScreenshot | null>;
 
 const DEFAULT_MAX_PRIMARY_CANDIDATES = 3;
 const DEFAULT_MAX_INTERACTIONS = 5;
@@ -151,13 +151,13 @@ async function executeInteraction(explorer: Explorer, stateManager: StateManager
   });
 
   if (captureState && isMeaningfulStateTransition(transition)) {
-    const screenshot = await captureState(afterState, transition);
+    const screenshot = await captureState(beforeState, afterState, transition);
     if (screenshot) {
       transition.screenshot = screenshot;
     }
   }
 
-  if (urlChanged || ariaChanges.newCount > 0) {
+  if (urlChanged || ariaChanges.newCount > 0 || ariaChanges.removedCount > 0) {
     await restoreInteractionState(explorer, restoreUrl);
   }
 
@@ -192,11 +192,12 @@ async function restoreInteractionState(explorer: Explorer, restoreUrl: string, p
 }
 
 function buildTransition(candidate: InteractionCandidate, beforeState: WebPageState, afterState: WebPageState, changes: InteractionChanges): DocStateTransition {
+  const existingUrls = new Set(collectLinks(beforeState).map((link) => link.url));
   const transition: DocStateTransition = {
     action: describeAction(candidate),
     before: summarizeInteractiveState(beforeState),
     after: summarizeInteractiveState(afterState),
-    discoveredUrls: collectLinks(afterState).map((link) => link.url),
+    discoveredUrls: [...new Set(collectLinks(afterState).map((link) => link.url).filter((url) => !existingUrls.has(url)))],
     newCapabilities: collectDiscoveryNotes(afterState, changes),
     element: buildInteractionElement(candidate),
     changes,
@@ -239,7 +240,7 @@ function isMeaningfulStateTransition(transition: DocStateTransition): boolean {
   if (transition.targetUrl || transition.changes?.urlChanged) {
     return true;
   }
-  return (transition.changes?.newElements || 0) > 0;
+  return (transition.changes?.newElements || 0) > 0 || (transition.changes?.removedElements || 0) > 0;
 }
 
 function buildInteractionElement(candidate: InteractionCandidate): InteractionElement {
