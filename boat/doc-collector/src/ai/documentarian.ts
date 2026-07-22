@@ -2,6 +2,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import type { AIProvider } from '../../../../src/ai/provider.ts';
 import type Explorer from '../../../../src/explorer.ts';
+import type { StateManager } from '../../../../src/state-manager.ts';
 import type { WebPageState } from '../../../../src/state-manager.ts';
 import { tag } from '../../../../src/utils/logger.ts';
 import type { DocbotConfig } from '../config.ts';
@@ -11,11 +12,13 @@ class Documentarian {
   private provider: AIProvider;
   private config: DocbotConfig;
   private explorer?: Explorer;
+  private stateManager?: StateManager;
 
-  constructor(provider: AIProvider, config: DocbotConfig = {}, explorer?: Explorer) {
+  constructor(provider: AIProvider, config: DocbotConfig = {}, explorer?: Explorer, stateManager?: StateManager) {
     this.provider = provider;
     this.config = config;
     this.explorer = explorer;
+    this.stateManager = stateManager;
   }
 
   async document(state: WebPageState, research: string, captureState?: CaptureInteractionState): Promise<PageDocumentation> {
@@ -46,7 +49,7 @@ class Documentarian {
     try {
       tag('info').log('Starting interactive exploration...');
 
-      const deterministicInteractions = await collectDocInteractions(this.explorer!, state, research, this.config, captureState);
+      const deterministicInteractions = await collectDocInteractions(this.explorer!, this.stateManager!, state, research, this.config, captureState);
       meaningfulInteractions = this.getMeaningfulInteractions(deterministicInteractions);
       if (meaningfulInteractions.length > 0) {
         tag('success').log(`Collected ${meaningfulInteractions.length} deterministic interactions`);

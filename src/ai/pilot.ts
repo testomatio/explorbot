@@ -2,8 +2,11 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
+import type { RequestStore } from '../api/request-store.ts';
 import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
+import type { PlaywrightRecorder } from '../playwright-recorder.ts';
+import type { StateManager } from '../state-manager.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
@@ -11,7 +14,7 @@ import { createDebug, tag } from '../utils/logger.ts';
 
 const debugLog = createDebug('explorbot:pilot');
 import { truncateJson } from '../utils/strings.ts';
-import type { Agent } from './agent.ts';
+import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import type { Navigator } from './navigator.ts';
@@ -30,13 +33,19 @@ export class Pilot implements Agent {
   private conversation: Conversation | null = null;
   private researcher: Researcher;
   private explorer: Explorer;
+  private stateManager: StateManager;
+  private requestStore: RequestStore;
+  private playwrightRecorder: PlaywrightRecorder;
   private fisherman: Fisherman | null = null;
 
-  constructor(provider: Provider, agentTools: any, researcher: Researcher, explorer: Explorer) {
-    this.provider = provider;
+  constructor(deps: AgentDeps, agentTools: any, researcher: Researcher) {
+    this.provider = deps.ai;
     this.agentTools = agentTools;
     this.researcher = researcher;
-    this.explorer = explorer;
+    this.explorer = deps.explorer;
+    this.stateManager = deps.stateManager;
+    this.requestStore = deps.requestStore;
+    this.playwrightRecorder = deps.playwrightRecorder;
   }
 
   setFisherman(fisherman: Fisherman): void {
@@ -91,7 +100,7 @@ export class Pilot implements Agent {
     let screenshotState: ActionResult | null = null;
     if (type === 'finish' && this.provider.hasVision()) {
       try {
-        screenshotState = await this.explorer.capturePageWithScreenshot();
+        screenshotState = await this.explorer.capture({ screenshot: true });
         if (screenshotState.screenshot) {
           visualAnalysis = (await this.researcher.answerQuestionAboutScreenshot(screenshotState, `Describe current page state relevant to: ${task.scenario}`)) || '';
         }
@@ -175,7 +184,7 @@ export class Pilot implements Agent {
         tag('substep').log(`Pilot requesting verification: ${result.requestVerification}`);
         const verifyResult = await navigator.verifyState(result.requestVerification, currentState).catch(() => null);
         if (verifyResult?.verified && verifyResult.assertionSteps?.length) {
-          this.explorer.getPlaywrightRecorder().recordVerification(verifyResult.assertionSteps);
+          this.playwrightRecorder.recordVerification(verifyResult.assertionSteps);
         }
       }
 
@@ -595,9 +604,9 @@ export class Pilot implements Agent {
   }
 
   private getExperienceToc(): string {
-    const state = this.explorer.getStateManager().getCurrentState();
+    const state = this.stateManager.getCurrentState();
     if (!state) return '';
-    return this.explorer.getStateManager().getExperienceTracker().renderExperienceTocFor(ActionResult.fromState(state));
+    return this.stateManager.getExperienceTracker().renderExperienceTocFor(ActionResult.fromState(state));
   }
 
   private pickPlanningTools() {
@@ -660,7 +669,7 @@ export class Pilot implements Agent {
   private async checkDataAvailability(task: Test, requestedData: string, fishermanReason: string | undefined): Promise<string | null> {
     if (!this.provider.hasVision()) return null;
 
-    const screenshotState = await this.explorer.capturePageWithScreenshot().catch(() => null);
+    const screenshotState = await this.explorer.capture({ screenshot: true }).catch(() => null);
     if (!screenshotState?.screenshot) return null;
 
     const question = dedent`
@@ -712,8 +721,8 @@ export class Pilot implements Agent {
       lines.push('modal: none');
     }
 
-    if (this.explorer.hasOtherTabs()) {
-      const tabs = this.explorer.getOtherTabsInfo();
+    const tabs = this.stateManager.otherTabs;
+    if (tabs.length > 0) {
       lines.push(`other tabs: ${tabs.length} (${tabs.map((t) => `${t.url} - ${t.title}`).join(', ')})`);
     } else {
       lines.push('other tabs: none');
@@ -736,7 +745,7 @@ export class Pilot implements Agent {
       lines.push('console errors: none');
     }
 
-    const failedRequests = this.explorer.getRequestStore()?.getFailedRequests() ?? [];
+    const failedRequests = this.requestStore.getFailedRequests();
     if (failedRequests.length > 0) {
       const sample = failedRequests
         .slice(-5)
@@ -817,7 +826,7 @@ export class Pilot implements Agent {
 
   private formatSessionLog(testerConversation: Conversation): string {
     const executions = testerConversation.getToolExecutions().filter((t) => !META_TOOLS.includes(t.toolName));
-    const stateHistory = this.explorer.getStateManager().getStateHistory();
+    const stateHistory = this.stateManager.getStateHistory();
 
     const initialUrl = stateHistory[0]?.toState?.url || '';
     let currentUrl = initialUrl;

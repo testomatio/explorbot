@@ -4,10 +4,10 @@ import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts'
 import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
 import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
-import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
 import { captureDocumentationScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
+import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
 
 describe('doc-collector path filter', () => {
   it('allows regular documentation pages', () => {
@@ -403,7 +403,7 @@ describe('doc-collector screenshots', () => {
     };
 
     const screenshots = await captureDocumentationScreenshots(
-      { playwrightHelper: { page } } as any,
+      { page } as any,
       { url: '/users/sign_in' },
       `
 ## Navigation
@@ -738,11 +738,9 @@ describe('documentarian interactive mode', () => {
         };
       },
     } as any;
+    const stateManager = { getCurrentState: () => states[stateIndex] } as any;
     const explorer = {
-      getStateManager() {
-        return { getCurrentState: () => states[stateIndex] };
-      },
-      createAction() {
+      action() {
         return {
           async attempt(command: string) {
             stateIndex = command.startsWith('I.amOnPage') ? 0 : 1;
@@ -751,7 +749,7 @@ describe('documentarian interactive mode', () => {
         };
       },
     } as any;
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer, stateManager);
     const result = await documentarian.document(
       states[0],
       `## Content Controls
@@ -783,11 +781,9 @@ describe('documentarian interactive mode', () => {
         };
       },
     } as any;
+    const stateManager = { getCurrentState: () => states[stateIndex] } as any;
     const explorer = {
-      getStateManager() {
-        return { getCurrentState: () => states[stateIndex] };
-      },
-      createAction() {
+      action() {
         return {
           async attempt(command: string) {
             stateIndex = command.startsWith('I.amOnPage') ? 0 : 1;
@@ -796,7 +792,7 @@ describe('documentarian interactive mode', () => {
         };
       },
     } as any;
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer, stateManager);
     const result = await documentarian.document(
       states[0],
       `## Content
@@ -892,19 +888,17 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const mockExplorer = {
-      getStateManager() {
+    const mockStateManager = {
+      getCurrentState() {
         return {
-          getCurrentState() {
-            return {
-              url: '/test',
-              title: 'Test',
-              ariaSnapshot: '[role: button]',
-            };
-          },
+          url: '/test',
+          title: 'Test',
+          ariaSnapshot: '[role: button]',
         };
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async execute(command: string) {
             return true;
@@ -913,7 +907,7 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer, mockStateManager);
 
     const result = await documentarian.document(
       {
@@ -946,19 +940,17 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const mockExplorer = {
-      getStateManager() {
+    const mockStateManager = {
+      getCurrentState() {
         return {
-          getCurrentState() {
-            return {
-              url: '/test',
-              title: 'Test',
-              ariaSnapshot: '[role: button]',
-            };
-          },
+          url: '/test',
+          title: 'Test',
+          ariaSnapshot: '[role: button]',
         };
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async execute(command: string) {
             return true;
@@ -967,7 +959,7 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer, mockStateManager);
 
     const result = await documentarian.document(
       {
@@ -1015,15 +1007,13 @@ describe('documentarian interactive mode', () => {
     ];
 
     let stateIndex = 0;
-    const mockExplorer = {
-      getStateManager() {
-        return {
-          getCurrentState() {
-            return states[stateIndex];
-          },
-        };
+    const mockStateManager = {
+      getCurrentState() {
+        return states[stateIndex];
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async attempt(command: string) {
             if (command.startsWith('I.click')) {
@@ -1040,7 +1030,7 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer, mockStateManager);
     const result = await documentarian.document(
       {
         url: '/items',
@@ -1082,19 +1072,17 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const mockExplorer = {
-      getStateManager() {
+    const mockStateManager = {
+      getCurrentState() {
         return {
-          getCurrentState() {
-            return {
-              url: '/test',
-              title: 'Test',
-              ariaSnapshot: '[role: tab]',
-            };
-          },
+          url: '/test',
+          title: 'Test',
+          ariaSnapshot: '[role: tab]',
         };
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async execute(command: string) {
             return true;
@@ -1103,7 +1091,7 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer, mockStateManager);
 
     const result = await documentarian.document(
       {
@@ -1134,19 +1122,17 @@ describe('documentarian interactive defaults', () => {
       },
     } as any;
 
-    const mockExplorer = {
-      getStateManager() {
+    const mockStateManager = {
+      getCurrentState() {
         return {
-          getCurrentState() {
-            return {
-              url: '/test',
-              title: 'Test',
-              ariaSnapshot: '[role: button]',
-            };
-          },
+          url: '/test',
+          title: 'Test',
+          ariaSnapshot: '[role: button]',
         };
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async execute() {
             return true;
@@ -1155,7 +1141,7 @@ describe('documentarian interactive defaults', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, {}, mockExplorer);
+    const documentarian = new Documentarian(provider, {}, mockExplorer, mockStateManager);
     const result = await documentarian.document(
       {
         url: '/test',

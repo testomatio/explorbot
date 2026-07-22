@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import * as codeceptjs from 'codeceptjs';
 import { outputPath } from '../../config.ts';
 import type { ExplorbotConfig } from '../../config.ts';
+import type Explorer from '../../explorer.ts';
 import type { PlaywrightRecorder } from '../../playwright-recorder.ts';
 import { tag } from '../../utils/logger.ts';
 import { relativeToCwd } from '../../utils/next-steps.ts';
@@ -22,7 +23,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
   return class extends Base {
     declare config: ExplorbotConfig | undefined;
     declare savedFiles: Set<string>;
-    declare playwright: { recorder: PlaywrightRecorder; helper: any } | undefined;
+    declare playwright: { recorder: PlaywrightRecorder; explorer: Explorer } | undefined;
 
     private screencastPage: any = null;
     private screencastActive = false;
@@ -41,7 +42,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
     attachScreencast(): void {
       if (this.screencastListenersInstalled) return;
       if (!this.config?.ai?.agents?.historian?.screencast) return;
-      if (!this.playwright?.helper) return;
+      if (!this.playwright?.explorer) return;
 
       this.onTestBefore = (test: any) => {
         void this.startScreencast(test);
@@ -62,7 +63,7 @@ export function WithScreencast<T extends Constructor>(Base: T) {
 
     private async startScreencast(test: any): Promise<void> {
       if (this.screencastActive) return;
-      const page = this.playwright?.helper?.page;
+      const page = this.playwright?.explorer?.page;
       if (!page?.screencast?.start) return;
 
       const task = test?._explorbotTest;

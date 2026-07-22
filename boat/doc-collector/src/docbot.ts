@@ -8,10 +8,10 @@ import { sanitizeFilename } from '../../../src/utils/strings.ts';
 import { Documentarian, type PageDocumentation } from './ai/documentarian.ts';
 import { type DocbotConfig, DocbotConfigParser } from './config.ts';
 import { type DocumentedPage, type SkippedPage, renderPageDocumentation, renderSpecIndex } from './docs-renderer.ts';
-import { renderMermaidBody } from './state-diagram.ts';
 import { getDocPageKey, shouldCrawlDocPath } from './path-filter.ts';
 import { extractResearchNavigationTargets } from './research-navigation.ts';
 import { type DocumentationScreenshot, captureDocumentationScreenshots, captureInteractionScreenshot } from './screenshots.ts';
+import { renderMermaidBody } from './state-diagram.ts';
 
 class DocBot {
   private explorBot: ExplorBot;
@@ -43,7 +43,7 @@ class DocBot {
       config: this.options.docsConfig,
       path: this.options.path,
     });
-    this.documentarian = new Documentarian(this.explorBot.getProvider(), this.config, this.explorBot.getExplorer());
+    this.documentarian = new Documentarian(this.explorBot.getProvider(), this.config, this.explorBot.getExplorer(), this.explorBot.stateManager());
     this.ensureDirectory(this.configParser.getOutputDir());
     this.ensureDirectory(this.getPagesDir());
   }
@@ -76,7 +76,7 @@ class DocBot {
         continue;
       }
 
-      const stateManager = this.explorBot.getExplorer().getStateManager();
+      const stateManager = this.explorBot.stateManager();
       if (stateManager.hasVisitedState(target)) {
         continue;
       }

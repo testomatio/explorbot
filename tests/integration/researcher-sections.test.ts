@@ -15,7 +15,7 @@ const fakeState = {
   ariaSnapshot: '- navigation:\n  - link "Home"\n- main:\n  - button "Click me"',
 };
 
-function createMockExplorer(configOverrides: Record<string, unknown> = {}, playwrightLocatorCount: () => Promise<number> = async () => 0) {
+function createMockDeps(configOverrides: Record<string, unknown> = {}, locatorCount: () => Promise<number> = async () => 0) {
   const baseConfig = ConfigParser.getInstance().getConfig();
   const config = {
     ...baseConfig,
@@ -36,21 +36,29 @@ function createMockExplorer(configOverrides: Record<string, unknown> = {}, playw
     getExperienceTracker: () => ({ getSuccessfulExperience: () => [], updateSummary: () => {} }),
     getRelevantKnowledge: () => [],
   };
-  return {
-    getStateManager: () => stateManager,
-    getKnowledgeTracker: () => ({ getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '' }),
-    getConfig: () => config,
-    visit: async () => {},
-    annotateElements: async () => [],
-    capturePageState: async () => ActionResult.fromState(fakeState),
-    capturePageWithScreenshot: async () => ActionResult.fromState(fakeState),
-    runWithBrowserRecovery: async (_label: string, operation: () => Promise<any>) => operation(),
-    createAction: () => ({
+  const fakePage: any = {};
+  fakePage.locator = () => fakePage;
+  fakePage.getByRole = () => fakePage;
+  fakePage.count = locatorCount;
+  fakePage.ariaSnapshot = async () => '';
+  fakePage.evaluateAll = async () => [];
+  const explorer = {
+    visit: async () => ActionResult.fromState(fakeState),
+    capture: async () => ActionResult.fromState(fakeState),
+    withPage: async (fn: any) => fn(fakePage),
+    action: () => ({
       capturePageState: async () => ActionResult.fromState(fakeState),
     }),
-    playwrightLocatorCount,
-    playwrightHelper: { page: {} },
+    page: fakePage,
   } as any;
+  return {
+    explorer,
+    config,
+    stateManager,
+    knowledgeTracker: { getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '' },
+    requestStore: {},
+    playwrightRecorder: {},
+  };
 }
 
 function extractPromptText(entry: any): string {
@@ -101,9 +109,9 @@ describe('Researcher researchBySections', () => {
     await mock.stop();
   });
 
-  function makeResearcher(configOverrides: Record<string, unknown> = {}, playwrightLocatorCount: () => Promise<number> = async () => 0): Researcher {
-    const explorer = createMockExplorer(configOverrides, playwrightLocatorCount);
-    const researcher = new Researcher(explorer, provider);
+  function makeResearcher(configOverrides: Record<string, unknown> = {}, locatorCount: () => Promise<number> = async () => 0): Researcher {
+    const deps = createMockDeps(configOverrides, locatorCount);
+    const researcher = new Researcher({ ...deps, ai: provider } as any);
     researcher.actionResult = ActionResult.fromState(fakeState);
     return researcher;
   }

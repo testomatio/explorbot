@@ -8,7 +8,7 @@ export class ContextDataCommand extends BaseCommand {
 
   async execute(_args: string): Promise<void> {
     const explorer = this.explorBot.getExplorer();
-    const state = explorer.getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
 
     if (!state) {
       throw new Error('No active page to extract data from');
@@ -18,7 +18,7 @@ export class ContextDataCommand extends BaseCommand {
 
     if (!actionResult.html || actionResult.html.trim().length < 100) {
       tag('info').log('Capturing fresh page content...');
-      const freshResult = await explorer.createAction().capturePageState();
+      const freshResult = await explorer.capture();
       const table = await this.explorBot.agentResearcher().extractData(freshResult);
       tag('multiline').log(table);
       return;

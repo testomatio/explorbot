@@ -178,7 +178,7 @@ export class CommandHandler implements InputManager {
   }
 
   private async executeBrowserCommand(input: string): Promise<void> {
-    const action = this.explorBot.getExplorer().createAction();
+    const action = this.explorBot.getExplorer().action();
     await action.execute(input);
   }
 

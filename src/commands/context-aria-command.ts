@@ -6,7 +6,7 @@ export class ContextAriaCommand extends BaseCommand {
   description = 'Print full ARIA snapshot for current page';
 
   async execute(_args: string): Promise<void> {
-    const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
 
     if (!state) {
       throw new Error('No active page to snapshot');

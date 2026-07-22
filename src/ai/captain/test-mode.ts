@@ -146,7 +146,7 @@ export function WithTestMode<T extends Constructor>(Base: T) {
               if (!t) return { success: false, message: `Test "${session}" not found` };
               states = t.states;
             } else {
-              const stateManager = ctx.explorBot.getExplorer().getStateManager();
+              const stateManager = ctx.explorBot.stateManager();
               const history = stateManager.getStateHistory();
               const seen = new Set<string>();
               states = history

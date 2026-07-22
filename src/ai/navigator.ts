@@ -3,17 +3,18 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
 import type Action from '../action.ts';
+import type { ExplorbotConfig } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
-import { normalizeUrl } from '../state-manager.js';
+import { type StateManager, normalizeUrl } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
 import { extractStatePath } from '../utils/url-matcher.js';
-import type { Agent } from './agent.js';
+import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
@@ -70,25 +71,29 @@ class Navigator implements Agent {
   </rules>
   `;
   private explorer: Explorer;
+  private config: ExplorbotConfig;
+  private stateManager: StateManager;
 
-  constructor(explorer: Explorer, provider: Provider) {
-    this.provider = provider;
-    this.explorer = explorer;
-    this.knowledgeTracker = explorer.getKnowledgeTracker();
-    this.experienceTracker = explorer.getStateManager().getExperienceTracker();
-    this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
+  constructor(deps: AgentDeps) {
+    this.provider = deps.ai;
+    this.explorer = deps.explorer;
+    this.config = deps.config;
+    this.stateManager = deps.stateManager;
+    this.knowledgeTracker = deps.knowledgeTracker;
+    this.experienceTracker = deps.stateManager.getExperienceTracker();
+    this.hooksRunner = new HooksRunner(deps.explorer, deps.config);
   }
 
   private get verifyAttempts(): number {
-    return this.explorer.getConfig().ai?.agents?.navigator?.verifyAttempts ?? 3;
+    return this.config.ai?.agents?.navigator?.verifyAttempts ?? 3;
   }
 
   private get verifyTimeout(): number {
-    return this.explorer.getConfig().ai?.agents?.navigator?.verifyTimeout ?? 1500;
+    return this.config.ai?.agents?.navigator?.verifyTimeout ?? 1500;
   }
 
   private getBaseOrigin(): string | null {
-    const baseUrl = this.explorer.getConfig().playwright.url;
+    const baseUrl = this.config.playwright.url;
     try {
       return new URL(baseUrl).origin;
     } catch {
@@ -133,12 +138,12 @@ class Navigator implements Agent {
   }
 
   async visit(url: string): Promise<void> {
-    return this.explorer.runWithBrowserRecovery('navigator.visit', () => this.visitOnce(url));
+    return this.visitOnce(url);
   }
 
   private async visitOnce(url: string): Promise<void> {
     try {
-      const action = this.explorer.createAction();
+      const action = this.explorer.action();
 
       await action.execute(`I.amOnPage('${url}')`);
 
@@ -171,7 +176,7 @@ class Navigator implements Agent {
           throw new Error(`Navigation to ${url} failed: ${action.lastError?.message}`);
         }
       }
-      await this.explorer.capturePageWithScreenshot();
+      await this.explorer.capture({ screenshot: true });
       await this.hooksRunner.runAfterHook('navigator', url);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -188,7 +193,7 @@ class Navigator implements Agent {
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
 
-    const action = opts?.action ?? this.explorer.createAction();
+    const action = opts?.action ?? this.explorer.action();
     const expectedUrl = opts?.expectedUrl;
 
     const knowledge = this.knowledgeTracker.renderRelevantKnowledge(actionResult);
@@ -341,7 +346,7 @@ class Navigator implements Agent {
         codeBlockIndex++;
         totalAttempts++;
 
-        await this.explorer.switchToMainFrame();
+        await action.exitIframe();
 
         const prevActionResult = action.actionResult ?? actionResult;
         const prevHash = prevActionResult.getStateHash();
@@ -373,7 +378,7 @@ class Navigator implements Agent {
               // URL did not transition to expectedUrl within timeout
             }
           }
-          const freshState = await this.explorer.capturePageState();
+          const freshState = await this.explorer.capture();
           const currentUrl = /^https?:\/\//i.test(expectedUrl) ? freshState.fullUrl || freshState.url || '' : freshState.url || '';
           const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
           const stateChanged = freshState.getStateHash() !== actionResult.getStateHash();
@@ -473,7 +478,7 @@ class Navigator implements Agent {
 
   private buildExperienceTools(): { learnExperience: unknown } | undefined {
     if (!this.experienceTracker) return undefined;
-    const stateManager = this.explorer.getStateManager();
+    const stateManager = this.stateManager;
     const getState = () => {
       const s = stateManager.getCurrentState();
       return s ? ActionResult.fromState(s) : null;
@@ -482,7 +487,7 @@ class Navigator implements Agent {
   }
 
   async freeSail(opts?: { strategy?: 'deep' | 'shallow'; scope?: string; visitedUrls?: Set<string> }, actionResult?: ActionResult): Promise<{ target: string; reason: string } | null> {
-    const stateManager = this.explorer.getStateManager();
+    const stateManager = this.stateManager;
     const state = stateManager.getCurrentState();
     if (!state) {
       return null;
@@ -690,11 +695,11 @@ class Navigator implements Agent {
     const successfulCodes: string[] = [];
     const assertionSteps: Array<{ name: string; args: any[] }> = [];
 
-    const action = this.explorer.createAction();
+    const action = this.explorer.action();
     let failures = 0;
 
-    const page = this.explorer.playwrightHelper?.page;
-    const originalTimeout = this.explorer.playwrightHelper?.options?.timeout ?? 3000;
+    const page = this.explorer.page;
+    const originalTimeout = this.config.playwright.timeout ?? 3000;
     page?.setDefaultTimeout(this.verifyTimeout);
 
     try {
@@ -726,7 +731,7 @@ class Navigator implements Agent {
             return;
           }
 
-          await this.explorer.switchToMainFrame();
+          await action.exitIframe();
 
           const verified = await action.attempt(codeBlock, message);
 
@@ -764,7 +769,7 @@ class Navigator implements Agent {
     if (alreadyVerified) verified = true;
 
     actionResult.addVerification(message, verified);
-    this.explorer.getStateManager().updateState(actionResult);
+    this.stateManager.updateState(actionResult);
 
     return { verified, successfulCodes, assertionSteps, totalAttempted };
   }

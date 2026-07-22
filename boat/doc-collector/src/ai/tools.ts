@@ -1,6 +1,6 @@
 import { type ResearchElement, parseResearchSections } from '../../../../src/ai/researcher/parser.ts';
 import type Explorer from '../../../../src/explorer.ts';
-import type { WebPageState } from '../../../../src/state-manager.ts';
+import type { StateManager, WebPageState } from '../../../../src/state-manager.ts';
 import { detectFocusArea } from '../../../../src/utils/aria.ts';
 import type { DocbotConfig } from '../config.ts';
 
@@ -58,14 +58,14 @@ const DEFAULT_WAIT_MS = 700;
 const TAB_WAIT_MS = 500;
 const DEFAULT_DENIED_ACTION_LABELS = ['delete', 'remove', 'destroy', 'archive', 'discard', 'logout', 'sign out', 'signout', 'sign_out', 'erase', 'drop'];
 
-export async function collectDocInteractions(explorer: Explorer, state: WebPageState, research: string, config: DocbotConfig = {}, captureState?: CaptureInteractionState): Promise<DocStateTransition[]> {
+export async function collectDocInteractions(explorer: Explorer, stateManager: StateManager, state: WebPageState, research: string, config: DocbotConfig = {}, captureState?: CaptureInteractionState): Promise<DocStateTransition[]> {
   const sections = parseResearchSections(research);
   const transitions: DocStateTransition[] = [];
   const maxInteractions = getPositiveConfigNumber(config.docs?.maxInteractions, DEFAULT_MAX_INTERACTIONS);
   const tabGroup = findTabGroup(sections);
 
   if (tabGroup) {
-    transitions.push(...(await exploreTabGroup(explorer, tabGroup, state.url, maxInteractions, captureState)));
+    transitions.push(...(await exploreTabGroup(explorer, stateManager, tabGroup, state.url, maxInteractions, captureState)));
   }
 
   for (const candidate of findActionCandidates(sections, config)) {
@@ -73,7 +73,7 @@ export async function collectDocInteractions(explorer: Explorer, state: WebPageS
       break;
     }
 
-    const transition = await executeInteraction(explorer, candidate, state.url, DEFAULT_WAIT_MS, captureState);
+    const transition = await executeInteraction(explorer, stateManager, candidate, state.url, DEFAULT_WAIT_MS, captureState);
     if (!transition) {
       continue;
     }
@@ -92,7 +92,7 @@ export function pickDocActionCandidates(research: string, config: DocbotConfig =
   }));
 }
 
-async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: ResearchElement[]; container?: string; sectionName: string }, restoreUrl: string, maxInteractions: number, captureState?: CaptureInteractionState): Promise<DocStateTransition[]> {
+async function exploreTabGroup(explorer: Explorer, stateManager: StateManager, tabGroup: { elements: ResearchElement[]; container?: string; sectionName: string }, restoreUrl: string, maxInteractions: number, captureState?: CaptureInteractionState): Promise<DocStateTransition[]> {
   const transitions: DocStateTransition[] = [];
 
   for (const element of tabGroup.elements) {
@@ -102,6 +102,7 @@ async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: Researc
 
     const transition = await executeInteraction(
       explorer,
+      stateManager,
       {
         element,
         container: tabGroup.container,
@@ -123,8 +124,8 @@ async function exploreTabGroup(explorer: Explorer, tabGroup: { elements: Researc
   return transitions;
 }
 
-async function executeInteraction(explorer: Explorer, candidate: InteractionCandidate, restoreUrl: string, waitMs: number, captureState?: CaptureInteractionState): Promise<DocStateTransition | null> {
-  const beforeState = explorer.getStateManager().getCurrentState();
+async function executeInteraction(explorer: Explorer, stateManager: StateManager, candidate: InteractionCandidate, restoreUrl: string, waitMs: number, captureState?: CaptureInteractionState): Promise<DocStateTransition | null> {
+  const beforeState = stateManager.getCurrentState();
   if (!beforeState) {
     return null;
   }
@@ -136,7 +137,7 @@ async function executeInteraction(explorer: Explorer, candidate: InteractionCand
 
   await wait(waitMs);
 
-  const afterState = explorer.getStateManager().getCurrentState();
+  const afterState = stateManager.getCurrentState();
   if (!afterState) {
     return null;
   }
@@ -164,7 +165,7 @@ async function executeInteraction(explorer: Explorer, candidate: InteractionCand
 }
 
 async function attemptInteraction(explorer: Explorer, candidate: InteractionCandidate): Promise<boolean> {
-  const action = explorer.createAction();
+  const action = explorer.action();
 
   for (const command of buildClickCommands(candidate.element, candidate.container)) {
     const success = await action.attempt(command, buildPurpose(candidate));
@@ -178,7 +179,7 @@ async function attemptInteraction(explorer: Explorer, candidate: InteractionCand
 
 async function restoreInteractionState(explorer: Explorer, restoreUrl: string, primaryCommand?: string | null): Promise<void> {
   if (primaryCommand) {
-    const action = explorer.createAction();
+    const action = explorer.action();
     const restored = await action.attempt(primaryCommand, `Restore initial state on ${restoreUrl}`);
     if (restored) {
       await wait(TAB_WAIT_MS);
@@ -186,7 +187,7 @@ async function restoreInteractionState(explorer: Explorer, restoreUrl: string, p
     }
   }
 
-  const action = explorer.createAction();
+  const action = explorer.action();
   await action.attempt(`I.amOnPage(${JSON.stringify(restoreUrl)})`, `Restore page ${restoreUrl}`);
 }
 

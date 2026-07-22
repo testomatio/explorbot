@@ -29,8 +29,7 @@ describe('back tool', () => {
       getStateHistory: () => [{ toState: after }],
     };
     const explorer = {
-      getStateManager: () => stateManager,
-      createAction: () => ({
+      action: () => ({
         attempt: async () => {
           navigated = true;
           return true;
@@ -41,9 +40,10 @@ describe('back tool', () => {
 
     const tools = createAgentTools({
       explorer: explorer as any,
+      stateManager: stateManager as any,
+      ai: {} as any,
       researcher: {} as any,
       navigator: {} as any,
-      getState: () => before as any,
     });
 
     const result: any = await tools.back.execute({ reason: 'went to the wrong page' });

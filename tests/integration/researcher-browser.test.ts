@@ -8,7 +8,7 @@ import { Provider } from '../../src/ai/provider.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
 import { clearResearchCache } from '../../src/ai/researcher/cache.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { annotatePageElements } from '../../src/explorer.ts';
+import { annotatePageElements } from '../../src/utils/web-annotate.ts';
 
 const TASK_BOARD_URL = `file://${join(process.cwd(), 'test-data', 'task-board.html')}`;
 
@@ -81,7 +81,7 @@ describe('Researcher with real browser + aimock', () => {
     };
   }
 
-  function buildExplorer(state: any) {
+  function buildDeps(state: any) {
     const mockExperienceTracker = {
       getSuccessfulExperience: () => [],
       updateSummary: () => {},
@@ -92,24 +92,23 @@ describe('Researcher with real browser + aimock', () => {
       getExperienceTracker: () => mockExperienceTracker,
       getRelevantKnowledge: () => [],
     };
-    return {
-      getStateManager: () => mockStateManager,
-      getKnowledgeTracker: () => ({ getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '' }),
-      getConfig: () => ConfigParser.getInstance().getConfig(),
-      visit: async () => {},
-      annotateElements: async () => (await annotatePageElements(page)).elements,
-      capturePageState: async () => ActionResult.fromState(state),
-      capturePageWithScreenshot: async () => ActionResult.fromState(state),
-      runWithBrowserRecovery: async (_label: string, operation: () => Promise<any>) => operation(),
-      createAction: () => ({
+    const explorer = {
+      visit: async () => ActionResult.fromState(state),
+      capture: async () => ActionResult.fromState(state),
+      withPage: async (fn: any) => fn(page),
+      action: () => ({
         capturePageState: async () => ActionResult.fromState(state),
       }),
-      playwrightLocatorCount: async (cb: (p: any) => any) => {
-        const locator = cb(page);
-        return locator.count();
-      },
-      playwrightHelper: { page },
+      page,
     } as any;
+    return {
+      explorer,
+      config: ConfigParser.getInstance().getConfig(),
+      stateManager: mockStateManager,
+      knowledgeTracker: { getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '' },
+      requestStore: {},
+      playwrightRecorder: {},
+    };
   }
 
   beforeAll(async () => {
@@ -140,7 +139,7 @@ describe('Researcher with real browser + aimock', () => {
     ConfigParser.setupTestConfig();
 
     const state = await captureRealState();
-    researcher = new Researcher(buildExplorer(state), provider);
+    researcher = new Researcher({ ...buildDeps(state), ai: provider } as any);
   });
 
   afterAll(async () => {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-22
+
+### Changes
+- Fixed a test being reported as started when the browser could not be recovered before it began. Browser recovery now runs before the test starts, so a failed recovery no longer leaves a started-but-never-finished test in the report.
+
 ## 2026-07-19
 
 ### Environment Variables
@@ -39,6 +44,9 @@ Config-free runs do not write experience and run with the Historian off, so no g
 ## 2026-07-17
 
 ### Changes
+- Browser crash recovery now applies to every browser operation. Previously some interactions and page lookups could fail permanently when the page or browser crashed mid-session; now every action, capture, and element query automatically reattaches the page or restarts the browser and retries once before giving up.
+- [Captain] The `browser` tool's `restart` action was merged into `recover` — recovering a page now escalates to a full browser restart automatically when needed, so there is no separate action to choose.
+- Failed page actions that accidentally entered an iframe now return to the main page automatically. Previously only failed form actions did this; now it applies to every action, so a failed click or keypress can no longer leave the session stuck inside an iframe.
 - Research no longer discards whole sections of a page when a container matches more than one element. A container only narrows down where child elements are looked up, so a selector matching every navigation bar or every card on the page is now perfectly usable — each child element inside it is still required to be unique. Previously such a section was declared broken and every element in it was sent back to the AI for repair.
 - When a container matches nothing on the page, Explorbot now repairs it by looking at the elements it found inside it and working out their real wrapper, instead of asking the AI to guess a new selector. The section is fixed instantly and keeps working locators for its elements. When several sections share the same broken container and only some of them can be repaired this way, the remaining sections are still sent to the AI repair step instead of being wrongly treated as fixed.
 - [Pilot] Pilot's instructions and its list of available tools now stay identical across every call in a session, with the scenario details moved to the end. Providers can reuse the prompt they already processed instead of re-reading it on each call, which lowers the cost of long test runs.

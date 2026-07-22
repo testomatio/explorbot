@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { annotatePageElements } from '../../src/explorer.ts';
+import { annotatePageElements } from '../../src/utils/web-annotate.ts';
 
 function createMockPage(ariaSnapshot: string, roleElements: Record<string, any[]>) {
   return {

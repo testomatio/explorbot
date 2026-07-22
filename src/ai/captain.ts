@@ -49,7 +49,7 @@ export class Captain extends CaptainBase implements Agent {
   private getHooksRunner(): HooksRunner {
     if (!this.hooksRunner) {
       const explorer = this.explorBot.getExplorer();
-      this.hooksRunner = new HooksRunner(explorer, explorer.getConfig());
+      this.hooksRunner = new HooksRunner(explorer, this.explorBot.getConfig());
     }
     return this.hooksRunner;
   }
@@ -89,17 +89,16 @@ export class Captain extends CaptainBase implements Agent {
   getMode(): CaptainMode {
     const explorer = this.explorBot.getExplorer();
     const activeTest = explorer.activeTest;
-    const page = explorer.playwrightHelper?.page;
 
-    if (activeTest && (!page || page.isClosed?.())) return 'heal';
+    if (activeTest && !explorer.page) return 'heal';
     if (activeTest) return 'test';
-    if (explorer.getStateManager().getCurrentState()) return 'web';
+    if (this.explorBot.stateManager().getCurrentState()) return 'web';
     return 'idle';
   }
 
   private systemPrompt(): string {
     const mode = this.getMode();
-    const currentUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url;
+    const currentUrl = this.explorBot.stateManager().getCurrentState()?.url;
     const customPrompt = this.explorBot.getProvider().getSystemPromptForAgent('captain', currentUrl);
 
     return dedent`
@@ -147,7 +146,7 @@ export class Captain extends CaptainBase implements Agent {
   }
 
   private async getPageContext(): Promise<string> {
-    const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
     if (!state) {
       return 'No page loaded';
     }
@@ -326,7 +325,7 @@ export class Captain extends CaptainBase implements Agent {
     }
 
     const pilotAnalysis = this.explorBot.agentPilot().getLastAnalysis() || '';
-    const currentUrl = this.explorBot.getExplorer().getStateManager().getCurrentState()?.url || '';
+    const currentUrl = this.explorBot.stateManager().getCurrentState()?.url || '';
 
     const schema = z.object({
       action: z.enum(['inject', 'stop', 'pass', 'skip']),
@@ -377,7 +376,7 @@ export class Captain extends CaptainBase implements Agent {
 
   async processExecutionError(error: Error, activeTest: Test): Promise<ExecutionRecoveryAction> {
     const explorer = this.explorBot.getExplorer();
-    const result = await explorer.handleExecutionError(error);
+    const result = await explorer.recover(error);
     return {
       ...result,
       message: result.recovered ? `${result.message}\nContinue the test "${activeTest.scenario}" from the restored page.` : result.message,
@@ -389,7 +388,7 @@ export class Captain extends CaptainBase implements Agent {
   }
 
   async handle(input: string, options: { reset?: boolean } = {}): Promise<string | null> {
-    const stateManager = this.explorBot.getExplorer().getStateManager();
+    const stateManager = this.explorBot.stateManager();
     const initialState = stateManager.getCurrentState();
 
     const conversation = options.reset ? this.resetConversation() : this.ensureConversation();

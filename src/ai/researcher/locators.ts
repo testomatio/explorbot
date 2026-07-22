@@ -52,18 +52,18 @@ export function WithLocators<T extends Constructor>(Base: T) {
           continue;
         }
         try {
-          const count = await this.explorer.playwrightLocatorCount((page) => {
+          const count = await this.explorer.withPage((page) => {
             const base = loc.container ? page.locator(loc.container) : page;
             if (loc.type === 'aria') {
               const parsed = parseAriaLocator(loc.locator);
-              if (!parsed) return page.locator('__invalid__');
-              return base.getByRole(parsed.role as any, { name: parsed.text });
+              if (!parsed) return page.locator('__invalid__').count();
+              return base.getByRole(parsed.role as any, { name: parsed.text }).count();
             }
             const converted = loc.locator.replace(/:contains\(/g, ':has-text(');
             if (converted !== loc.locator) {
               loc.locator = converted;
             }
-            return base.locator(loc.locator);
+            return base.locator(loc.locator).count();
           });
           loc.valid = count === 1;
           if (opts.scope && count > 1) loc.valid = true;
@@ -196,7 +196,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
       }
 
       if (needsXpath.length > 0) {
-        const webElements = await this.explorer.runWithBrowserRecovery('backfillBrokenLocators', () => WebElement.fromEidxList(this.explorer.playwrightHelper.page, needsXpath));
+        const webElements = await this.explorer.withPage((page) => WebElement.fromEidxList(page, needsXpath));
         const changedSections = new Set<(typeof sections)[0]>();
         for (const w of webElements) {
           const entry = needsXpathEls.get(w.eidx!);
@@ -273,7 +273,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
 
         let count = 0;
         try {
-          count = await this.explorer.playwrightLocatorCount((page) => page.locator(section.containerCss!));
+          count = await this.explorer.withPage((page) => page.locator(section.containerCss!).count());
         } catch {}
 
         if (count >= 1) continue;
@@ -282,7 +282,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
         if (simplified) {
           let simplifiedCount = 0;
           try {
-            simplifiedCount = await this.explorer.playwrightLocatorCount((page) => page.locator(simplified));
+            simplifiedCount = await this.explorer.withPage((page) => page.locator(simplified).count());
           } catch {}
 
           if (simplifiedCount >= 1) {

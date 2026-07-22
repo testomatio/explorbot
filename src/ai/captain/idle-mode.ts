@@ -66,7 +66,7 @@ export function WithIdleMode<T extends Constructor>(Base: T) {
               if (!action || action === 'replace') {
                 plan.tests.length = 0;
               }
-              const currentUrl = ctx.explorBot.getExplorer().getStateManager().getCurrentState()?.url || '';
+              const currentUrl = ctx.explorBot.stateManager().getCurrentState()?.url || '';
               for (const testInput of tests) {
                 const priority = testInput.priority || 'normal';
                 const expected = testInput.expected?.length ? testInput.expected : [];

@@ -17,14 +17,12 @@ describe('createAgentTools experience', () => {
         content: '## FLOW: use prior success',
       }),
     };
-    const explorer = {
-      getStateManager: () => ({
-        getCurrentState: () => state,
-        getExperienceTracker: () => experienceTracker,
-      }),
+    const stateManager = {
+      getCurrentState: () => state,
+      getExperienceTracker: () => experienceTracker,
     } as any;
 
-    const tools = createAgentTools({ explorer, researcher: {} as any, navigator: {} as any });
+    const tools = createAgentTools({ explorer: {} as any, stateManager, ai: {} as any, researcher: {} as any, navigator: {} as any });
 
     expect(tools.learnExperience).toBeDefined();
 
@@ -38,7 +36,7 @@ describe('createAgentTools experience', () => {
   });
 
   it('omits learnExperience when withExperience is false', () => {
-    const tools = createAgentTools({ explorer: {} as any, researcher: {} as any, navigator: {} as any, withExperience: false });
+    const tools = createAgentTools({ explorer: {} as any, stateManager: {} as any, ai: {} as any, researcher: {} as any, navigator: {} as any, withExperience: false });
     expect(tools.learnExperience).toBeUndefined();
   });
 });

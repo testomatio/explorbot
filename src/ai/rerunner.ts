@@ -12,16 +12,13 @@ import figureSet from 'figures';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { setActivity } from '../activity.ts';
-import type { ExperienceTracker } from '../experience-tracker.ts';
-import type Explorer from '../explorer.ts';
-import type { KnowledgeTracker } from '../knowledge-tracker.ts';
 import { Stats } from '../stats.ts';
 import { Task, Test, TestResult } from '../test-plan.ts';
 import { formatHeadings } from '../utils/context-formatter.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
 import { RulesLoader } from '../utils/rules-loader.ts';
-import type { Agent } from './agent.ts';
+import type { Agent, AgentDeps } from './agent.ts';
 import { toolExecutionLabel } from './conversation.ts';
 import type { Navigator } from './navigator.ts';
 import { Provider } from './provider.ts';
@@ -35,17 +32,13 @@ export class Rerunner extends TaskAgent implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'pressKey', 'form'];
   emoji = '🔄';
 
-  private explorer: Explorer;
-  private provider: Provider;
   private agentTools: any;
   private healedSteps: Array<{ original: string; healed: string }> = [];
   private traceDir = '';
   private static pluginsWired = false;
 
-  constructor(explorer: Explorer, provider: Provider, agentTools?: any) {
-    super();
-    this.explorer = explorer;
-    this.provider = provider;
+  constructor(deps: AgentDeps, agentTools?: any) {
+    super(deps);
     this.agentTools = agentTools;
   }
 
@@ -53,20 +46,8 @@ export class Rerunner extends TaskAgent implements Agent {
     throw new Error('Rerunner does not use Navigator');
   }
 
-  protected getExperienceTracker(): ExperienceTracker {
-    return this.explorer.getStateManager().getExperienceTracker();
-  }
-
-  protected getKnowledgeTracker(): KnowledgeTracker {
-    return this.explorer.getKnowledgeTracker();
-  }
-
-  protected getProvider(): Provider {
-    return this.provider;
-  }
-
   private get rerunnerConfig(): Record<string, any> {
-    return (this.explorer.getConfig().ai?.agents?.rerunner as any) || {};
+    return (this.config.ai?.agents?.rerunner as any) || {};
   }
 
   private get healLimit(): number {
@@ -325,7 +306,7 @@ export class Rerunner extends TaskAgent implements Agent {
       });
 
       const healTask = new Task(`Heal: ${failedCode}`);
-      const codeceptTools = createCodeceptJSTools(this.explorer, healTask);
+      const codeceptTools = createCodeceptJSTools(this.toolDeps, healTask);
 
       let healed = false;
       let healedCommand = '';
@@ -345,9 +326,9 @@ export class Rerunner extends TaskAgent implements Agent {
               healTask.addNote(note);
               tag('substep').log(note);
             }
-            const action = this.explorer.createAction();
+            const action = this.explorer.action();
             await action.execute(`I.wait(${seconds})`);
-            const state = this.explorer.getStateManager().getCurrentState();
+            const state = this.stateManager.getCurrentState();
             const ar = state ? ActionResult.fromState(state) : null;
             return {
               success: true,
@@ -438,8 +419,8 @@ export class Rerunner extends TaskAgent implements Agent {
   }
 
   private getHealSystemPrompt(): string {
-    const customRules = this.provider.getSystemPromptForAgent('rerunner', this.explorer.getStateManager().getCurrentState()?.url) || '';
-    const currentUrl = this.explorer.getStateManager().getCurrentState()?.url || '';
+    const customRules = this.provider.getSystemPromptForAgent('rerunner', this.stateManager.getCurrentState()?.url) || '';
+    const currentUrl = this.stateManager.getCurrentState()?.url || '';
     const approach = RulesLoader.loadRules('rerunner', ['healing-approach'], currentUrl);
 
     return dedent`
@@ -474,7 +455,7 @@ export class Rerunner extends TaskAgent implements Agent {
   }
 
   private getHealUserPrompt(failedCode: string, error: Error): string {
-    const state = this.explorer.getStateManager().getCurrentState();
+    const state = this.stateManager.getCurrentState();
     const actionResult = state ? ActionResult.fromState(state) : null;
 
     const headings = formatHeadings(state || {});

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { ActionResult } from '../action-result.ts';
 import { outputPath } from '../config.ts';
+import type Explorer from '../explorer.ts';
 import type { StateManager, StateTransition, WebPageState } from '../state-manager.ts';
 import type { Task } from '../test-plan.ts';
 import { createDebug, tag } from '../utils/logger.ts';
@@ -18,7 +19,7 @@ export class Quartermaster {
   private outputDir: string;
   private pageAnalyses: Map<string, PageAnalysis> = new Map();
   private unsubscribe: (() => void) | null = null;
-  private playwrightHelper: any = null;
+  private explorer: Explorer | null = null;
   private pendingAnalyses: Promise<void>[] = [];
 
   constructor(provider: Provider, options?: { model?: any }) {
@@ -28,8 +29,8 @@ export class Quartermaster {
     this.outputDir = outputPath('a11y');
   }
 
-  start(playwrightHelper: any, stateManager: StateManager): void {
-    this.playwrightHelper = playwrightHelper;
+  start(explorer: Explorer, stateManager: StateManager): void {
+    this.explorer = explorer;
     mkdirSync(this.outputDir, { recursive: true });
 
     this.unsubscribe = stateManager.onStateChange((event) => {
@@ -60,7 +61,7 @@ export class Quartermaster {
   }
 
   private async runAxeAnalysis(state: WebPageState): Promise<void> {
-    const page = this.playwrightHelper?.page;
+    const page = this.explorer?.page;
     if (!page || !state.hash) {
       debugLog('No page available for axe analysis');
       return;
