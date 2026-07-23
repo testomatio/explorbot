@@ -190,7 +190,7 @@ export function computeHtmlFingerprint(html: string): string[] {
 /**
  * Compares two HTML documents and returns differences along with a diff subtree.
  */
-export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlConfig?: HtmlConfig, options: { includeTextChanges?: boolean } = {}): Promise<HtmlDiffResult> {
+export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlConfig?: HtmlConfig): Promise<HtmlDiffResult> {
   const originalDocument = parseDocument(originalHtml, htmlConfig);
   const modifiedDocument = parseDocument(modifiedHtml, htmlConfig);
 
@@ -203,7 +203,7 @@ export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlC
   const similarity = calculateSimilarity(originalLines, modifiedLines);
   const { added, removed } = findDifferences(originalLines, modifiedLines);
 
-  const parts = await buildDiffParts(originalDocument, modifiedDocument, options.includeTextChanges === true);
+  const parts = await buildDiffParts(originalDocument, modifiedDocument);
 
   const structuralAdditions = parts.flatMap((p) => p.added.filter((a) => a.startsWith('ELEMENT:')));
   const allAdded = [...added, ...structuralAdditions];
@@ -237,25 +237,7 @@ function parseDocument(html: string, htmlConfig?: HtmlConfig): DocumentNode {
 function sanitizeDocumentTreeForDiff(document: parse5TreeAdapter.Document): void {
   // Remove standard non-semantic tags
   stripElementsByTag(document, new Set([...NON_SEMANTIC_TAGS, 'iframe']));
-  stripExplorbotArtifacts(document);
   pruneDocumentHeadForDiff(document);
-}
-
-function stripExplorbotArtifacts(node: ParentNodeLike): void {
-  if (!node.childNodes) return;
-
-  for (let i = node.childNodes.length - 1; i >= 0; i--) {
-    const child = node.childNodes[i];
-    if (!('tagName' in child) || !child.tagName) continue;
-
-    const element = child as ElementNode;
-    if (element.attrs?.some((attr) => attr.name === 'data-explorbot-annotation')) {
-      node.childNodes.splice(i, 1);
-      continue;
-    }
-    element.attrs = element.attrs?.filter((attr) => !attr.name.startsWith('data-explorbot-')) ?? [];
-    stripExplorbotArtifacts(element);
-  }
 }
 
 /**
@@ -466,7 +448,7 @@ function findStableContainer(topLevelPath: string, originalMap: NodeMap, modifie
   return { path: 'html[1]/body[1]', selector: 'body' };
 }
 
-async function buildDiffParts(originalDocument: DocumentNode, modifiedDocument: DocumentNode, includeTextChanges: boolean): Promise<HtmlDiffPart[]> {
+async function buildDiffParts(originalDocument: DocumentNode, modifiedDocument: DocumentNode): Promise<HtmlDiffPart[]> {
   const originalMap = collectElementMap(originalDocument);
   const modifiedMap = collectElementMap(modifiedDocument);
 
@@ -483,7 +465,7 @@ async function buildDiffParts(originalDocument: DocumentNode, modifiedDocument: 
       continue;
     }
 
-    if (attributesDiffer(element, originalElement) || (includeTextChanges && directTextDiffer(element, originalElement))) {
+    if (attributesDiffer(element, originalElement)) {
       changedPaths.push(path);
     }
   }

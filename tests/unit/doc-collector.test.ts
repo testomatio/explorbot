@@ -6,7 +6,7 @@ import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
-import { captureDocumentationScreenshots, captureInteractionScreenshot, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
+import { captureDocumentationScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
 import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
 
 describe('doc-collector path filter', () => {
@@ -435,167 +435,6 @@ describe('doc-collector screenshots', () => {
     expect(captured.map((item) => item.selector)).toEqual([undefined, '.mainnav-menu']);
   });
 
-  it('captures the smallest live container covering ARIA changes', async () => {
-    const calls: Array<{ clip?: { x: number; y: number; width: number; height: number } }> = [];
-    let evaluations = 0;
-    const clip = { x: 20, y: 30, width: 400, height: 300 };
-    const page = {
-      async screenshot(options: any) {
-        calls.push(options);
-      },
-      getByRole() {
-        return {
-          async all() {
-            return [
-              {
-                async evaluate() {},
-              },
-            ];
-          },
-        };
-      },
-      async evaluate() {
-        evaluations++;
-        return evaluations === 1 ? clip : undefined;
-      },
-    };
-
-    const result = await captureInteractionScreenshot(
-      { page } as any,
-      { url: '/dashboard', ariaSnapshot: '- button "Old"' },
-      { url: '/dashboard', ariaSnapshot: '- button "Old"\n- link "New item"' },
-      { action: 'Clicked tab: Details', before: 'before', after: 'after', targetState: { kind: 'section', label: 'Details', url: '/dashboard' }, element: { role: 'tab', name: 'Details', section: 'Tabs', container: '.tabs' } },
-      { pageFilePath: 'output/docs/pages/dashboard.md', screenshotsDir: 'output/docs/screenshots', config: {} }
-    );
-
-    expect(result?.kind).toBe('state');
-    expect(calls[0].clip).toEqual(clip);
-  });
-
-  it('uses the reverse DOM diff to capture a container after content is removed', async () => {
-    const calls: Array<{ selector?: string }> = [];
-    const markedSelectors: string[] = [];
-    const page = {
-      async screenshot(options: any) {
-        calls.push(options);
-      },
-      locator(selector: string) {
-        return {
-          first() {
-            return {
-              async evaluate() {
-                markedSelectors.push(selector);
-              },
-              async screenshot() {
-                calls.push({ selector });
-              },
-            };
-          },
-        };
-      },
-      async evaluate() {
-        return undefined;
-      },
-    };
-
-    const result = await captureInteractionScreenshot(
-      { page } as any,
-      { url: '/search', html: '<main><section class="results"><article>One</article><article>Two</article></section></main>' },
-      { url: '/search', html: '<main><section class="results"><article>One</article></section></main>' },
-      { action: 'Clicked button: Clear', before: 'before', after: 'after' },
-      { pageFilePath: 'output/docs/pages/dashboard.md', screenshotsDir: 'output/docs/screenshots', config: {} }
-    );
-
-    expect(result?.kind).toBe('state');
-    expect(markedSelectors.length).toBeGreaterThan(0);
-    expect(calls).toEqual([{ selector: markedSelectors[0] }]);
-  });
-
-  it('falls back to the viewport when changes only share the document root', async () => {
-    const calls: Array<{ viewport?: boolean }> = [];
-    const page = {
-      async screenshot() {
-        calls.push({ viewport: true });
-      },
-      getByRole: () => ({ all: async () => [{ evaluate: async () => {} }] }),
-      async evaluate() {
-        return false;
-      },
-    };
-
-    const result = await captureInteractionScreenshot(
-      { page } as any,
-      { url: '/dashboard', ariaSnapshot: '- link "Report"' },
-      { url: '/reports/1', ariaSnapshot: '- heading "Report"\n- button "Download"' },
-      { action: 'Clicked link: Report', before: 'before', after: 'after' },
-      { pageFilePath: 'output/docs/pages/dashboard.md', screenshotsDir: 'output/docs/screenshots', config: {} }
-    );
-
-    expect(result?.kind).toBe('state');
-    expect(calls).toEqual([{ viewport: true }]);
-  });
-
-  it('uses the viewport when the only changed container is the document root', async () => {
-    const calls: string[] = [];
-    const page = {
-      async screenshot() {
-        calls.push('viewport');
-      },
-      locator(selector: string) {
-        return {
-          async evaluateAll() {},
-          first() {
-            return {
-              async evaluate() {
-                return true;
-              },
-              async screenshot() {
-                calls.push(selector);
-              },
-            };
-          },
-        };
-      },
-    };
-
-    await captureInteractionScreenshot(
-      { page } as any,
-      { url: '/products', html: '<main><h1>Products</h1><section>Catalog</section></main>' },
-      { url: '/account', html: '<main><h1>Account</h1><form><button>Save</button></form></main>' },
-      { action: 'Clicked link: Account', before: 'before', after: 'after' },
-      { pageFilePath: 'output/docs/pages/products.md', screenshotsDir: 'output/docs/screenshots', config: {} }
-    );
-
-    expect(calls).toEqual(['viewport']);
-  });
-
-  it('captures a newly visible dialog before calculating other changes', async () => {
-    const calls: string[] = [];
-    const page = {
-      locator(selector: string) {
-        return {
-          last() {
-            return {
-              async screenshot() {
-                calls.push(selector);
-              },
-            };
-          },
-        };
-      },
-    };
-
-    const result = await captureInteractionScreenshot(
-      { page } as any,
-      { url: '/dashboard', ariaSnapshot: '- button "Open"' },
-      { url: '/dashboard', ariaSnapshot: '- dialog "Settings"\n  - button "Close"' },
-      { action: 'Clicked button: Open', before: 'before', after: 'after' },
-      { pageFilePath: 'output/docs/pages/dashboard.md', screenshotsDir: 'output/docs/screenshots', config: {} }
-    );
-
-    expect(result?.kind).toBe('state');
-    expect(calls).toEqual(['[role="dialog"]:visible, [role="alertdialog"]:visible, [aria-modal="true"]:visible']);
-  });
 });
 
 describe('doc-collector scope and signal', () => {
@@ -906,6 +745,7 @@ describe('documentarian interactive mode', () => {
       { url: '/suites', title: 'Suites', h1: 'Suites', ariaSnapshot: '- heading "Suites"\n- dialog "Import tests":\n  - heading "Import tests"' },
     ];
     let stateIndex = 0;
+    const screenshotLifecycle: string[] = [];
     const provider = {
       async generateObject() {
         return {
@@ -923,6 +763,7 @@ describe('documentarian interactive mode', () => {
       action() {
         return {
           async attempt(command: string) {
+            screenshotLifecycle.push(command.startsWith('I.amOnPage') ? 'restore' : 'click');
             stateIndex = command.startsWith('I.amOnPage') ? 0 : 1;
             return true;
           },
@@ -936,10 +777,21 @@ describe('documentarian interactive mode', () => {
 
 | Element | Type | ARIA | CSS |
 |------|------|------|------|
-| 'Import tests' | button | { role: 'button', text: 'Import tests' } | 'button.import' |`
+| 'Import tests' | button | { role: 'button', text: 'Import tests' } | 'button.import' |`,
+      {
+        async before() {
+          screenshotLifecycle.push('before');
+          return Buffer.from('before');
+        },
+        async after(beforeScreenshot) {
+          screenshotLifecycle.push(`after:${beforeScreenshot?.toString()}`);
+          return null;
+        },
+      }
     );
 
     expect(result.interactions?.[0]?.targetState).toEqual({ kind: 'dialog', label: 'Import tests', url: '/suites' });
+    expect(screenshotLifecycle).toEqual(['before', 'click', 'after:before', 'restore']);
     expect(stateIndex).toBe(0);
   });
 

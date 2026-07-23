@@ -1,25 +1,84 @@
+import { writeFileSync } from 'node:fs';
+import pixelmatch from 'pixelmatch';
 import type { Page } from 'playwright';
-import type { WebPageState } from '../../../src/state-manager.ts';
-import { collectInteractiveNodes, detectFocusArea } from '../../../src/utils/aria.ts';
-import { htmlDiff } from '../../../src/utils/html-diff.ts';
+import { PNG } from 'pngjs';
 
-const TARGET_ATTRIBUTE = 'data-docbot-change-target';
-const REGION_PADDING = 16;
+const REGION_PADDING = 30;
+const SCREENSHOT_OPTIONS = { animations: 'disabled', caret: 'hide' } as const;
 
-export async function captureInteractionStateScreenshot(page: Page, beforeState: WebPageState, state: WebPageState, filePath: string): Promise<boolean> {
+export async function captureInteractionBefore(page: Page): Promise<Buffer | null> {
   await removeVisualAnnotations(page);
-  if (await captureNewFocusArea(page, beforeState, state, filePath)) return true;
-
-  const selectors = await getChangedDomSelectors(beforeState, state);
   try {
-    if (selectors.length === 1) return await captureChangedContainer(page, selectors[0], filePath);
-    await markChangedElements(page, beforeState, state, selectors);
-    return await captureMarkedRegion(page, filePath);
+    return await page.screenshot(SCREENSHOT_OPTIONS);
   } catch {
-    return false;
-  } finally {
-    await clearChangeMarkers(page);
+    return null;
   }
+}
+
+export async function captureInteractionAfter(page: Page, beforeScreenshot: Buffer | null, filePath: string, detectUnmarkedOverlay = false): Promise<InteractionCaptureResult> {
+  if (!beforeScreenshot) return 'failed';
+
+  await removeVisualAnnotations(page);
+  try {
+    const afterScreenshot = await page.screenshot(SCREENSHOT_OPTIONS);
+    const before = PNG.sync.read(beforeScreenshot);
+    const after = PNG.sync.read(afterScreenshot);
+    if (before.width !== after.width || before.height !== after.height) return 'failed';
+    const changedPixels = findChangedPixelBounds(before, after);
+    if (!changedPixels) return 'unchanged';
+    const fullViewportChanged = changedPixels.x === 0 && changedPixels.y === 0 && changedPixels.width === after.width && changedPixels.height === after.height;
+    const changedRegion = addPadding(changedPixels, after.width, after.height);
+    const overlayRegion = fullViewportChanged ? await findOverlayRegion(page, after, detectUnmarkedOverlay) : null;
+    saveRegion(after, overlayRegion || changedRegion, filePath);
+    return 'captured';
+  } catch {
+    return 'failed';
+  }
+}
+
+export function findChangedRegion(beforeScreenshot: Buffer, afterScreenshot: Buffer, padding = REGION_PADDING): ScreenshotRegion | null {
+  const before = PNG.sync.read(beforeScreenshot);
+  const after = PNG.sync.read(afterScreenshot);
+  if (before.width !== after.width || before.height !== after.height) return null;
+  const changedPixels = findChangedPixelBounds(before, after);
+  return changedPixels ? addPadding(changedPixels, before.width, before.height, padding) : null;
+}
+
+function saveRegion(after: PNG, region: ScreenshotRegion, filePath: string): void {
+  const cropped = new PNG({ width: region.width, height: region.height });
+  PNG.bitblt(after, cropped, region.x, region.y, region.width, region.height, 0, 0);
+  writeFileSync(filePath, PNG.sync.write(cropped));
+}
+
+function findChangedPixelBounds(before: PNG, after: PNG): ScreenshotRegion | null {
+  const diff = Buffer.alloc(before.width * before.height * 4);
+  const changedPixels = pixelmatch(before.data, after.data, diff, before.width, before.height, { diffMask: true });
+  if (changedPixels === 0) return null;
+
+  let left = before.width;
+  let top = before.height;
+  let right = 0;
+  let bottom = 0;
+
+  for (let y = 0; y < before.height; y++) {
+    for (let x = 0; x < before.width; x++) {
+      if (diff[(y * before.width + x) * 4 + 3] === 0) continue;
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+    }
+  }
+
+  return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+}
+
+function addPadding(region: ScreenshotRegion, imageWidth: number, imageHeight: number, padding = REGION_PADDING): ScreenshotRegion {
+  const x = Math.max(0, region.x - padding);
+  const y = Math.max(0, region.y - padding);
+  const maxX = Math.min(imageWidth, region.x + region.width + padding);
+  const maxY = Math.min(imageHeight, region.y + region.height + padding);
+  return { x, y, width: maxX - x, height: maxY - y };
 }
 
 async function removeVisualAnnotations(page: Page): Promise<void> {
@@ -30,119 +89,72 @@ async function removeVisualAnnotations(page: Page): Promise<void> {
   } catch {}
 }
 
-async function captureNewFocusArea(page: Page, beforeState: WebPageState, state: WebPageState, filePath: string): Promise<boolean> {
-  const before = detectFocusArea(beforeState.ariaSnapshot || null);
-  const after = detectFocusArea(state.ariaSnapshot || null);
-  if (!after.detected || (before.detected && before.type === after.type && before.name === after.name)) return false;
-
+async function findOverlayRegion(page: Page, image: PNG, detectUnmarkedOverlay: boolean): Promise<ScreenshotRegion | null> {
+  let box: { x: number; y: number; width: number; height: number } | null = null;
   try {
-    await page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible, [aria-modal="true"]:visible').last().screenshot({ path: filePath });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function getChangedDomSelectors(beforeState: WebPageState, state: WebPageState): Promise<string[]> {
-  if (!beforeState.html || !state.html) return [];
-
-  try {
-    const [added, removed] = await Promise.all([htmlDiff(beforeState.html, state.html, undefined, { includeTextChanges: true }), htmlDiff(state.html, beforeState.html, undefined, { includeTextChanges: true })]);
-    return [...new Set([...added.parts, ...removed.parts].map((part) => part.container).filter((selector) => selector !== 'body' && selector !== 'html'))];
-  } catch {
-    return [];
-  }
-}
-
-async function captureChangedContainer(page: Page, selector: string, filePath: string): Promise<boolean> {
-  const locator = page.locator(selector).first();
-  const isDocumentRoot = await locator.evaluate((element) => {
-    const visibleContent = [...document.body.children].filter((child) => {
-      if (['SCRIPT', 'STYLE', 'TEMPLATE'].includes(child.tagName)) return false;
-      if (child.hasAttribute('data-explorbot-annotation')) return false;
-      const box = child.getBoundingClientRect();
-      return box.width > 0 && box.height > 0;
-    });
-    return visibleContent.length === 1 && visibleContent[0] === element;
-  });
-  if (isDocumentRoot) return false;
-
-  await locator.screenshot({ path: filePath });
-  return true;
-}
-
-async function markChangedElements(page: Page, beforeState: WebPageState, state: WebPageState, selectors: string[]): Promise<void> {
-  for (const node of getChangedAriaNodes(beforeState.ariaSnapshot || null, state.ariaSnapshot || null)) {
-    if (!node.name) continue;
-    try {
-      const locators = await page.getByRole(node.role, { name: node.name, exact: true }).all();
-      if (locators.length !== 1) continue;
-      await locators[0].evaluate((element, attribute) => element.setAttribute(attribute, 'true'), TARGET_ATTRIBUTE);
-    } catch {}
-  }
-
-  for (const selector of selectors) {
-    try {
-      await page
-        .locator(selector)
-        .first()
-        .evaluate((element, attribute) => element.setAttribute(attribute, 'true'), TARGET_ATTRIBUTE);
-    } catch {}
-  }
-}
-
-async function captureMarkedRegion(page: Page, filePath: string): Promise<boolean> {
-  const clip = await page.evaluate(
-    ({ targetAttribute, padding }) => {
-      const elements = [...document.querySelectorAll(`[${targetAttribute}]`)];
-      if (elements.length === 0) return null;
-
-      let region: Element | null = elements[0];
-      while (region && !elements.every((element) => region?.contains(element))) region = region.parentElement;
-      if (!region || region === document.body || region === document.documentElement) return null;
-
-      const boxes = elements.map((element) => element.getBoundingClientRect()).filter((box) => box.width > 0 && box.height > 0);
-      if (boxes.length === 0) return null;
-      const left = Math.max(0, Math.min(...boxes.map((box) => box.left)) + window.scrollX - padding);
-      const top = Math.max(0, Math.min(...boxes.map((box) => box.top)) + window.scrollY - padding);
-      const right = Math.min(document.documentElement.scrollWidth, Math.max(...boxes.map((box) => box.right)) + window.scrollX + padding);
-      const bottom = Math.min(document.documentElement.scrollHeight, Math.max(...boxes.map((box) => box.bottom)) + window.scrollY + padding);
-      return { x: left, y: top, width: right - left, height: bottom - top };
-    },
-    { targetAttribute: TARGET_ATTRIBUTE, padding: REGION_PADDING }
-  );
-  if (!clip || clip.width < 1 || clip.height < 1) return false;
-
-  await page.screenshot({ path: filePath, clip });
-  return true;
-}
-
-async function clearChangeMarkers(page: Page): Promise<void> {
-  try {
-    await page.evaluate((targetAttribute) => {
-      for (const element of document.querySelectorAll(`[${targetAttribute}]`)) element.removeAttribute(targetAttribute);
-    }, TARGET_ATTRIBUTE);
+    const dialogs = page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible, [aria-modal="true"]:visible');
+    if ((await dialogs.count()) > 0) box = await dialogs.last().boundingBox();
   } catch {}
-}
 
-function getChangedAriaNodes(before: string | null, after: string | null): AriaTarget[] {
-  const remaining = collectInteractiveNodes(before).map((node) => JSON.stringify(node));
-  const changed: AriaTarget[] = [];
-
-  for (const node of collectInteractiveNodes(after)) {
-    const serialized = JSON.stringify(node);
-    const match = remaining.indexOf(serialized);
-    if (match >= 0) {
-      remaining.splice(match, 1);
-      continue;
-    }
-    if (typeof node.role !== 'string') continue;
-    changed.push({ role: node.role as AriaTarget['role'], name: typeof node.name === 'string' ? node.name : '' });
+  if (!box && detectUnmarkedOverlay) {
+    try {
+      box = await findUnmarkedOverlay(page);
+    } catch {}
   }
-  return changed;
+
+  try {
+    const viewport = page.viewportSize();
+    if (!box || !viewport) return null;
+
+    const scaleX = image.width / viewport.width;
+    const scaleY = image.height / viewport.height;
+    const x = Math.max(0, Math.floor(box.x * scaleX) - REGION_PADDING);
+    const y = Math.max(0, Math.floor(box.y * scaleY) - REGION_PADDING);
+    const maxX = Math.min(image.width, Math.ceil((box.x + box.width) * scaleX) + REGION_PADDING);
+    const maxY = Math.min(image.height, Math.ceil((box.y + box.height) * scaleY) + REGION_PADDING);
+    if (maxX <= x || maxY <= y) return null;
+    return { x, y, width: maxX - x, height: maxY - y };
+  } catch {
+    return null;
+  }
 }
 
-interface AriaTarget {
-  role: Parameters<Page['getByRole']>[0];
-  name: string;
+async function findUnmarkedOverlay(page: Page): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  return page.evaluate(() => {
+    const elements = [...document.body.querySelectorAll('*')].map((element) => {
+      const style = getComputedStyle(element);
+      const box = element.getBoundingClientRect();
+      const zIndex = Number.parseInt(style.zIndex, 10);
+      return { element, style, box, zIndex, area: box.width * box.height };
+    });
+    const isVisibleLayer = ({ style, box, zIndex }: (typeof elements)[number]) => {
+      if (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) return false;
+      if (box.width <= 0 || box.height <= 0) return false;
+      if (style.position !== 'fixed' && style.position !== 'absolute') return false;
+      return Number.isFinite(zIndex);
+    };
+    const backdropZIndex = elements.filter((item) => isVisibleLayer(item) && item.box.width >= window.innerWidth && item.box.height >= window.innerHeight).reduce((highest, item) => Math.max(highest, item.zIndex), Number.NEGATIVE_INFINITY);
+    if (!Number.isFinite(backdropZIndex)) return null;
+
+    const candidates = elements
+      .filter((item) => {
+        if (!isVisibleLayer(item)) return false;
+        if (item.box.width >= window.innerWidth && item.box.height >= window.innerHeight) return false;
+        if (item.zIndex < backdropZIndex) return false;
+        return item.element.matches('button, input, select, textarea, a[href]') || !!item.element.querySelector('button, input, select, textarea, a[href]');
+      })
+      .sort((left, right) => right.zIndex - left.zIndex || left.area - right.area);
+    const box = candidates[0]?.box;
+    if (!box) return null;
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
 }
+
+export interface ScreenshotRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type InteractionCaptureResult = 'captured' | 'unchanged' | 'failed';

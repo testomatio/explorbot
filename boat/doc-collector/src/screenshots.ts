@@ -6,7 +6,7 @@ import type { WebPageState } from '../../../src/state-manager.ts';
 import { safeFilename, sanitizeFilename } from '../../../src/utils/strings.ts';
 import type { DocStateTransition } from './ai/tools.ts';
 import type { DocbotConfig } from './config.ts';
-import { captureInteractionStateScreenshot } from './interaction-screenshots.ts';
+import { captureInteractionAfter, captureInteractionBefore } from './interaction-screenshots.ts';
 
 const DEFAULT_MAX_SECTION_SCREENSHOTS = 8;
 
@@ -61,7 +61,7 @@ export function getScreenshotSections(research: string): ScreenshotSection[] {
   return sections;
 }
 
-export async function captureInteractionScreenshot(explorer: Explorer, beforeState: WebPageState, state: WebPageState, transition: DocStateTransition, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {
+export async function captureInteractionScreenshot(explorer: Explorer, beforeScreenshot: Buffer | null, state: WebPageState, transition: DocStateTransition, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {
   const page = explorer.page;
   if (!page) {
     return null;
@@ -72,9 +72,9 @@ export async function captureInteractionScreenshot(explorer: Explorer, beforeSta
   const stateName = sanitizeFilename(transition.targetState?.label || transition.action) || 'state';
   const stateId = state.id ? `_${state.id}` : '';
   const filePath = path.join(options.screenshotsDir, safeFilename(`${pageName}_${stateName}${stateId}`, '.png'));
-  let captured = await captureInteractionStateScreenshot(page, beforeState, state, filePath);
-  if (!captured) captured = await captureViewport(page, filePath);
-  if (!captured) return null;
+  const result = await captureInteractionAfter(page, beforeScreenshot, filePath, transition.changes?.urlChanged !== true);
+  if (result === 'unchanged') return null;
+  if (result === 'failed' && !(await captureViewport(page, filePath))) return null;
 
   return {
     title: transition.targetState?.label || transition.action,
@@ -82,6 +82,12 @@ export async function captureInteractionScreenshot(explorer: Explorer, beforeSta
     relativePath: toMarkdownPath(options.pageFilePath, filePath),
     kind: 'state',
   };
+}
+
+export async function captureBeforeInteraction(explorer: Explorer): Promise<Buffer | null> {
+  const page = explorer.page;
+  if (!page) return null;
+  return captureInteractionBefore(page);
 }
 
 async function captureViewport(page: any, filePath: string): Promise<boolean> {

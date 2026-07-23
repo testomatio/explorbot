@@ -6,11 +6,12 @@ import { normalizeUrl } from '../../../src/state-manager.ts';
 import { tag } from '../../../src/utils/logger.ts';
 import { sanitizeFilename } from '../../../src/utils/strings.ts';
 import { Documentarian, type PageDocumentation } from './ai/documentarian.ts';
+import type { DocStateTransition } from './ai/tools.ts';
 import { type DocbotConfig, DocbotConfigParser } from './config.ts';
 import { type DocumentedPage, type SkippedPage, renderPageDocumentation, renderSpecIndex } from './docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from './path-filter.ts';
 import { extractResearchNavigationTargets } from './research-navigation.ts';
-import { type DocumentationScreenshot, captureDocumentationScreenshots, captureInteractionScreenshot } from './screenshots.ts';
+import { type DocumentationScreenshot, captureBeforeInteraction, captureDocumentationScreenshots, captureInteractionScreenshot } from './screenshots.ts';
 import { renderMermaidBody } from './state-diagram.ts';
 
 class DocBot {
@@ -113,16 +114,18 @@ class DocBot {
           force: true,
         });
         const pagePath = this.getPageFilePath(state.url);
-        const documentation = await this.documentarian.document(state, research, async (beforeState, interactionState, transition) => {
-          if (!this.shouldUseScreenshots()) {
-            return null;
-          }
-          return captureInteractionScreenshot(this.explorBot.getExplorer(), beforeState, interactionState, transition, {
-            pageFilePath: pagePath,
-            screenshotsDir: this.getScreenshotsDir(),
-            config: this.config,
-          });
-        });
+        const captureState = this.shouldUseScreenshots()
+          ? {
+              before: () => captureBeforeInteraction(this.explorBot.getExplorer()),
+              after: (beforeScreenshot: Buffer | null, interactionState: WebPageState, transition: DocStateTransition) =>
+                captureInteractionScreenshot(this.explorBot.getExplorer(), beforeScreenshot, interactionState, transition, {
+                  pageFilePath: pagePath,
+                  screenshotsDir: this.getScreenshotsDir(),
+                  config: this.config,
+                }),
+            }
+          : undefined;
+        const documentation = await this.documentarian.document(state, research, captureState);
         const lowSignalReason = this.getLowSignalReason(documentation, research);
         if (lowSignalReason) {
           skipped.push({

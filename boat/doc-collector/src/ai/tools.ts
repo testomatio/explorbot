@@ -49,7 +49,10 @@ export interface InteractionScreenshot {
   relativePath: string;
 }
 
-export type CaptureInteractionState = (beforeState: WebPageState, state: WebPageState, transition: DocStateTransition) => Promise<InteractionScreenshot | null>;
+export interface CaptureInteractionState {
+  before(): Promise<Buffer | null>;
+  after(beforeScreenshot: Buffer | null, state: WebPageState, transition: DocStateTransition): Promise<InteractionScreenshot | null>;
+}
 
 const DEFAULT_MAX_PRIMARY_CANDIDATES = 3;
 const DEFAULT_MAX_INTERACTIONS = 5;
@@ -130,6 +133,8 @@ async function executeInteraction(explorer: Explorer, stateManager: StateManager
     return null;
   }
 
+  const beforeScreenshot = await captureState?.before();
+
   const executed = await attemptInteraction(explorer, candidate);
   if (!executed) {
     return null;
@@ -151,7 +156,7 @@ async function executeInteraction(explorer: Explorer, stateManager: StateManager
   });
 
   if (captureState && isMeaningfulStateTransition(transition)) {
-    const screenshot = await captureState(beforeState, afterState, transition);
+    const screenshot = await captureState.after(beforeScreenshot ?? null, afterState, transition);
     if (screenshot) {
       transition.screenshot = screenshot;
     }

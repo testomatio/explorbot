@@ -6,17 +6,6 @@ function allSubtrees(result: { parts: { subtree: string }[] }): string {
 }
 
 describe('HTML Diff', () => {
-  it('ignores Explorbot attributes and visual annotation overlays', async () => {
-    const original = '<html><body><main><button data-explorbot-eidx="e1">Search</button></main></body></html>';
-    const modified = '<html><body><main><button data-explorbot-eidx="e9" data-explorbot-hit="visible">Search</button><div data-explorbot-annotation="true">e9</div></main></body></html>';
-
-    const result = await htmlDiff(original, modified);
-
-    expect(result.parts).toEqual([]);
-    expect(result.added).toEqual([]);
-    expect(result.removed).toEqual([]);
-  });
-
   it('should detect no changes in identical HTML', async () => {
     const html1 = `
       <html>
@@ -203,16 +192,6 @@ describe('HTML Diff', () => {
     expect(result.parts).toHaveLength(0);
     expect(result.added).toContain('BUTTON:Confirm');
     expect(result.removed).toContain('BUTTON:Submit');
-  });
-
-  it('can locate a text-only change for screenshot regions', async () => {
-    const original = '<section id="card"><p>Unavailable</p></section>';
-    const modified = '<section id="card"><p>Available now</p></section>';
-
-    const result = await htmlDiff(original, modified, undefined, { includeTextChanges: true });
-
-    expect(result.parts).toHaveLength(1);
-    expect(result.parts[0].container).toBe('#card');
   });
 
   it('should sanitize scripts and non-semantic nodes from diff output', async () => {
