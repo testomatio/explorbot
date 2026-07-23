@@ -434,7 +434,6 @@ describe('doc-collector screenshots', () => {
     expect(screenshots[1].relativePath).toBe('../screenshots/users_sign_in_navigation.png');
     expect(captured.map((item) => item.selector)).toEqual([undefined, '.mainnav-menu']);
   });
-
 });
 
 describe('doc-collector scope and signal', () => {
