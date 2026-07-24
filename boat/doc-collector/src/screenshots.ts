@@ -3,10 +3,10 @@ import path from 'node:path';
 import { parseResearchSections } from '../../../src/ai/researcher/parser.ts';
 import type Explorer from '../../../src/explorer.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
-import { detectFocusArea } from '../../../src/utils/aria.ts';
 import { safeFilename, sanitizeFilename } from '../../../src/utils/strings.ts';
 import type { DocStateTransition } from './ai/tools.ts';
 import type { DocbotConfig } from './config.ts';
+import { captureInteractionAfter, captureInteractionBefore } from './interaction-screenshots.ts';
 
 const DEFAULT_MAX_SECTION_SCREENSHOTS = 8;
 
@@ -61,7 +61,7 @@ export function getScreenshotSections(research: string): ScreenshotSection[] {
   return sections;
 }
 
-export async function captureInteractionScreenshot(explorer: Explorer, state: WebPageState, transition: DocStateTransition, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {
+export async function captureInteractionScreenshot(explorer: Explorer, beforeScreenshot: Buffer | null, state: WebPageState, transition: DocStateTransition, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {
   const page = explorer.page;
   if (!page) {
     return null;
@@ -70,18 +70,11 @@ export async function captureInteractionScreenshot(explorer: Explorer, state: We
   mkdirSync(options.screenshotsDir, { recursive: true });
   const pageName = sanitizeFilename(state.url || 'page') || 'page';
   const stateName = sanitizeFilename(transition.targetState?.label || transition.action) || 'state';
-  const filePath = path.join(options.screenshotsDir, safeFilename(`${pageName}_${stateName}`, '.png'));
-  const focus = detectFocusArea(state.ariaSnapshot || null);
-
-  try {
-    if (focus.detected) {
-      await page.locator('[role="dialog"], [role="alertdialog"], [aria-modal="true"]').last().screenshot({ path: filePath });
-    } else {
-      await page.screenshot({ path: filePath });
-    }
-  } catch {
-    return null;
-  }
+  const stateId = state.id ? `_${state.id}` : '';
+  const filePath = path.join(options.screenshotsDir, safeFilename(`${pageName}_${stateName}${stateId}`, '.png'));
+  const result = await captureInteractionAfter(page, beforeScreenshot, filePath, transition.changes?.urlChanged !== true);
+  if (result === 'unchanged') return null;
+  if (result === 'failed' && !(await captureViewport(page, filePath))) return null;
 
   return {
     title: transition.targetState?.label || transition.action,
@@ -89,6 +82,21 @@ export async function captureInteractionScreenshot(explorer: Explorer, state: We
     relativePath: toMarkdownPath(options.pageFilePath, filePath),
     kind: 'state',
   };
+}
+
+export async function captureBeforeInteraction(explorer: Explorer): Promise<Buffer | null> {
+  const page = explorer.page;
+  if (!page) return null;
+  return captureInteractionBefore(page);
+}
+
+async function captureViewport(page: any, filePath: string): Promise<boolean> {
+  try {
+    await page.screenshot({ path: filePath });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function captureFullPageScreenshot(page: any, pageName: string, options: DocumentationScreenshotOptions): Promise<DocumentationScreenshot | null> {

@@ -437,6 +437,24 @@ describe('doc-collector screenshots', () => {
 });
 
 describe('doc-collector scope and signal', () => {
+  it('supports all, none, and selected page error ignoring', () => {
+    const bot = new DocBot();
+
+    (bot as any).config = { docs: { ignoreErrors: true } };
+    expect((bot as any).shouldIgnoreError('Navigation timeout')).toBe(true);
+
+    (bot as any).config = { docs: { ignoreErrors: false } };
+    expect((bot as any).shouldIgnoreError('Navigation timeout')).toBe(false);
+
+    (bot as any).config = { docs: { ignoreErrors: ['timeout', 'connection refused'] } };
+    expect((bot as any).shouldIgnoreError(new Error('Navigation TIMEOUT after 30s'))).toBe(true);
+    expect((bot as any).shouldIgnoreError(Object.assign(new Error('Navigation failed'), { code: 'ERR_CONNECTION_REFUSED' }))).toBe(true);
+    expect((bot as any).shouldIgnoreError(new Error('Page crashed'))).toBe(false);
+
+    (bot as any).config = { docs: { ignoreErrors: [''] } };
+    expect((bot as any).shouldIgnoreError(new Error('Page crashed'))).toBe(false);
+  });
+
   it('keeps subtree scope around the start page', () => {
     const bot = new DocBot();
     (bot as any).config = { docs: { scope: 'subtree' } };
@@ -726,6 +744,7 @@ describe('documentarian interactive mode', () => {
       { url: '/suites', title: 'Suites', h1: 'Suites', ariaSnapshot: '- heading "Suites"\n- dialog "Import tests":\n  - heading "Import tests"' },
     ];
     let stateIndex = 0;
+    const screenshotLifecycle: string[] = [];
     const provider = {
       async generateObject() {
         return {
@@ -743,6 +762,7 @@ describe('documentarian interactive mode', () => {
       action() {
         return {
           async attempt(command: string) {
+            screenshotLifecycle.push(command.startsWith('I.amOnPage') ? 'restore' : 'click');
             stateIndex = command.startsWith('I.amOnPage') ? 0 : 1;
             return true;
           },
@@ -756,10 +776,21 @@ describe('documentarian interactive mode', () => {
 
 | Element | Type | ARIA | CSS |
 |------|------|------|------|
-| 'Import tests' | button | { role: 'button', text: 'Import tests' } | 'button.import' |`
+| 'Import tests' | button | { role: 'button', text: 'Import tests' } | 'button.import' |`,
+      {
+        async before() {
+          screenshotLifecycle.push('before');
+          return Buffer.from('before');
+        },
+        async after(beforeScreenshot) {
+          screenshotLifecycle.push(`after:${beforeScreenshot?.toString()}`);
+          return null;
+        },
+      }
     );
 
     expect(result.interactions?.[0]?.targetState).toEqual({ kind: 'dialog', label: 'Import tests', url: '/suites' });
+    expect(screenshotLifecycle).toEqual(['before', 'click', 'after:before', 'restore']);
     expect(stateIndex).toBe(0);
   });
 
@@ -837,7 +868,7 @@ describe('documentarian interactive mode', () => {
       { action: 'Clicked link: Item A', before: '1', after: '2', targetUrl: '/items/a' },
       { action: 'Clicked button: Save', before: '1', after: '2', changes: { urlChanged: false, newElements: 2, removedElements: 0 } },
       { action: 'Clicked tab: Merged', before: '1', after: '2', discoveredUrls: ['/branches/merged'] },
-      { action: 'Clicked button: No change', before: '1', after: '1', changes: { urlChanged: false, newElements: 0, removedElements: 0 } },
+      { action: 'Clicked button: No change', before: '1', after: '1', discoveredUrls: [], changes: { urlChanged: false, newElements: 0, removedElements: 0 } },
     ]);
 
     expect(interactions).toHaveLength(3);

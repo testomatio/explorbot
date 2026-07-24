@@ -39,6 +39,7 @@ export default {
     maxPages: 100, // how many pages to document
     output: 'docs', // subfolder inside your output dir
     screenshot: true, // capture page and section screenshots
+    ignoreErrors: true, // skip pages that fail instead of stopping the crawl
   },
 };
 ```

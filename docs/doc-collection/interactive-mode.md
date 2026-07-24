@@ -78,7 +78,7 @@ Screenshots are on by default (`screenshot: true`) in both modes. For every docu
 
 Images land in `output/docs/screenshots/` and are embedded in the page files, each section shot labeled with the CSS selector it was taken from.
 
-Interactive states are captured before the collector restores the original page. A dialog is cropped to its active overlay when semantic dialog markup is available; other changed screen areas receive a viewport screenshot.
+Interactive states are captured before the collector restores the original page. DocBot compares viewport screenshots from immediately before and after the action, finds the rectangle containing the changed pixels, adds a 30-pixel margin, and saves that fragment. If the images cannot be compared safely, it saves the current viewport instead.
 
 ```ts
 docs: {
@@ -87,3 +87,13 @@ docs: {
 ```
 
 Set `screenshot: false` to turn captures off entirely. This also disables screenshot-assisted research, which makes the run cheaper and faster but text-only.
+
+## Error handling
+
+`ignoreErrors` controls page-level crawl failures. `true` keeps the current best-effort behavior and skips every failed page, `false` stops the crawl on the first error, and an array skips only errors whose code, name, or message contains one of the listed strings.
+
+```ts
+docs: {
+  ignoreErrors: ['timeout', 'navigation interrupted'],
+}
+```
