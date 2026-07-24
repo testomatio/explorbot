@@ -58,6 +58,7 @@ class Explorer {
   private testPageErrorHandler: ((error: Error) => void) | null = null;
   private testConsoleHandler: ((message: any) => void) | null = null;
   private testDialogHandler: ((dialog: any) => void) | null = null;
+  private eventDispatcher = codeceptjs.event.dispatcher;
 
   constructor(config: ExplorbotConfig, options: ExplorerOptions | undefined, deps: ExplorerDeps) {
     this.config = config;
@@ -215,17 +216,17 @@ class Explorer {
       stepHandler(step, 'failed', error?.message || String(error), error?.stack);
     };
     const onTestAfter = () => {
-      codeceptjs.event.dispatcher.off('step.passed', onStepPassed);
-      codeceptjs.event.dispatcher.off('step.failed', onStepFailed);
-      codeceptjs.event.dispatcher.off('test.after', onTestAfter);
+      this.eventDispatcher.off('step.passed', onStepPassed);
+      this.eventDispatcher.off('step.failed', onStepFailed);
+      this.eventDispatcher.off('test.after', onTestAfter);
       this.unwatchActiveTestPages();
     };
 
-    codeceptjs.event.dispatcher.emit('test.before', codeceptjsTest);
-    codeceptjs.event.dispatcher.emit('test.start', codeceptjsTest);
-    codeceptjs.event.dispatcher.on('step.passed', onStepPassed);
-    codeceptjs.event.dispatcher.on('step.failed', onStepFailed);
-    codeceptjs.event.dispatcher.on('test.after', onTestAfter);
+    this.eventDispatcher.emit('test.before', codeceptjsTest);
+    this.eventDispatcher.emit('test.start', codeceptjsTest);
+    this.eventDispatcher.on('step.passed', onStepPassed);
+    this.eventDispatcher.on('step.failed', onStepFailed);
+    this.eventDispatcher.on('test.after', onTestAfter);
 
     return { started: true, stop: (meta) => this.finishTest(test, meta) };
   }
@@ -665,17 +666,17 @@ class Explorer {
 
     if (test.isSuccessful) {
       codeceptjsTest.state = 'passed';
-      codeceptjs.event.dispatcher.emit('test.passed', codeceptjsTest);
+      this.eventDispatcher.emit('test.passed', codeceptjsTest);
     } else if (test.isSkipped) {
       codeceptjsTest.state = 'skipped';
-      codeceptjs.event.dispatcher.emit('test.skipped', codeceptjsTest);
+      this.eventDispatcher.emit('test.skipped', codeceptjsTest);
     } else {
       codeceptjsTest.state = 'failed';
-      codeceptjs.event.dispatcher.emit('test.failed', codeceptjsTest);
+      this.eventDispatcher.emit('test.failed', codeceptjsTest);
     }
 
-    codeceptjs.event.dispatcher.emit('test.finish', codeceptjsTest);
-    codeceptjs.event.dispatcher.emit('test.after', codeceptjsTest);
+    this.eventDispatcher.emit('test.finish', codeceptjsTest);
+    this.eventDispatcher.emit('test.after', codeceptjsTest);
   }
 
   private watchActiveTestPage(page = this.playwrightHelper?.page): void {
