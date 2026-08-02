@@ -4,7 +4,7 @@
 
 **Goal:** Ship `boat/actor` — an intent-level browser driver CLI (`explorbot act ...`) that lets an orchestrating agent act on pages via Playwright calls or natural language while explorbot's cheap models handle perception, healing, and evidence.
 
-**Architecture:** A boat following the `boat/doc-collector` pattern: `Actor` class wraps `ExplorBot`, reuses Navigator/Researcher/Explorer/StateManager, adds a pure envelope renderer and a pw-expression validator. Core changes are minimal: named browser-server instances, a Navigator heal-attempt hook, and a global-config/per-host-state ladder in config loading.
+**Architecture:** A boat following the `boat/doc-collector` pattern: `Actor` class wraps `ExplorBot`, reuses Navigator/Researcher/Explorer/StateManager, adds a pure envelope renderer and a pw function wrapper. Core changes are minimal: named browser-server instances, a Navigator heal-attempt hook, and a global-config/per-host-state ladder in config loading.
 
 **Tech Stack:** Bun (never Node), TypeScript, commander, CodeceptJS/Playwright via Explorer, `bun:test`, Biome.
 
@@ -32,7 +32,7 @@ boat/actor/
 │   ├── cli.ts                 # createActCommands(name = 'act')
 │   ├── actor.ts               # Actor class (all business logic)
 │   ├── envelope.ts            # EnvelopeData type, renderEnvelope(), writeArtifacts()
-│   └── pw-parser.ts           # validatePwExpression(), toCodeceptWrapper()
+│   └── pw-parser.ts           # isFunctionExpression(), toCodeceptWrapper()
 └── tests/
     ├── envelope.test.ts
     ├── pw-parser.test.ts
@@ -121,7 +121,7 @@ import { type EnvelopeData, renderEnvelope, writeArtifacts } from '../src/envelo
 
 const base: EnvelopeData = {
   ok: true,
-  command: "pw page.click('text=Login')",
+  command: "pw ({ page }) => page.click('text=Login')",
   used: ["I.click('Login')"],
   page: { url: 'https://app.example.com/dashboard', previousUrl: 'https://app.example.com/login', title: 'Dashboard', state: 'dashboard_h1_dashboard', visits: 1 },
   changes: 'ariaDiff:\n  added:\n    - heading "Dashboard"',
@@ -231,17 +231,19 @@ git commit -m "feat(actor): boat scaffold and result envelope"
 
 ---
 
-### Task 2: pw expression validator
+### Task 2: pw function wrapper
+
+The `pw` argument is a function expression in the exact shape `I.usePlaywrightTo` accepts — `({ page, browserContext, browser }) => ...` — so callers destructure whichever Playwright objects they need. The parser only answers "is this a parseable function expression" (for clean `tool:` errors) and interpolates it verbatim into the CodeceptJS call that `Action.execute` expects.
 
 **Files:**
 - Create: `boat/actor/src/pw-parser.ts`
 - Test: `boat/actor/tests/pw-parser.test.ts`
 
 **Interfaces:**
-- Produces (used by Task 3):
+- Produces (used by Task 4):
 
 ```typescript
-export function validatePwExpression(expr: string): { valid: boolean; error?: string };
+export function isFunctionExpression(expr: string): { valid: boolean; error?: string };
 export function toCodeceptWrapper(expr: string): string;
 ```
 
@@ -251,38 +253,35 @@ export function toCodeceptWrapper(expr: string): string;
 
 ```typescript
 import { describe, expect, test } from 'bun:test';
-import { toCodeceptWrapper, validatePwExpression } from '../src/pw-parser.ts';
+import { isFunctionExpression, toCodeceptWrapper } from '../src/pw-parser.ts';
 
-describe('validatePwExpression', () => {
+describe('isFunctionExpression', () => {
   test.each([
-    "page.click('text=Login')",
-    "page.getByRole('button', { name: 'Submit' }).click()",
-    "page.fill('#email', 'user@example.com')",
-    "page.keyboard.press('Enter')",
-    "page.selectOption('select#tier', 'pro')",
-    "page.getByText('3 items').isVisible()",
+    "({ page }) => page.click('text=Login')",
+    "async ({ page }) => { await page.fill('#email', 'user@example.com'); await page.keyboard.press('Enter'); }",
+    "({ browserContext }) => browserContext.clearCookies()",
+    "({ page, browser }) => browser.version()",
+    "function ({ page }) { return page.title() }",
   ])('accepts %s', (expr) => {
-    expect(validatePwExpression(expr).valid).toBe(true);
+    expect(isFunctionExpression(expr).valid).toBe(true);
   });
 
   test.each([
-    ["fetch('https://evil.example')", 'must start with page.'],
-    ["process.exit(1)", 'must start with page.'],
-    ["page.click('a'); process.exit(1)", 'single expression'],
-    ["page.evaluate(() => require('fs'))", 'forbidden token'],
-    ["page.click('a'", 'unbalanced'],
+    "page.click('text=Login')",
+    "({ page }) => page.click('a'",
+    "just some text",
+    "",
   ])('rejects %s', (expr) => {
-    const result = validatePwExpression(expr);
+    const result = isFunctionExpression(expr);
     expect(result.valid).toBe(false);
     expect(result.error).toBeTruthy();
   });
 });
 
 describe('toCodeceptWrapper', () => {
-  test('wraps expression in usePlaywrightTo', () => {
-    const code = toCodeceptWrapper("page.click('text=Login')");
-    expect(code).toContain("I.usePlaywrightTo");
-    expect(code).toContain("await page.click('text=Login')");
+  test('interpolates the function verbatim into usePlaywrightTo', () => {
+    const code = toCodeceptWrapper("({ page }) => page.click('text=Login')");
+    expect(code).toBe("I.usePlaywrightTo('pw', ({ page }) => page.click('text=Login'))");
   });
 });
 ```
@@ -294,18 +293,27 @@ Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `boat/actor/src/pw-parser.ts`**
 
-Validation rules (general, not example-driven):
-- Trimmed expression must start with `page.`.
-- Balanced `()`, `[]`, `{}` and closed string literals (single scan with a quote/bracket stack).
-- No statement separators outside strings: `;` splitting into a second non-empty statement fails with 'single expression only'.
-- Forbidden identifiers outside strings: `require`, `import`, `process`, `child_process`, `Bun`, `globalThis`, `eval`.
-- Return `{ valid: true }` or `{ valid: false, error: <specific reason> }`.
-
 ```typescript
+const FUNCTION_SHAPE = /^(async\s+)?(function\b|\()/;
+
+export function isFunctionExpression(expr: string): { valid: boolean; error?: string } {
+  const trimmed = expr.trim();
+  if (!trimmed) return { valid: false, error: 'empty expression; pass a function like ({ page }) => ...' };
+  if (!FUNCTION_SHAPE.test(trimmed)) return { valid: false, error: 'expression must be a function like ({ page }) => ... destructuring the playwright objects it needs' };
+  try {
+    new Function(`return (${trimmed})`);
+  } catch (e) {
+    return { valid: false, error: `not a valid function expression: ${(e as Error).message}` };
+  }
+  return { valid: true };
+}
+
 export function toCodeceptWrapper(expr: string): string {
-  return `I.usePlaywrightTo('pw', async ({ page }) => { await ${expr} })`;
+  return `I.usePlaywrightTo('pw', ${expr.trim()})`;
 }
 ```
+
+`new Function` is construction-only — the user's code is never invoked here (invoking would execute non-function inputs). The shape regex rejects bare call chains like `page.click(...)` with an error pointing at the expected form; the construction catch turns syntax errors (unbalanced brackets, garbage text) into the `tool:` error in the envelope. Note the shape regex also requires arrow parameters to be parenthesized — acceptable since the destructured `({ page })` form is the documented contract.
 
 - [ ] **Step 4: Run tests, verify pass**
 
@@ -317,7 +325,7 @@ Expected: PASS.
 ```bash
 bun run format
 git add boat/actor/src/pw-parser.ts boat/actor/tests/pw-parser.test.ts
-git commit -m "feat(actor): pw expression validator and codecept wrapper"
+git commit -m "feat(actor): pw function wrapper"
 ```
 
 ---
@@ -392,7 +400,7 @@ git commit -m "feat: named browser server instances"
 - Test: `boat/actor/tests/actor.test.ts`
 
 **Interfaces:**
-- Consumes: `renderEnvelope`/`writeArtifacts`/`EnvelopeData`/`InstanceInfo` (Task 1), `validatePwExpression`/`toCodeceptWrapper` (Task 2), `getAliveEndpoint(instance)`/`launchServer` (Task 3), `ExplorBot` API (`src/explorbot.ts`: `start()`, `stop()`, `visit(url)`, `getExplorer()`, `stateManager()`, `getCurrentState()`, `agentNavigator()`, `agentResearcher()`, `agentHistorian()`, `requestStore()`), `Explorer.action(): Action` (`src/explorer.ts:151`), `Action.execute(code)` / `Action.capturePageState()` (`src/action.ts:64-68`), `ActionResult` (`getStateHash()`, `ariaSnapshot`, `combinedHtml()`, `url`, `title`), `compactAriaSnapshot` (`src/utils/aria.ts`), `Diff`/`PageDiff` via `ActionResult` (`src/action-result.ts`).
+- Consumes: `renderEnvelope`/`writeArtifacts`/`EnvelopeData`/`InstanceInfo` (Task 1), `isFunctionExpression`/`toCodeceptWrapper` (Task 2), `getAliveEndpoint(instance)`/`launchServer` (Task 3), `ExplorBot` API (`src/explorbot.ts`: `start()`, `stop()`, `visit(url)`, `getExplorer()`, `stateManager()`, `getCurrentState()`, `agentNavigator()`, `agentResearcher()`, `agentHistorian()`, `requestStore()`), `Explorer.action(): Action` (`src/explorer.ts:151`), `Action.execute(code)` / `Action.capturePageState()` (`src/action.ts:64-68`), `ActionResult` (`getStateHash()`, `ariaSnapshot`, `combinedHtml()`, `url`, `title`), `compactAriaSnapshot` (`src/utils/aria.ts`), `Diff`/`PageDiff` via `ActionResult` (`src/action-result.ts`).
 - Produces (used by Tasks 5–7, 9):
 
 ```typescript
@@ -463,20 +471,20 @@ function fakeActor() {
 }
 
 describe('Actor.pw', () => {
-  test('rejects invalid expression as tool error without executing', async () => {
+  test('rejects non-function argument as tool error without executing', async () => {
     const { actor, executed } = fakeActor();
-    const envelope = await actor.pw("process.exit(1)");
+    const envelope = await actor.pw("page.click('text=Login')");
     expect(envelope.ok).toBe(false);
-    expect(envelope.failure?.error).toContain('page.');
+    expect(envelope.failure?.error).toContain('function');
     expect(executed.length).toBe(0);
   });
 
-  test('executes wrapped expression and returns success envelope data', async () => {
+  test('executes wrapped function and returns success envelope data', async () => {
     const { actor, executed } = fakeActor();
-    const envelope = await actor.pw("page.click('text=Login')");
+    const envelope = await actor.pw("({ page }) => page.click('text=Login')");
     expect(executed[0]).toContain("I.usePlaywrightTo");
     expect(envelope.ok).toBe(true);
-    expect(envelope.used).toEqual(["page.click('text=Login')"]);
+    expect(envelope.used).toEqual(["({ page }) => page.click('text=Login')"]);
     expect(envelope.page.url).toBe('https://app.example.com/dashboard');
     expect(envelope.page.previousUrl).toBe('https://app.example.com/login');
   });
@@ -494,7 +502,7 @@ Expected: FAIL — module not found.
 - Constructor stores options, builds `ExplorBot` options (`config`, `path`, `verbose`, `session`, `headless: true`) — but do NOT boot in constructor (DocBot pattern).
 - `start()`: resolve instance endpoint via `getAliveEndpoint(this.options.instance ?? 'default')`; when absent, launch via `launchServer` equivalent used by `explorbot browser start` (reuse, do not reimplement); then `await this.bot.start()`. When `options.url` is set and no current state exists, `await this.bot.visit(options.url)`.
 - `pw(expression)`:
-  1. `validatePwExpression` — invalid → return tool-error envelope (`ok: false`, `failure.error` prefixed `tool:`), never execute.
+  1. `isFunctionExpression` — invalid → return tool-error envelope (`ok: false`, `failure.error` prefixed `tool:`), never execute.
   2. Capture `before = stateManager.getCurrentState()`.
   3. `const action = explorer.action(); await action.execute(toCodeceptWrapper(expression))`.
   4. On success build `EnvelopeData` with `used: [expression]`, page block from resulting `ActionResult` (`previousUrl` from `before`), `changes` from the pageDiff ariaChanges the Action pipeline computed (see `ActionResult.toToolResult` usage in `src/ai/tools.ts:1122` for how diffs are obtained — reuse the same path, do not recompute).
@@ -556,7 +564,7 @@ test('failed pw heals via navigator and reports healed envelope', async () => {
       return true;
     },
   });
-  const envelope = await actor.pw("page.click('text=Login')");
+  const envelope = await actor.pw("({ page }) => page.click('text=Login')");
   expect(envelope.ok).toBe(true);
   expect(envelope.healed).toBe(true);
   expect(envelope.used).toEqual(["I.click('#login-btn')"]);
@@ -578,7 +586,7 @@ test('exhausted heal returns failure envelope with attempts and compact aria', a
       return false;
     },
   });
-  const envelope = await actor.pw("page.click('text=Login')");
+  const envelope = await actor.pw("({ page }) => page.click('text=Login')");
   expect(envelope.ok).toBe(false);
   expect(envelope.failure?.attempts.length).toBe(1);
   expect(envelope.failure?.compactAria).toContain('button');
@@ -818,7 +826,7 @@ git commit -m "feat: global config ladder and per-host state dirs"
 
 - [ ] **Step 1: Implement `boat/actor/src/cli.ts`**
 
-Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOptions`, subcommands). Subcommands: `pw <expression>`, `do <instruction>`, `click <target>`, `fill <field> <value>`, `ask <question>`, `verify <assertion>` (alias `assert`), `go <target>`, `browser <start|stop|status|list>`. Common options:
+Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOptions`, subcommands). Subcommands: `pw <fn>`, `do <instruction>`, `click <target>`, `fill <field> <value>`, `ask <question>`, `verify <assertion>` (alias `assert`), `go <target>`, `browser <start|stop|status|list>`. Common options:
 
 ```
 -v, --verbose            --debug
@@ -866,8 +874,8 @@ git commit -m "feat(actor): act CLI namespace and standalone actbot bin"
 - [ ] **Step 2: Write the smoke test**
 
 Scenarios, driven through the `Actor` class directly against the local fixture (real browser, no AI provider needed for these paths):
-1. `pw "page.click('text=Submit')"` on the fixture → `ok: true`, envelope contains `### Changes` and artifact files exist on disk.
-2. `pw` with an invalid expression → `ok: false`, `tool:`-prefixed error, exit path returns without browser action.
+1. `pw "({ page }) => page.click('text=Submit')"` on the fixture → `ok: true`, envelope contains `### Changes` and artifact files exist on disk.
+2. `pw` with a non-function argument → `ok: false`, `tool:`-prefixed error, exit path returns without browser action.
 3. `do 'click the "Submit" button'` → fast path, zero AI (assert no provider configured and it still works).
 4. Instance autostart honored: run without a pre-started daemon; assert endpoint file appears.
 
