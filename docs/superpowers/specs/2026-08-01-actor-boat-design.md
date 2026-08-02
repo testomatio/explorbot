@@ -44,7 +44,7 @@ Registered in `bin/explorbot-cli.ts` via `program.addCommand(createActCommands('
 ## Command Surface
 
 ```
-explorbot act pw "page.click('text=Login')"   # raw Playwright call, healed on failure
+explorbot act pw "({ page }) => page.click('text=Login')"   # raw Playwright fn, healed on failure
 explorbot act do "click the login link"        # NL action via Navigator
 explorbot act click "Login"                    # targeted click via existing fallback ladder
 explorbot act fill "Search" "wireless mouse"   # targeted fill via existing ladder
@@ -67,7 +67,7 @@ Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with de
 
 ### Execution paths
 
-- **pw**: expression validated as a `page.*` call chain (no arbitrary JS), executed against the daemon's Playwright page through the Explorer/Action pipeline so state capture, ariaDiff, and experience recording come for free. Deterministic and near-instant on the happy path.
+- **pw**: the argument is a function expression in the exact shape `I.usePlaywrightTo` accepts — `({ page, browserContext, browser }) => ...` — checked only for being a parseable function, then interpolated directly into `I.usePlaywrightTo('pw', <fn>)` and executed through the Explorer/Action pipeline so state capture, ariaDiff, and experience recording come for free. Destructure whichever Playwright objects the call needs. Deterministic and near-instant on the happy path.
 - **do**: one bounded Navigator invocation (max ~3 tool roundtrips) reusing the existing click/type/form tool ladders. Deterministic fast path first: if the instruction resolves to exactly one interactive ARIA node by role+name, execute with zero AI calls.
 - **click / fill**: the existing multi-fallback ladders directly (text → ARIA → experience candidates); cheap-model disambiguation only when multiple candidates match.
 - **ask**: Researcher answers from current compact ARIA / cached UI map; `--vision` routes through the vision model. Non-mutating.
@@ -90,7 +90,7 @@ The uniform response contract: every command prints the same block structure in 
 ```
 ### Result
 ok: true
-command: pw page.click('text=Login')
+command: pw ({ page }) => page.click('text=Login')
 healed: false
 used: I.click('Login')
 
