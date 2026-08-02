@@ -75,6 +75,7 @@ export interface EnvelopeData {
   page: { url: string; previousUrl?: string; title: string; state: string; visits: number };
   changes?: string | null;
   answer?: string;
+  research?: string;
   verdict?: { passed: boolean; evidence: string; code: string };
   failure?: { error: string; attempts: HealAttempt[]; reasoning?: string; compactAria?: string };
   instance: InstanceInfo;
@@ -622,7 +623,7 @@ git commit -m "feat(actor): heal loop over navigator recovery with attempt trace
 
 ---
 
-### Task 6: do, click, fill, ask, verify commands
+### Task 6: do, click, fill, ask, verify, research commands
 
 **Files:**
 - Modify: `boat/actor/src/actor.ts`
@@ -638,7 +639,10 @@ async click(target: string): Promise<EnvelopeData>;
 async fill(field: string, value: string): Promise<EnvelopeData>;
 async ask(question: string): Promise<EnvelopeData>;
 async verify(assertion: string): Promise<EnvelopeData>;
+async research(opts?: { data?: boolean; deep?: boolean; fresh?: boolean }): Promise<EnvelopeData>;
 ```
+
+`EnvelopeData` gains an optional `research?: string` field (Task 1's renderer: `### Research` replaces `### Changes` when set, mutually exclusive with `answer`/`verdict` — add a render test alongside the answer/verdict ones).
 
 - [ ] **Step 1: Write failing tests for the deterministic fast path**
 
@@ -663,6 +667,14 @@ test('verify returns verdict with assertion code', async () => {
   expect(envelope.verdict?.code).toBe("I.see('Dashboard')");
 });
 
+test('research returns UI map in envelope', async () => {
+  const { actor } = fakeActor();
+  (actor as any).bot.agentResearcher = () => ({ research: async () => '## Section: Login Form\n| Element | ARIA | CSS |' });
+  const envelope = await actor.research({ data: true });
+  expect(envelope.research).toContain('Login Form');
+  expect(envelope.ok).toBe(true);
+});
+
 test('ask without vision answers from researcher summary', async () => {
   const { actor } = fakeActor();
   (actor as any).bot.agentResearcher = () => ({ summary: async () => 'Login form with email and password' });
@@ -683,6 +695,7 @@ test('ask without vision answers from researcher summary', async () => {
 - `click(target)` / `fill(field, value)`: call the corresponding tool object from `createCodeceptJSTools` directly (`tools.click.execute({ locator: target })` — read the tool's exact input schema in `src/ai/tools.ts` first and match it); ladder failures feed `heal`.
 - `ask(question)`: `options.vision` → `researcher.answerQuestionAboutScreenshot(state, question)`; otherwise `provider.chat` over dedent prompt containing `researcher.summary(state)` + compact ARIA + the question. Non-mutating: envelope has `answer`, no `changes`, artifacts still written.
 - `verify(assertion)`: `explorer.capture()` then `navigator.verifyState(assertion, actionResult)`; verdict `{ passed: verified, evidence: <first successful step or failure note>, code: successfulCodes.join('\n') }`.
+- `research(opts)`: `researcher.research(state, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh })` (`src/ai/researcher.ts:94`); envelope `research` = returned UI map verbatim (staleness banner included when cached), no `changes`. Non-mutating; artifacts still written.
 - All command methods end by building `used` from actually executed code (never the requested input when they differ).
 
 - [ ] **Step 4: Run tests, verify pass** — `bun test boat/actor/tests/`.
@@ -826,7 +839,7 @@ git commit -m "feat: global config ladder and per-host state dirs"
 
 - [ ] **Step 1: Implement `boat/actor/src/cli.ts`**
 
-Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOptions`, subcommands). Subcommands: `pw <fn>`, `do <instruction>`, `click <target>`, `fill <field> <value>`, `ask <question>`, `verify <assertion>` (alias `assert`), `go <target>`, `browser <start|stop|status|list>`. Common options:
+Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOptions`, subcommands). Subcommands: `pw <fn>`, `do <instruction>`, `click <target>`, `fill <field> <value>`, `ask <question>`, `verify <assertion>` (alias `assert`), `research` (flags `--data`, `--deep`, `--fresh`), `go <target>`, `browser <start|stop|status|list>`. Common options:
 
 ```
 -v, --verbose            --debug
@@ -841,7 +854,7 @@ Every action handler: `setPreserveConsoleLogs(true)`, build `Actor`, `await acto
 
 - [ ] **Step 2: Write the --help contract text**
 
-The command description plus `addHelpText('after', ...)` on the `act` group is the sole teaching surface for orchestrating agents. It must compactly cover (dedent block, ~40 lines): the tiering (pw = precise, click/fill = ladder, do = intent), the envelope sections and their meaning, `used:` as reusable verified code, heal semantics and `--no-heal`, failure = inline compact ARIA + artifact file paths for deep dives, `--instance` vs `--session`, autostart behavior, the close-when-finished convention driven by `### Instance`, and one usage example per tier. General shapes only — no app-specific examples.
+The command description plus `addHelpText('after', ...)` on the `act` group is the sole teaching surface for orchestrating agents. It must compactly cover (dedent block, ~40 lines): the tiering (pw = precise, click/fill = ladder, do = intent), the recommended loop (research once for verified locators → drive with pw → verify), the envelope sections and their meaning, `used:` as reusable verified code, heal semantics and `--no-heal`, failure = inline compact ARIA + artifact file paths for deep dives, `--instance` vs `--session`, autostart behavior, the close-when-finished convention driven by `### Instance`, and one usage example per tier. General shapes only — no app-specific examples.
 
 - [ ] **Step 3: Wire into main CLI and standalone bin**
 
@@ -907,6 +920,6 @@ git commit -m "feat(actor): e2e smoke, docs and changelog"
 
 ## Self-Review Notes
 
-- Spec coverage: pw/do/click/fill/ask/verify+assert/go (Tasks 4-7, 9), envelope + used code (1, 4), heal + attempt trace + `--no-heal` (5), instances + autostart + `--session` reuse (3, 4, 7), config-free ladder + per-host state + `--ephemeral` (8), `--help`-only discovery (9), testing incl. aimock heal test (10). Framework flag (`--framework`) is parsed (9) and stored (4); Historian-based conversion of `used:` into Playwright dialect is deliberately deferred until `used` collection stabilizes — v1 emits the executed CodeceptJS (pw commands echo the Playwright expression itself), which satisfies "actual used locator" for both dialect inputs. If reviewers want full conversion in v1, extend Task 6 with `historian.toPlaywrightCode` per `src/ai/historian/playwright.ts:21`.
+- Spec coverage: pw/do/click/fill/ask/verify+assert/research/go (Tasks 4-7, 9), envelope + used code (1, 4), heal + attempt trace + `--no-heal` (5), instances + autostart + `--session` reuse (3, 4, 7), config-free ladder + per-host state + `--ephemeral` (8), `--help`-only discovery (9), testing incl. aimock heal test (10). Framework flag (`--framework`) is parsed (9) and stored (4); Historian-based conversion of `used:` into Playwright dialect is deliberately deferred until `used` collection stabilizes — v1 emits the executed CodeceptJS (pw commands echo the Playwright expression itself), which satisfies "actual used locator" for both dialect inputs. If reviewers want full conversion in v1, extend Task 6 with `historian.toPlaywrightCode` per `src/ai/historian/playwright.ts:21`.
 - Vision `ask` degrades to text path when no `visionModel` configured (`provider.hasVision()`, `src/ai/provider.ts:635`) — implementer: guard in `ask`.
 - Type consistency: `EnvelopeData`/`InstanceInfo`/`HealAttempt` defined once in Task 1 and only consumed elsewhere; `ActorOptions` defined in Task 4 and consumed by 9.

@@ -49,6 +49,7 @@ explorbot act do "click the login link"        # NL action via Navigator
 explorbot act click "Login"                    # targeted click via existing fallback ladder
 explorbot act fill "Search" "wireless mouse"   # targeted fill via existing ladder
 explorbot act ask "what do I see here?"        # cheap-model page Q&A via Researcher
+explorbot act research [--data] [--deep] [--fresh]  # verified UI map for precise pw driving
 explorbot act verify "user is logged in"       # AI assertion (alias: assert)
 explorbot act go "billing settings"            # URL or NL navigation
 explorbot act browser start|stop|status|list   # instance management (stop --all)
@@ -71,6 +72,7 @@ Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with de
 - **do**: one bounded Navigator invocation (max ~3 tool roundtrips) reusing the existing click/type/form tool ladders. Deterministic fast path first: if the instruction resolves to exactly one interactive ARIA node by role+name, execute with zero AI calls.
 - **click / fill**: the existing multi-fallback ladders directly (text → ARIA → experience candidates); cheap-model disambiguation only when multiple candidates match.
 - **ask**: Researcher answers from current compact ARIA / cached UI map; `--vision` routes through the vision model. Non-mutating.
+- **research**: `researcher.research(state, { screenshot: true, data, deep, force })`. The envelope's `### Research` section carries the UI map inline — it is the deliverable: verified, live-tested locators that let the orchestrator drive `pw` precisely without reading raw ARIA. `--data` adds extracted data sections, `--deep` deep analysis, `--fresh` bypasses the cache; cached results keep the existing staleness banner. Non-mutating.
 - **verify / assert**: `navigator.verifyState()` on the cheap model; verdict plus the assertion code that proved it.
 - **go**: URL-shaped input navigates directly; intent-shaped input uses Navigator's stateful navigation with visited-state history and knowledge. Autostarts the instance like every other command.
 
@@ -118,7 +120,7 @@ network: <abs path>/output/act/<ts>/network.jsonl
 ```
 
 - `used:` — the exact code that worked (healed form when healed), rendered in the configured framework via Historian's converters. Sessions thereby double as a verified-locator oracle for test generation.
-- `### Changes` becomes `### Answer` for `ask` and `### Verdict` (pass/fail + evidence line + assertion code) for `verify`.
+- `### Changes` becomes `### Answer` for `ask`, `### Verdict` (pass/fail + evidence line + assertion code) for `verify`, and `### Research` (the UI map, inline) for `research`.
 - `### Instance` appears on every response — tab counts and other live instances — so the orchestrator sees leftover state and knows to close it when finished.
 - Artifact paths are always absolute; full HTML, full ARIA, and the network log are always written, never inlined.
 
@@ -198,4 +200,5 @@ Experience accumulates per target host across runs from any directory — zero-s
 - Persistent per-host state dir by default in config-free mode; `--ephemeral` for temp.
 - `used:` code in envelope via Historian converters; `verify` exposes assertion code.
 - click/fill exposed as ladder-backed sugar; select/pressKey/hover/drag stay behind `pw`.
+- `research` exposed with `--data`/`--deep`/`--fresh`; UI map inline as the deliverable (verified locators enable precise `pw` driving).
 - Implementation runs on Opus.
