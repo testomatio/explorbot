@@ -64,14 +64,14 @@ Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with de
 - `--no-heal` — fail fast without cheap-model recovery.
 - `--ephemeral` — throwaway temp state dir instead of the per-host persistent one.
 - `--framework playwright|codeceptjs` — output dialect for `used:` code (default from `ai.agents.historian.framework`).
-- `--vision` — force screenshot pass for `ask`.
+- `--no-vision` — `ask` answers from compact ARIA/UI map instead of the default screenshot pass.
 
 ### Execution paths
 
 - **pw**: the argument is a function expression in the exact shape `I.usePlaywrightTo` accepts — `({ page, browserContext, browser }) => ...` — checked only for being a parseable function, then interpolated directly into `I.usePlaywrightTo('pw', <fn>)` and executed through the Explorer/Action pipeline so state capture, ariaDiff, and experience recording come for free. Destructure whichever Playwright objects the call needs. Deterministic and near-instant on the happy path.
 - **do**: one bounded Navigator invocation (max ~3 tool roundtrips) reusing the existing click/type/form tool ladders. Deterministic fast path first: if the instruction resolves to exactly one interactive ARIA node by role+name, execute with zero AI calls.
 - **click / fill**: the existing multi-fallback ladders directly (text → ARIA → experience candidates); cheap-model disambiguation only when multiple candidates match.
-- **ask**: Researcher answers from current compact ARIA / cached UI map; `--vision` routes through the vision model. Non-mutating.
+- **ask**: vision by default — Researcher answers from a fresh screenshot via the vision model; `--no-vision` (or no `visionModel` configured, with a note in the envelope) falls back to compact ARIA / cached UI map. Non-mutating.
 - **research**: `researcher.research(state, { screenshot: true, data, deep, force })`. The envelope's `### Research` section carries the UI map inline — it is the deliverable: verified, live-tested locators that let the orchestrator drive `pw` precisely without reading raw ARIA. `--data` adds extracted data sections, `--deep` deep analysis, `--fresh` bypasses the cache; cached results keep the existing staleness banner. Non-mutating.
 - **verify / assert**: `navigator.verifyState()` on the cheap model; verdict plus the assertion code that proved it.
 - **go**: URL-shaped input navigates directly; intent-shaped input uses Navigator's stateful navigation with visited-state history and knowledge. Autostarts the instance like every other command.
@@ -163,15 +163,17 @@ Tool errors (daemon unreachable, AI provider missing, invalid `pw` expression) a
 Resolution ladder, first hit wins per setting:
 
 1. Project config — `explorbot.config.js|ts` in cwd.
-2. Global user config — `~/.config/explorbot/config.js|ts` (models, providers, keys).
-3. Env vars — existing `EXPLORBOT_*` set, from process env, cwd `.env`, or `~/.config/explorbot/.env`.
+2. Global user config — `~/.explorbot/config.js|ts` (models, providers, keys).
+3. Env vars — existing `EXPLORBOT_*` set, from process env, cwd `.env`, or `~/.explorbot/.env`.
+
+All global paths resolve through `os.homedir()`, so the same single directory works on Linux (`/home/<user>/.explorbot`), macOS (`/Users/<user>/.explorbot`), and Windows (`C:\Users\<user>\.explorbot`) — no per-OS conventions (XDG, Library, AppData) to document or branch on.
 
 The ladder lives in core config loading (`buildEnvConfig` grows global-config and global-`.env` sources); the boat inherits it.
 
 With no project config, working dirs move to a persistent per-host state dir:
 
 ```
-~/.local/state/explorbot/<host>/
+~/.explorbot/state/<host>/
 ├── experience/
 ├── knowledge/
 └── output/prima/...
@@ -198,6 +200,8 @@ Experience accumulates per target host across runs from any directory — zero-s
 - Boat architecture (`boat/prima`, namespace `prima`), not core commands.
 - `--instance` for daemon switching; `--session` keeps existing auth-state meaning.
 - Persistent per-host state dir by default in config-free mode; `--ephemeral` for temp.
+- All global paths under a single cross-platform `~/.explorbot/` dir (config.js, .env, state/<host>/) — no XDG/Library/AppData branching.
+- `ask` is vision-first; `--no-vision` opts into the ARIA text path.
 - `used:` code in envelope via Historian converters; `verify` exposes assertion code.
 - click/fill exposed as ladder-backed sugar; select/pressKey/hover/drag stay behind `pw`.
 - `research` exposed with `--data`/`--deep`/`--fresh`; UI map inline as the deliverable (verified locators enable precise `pw` driving).

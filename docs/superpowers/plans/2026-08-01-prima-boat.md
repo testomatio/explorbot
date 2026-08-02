@@ -414,7 +414,7 @@ export interface PrimaOptions {
   heal?: boolean;
   ephemeral?: boolean;
   framework?: 'codeceptjs' | 'playwright';
-  vision?: boolean;
+  noVision?: boolean;
   url?: string;
 }
 export class Prima {
@@ -675,8 +675,17 @@ test('research returns UI map in envelope', async () => {
   expect(envelope.ok).toBe(true);
 });
 
-test('ask without vision answers from researcher summary', async () => {
+test('ask defaults to vision via screenshot analysis', async () => {
   const { prima } = fakePrima();
+  (prima as any).bot.getProvider = () => ({ hasVision: () => true });
+  (prima as any).bot.agentResearcher = () => ({ answerQuestionAboutScreenshot: async () => 'A login page with an email form' });
+  const envelope = await prima.ask('what do I see?');
+  expect(envelope.answer).toContain('login');
+});
+
+test('ask with noVision answers from researcher summary', async () => {
+  const { prima } = fakePrima();
+  (prima as any).options.noVision = true;
   (prima as any).bot.agentResearcher = () => ({ summary: async () => 'Login form with email and password' });
   (prima as any).bot.getProvider = () => ({ chat: async () => ({ text: 'A login page with an email form' }) });
   const envelope = await prima.ask('what do I see?');
@@ -693,7 +702,7 @@ test('ask without vision answers from researcher summary', async () => {
   2. Otherwise: bounded agentic call — `provider.invokeConversation(conversation, createCodeceptJSTools(explorer, ...), { maxToolRoundtrips: 3, toolChoice: 'required' })` with a dedent system prompt: current compact ARIA + the instruction + rule to perform exactly the instructed interaction and stop. Collect executed codes from the tool results (same shape the Driller reads).
   3. Failures feed `heal(...)` from Task 5.
 - `click(target)` / `fill(field, value)`: call the corresponding tool object from `createCodeceptJSTools` directly (`tools.click.execute({ locator: target })` — read the tool's exact input schema in `src/ai/tools.ts` first and match it); ladder failures feed `heal`.
-- `ask(question)`: `options.vision` → `researcher.answerQuestionAboutScreenshot(state, question)`; otherwise `provider.chat` over dedent prompt containing `researcher.summary(state)` + compact ARIA + the question. Non-mutating: envelope has `answer`, no `changes`, artifacts still written.
+- `ask(question)`: vision by default — `researcher.answerQuestionAboutScreenshot(state, question)`; falls to the text path when `options.noVision` or `!provider.hasVision()` (`src/ai/provider.ts:635`; append a one-line note to the answer when degrading for the latter reason). Text path: `provider.chat` over dedent prompt containing `researcher.summary(state)` + compact ARIA + the question. Non-mutating: envelope has `answer`, no `changes`, artifacts still written.
 - `verify(assertion)`: `explorer.capture()` then `navigator.verifyState(assertion, actionResult)`; verdict `{ passed: verified, evidence: <first successful step or failure note>, code: successfulCodes.join('\n') }`.
 - `research(opts)`: `researcher.research(state, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh })` (`src/ai/researcher.ts:94`); envelope `research` = returned UI map verbatim (staleness banner included when cached), no `changes`. Non-mutating; artifacts still written.
 - All command methods end by building `used` from actually executed code (never the requested input when they differ).
@@ -766,13 +775,13 @@ git commit -m "feat(prima): go command and instance management"
 - Test: `tests/unit/config-ladder.test.ts`
 
 **Interfaces:**
-- Produces: `loadConfig` resolution order becomes: explicit `--config` path → project `explorbot.config.js|ts` in cwd → `~/.config/explorbot/config.js|ts` → env-var config (`buildEnvConfig`). `.env` loading order: cwd `.env` (existing behavior) then `~/.config/explorbot/.env` (only for keys not already set). New exported helper:
+- Produces: `loadConfig` resolution order becomes: explicit `--config` path → project `explorbot.config.js|ts` in cwd → `~/.explorbot/config.js|ts` → env-var config (`buildEnvConfig`). `.env` loading order: cwd `.env` (existing behavior) then `~/.explorbot/.env` (only for keys not already set). All home paths via `os.homedir()` — one cross-platform dir, no XDG/AppData branching. New exported helper:
 
 ```typescript
 export function resolveStateRoot(baseUrl: string, ephemeral?: boolean): string;
 ```
 
-returning `~/.local/state/explorbot/<host>/` (created), or a `mkdtempSync` temp dir when `ephemeral`.
+returning `~/.explorbot/state/<host>/` (created), or a `mkdtempSync` temp dir when `ephemeral`.
 
 - [ ] **Step 1: Read `src/config.ts` load path fully** (lines 297-560) before changing anything.
 
@@ -790,7 +799,7 @@ import { resolveStateRoot } from '../../src/config.ts';
 describe('resolveStateRoot', () => {
   test('derives persistent per-host dir', () => {
     const dir = resolveStateRoot('https://app.example.com/login');
-    expect(dir).toBe(path.join(os.homedir(), '.local', 'state', 'explorbot', 'app.example.com'));
+    expect(dir).toBe(path.join(os.homedir(), '.explorbot', 'state', 'app.example.com'));
     expect(existsSync(dir)).toBe(true);
   });
 
@@ -803,7 +812,7 @@ describe('resolveStateRoot', () => {
 });
 ```
 
-Global-config precedence test: point `ConfigParser.loadConfig` at a temp `HOME` (set `process.env.HOME` in the test, restore in `afterEach`), write `~/.config/explorbot/config.js` exporting a marker value, assert it loads when cwd has no project config and that a project config wins when both exist. Follow existing config tests in `tests/unit/` for how ConfigParser is instantiated.
+Global-config precedence test: point `ConfigParser.loadConfig` at a temp `HOME` (set `process.env.HOME` in the test, restore in `afterEach`; note `os.homedir()` ignores `$HOME` on Windows — gate the test or stub `homedir` if CI runs there), write `~/.explorbot/config.js` exporting a marker value, assert it loads when cwd has no project config and that a project config wins when both exist. Follow existing config tests in `tests/unit/` for how ConfigParser is instantiated.
 
 - [ ] **Step 3: Run, verify fail.**
 
@@ -811,7 +820,7 @@ Global-config precedence test: point `ConfigParser.loadConfig` at a temp `HOME` 
 
 - `resolveStateRoot`: host from `new URL(baseUrl).host`; `mkdirSync(..., { recursive: true })`; ephemeral via `mkdtempSync(path.join(os.tmpdir(), 'explorbot-'))`.
 - In `loadConfig`: after project-config lookup misses, try `path.join(os.homedir(), '.config', 'explorbot', 'config.js')` then `.ts` through the existing `loadConfigModule`.
-- `.env`: where the existing cwd `.env` loads, additionally load `~/.config/explorbot/.env` without overwriting already-set keys.
+- `.env`: where the existing cwd `.env` loads, additionally load `~/.explorbot/.env` without overwriting already-set keys.
 - In `buildEnvConfig` (config-free mode): when no project config, set `dirs` (knowledge/experience/output) under `resolveStateRoot(baseUrl, ephemeralFlag)`; ephemeral flag arrives via new `EXPLORBOT_EPHEMERAL` env var so the boat can pass it without new plumbing.
 
 - [ ] **Step 5: Run full unit suite** — `bun test tests/unit/` — PASS, no regressions.
@@ -846,7 +855,7 @@ Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOpti
 -c, --config <path>      -p, --path <path>
 -i, --instance <name>    --session [file]
 --no-heal                --ephemeral
---framework <name>       --vision   (ask only)
+--framework <name>       --no-vision   (ask only)
 --url <url>              (start page for config-free mode)
 ```
 
