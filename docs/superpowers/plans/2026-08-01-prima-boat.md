@@ -1,23 +1,23 @@
-# Actor Boat Implementation Plan
+# Prima Boat Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship `boat/actor` — an intent-level browser driver CLI (`explorbot act ...`) that lets an orchestrating agent act on pages via Playwright calls or natural language while explorbot's cheap models handle perception, healing, and evidence.
+**Goal:** Ship `boat/prima` — an intent-level browser driver CLI (`explorbot prima ...`) that lets an orchestrating agent act on pages via Playwright calls or natural language while explorbot's cheap models handle perception, healing, and evidence.
 
-**Architecture:** A boat following the `boat/doc-collector` pattern: `Actor` class wraps `ExplorBot`, reuses Navigator/Researcher/Explorer/StateManager, adds a pure envelope renderer and a pw function wrapper. Core changes are minimal: named browser-server instances, a Navigator heal-attempt hook, and a global-config/per-host-state ladder in config loading.
+**Architecture:** A boat following the `boat/doc-collector` pattern: `Prima` class wraps `ExplorBot`, reuses Navigator/Researcher/Explorer/StateManager, adds a pure envelope renderer and a pw function wrapper. Core changes are minimal: named browser-server instances, a Navigator heal-attempt hook, and a global-config/per-host-state ladder in config loading.
 
-**Tech Stack:** Bun (never Node), TypeScript, commander, CodeceptJS/Playwright via Explorer, `bun:test`, Biome.
+**Tech Stack:** TypeScript on Bun (Node.js supported through the package build step), commander, CodeceptJS/Playwright via Explorer, `bun:test`, Biome.
 
-**Spec:** `docs/superpowers/specs/2026-08-01-actor-boat-design.md` — read it first.
+**Spec:** `docs/superpowers/specs/2026-08-01-prima-boat-design.md` — read it first.
 
 **Execution model:** Run implementation subagents on Opus (user directive).
 
 ## Global Constraints
 
-- Bun only; never Node.js APIs where Bun equivalents exist; tests via `bun:test`.
+- Tests via `bun:test`; keep sources compatible with the existing package build step (`dist/` output runs on Node.js, `bun` condition points at `src/` — see `docs/contributing/npm-package.md`).
 - No code comments unless explicitly specified; premature exit over if/else; no ternary operators; no `...(cond ? {} : {})` spreads; `?.` over `&&` chains; private methods after public; types at end of file; `dedent` for prompts.
 - Prompts and tool descriptions must be GENERAL — never encode a specific failing example.
-- Business logic lives in the `Actor` class / agents; CLI handlers only parse options and delegate (repo rule).
+- Business logic lives in the `Prima` class / agents; CLI handlers only parse options and delegate (repo rule).
 - Run `bun run format` after each code change; `bun run lint:fix` after big ones.
 - Clean stdout: respect `EXPLORBOT_NO_BANNER`; envelope output goes to `console.log`, logs go through `tag()` logger.
 - DO NOT duplicate existing code — reuse `src/utils/aria.ts`, `src/action-result.ts`, `src/browser-server.ts`, Historian converters.
@@ -25,23 +25,23 @@
 ## File Structure
 
 ```
-boat/actor/
-├── package.json               # name "actbot", bin actbot
-├── bin/actbot-cli.ts          # standalone CLI entry
+boat/prima/
+├── package.json               # name "prima", bin prima
+├── bin/prima-cli.ts          # standalone CLI entry
 ├── src/
-│   ├── cli.ts                 # createActCommands(name = 'act')
-│   ├── actor.ts               # Actor class (all business logic)
+│   ├── cli.ts                 # createPrimaCommands(name = 'prima')
+│   ├── prima.ts               # Prima class (all business logic)
 │   ├── envelope.ts            # EnvelopeData type, renderEnvelope(), writeArtifacts()
 │   └── pw-parser.ts           # isFunctionExpression(), toCodeceptWrapper()
 └── tests/
     ├── envelope.test.ts
     ├── pw-parser.test.ts
-    └── actor.test.ts          # duck-typed ExplorBot mocks
+    └── prima.test.ts          # duck-typed ExplorBot mocks
 Core modifications:
 ├── src/browser-server.ts      # named instances (endpoint file per instance)
 ├── src/ai/navigator.ts        # resolveState onAttempt hook (small)
 ├── src/config.ts              # global config + global .env + per-host state dir
-└── bin/explorbot-cli.ts       # program.addCommand(createActCommands('act'))
+└── bin/explorbot-cli.ts       # program.addCommand(createPrimaCommands('prima'))
 ```
 
 ---
@@ -49,8 +49,8 @@ Core modifications:
 ### Task 1: Envelope module
 
 **Files:**
-- Create: `boat/actor/package.json`, `boat/actor/src/envelope.ts`
-- Test: `boat/actor/tests/envelope.test.ts`
+- Create: `boat/prima/package.json`, `boat/prima/src/envelope.ts`
+- Test: `boat/prima/tests/envelope.test.ts`
 
 **Interfaces:**
 - Produces (used by Tasks 3–7 and 9):
@@ -87,15 +87,15 @@ export function writeArtifacts(dir: string, snapshot: { aria: string | null; htm
 
 - [ ] **Step 1: Scaffold the boat package**
 
-`boat/actor/package.json` (mirror `boat/api-tester/package.json` shape):
+`boat/prima/package.json` (mirror `boat/api-tester/package.json` shape):
 
 ```json
 {
-  "name": "actbot",
+  "name": "prima",
   "version": "1.0.0",
   "description": "High-level browser driver CLI for orchestrating agents",
   "type": "module",
-  "bin": { "actbot": "./bin/actbot-cli.ts" },
+  "bin": { "prima": "./bin/prima-cli.ts" },
   "scripts": {
     "format": "biome format --write .",
     "lint:fix": "biome lint --write .",
@@ -110,7 +110,7 @@ export function writeArtifacts(dir: string, snapshot: { aria: string | null; htm
 
 - [ ] **Step 2: Write failing envelope tests**
 
-`boat/actor/tests/envelope.test.ts`:
+`boat/prima/tests/envelope.test.ts`:
 
 ```typescript
 import { describe, expect, test } from 'bun:test';
@@ -188,7 +188,7 @@ describe('renderEnvelope', () => {
 
 describe('writeArtifacts', () => {
   test('writes aria, html and network files and returns absolute paths', () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'act-'));
+    const dir = mkdtempSync(path.join(tmpdir(), 'prima-'));
     const result = writeArtifacts(dir, { aria: '- button "Login"', html: '<html></html>', requests: [{ url: '/api/user', status: 200 }] });
     expect(readFileSync(result.aria, 'utf-8')).toContain('button "Login"');
     expect(readFileSync(result.html, 'utf-8')).toContain('<html>');
@@ -200,10 +200,10 @@ describe('writeArtifacts', () => {
 
 - [ ] **Step 3: Run tests, verify they fail**
 
-Run: `bun test boat/actor/tests/envelope.test.ts`
+Run: `bun test boat/prima/tests/envelope.test.ts`
 Expected: FAIL — cannot resolve `../src/envelope.ts`.
 
-- [ ] **Step 4: Implement `boat/actor/src/envelope.ts`**
+- [ ] **Step 4: Implement `boat/prima/src/envelope.ts`**
 
 Pure string building. Rules:
 - Sections always in order: Result, Page, then exactly one of Changes/Answer/Verdict (Changes only when `changes` is a non-empty string), Failure + Healing attempts + Current page (only when `failure` set), Instance, Artifacts (only when set).
@@ -219,15 +219,15 @@ Keep it one exported function plus small private helpers below it; no classes.
 
 - [ ] **Step 5: Run tests, verify pass**
 
-Run: `bun test boat/actor/tests/envelope.test.ts`
+Run: `bun test boat/prima/tests/envelope.test.ts`
 Expected: PASS (7 tests).
 
 - [ ] **Step 6: Format and commit**
 
 ```bash
 bun run format
-git add boat/actor
-git commit -m "feat(actor): boat scaffold and result envelope"
+git add boat/prima
+git commit -m "feat(prima): boat scaffold and result envelope"
 ```
 
 ---
@@ -237,8 +237,8 @@ git commit -m "feat(actor): boat scaffold and result envelope"
 The `pw` argument is a function expression in the exact shape `I.usePlaywrightTo` accepts — `({ page, browserContext, browser }) => ...` — so callers destructure whichever Playwright objects they need. The parser only answers "is this a parseable function expression" (for clean `tool:` errors) and interpolates it verbatim into the CodeceptJS call that `Action.execute` expects.
 
 **Files:**
-- Create: `boat/actor/src/pw-parser.ts`
-- Test: `boat/actor/tests/pw-parser.test.ts`
+- Create: `boat/prima/src/pw-parser.ts`
+- Test: `boat/prima/tests/pw-parser.test.ts`
 
 **Interfaces:**
 - Produces (used by Task 4):
@@ -250,7 +250,7 @@ export function toCodeceptWrapper(expr: string): string;
 
 - [ ] **Step 1: Write failing tests**
 
-`boat/actor/tests/pw-parser.test.ts`:
+`boat/prima/tests/pw-parser.test.ts`:
 
 ```typescript
 import { describe, expect, test } from 'bun:test';
@@ -289,10 +289,10 @@ describe('toCodeceptWrapper', () => {
 
 - [ ] **Step 2: Run tests, verify fail**
 
-Run: `bun test boat/actor/tests/pw-parser.test.ts`
+Run: `bun test boat/prima/tests/pw-parser.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `boat/actor/src/pw-parser.ts`**
+- [ ] **Step 3: Implement `boat/prima/src/pw-parser.ts`**
 
 ```typescript
 const FUNCTION_SHAPE = /^(async\s+)?(function\b|\()/;
@@ -318,15 +318,15 @@ export function toCodeceptWrapper(expr: string): string {
 
 - [ ] **Step 4: Run tests, verify pass**
 
-Run: `bun test boat/actor/tests/pw-parser.test.ts`
+Run: `bun test boat/prima/tests/pw-parser.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 bun run format
-git add boat/actor/src/pw-parser.ts boat/actor/tests/pw-parser.test.ts
-git commit -m "feat(actor): pw function wrapper"
+git add boat/prima/src/pw-parser.ts boat/prima/tests/pw-parser.test.ts
+git commit -m "feat(prima): pw function wrapper"
 ```
 
 ---
@@ -394,18 +394,18 @@ git commit -m "feat: named browser server instances"
 
 ---
 
-### Task 4: Actor class core — lifecycle and pw command
+### Task 4: Prima class core — lifecycle and pw command
 
 **Files:**
-- Create: `boat/actor/src/actor.ts`
-- Test: `boat/actor/tests/actor.test.ts`
+- Create: `boat/prima/src/prima.ts`
+- Test: `boat/prima/tests/prima.test.ts`
 
 **Interfaces:**
 - Consumes: `renderEnvelope`/`writeArtifacts`/`EnvelopeData`/`InstanceInfo` (Task 1), `isFunctionExpression`/`toCodeceptWrapper` (Task 2), `getAliveEndpoint(instance)`/`launchServer` (Task 3), `ExplorBot` API (`src/explorbot.ts`: `start()`, `stop()`, `visit(url)`, `getExplorer()`, `stateManager()`, `getCurrentState()`, `agentNavigator()`, `agentResearcher()`, `agentHistorian()`, `requestStore()`), `Explorer.action(): Action` (`src/explorer.ts:151`), `Action.execute(code)` / `Action.capturePageState()` (`src/action.ts:64-68`), `ActionResult` (`getStateHash()`, `ariaSnapshot`, `combinedHtml()`, `url`, `title`), `compactAriaSnapshot` (`src/utils/aria.ts`), `Diff`/`PageDiff` via `ActionResult` (`src/action-result.ts`).
 - Produces (used by Tasks 5–7, 9):
 
 ```typescript
-export interface ActorOptions {
+export interface PrimaOptions {
   verbose?: boolean;
   config?: string;
   path?: string;
@@ -417,8 +417,8 @@ export interface ActorOptions {
   vision?: boolean;
   url?: string;
 }
-export class Actor {
-  constructor(options?: ActorOptions);
+export class Prima {
+  constructor(options?: PrimaOptions);
   async start(): Promise<void>;
   async stop(): Promise<void>;
   async pw(expression: string): Promise<EnvelopeData>;
@@ -426,15 +426,15 @@ export class Actor {
 }
 ```
 
-- [ ] **Step 1: Study `boat/doc-collector/src/docbot.ts`** — the Actor mirrors how DocBot wraps ExplorBot (constructor builds `new ExplorBot({...})`, `start()` boots it, agents accessed lazily).
+- [ ] **Step 1: Study `boat/doc-collector/src/docbot.ts`** — the Prima mirrors how DocBot wraps ExplorBot (constructor builds `new ExplorBot({...})`, `start()` boots it, agents accessed lazily).
 
 - [ ] **Step 2: Write failing tests with duck-typed mocks**
 
-`boat/actor/tests/actor.test.ts` — follow the duck-type-mock style of `tests/integration/` (mock Explorer/StateManager, no real browser):
+`boat/prima/tests/prima.test.ts` — follow the duck-type-mock style of `tests/integration/` (mock Explorer/StateManager, no real browser):
 
 ```typescript
 import { describe, expect, test } from 'bun:test';
-import { Actor } from '../src/actor.ts';
+import { Prima } from '../src/prima.ts';
 
 function fakeState(over: Record<string, unknown> = {}) {
   return {
@@ -447,11 +447,11 @@ function fakeState(over: Record<string, unknown> = {}) {
   };
 }
 
-function fakeActor() {
-  const actor = new Actor({ instance: 'default' });
+function fakePrima() {
+  const prima = new Prima({ instance: 'default' });
   const executed: string[] = [];
   const after = fakeState({ url: 'https://app.example.com/dashboard', title: 'Dashboard', getStateHash: () => 'dashboard_h1_dashboard' });
-  (actor as any).bot = {
+  (prima as any).bot = {
     getExplorer: () => ({
       action: () => ({
         execute: async (code: string) => {
@@ -467,22 +467,22 @@ function fakeActor() {
     }),
     requestStore: () => ({ getRequests: () => [] }),
   };
-  (actor as any).artifactsDir = '/tmp/act-test';
-  return { actor, executed };
+  (prima as any).artifactsDir = '/tmp/prima-test';
+  return { prima, executed };
 }
 
-describe('Actor.pw', () => {
+describe('Prima.pw', () => {
   test('rejects non-function argument as tool error without executing', async () => {
-    const { actor, executed } = fakeActor();
-    const envelope = await actor.pw("page.click('text=Login')");
+    const { prima, executed } = fakePrima();
+    const envelope = await prima.pw("page.click('text=Login')");
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toContain('function');
     expect(executed.length).toBe(0);
   });
 
   test('executes wrapped function and returns success envelope data', async () => {
-    const { actor, executed } = fakeActor();
-    const envelope = await actor.pw("({ page }) => page.click('text=Login')");
+    const { prima, executed } = fakePrima();
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
     expect(executed[0]).toContain("I.usePlaywrightTo");
     expect(envelope.ok).toBe(true);
     expect(envelope.used).toEqual(["({ page }) => page.click('text=Login')"]);
@@ -494,12 +494,12 @@ describe('Actor.pw', () => {
 
 - [ ] **Step 3: Run tests, verify fail**
 
-Run: `bun test boat/actor/tests/actor.test.ts`
+Run: `bun test boat/prima/tests/prima.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 4: Implement Actor core**
+- [ ] **Step 4: Implement Prima core**
 
-`boat/actor/src/actor.ts` responsibilities in this task:
+`boat/prima/src/prima.ts` responsibilities in this task:
 - Constructor stores options, builds `ExplorBot` options (`config`, `path`, `verbose`, `session`, `headless: true`) — but do NOT boot in constructor (DocBot pattern).
 - `start()`: resolve instance endpoint via `getAliveEndpoint(this.options.instance ?? 'default')`; when absent, launch via `launchServer` equivalent used by `explorbot browser start` (reuse, do not reimplement); then `await this.bot.start()`. When `options.url` is set and no current state exists, `await this.bot.visit(options.url)`.
 - `pw(expression)`:
@@ -510,21 +510,21 @@ Expected: FAIL — module not found.
   5. Write artifacts via `writeArtifacts(this.nextArtifactDir(), { aria: result.ariaSnapshot, html: result.combinedHtml(), requests: this.bot.requestStore().getRequests() })`.
   6. On execution error: this task returns a plain failure envelope (heal comes in Task 5).
 - `instanceInfo()`: name from options; tabs from `explorer` playwright context pages count (add a small public accessor if none exists — check `src/explorer.ts:79` `playwrightHelper?.page`); others from `listInstances()` (Task 3) excluding self; tabs for others may be reported as 0 when unreachable — do not connect to other instances.
-- `nextArtifactDir()`: `<output>/act/<ISO-timestamp>/`, one per command invocation.
+- `nextArtifactDir()`: `<output>/prima/<ISO-timestamp>/`, one per command invocation.
 
 Mockability rule: everything the tests stub lives behind `this.bot` — keep all ExplorBot access via that single field.
 
 - [ ] **Step 5: Run tests, verify pass**
 
-Run: `bun test boat/actor/tests/`
+Run: `bun test boat/prima/tests/`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 bun run format
-git add boat/actor
-git commit -m "feat(actor): Actor core with pw execution and instance info"
+git add boat/prima
+git commit -m "feat(prima): Prima core with pw execution and instance info"
 ```
 
 ---
@@ -532,25 +532,25 @@ git commit -m "feat(actor): Actor core with pw execution and instance info"
 ### Task 5: Heal loop
 
 **Files:**
-- Modify: `src/ai/navigator.ts:192` (`resolveState` signature), `boat/actor/src/actor.ts`
-- Test: `boat/actor/tests/actor.test.ts` (extend), `tests/integration/` untouched
+- Modify: `src/ai/navigator.ts:192` (`resolveState` signature), `boat/prima/src/prima.ts`
+- Test: `boat/prima/tests/prima.test.ts` (extend), `tests/integration/` untouched
 
 **Interfaces:**
 - Consumes: `navigator.resolveState(message, actionResult, opts)` (`src/ai/navigator.ts:192`).
-- Produces: `resolveState` opts gains `onAttempt?: (attempt: { code: string; error?: string }) => void`, invoked once per executed recovery attempt with the exact code string and the error message when it failed. Actor gains private `heal(...)` used by pw (and Task 6 commands).
+- Produces: `resolveState` opts gains `onAttempt?: (attempt: { code: string; error?: string }) => void`, invoked once per executed recovery attempt with the exact code string and the error message when it failed. Prima gains private `heal(...)` used by pw (and Task 6 commands).
 
 - [ ] **Step 1: Extend `resolveState` with the attempt hook**
 
 Read `src/ai/navigator.ts` `resolveState` implementation; find where recovery code executes (each `action.execute`/attempt site). Add `opts.onAttempt` invocation at each attempt completion with `{ code, error: lastError?.message }`. Smallest change possible; no behavior change when the callback is absent.
 
-- [ ] **Step 2: Write failing Actor heal test**
+- [ ] **Step 2: Write failing Prima heal test**
 
-Extend `boat/actor/tests/actor.test.ts`; stub `agentNavigator` on the fake bot:
+Extend `boat/prima/tests/prima.test.ts`; stub `agentNavigator` on the fake bot:
 
 ```typescript
 test('failed pw heals via navigator and reports healed envelope', async () => {
-  const { actor } = fakeActor();
-  (actor as any).bot.getExplorer = () => ({
+  const { prima } = fakePrima();
+  (prima as any).bot.getExplorer = () => ({
     action: () => ({
       execute: async () => {
         throw new Error("locator 'text=Login' not found");
@@ -558,22 +558,22 @@ test('failed pw heals via navigator and reports healed envelope', async () => {
     }),
     capture: async () => fakeState(),
   });
-  (actor as any).bot.agentNavigator = () => ({
+  (prima as any).bot.agentNavigator = () => ({
     resolveState: async (_msg: string, _result: unknown, opts: any) => {
       opts?.onAttempt?.({ code: "I.click('Login')", error: 'not visible' });
       opts?.onAttempt?.({ code: "I.click('#login-btn')" });
       return true;
     },
   });
-  const envelope = await actor.pw("({ page }) => page.click('text=Login')");
+  const envelope = await prima.pw("({ page }) => page.click('text=Login')");
   expect(envelope.ok).toBe(true);
   expect(envelope.healed).toBe(true);
   expect(envelope.used).toEqual(["I.click('#login-btn')"]);
 });
 
 test('exhausted heal returns failure envelope with attempts and compact aria', async () => {
-  const { actor } = fakeActor();
-  (actor as any).bot.getExplorer = () => ({
+  const { prima } = fakePrima();
+  (prima as any).bot.getExplorer = () => ({
     action: () => ({
       execute: async () => {
         throw new Error("locator 'text=Login' not found");
@@ -581,13 +581,13 @@ test('exhausted heal returns failure envelope with attempts and compact aria', a
     }),
     capture: async () => fakeState(),
   });
-  (actor as any).bot.agentNavigator = () => ({
+  (prima as any).bot.agentNavigator = () => ({
     resolveState: async (_msg: string, _result: unknown, opts: any) => {
       opts?.onAttempt?.({ code: "I.click('Login')", error: 'not visible' });
       return false;
     },
   });
-  const envelope = await actor.pw("({ page }) => page.click('text=Login')");
+  const envelope = await prima.pw("({ page }) => page.click('text=Login')");
   expect(envelope.ok).toBe(false);
   expect(envelope.failure?.attempts.length).toBe(1);
   expect(envelope.failure?.compactAria).toContain('button');
@@ -596,10 +596,10 @@ test('exhausted heal returns failure envelope with attempts and compact aria', a
 
 - [ ] **Step 3: Run tests, verify fail**
 
-Run: `bun test boat/actor/tests/actor.test.ts`
+Run: `bun test boat/prima/tests/prima.test.ts`
 Expected: new tests FAIL (heal not implemented).
 
-- [ ] **Step 4: Implement heal in Actor**
+- [ ] **Step 4: Implement heal in Prima**
 
 Private `heal(errorMessage, actionResult, originalCode)`:
 - Skip entirely when `options.heal === false` — go straight to failure envelope.
@@ -610,15 +610,15 @@ Private `heal(errorMessage, actionResult, originalCode)`:
 
 - [ ] **Step 5: Run boat tests and repo unit tests**
 
-Run: `bun test boat/actor/tests/ tests/unit/`
+Run: `bun test boat/prima/tests/ tests/unit/`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 bun run format
-git add src/ai/navigator.ts boat/actor
-git commit -m "feat(actor): heal loop over navigator recovery with attempt trace"
+git add src/ai/navigator.ts boat/prima
+git commit -m "feat(prima): heal loop over navigator recovery with attempt trace"
 ```
 
 ---
@@ -626,8 +626,8 @@ git commit -m "feat(actor): heal loop over navigator recovery with attempt trace
 ### Task 6: do, click, fill, ask, verify, research commands
 
 **Files:**
-- Modify: `boat/actor/src/actor.ts`
-- Test: `boat/actor/tests/actor.test.ts` (extend)
+- Modify: `boat/prima/src/prima.ts`
+- Test: `boat/prima/tests/prima.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: `collectInteractiveNodes(snapshot)` (`src/utils/aria.ts`), `createCodeceptJSTools` (`src/ai/tools.ts:30`) — tool objects expose `.execute(input)`; `provider.invokeConversation` with `maxToolRoundtrips` (Driller pattern, `src/ai/driller.ts:325-329`); `researcher.answerQuestionAboutScreenshot(state, question)` and `researcher.summary(state)` (`src/ai/researcher.ts:544, 659`); `navigator.verifyState(message, actionResult)` (`src/ai/navigator.ts:618`) returning `{ verified, successfulCodes, assertionSteps, totalAttempted }`.
@@ -648,43 +648,43 @@ async research(opts?: { data?: boolean; deep?: boolean; fresh?: boolean }): Prom
 
 ```typescript
 test('do with unambiguous role+name executes without AI', async () => {
-  const { actor, executed } = fakeActor();
+  const { prima, executed } = fakePrima();
   let aiCalled = false;
-  (actor as any).bot.getProvider = () => ({ invokeConversation: async () => { aiCalled = true; } });
-  const envelope = await actor.do('click the "Sign in" button');
+  (prima as any).bot.getProvider = () => ({ invokeConversation: async () => { aiCalled = true; } });
+  const envelope = await prima.do('click the "Sign in" button');
   expect(aiCalled).toBe(false);
   expect(executed.some((code) => code.includes("I.click"))).toBe(true);
   expect(envelope.ok).toBe(true);
 });
 
 test('verify returns verdict with assertion code', async () => {
-  const { actor } = fakeActor();
-  (actor as any).bot.agentNavigator = () => ({
+  const { prima } = fakePrima();
+  (prima as any).bot.agentNavigator = () => ({
     verifyState: async () => ({ verified: true, successfulCodes: ["I.see('Dashboard')"], assertionSteps: [], totalAttempted: 1 }),
   });
-  const envelope = await actor.verify('user sees the dashboard');
+  const envelope = await prima.verify('user sees the dashboard');
   expect(envelope.verdict?.passed).toBe(true);
   expect(envelope.verdict?.code).toBe("I.see('Dashboard')");
 });
 
 test('research returns UI map in envelope', async () => {
-  const { actor } = fakeActor();
-  (actor as any).bot.agentResearcher = () => ({ research: async () => '## Section: Login Form\n| Element | ARIA | CSS |' });
-  const envelope = await actor.research({ data: true });
+  const { prima } = fakePrima();
+  (prima as any).bot.agentResearcher = () => ({ research: async () => '## Section: Login Form\n| Element | ARIA | CSS |' });
+  const envelope = await prima.research({ data: true });
   expect(envelope.research).toContain('Login Form');
   expect(envelope.ok).toBe(true);
 });
 
 test('ask without vision answers from researcher summary', async () => {
-  const { actor } = fakeActor();
-  (actor as any).bot.agentResearcher = () => ({ summary: async () => 'Login form with email and password' });
-  (actor as any).bot.getProvider = () => ({ chat: async () => ({ text: 'A login page with an email form' }) });
-  const envelope = await actor.ask('what do I see?');
+  const { prima } = fakePrima();
+  (prima as any).bot.agentResearcher = () => ({ summary: async () => 'Login form with email and password' });
+  (prima as any).bot.getProvider = () => ({ chat: async () => ({ text: 'A login page with an email form' }) });
+  const envelope = await prima.ask('what do I see?');
   expect(envelope.answer).toContain('login');
 });
 ```
 
-- [ ] **Step 2: Run tests, verify fail** — `bun test boat/actor/tests/actor.test.ts`.
+- [ ] **Step 2: Run tests, verify fail** — `bun test boat/prima/tests/prima.test.ts`.
 
 - [ ] **Step 3: Implement**
 
@@ -698,14 +698,14 @@ test('ask without vision answers from researcher summary', async () => {
 - `research(opts)`: `researcher.research(state, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh })` (`src/ai/researcher.ts:94`); envelope `research` = returned UI map verbatim (staleness banner included when cached), no `changes`. Non-mutating; artifacts still written.
 - All command methods end by building `used` from actually executed code (never the requested input when they differ).
 
-- [ ] **Step 4: Run tests, verify pass** — `bun test boat/actor/tests/`.
+- [ ] **Step 4: Run tests, verify pass** — `bun test boat/prima/tests/`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 bun run format
-git add boat/actor
-git commit -m "feat(actor): do, click, fill, ask, verify commands"
+git add boat/prima
+git commit -m "feat(prima): do, click, fill, ask, verify commands"
 ```
 
 ---
@@ -713,8 +713,8 @@ git commit -m "feat(actor): do, click, fill, ask, verify commands"
 ### Task 7: go command and browser instance management
 
 **Files:**
-- Modify: `boat/actor/src/actor.ts`
-- Test: `boat/actor/tests/actor.test.ts` (extend)
+- Modify: `boat/prima/src/prima.ts`
+- Test: `boat/prima/tests/prima.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: `navigator.visit(destination)` (`src/ai/navigator.ts:140` — handles both URLs and NL/state destinations, same call the TUI `/navigate` uses per `src/commands/navigate-command.ts`), Task 3 instance functions.
@@ -731,10 +731,10 @@ async browserStatus(): Promise<string>;
 
 ```typescript
 test('go delegates to navigator.visit and returns envelope', async () => {
-  const { actor } = fakeActor();
+  const { prima } = fakePrima();
   const visited: string[] = [];
-  (actor as any).bot.agentNavigator = () => ({ visit: async (dest: string) => { visited.push(dest); } });
-  const envelope = await actor.go('billing settings');
+  (prima as any).bot.agentNavigator = () => ({ visit: async (dest: string) => { visited.push(dest); } });
+  const envelope = await prima.go('billing settings');
   expect(visited).toEqual(['billing settings']);
   expect(envelope.ok).toBe(true);
   expect(envelope.page.url).toBeTruthy();
@@ -753,8 +753,8 @@ test('go delegates to navigator.visit and returns envelope', async () => {
 
 ```bash
 bun run format
-git add boat/actor
-git commit -m "feat(actor): go command and instance management"
+git add boat/prima
+git commit -m "feat(prima): go command and instance management"
 ```
 
 ---
@@ -829,15 +829,15 @@ git commit -m "feat: global config ladder and per-host state dirs"
 ### Task 9: CLI wiring and --help contract
 
 **Files:**
-- Create: `boat/actor/src/cli.ts`, `boat/actor/bin/actbot-cli.ts`
-- Modify: `bin/explorbot-cli.ts` (add near line 874: `program.addCommand(createActCommands('act'))`)
+- Create: `boat/prima/src/cli.ts`, `boat/prima/bin/prima-cli.ts`
+- Modify: `bin/explorbot-cli.ts` (add near line 874: `program.addCommand(createPrimaCommands('prima'))`)
 - Test: manual smoke via `--help` (Step 4)
 
 **Interfaces:**
-- Consumes: `Actor`/`ActorOptions` (Tasks 4-7), `renderEnvelope` (Task 1).
-- Produces: `export function createActCommands(name = 'act'): Command`.
+- Consumes: `Prima`/`PrimaOptions` (Tasks 4-7), `renderEnvelope` (Task 1).
+- Produces: `export function createPrimaCommands(name = 'prima'): Command`.
 
-- [ ] **Step 1: Implement `boat/actor/src/cli.ts`**
+- [ ] **Step 1: Implement `boat/prima/src/cli.ts`**
 
 Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOptions`, subcommands). Subcommands: `pw <fn>`, `do <instruction>`, `click <target>`, `fill <field> <value>`, `ask <question>`, `verify <assertion>` (alias `assert`), `research` (flags `--data`, `--deep`, `--fresh`), `go <target>`, `browser <start|stop|status|list>`. Common options:
 
@@ -850,28 +850,28 @@ Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOpti
 --url <url>              (start page for config-free mode)
 ```
 
-Every action handler: `setPreserveConsoleLogs(true)`, build `Actor`, `await actor.start()`, run the method, `console.log(renderEnvelope(result))`, `await actor.stop()`, `process.exit(result.ok ? 0 : 1)`. `--ephemeral` sets `process.env.EXPLORBOT_EPHEMERAL = '1'` before Actor construction. Zero business logic in handlers.
+Every action handler: `setPreserveConsoleLogs(true)`, build `Prima`, `await prima.start()`, run the method, `console.log(renderEnvelope(result))`, `await prima.stop()`, `process.exit(result.ok ? 0 : 1)`. `--ephemeral` sets `process.env.EXPLORBOT_EPHEMERAL = '1'` before Prima construction. Zero business logic in handlers.
 
 - [ ] **Step 2: Write the --help contract text**
 
-The command description plus `addHelpText('after', ...)` on the `act` group is the sole teaching surface for orchestrating agents. It must compactly cover (dedent block, ~40 lines): the tiering (pw = precise, click/fill = ladder, do = intent), the recommended loop (research once for verified locators → drive with pw → verify), the envelope sections and their meaning, `used:` as reusable verified code, heal semantics and `--no-heal`, failure = inline compact ARIA + artifact file paths for deep dives, `--instance` vs `--session`, autostart behavior, the close-when-finished convention driven by `### Instance`, and one usage example per tier. General shapes only — no app-specific examples.
+The command description plus `addHelpText('after', ...)` on the `prima` group is the sole teaching surface for orchestrating agents. It must compactly cover (dedent block, ~40 lines): the tiering (pw = precise, click/fill = ladder, do = intent), the recommended loop (research once for verified locators → drive with pw → verify), the envelope sections and their meaning, `used:` as reusable verified code, heal semantics and `--no-heal`, failure = inline compact ARIA + artifact file paths for deep dives, `--instance` vs `--session`, autostart behavior, the close-when-finished convention driven by `### Instance`, and one usage example per tier. General shapes only — no app-specific examples.
 
 - [ ] **Step 3: Wire into main CLI and standalone bin**
 
-- `bin/explorbot-cli.ts`: `import { createActCommands } from '../boat/actor/src/cli.ts';` + `program.addCommand(createActCommands('act'));` next to the existing api/docs registrations (line ~874).
-- `boat/actor/bin/actbot-cli.ts`: mirror `boat/api-tester/bin` entry — a commander program that mounts the same subcommands at top level.
+- `bin/explorbot-cli.ts`: `import { createPrimaCommands } from '../boat/prima/src/cli.ts';` + `program.addCommand(createPrimaCommands('prima'));` next to the existing api/docs registrations (line ~874).
+- `boat/prima/bin/prima-cli.ts`: mirror `boat/api-tester/bin` entry — a commander program that mounts the same subcommands at top level.
 
 - [ ] **Step 4: Smoke the help output**
 
-Run: `bun bin/explorbot-cli.ts act --help` and `bun boat/actor/bin/actbot-cli.ts --help`
+Run: `bun bin/explorbot-cli.ts prima --help` and `bun boat/prima/bin/prima-cli.ts --help`
 Expected: full contract text, all 8 subcommands listed, no banner noise with `EXPLORBOT_NO_BANNER=1`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 bun run format && bun run lint:fix
-git add boat/actor bin/explorbot-cli.ts
-git commit -m "feat(actor): act CLI namespace and standalone actbot bin"
+git add boat/prima bin/explorbot-cli.ts
+git commit -m "feat(prima): prima CLI namespace and standalone prima bin"
 ```
 
 ---
@@ -879,29 +879,29 @@ git commit -m "feat(actor): act CLI namespace and standalone actbot bin"
 ### Task 10: End-to-end smoke, changelog, docs
 
 **Files:**
-- Create: `tests/node/actor-smoke.test.ts` (or `tests/regression/` — match where existing browser-driving tests live; inspect both dirs first)
+- Create: `tests/node/prima-smoke.test.ts` (or `tests/regression/` — match where existing browser-driving tests live; inspect both dirs first)
 - Modify: `docs/reference/commands.md`, `CHANGELOG.md` (via `/changelog` skill at commit time)
 
 - [ ] **Step 1: Inspect existing e2e/browser test setup** — `tests/node/` and `tests/regression/` — reuse their fixture-server pattern for a local page (a form with a button and an input; fictional content only).
 
 - [ ] **Step 2: Write the smoke test**
 
-Scenarios, driven through the `Actor` class directly against the local fixture (real browser, no AI provider needed for these paths):
+Scenarios, driven through the `Prima` class directly against the local fixture (real browser, no AI provider needed for these paths):
 1. `pw "({ page }) => page.click('text=Submit')"` on the fixture → `ok: true`, envelope contains `### Changes` and artifact files exist on disk.
 2. `pw` with a non-function argument → `ok: false`, `tool:`-prefixed error, exit path returns without browser action.
 3. `do 'click the "Submit" button'` → fast path, zero AI (assert no provider configured and it still works).
 4. Instance autostart honored: run without a pre-started daemon; assert endpoint file appears.
 
-Heal-path e2e requires an AI provider — cover it with an aimock integration test in `tests/integration/actor-heal.test.ts` following `tests/integration/planner.test.ts` (mock provider returns a recovery instruction; assert `healed: true` envelope and `onAttempt` trace).
+Heal-path e2e requires an AI provider — cover it with an aimock integration test in `tests/integration/prima-heal.test.ts` following `tests/integration/planner.test.ts` (mock provider returns a recovery instruction; assert `healed: true` envelope and `onAttempt` trace).
 
 - [ ] **Step 3: Run everything**
 
-Run: `bun test boat/actor/tests/ tests/unit/ tests/integration/` plus the smoke file.
+Run: `bun test boat/prima/tests/ tests/unit/ tests/integration/` plus the smoke file.
 Expected: all PASS.
 
 - [ ] **Step 4: Document**
 
-Add an "Actor boat" section to `docs/reference/commands.md`: command table, envelope sample, tiering guidance, instance/session flags, config-free example (`EXPLORBOT_AI_PROVIDER=groq explorbot act go https://app.example.com`).
+Add an "Prima boat" section to `docs/reference/commands.md`: command table, envelope sample, tiering guidance, instance/session flags, config-free example (`EXPLORBOT_AI_PROVIDER=groq explorbot prima go https://app.example.com`).
 
 - [ ] **Step 5: Final checks and commit**
 
@@ -913,7 +913,7 @@ Invoke the `/changelog` skill, then:
 
 ```bash
 git add -A
-git commit -m "feat(actor): e2e smoke, docs and changelog"
+git commit -m "feat(prima): e2e smoke, docs and changelog"
 ```
 
 ---
@@ -922,4 +922,4 @@ git commit -m "feat(actor): e2e smoke, docs and changelog"
 
 - Spec coverage: pw/do/click/fill/ask/verify+assert/research/go (Tasks 4-7, 9), envelope + used code (1, 4), heal + attempt trace + `--no-heal` (5), instances + autostart + `--session` reuse (3, 4, 7), config-free ladder + per-host state + `--ephemeral` (8), `--help`-only discovery (9), testing incl. aimock heal test (10). Framework flag (`--framework`) is parsed (9) and stored (4); Historian-based conversion of `used:` into Playwright dialect is deliberately deferred until `used` collection stabilizes — v1 emits the executed CodeceptJS (pw commands echo the Playwright expression itself), which satisfies "actual used locator" for both dialect inputs. If reviewers want full conversion in v1, extend Task 6 with `historian.toPlaywrightCode` per `src/ai/historian/playwright.ts:21`.
 - Vision `ask` degrades to text path when no `visionModel` configured (`provider.hasVision()`, `src/ai/provider.ts:635`) — implementer: guard in `ask`.
-- Type consistency: `EnvelopeData`/`InstanceInfo`/`HealAttempt` defined once in Task 1 and only consumed elsewhere; `ActorOptions` defined in Task 4 and consumed by 9.
+- Type consistency: `EnvelopeData`/`InstanceInfo`/`HealAttempt` defined once in Task 1 and only consumed elsewhere; `PrimaOptions` defined in Task 4 and consumed by 9.

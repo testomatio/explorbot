@@ -1,4 +1,4 @@
-# Actor Boat — High-Level Browser Driver for Orchestrating Agents
+# Prima Boat — High-Level Browser Driver for Orchestrating Agents
 
 **Date:** 2026-08-01
 **Status:** Draft for review
@@ -8,7 +8,7 @@
 
 Coding agents (Claude Code on Opus/Fable) drive browsers through playwright-cli or Playwright MCP. Every action forces page state (aria snapshots) into the orchestrator's context: the expensive model pays to read the tree, pick a ref, and re-read after every step, and each snapshot stays in conversation history compounding cost for the rest of the session. A 20-step flow means 20+ expensive perception roundtrips.
 
-Explorbot already owns the layers that fix this: cheap-model perception (Navigator, Researcher), semantic diffs (ariaDiff, pageDiff), state tracking, and experience replay. The Actor boat exposes those layers as an intent-level CLI so the orchestrator sends instructions and receives compact evidence — page data never enters the expensive context on the happy path.
+Explorbot already owns the layers that fix this: cheap-model perception (Navigator, Researcher), semantic diffs (ariaDiff, pageDiff), state tracking, and experience replay. The Prima boat exposes those layers as an intent-level CLI so the orchestrator sends instructions and receives compact evidence — page data never enters the expensive context on the happy path.
 
 ## Goals
 
@@ -29,30 +29,30 @@ Explorbot already owns the layers that fix this: cheap-model perception (Navigat
 A boat, following the existing `boat/api-tester` / `boat/doc-collector` pattern:
 
 ```
-boat/actor/
-├── package.json          # name: "actbot", own bin
-├── bin/actbot-cli.ts     # standalone CLI
+boat/prima/
+├── package.json          # name: "prima", own bin
+├── bin/prima-cli.ts     # standalone CLI
 └── src/
-    ├── cli.ts            # createActCommands('act') → composed into main CLI
-    ├── actor.ts          # Actor class wrapping ExplorBot (like DocBot)
+    ├── cli.ts            # createPrimaCommands('prima') → composed into main CLI
+    ├── prima.ts          # Prima class wrapping ExplorBot (like DocBot)
     ├── envelope.ts       # result envelope: inline render + artifact files
     └── config.ts
 ```
 
-Registered in `bin/explorbot-cli.ts` via `program.addCommand(createActCommands('act'))`. The `Actor` class wraps `ExplorBot`, reusing `agentNavigator()`, `agentResearcher()`, `stateManager()`, Historian, and the Explorer/Action capture pipeline. Business logic lives in the Actor class and agents; CLI handlers stay thin, per repo convention.
+Registered in `bin/explorbot-cli.ts` via `program.addCommand(createPrimaCommands('prima'))`. The `Prima` class wraps `ExplorBot`, reusing `agentNavigator()`, `agentResearcher()`, `stateManager()`, Historian, and the Explorer/Action capture pipeline. Business logic lives in the Prima class and agents; CLI handlers stay thin, per repo convention.
 
 ## Command Surface
 
 ```
-explorbot act pw "({ page }) => page.click('text=Login')"   # raw Playwright fn, healed on failure
-explorbot act do "click the login link"        # NL action via Navigator
-explorbot act click "Login"                    # targeted click via existing fallback ladder
-explorbot act fill "Search" "wireless mouse"   # targeted fill via existing ladder
-explorbot act ask "what do I see here?"        # cheap-model page Q&A via Researcher
-explorbot act research [--data] [--deep] [--fresh]  # verified UI map for precise pw driving
-explorbot act verify "user is logged in"       # AI assertion (alias: assert)
-explorbot act go "billing settings"            # URL or NL navigation
-explorbot act browser start|stop|status|list   # instance management (stop --all)
+explorbot prima pw "({ page }) => page.click('text=Login')"   # raw Playwright fn, healed on failure
+explorbot prima do "click the login link"        # NL action via Navigator
+explorbot prima click "Login"                    # targeted click via existing fallback ladder
+explorbot prima fill "Search" "wireless mouse"   # targeted fill via existing ladder
+explorbot prima ask "what do I see here?"        # cheap-model page Q&A via Researcher
+explorbot prima research [--data] [--deep] [--fresh]  # verified UI map for precise pw driving
+explorbot prima verify "user is logged in"       # AI assertion (alias: assert)
+explorbot prima go "billing settings"            # URL or NL navigation
+explorbot prima browser start|stop|status|list   # instance management (stop --all)
 ```
 
 Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with deterministic fallback ladders (AI only on ambiguity), `do` = intent (cheap-model planning). `select`, `pressKey`, `hover`, `drag` intentionally stay behind `pw` — a subcommand without a ladder is surface without value.
@@ -78,10 +78,10 @@ Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with de
 
 ### Examples of `do`
 
-- `act do "click the login link"` → ARIA has one `link "Login"` → `I.click('Login')`, zero AI.
-- `act do "search for 'wireless mouse'"` → cheap model plans fill + Enter → both lines reported in `used:`.
-- `act do "dismiss the cookie banner"` → ambiguous → cheap model picks `button "Accept all"` from compact ARIA.
-- `act do "open the newest invoice"` → list interpretation → cheap model over the UI map picks the first row link.
+- `prima do "click the login link"` → ARIA has one `link "Login"` → `I.click('Login')`, zero AI.
+- `prima do "search for 'wireless mouse'"` → cheap model plans fill + Enter → both lines reported in `used:`.
+- `prima do "dismiss the cookie banner"` → ambiguous → cheap model picks `button "Accept all"` from compact ARIA.
+- `prima do "open the newest invoice"` → list interpretation → cheap model over the UI map picks the first row link.
 
 ## The Envelope
 
@@ -114,9 +114,9 @@ instance: default (3 tabs) | other instances: auth-test (1 tab)
 browser: running (started 12m ago)
 
 ### Artifacts
-aria:    <abs path>/output/act/<ts>/aria.yml
-html:    <abs path>/output/act/<ts>/page.html
-network: <abs path>/output/act/<ts>/network.jsonl
+aria:    <abs path>/output/prima/<ts>/aria.yml
+html:    <abs path>/output/prima/<ts>/page.html
+network: <abs path>/output/prima/<ts>/network.jsonl
 ```
 
 - `used:` — the exact code that worked (healed form when healed), rendered in the configured framework via Historian's converters. Sessions thereby double as a verified-locator oracle for test generation.
@@ -155,8 +155,8 @@ Tool errors (daemon unreachable, AI provider missing, invalid `pw` expression) a
 ## Instances & Sessions
 
 - Named browser daemons via `--instance`; state persists across CLI invocations through the existing `explorbot browser start` server and `.browser-endpoint` discovery.
-- Any `act` command with no running daemon autostarts one for its instance; combined with `--session [file]`, the autostarted browser launches already authenticated.
-- `act browser start|stop|status|list` manages instances explicitly; `stop --all` kills everything.
+- Any `prima` command with no running daemon autostarts one for its instance; combined with `--session [file]`, the autostarted browser launches already authenticated.
+- `prima browser start|stop|status|list` manages instances explicitly; `stop --all` kills everything.
 
 ## Config-Free Operation
 
@@ -174,14 +174,14 @@ With no project config, working dirs move to a persistent per-host state dir:
 ~/.local/state/explorbot/<host>/
 ├── experience/
 ├── knowledge/
-└── output/act/...
+└── output/prima/...
 ```
 
 Experience accumulates per target host across runs from any directory — zero-setup feel with memory. `--ephemeral` opts into a throwaway temp dir (CI, demos).
 
 ## Discovery
 
-`explorbot act --help` (and `actbot --help`) is the sole teaching surface: it must compactly document the envelope shape, heal semantics, tiering (`pw` vs `click`/`fill` vs `do`), instance/session flags, and the artifact-file pattern. Clean stdout throughout (no banner).
+`explorbot prima --help` (and `prima --help`) is the sole teaching surface: it must compactly document the envelope shape, heal semantics, tiering (`pw` vs `click`/`fill` vs `do`), instance/session flags, and the artifact-file pattern. Clean stdout throughout (no banner).
 
 ## Testing
 
@@ -195,7 +195,7 @@ Experience accumulates per target host across runs from any directory — zero-s
 - Failure delivery: ariaDiff + error + compact ARIA inline; full HTML/ARIA/network as files.
 - Full command surface in v1 (pw, do, click, fill, ask, verify/assert, go, browser mgmt).
 - Discovery via `--help` only; no SKILL.md or MCP in v1.
-- Boat architecture (`boat/actor`, namespace `act`), not core commands.
+- Boat architecture (`boat/prima`, namespace `prima`), not core commands.
 - `--instance` for daemon switching; `--session` keeps existing auth-state meaning.
 - Persistent per-host state dir by default in config-free mode; `--ephemeral` for temp.
 - `used:` code in envelope via Historian converters; `verify` exposes assertion code.
