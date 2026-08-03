@@ -60,6 +60,7 @@ export interface InstanceInfo {
   name: string;
   tabs: number;
   startedAgo?: string;
+  attached?: string;
   others: Array<{ name: string; tabs: number }>;
 }
 export interface HealAttempt {
@@ -212,6 +213,7 @@ Pure string building. Rules:
 - Page line: `url: <url>   (changed: <prev> → <url>)` only when previousUrl differs.
 - State line: `state: <state>            (visit #<visits>)`.
 - Instance line exactly as tested; `others` empty → `| other instances: none`.
+- When `attached` is set, the browser line renders `browser: attached (<attached>)` instead of the running/started form (add a render test: `attached: 'playwright-cli session "default", workspace /w'` → contains `browser: attached (playwright-cli session "default"`).
 - Network artifact written as JSONL (one `JSON.stringify` per request).
 - Every attempt line: `<n>. <code>` padded, then `→ <outcome>`.
 
@@ -501,7 +503,7 @@ Expected: FAIL — module not found.
 
 `boat/prima/src/prima.ts` responsibilities in this task:
 - Constructor stores options, builds `ExplorBot` options (`config`, `path`, `verbose`, `session`, `headless: true`) — but do NOT boot in constructor (DocBot pattern).
-- `start()`: resolve instance endpoint via `getAliveEndpoint(this.options.instance ?? 'default')`; when absent, launch via `launchServer` equivalent used by `explorbot browser start` (reuse, do not reimplement); then `await this.bot.start()`. When `options.url` is set and no current state exists, `await this.bot.visit(options.url)`.
+- `start()`: resolve instance endpoint via `getAliveEndpoint(this.options.instance ?? 'default')`; when absent, launch via `launchServer` equivalent used by `explorbot browser start` (reuse, do not reimplement); then `await this.bot.start()`. When `options.url` is set and no current state exists, `await this.bot.visit(options.url)`. (Task 11 retrofits the playwright-cli attach ladder in front of this daemon path — keep the daemon logic in a private method Task 11 can call as its fallback.)
 - `pw(expression)`:
   1. `isFunctionExpression` — invalid → return tool-error envelope (`ok: false`, `failure.error` prefixed `tool:`), never execute.
   2. Capture `before = stateManager.getCurrentState()`.
@@ -857,6 +859,7 @@ Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOpti
 --no-heal                --ephemeral
 --framework <name>       --no-vision   (ask only)
 --url <url>              (start page for config-free mode)
+--endpoint <ep>          --pw-session <title>   (attach to playwright-cli browser, Task 11)
 ```
 
 Every action handler: `setPreserveConsoleLogs(true)`, build `Prima`, `await prima.start()`, run the method, `console.log(renderEnvelope(result))`, `await prima.stop()`, `process.exit(result.ok ? 0 : 1)`. `--ephemeral` sets `process.env.EXPLORBOT_EPHEMERAL = '1'` before Prima construction. Zero business logic in handlers.
@@ -927,8 +930,171 @@ git commit -m "feat(prima): e2e smoke, docs and changelog"
 
 ---
 
+### Task 11: playwright-cli browser attach (Playwright-protocol registry)
+
+Prima's default browser source becomes the playwright-cli daemon's browser for this workspace; prima's own daemon is the fallback. Every playwright-cli daemon browser is auto-`bind()`-ed as a Playwright-protocol server with a descriptor JSON in `~/.cache/ms-playwright/b/<guid>` (Linux `$XDG_CACHE_HOME/ms-playwright/b` fallback `~/.cache/...`; macOS `~/Library/Caches/ms-playwright/b`; Windows `%LOCALAPPDATA%\ms-playwright\b`) shaped `{ playwrightVersion, playwrightLib, title, endpoint, workspaceDir, browser: { browserName } }` where `title` is the playwright-cli session name (`default` unless `-s=`/`PLAYWRIGHT_CLI_SESSION`).
+
+**Files:**
+- Create: `boat/prima/src/pw-registry.ts`
+- Modify: `boat/prima/src/actor.ts` (`start()` ladder), `boat/prima/src/cli.ts` (`--endpoint`, `--pw-session`), `src/explorer.ts` (attach path: adopt existing browser/context)
+- Test: `boat/prima/tests/pw-registry.test.ts`, `boat/prima/tests/prima.test.ts` (extend)
+
+**Interfaces:**
+- Consumes: `PrimaOptions` (Task 4) gains `endpoint?: string; pwSession?: string`; `InstanceInfo.attached` (Task 1); Explorer internals `playwrightHelper.browser` / `_createContextPage` (`src/explorer.ts:107,146` — Explorer already assigns `playwrightHelper.browser`, so injection is supported).
+- Produces:
+
+```typescript
+export interface PwServerDescriptor {
+  file: string;
+  title: string;
+  endpoint: string;
+  workspaceDir: string;
+  browserName: string;
+  playwrightLib: string;
+}
+export function registryDir(): string;
+export function readDescriptors(dir?: string): PwServerDescriptor[];
+export function selectDescriptor(descriptors: PwServerDescriptor[], opts: { workspaceDir: string; title?: string }): { match?: PwServerDescriptor; candidates: PwServerDescriptor[] };
+```
+
+- [ ] **Step 1: Write failing registry tests**
+
+`boat/prima/tests/pw-registry.test.ts`:
+
+```typescript
+import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { readDescriptors, selectDescriptor } from '../src/pw-registry.ts';
+
+function writeDescriptor(dir: string, name: string, data: Record<string, unknown>) {
+  writeFileSync(path.join(dir, name), JSON.stringify({ playwrightVersion: '1.62.0', playwrightLib: '/lib/pw', endpoint: `/tmp/pw/${name}.sock`, browser: { browserName: 'chromium' }, ...data }));
+}
+
+describe('readDescriptors', () => {
+  test('parses descriptor files and skips malformed ones', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pwb-'));
+    writeDescriptor(dir, 'a', { title: 'default', workspaceDir: '/work/app' });
+    writeFileSync(path.join(dir, 'broken'), 'not json');
+    const list = readDescriptors(dir);
+    expect(list.length).toBe(1);
+    expect(list[0].title).toBe('default');
+    expect(list[0].browserName).toBe('chromium');
+  });
+});
+
+describe('selectDescriptor', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pwb-'));
+  writeDescriptor(dir, 'a', { title: 'default', workspaceDir: '/work/app' });
+  writeDescriptor(dir, 'b', { title: 'auth', workspaceDir: '/work/app' });
+  writeDescriptor(dir, 'c', { title: 'default', workspaceDir: '/work/other' });
+  const all = readDescriptors(dir);
+
+  test('explicit title wins within workspace', () => {
+    const { match } = selectDescriptor(all, { workspaceDir: '/work/app', title: 'auth' });
+    expect(match?.title).toBe('auth');
+  });
+
+  test('default title picked for workspace when present', () => {
+    const { match } = selectDescriptor(all, { workspaceDir: '/work/app' });
+    expect(match?.title).toBe('default');
+  });
+
+  test('single survivor for workspace picked without title', () => {
+    const { match } = selectDescriptor(all, { workspaceDir: '/work/other' });
+    expect(match?.workspaceDir).toBe('/work/other');
+  });
+
+  test('no workspace match returns candidates empty', () => {
+    const { match, candidates } = selectDescriptor(all, { workspaceDir: '/elsewhere' });
+    expect(match).toBeUndefined();
+    expect(candidates.length).toBe(0);
+  });
+
+  test('ambiguity returns no match with candidates listed', () => {
+    const noDefault = all.filter((d) => d.title !== 'default');
+    const extra = [...noDefault, { ...noDefault[0], title: 'second' }];
+    const { match, candidates } = selectDescriptor(extra, { workspaceDir: '/work/app' });
+    expect(match).toBeUndefined();
+    expect(candidates.length).toBe(2);
+  });
+});
+```
+
+- [ ] **Step 2: Run, verify fail** — `bun test boat/prima/tests/pw-registry.test.ts`.
+
+- [ ] **Step 3: Implement `pw-registry.ts`**
+
+- `registryDir()`: per-OS cache root (`process.platform`: darwin → `~/Library/Caches/ms-playwright/b`; win32 → `path.join(process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright', 'b')`; else `path.join(process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), '.cache'), 'ms-playwright', 'b')`).
+- `readDescriptors(dir = registryDir())`: `readdirSync` (return `[]` when dir missing), JSON.parse each file, skip on parse error or missing `endpoint`/`title`/`workspaceDir`, map to `PwServerDescriptor`.
+- `selectDescriptor`: filter by `workspaceDir` (compare `path.resolve` of both); explicit title → exact match; no title → prefer `title === 'default'`, else single survivor; ambiguity or explicit-title miss → `{ candidates }` with no match.
+
+- [ ] **Step 4: Run, verify pass; commit**
+
+```bash
+bun run format
+git add boat/prima/src/pw-registry.ts boat/prima/tests/pw-registry.test.ts
+git commit -m "feat(prima): playwright-cli browser-server registry discovery"
+```
+
+- [ ] **Step 5: Write failing attach-ladder test in `prima.test.ts`**
+
+```typescript
+test('start attaches to workspace playwright-cli browser before own daemon', async () => {
+  const prima = new Prima({});
+  const calls: string[] = [];
+  (prima as any).discover = () => ({ match: { title: 'default', endpoint: '/tmp/pw/a.sock', workspaceDir: process.cwd(), browserName: 'chromium', playwrightLib: '/lib/pw', file: 'a' }, candidates: [] });
+  (prima as any).attachToEndpoint = async (d: unknown) => { calls.push('attach'); };
+  (prima as any).startOwnDaemon = async () => { calls.push('daemon'); };
+  await prima.start();
+  expect(calls).toEqual(['attach']);
+});
+
+test('start falls back to own daemon when nothing attachable', async () => {
+  const prima = new Prima({});
+  const calls: string[] = [];
+  (prima as any).discover = () => ({ candidates: [] });
+  (prima as any).attachToEndpoint = async () => { calls.push('attach'); };
+  (prima as any).startOwnDaemon = async () => { calls.push('daemon'); };
+  await prima.start();
+  expect(calls).toEqual(['daemon']);
+});
+
+test('ambiguous sessions surface as tool error listing candidates', async () => {
+  const prima = new Prima({});
+  (prima as any).discover = () => ({ candidates: [{ title: 'auth' }, { title: 'smoke' }] });
+  await expect(prima.start()).rejects.toThrow(/auth.*smoke|smoke.*auth/);
+});
+```
+
+- [ ] **Step 6: Run, verify fail; implement the ladder in `Prima.start()`**
+
+Order: `options.endpoint` (skip discovery, attach directly) → `discover()` = `selectDescriptor(readDescriptors(), { workspaceDir: resolved cwd, title: options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION })` → match → `attachToEndpoint(descriptor)` → no match, candidates non-empty → throw Error listing candidate titles (CLI renders it as a `tool:` failure envelope) → no candidates → `startOwnDaemon()` (Task 4's daemon logic, extracted private method). Record attachment description for `InstanceInfo.attached` (`playwright-cli session "<title>", workspace <dir>`).
+
+`attachToEndpoint(descriptor)`:
+- Liveness probe: attempt `playwright[descriptor.browserName].connect(descriptor.endpoint, { timeout: 3000 })` with our own playwright-core import; on handshake/version failure, retry once with `require(descriptor.playwrightLib)` (daemon's own lib — the version-skew escape playwright-cli itself uses); on both failing, treat descriptor as dead and continue the ladder.
+- Inject into Explorer: assign the connected browser to `playwrightHelper.browser` and adopt the browser's existing default context and its last open page instead of `_createContextPage()` (add an Explorer attach path beside `src/explorer.ts:107`; keep it the smallest change that skips context creation and skips `storageState` — `--session` is ignored in attached mode).
+- Lifecycle guards: mark `this.attachedExternally = true`; `stop()`/`browserStop()` call `browser.close()`, which for a `connect()`ed browser is documented as disconnect-only ("clears all created contexts belonging to this browser and disconnects from the browser server" — pre-existing contexts survive; since prima adopts the existing context rather than creating one, nothing of the shared browser is torn down). Never remove registry/endpoint files. Add a unit test asserting `stop()` in attached mode does not invoke the daemon-kill path.
+
+- [ ] **Step 7: Run all boat tests** — `bun test boat/prima/tests/` — PASS.
+
+- [ ] **Step 8: Wire CLI flags and help**
+
+`--endpoint <ep>` and `--pw-session <title>` in `addCommonOptions` (Task 9); extend `browser list` output with attachable playwright-cli sessions from `readDescriptors()` for this workspace; extend the `--help` contract text: prima attaches to the workspace's playwright-cli browser by default — mixed playwright-cli + prima workflows on the same tabs are the intended usage.
+
+- [ ] **Step 9: Commit**
+
+```bash
+bun run format
+git add boat/prima src/explorer.ts
+git commit -m "feat(prima): attach to playwright-cli browser via protocol registry"
+```
+
+---
+
 ## Self-Review Notes
 
-- Spec coverage: pw/do/click/fill/ask/verify+assert/research/go (Tasks 4-7, 9), envelope + used code (1, 4), heal + attempt trace + `--no-heal` (5), instances + autostart + `--session` reuse (3, 4, 7), config-free ladder + per-host state + `--ephemeral` (8), `--help`-only discovery (9), testing incl. aimock heal test (10). Framework flag (`--framework`) is parsed (9) and stored (4); Historian-based conversion of `used:` into Playwright dialect is deliberately deferred until `used` collection stabilizes — v1 emits the executed CodeceptJS (pw commands echo the Playwright expression itself), which satisfies "actual used locator" for both dialect inputs. If reviewers want full conversion in v1, extend Task 6 with `historian.toPlaywrightCode` per `src/ai/historian/playwright.ts:21`.
+- Spec coverage: pw/do/click/fill/ask/verify+assert/research/go (Tasks 4-7, 9), playwright-cli attach ladder + `--endpoint`/`--pw-session` + attached lifecycle (Task 11), envelope + used code (1, 4), heal + attempt trace + `--no-heal` (5), instances + autostart + `--session` reuse (3, 4, 7), config-free ladder + per-host state + `--ephemeral` (8), `--help`-only discovery (9), testing incl. aimock heal test (10). Framework flag (`--framework`) is parsed (9) and stored (4); Historian-based conversion of `used:` into Playwright dialect is deliberately deferred until `used` collection stabilizes — v1 emits the executed CodeceptJS (pw commands echo the Playwright expression itself), which satisfies "actual used locator" for both dialect inputs. If reviewers want full conversion in v1, extend Task 6 with `historian.toPlaywrightCode` per `src/ai/historian/playwright.ts:21`.
 - Vision `ask` degrades to text path when no `visionModel` configured (`provider.hasVision()`, `src/ai/provider.ts:635`) — implementer: guard in `ask`.
 - Type consistency: `EnvelopeData`/`InstanceInfo`/`HealAttempt` defined once in Task 1 and only consumed elsewhere; `PrimaOptions` defined in Task 4 and consumed by 9.

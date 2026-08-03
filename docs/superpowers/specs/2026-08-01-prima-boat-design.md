@@ -59,7 +59,8 @@ Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with de
 
 ### Common flags
 
-- `--instance <name>` / `-i` — which named browser daemon to talk to. Default instance otherwise.
+- `--endpoint <ep>` / `--pw-session <title>` — attach to a specific Playwright-protocol browser server (playwright-cli registry) instead of the ladder's automatic pick.
+- `--instance <name>` / `-i` — which named prima-owned browser daemon to talk to when not attached. Default instance otherwise.
 - `--session [file]` — existing auth-session semantics; an autostarted instance launches with the saved cookies/storage state.
 - `--no-heal` — fail fast without cheap-model recovery.
 - `--ephemeral` — throwaway temp state dir instead of the per-host persistent one.
@@ -152,11 +153,29 @@ On `pw`, `do`, `click`, or `fill` failure, the failing intent goes to Navigator'
 
 Tool errors (daemon unreachable, AI provider missing, invalid `pw` expression) are reported as `ok: false` with a `### Failure` naming the failed layer — never disguised as page failures.
 
+## Connectivity — Sharing the Browser with playwright-cli
+
+Prima is a smart layer over whatever browser already exists, not an owner of a competing one. Every playwright-cli daemon browser is auto-`bind()`-ed as a Playwright-protocol browser server (public `browser.bind()` API, Playwright 1.62+), with a descriptor JSON in `~/.cache/ms-playwright/b/<guid>`: `{ playwrightVersion, playwrightLib, title: <session name>, endpoint, workspaceDir, browser: { browserName, ... } }`. Connecting to `endpoint` yields the same live Browser — same contexts, same tabs — exactly what `playwright-cli attach` does internally.
+
+**Browser resolution ladder (every prima command):**
+
+1. Explicit `--endpoint <ep>` (raw Playwright-protocol endpoint) or `--pw-session <title>` (registry lookup by title).
+2. `PLAYWRIGHT_CLI_SESSION` env, matched against registry titles for this workspace.
+3. Live registry descriptor with `workspaceDir` equal to the resolved cwd and `title` of `default`.
+4. Exactly one live descriptor for this workspace → use it; multiple → tool-error envelope listing candidate titles.
+5. Fall back to prima's own daemon (`--instance` semantics below), autostarting if needed.
+
+Descriptors may be stale — always liveness-probe (attempt connect) before selecting; skip dead ones. Version skew: prefer connecting with our own playwright-core; if the wire handshake rejects, load the daemon's own lib from `descriptor.playwrightLib` (the same trick playwright-cli uses).
+
+**Attached-mode rules:** prima never closes a browser it did not launch — `prima browser stop` detaches only; `--session` (auth storage-state) is ignored in attached mode (the attached browser owns its cookies); prima adopts the browser's existing default context and active page rather than creating a fresh context. The envelope's `### Instance` block reports the attachment (`browser: attached (playwright-cli session "default", workspace <dir>)`) so the orchestrator knows this browser is not its to kill.
+
+A CDP attach mode (`--cdp <url>`, for a user's real Chrome, CI browsers, or a playwright-cli browser with `launchOptions.args: ["--remote-debugging-port=..."]` injected via `.playwright/cli.config.json`) is a documented follow-up, not v1.
+
 ## Instances & Sessions
 
-- Named browser daemons via `--instance`; state persists across CLI invocations through the existing `explorbot browser start` server and `.browser-endpoint` discovery.
-- Any `prima` command with no running daemon autostarts one for its instance; combined with `--session [file]`, the autostarted browser launches already authenticated.
-- `prima browser start|stop|status|list` manages instances explicitly; `stop --all` kills everything.
+- Named browser daemons via `--instance`; state persists across CLI invocations through the existing `explorbot browser start` server and `.browser-endpoint` discovery. Used only when the resolution ladder found no playwright-cli browser to attach to.
+- Any `prima` command with no attachable browser and no running daemon autostarts one for its instance; combined with `--session [file]`, the autostarted browser launches already authenticated.
+- `prima browser start|stop|status|list` manages instances explicitly; `stop --all` kills every owned instance (attached browsers are only detached). `list` shows owned instances and attachable playwright-cli sessions for this workspace.
 
 ## Config-Free Operation
 
@@ -202,6 +221,8 @@ Experience accumulates per target host across runs from any directory — zero-s
 - Persistent per-host state dir by default in config-free mode; `--ephemeral` for temp.
 - All global paths under a single cross-platform `~/.explorbot/` dir (config.js, .env, state/<host>/) — no XDG/Library/AppData branching.
 - `ask` is vision-first; `--no-vision` opts into the ARIA text path.
+- Prima attaches to playwright-cli's browser by default via the Playwright-protocol registry (`~/.cache/ms-playwright/b/`), matched by `workspaceDir` + session `title`; own daemon is the fallback, never the first choice.
+- Attached browsers are never closed by prima; CDP attach (`--cdp`) deferred to a follow-up.
 - `used:` code in envelope via Historian converters; `verify` exposes assertion code.
 - click/fill exposed as ladder-backed sugar; select/pressKey/hover/drag stay behind `pw`.
 - `research` exposed with `--data`/`--deep`/`--fresh`; UI map inline as the deliverable (verified locators enable precise `pw` driving).
