@@ -636,7 +636,7 @@ git commit -m "feat(prima): heal loop over navigator recovery with attempt trace
 - Produces:
 
 ```typescript
-async do(instruction: string): Promise<EnvelopeData>;
+async do(instructions: string[]): Promise<EnvelopeData>;
 async click(target: string): Promise<EnvelopeData>;
 async fill(field: string, value: string): Promise<EnvelopeData>;
 async ask(question: string): Promise<EnvelopeData>;
@@ -646,17 +646,30 @@ async research(opts?: { data?: boolean; deep?: boolean; fresh?: boolean }): Prom
 
 `EnvelopeData` gains an optional `research?: string` field (Task 1's renderer: `### Research` replaces `### Changes` when set, mutually exclusive with `answer`/`verdict` — add a render test alongside the answer/verdict ones).
 
-- [ ] **Step 1: Write failing tests for the deterministic fast path**
+- [ ] **Step 1: Write failing tests**
 
 ```typescript
-test('do with unambiguous role+name executes without AI', async () => {
-  const { prima, executed } = fakePrima();
-  let aiCalled = false;
-  (prima as any).bot.getProvider = () => ({ invokeConversation: async () => { aiCalled = true; } });
-  const envelope = await prima.do('click the "Sign in" button');
-  expect(aiCalled).toBe(false);
-  expect(executed.some((code) => code.includes("I.click"))).toBe(true);
+test('do runs a bounded AI loop over the instruction set', async () => {
+  const { prima } = fakePrima();
+  const prompts: string[] = [];
+  (prima as any).bot.getProvider = () => ({
+    startConversation: () => ({ addUserText: (t: string) => prompts.push(t) }),
+    invokeConversation: async () => ({ toolExecutions: [{ toolName: 'click', args: { locator: 'Login' }, result: { success: true, code: "I.click('Login')" } }] }),
+  });
+  const envelope = await prima.do(['open the first invoice', 'download its PDF']);
+  expect(prompts.join('\n')).toContain('open the first invoice');
+  expect(prompts.join('\n')).toContain('download its PDF');
+  expect(envelope.used).toEqual(["I.click('Login')"]);
   expect(envelope.ok).toBe(true);
+});
+
+test('click is a single-instruction alias over do', async () => {
+  const { prima } = fakePrima();
+  const received: string[][] = [];
+  (prima as any).do = async (instructions: string[]) => { received.push(instructions); return { ok: true }; };
+  await prima.click('the login link');
+  expect(received[0].length).toBe(1);
+  expect(received[0][0]).toContain('the login link');
 });
 
 test('verify returns verdict with assertion code', async () => {
@@ -699,11 +712,8 @@ test('ask with noVision answers from researcher summary', async () => {
 
 - [ ] **Step 3: Implement**
 
-- `do(instruction)`:
-  1. Fast path: quote-extract or word-match the instruction against `collectInteractiveNodes(state.ariaSnapshot)`; when exactly one node matches by name (case-insensitive) and the instruction's verb maps to that node's default interaction, execute `I.click('<name>')` / `I.fillField(...)` via `explorer.action().execute(...)` with zero AI. The matching must be generic (role vocabulary from `INTERACTIVE_ROLES`), never keyed to specific words from any one app.
-  2. Otherwise: bounded agentic call — `provider.invokeConversation(conversation, createCodeceptJSTools(explorer, ...), { maxToolRoundtrips: 3, toolChoice: 'required' })` with a dedent system prompt: current compact ARIA + the instruction + rule to perform exactly the instructed interaction and stop. Collect executed codes from the tool results (same shape the Driller reads).
-  3. Failures feed `heal(...)` from Task 5.
-- `click(target)` / `fill(field, value)`: call the corresponding tool object from `createCodeceptJSTools` directly (`tools.click.execute({ locator: target })` — read the tool's exact input schema in `src/ai/tools.ts` first and match it); ladder failures feed `heal`.
+- `do(instructions)`: tester-style bounded AI loop, no deterministic path (callers describe elements, they never hold locators — precision belongs to `pw`). One conversation via `provider.startConversation(...)` with a dedent system prompt: current compact ARIA + relevant experience TOC + the numbered instruction list + rule to perform the instructions in order and stop when done. Execute `provider.invokeConversation(conversation, createCodeceptJSTools(explorer, ...), { maxToolRoundtrips: 5 })` per iteration, re-injecting fresh page context between iterations when state changed (same pattern as Driller's bounded loop, `src/ai/driller.ts:325-329`), capped at `min(instructions.length + 2, 6)` iterations. Collect executed codes from tool results into `used`. Failures feed `heal(...)` from Task 5.
+- `click(target)`: alias — `this.do([`click ${target}`])`. `fill(field, value)`: alias — `this.do([`fill ${field} with value: ${value}`])`. Phrase construction must stay general (verb + caller's description verbatim), never enumerate app-specific element names.
 - `ask(question)`: vision by default — `researcher.answerQuestionAboutScreenshot(state, question)`; falls to the text path when `options.noVision` or `!provider.hasVision()` (`src/ai/provider.ts:635`; append a one-line note to the answer when degrading for the latter reason). Text path: `provider.chat` over dedent prompt containing `researcher.summary(state)` + compact ARIA + the question. Non-mutating: envelope has `answer`, no `changes`, artifacts still written.
 - `verify(assertion)`: `explorer.capture()` then `navigator.verifyState(assertion, actionResult)`; verdict `{ passed: verified, evidence: <first successful step or failure note>, code: successfulCodes.join('\n') }`.
 - `research(opts)`: `researcher.research(state, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh })` (`src/ai/researcher.ts:94`); envelope `research` = returned UI map verbatim (staleness banner included when cached), no `changes`. Non-mutating; artifacts still written.
@@ -850,7 +860,7 @@ git commit -m "feat: global config ladder and per-host state dirs"
 
 - [ ] **Step 1: Implement `boat/prima/src/cli.ts`**
 
-Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOptions`, subcommands). Subcommands: `pw <fn>`, `do <instruction>`, `click <target>`, `fill <field> <value>`, `ask <question>`, `verify <assertion>` (alias `assert`), `research` (flags `--data`, `--deep`, `--fresh`), `go <target>`, `browser <start|stop|status|list>`. Common options:
+Mirror `boat/doc-collector/src/cli.ts` structure (`addCommonOptions`, `buildOptions`, subcommands). Subcommands: `pw <fn>`, `do <instructions...>` (variadic — each arg is one high-level instruction), `click <target>`, `fill <field> <value>`, `ask <question>`, `verify <assertion>` (alias `assert`), `research` (flags `--data`, `--deep`, `--fresh`), `go <target>`, `browser <start|stop|status|list>`. Common options:
 
 ```
 -v, --verbose            --debug
@@ -866,7 +876,7 @@ Every action handler: `setPreserveConsoleLogs(true)`, build `Prima`, `await prim
 
 - [ ] **Step 2: Write the --help contract text**
 
-The command description plus `addHelpText('after', ...)` on the `prima` group is the sole teaching surface for orchestrating agents. It must compactly cover (dedent block, ~40 lines): the tiering (pw = precise, click/fill = ladder, do = intent), the recommended loop (research once for verified locators → drive with pw → verify), the envelope sections and their meaning, `used:` as reusable verified code, heal semantics and `--no-heal`, failure = inline compact ARIA + artifact file paths for deep dives, `--instance` vs `--session`, autostart behavior, the close-when-finished convention driven by `### Instance`, and one usage example per tier. General shapes only — no app-specific examples.
+The command description plus `addHelpText('after', ...)` on the `prima` group is the sole teaching surface for orchestrating agents. It must compactly cover (dedent block, ~40 lines): the tiering (pw = precise with a locator you hold, click/fill = one described action AI-resolved, do = a set of high-level instructions run tester-style — never pass locators to NL commands, never pass descriptions to pw), the recommended loop (research once for verified locators → drive with pw → verify; reach for do/click when you have no locator), the envelope sections and their meaning, `used:` as reusable verified code, heal semantics and `--no-heal`, failure = inline compact ARIA + artifact file paths for deep dives, `--instance` vs `--session`, autostart behavior, the close-when-finished convention driven by `### Instance`, and one usage example per tier. General shapes only — no app-specific examples.
 
 - [ ] **Step 3: Wire into main CLI and standalone bin**
 
@@ -901,7 +911,7 @@ git commit -m "feat(prima): prima CLI namespace and standalone prima bin"
 Scenarios, driven through the `Prima` class directly against the local fixture (real browser, no AI provider needed for these paths):
 1. `pw "({ page }) => page.click('text=Submit')"` on the fixture → `ok: true`, envelope contains `### Changes` and artifact files exist on disk.
 2. `pw` with a non-function argument → `ok: false`, `tool:`-prefixed error, exit path returns without browser action.
-3. `do 'click the "Submit" button'` → fast path, zero AI (assert no provider configured and it still works).
+3. `do`/`click` are NOT in the browser smoke (they always require a model) — cover them in `tests/integration/prima-do.test.ts` via aimock: mock model returns click tool calls for a two-instruction `do`, assert both instructions appear in the prompt, `used` collects executed codes, envelope `ok: true`.
 4. Instance autostart honored: run without a pre-started daemon; assert endpoint file appears.
 
 Heal-path e2e requires an AI provider — cover it with an aimock integration test in `tests/integration/prima-heal.test.ts` following `tests/integration/planner.test.ts` (mock provider returns a recovery instruction; assert `healed: true` envelope and `onAttempt` trace).

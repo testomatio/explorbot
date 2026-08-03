@@ -46,8 +46,8 @@ Registered in `bin/explorbot-cli.ts` via `program.addCommand(createPrimaCommands
 ```
 explorbot prima pw "({ page }) => page.click('text=Login')"   # raw Playwright fn, healed on failure
 explorbot prima do "click the login link"        # NL action via Navigator
-explorbot prima click "Login"                    # targeted click via existing fallback ladder
-explorbot prima fill "Search" "wireless mouse"   # targeted fill via existing ladder
+explorbot prima click "the login link"           # single AI-resolved action (alias over do)
+explorbot prima fill "search box" "wireless mouse"  # single AI-resolved fill (alias over do)
 explorbot prima ask "what do I see here?"        # cheap-model page Q&A via Researcher
 explorbot prima research [--data] [--deep] [--fresh]  # verified UI map for precise pw driving
 explorbot prima verify "user is logged in"       # AI assertion (alias: assert)
@@ -55,7 +55,7 @@ explorbot prima go "billing settings"            # URL or NL navigation
 explorbot prima browser start|stop|status|list   # instance management (stop --all)
 ```
 
-Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with deterministic fallback ladders (AI only on ambiguity), `do` = intent (cheap-model planning). `select`, `pressKey`, `hover`, `drag` intentionally stay behind `pw` — a subcommand without a ladder is surface without value.
+Tiering: `pw` = precise, no AI — for when the orchestrator already holds a verified locator (from `research`) or drives via playwright-cli conventions; `click`/`fill` = one high-level action, always AI-resolved — the orchestrator never sees ARIA/HTML, so "the login link" is a description, not a locator, and the cheap model resolves it against the page; `do` = a set of high-level instructions executed tester-style in one AI loop. There are NO deterministic no-AI paths in the NL commands — precision without AI is exactly what `pw`/playwright-cli exist for, and duplicating it here would be surface without value. `select`, `pressKey`, `hover`, `drag` stay behind `pw`.
 
 ### Common flags
 
@@ -70,8 +70,8 @@ Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with de
 ### Execution paths
 
 - **pw**: the argument is a function expression in the exact shape `I.usePlaywrightTo` accepts — `({ page, browserContext, browser }) => ...` — checked only for being a parseable function, then interpolated directly into `I.usePlaywrightTo('pw', <fn>)` and executed through the Explorer/Action pipeline so state capture, ariaDiff, and experience recording come for free. Destructure whichever Playwright objects the call needs. Deterministic and near-instant on the happy path.
-- **do**: one bounded Navigator invocation (max ~3 tool roundtrips) reusing the existing click/type/form tool ladders. Deterministic fast path first: if the instruction resolves to exactly one interactive ARIA node by role+name, execute with zero AI calls.
-- **click / fill**: the existing multi-fallback ladders directly (text → ARIA → experience candidates); cheap-model disambiguation only when multiple candidates match.
+- **do**: takes one or more high-level instructions and performs them tester-style — a bounded cheap-model loop over the existing CodeceptJS tools (click/type/form ladders), holding page context (compact ARIA + relevant experience) the orchestrator never sees, iterating until the instructions are done or the budget is exhausted. Multi-step by design: `prima do "open the first invoice" "download its PDF"`.
+- **click / fill**: shorter aliases over the same AI resolution — a single instruction (`click <description>`, `fill <field description> <value>`) resolved by the cheap model against the current page (Navigator-style state resolution) and executed via the tool ladders. Never deterministic: the caller supplies a description, not a locator.
 - **ask**: vision by default — Researcher answers from a fresh screenshot via the vision model; `--no-vision` (or no `visionModel` configured, with a note in the envelope) falls back to compact ARIA / cached UI map. Non-mutating.
 - **research**: `researcher.research(state, { screenshot: true, data, deep, force })`. The envelope's `### Research` section carries the UI map inline — it is the deliverable: verified, live-tested locators that let the orchestrator drive `pw` precisely without reading raw ARIA. `--data` adds extracted data sections, `--deep` deep analysis, `--fresh` bypasses the cache; cached results keep the existing staleness banner. Non-mutating.
 - **verify / assert**: `navigator.verifyState()` on the cheap model; verdict plus the assertion code that proved it.
@@ -79,7 +79,7 @@ Tiering: `pw` = precise (no AI on happy path), `click`/`fill` = targeted with de
 
 ### Examples of `do`
 
-- `prima do "click the login link"` → ARIA has one `link "Login"` → `I.click('Login')`, zero AI.
+- `prima do "click the login link"` → cheap model resolves the description against compact ARIA → `I.click('Login')`.
 - `prima do "search for 'wireless mouse'"` → cheap model plans fill + Enter → both lines reported in `used:`.
 - `prima do "dismiss the cookie banner"` → ambiguous → cheap model picks `button "Accept all"` from compact ARIA.
 - `prima do "open the newest invoice"` → list interpretation → cheap model over the UI map picks the first row link.
@@ -208,7 +208,7 @@ Experience accumulates per target host across runs from any directory — zero-s
 
 - Unit: envelope rendering (success, failure, ask/verify variants), `pw` expression validation, config ladder resolution.
 - Integration: heal-loop prompts via the existing `@copilotkit/aimock` harness per `docs/contributing/ai-integration-tests.md`; fictional fixture data only.
-- End-to-end smoke against a local fixture page: `pw` success, healed failure, exhausted failure, `do` fast path (zero AI), instance autostart with `--session`.
+- End-to-end smoke against a local fixture page: `pw` success, healed failure, exhausted failure, instance autostart with `--session`; `do`/`click` covered by aimock integration tests (they always require a model).
 
 ## Decisions Log
 
@@ -224,6 +224,6 @@ Experience accumulates per target host across runs from any directory — zero-s
 - Prima attaches to playwright-cli's browser by default via the Playwright-protocol registry (`~/.cache/ms-playwright/b/`), matched by `workspaceDir` + session `title`; own daemon is the fallback, never the first choice.
 - Attached browsers are never closed by prima; CDP attach (`--cdp`) deferred to a follow-up.
 - `used:` code in envelope via Historian converters; `verify` exposes assertion code.
-- click/fill exposed as ladder-backed sugar; select/pressKey/hover/drag stay behind `pw`.
+- click/fill are single-instruction aliases over the same AI resolution as `do`; `do` accepts multiple high-level instructions run tester-style. No deterministic no-AI paths in NL commands — precision belongs to `pw`/playwright-cli. select/pressKey/hover/drag stay behind `pw`.
 - `research` exposed with `--data`/`--deep`/`--fresh`; UI map inline as the deliverable (verified locators enable precise `pw` driving).
 - Implementation runs on Opus.
