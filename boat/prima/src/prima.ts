@@ -1,12 +1,15 @@
 import path from 'node:path';
 import dedent from 'dedent';
 import { ActionResult } from '../../../src/action-result.ts';
+import type { Navigator } from '../../../src/ai/navigator.ts';
 import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
+import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
-import { type EnvelopeData, type InstanceInfo, writeArtifacts } from './envelope.ts';
+import { pluralize } from '../../../src/utils/logger.ts';
+import { type EnvelopeData, type HealAttempt, type InstanceInfo, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, toCodeceptWrapper } from './pw-parser.ts';
 
 export class Prima {
@@ -55,13 +58,16 @@ export class Prima {
 
     const previousState = this.bot.stateManager().getCurrentState();
     let result: ActionResult | null = null;
+    let executionError: unknown = null;
 
     try {
       const executed = await this.bot.getExplorer().action().execute(toCodeceptWrapper(expression));
       result = executed.actionResult;
     } catch (error) {
-      return this.failureEnvelope(command, error, previousState);
+      executionError = error;
     }
+
+    if (executionError) return this.heal(command, expression, executionError, previousState);
 
     result ||= await this.capturedResult(previousState);
     return this.successEnvelope(command, [expression], result, previousState);
@@ -80,6 +86,49 @@ export class Prima {
     return !!(await getAliveEndpoint(this.instanceName()));
   }
 
+  private async heal(command: string, expression: string, error: unknown, previousState: WebPageState | null): Promise<EnvelopeData> {
+    if (this.options.heal === false) return this.failureEnvelope(command, error, previousState);
+
+    const navigator = this.healNavigator();
+    if (!navigator) {
+      const envelope = await this.failureEnvelope(command, error, previousState);
+      envelope.healed = false;
+      envelope.healNote = 'ai unavailable';
+      return envelope;
+    }
+
+    const message = dedent`
+      I tried to run this command on the page: ${expression}
+      But it failed with: ${browserErrorMessage(error)}
+      Reach the same outcome on the current page in a different way.
+    `;
+
+    const attempts: Array<{ code: string; error?: string }> = [];
+    const failedResult = await this.capturedResult(previousState);
+    const resolved = await navigator.resolveState(message, failedResult, { onAttempt: (attempt) => attempts.push(attempt) }).catch(() => false);
+
+    if (!resolved) {
+      const healAttempts = attempts.map((attempt) => ({ code: attempt.code, outcome: attempt.error || 'ok' }));
+      return this.failureEnvelope(command, error, previousState, healAttempts);
+    }
+
+    const used = attempts.filter((attempt) => !attempt.error).map((attempt) => attempt.code);
+    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+    const envelope = await this.successEnvelope(command, used, result, previousState);
+    envelope.healed = true;
+    envelope.healNote = `recovered after ${attempts.length} ${pluralize(attempts.length, 'attempt')}`;
+    return envelope;
+  }
+
+  private healNavigator(): Navigator | null {
+    try {
+      if (!this.bot.getProvider?.()) return null;
+      return this.bot.agentNavigator?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private async successEnvelope(command: string, used: string[], result: ActionResult, previousState: WebPageState | null): Promise<EnvelopeData> {
     return {
       ok: true,
@@ -92,14 +141,19 @@ export class Prima {
     };
   }
 
-  private async failureEnvelope(command: string, error: unknown, previousState: WebPageState | null): Promise<EnvelopeData> {
+  private async failureEnvelope(command: string, error: unknown, previousState: WebPageState | null, attempts: HealAttempt[] = []): Promise<EnvelopeData> {
     const result = await this.capturedResult(previousState);
+    const failure: EnvelopeData['failure'] = { error: browserErrorMessage(error), attempts };
+    if (attempts.length) {
+      failure.reasoning = [...new Set(attempts.map((attempt) => attempt.outcome))].join('; ');
+      failure.compactAria = compactAriaSnapshot(result.ariaSnapshot, true);
+    }
 
     return {
       ok: false,
       command,
       page: this.pageBlock(result, previousState),
-      failure: { error: browserErrorMessage(error), attempts: [] },
+      failure,
       instance: await this.instanceInfo(),
       artifacts: await this.writeSnapshot(result),
     };

@@ -189,7 +189,7 @@ class Navigator implements Agent {
     }
   }
 
-  async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string }): Promise<boolean> {
+  async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string; onAttempt?: (attempt: { code: string; error?: string }) => void }): Promise<boolean> {
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
 
@@ -363,11 +363,14 @@ class Navigator implements Agent {
           }
         }
 
+        if (attemptOk) opts?.onAttempt?.({ code: codeBlock });
+
         if (!attemptOk) {
           const raw = action.lastError?.message || 'attempt failed';
           const firstMeaningful = raw.split('\n').find((l) => l.trim() && !l.trim().startsWith('at ')) || raw;
           const shortErr = firstMeaningful.replace(/\s+/g, ' ').trim().slice(0, 220);
           batchFailures.push({ code: codeBlock, error: shortErr });
+          opts?.onAttempt?.({ code: codeBlock, error: shortErr });
         }
 
         if (expectedUrl) {

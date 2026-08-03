@@ -18,12 +18,24 @@ function fakeState(over: Record<string, unknown> = {}) {
     getStateHash: () => 'login_h1_login',
     ariaSnapshot: '- textbox "Email"\n- button "Sign in"',
     combinedHtml: () => '<form></form>',
+    toToolResult: async () => ({ pageDiff: { urlChanged: false, ariaChanges: null } }),
     ...over,
   };
 }
 
-function fakePrima() {
-  const prima = new Prima({ instance: 'default' });
+function failingExplorer() {
+  return {
+    action: () => ({
+      execute: async () => {
+        throw new Error("locator 'text=Login' not found");
+      },
+    }),
+    capture: async () => fakeState(),
+  };
+}
+
+function fakePrima(options: Record<string, unknown> = {}) {
+  const prima = new Prima({ instance: 'default', ...options });
   const executed: string[] = [];
   const after = fakeState({
     url: 'https://app.example.com/dashboard',
@@ -47,6 +59,7 @@ function fakePrima() {
       getVisitCount: () => 1,
     }),
     requestStore: () => ({ getRequests: () => [] }),
+    getProvider: () => ({ chat: async () => '' }),
   };
   (prima as any).artifactsDir = mkdtempSync(path.join(tmpdir(), 'prima-'));
   return { prima, executed };
@@ -129,6 +142,77 @@ describe('Prima.pw', () => {
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toBeTruthy();
     expect(envelope.page.url).toContain('/login');
+  });
+});
+
+describe('Prima heal', () => {
+  test('failed pw heals via navigator and reports healed envelope', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getExplorer = failingExplorer;
+    (prima as any).bot.agentNavigator = () => ({
+      resolveState: async (_msg: string, _result: unknown, opts: any) => {
+        opts?.onAttempt?.({ code: "I.click('Login')", error: 'not visible' });
+        opts?.onAttempt?.({ code: "I.click('#login-btn')" });
+        return true;
+      },
+    });
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+    expect(envelope.ok).toBe(true);
+    expect(envelope.healed).toBe(true);
+    expect(envelope.healNote).toBeTruthy();
+    expect(envelope.used).toEqual(["I.click('#login-btn')"]);
+  });
+
+  test('exhausted heal returns failure envelope with attempts and compact aria', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getExplorer = failingExplorer;
+    (prima as any).bot.agentNavigator = () => ({
+      resolveState: async (_msg: string, _result: unknown, opts: any) => {
+        opts?.onAttempt?.({ code: "I.click('Login')", error: 'not visible' });
+        return false;
+      },
+    });
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain("locator 'text=Login' not found");
+    expect(envelope.failure?.attempts).toEqual([{ code: "I.click('Login')", outcome: 'not visible' }]);
+    expect(envelope.failure?.reasoning).toBe('not visible');
+    expect(envelope.failure?.compactAria).toContain('button');
+    expect(envelope.artifacts).toBeTruthy();
+  });
+
+  test('heal disabled skips navigator entirely', async () => {
+    const { prima } = fakePrima({ heal: false });
+    let called = false;
+    (prima as any).bot.getExplorer = failingExplorer;
+    (prima as any).bot.agentNavigator = () => {
+      called = true;
+      return { resolveState: async () => true };
+    };
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+    expect(called).toBe(false);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.healed).toBeUndefined();
+    expect(envelope.failure?.attempts).toEqual([]);
+  });
+
+  test('unusable ai provider skips healing and notes it in the envelope', async () => {
+    const { prima } = fakePrima();
+    let called = false;
+    (prima as any).bot.getExplorer = failingExplorer;
+    (prima as any).bot.getProvider = () => {
+      throw new Error('AI provider is not configured');
+    };
+    (prima as any).bot.agentNavigator = () => {
+      called = true;
+      return { resolveState: async () => true };
+    };
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+    expect(called).toBe(false);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.healed).toBe(false);
+    expect(envelope.healNote).toBe('ai unavailable');
+    expect(envelope.failure?.error).toContain("locator 'text=Login' not found");
   });
 });
 
