@@ -1,8 +1,9 @@
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { beforeAll, describe, expect, test } from 'bun:test';
 import { ConfigParser } from '../../../src/config.ts';
+import { ExplorBot } from '../../../src/explorbot.ts';
 import { Prima } from '../src/prima.ts';
 
 beforeAll(() => {
@@ -31,6 +32,17 @@ function failingExplorer() {
       },
     }),
     capture: async () => fakeState(),
+  };
+}
+
+function toolExecution(code: string, success = true, message?: string) {
+  return { toolName: 'click', input: { commands: [code] }, output: { success, code, message }, wasSuccessful: success };
+}
+
+function fakeProvider(invokeConversation: (...args: any[]) => Promise<any>, prompts: string[] = []) {
+  return {
+    startConversation: () => ({ addUserText: (text: string) => prompts.push(text) }),
+    invokeConversation,
   };
 }
 
@@ -211,7 +223,8 @@ describe('Prima heal', () => {
     expect(called).toBe(false);
     expect(envelope.ok).toBe(false);
     expect(envelope.healed).toBe(false);
-    expect(envelope.healNote).toBe('ai unavailable');
+    expect(envelope.healNote).toContain('ai unavailable');
+    expect(envelope.healNote).toContain('AI provider is not configured');
     expect(envelope.failure?.error).toContain("locator 'text=Login' not found");
   });
 });
@@ -227,6 +240,216 @@ describe('Prima.start', () => {
     };
     await expect(prima.start()).rejects.toThrow(/playwright-cli open/);
     expect(started).toBe(false);
+  });
+});
+
+describe('Prima.do', () => {
+  test('runs a bounded AI loop over the instruction set', async () => {
+    const { prima } = fakePrima();
+    const prompts: string[] = [];
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async () => {
+        calls++;
+        if (calls > 1) return { toolExecutions: [] };
+        return { toolExecutions: [toolExecution("I.click('Login')")] };
+      }, prompts);
+
+    const envelope = await prima.do(['open the first invoice', 'download its PDF']);
+
+    expect(prompts.join('\n')).toContain('open the first invoice');
+    expect(prompts.join('\n')).toContain('download its PDF');
+    expect(prompts.join('\n')).toContain('button "Sign in"');
+    expect(envelope.used).toEqual(["I.click('Login')"]);
+    expect(envelope.ok).toBe(true);
+    expect(calls).toBe(2);
+  });
+
+  test('caps iterations at the instruction budget', async () => {
+    const { prima } = fakePrima();
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async () => {
+        calls++;
+        return { toolExecutions: [toolExecution("I.click('Next')")] };
+      });
+
+    await prima.do(['first step', 'second step']);
+    expect(calls).toBe(4);
+
+    calls = 0;
+    await prima.do(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+    expect(calls).toBe(6);
+  });
+
+  test('routes a failed tool execution through heal', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [toolExecution("I.click('Login')", false, 'element not found')] }));
+    (prima as any).bot.agentNavigator = () => ({
+      resolveState: async (_msg: string, _result: unknown, opts: any) => {
+        opts?.onAttempt?.({ code: "I.click('#login-btn')" });
+        return true;
+      },
+    });
+
+    const envelope = await prima.do(['click the login link']);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.healed).toBe(true);
+    expect(envelope.used).toEqual(["I.click('#login-btn')"]);
+  });
+
+  test('reports a failure when the model performs no action', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [] }));
+
+    const envelope = await prima.do(['click the login link']);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toBeTruthy();
+  });
+
+  test('click is a single-instruction alias over do', async () => {
+    const { prima } = fakePrima();
+    const received: string[][] = [];
+    (prima as any).do = async (instructions: string[]) => {
+      received.push(instructions);
+      return { ok: true };
+    };
+
+    await prima.click('the login link');
+    expect(received[0].length).toBe(1);
+    expect(received[0][0]).toContain('the login link');
+  });
+
+  test('fill is a single-instruction alias carrying field and value', async () => {
+    const { prima } = fakePrima();
+    const received: string[][] = [];
+    (prima as any).do = async (instructions: string[]) => {
+      received.push(instructions);
+      return { ok: true };
+    };
+
+    await prima.fill('the email field', 'user@example.com');
+    expect(received[0].length).toBe(1);
+    expect(received[0][0]).toContain('the email field');
+    expect(received[0][0]).toContain('user@example.com');
+  });
+});
+
+describe('Prima.ask, verify, research', () => {
+  test('ask defaults to vision via screenshot analysis', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => ({ hasVision: () => true });
+    (prima as any).bot.agentResearcher = () => ({ answerQuestionAboutScreenshot: async () => 'A login page with an email form' });
+
+    const envelope = await prima.ask('what do I see?');
+    expect(envelope.answer).toContain('login');
+    expect(envelope.changes).toBeUndefined();
+    expect(envelope.artifacts).toBeTruthy();
+  });
+
+  test('ask with noVision answers from researcher summary', async () => {
+    const { prima } = fakePrima({ noVision: true });
+    (prima as any).bot.agentResearcher = () => ({ summary: async () => 'Login form with email and password' });
+    const prompts: string[] = [];
+    (prima as any).bot.getProvider = () => ({
+      chat: async (messages: any[]) => {
+        prompts.push(messages[0].content);
+        return { text: 'A login page with an email form' };
+      },
+    });
+
+    const envelope = await prima.ask('what do I see?');
+    expect(envelope.answer).toContain('login');
+    expect(envelope.answer).not.toContain('vision');
+    expect(prompts.join('\n')).toContain('Login form with email and password');
+    expect(prompts.join('\n')).toContain('what do I see?');
+  });
+
+  test('ask notes the degradation when no vision model is configured', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentResearcher = () => ({ summary: async () => 'Login form' });
+    (prima as any).bot.getProvider = () => ({
+      hasVision: () => false,
+      chat: async () => ({ text: 'A login page' }),
+    });
+
+    const envelope = await prima.ask('what do I see?');
+    expect(envelope.answer).toContain('A login page');
+    expect(envelope.answer).toContain('vision');
+  });
+
+  test('verify returns verdict with assertion code', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentNavigator = () => ({
+      verifyState: async () => ({ verified: true, successfulCodes: ["I.see('Dashboard')"], assertionSteps: [], totalAttempted: 1 }),
+    });
+
+    const envelope = await prima.verify('user sees the dashboard');
+    expect(envelope.verdict?.passed).toBe(true);
+    expect(envelope.verdict?.code).toBe("I.see('Dashboard')");
+    expect(envelope.ok).toBe(true);
+  });
+
+  test('failed verification is reported as a failed verdict', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentNavigator = () => ({
+      verifyState: async () => ({ verified: false, successfulCodes: [], assertionSteps: [], totalAttempted: 3 }),
+    });
+
+    const envelope = await prima.verify('user sees the dashboard');
+    expect(envelope.verdict?.passed).toBe(false);
+    expect(envelope.verdict?.evidence).toBeTruthy();
+    expect(envelope.ok).toBe(false);
+  });
+
+  test('research returns UI map in envelope', async () => {
+    const { prima } = fakePrima();
+    const options: any[] = [];
+    (prima as any).bot.agentResearcher = () => ({
+      research: async (_state: unknown, opts: any) => {
+        options.push(opts);
+        return '## Section: Login Form\n| Element | ARIA | CSS |';
+      },
+    });
+
+    const envelope = await prima.research({ data: true });
+    expect(envelope.research).toContain('Login Form');
+    expect(envelope.ok).toBe(true);
+    expect(envelope.changes).toBeUndefined();
+    expect(options[0]).toMatchObject({ screenshot: true, data: true });
+  });
+});
+
+describe('Prima AI availability', () => {
+  test('model commands fail with the playwright-cli fallback when ai is unusable', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => {
+      throw new Error('AI connection failed: no credentials');
+    };
+
+    const envelopes = [await prima.do(['click the login link']), await prima.ask('what do I see?'), await prima.verify('user is logged in'), await prima.research()];
+
+    for (const envelope of envelopes) {
+      expect(envelope.ok).toBe(false);
+      expect(envelope.failure?.error).toContain('playwright-cli');
+      expect(envelope.failure?.error).toContain('AI connection failed: no credentials');
+    }
+  });
+
+  test('start survives a failing ai provider bootstrap and do reports the fallback', async () => {
+    const { prima } = fakePrima();
+    const bot = new ExplorBot({ optionalAi: true });
+    (prima as any).connectOwnInstance = async () => true;
+    (prima as any).bot.start = () => bot.startProviderOnly();
+    (prima as any).bot.getProvider = () => bot.getProvider();
+    (prima as any).bot.aiFailureReason = () => bot.aiFailureReason();
+
+    await prima.start();
+    expect(bot.getProvider()).toBeUndefined();
+
+    const envelope = await prima.do(['click the login link']);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('playwright-cli');
   });
 });
 

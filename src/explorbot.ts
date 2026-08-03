@@ -47,6 +47,7 @@ export interface ExplorBotOptions {
   incognito?: boolean;
   session?: string | boolean;
   instance?: string;
+  optionalAi?: boolean;
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -62,6 +63,7 @@ export class ExplorBot {
   private planFeature?: string;
   lastPlanError: Error | null = null;
   lastSavedPlanPath: string | null = null;
+  private aiFailure: string | null = null;
   private agents: Record<string, any> = {};
   private sessionPlans: Plan[] = [];
   private lastReportedTestCount = 0;
@@ -105,7 +107,7 @@ export class ExplorBot {
         playwrightRecorder: this.playwrightRecorder(),
       });
       await this.explorer.start();
-      if (!this.options.incognito) {
+      if (!this.options.incognito && this.provider) {
         await this.agentExperienceCompactor().autocompact();
       }
     } catch (error) {
@@ -119,8 +121,13 @@ export class ExplorBot {
     if (this.provider) return;
     this.config = await this.configParser.loadConfig(this.options);
     if (this.options.session === true) this.options.session = path.join(this.configParser.getOutputDir(), 'session.json');
+    if (this.options.optionalAi) return this.bootstrapOptionalProvider();
     this.provider = new AIProvider(this.config.ai);
     await this.provider.validateConnection();
+  }
+
+  aiFailureReason(): string | null {
+    return this.aiFailure;
   }
 
   async stop(): Promise<void> {
@@ -518,5 +525,16 @@ export class ExplorBot {
 
   private isHistorianEnabled(): boolean {
     return this.config.ai?.agents?.historian?.enabled !== false;
+  }
+
+  private async bootstrapOptionalProvider(): Promise<void> {
+    try {
+      const provider = new AIProvider(this.config.ai);
+      await provider.validateConnection();
+      this.provider = provider;
+    } catch (error) {
+      this.aiFailure = browserErrorMessage(error);
+      tag('debug').log(`AI provider unavailable: ${this.aiFailure}`);
+    }
   }
 }

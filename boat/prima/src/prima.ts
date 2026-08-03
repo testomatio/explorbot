@@ -2,15 +2,22 @@ import path from 'node:path';
 import dedent from 'dedent';
 import { ActionResult } from '../../../src/action-result.ts';
 import type { Navigator } from '../../../src/ai/navigator.ts';
+import { locatorRule } from '../../../src/ai/rules.ts';
+import { createCodeceptJSTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
+import { Task } from '../../../src/test-plan.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { type EnvelopeData, type HealAttempt, type InstanceInfo, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, toCodeceptWrapper } from './pw-parser.ts';
+
+const MAX_INSTRUCTION_ITERATIONS = 6;
+const MAX_TOOL_ROUNDTRIPS = 5;
+const AI_AGENT_NAME = 'prima';
 
 export class Prima {
   private options: PrimaOptions;
@@ -26,6 +33,7 @@ export class Prima {
       session: options.session,
       instance: options.instance,
       headless: true,
+      optionalAi: true,
     });
   }
 
@@ -73,6 +81,106 @@ export class Prima {
     return this.successEnvelope(command, [expression], result, previousState);
   }
 
+  async do(instructions: string[]): Promise<EnvelopeData> {
+    const command = `do ${instructions.map((instruction) => `"${instruction}"`).join(' ')}`;
+    const guard = await this.aiGuard(command);
+    if (guard) return guard;
+
+    const provider = this.bot.getProvider();
+    const previousState = this.bot.stateManager().getCurrentState();
+    const conversation = provider.startConversation(this.instructionSystemPrompt(), AI_AGENT_NAME);
+    const task = new Task(instructions.join('; '), previousState?.url || '');
+    const tools = createCodeceptJSTools({ explorer: this.bot.getExplorer(), stateManager: this.bot.stateManager(), ai: provider }, task);
+    conversation.addUserText(this.instructionPrompt(instructions, await this.capturedResult(previousState)));
+
+    const used: string[] = [];
+    let failure: { code: string; message: string } | null = null;
+    let aiError: unknown = null;
+    let contextHash = previousState?.hash;
+
+    for (let iteration = 1; iteration <= Math.min(instructions.length + 2, MAX_INSTRUCTION_ITERATIONS); iteration++) {
+      const state = this.bot.stateManager().getCurrentState();
+      if (iteration > 1 && state && state.hash !== contextHash) {
+        contextHash = state.hash;
+        conversation.addUserText(this.pageContext(ActionResult.fromState(state)));
+      }
+
+      const invoked = await provider.invokeConversation(conversation, tools, { maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS, agentName: AI_AGENT_NAME }).catch((error: unknown) => {
+        aiError = error;
+        return null;
+      });
+      if (!invoked) break;
+
+      const executions = invoked.toolExecutions || [];
+      if (!executions.length) break;
+
+      for (const execution of executions) {
+        if (!execution.wasSuccessful) {
+          failure = { code: execution.output?.code || '', message: execution.output?.message || 'action failed' };
+          continue;
+        }
+        used.push(...this.executedCodes(execution.output?.code));
+        failure = null;
+      }
+    }
+
+    if (aiError) return this.failureEnvelope(command, aiError, previousState);
+
+    if (failure) {
+      const envelope = await this.heal(command, failure.code || instructions.join('; '), failure.message, previousState);
+      envelope.used = [...used, ...(envelope.used || [])];
+      return envelope;
+    }
+
+    if (!used.length) return this.failureEnvelope(command, 'No action was performed for these instructions on the current page.', previousState);
+
+    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+    return this.successEnvelope(command, used, result, previousState);
+  }
+
+  async click(target: string): Promise<EnvelopeData> {
+    return this.do([`click ${target}`]);
+  }
+
+  async fill(field: string, value: string): Promise<EnvelopeData> {
+    return this.do([`fill ${field} with value: ${value}`]);
+  }
+
+  async ask(question: string): Promise<EnvelopeData> {
+    const command = `ask ${question}`;
+    const guard = await this.aiGuard(command);
+    if (guard) return guard;
+
+    const previousState = this.bot.stateManager().getCurrentState();
+    const result = await this.capturedResult(previousState, { screenshot: this.visionEnabled() });
+    return this.reportEnvelope(command, result, previousState, { answer: await this.answer(question, result) });
+  }
+
+  async verify(assertion: string): Promise<EnvelopeData> {
+    const command = `verify ${assertion}`;
+    const guard = await this.aiGuard(command);
+    if (guard) return guard;
+
+    const previousState = this.bot.stateManager().getCurrentState();
+    const result = await this.capturedResult(previousState);
+    const verification = await this.bot.agentNavigator().verifyState(assertion, result);
+    const codes = verification.successfulCodes || [];
+    const verdict = { passed: verification.verified, evidence: this.verdictEvidence(verification.verified, codes), code: codes.join('\n') };
+    return this.reportEnvelope(command, result, previousState, { ok: verification.verified, verdict });
+  }
+
+  async research(opts: { data?: boolean; deep?: boolean; fresh?: boolean } = {}): Promise<EnvelopeData> {
+    const flags = [opts.data && '--data', opts.deep && '--deep', opts.fresh && '--fresh'].filter(Boolean);
+    const command = ['research', ...flags].join(' ');
+    const guard = await this.aiGuard(command);
+    if (guard) return guard;
+
+    const previousState = this.bot.stateManager().getCurrentState();
+    const result = await this.capturedResult(previousState);
+    const uiMap = await this.bot.agentResearcher().research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
+    return this.reportEnvelope(command, result, previousState, { research: uiMap });
+  }
+
   async instanceInfo(): Promise<InstanceInfo> {
     const name = this.instanceName();
     const others = listInstances()
@@ -93,7 +201,7 @@ export class Prima {
     if (!navigator) {
       const envelope = await this.failureEnvelope(command, error, previousState);
       envelope.healed = false;
-      envelope.healNote = 'ai unavailable';
+      envelope.healNote = this.aiUnavailableNote();
       return envelope;
     }
 
@@ -121,12 +229,133 @@ export class Prima {
   }
 
   private healNavigator(): Navigator | null {
+    if (this.aiUnavailable()) return null;
     try {
-      if (!this.bot.getProvider?.()) return null;
       return this.bot.agentNavigator?.() ?? null;
     } catch {
       return null;
     }
+  }
+
+  private aiUnavailable(): string | null {
+    try {
+      if (this.bot.getProvider?.()) return null;
+    } catch (error) {
+      return browserErrorMessage(error);
+    }
+    return this.bot.aiFailureReason?.() || 'no AI model is configured';
+  }
+
+  private aiUnavailableNote(): string {
+    const reason = this.aiUnavailable();
+    if (!reason) return 'ai unavailable';
+    return `ai unavailable: ${reason}`;
+  }
+
+  private async aiGuard(command: string): Promise<EnvelopeData | null> {
+    const reason = this.aiUnavailable();
+    if (!reason) return null;
+    const message = `this command needs an AI model and none is usable: ${reason}. Drive the browser directly with playwright-cli or prima pw, or fix the AI config in ~/.explorbot/config.js or EXPLORBOT_AI_PROVIDER.`;
+    return this.toolFailureEnvelope(command, message);
+  }
+
+  private instructionSystemPrompt(): string {
+    return dedent`
+      <role>
+      You are a web automation engineer performing high-level instructions on the page that is already open in the browser.
+      </role>
+
+      <approach>
+      1. Read the page context and perform the instructions in the order they are listed.
+      2. Interact with the page only through the provided tools.
+      3. Pick the smallest interaction that fulfills an instruction, then move to the next one.
+      4. After the page changes, work from the updated context you are given, not from the earlier one.
+      5. Stop calling tools when every instruction is done, or when an instruction cannot be performed on this page — say what is missing instead.
+      </approach>
+
+      ${locatorRule}
+    `;
+  }
+
+  private instructionPrompt(instructions: string[], result: ActionResult): string {
+    const list = instructions.map((instruction, index) => `${index + 1}. ${instruction}`).join('\n');
+    return dedent`
+      <instructions>
+      ${list}
+      </instructions>
+
+      ${this.pageContext(result)}
+    `;
+  }
+
+  private pageContext(result: ActionResult): string {
+    const experience = this.bot.experienceTracker?.()?.renderExperienceTocFor?.(result) || '';
+    return dedent`
+      <page url="${result.url}" title="${result.title}">
+      ${compactAriaSnapshot(result.ariaSnapshot, true)}
+      </page>
+
+      ${experience}
+    `;
+  }
+
+  private executedCodes(code: unknown): string[] {
+    if (typeof code !== 'string') return [];
+    return code
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line);
+  }
+
+  private visionEnabled(): boolean {
+    if (this.options.noVision) return false;
+    return this.bot.getProvider().hasVision?.() === true;
+  }
+
+  private async answer(question: string, result: ActionResult): Promise<string> {
+    const seen = await this.visionAnswer(question, result);
+    if (seen) return seen;
+
+    const described = await this.textAnswer(question, result);
+    if (this.options.noVision) return described;
+    return `${described}\n\n(vision was unavailable, answered from page structure)`;
+  }
+
+  private async visionAnswer(question: string, result: ActionResult): Promise<string | null> {
+    if (!this.visionEnabled()) return null;
+    return this.bot.agentResearcher().answerQuestionAboutScreenshot(result, question);
+  }
+
+  private async textAnswer(question: string, result: ActionResult): Promise<string> {
+    const provider = this.bot.getProvider();
+    const summary = await this.bot.agentResearcher().summary(result);
+    const prompt = dedent`
+      Answer the question about the web page described below.
+      Rely only on the page summary and the accessibility tree given here.
+      When the answer is not present in them, say which part of the page would be needed instead of guessing.
+      Keep the answer under five sentences.
+
+      <question>
+      ${question}
+      </question>
+
+      <page_summary>
+      ${summary}
+      </page_summary>
+
+      <page_aria>
+      ${compactAriaSnapshot(result.ariaSnapshot, true)}
+      </page_aria>
+    `;
+
+    const response = await provider.chat([{ role: 'user', content: prompt }], provider.getModelForAgent?.(AI_AGENT_NAME), { agentName: AI_AGENT_NAME });
+    return response?.text || '';
+  }
+
+  private verdictEvidence(verified: boolean, codes: string[]): string {
+    if (!verified) return 'no assertion held on the current page';
+    if (!codes.length) return 'already verified on this page';
+    return `${codes[0]} passed`;
   }
 
   private async successEnvelope(command: string, used: string[], result: ActionResult, previousState: WebPageState | null): Promise<EnvelopeData> {
@@ -159,6 +388,17 @@ export class Prima {
     };
   }
 
+  private async reportEnvelope(command: string, result: ActionResult, previousState: WebPageState | null, outcome: Partial<EnvelopeData>): Promise<EnvelopeData> {
+    return {
+      ok: true,
+      command,
+      page: this.pageBlock(result, previousState),
+      ...outcome,
+      instance: await this.instanceInfo(),
+      artifacts: await this.writeSnapshot(result),
+    };
+  }
+
   private async toolFailureEnvelope(command: string, error: string): Promise<EnvelopeData> {
     const state = this.bot.stateManager().getCurrentState();
 
@@ -171,10 +411,10 @@ export class Prima {
     };
   }
 
-  private async capturedResult(previousState: WebPageState | null): Promise<ActionResult> {
+  private async capturedResult(previousState: WebPageState | null, opts: { screenshot?: boolean } = {}): Promise<ActionResult> {
     const captured = await this.bot
       .getExplorer()
-      ?.capture()
+      ?.capture(opts)
       .catch(() => null);
     if (captured) return captured;
     if (previousState) return ActionResult.fromState(previousState);
