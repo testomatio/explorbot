@@ -740,6 +740,7 @@ browserCmd
   .description('Launch a persistent browser server')
   .option('-s, --show', 'Launch browser in headed mode (visible window)')
   .option('--headless', 'Launch browser in headless mode')
+  .option('--instance <name>', 'Named browser instance (lowercase letters, digits, dashes)')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
@@ -754,17 +755,20 @@ browserCmd
     if (options.show !== undefined) show = true;
     if (options.headless !== undefined) show = false;
 
-    const server = await launchServer({
-      browser: config.playwright.browser,
-      show,
-    });
+    const server = await launchServer(
+      {
+        browser: config.playwright.browser,
+        show,
+      },
+      options.instance
+    );
 
     console.log('Browser server is running. Press Ctrl+C to stop.');
 
     const cleanup = () => {
       console.log('\nStopping browser server...');
       server.close();
-      removeEndpointFile();
+      removeEndpointFile(options.instance);
       process.exit(0);
     };
 
@@ -775,6 +779,7 @@ browserCmd
 browserCmd
   .command('stop')
   .description('Stop a running browser server')
+  .option('--instance <name>', 'Named browser instance (lowercase letters, digits, dashes)')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
@@ -784,7 +789,7 @@ browserCmd
       path: options.path,
     });
 
-    const endpoint = await getAliveEndpoint();
+    const endpoint = await getAliveEndpoint(options.instance);
     if (!endpoint) {
       console.log('No running browser server found.');
       process.exit(0);
@@ -796,13 +801,14 @@ browserCmd
       await browser.close();
     } catch {}
 
-    removeEndpointFile();
+    removeEndpointFile(options.instance);
     console.log('Browser server stopped.');
   });
 
 browserCmd
   .command('status')
   .description('Check if a browser server is running')
+  .option('--instance <name>', 'Named browser instance (lowercase letters, digits, dashes)')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
@@ -812,7 +818,7 @@ browserCmd
       path: options.path,
     });
 
-    const endpoint = await getAliveEndpoint();
+    const endpoint = await getAliveEndpoint(options.instance);
     if (endpoint) {
       console.log(`Browser server is running at: ${endpoint}`);
     } else {
