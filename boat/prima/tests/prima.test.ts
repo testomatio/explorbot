@@ -298,13 +298,51 @@ describe('Prima.do', () => {
     expect(envelope.used).toEqual(["I.click('#login-btn')"]);
   });
 
-  test('reports a failure when the model performs no action', async () => {
+  test('reports a failure when the model performs no action and keeps its explanation', async () => {
     const { prima } = fakePrima();
-    (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [] }));
+    (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [], response: { text: 'This page has no invoice list to open.' } }));
 
-    const envelope = await prima.do(['click the login link']);
+    const envelope = await prima.do(['open the first invoice']);
     expect(envelope.ok).toBe(false);
-    expect(envelope.failure?.error).toBeTruthy();
+    expect(envelope.failure?.error).toContain('No action was performed');
+    expect(envelope.failure?.error).toContain('This page has no invoice list to open.');
+  });
+
+  test('re-injects fresh page context when the state changed between iterations', async () => {
+    const { prima } = fakePrima();
+    const prompts: string[] = [];
+    const states = [fakeState(), fakeState({ hash: 'dashboard_h1_dashboard', ariaSnapshot: '- heading "Dashboard"\n- link "Invoices"' })];
+    let index = 0;
+    let calls = 0;
+    (prima as any).bot.stateManager = () => ({ getCurrentState: () => states[index], getVisitCount: () => 1 });
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async () => {
+        calls++;
+        if (calls > 2) return { toolExecutions: [] };
+        index = 1;
+        return { toolExecutions: [toolExecution("I.click('Invoices')")] };
+      }, prompts);
+
+    await prima.do(['open the invoices page', 'read the first invoice']);
+
+    expect(prompts.length).toBe(2);
+    expect(prompts[0]).toContain('button "Sign in"');
+    expect(prompts[1]).toContain('heading "Dashboard"');
+  });
+
+  test('keeps the context when the state did not change between iterations', async () => {
+    const { prima } = fakePrima();
+    const prompts: string[] = [];
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async () => {
+        calls++;
+        if (calls > 2) return { toolExecutions: [] };
+        return { toolExecutions: [toolExecution("I.click('Invoices')")] };
+      }, prompts);
+
+    await prima.do(['open the invoices page', 'read the first invoice']);
+    expect(prompts.length).toBe(1);
   });
 
   test('click is a single-instruction alias over do', async () => {

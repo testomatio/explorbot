@@ -2,7 +2,7 @@ import path from 'node:path';
 import dedent from 'dedent';
 import { ActionResult } from '../../../src/action-result.ts';
 import type { Navigator } from '../../../src/ai/navigator.ts';
-import { locatorRule } from '../../../src/ai/rules.ts';
+import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createCodeceptJSTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
 import { outputPath } from '../../../src/config.ts';
@@ -96,7 +96,8 @@ export class Prima {
     const used: string[] = [];
     let failure: { code: string; message: string } | null = null;
     let aiError: unknown = null;
-    let contextHash = previousState?.hash;
+    let narration = '';
+    let contextHash = this.bot.stateManager().getCurrentState()?.hash;
 
     for (let iteration = 1; iteration <= Math.min(instructions.length + 2, MAX_INSTRUCTION_ITERATIONS); iteration++) {
       const state = this.bot.stateManager().getCurrentState();
@@ -112,7 +113,10 @@ export class Prima {
       if (!invoked) break;
 
       const executions = invoked.toolExecutions || [];
-      if (!executions.length) break;
+      if (!executions.length) {
+        narration = invoked.response?.text?.trim() || '';
+        break;
+      }
 
       for (const execution of executions) {
         if (!execution.wasSuccessful) {
@@ -132,7 +136,10 @@ export class Prima {
       return envelope;
     }
 
-    if (!used.length) return this.failureEnvelope(command, 'No action was performed for these instructions on the current page.', previousState);
+    if (!used.length) {
+      const reason = ['No action was performed for these instructions on the current page.', narration].filter(Boolean).join(' ');
+      return this.failureEnvelope(command, reason, previousState);
+    }
 
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
     return this.successEnvelope(command, used, result, previousState);
@@ -274,6 +281,8 @@ export class Prima {
       </approach>
 
       ${locatorRule}
+
+      ${actionRule}
     `;
   }
 
