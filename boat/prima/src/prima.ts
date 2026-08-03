@@ -54,17 +54,16 @@ export class Prima {
     if (!validation.valid) return this.toolFailureEnvelope(command, validation.error!);
 
     const previousState = this.bot.stateManager().getCurrentState();
-    const action = this.bot.getExplorer().action();
     let result: ActionResult | null = null;
 
     try {
-      const executed = await action.execute(toCodeceptWrapper(expression));
+      const executed = await this.bot.getExplorer().action().execute(toCodeceptWrapper(expression));
       result = executed.actionResult;
     } catch (error) {
       return this.failureEnvelope(command, error, previousState);
     }
 
-    result ||= await this.bot.getExplorer().capture();
+    result ||= await this.capturedResult(previousState);
     return this.successEnvelope(command, [expression], result, previousState);
   }
 
@@ -94,7 +93,7 @@ export class Prima {
   }
 
   private async failureEnvelope(command: string, error: unknown, previousState: WebPageState | null): Promise<EnvelopeData> {
-    const result = await this.bot.getExplorer().capture();
+    const result = await this.capturedResult(previousState);
 
     return {
       ok: false,
@@ -116,6 +115,16 @@ export class Prima {
       failure: { error: `tool: ${error}`, attempts: [] },
       instance: await this.instanceInfo(),
     };
+  }
+
+  private async capturedResult(previousState: WebPageState | null): Promise<ActionResult> {
+    const captured = await this.bot
+      .getExplorer()
+      ?.capture()
+      .catch(() => null);
+    if (captured) return captured;
+    if (previousState) return ActionResult.fromState(previousState);
+    return new ActionResult({ url: '' });
   }
 
   private pageBlock(result: ActionResult, previousState: WebPageState | null): EnvelopeData['page'] {

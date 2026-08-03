@@ -102,6 +102,34 @@ describe('Prima.pw', () => {
     expect(envelope.page.url).toBe('https://app.example.com/login');
     expect(envelope.artifacts).toBeTruthy();
   });
+
+  test('unrecoverable browser still returns a failure envelope when capture fails too', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getExplorer = () => ({
+      action: () => ({
+        execute: async () => {
+          throw new Error('Browser page is unavailable before action');
+        },
+      }),
+      capture: async () => {
+        throw new Error('Target page, context or browser has been closed');
+      },
+    });
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('Browser page is unavailable');
+    expect(envelope.page.url).toContain('/login');
+    expect(envelope.artifacts).toBeTruthy();
+  });
+
+  test('missing explorer returns a failure envelope instead of rejecting', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getExplorer = () => undefined;
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toBeTruthy();
+    expect(envelope.page.url).toContain('/login');
+  });
 });
 
 describe('Prima.start', () => {
