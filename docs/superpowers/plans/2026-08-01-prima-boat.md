@@ -503,7 +503,7 @@ Expected: FAIL — module not found.
 
 `boat/prima/src/prima.ts` responsibilities in this task:
 - Constructor stores options, builds `ExplorBot` options (`config`, `path`, `verbose`, `session`, `headless: true`) — but do NOT boot in constructor (DocBot pattern).
-- `start()`: resolve instance endpoint via `getAliveEndpoint(this.options.instance ?? 'default')`; when absent, launch via `launchServer` equivalent used by `explorbot browser start` (reuse, do not reimplement); then `await this.bot.start()`. When `options.url` is set and no current state exists, `await this.bot.visit(options.url)`. (Task 11 retrofits the playwright-cli attach ladder in front of this daemon path — keep the daemon logic in a private method Task 11 can call as its fallback.)
+- `start()`: resolve instance endpoint via `getAliveEndpoint(this.options.instance ?? 'default')`; when absent, throw an Error instructing the caller to create a session first — start one with playwright-cli (`playwright-cli open <url>`) or `prima browser start` (the CLI renders it as a `tool:` failure envelope, exit 1). NEVER launch a browser implicitly. Then `await this.bot.start()`. When `options.url` is set and no current state exists, `await this.bot.visit(options.url)`. (Task 11 retrofits the playwright-cli attach ladder in front of this owned-instance path — keep the owned-instance lookup in a private method Task 11 calls late in its ladder.)
 - `pw(expression)`:
   1. `isFunctionExpression` — invalid → return tool-error envelope (`ok: false`, `failure.error` prefixed `tool:`), never execute.
   2. Capture `before = stateManager.getCurrentState()`.
@@ -605,6 +605,7 @@ Expected: new tests FAIL (heal not implemented).
 
 Private `heal(errorMessage, actionResult, originalCode)`:
 - Skip entirely when `options.heal === false` — go straight to failure envelope.
+- Skip with an envelope note (`healed: false (ai unavailable)`) when no AI provider is usable — `pw` must keep working without AI.
 - Collect attempts array via `onAttempt`; call `navigator.resolveState(errorMessage, actionResult, { onAttempt })`.
 - `true` → success envelope: `healed: true`, `healNote` = last attempt outcome summary, `used` = codes of successful attempts (last attempt without error), current state re-read from `stateManager.getCurrentState()`.
 - `false` → failure envelope: `error`, `attempts` (map error→outcome, success→'ok'), `compactAria` from `compactAriaSnapshot(state.ariaSnapshot, true)` (`src/utils/aria.ts`), reasoning left to Task 8's compaction if trivial — set `reasoning` to a one-line join of distinct outcomes for now (general, not model-generated).
@@ -714,6 +715,7 @@ test('ask with noVision answers from researcher summary', async () => {
 
 - `do(instructions)`: tester-style bounded AI loop, no deterministic path (callers describe elements, they never hold locators — precision belongs to `pw`). One conversation via `provider.startConversation(...)` with a dedent system prompt: current compact ARIA + relevant experience TOC + the numbered instruction list + rule to perform the instructions in order and stop when done. Execute `provider.invokeConversation(conversation, createCodeceptJSTools(explorer, ...), { maxToolRoundtrips: 5 })` per iteration, re-injecting fresh page context between iterations when state changed (same pattern as Driller's bounded loop, `src/ai/driller.ts:325-329`), capped at `min(instructions.length + 2, 6)` iterations. Collect executed codes from tool results into `used`. Failures feed `heal(...)` from Task 5.
 - `click(target)`: alias — `this.do([`click ${target}`])`. `fill(field, value)`: alias — `this.do([`fill ${field} with value: ${value}`])`. Phrase construction must stay general (verb + caller's description verbatim), never enumerate app-specific element names.
+- AI-availability guard: every model-requiring command (`do`, `click`, `fill`, `ask`, `verify`, `research`, intent-`go`) checks provider availability first (provider construction failed, or no model configured — surface the underlying reason from `bot.getProvider()`/config); on failure return a tool-error envelope whose message states the reason and suggests the fallback: use playwright-cli for direct browser control, or fix AI config (`~/.explorbot/config.js` / `EXPLORBOT_AI_PROVIDER`). Add a test: provider getter throws → `do` returns `ok: false` with error containing 'playwright-cli'. The message must describe the failure layer generally — never hardcode a specific provider's error text.
 - `ask(question)`: vision by default — `researcher.answerQuestionAboutScreenshot(state, question)`; falls to the text path when `options.noVision` or `!provider.hasVision()` (`src/ai/provider.ts:635`; append a one-line note to the answer when degrading for the latter reason). Text path: `provider.chat` over dedent prompt containing `researcher.summary(state)` + compact ARIA + the question. Non-mutating: envelope has `answer`, no `changes`, artifacts still written.
 - `verify(assertion)`: `explorer.capture()` then `navigator.verifyState(assertion, actionResult)`; verdict `{ passed: verified, evidence: <first successful step or failure note>, code: successfulCodes.join('\n') }`.
 - `research(opts)`: `researcher.research(state, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh })` (`src/ai/researcher.ts:94`); envelope `research` = returned UI map verbatim (staleness banner included when cached), no `changes`. Non-mutating; artifacts still written.
@@ -768,7 +770,7 @@ test('go delegates to navigator.visit and returns envelope', async () => {
 
 - `go(target)`: `navigator.visit(target)` (it resolves URL vs intent internally); envelope from resulting state; navigation errors feed `heal`.
 - `browserStart/Stop/Status`: thin delegation to Task 3's browser-server functions with `options.instance`; `browserStop(true)` iterates `listInstances()`. Status string includes what `instanceInfo()` knows.
-- Autostart: already in `start()` (Task 4) — verify `go` path hits it when no daemon runs; with `options.session` set, the launched context loads storage state (Explorer already honors `session` — `src/explorer.ts:106,337`).
+- No implicit launch: verify `go` (like every command) fails with the create-a-session guidance when no browser is available. `browserStart()` is the only launch path; with `options.session` set there, the launched context loads storage state (Explorer already honors `session` — `src/explorer.ts:106,337`).
 
 - [ ] **Step 4: Run tests, verify pass; commit**
 
@@ -876,7 +878,7 @@ Every action handler: `setPreserveConsoleLogs(true)`, build `Prima`, `await prim
 
 - [ ] **Step 2: Write the --help contract text**
 
-The command description plus `addHelpText('after', ...)` on the `prima` group is the sole teaching surface for orchestrating agents. It must compactly cover (dedent block, ~40 lines): the tiering (pw = precise with a locator you hold, click/fill = one described action AI-resolved, do = a set of high-level instructions run tester-style — never pass locators to NL commands, never pass descriptions to pw), the recommended loop (research once for verified locators → drive with pw → verify; reach for do/click when you have no locator), the envelope sections and their meaning, `used:` as reusable verified code, heal semantics and `--no-heal`, failure = inline compact ARIA + artifact file paths for deep dives, `--instance` vs `--session`, autostart behavior, the close-when-finished convention driven by `### Instance`, and one usage example per tier. General shapes only — no app-specific examples.
+The command description plus `addHelpText('after', ...)` on the `prima` group is the sole teaching surface for orchestrating agents. It must compactly cover (dedent block, ~40 lines): the tiering (pw = precise with a locator you hold, click/fill = one described action AI-resolved, do = a set of high-level instructions run tester-style — never pass locators to NL commands, never pass descriptions to pw), the recommended loop (research once for verified locators → drive with pw → verify; reach for do/click when you have no locator), the envelope sections and their meaning, `used:` as reusable verified code, heal semantics and `--no-heal`, failure = inline compact ARIA + artifact file paths for deep dives, `--instance` vs `--session`, the no-implicit-launch rule (create sessions via playwright-cli or `prima browser start`), the AI-unavailable fallback (use playwright-cli directly), the close-when-finished convention driven by `### Instance`, and one usage example per tier. General shapes only — no app-specific examples.
 
 - [ ] **Step 3: Wire into main CLI and standalone bin**
 
@@ -912,7 +914,8 @@ Scenarios, driven through the `Prima` class directly against the local fixture (
 1. `pw "({ page }) => page.click('text=Submit')"` on the fixture → `ok: true`, envelope contains `### Changes` and artifact files exist on disk.
 2. `pw` with a non-function argument → `ok: false`, `tool:`-prefixed error, exit path returns without browser action.
 3. `do`/`click` are NOT in the browser smoke (they always require a model) — cover them in `tests/integration/prima-do.test.ts` via aimock: mock model returns click tool calls for a two-instruction `do`, assert both instructions appear in the prompt, `used` collects executed codes, envelope `ok: true`.
-4. Instance autostart honored: run without a pre-started daemon; assert endpoint file appears.
+4. No implicit launch: run without any browser session → failure envelope containing the create-a-session guidance (`playwright-cli open` mentioned), exit code 1, and no endpoint file created.
+5. `pw` with no AI provider configured: executes normally, envelope notes healing unavailable.
 
 Heal-path e2e requires an AI provider — cover it with an aimock integration test in `tests/integration/prima-heal.test.ts` following `tests/integration/planner.test.ts` (mock provider returns a recovery instruction; assert `healed: true` envelope and `onAttempt` trace).
 
@@ -1056,19 +1059,26 @@ test('start attaches to workspace playwright-cli browser before own daemon', asy
   const calls: string[] = [];
   (prima as any).discover = () => ({ match: { title: 'default', endpoint: '/tmp/pw/a.sock', workspaceDir: process.cwd(), browserName: 'chromium', playwrightLib: '/lib/pw', file: 'a' }, candidates: [] });
   (prima as any).attachToEndpoint = async (d: unknown) => { calls.push('attach'); };
-  (prima as any).startOwnDaemon = async () => { calls.push('daemon'); };
+  (prima as any).connectOwnInstance = async () => { calls.push('own'); return true; };
   await prima.start();
   expect(calls).toEqual(['attach']);
 });
 
-test('start falls back to own daemon when nothing attachable', async () => {
+test('start uses explicitly started own instance when nothing attachable', async () => {
   const prima = new Prima({});
   const calls: string[] = [];
   (prima as any).discover = () => ({ candidates: [] });
   (prima as any).attachToEndpoint = async () => { calls.push('attach'); };
-  (prima as any).startOwnDaemon = async () => { calls.push('daemon'); };
+  (prima as any).connectOwnInstance = async () => { calls.push('own'); return true; };
   await prima.start();
-  expect(calls).toEqual(['daemon']);
+  expect(calls).toEqual(['own']);
+});
+
+test('start fails with playwright-cli guidance when no session exists anywhere', async () => {
+  const prima = new Prima({});
+  (prima as any).discover = () => ({ candidates: [] });
+  (prima as any).connectOwnInstance = async () => false;
+  await expect(prima.start()).rejects.toThrow(/playwright-cli open/);
 });
 
 test('ambiguous sessions surface as tool error listing candidates', async () => {
@@ -1080,7 +1090,7 @@ test('ambiguous sessions surface as tool error listing candidates', async () => 
 
 - [ ] **Step 6: Run, verify fail; implement the ladder in `Prima.start()`**
 
-Order: `options.endpoint` (skip discovery, attach directly) → `discover()` = `selectDescriptor(readDescriptors(), { workspaceDir: resolved cwd, title: options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION })` → match → `attachToEndpoint(descriptor)` → no match, candidates non-empty → throw Error listing candidate titles (CLI renders it as a `tool:` failure envelope) → no candidates → `startOwnDaemon()` (Task 4's daemon logic, extracted private method). Record attachment description for `InstanceInfo.attached` (`playwright-cli session "<title>", workspace <dir>`).
+Order: `options.endpoint` (skip discovery, attach directly) → `discover()` = `selectDescriptor(readDescriptors(), { workspaceDir: resolved cwd, title: options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION })` → match → `attachToEndpoint(descriptor)` → no match, candidates non-empty → throw Error listing candidate titles (CLI renders it as a `tool:` failure envelope) → no candidates → `connectOwnInstance()` (Task 4's alive-endpoint lookup, extracted private method returning boolean; it never launches) → false → throw Error with the create-a-session guidance naming `playwright-cli open <url>` first and `prima browser start` second. Record attachment description for `InstanceInfo.attached` (`playwright-cli session "<title>", workspace <dir>`).
 
 `attachToEndpoint(descriptor)`:
 - Liveness probe: attempt `playwright[descriptor.browserName].connect(descriptor.endpoint, { timeout: 3000 })` with our own playwright-core import; on handshake/version failure, retry once with `require(descriptor.playwrightLib)` (daemon's own lib — the version-skew escape playwright-cli itself uses); on both failing, treat descriptor as dead and continue the ladder.
@@ -1105,6 +1115,6 @@ git commit -m "feat(prima): attach to playwright-cli browser via protocol regist
 
 ## Self-Review Notes
 
-- Spec coverage: pw/do/click/fill/ask/verify+assert/research/go (Tasks 4-7, 9), playwright-cli attach ladder + `--endpoint`/`--pw-session` + attached lifecycle (Task 11), envelope + used code (1, 4), heal + attempt trace + `--no-heal` (5), instances + autostart + `--session` reuse (3, 4, 7), config-free ladder + per-host state + `--ephemeral` (8), `--help`-only discovery (9), testing incl. aimock heal test (10). Framework flag (`--framework`) is parsed (9) and stored (4); Historian-based conversion of `used:` into Playwright dialect is deliberately deferred until `used` collection stabilizes — v1 emits the executed CodeceptJS (pw commands echo the Playwright expression itself), which satisfies "actual used locator" for both dialect inputs. If reviewers want full conversion in v1, extend Task 6 with `historian.toPlaywrightCode` per `src/ai/historian/playwright.ts:21`.
+- Spec coverage: pw/do/click/fill/ask/verify+assert/research/go (Tasks 4-7, 9), playwright-cli attach ladder + `--endpoint`/`--pw-session` + attached lifecycle (Task 11), envelope + used code (1, 4), heal + attempt trace + `--no-heal` + ai-unavailable skip (5), instances + no-implicit-launch + `--session` reuse (3, 4, 7), AI-unavailable fallback guidance (6), config-free ladder + per-host state + `--ephemeral` (8), `--help`-only discovery (9), testing incl. aimock heal test (10). Framework flag (`--framework`) is parsed (9) and stored (4); Historian-based conversion of `used:` into Playwright dialect is deliberately deferred until `used` collection stabilizes — v1 emits the executed CodeceptJS (pw commands echo the Playwright expression itself), which satisfies "actual used locator" for both dialect inputs. If reviewers want full conversion in v1, extend Task 6 with `historian.toPlaywrightCode` per `src/ai/historian/playwright.ts:21`.
 - Vision `ask` degrades to text path when no `visionModel` configured (`provider.hasVision()`, `src/ai/provider.ts:635`) — implementer: guard in `ask`.
 - Type consistency: `EnvelopeData`/`InstanceInfo`/`HealAttempt` defined once in Task 1 and only consumed elsewhere; `PrimaOptions` defined in Task 4 and consumed by 9.

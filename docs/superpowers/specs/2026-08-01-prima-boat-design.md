@@ -61,7 +61,7 @@ Tiering: `pw` = precise, no AI — for when the orchestrator already holds a ver
 
 - `--endpoint <ep>` / `--pw-session <title>` — attach to a specific Playwright-protocol browser server (playwright-cli registry) instead of the ladder's automatic pick.
 - `--instance <name>` / `-i` — which named prima-owned browser daemon to talk to when not attached. Default instance otherwise.
-- `--session [file]` — existing auth-session semantics; an autostarted instance launches with the saved cookies/storage state.
+- `--session [file]` — existing auth-session semantics; a browser launched via explicit `prima browser start` loads the saved cookies/storage state. Ignored in attached mode.
 - `--no-heal` — fail fast without cheap-model recovery.
 - `--ephemeral` — throwaway temp state dir instead of the per-host persistent one.
 - `--framework playwright|codeceptjs` — output dialect for `used:` code (default from `ai.agents.historian.framework`).
@@ -75,7 +75,7 @@ Tiering: `pw` = precise, no AI — for when the orchestrator already holds a ver
 - **ask**: vision by default — Researcher answers from a fresh screenshot via the vision model; `--no-vision` (or no `visionModel` configured, with a note in the envelope) falls back to compact ARIA / cached UI map. Non-mutating.
 - **research**: `researcher.research(state, { screenshot: true, data, deep, force })`. The envelope's `### Research` section carries the UI map inline — it is the deliverable: verified, live-tested locators that let the orchestrator drive `pw` precisely without reading raw ARIA. `--data` adds extracted data sections, `--deep` deep analysis, `--fresh` bypasses the cache; cached results keep the existing staleness banner. Non-mutating.
 - **verify / assert**: `navigator.verifyState()` on the cheap model; verdict plus the assertion code that proved it.
-- **go**: URL-shaped input navigates directly; intent-shaped input uses Navigator's stateful navigation with visited-state history and knowledge. Autostarts the instance like every other command.
+- **go**: URL-shaped input navigates directly; intent-shaped input uses Navigator's stateful navigation with visited-state history and knowledge. Like every command, requires an existing browser session — it never launches one.
 
 ### Examples of `do`
 
@@ -163,7 +163,8 @@ Prima is a smart layer over whatever browser already exists, not an owner of a c
 2. `PLAYWRIGHT_CLI_SESSION` env, matched against registry titles for this workspace.
 3. Live registry descriptor with `workspaceDir` equal to the resolved cwd and `title` of `default`.
 4. Exactly one live descriptor for this workspace → use it; multiple → tool-error envelope listing candidate titles.
-5. Fall back to prima's own daemon (`--instance` semantics below), autostarting if needed.
+5. A prima-owned instance previously started explicitly via `prima browser start` (`--instance` semantics below), if alive.
+6. Nothing available → **fail** with a tool-error envelope instructing the caller to create a session first: start one with playwright-cli (`playwright-cli open <url>`) — the preferred path — or `prima browser start`. Prima never launches a browser implicitly.
 
 Descriptors may be stale — always liveness-probe (attempt connect) before selecting; skip dead ones. Version skew: prefer connecting with our own playwright-core; if the wire handshake rejects, load the daemon's own lib from `descriptor.playwrightLib` (the same trick playwright-cli uses).
 
@@ -174,8 +175,18 @@ A CDP attach mode (`--cdp <url>`, for a user's real Chrome, CI browsers, or a pl
 ## Instances & Sessions
 
 - Named browser daemons via `--instance`; state persists across CLI invocations through the existing `explorbot browser start` server and `.browser-endpoint` discovery. Used only when the resolution ladder found no playwright-cli browser to attach to.
-- Any `prima` command with no attachable browser and no running daemon autostarts one for its instance; combined with `--session [file]`, the autostarted browser launches already authenticated.
-- `prima browser start|stop|status|list` manages instances explicitly; `stop --all` kills every owned instance (attached browsers are only detached). `list` shows owned instances and attachable playwright-cli sessions for this workspace.
+- No implicit launching: a `prima` command with no attachable browser and no running owned instance fails with the create-a-session guidance above.
+- `prima browser start|stop|status|list` manages owned instances explicitly; `start` combined with `--session [file]` launches already authenticated; `stop --all` kills every owned instance (attached browsers are only detached). `list` shows owned instances and attachable playwright-cli sessions for this workspace.
+
+## Degraded Modes
+
+Prima is a layer over playwright-cli, so when prima itself cannot help, its job is to say so and point back down:
+
+- **No browser session** (ladder step 6 above): tool-error envelope with the create-a-session instruction. Exit code 1.
+- **AI unavailable** — no provider configured, missing/expired credentials, provider errors at startup: commands that require a model (`do`, `click`, `fill`, `ask`, `verify`, `research`, intent-`go`) fail fast with a tool-error envelope stating the specific reason (general shape: which layer failed and why) and suggesting the fallback: use playwright-cli for direct browser control, or fix the AI config (`~/.explorbot/config.js` / `EXPLORBOT_AI_PROVIDER`). No partial AI attempts.
+- **`pw` stays useful without AI**: it executes normally (it needs no model); healing is skipped with a `healed: false (ai unavailable)` note in the envelope. URL-`go` likewise works.
+
+The distinction rule from the heal section applies everywhere: tool-layer failures (browser missing, AI missing, invalid input) are never disguised as page failures.
 
 ## Config-Free Operation
 
@@ -208,7 +219,7 @@ Experience accumulates per target host across runs from any directory — zero-s
 
 - Unit: envelope rendering (success, failure, ask/verify variants), `pw` expression validation, config ladder resolution.
 - Integration: heal-loop prompts via the existing `@copilotkit/aimock` harness per `docs/contributing/ai-integration-tests.md`; fictional fixture data only.
-- End-to-end smoke against a local fixture page: `pw` success, healed failure, exhausted failure, instance autostart with `--session`; `do`/`click` covered by aimock integration tests (they always require a model).
+- End-to-end smoke against a local fixture page: `pw` success, healed failure, exhausted failure, no-browser failure with create-a-session guidance, `pw` without AI (heal-skipped note); `do`/`click` covered by aimock integration tests (they always require a model), plus an AI-unavailable test asserting the playwright-cli fallback suggestion.
 
 ## Decisions Log
 
@@ -223,6 +234,8 @@ Experience accumulates per target host across runs from any directory — zero-s
 - `ask` is vision-first; `--no-vision` opts into the ARIA text path.
 - Prima attaches to playwright-cli's browser by default via the Playwright-protocol registry (`~/.cache/ms-playwright/b/`), matched by `workspaceDir` + session `title`; own daemon is the fallback, never the first choice.
 - Attached browsers are never closed by prima; CDP attach (`--cdp`) deferred to a follow-up.
+- No implicit browser launch: missing session → fail with "create one via playwright-cli" guidance; own daemon only via explicit `prima browser start`.
+- AI unavailable → NL commands fail fast suggesting playwright-cli as fallback; `pw`/URL-`go` keep working with healing skipped.
 - `used:` code in envelope via Historian converters; `verify` exposes assertion code.
 - click/fill are single-instruction aliases over the same AI resolution as `do`; `do` accepts multiple high-level instructions run tester-style. No deterministic no-AI paths in NL commands — precision belongs to `pw`/playwright-cli. select/pressKey/hover/drag stay behind `pw`.
 - `research` exposed with `--data`/`--deep`/`--fresh`; UI map inline as the deliverable (verified locators enable precise `pw` driving).
