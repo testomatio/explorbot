@@ -310,7 +310,7 @@ class Explorer {
 
   private async connectOrLaunchBrowser(): Promise<void> {
     const { getAliveEndpoint } = await import('./browser-server.js');
-    const endpoint = await getAliveEndpoint();
+    const endpoint = await getAliveEndpoint(this.options?.instance);
 
     if (endpoint) {
       const browserName = this.config.playwright.browser || 'chromium';
@@ -733,6 +733,7 @@ export interface ExplorerOptions {
   headless?: boolean;
   incognito?: boolean;
   session?: string;
+  instance?: string;
 }
 
 export interface ExplorerDeps {

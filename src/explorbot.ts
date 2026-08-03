@@ -46,6 +46,7 @@ export interface ExplorBotOptions {
   headless?: boolean;
   incognito?: boolean;
   session?: string | boolean;
+  instance?: string;
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
