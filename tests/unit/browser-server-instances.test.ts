@@ -46,6 +46,17 @@ describe('named instances', () => {
     ]);
   });
 
+  test('skips malformed endpoint filenames instead of naming them default', () => {
+    const dir = path.dirname(getEndpointFilePath());
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(getEndpointFilePath(), 'ws://localhost:1111/default\n', 'utf8');
+    writeFileSync(path.join(dir, '.browser-endpoint-'), 'ws://localhost:3333/malformed\n', 'utf8');
+    writeFileSync(path.join(dir, '.browser-endpointX'), 'ws://localhost:4444/malformed\n', 'utf8');
+    writeFileSync(path.join(dir, '.browser-endpoint-Staging'), 'ws://localhost:5555/malformed\n', 'utf8');
+
+    expect(listInstances()).toEqual([{ name: 'default', endpoint: 'ws://localhost:1111/default' }]);
+  });
+
   test('lists nothing when endpoint dir is missing', () => {
     expect(listInstances()).toEqual([]);
   });

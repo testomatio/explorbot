@@ -48,6 +48,7 @@ function listInstances(): Array<{ name: string; endpoint: string }> {
     if (!fileName.startsWith(ENDPOINT_FILENAME)) continue;
     const suffix = fileName.slice(ENDPOINT_FILENAME.length);
     if (suffix && !suffix.startsWith('-')) continue;
+    if (suffix === '-') continue;
     const name = suffix.slice(1) || 'default';
     if (!INSTANCE_NAME_PATTERN.test(name)) continue;
     instances.push({ name, endpoint: readFileSync(path.join(dir, fileName), 'utf8').trim() });
