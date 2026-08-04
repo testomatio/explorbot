@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
-import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, EXPLORBOT_CONFIG_PATHS, createModel, materializeKnowledge, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
+import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, EXPLORBOT_CONFIG_PATHS, createModel, materializeKnowledge, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
+import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
 
 export type { AIConfig };
 
@@ -26,6 +27,7 @@ export class ApibotConfigParser {
   private static instance: ApibotConfigParser;
   private config: ApibotConfig | null = null;
   private configPath: string | null = null;
+  private site: SiteRecord | null = null;
 
   private constructor() {}
 
@@ -42,7 +44,7 @@ export class ApibotConfigParser {
     Object.assign(process.env, parseEnv(readFileSync(resolved, 'utf8')));
   }
 
-  async loadConfig(options?: { config?: string; path?: string }): Promise<ApibotConfig> {
+  async loadConfig(options?: { config?: string; path?: string; endpoint?: string }): Promise<ApibotConfig> {
     if (this.config && !options?.config && !options?.path) return this.config;
 
     const originalCwd = process.cwd();
@@ -50,6 +52,7 @@ export class ApibotConfigParser {
       process.chdir(resolve(options.path));
     }
 
+    ApibotConfigParser.loadEnv(globalEnvPath());
     ApibotConfigParser.loadEnv('.env');
 
     const resolvedPath = options?.config || this.findConfigFile();
@@ -78,7 +81,14 @@ export class ApibotConfigParser {
       }
 
       this.config = this.mergeWithDefaults(loadedConfig);
+      await resolveConfigModels(this.config.ai);
       this.configPath = resolvedPath;
+      this.site = null;
+
+      if (isGlobalConfigPath(resolvedPath)) {
+        this.enterGlobalMode(this.config, options?.endpoint);
+      }
+
       this.validateConfig(this.config);
 
       return this.config;
@@ -100,9 +110,22 @@ export class ApibotConfigParser {
 
   getOutputDir(): string {
     const config = this.getConfig();
+    return path.join(this.getProjectRoot(), config.dirs?.output || 'output');
+  }
+
+  getProjectRoot(): string {
+    if (this.site) return this.site.dir;
     const configPath = this.getConfigPath();
     if (!configPath) throw new Error('Config path not found');
-    return path.join(path.dirname(configPath), config.dirs?.output || 'output');
+    return path.dirname(configPath);
+  }
+
+  resolveEndpointPath(endpoint: string): string {
+    if (!this.site) return endpoint;
+
+    const resolved = resolveSiteTarget(endpoint, this.site.url);
+    if (resolved.baseUrl !== this.site.url) return endpoint;
+    return resolved.path;
   }
 
   getPlansDir(): string {
@@ -115,15 +138,22 @@ export class ApibotConfigParser {
 
   getKnowledgeDir(): string {
     const config = this.getConfig();
-    const configPath = this.getConfigPath();
-    if (!configPath) throw new Error('Config path not found');
-    return path.join(path.dirname(configPath), config.dirs?.knowledge || 'knowledge');
+    return path.join(this.getProjectRoot(), config.dirs?.knowledge || 'knowledge');
   }
 
   ensureDirectory(dirPath: string): void {
     if (!existsSync(dirPath)) {
       mkdirSync(dirPath, { recursive: true });
     }
+  }
+
+  private enterGlobalMode(config: ApibotConfig, endpoint?: string): void {
+    const site = resolveSiteTarget(endpoint);
+    this.site = registerSite(site.baseUrl);
+
+    config.dirs = { output: 'output', knowledge: 'knowledge' };
+    config.api = { ...config.api, baseEndpoint: site.baseUrl };
+    if (process.env.EXPLORBOT_API_SPEC) config.api.spec = [process.env.EXPLORBOT_API_SPEC];
   }
 
   private async loadEnvConfig(): Promise<ApibotConfig> {
@@ -177,7 +207,7 @@ export class ApibotConfigParser {
       if (existsSync(fullPath)) return fullPath;
     }
 
-    return null;
+    return findGlobalConfig();
   }
 
   private async loadConfigModule(configPath: string): Promise<any> {

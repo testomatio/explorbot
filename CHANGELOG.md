@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-08-05
+
+### Global Installation
+
+Explorbot can now be configured once for the whole machine instead of per project. `npx explorbot init --global` stores AI models and keys in `~/.explorbot`, and every explorbot command then works from any directory — no project, no config file to copy around.
+
+```bash
+npx explorbot init --global
+npx explorbot explore https://app.example.com/login   # first visit registers the site
+npx explorbot explore app.example.com/dashboard       # later runs: reference it by host
+npx explorbot sites
+```
+
+Each explored site gets its own folder under `~/.explorbot/sites/<host>/` holding `knowledge/`, `experience/`, and `output/`, so what Explorbot learns about an app accumulates between runs. The folder name is the host and port of the site, lowercased, with characters invalid in directory names replaced by `_` — `localhost:3000` becomes `localhost_3000`.
+
+Unlike the environment-variable mode, global runs keep full project behavior: experience is read and written, generated test files are saved, and reports land in the site's `output/`. A project `explorbot.config.js` still wins whenever one is present, so nothing changes inside existing projects. Environment files load global first, then the current directory, so a project `.env` overrides a global key.
+
+### New CLI Options
+- **`init --global`** — Set up `~/.explorbot` instead of the current directory. Opens a wizard: pick a provider, paste the API key, optionally check it with one test AI call. Plain `init` in a terminal now asks Local or Global first; the Global option is disabled once a global config exists. Passing `--config-path` or `--path`, or running outside a terminal, means Local as before.
+  ```bash
+  npx explorbot init                      # asks Local or Global
+  npx explorbot init --global             # wizard
+  npx explorbot init --global --force     # reinstall over an existing global config
+  ```
+- **`init --provider <name>`** — Skip the wizard and write the global config for that provider, for agents and scripts. Providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
+  ```bash
+  npx explorbot init --global --provider openrouter
+  ```
+- **`init --api-key <key>`** — Store the provider's API key in `~/.explorbot/.env`. Without it the key is expected in the environment; an existing stored key is never overwritten.
+  ```bash
+  npx explorbot init --global --provider groq --api-key gsk_...
+  ```
+- **`sites`** — List the sites registered in the global installation: folder name, base URL, and last run.
+  ```bash
+  npx explorbot sites
+  ```
+
+### Configuration
+- **`ai.model`, `ai.visionModel`, `ai.agenticModel`, `ai.agents.<name>.model`** — Accept a `'provider/model-id'` string in addition to a model instance, so a config file needs no provider imports. `'openrouter'` on its own resolves to that provider's recommended model for the role. This is how the global config is written, since `~/.explorbot` has no `node_modules` to import provider packages from.
+
+### Changes
+- The error shown when no configuration is found now suggests `explorbot init --global` alongside creating a config file and setting environment variables.
+
 ## 2026-07-22
 
 ### Changes

@@ -27,7 +27,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
           execute: async ({ destination }) => {
             try {
               debugLog('navigate', destination);
-              await ctx.explorBot.agentNavigator().visit(destination);
+              await ctx.explorBot.visit(destination);
               const stateManager = ctx.explorBot.stateManager();
               const state = stateManager.getCurrentState();
               return { success: true, url: state?.url, title: state?.title };

@@ -3,16 +3,17 @@ import { tmpdir } from 'node:os';
 import path, { basename, dirname, join, resolve } from 'node:path';
 import { parseEnv } from 'node:util';
 import matter from 'gray-matter';
+import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from './global-config.js';
 import { log } from './utils/logger.js';
 
-export const PROVIDERS: Record<string, () => Promise<(modelId: string) => any>> = {
-  openai: async () => (await import('@ai-sdk/openai')).createOpenAI(),
-  anthropic: async () => (await import('@ai-sdk/anthropic')).createAnthropic(),
-  google: async () => (await import('@ai-sdk/google')).createGoogleGenerativeAI(),
-  groq: async () => (await import('@ai-sdk/groq')).createGroq(),
-  mistral: async () => (await import('@ai-sdk/mistral')).createMistral(),
-  openrouter: async () => (await import('@openrouter/ai-sdk-provider')).createOpenRouter(),
-  sambanova: async () => (await import('sambanova-ai-provider')).createSambaNova(),
+export const PROVIDERS: Record<string, ProviderInfo> = {
+  openai: { envKey: 'OPENAI_API_KEY', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
+  anthropic: { envKey: 'ANTHROPIC_API_KEY', load: async () => (await import('@ai-sdk/anthropic')).createAnthropic() },
+  google: { envKey: 'GOOGLE_GENERATIVE_AI_API_KEY', load: async () => (await import('@ai-sdk/google')).createGoogleGenerativeAI() },
+  groq: { envKey: 'GROQ_API_KEY', load: async () => (await import('@ai-sdk/groq')).createGroq() },
+  mistral: { envKey: 'MISTRAL_API_KEY', load: async () => (await import('@ai-sdk/mistral')).createMistral() },
+  openrouter: { envKey: 'OPENROUTER_API_KEY', load: async () => (await import('@openrouter/ai-sdk-provider')).createOpenRouter() },
+  sambanova: { envKey: 'SAMBANOVA_API_KEY', load: async () => (await import('sambanova-ai-provider')).createSambaNova() },
 };
 
 let cachedOutputRoot: string | null = null;
@@ -299,7 +300,9 @@ export class ConfigParser {
   private static recommended: Record<string, Record<string, string>> | null = null;
   private config: ExplorbotConfig | null = null;
   private configPath: string | null = null;
-  private runtimeBaseUrlOverride: string | null = null;
+  private runtimeTarget: string | null = null;
+  private site: SiteRecord | null = null;
+  private siteStartPath = '/';
 
   private constructor() {}
 
@@ -325,8 +328,10 @@ export class ConfigParser {
     config?: string;
     path?: string;
     baseUrl?: string;
+    from?: string;
   }): Promise<ExplorbotConfig> {
-    if (this.config && !options?.config && !options?.path && this.runtimeBaseUrlOverride === (options?.baseUrl || null)) {
+    const target = options?.baseUrl || options?.from || null;
+    if (this.config && !options?.config && !options?.path && this.runtimeTarget === target) {
       return this.config;
     }
 
@@ -341,6 +346,7 @@ export class ConfigParser {
       process.chdir(resolvedWorkingPath);
     }
 
+    ConfigParser.loadEnv(globalEnvPath());
     ConfigParser.loadEnv('.env');
 
     try {
@@ -369,8 +375,14 @@ export class ConfigParser {
       }
 
       this.config = this.resolveConfig(loadedConfig as ExplorbotConfig, options);
-      this.runtimeBaseUrlOverride = options?.baseUrl || null;
+      await resolveConfigModels(this.config.ai);
+      this.runtimeTarget = target;
       this.configPath = sourcePath;
+      this.site = null;
+
+      if (resolvedPath && isGlobalConfigPath(resolvedPath)) {
+        this.enterGlobalMode(this.config, target);
+      }
 
       // Restore original directory after successful config load
       if (options?.path && originalCwd !== process.cwd()) {
@@ -400,21 +412,37 @@ export class ConfigParser {
 
   public getOutputDir(): string {
     const config = this.getConfig();
-    const configPath = this.getConfigPath();
-    if (!configPath) throw new Error('Config path not found');
-    return path.join(path.dirname(configPath), config.dirs?.output || 'output');
+    if (!this.configPath) throw new Error('Config path not found');
+    return path.join(this.getProjectRoot(), config.dirs?.output || 'output');
   }
 
   public getProjectRoot(): string {
+    if (this.site) return this.site.dir;
     const configPath = this.getConfigPath();
     if (configPath) return path.dirname(configPath);
     return process.cwd();
   }
 
   public resolveProjectDir(relativeDir: string): string {
-    const configPath = this.getConfigPath();
-    if (!configPath) return relativeDir;
-    return path.join(path.dirname(configPath), relativeDir);
+    if (!this.configPath) return relativeDir;
+    return path.join(this.getProjectRoot(), relativeDir);
+  }
+
+  public isGlobalMode(): boolean {
+    return !!this.site;
+  }
+
+  public getSite(): SiteRecord | null {
+    return this.site;
+  }
+
+  public resolveTargetPath(target?: string): string {
+    if (!this.site) return target || '/';
+    if (!target) return this.siteStartPath;
+
+    const resolved = resolveSiteTarget(target, this.site.url);
+    if (resolved.baseUrl !== this.site.url) return target;
+    return resolved.path;
   }
 
   public getStatesDir(): string {
@@ -435,7 +463,9 @@ export class ConfigParser {
     if (ConfigParser.instance) {
       ConfigParser.instance.config = null;
       ConfigParser.instance.configPath = null;
-      ConfigParser.instance.runtimeBaseUrlOverride = null;
+      ConfigParser.instance.runtimeTarget = null;
+      ConfigParser.instance.site = null;
+      ConfigParser.instance.siteStartPath = '/';
     }
   }
 
@@ -486,11 +516,26 @@ export class ConfigParser {
     }
   }
 
+  private enterGlobalMode(config: ExplorbotConfig, target: string | null): void {
+    if (config.web?.url) {
+      throw new Error('Global config must not set web.url — the site comes from the command URL or a registered site');
+    }
+
+    const site = resolveSiteTarget(target || undefined);
+    this.site = registerSite(site.baseUrl);
+    this.siteStartPath = site.path;
+
+    config.dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
+    config.playwright = { ...config.playwright, browser: config.playwright?.browser || 'chromium', url: site.baseUrl };
+
+    log(`Global mode: ${site.baseUrl} stored in ${this.site.dir}`);
+  }
+
   private async buildEnvConfig(baseUrl: string | undefined, outputRoot: string): Promise<ExplorbotConfig> {
     const provider = process.env.EXPLORBOT_AI_PROVIDER;
     const modelSpec = process.env.EXPLORBOT_AI_MODEL;
     if (!provider && !modelSpec) {
-      throw new Error('No configuration file found. Please create explorbot.config.js or set EXPLORBOT_URL and EXPLORBOT_AI_PROVIDER environment variables');
+      throw new Error('No configuration file found. Create explorbot.config.js, run "explorbot init --global" to configure explorbot for this machine, or set EXPLORBOT_URL and EXPLORBOT_AI_PROVIDER environment variables');
     }
     if (modelSpec && !provider && !modelSpec.includes('/')) {
       throw new Error('EXPLORBOT_AI_MODEL needs a provider — set EXPLORBOT_AI_PROVIDER, or write it as "provider/model-id"');
@@ -542,7 +587,7 @@ export class ConfigParser {
       }
     }
 
-    return null;
+    return findGlobalConfig();
   }
 
   private async loadConfigModule(configPath: string): Promise<any> {
@@ -664,6 +709,19 @@ export async function resolveModel(spec: string, role: ModelRole = 'model'): Pro
   return createModel(spec, modelId);
 }
 
+export async function resolveConfigModels(ai?: AIConfig): Promise<void> {
+  if (!ai) return;
+
+  const roles: ModelRole[] = ['model', 'visionModel', 'agenticModel'];
+  for (const role of roles) {
+    if (typeof ai[role] === 'string') ai[role] = await resolveModel(ai[role], role);
+  }
+
+  for (const agent of Object.values(ai.agents || {})) {
+    if (typeof agent?.model === 'string') agent.model = await resolveModel(agent.model);
+  }
+}
+
 export function resolveOutputRoot(): string {
   if (cachedOutputRoot) return cachedOutputRoot;
 
@@ -700,14 +758,19 @@ export function materializeKnowledge(outputRoot: string): void {
 }
 
 export async function createModel(provider: string, modelId: string): Promise<any> {
-  const factory = PROVIDERS[provider];
-  if (!factory) {
+  const info = PROVIDERS[provider];
+  if (!info) {
     throw new Error(`Unknown AI provider "${provider}". Supported providers: ${Object.keys(PROVIDERS).join(', ')}`);
   }
-  return (await factory())(modelId);
+  return (await info.load())(modelId);
 }
 
 type ModelRole = 'model' | 'visionModel' | 'agenticModel';
+
+interface ProviderInfo {
+  envKey: string;
+  load: () => Promise<(modelId: string) => any>;
+}
 
 interface EnvVar {
   name: string;
@@ -715,4 +778,4 @@ interface EnvVar {
   required?: boolean;
 }
 
-export type { ModelRole, EnvVar };
+export type { ModelRole, EnvVar, ProviderInfo };

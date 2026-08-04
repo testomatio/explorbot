@@ -382,12 +382,46 @@ Explorbot looks for a config file in this order:
 7. `src/config/explorbot.config.js`
 8. `src/config/explorbot.config.mjs`
 9. `src/config/explorbot.config.ts`
+10. `~/.explorbot/config.js` (or `.mjs`, `.ts`) — the global installation
 
 Or pass a custom path:
 
 ```bash
 npx explorbot explore /dashboard --config ./custom/path/config.js
 ```
+
+The first file found wins as a whole: a project config never merges with the global one, and a config file always beats `EXPLORBOT_*` variables. Env files load in the opposite direction — `~/.explorbot/.env` first, then the `.env` of the current directory, so a project key overrides a global one.
+
+### Running from anywhere: the global installation
+
+`npx explorbot init --global` configures AI models and keys once in `~/.explorbot`, so explorbot commands work in any directory without a project. Every explored site gets its own folder that persists between runs:
+
+```
+~/.explorbot/
+├── config.js            # AI models and keys, no URL
+├── .env
+└── sites/
+    ├── app.example.com/
+    │   ├── site.json    # base URL, first and last run
+    │   ├── knowledge/
+    │   ├── experience/
+    │   └── output/      # states, plans, reports, tests
+    └── localhost_3000/
+```
+
+The folder name is the host and port of the site, lowercased, with characters invalid in directory names replaced by `_`.
+
+Global mode runs with full project semantics — experience is read and written, the Historian saves generated tests, reports land in the site's `output/` — so the tool keeps learning your app across runs.
+
+The site comes from the URL of the command, or from `EXPLORBOT_URL`:
+
+```bash
+npx explorbot explore https://app.example.com/login   # registers the site on first visit
+npx explorbot explore app.example.com/dashboard       # later runs: reference it by host
+npx explorbot sites                                   # list registered sites
+```
+
+Two rules keep the global config site-agnostic: a `web.url` in it is an error, and a `dirs` section is ignored in favor of the layout above.
 
 ### Running without a config file
 

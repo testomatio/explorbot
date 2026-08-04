@@ -48,7 +48,8 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Extract built-in rules | `npx explorbot extract-rules <agent>` | — | Customizable rules to `rules/` |
 | Create a rule file | `npx explorbot add-rule [agent] [name]` | `/add-rule [agent] [name]` | Writes `rules/<agent>/<name>.md` |
 | Manage persistent browser | `npx explorbot browser {start\|stop\|status}` | — | Share browser across runs |
-| Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*` |
+| Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*`, or `~/.explorbot` with `--global` |
+| List registered sites | `npx explorbot sites` | — | Sites stored in the global installation |
 | Clean generated files | `npx explorbot clean [target]` | `/clean [target]` | Same targets both ways |
 
 ## Common CLI Options
@@ -710,12 +711,41 @@ Exit the application gracefully.
 
 ### `npx explorbot init`
 
-Initialize project configuration.
+Initialize configuration. In an interactive terminal, plain `init` first asks where it should go: **Local** writes `explorbot.config.js` in the current directory, **Global** sets up `~/.explorbot` so explorbot runs from anywhere. The Global option is disabled once a global config exists — reinstall with `--global --force`.
 
 ```bash
 npx explorbot init
 npx explorbot init --config-path ./explorbot.config.js
 npx explorbot init --force
+```
+
+Passing `--config-path` or `--path` means local, and so does running outside a terminal (agents, CI): the chooser is skipped and the project config is written as before.
+
+`--global` runs the global wizard instead — pick a provider, paste the API key, optionally check it with one test AI call. The wizard writes `~/.explorbot/config.js` with the recommended model ids of this Explorbot version and stores the key in `~/.explorbot/.env`.
+
+```bash
+npx explorbot init --global
+npx explorbot init --global --provider openrouter --api-key sk-...   # no wizard
+npx explorbot init --global --force                                  # reinstall
+```
+
+| Option | Description |
+|--------|-------------|
+| `-c, --config-path <path>` | Path for the project config file |
+| `-f, --force` | Overwrite an existing config file |
+| `-p, --path <path>` | Working directory for initialization |
+| `-g, --global` | Configure `~/.explorbot` to run from anywhere |
+| `--provider <name>` | AI provider for the global config, skips the wizard |
+| `--api-key <key>` | API key stored in `~/.explorbot/.env` |
+
+See [Configuration](configuration.md#running-from-anywhere-the-global-installation) for the directory layout and how a site is resolved.
+
+### `npx explorbot sites`
+
+List the sites registered in the global installation — folder name, base URL, and last run. Sites register themselves the first time you explore them by URL.
+
+```bash
+npx explorbot sites
 ```
 
 ### `npx explorbot clean [target]`

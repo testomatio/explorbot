@@ -106,6 +106,15 @@ Config-free runs are built to leave no trace in the working directory:
 
 For a long-lived agent that should learn across runs, use a real config file with experience writing enabled. A stable `EXPLORBOT_OUTPUT` preserves run artifacts, but config-free mode still does not write experience.
 
+The middle ground is the global installation: `npx explorbot init --global --provider <name> --api-key <key>` configures models once in `~/.explorbot`, and every site explored afterwards keeps its own knowledge, experience, and output under `~/.explorbot/sites/<host>/`. Commands work from any directory, and the site comes from the URL you pass:
+
+```bash
+npx explorbot explore https://app.example.com/login   # first visit registers the site
+npx explorbot explore app.example.com/dashboard       # later runs reference it by host
+```
+
+Since it is a config file, it takes precedence over the `EXPLORBOT_*` variables above — an agent that wants stateless runs on a machine with a global config should point `--config` at its own file. See [Configuration](../reference/configuration.md#running-from-anywhere-the-global-installation).
+
 ### Reading results
 
 Everything lands under the output root:
