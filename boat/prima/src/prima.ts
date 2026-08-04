@@ -4,8 +4,8 @@ import { ActionResult } from '../../../src/action-result.ts';
 import type { Navigator } from '../../../src/ai/navigator.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createCodeceptJSTools } from '../../../src/ai/tools.ts';
-import { getAliveEndpoint, listInstances } from '../../../src/browser-server.ts';
-import { outputPath } from '../../../src/config.ts';
+import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
+import { ConfigParser, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Task } from '../../../src/test-plan.ts';
@@ -23,6 +23,7 @@ export class Prima {
   private options: PrimaOptions;
   private bot: ExplorBot;
   private artifactsDir?: string;
+  private server: { close: () => Promise<void> } | null = null;
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -188,6 +189,59 @@ export class Prima {
     return this.reportEnvelope(command, result, previousState, { research: uiMap });
   }
 
+  async go(target: string): Promise<EnvelopeData> {
+    const command = `go ${target}`;
+    const code = `I.amOnPage('${target}')`;
+    const isUrl = this.isUrlTarget(target);
+
+    if (!isUrl) {
+      const guard = await this.aiGuard(command);
+      if (guard) return guard;
+    }
+
+    const previousState = this.bot.stateManager().getCurrentState();
+    let navigationError: unknown = null;
+
+    try {
+      await this.bot.agentNavigator().visit(target);
+    } catch (error) {
+      navigationError = error;
+    }
+
+    if (navigationError) return this.heal(command, code, navigationError, previousState);
+
+    const used: string[] = [];
+    if (isUrl) used.push(code);
+    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+    return this.successEnvelope(command, used, result, previousState);
+  }
+
+  async browserStart(): Promise<void> {
+    const config = await ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path });
+    this.server = await this.launchOwnServer({ browser: config.playwright.browser, show: config.playwright.show }, this.instanceName());
+  }
+
+  async browserStop(all = false): Promise<void> {
+    if (!all) {
+      await this.stopInstance(this.instanceName());
+      return;
+    }
+
+    for (const instance of listInstances()) {
+      await this.stopInstance(instance.name);
+    }
+  }
+
+  async browserStatus(): Promise<string> {
+    const info = await this.instanceInfo();
+    const endpoint = await getAliveEndpoint(info.name);
+    const others = info.others.map((other) => other.name).join(', ') || 'none';
+    const lines = [`instance: ${info.name} (${info.tabs} ${pluralize(info.tabs, 'tab')}) | other instances: ${others}`];
+    if (!endpoint) lines.push('browser: not running');
+    if (endpoint) lines.push(`browser: running at ${endpoint}`);
+    return lines.join('\n');
+  }
+
   async instanceInfo(): Promise<InstanceInfo> {
     const name = this.instanceName();
     const others = listInstances()
@@ -199,6 +253,26 @@ export class Prima {
 
   private async connectOwnInstance(): Promise<boolean> {
     return !!(await getAliveEndpoint(this.instanceName()));
+  }
+
+  private async launchOwnServer(opts: { browser?: string; show?: boolean }, instance: string): Promise<{ close: () => Promise<void> }> {
+    return launchServer(opts, instance);
+  }
+
+  private async stopInstance(instance: string): Promise<void> {
+    if (instance === this.instanceName()) {
+      const server = this.server;
+      this.server = null;
+      await server?.close();
+    }
+
+    await stopServer(instance);
+  }
+
+  private isUrlTarget(target: string): boolean {
+    const value = target.trim();
+    if (value.startsWith('/')) return true;
+    return URL.canParse(value);
   }
 
   private async heal(command: string, expression: string, error: unknown, previousState: WebPageState | null): Promise<EnvelopeData> {

@@ -101,6 +101,19 @@ async function launchServer(opts: { browser?: string; show?: boolean }, instance
   return server;
 }
 
+async function stopServer(instance = 'default'): Promise<boolean> {
+  const endpoint = await getAliveEndpoint(instance);
+  if (!endpoint) return false;
+
+  try {
+    const browser = await chromium.connect(endpoint, { timeout: 3000 });
+    await browser.close();
+  } catch {}
+
+  removeEndpointFile(instance);
+  return true;
+}
+
 async function getAliveEndpoint(instance = 'default'): Promise<string | null> {
   const endpoint = readEndpoint(instance);
   if (!endpoint) return null;
@@ -109,4 +122,4 @@ async function getAliveEndpoint(instance = 'default'): Promise<string | null> {
   return null;
 }
 
-export { readEndpoint, removeEndpointFile, isServerRunning, launchServer, getEndpointFilePath, getAliveEndpoint, listInstances };
+export { readEndpoint, removeEndpointFile, isServerRunning, launchServer, stopServer, getEndpointFilePath, getAliveEndpoint, listInstances };

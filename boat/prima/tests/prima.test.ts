@@ -1,7 +1,8 @@
-import { beforeAll, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { getEndpointFilePath, listInstances } from '../../../src/browser-server.ts';
 import { ConfigParser } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { Prima } from '../src/prima.ts';
@@ -9,6 +10,10 @@ import { Prima } from '../src/prima.ts';
 beforeAll(() => {
   ConfigParser.resetForTesting();
   ConfigParser.setupTestConfig();
+});
+
+afterAll(() => {
+  ConfigParser.cleanupAllTestDirectories();
 });
 
 function fakeState(over: Record<string, unknown> = {}) {
@@ -498,5 +503,178 @@ describe('Prima.instanceInfo', () => {
     expect(info.name).toBe('default');
     expect(info.tabs).toBe(0);
     expect(info.others).toEqual([]);
+  });
+});
+
+describe('Prima.go', () => {
+  test('delegates to navigator.visit and returns envelope', async () => {
+    const { prima } = fakePrima();
+    const visited: string[] = [];
+    (prima as any).bot.agentNavigator = () => ({
+      visit: async (destination: string) => {
+        visited.push(destination);
+      },
+    });
+
+    const envelope = await prima.go('billing settings');
+    expect(visited).toEqual(['billing settings']);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.command).toBe('go billing settings');
+    expect(envelope.page.url).toBeTruthy();
+    expect(envelope.used).toEqual([]);
+  });
+
+  test('url target reports the executed navigation code as used', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentNavigator = () => ({ visit: async () => {} });
+
+    const envelope = await prima.go('/dashboard');
+    expect(envelope.ok).toBe(true);
+    expect(envelope.used).toEqual(["I.amOnPage('/dashboard')"]);
+    expect(envelope.page.url).toBe('https://app.example.com/dashboard');
+  });
+
+  test('url target navigates without an ai model', async () => {
+    const { prima } = fakePrima();
+    const visited: string[] = [];
+    (prima as any).bot.getProvider = () => {
+      throw new Error('AI connection failed: no credentials');
+    };
+    (prima as any).bot.agentNavigator = () => ({
+      visit: async (destination: string) => {
+        visited.push(destination);
+      },
+    });
+
+    const envelope = await prima.go('https://app.example.com/billing');
+    expect(visited).toEqual(['https://app.example.com/billing']);
+    expect(envelope.ok).toBe(true);
+  });
+
+  test('intent target without an ai model returns the playwright-cli fallback', async () => {
+    const { prima } = fakePrima();
+    let navigated = false;
+    (prima as any).bot.getProvider = () => {
+      throw new Error('AI connection failed: no credentials');
+    };
+    (prima as any).bot.agentNavigator = () => {
+      navigated = true;
+      return { visit: async () => {} };
+    };
+
+    const envelope = await prima.go('billing settings');
+    expect(navigated).toBe(false);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('playwright-cli');
+    expect(envelope.failure?.error).toContain('AI connection failed: no credentials');
+  });
+
+  test('failed url navigation without ai degrades to a failure envelope', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => {
+      throw new Error('AI provider is not configured');
+    };
+    (prima as any).bot.agentNavigator = () => ({
+      visit: async () => {
+        throw new Error('Navigation to /billing failed: redirected to /login and could not resolve');
+      },
+    });
+
+    const envelope = await prima.go('/billing');
+    expect(envelope.ok).toBe(false);
+    expect(envelope.healed).toBe(false);
+    expect(envelope.healNote).toContain('ai unavailable');
+    expect(envelope.failure?.error).toContain('redirected to /login');
+  });
+
+  test('navigation error is routed through heal', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentNavigator = () => ({
+      visit: async () => {
+        throw new Error('Navigation to /billing failed');
+      },
+      resolveState: async (_message: string, _result: unknown, opts: any) => {
+        opts?.onAttempt?.({ code: "I.click('Billing')" });
+        return true;
+      },
+    });
+
+    const envelope = await prima.go('/billing');
+    expect(envelope.ok).toBe(true);
+    expect(envelope.healed).toBe(true);
+    expect(envelope.used).toEqual(["I.click('Billing')"]);
+  });
+
+  test('go cannot run before a session exists and never launches a browser', async () => {
+    const prima = new Prima({ instance: 'default' });
+    let started = false;
+    (prima as any).bot = {
+      start: async () => {
+        started = true;
+      },
+    };
+
+    await expect(prima.start()).rejects.toThrow(/prima browser start/);
+    expect(started).toBe(false);
+    expect(existsSync(getEndpointFilePath('default'))).toBe(false);
+  });
+});
+
+describe('Prima browser instances', () => {
+  afterEach(() => {
+    for (const instance of ['default', 'staging']) {
+      rmSync(getEndpointFilePath(instance), { force: true });
+    }
+  });
+
+  function writeDeadEndpoint(instance: string) {
+    const file = getEndpointFilePath(instance);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, `ws://127.0.0.1:1/${instance}`, 'utf8');
+  }
+
+  test('browserStart launches the configured browser for the instance and keeps the server', async () => {
+    const { prima } = fakePrima({ instance: 'staging' });
+    const launches: any[] = [];
+    let closed = false;
+    (prima as any).launchOwnServer = async (opts: any, instance: string) => {
+      launches.push({ opts, instance });
+      return {
+        close: async () => {
+          closed = true;
+        },
+      };
+    };
+
+    await prima.browserStart();
+    expect(launches).toEqual([{ opts: { browser: 'chromium', show: false }, instance: 'staging' }]);
+
+    await prima.browserStop();
+    expect(closed).toBe(true);
+  });
+
+  test('browserStop with all clears every registered instance', async () => {
+    const { prima } = fakePrima();
+    writeDeadEndpoint('default');
+    writeDeadEndpoint('staging');
+    expect(listInstances().length).toBe(2);
+
+    await prima.browserStop(true);
+    expect(listInstances()).toEqual([]);
+  });
+
+  test('browserStatus reports the instance, tabs and other instances', async () => {
+    const { prima } = fakePrima();
+    writeDeadEndpoint('staging');
+
+    const status = await prima.browserStatus();
+    expect(status).toContain('instance: default (0 tabs)');
+    expect(status).toContain('staging');
+    expect(status).toContain('browser: not running');
+  });
+
+  test('session file is wired into the browser context options', () => {
+    const prima = new Prima({ session: 'output/session.json' });
+    expect((prima as any).bot.options.session).toBe('output/session.json');
   });
 });

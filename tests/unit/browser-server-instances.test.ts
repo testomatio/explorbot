@@ -1,7 +1,7 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { getEndpointFilePath, listInstances } from '../../src/browser-server.ts';
+import { getEndpointFilePath, listInstances, stopServer } from '../../src/browser-server.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 describe('named instances', () => {
@@ -58,6 +58,15 @@ describe('named instances', () => {
   });
 
   test('lists nothing when endpoint dir is missing', () => {
+    expect(listInstances()).toEqual([]);
+  });
+
+  test('stopping an instance with a dead endpoint reports nothing was running and clears it', async () => {
+    const dir = path.dirname(getEndpointFilePath());
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(getEndpointFilePath('staging'), 'ws://127.0.0.1:1/staging', 'utf8');
+
+    expect(await stopServer('staging')).toBe(false);
     expect(listInstances()).toEqual([]);
   });
 });

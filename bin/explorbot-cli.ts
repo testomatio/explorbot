@@ -783,25 +783,17 @@ browserCmd
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
-    const { getAliveEndpoint, removeEndpointFile } = await import('../src/browser-server.js');
+    const { stopServer } = await import('../src/browser-server.js');
     await ConfigParser.getInstance().loadConfig({
       config: options.config,
       path: options.path,
     });
 
-    const endpoint = await getAliveEndpoint(options.instance);
-    if (!endpoint) {
+    if (!(await stopServer(options.instance))) {
       console.log('No running browser server found.');
       process.exit(0);
     }
 
-    try {
-      const { chromium } = await import('playwright-core');
-      const browser = await chromium.connect(endpoint, { timeout: 3000 });
-      await browser.close();
-    } catch {}
-
-    removeEndpointFile(options.instance);
     console.log('Browser server stopped.');
   });
 
