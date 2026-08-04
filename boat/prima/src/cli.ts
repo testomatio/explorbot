@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import dedent from 'dedent';
 import { keepServerRunning } from '../../../src/browser-server.ts';
+import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
@@ -37,7 +38,7 @@ const helpContract = dedent`
     ### Instance   the browser you are on and the other instances running
     ### Artifacts  paths to the full aria.yml, page.html and network.jsonl
     used: is verified code that already executed - copy it into a test as is.
-    Set EXPLORBOT_NO_BANNER=1 so nothing but the envelope reaches stdout.
+    Log lines can precede the envelope; start parsing at the first ### line.
 
   HEALING AND FAILURE
     A failed action is retried by AI along a different route; healed: true means the
@@ -49,11 +50,13 @@ const helpContract = dedent`
   SESSIONS
     --instance <name>  which browser process you talk to; parallel work needs one each
     --session [file]   cookies and storage persisted across processes
-    --endpoint, --pw-session  attach to a browser opened by playwright-cli
-    Prima never launches a browser implicitly. Open one with playwright-cli (preferred)
-    or with prima browser start, and close it when finished - ### Instance lists what
-    you own. When no AI model is usable pw still works; for everything else drive
+    Prima never launches a browser implicitly. The session it drives is the one from
+    prima browser start; close it when finished - ### Instance lists what you own.
+    When no AI model is usable pw still works; for everything else drive
     playwright-cli directly.
+    Parsed but not active yet: --endpoint and --pw-session, so a browser opened by
+    playwright-cli cannot be reached yet; and --framework, so reported code is
+    CodeceptJS whatever you pass.
 `;
 
 function buildOptions(options: any): PrimaOptions {
@@ -85,10 +88,10 @@ function addCommonOptions(cmd: Command): Command {
     .option('--session [file]', 'Persist cookies and storage to a session file')
     .option('--no-heal', 'Fail immediately instead of letting AI retry a failed action')
     .option('--ephemeral', 'Keep no state between runs, output goes to a temp directory')
-    .option('--framework <name>', 'Framework the reported code targets: codeceptjs or playwright')
+    .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')
-    .option('--endpoint <ep>', 'Websocket endpoint of a playwright-cli browser to attach to')
-    .option('--pw-session <title>', 'Title of a playwright-cli session to attach to');
+    .option('--endpoint <ep>', 'Not active yet: websocket endpoint of a playwright-cli browser to attach to')
+    .option('--pw-session <title>', 'Not active yet: title of a playwright-cli session to attach to');
 }
 
 function primaFor(options: any): Prima {
@@ -111,6 +114,18 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
   console.log(renderEnvelope(envelope));
   await prima.stop().catch(() => {});
   process.exit(envelope.ok ? 0 : 1);
+}
+
+async function runBrowser(options: any, run: (prima: Prima) => Promise<boolean>): Promise<void> {
+  let ok = false;
+  try {
+    ok = await run(primaFor(options));
+  } catch (error) {
+    console.error(browserErrorMessage(error));
+    process.exit(1);
+  }
+
+  process.exit(ok ? 0 : 1);
 }
 
 export function createPrimaCommands(name = 'prima'): Command {
@@ -158,26 +173,35 @@ export function createPrimaCommands(name = 'prima'): Command {
     .option('-s, --show', 'Launch the browser in a visible window')
     .option('--headless', 'Launch the browser without a window')
     .action(async (options) => {
-      const prima = primaFor(options);
-      await prima.browserStart();
-      console.log(await prima.browserStatus());
-      keepServerRunning(() => prima.browserStop());
+      await runBrowser(options, async (prima) => {
+        await prima.browserStart();
+        console.log(await prima.browserStatus());
+        return keepServerRunning(() => prima.browserStop());
+      });
     });
 
   addCommonOptions(browser.command('stop').description('Stop the browser of this instance'))
     .option('--all', 'Stop every running instance')
     .action(async (options) => {
-      const prima = primaFor(options);
-      await prima.browserStop(options.all);
-      console.log(await prima.browserStatus());
+      await runBrowser(options, async (prima) => {
+        const stopped = await prima.browserStop(options.all);
+        console.log(await prima.browserStatus());
+        return stopped;
+      });
     });
 
   addCommonOptions(browser.command('status').description('Report the browser of this instance')).action(async (options) => {
-    console.log(await primaFor(options).browserStatus());
+    await runBrowser(options, async (prima) => {
+      console.log(await prima.browserStatus());
+      return true;
+    });
   });
 
   addCommonOptions(browser.command('list').description('List every browser instance that is running')).action(async (options) => {
-    console.log(await primaFor(options).browserList());
+    await runBrowser(options, async (prima) => {
+      console.log(await prima.browserList());
+      return true;
+    });
   });
 
   return cmd;

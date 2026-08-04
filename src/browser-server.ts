@@ -115,7 +115,7 @@ async function stopServer(instance = 'default'): Promise<boolean> {
   return true;
 }
 
-function keepServerRunning(stop: () => void | Promise<void>): void {
+function keepServerRunning(stop: () => unknown): Promise<never> {
   console.log('Browser server is running. Press Ctrl+C to stop.');
   const heartbeat = setInterval(() => {}, KEEP_ALIVE_INTERVAL);
 
@@ -128,6 +128,8 @@ function keepServerRunning(stop: () => void | Promise<void>): void {
 
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
+
+  return new Promise<never>(() => {});
 }
 
 async function getAliveEndpoint(instance = 'default'): Promise<string | null> {

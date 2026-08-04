@@ -763,7 +763,7 @@ browserCmd
       options.instance
     );
 
-    keepServerRunning(async () => {
+    await keepServerRunning(async () => {
       await server.close();
       removeEndpointFile(options.instance);
     });

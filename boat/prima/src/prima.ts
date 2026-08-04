@@ -45,9 +45,10 @@ export class Prima {
       throw new Error(dedent`
         No browser session found for instance "${this.instanceName()}".
         Create one first:
-          playwright-cli open <url>   preferred, prima drives that session
-          prima browser start        starts a prima-owned browser
+          prima browser start   starts a prima-owned browser
         Prima never launches a browser implicitly.
+        Attaching to a browser opened by playwright-cli is not wired yet, so --endpoint
+        and --pw-session cannot reach one.
       `);
     }
 
@@ -226,17 +227,16 @@ export class Prima {
     this.server = await this.launchOwnServer({ browser: config.playwright.browser, show }, this.instanceName());
   }
 
-  async browserStop(all = false): Promise<void> {
+  async browserStop(all = false): Promise<boolean> {
     await this.loadConfig();
 
-    if (!all) {
-      await this.stopInstance(this.instanceName());
-      return;
-    }
+    if (!all) return this.stopInstance(this.instanceName());
 
+    let stopped = false;
     for (const instance of listInstances()) {
-      await this.stopInstance(instance.name);
+      if (await this.stopInstance(instance.name)) stopped = true;
     }
+    return stopped;
   }
 
   async browserStatus(): Promise<string> {
@@ -276,12 +276,14 @@ export class Prima {
   async toolFailureEnvelope(command: string, error: unknown): Promise<EnvelopeData> {
     const state = this.bot.getCurrentState();
     const instance = await this.instanceInfo().catch(() => ({ name: this.instanceName(), tabs: 0, others: [] }));
+    const failure: EnvelopeData['failure'] = { error: `tool: ${browserErrorMessage(error)}`, attempts: [] };
+    if (state?.ariaSnapshot) failure.compactAria = compactAriaSnapshot(state.ariaSnapshot, true);
 
     return {
       ok: false,
       command,
       page: { url: state?.url || '', title: state?.title || '', state: state?.hash || '', visits: 0 },
-      failure: { error: `tool: ${browserErrorMessage(error)}`, attempts: [] },
+      failure,
       instance,
     };
   }
@@ -298,14 +300,14 @@ export class Prima {
     return launchServer(opts, instance);
   }
 
-  private async stopInstance(instance: string): Promise<void> {
+  private async stopInstance(instance: string): Promise<boolean> {
     if (instance === this.instanceName()) {
       const server = this.server;
       this.server = null;
       await server?.close();
     }
 
-    await stopServer(instance);
+    return stopServer(instance);
   }
 
   private isUrlTarget(target: string): boolean {
@@ -495,10 +497,8 @@ export class Prima {
   private async failureEnvelope(command: string, error: unknown, previousState: WebPageState | null, attempts: HealAttempt[] = []): Promise<EnvelopeData> {
     const result = await this.capturedResult(previousState);
     const failure: EnvelopeData['failure'] = { error: browserErrorMessage(error), attempts };
-    if (attempts.length) {
-      failure.reasoning = [...new Set(attempts.map((attempt) => attempt.outcome))].join('; ');
-      failure.compactAria = compactAriaSnapshot(result.ariaSnapshot, true);
-    }
+    if (result.ariaSnapshot) failure.compactAria = compactAriaSnapshot(result.ariaSnapshot, true);
+    if (attempts.length) failure.reasoning = [...new Set(attempts.map((attempt) => attempt.outcome))].join('; ');
 
     return {
       ok: false,

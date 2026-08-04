@@ -116,7 +116,8 @@ function otherInstances(others: string[]): string {
 function browserLine(instance: InstanceInfo): string {
   if (instance.attached) return `browser: attached (${instance.attached})`;
   if (instance.startedAgo) return `browser: running, started ${instance.startedAgo} ago`;
-  return 'browser: running';
+  if (instance.tabs > 0) return 'browser: running';
+  return 'browser: not running';
 }
 
 function tabsLabel(tabs: number): string {

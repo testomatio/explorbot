@@ -86,6 +86,17 @@ describe('renderEnvelope', () => {
     expect(out).toContain('browser: attached (playwright-cli session "default"');
     expect(out).not.toContain('started 12m ago');
   });
+
+  test('instance without evidence of a live browser reports it as not running', () => {
+    const out = renderEnvelope({ ...base, instance: { name: 'default', tabs: 0, others: [] } });
+    expect(out).toContain('browser: not running');
+  });
+
+  test('open tabs alone are evidence enough for a running browser', () => {
+    const out = renderEnvelope({ ...base, instance: { name: 'default', tabs: 2, others: [] } });
+    expect(out).toContain('browser: running');
+    expect(out).not.toContain('browser: not running');
+  });
 });
 
 describe('writeArtifacts', () => {

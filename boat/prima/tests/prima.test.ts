@@ -90,6 +90,7 @@ describe('Prima.pw', () => {
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toContain('tool:');
     expect(envelope.failure?.error).toContain('function');
+    expect(envelope.failure?.compactAria).toContain('button');
     expect(executed.length).toBe(0);
   });
 
@@ -212,6 +213,7 @@ describe('Prima heal', () => {
     expect(envelope.ok).toBe(false);
     expect(envelope.healed).toBeUndefined();
     expect(envelope.failure?.attempts).toEqual([]);
+    expect(envelope.failure?.compactAria).toContain('button');
   });
 
   test('unusable ai provider skips healing and notes it in the envelope', async () => {
@@ -244,7 +246,7 @@ describe('Prima.start', () => {
         started = true;
       },
     };
-    await expect(prima.start()).rejects.toThrow(/playwright-cli open/);
+    await expect(prima.start()).rejects.toThrow(/not wired yet/);
     expect(started).toBe(false);
   });
 });
