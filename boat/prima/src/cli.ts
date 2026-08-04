@@ -37,7 +37,8 @@ const helpContract = dedent`
     ### Failure    error, reasoning, healing attempts, compact ARIA of the page
     ### Instance   the browser you are on and the other instances running
     ### Artifacts  paths to the full aria.yml, page.html and network.jsonl
-    used: is verified code that already executed - copy it into a test as is.
+    used: is code that already executed - CodeceptJS steps to copy as they are, except
+          for pw, whose Playwright expression a test needs inside I.usePlaywrightTo(...).
     Log lines can precede the envelope; start parsing at the first ### line.
 
   HEALING AND FAILURE
@@ -175,6 +176,7 @@ export function createPrimaCommands(name = 'prima'): Command {
   });
 
   addCommonOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
+    if (!options.url && URL.canParse(target)) options.url = target;
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
 

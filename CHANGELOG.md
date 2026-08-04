@@ -44,6 +44,7 @@ Prima also ships as a standalone `prima` bin. See [Commands](docs/reference/comm
 ### Changes
 
 - Config-free runs now keep their output in a per-host state directory, `~/.explorbot/state/<host>/`, instead of a fresh temp directory every time — states, plans, research, and reports for the same app collect in one place. `EXPLORBOT_OUTPUT` still overrides the location, and `EXPLORBOT_EPHEMERAL=1` restores the throwaway behavior.
+- Config-free runs now write experience into that state directory, so what worked on a page is remembered for the next run against the same host. Ephemeral runs still write none.
 - `explorbot browser start` now stays in the foreground until Ctrl+C. Previously the process could exit as soon as it had printed the endpoint.
 
 ## 2026-07-22

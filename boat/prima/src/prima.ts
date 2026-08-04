@@ -37,6 +37,7 @@ export class Prima {
     this.bot = new ExplorBot({
       config: options.config,
       path: options.path,
+      baseUrl: this.configBaseUrl(),
       verbose: options.verbose,
       session: options.session,
       instance: options.instance,
@@ -294,7 +295,14 @@ export class Prima {
   }
 
   private async loadConfig(): Promise<ExplorbotConfig> {
-    return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path });
+    return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path, baseUrl: this.configBaseUrl() });
+  }
+
+  private configBaseUrl(): string | undefined {
+    const url = this.options.url;
+    if (!url) return undefined;
+    if (!URL.canParse(url)) return undefined;
+    return url;
   }
 
   private async resolveBrowser(config: ExplorbotConfig): Promise<void> {

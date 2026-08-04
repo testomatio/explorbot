@@ -542,7 +542,7 @@ export class ConfigParser {
       playwright: { browser: 'chromium', url, show: false },
       ai,
       dirs: { knowledge: 'knowledge', experience: 'experience', output: '.' },
-      experience: { disabled: true },
+      experience: { disabled: !!process.env.EXPLORBOT_EPHEMERAL },
     };
   }
 

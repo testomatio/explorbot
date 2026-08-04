@@ -164,6 +164,25 @@ describe('config-free state root', () => {
     expect(parser.getOutputDir()).toContain('explorbot');
   });
 
+  test('records experience while the state root is persistent', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: project });
+
+    expect(config.experience?.disabled).toBe(false);
+  });
+
+  test('records no experience when the state root is ephemeral', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+    process.env.EXPLORBOT_EPHEMERAL = '1';
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: project });
+
+    expect(config.experience?.disabled).toBe(true);
+  });
+
   test('leaves an unparseable url to config validation', async () => {
     process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
     process.env.EXPLORBOT_URL = 'example.com';

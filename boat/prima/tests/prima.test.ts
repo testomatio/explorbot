@@ -1,7 +1,8 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Navigator } from '../../../src/ai/navigator.ts';
 import { getEndpointFilePath, listInstances } from '../../../src/browser-server.ts';
 import { ConfigParser } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
@@ -775,20 +776,28 @@ describe('Prima.go', () => {
 
   test('failed url navigation without ai degrades to a failure envelope', async () => {
     const { prima } = fakePrima();
+    const navigator = Object.create(Navigator.prototype) as any;
+    navigator.provider = undefined;
+    navigator.config = { playwright: { url: 'https://app.example.com' } };
+    navigator.hooksRunner = { runBeforeHook: async () => {}, runAfterHook: async () => {} };
+    navigator.explorer = {
+      action: () => ({
+        execute: async () => {},
+        lastError: null,
+        actionResult: fakeState(),
+        stateManager: { getCurrentState: () => ({ url: '/login', fullUrl: 'https://app.example.com/login' }) },
+      }),
+    };
     (prima as any).bot.getProvider = () => {
       throw new Error('AI provider is not configured');
     };
-    (prima as any).bot.agentNavigator = () => ({
-      visit: async () => {
-        throw new Error('Navigation to /billing failed: redirected to /login and could not resolve');
-      },
-    });
+    (prima as any).bot.agentNavigator = () => navigator;
 
     const envelope = await prima.go('/billing');
     expect(envelope.ok).toBe(false);
     expect(envelope.healed).toBe(false);
     expect(envelope.healNote).toContain('ai unavailable');
-    expect(envelope.failure?.error).toContain('redirected to /login');
+    expect(envelope.failure?.error).toContain('AI-assisted recovery is unavailable');
   });
 
   test('navigation error is routed through heal', async () => {
@@ -881,5 +890,35 @@ describe('Prima browser instances', () => {
   test('session file is wired into the browser context options', () => {
     const prima = new Prima({ session: 'output/session.json' });
     expect((prima as any).bot.options.session).toBe('output/session.json');
+  });
+});
+
+describe('Prima base url', () => {
+  function recordConfigLoad() {
+    const loadConfig = spyOn(ConfigParser.getInstance(), 'loadConfig').mockImplementation(async () => ({}) as any);
+    loadConfig.mockClear();
+    return loadConfig;
+  }
+
+  test('a url is seeded into every config load, so a config-free run has one', async () => {
+    const prima = new Prima({ url: 'https://app.example.com/login' });
+    const loadConfig = recordConfigLoad();
+
+    await (prima as any).loadConfig();
+
+    expect((prima as any).bot.options.baseUrl).toBe('https://app.example.com/login');
+    expect(loadConfig.mock.calls.at(-1)?.[0].baseUrl).toBe('https://app.example.com/login');
+    loadConfig.mockRestore();
+  });
+
+  test('a path is left out, so the configured base url stays in charge', async () => {
+    const prima = new Prima({ url: '/dashboard' });
+    const loadConfig = recordConfigLoad();
+
+    await (prima as any).loadConfig();
+
+    expect((prima as any).bot.options.baseUrl).toBeUndefined();
+    expect(loadConfig.mock.calls.at(-1)?.[0].baseUrl).toBeUndefined();
+    loadConfig.mockRestore();
   });
 });

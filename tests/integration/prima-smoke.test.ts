@@ -197,6 +197,47 @@ describe('Prima without a browser session', () => {
   }, 60000);
 });
 
+describe('Prima without a config file', () => {
+  let workspace: string;
+  let home: string;
+
+  beforeAll(() => {
+    workspace = mkdtempSync(path.join(tmpdir(), 'prima-config-free-'));
+    home = path.join(workspace, 'home');
+    mkdirSync(path.join(home, '.cache'), { recursive: true });
+  });
+
+  afterAll(() => {
+    rmSync(workspace, { recursive: true, force: true });
+  });
+
+  function runCli(args: string[]) {
+    const env: Record<string, string> = { ...process.env, HOME: home, XDG_CACHE_HOME: path.join(home, '.cache'), EXPLORBOT_AI_PROVIDER: 'groq' };
+    for (const key of ['EXPLORBOT_URL', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL']) delete env[key];
+
+    const run = Bun.spawnSync(['bun', PRIMA_CLI, ...args], { cwd: workspace, env });
+    return { exitCode: run.exitCode, stdout: run.stdout.toString() };
+  }
+
+  test('the go target is the url the configuration is built around', () => {
+    const run = runCli(['go', 'https://app.example.com/login']);
+
+    expect(run.stdout).not.toContain('No URL to explore');
+    expect(run.stdout).toContain('playwright-cli open');
+    expect(run.exitCode).toBe(1);
+    expect(existsSync(path.join(home, '.explorbot', 'state', 'app.example.com'))).toBe(true);
+  }, 60000);
+
+  test('--url is the url the configuration is built around', () => {
+    const run = runCli(['pw', "({ page }) => page.click('text=Submit')", '--url', 'https://shop.example.com']);
+
+    expect(run.stdout).not.toContain('No URL to explore');
+    expect(run.stdout).toContain('playwright-cli open');
+    expect(run.exitCode).toBe(1);
+    expect(existsSync(path.join(home, '.explorbot', 'state', 'shop.example.com'))).toBe(true);
+  }, 60000);
+});
+
 describe('Prima attaches to a live playwright-cli session', () => {
   test.skipIf(!liveSession)(
     'reports the playwright-cli session it is driving — skipped unless a playwright-cli session is open for this workspace',

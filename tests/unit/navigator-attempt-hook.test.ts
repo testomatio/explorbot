@@ -67,4 +67,11 @@ describe('Navigator resolveState attempt hook', () => {
 
     expect(resolved).toBe(true);
   });
+
+  it('says AI recovery is unavailable when no provider is configured', async () => {
+    const navigator = createNavigator('', '#login-btn');
+    navigator.provider = undefined;
+
+    await expect(navigator.resolveState('click Login', fakeActionResult())).rejects.toThrow(/AI-assisted recovery is unavailable/);
+  });
 });

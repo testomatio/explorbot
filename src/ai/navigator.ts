@@ -190,6 +190,8 @@ class Navigator implements Agent {
   }
 
   async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string; onAttempt?: (attempt: { code: string; error?: string }) => void }): Promise<boolean> {
+    if (!this.provider) throw new Error('AI-assisted recovery is unavailable: no AI model is configured.');
+
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
 
