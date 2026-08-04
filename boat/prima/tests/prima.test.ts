@@ -921,4 +921,39 @@ describe('Prima base url', () => {
     expect(loadConfig.mock.calls.at(-1)?.[0].baseUrl).toBeUndefined();
     loadConfig.mockRestore();
   });
+
+  test('a base url only reaches the configuration, never the browser', async () => {
+    const { prima } = fakePrima({ baseUrl: 'https://app.example.com/billing' });
+    const loadConfig = recordConfigLoad();
+    const visited: string[] = [];
+    (prima as any).bot.start = async () => {};
+    (prima as any).bot.getCurrentState = () => null;
+    (prima as any).bot.visit = async (url: string) => visited.push(`start:${url}`);
+    (prima as any).bot.agentNavigator = () => ({ visit: async (url: string) => visited.push(`go:${url}`) });
+    (prima as any).discover = () => ({ candidates: [] });
+    (prima as any).connectOwnInstance = async () => true;
+
+    await prima.start();
+    await prima.go('https://app.example.com/billing');
+
+    expect(loadConfig.mock.calls.at(-1)?.[0].baseUrl).toBe('https://app.example.com/billing');
+    expect(visited).toEqual(['go:https://app.example.com/billing']);
+    loadConfig.mockRestore();
+  });
+
+  test('an explicit url is still opened when the session has no page', async () => {
+    const { prima } = fakePrima({ url: 'https://app.example.com/billing' });
+    const loadConfig = recordConfigLoad();
+    const visited: string[] = [];
+    (prima as any).bot.start = async () => {};
+    (prima as any).bot.getCurrentState = () => null;
+    (prima as any).bot.visit = async (url: string) => visited.push(`start:${url}`);
+    (prima as any).discover = () => ({ candidates: [] });
+    (prima as any).connectOwnInstance = async () => true;
+
+    await prima.start();
+
+    expect(visited).toEqual(['start:https://app.example.com/billing']);
+    loadConfig.mockRestore();
+  });
 });

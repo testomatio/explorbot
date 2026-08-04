@@ -299,7 +299,7 @@ export class Prima {
   }
 
   private configBaseUrl(): string | undefined {
-    const url = this.options.url;
+    const url = this.options.baseUrl || this.options.url;
     if (!url) return undefined;
     if (!URL.canParse(url)) return undefined;
     return url;
@@ -696,6 +696,7 @@ export interface PrimaOptions {
   framework?: 'codeceptjs' | 'playwright';
   noVision?: boolean;
   url?: string;
+  baseUrl?: string;
   show?: boolean;
   headless?: boolean;
   endpoint?: string;

@@ -83,6 +83,7 @@ function buildOptions(options: any): PrimaOptions {
     framework: options.framework,
     noVision: options.vision === false,
     url: options.url,
+    baseUrl: options.baseUrl,
     show: options.show,
     headless: options.headless,
     endpoint: options.endpoint,
@@ -176,7 +177,7 @@ export function createPrimaCommands(name = 'prima'): Command {
   });
 
   addCommonOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
-    if (!options.url && URL.canParse(target)) options.url = target;
+    if (URL.canParse(target)) options.baseUrl = target;
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
 
