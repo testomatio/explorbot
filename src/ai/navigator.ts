@@ -6,7 +6,7 @@ import type Action from '../action.ts';
 import type { ExplorbotConfig } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
-import type { KnowledgeTracker } from '../knowledge-tracker.js';
+import { type KnowledgeTracker, renderKnowledgeContext } from '../knowledge-tracker.js';
 import { type StateManager, normalizeUrl } from '../state-manager.js';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
@@ -196,7 +196,7 @@ class Navigator implements Agent {
     const action = opts?.action ?? this.explorer.action();
     const expectedUrl = opts?.expectedUrl;
 
-    const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
+    const knowledge = renderKnowledgeContext(this.knowledgeTracker, actionResult);
     let experience = '';
 
     if (!actionResult.isInsideIframe) {
@@ -625,7 +625,7 @@ class Navigator implements Agent {
       return { verified: cachedVerification, successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
-    const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
+    const knowledge = renderKnowledgeContext(this.knowledgeTracker, actionResult);
     let experience = '';
 
     if (!actionResult.isInsideIframe) {

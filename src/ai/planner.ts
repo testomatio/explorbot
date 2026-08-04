@@ -413,7 +413,7 @@ export class Planner extends PlannerBase implements Agent {
       </page_research>
     `);
 
-    const applicationContext = this.knowledgeTracker.renderApplicationSpec(state);
+    const applicationContext = this.knowledgeTracker.renderApplicationSpec?.(state) || '';
     if (applicationContext) {
       conversation.addUserText(applicationContext);
     }

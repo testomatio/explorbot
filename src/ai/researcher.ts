@@ -5,6 +5,7 @@ import { ConfigParser, type ExplorbotConfig, outputPath } from '../config.ts';
 import { executionController } from '../execution-controller.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
+import { renderKnowledgeContext } from '../knowledge-tracker.ts';
 import { Observability } from '../observability.ts';
 import type { StateManager } from '../state-manager.js';
 import { WebPageState } from '../state-manager.js';
@@ -438,7 +439,7 @@ export class Researcher extends ResearcherBase implements Agent {
     if (!this.actionResult) throw new Error('actionResult is not set');
 
     const html = await this.actionResult.combinedHtml();
-    const knowledge = this.knowledgeTracker.renderRelevantContext(this.actionResult);
+    const knowledge = renderKnowledgeContext(this.knowledgeTracker, this.actionResult);
 
     const ariaSnapshot = this.actionResult.getCompactARIA();
 
