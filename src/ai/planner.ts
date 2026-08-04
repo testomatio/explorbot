@@ -14,7 +14,7 @@ import { createDebug, tag } from '../utils/logger.js';
 import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
 import { planToCompactAiContext } from '../utils/test-plan-markdown.ts';
-import type { Agent } from './agent.js';
+import type { Agent, AgentDeps } from './agent.js';
 import { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { WithSessionDedup } from './planner/session-dedup.ts';
@@ -63,13 +63,13 @@ export class Planner extends PlannerBase implements Agent {
   researcher: Researcher;
   private fisherman: Fisherman | null = null;
 
-  constructor(explorer: Explorer, provider: Provider, researcher: Researcher) {
+  constructor(deps: AgentDeps, researcher: Researcher) {
     super();
-    this.explorer = explorer;
-    this.provider = provider;
+    this.explorer = deps.explorer;
+    this.provider = deps.ai;
     this.researcher = researcher;
-    this.stateManager = explorer.getStateManager();
-    this.experienceTracker = explorer.getStateManager().getExperienceTracker();
+    this.stateManager = deps.stateManager;
+    this.experienceTracker = deps.stateManager.getExperienceTracker();
   }
 
   setFisherman(fisherman: Fisherman): void {

@@ -68,7 +68,7 @@ export function App({ explorBot, initialShowInput = false, exitOnEmptyInput = fa
       });
     });
 
-    const manager = explorBot.getExplorer().getStateManager();
+    const manager = explorBot.stateManager();
 
     unsubscribe = manager.onStateChange((transition: StateTransition) => {
       if (mounted) {

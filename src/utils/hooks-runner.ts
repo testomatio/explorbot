@@ -54,11 +54,9 @@ export class HooksRunner {
   private async executeHook(hook: Hook, url: string): Promise<void> {
     try {
       if (hook.type === 'playwright') {
-        const page = this.explorer.playwrightHelper.page;
-        await hook.hook({ page, url });
+        await this.explorer.withPage(async (page) => hook.hook({ page, url }));
       } else {
-        const I = this.explorer.actor;
-        await hook.hook({ I, url });
+        await hook.hook({ I: this.explorer.actor, url });
       }
     } catch (error) {
       debugLog(`Hook error: ${error}`);

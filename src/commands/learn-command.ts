@@ -14,13 +14,13 @@ export class LearnCommand extends BaseCommand {
     if (!note) {
       const AddKnowledge = (await import('../components/AddKnowledge.js')).default;
       const explorer = this.explorBot.getExplorer();
-      const state = explorer.getStateManager().getCurrentState();
+      const state = this.explorBot.stateManager().getCurrentState();
       const initialUrl = state?.url || '';
 
       const { unmount } = render(
         React.createElement(AddKnowledge, {
           initialUrl,
-          knowledgeTracker: explorer.getKnowledgeTracker(),
+          knowledgeTracker: this.explorBot.knowledgeTracker(),
           onComplete: () => unmount(),
           onCancel: () => unmount(),
         }),
@@ -33,14 +33,14 @@ export class LearnCommand extends BaseCommand {
     }
 
     const explorer = this.explorBot.getExplorer();
-    const state = explorer.getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
 
     if (!state) {
       throw new Error('No active page to attach knowledge');
     }
 
     const targetUrl = state.url || state.fullUrl || '/';
-    explorer.getKnowledgeTracker().addKnowledge(targetUrl, note);
+    this.explorBot.knowledgeTracker().addKnowledge(targetUrl, note);
     tag('success').log('Knowledge saved for current page');
   }
 }

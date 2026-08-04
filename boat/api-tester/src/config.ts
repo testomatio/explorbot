@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
-import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, EXPLORBOT_CONFIG_PATHS } from '../../../src/config.ts';
+import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, EXPLORBOT_CONFIG_PATHS, createModel, materializeKnowledge, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
 
 export type { AIConfig };
 
@@ -54,8 +54,11 @@ export class ApibotConfigParser {
 
     const resolvedPath = options?.config || this.findConfigFile();
     if (!resolvedPath) {
-      if (options?.path) process.chdir(originalCwd);
-      throw new Error('No configuration file found. Create apibot.config.js or apibot.config.ts');
+      try {
+        return await this.loadEnvConfig();
+      } finally {
+        if (options?.path && originalCwd !== process.cwd()) process.chdir(originalCwd);
+      }
     }
 
     try {
@@ -121,6 +124,45 @@ export class ApibotConfigParser {
     if (!existsSync(dirPath)) {
       mkdirSync(dirPath, { recursive: true });
     }
+  }
+
+  private async loadEnvConfig(): Promise<ApibotConfig> {
+    const provider = process.env.EXPLORBOT_AI_PROVIDER;
+    const modelSpec = process.env.EXPLORBOT_AI_MODEL;
+    if (!provider && !modelSpec) {
+      throw new Error('No configuration file found. Create apibot.config.js or set EXPLORBOT_URL and EXPLORBOT_AI_PROVIDER environment variables');
+    }
+    if (modelSpec && !provider && !modelSpec.includes('/')) {
+      throw new Error('EXPLORBOT_AI_MODEL needs a provider — set EXPLORBOT_AI_PROVIDER, or write it as "provider/model-id"');
+    }
+
+    const baseEndpoint = process.env.EXPLORBOT_URL;
+    if (!baseEndpoint) {
+      throw new Error('No API endpoint to test. Set EXPLORBOT_URL to the API base endpoint');
+    }
+
+    const outputRoot = resolveOutputRoot();
+    materializeKnowledge(outputRoot);
+
+    const api: ApiConfig = { baseEndpoint };
+    if (process.env.EXPLORBOT_API_SPEC) {
+      api.spec = [process.env.EXPLORBOT_API_SPEC];
+    }
+
+    let model: any;
+    if (provider && modelSpec) model = await createModel(provider, modelSpec);
+    if (provider && !modelSpec) model = await resolveModel(provider, 'model');
+    if (!provider) model = await resolveModel(modelSpec!, 'model');
+
+    this.config = {
+      ai: { model },
+      api,
+      dirs: { output: '.', knowledge: 'knowledge' },
+    };
+    this.configPath = path.join(outputRoot, 'apibot.config.js');
+    this.validateConfig(this.config);
+
+    return this.config;
   }
 
   private findConfigFile(): string | null {

@@ -76,7 +76,7 @@ export async function dryRunTestFile(filePath: string): Promise<void> {
     },
   };
 
-  (global as any).output_dir = path.join(projectRoot, 'output', 'states');
+  (global as any).output_dir = ConfigParser.getInstance().getStatesDir();
   (global as any).codecept_dir = projectRoot;
 
   codeceptjs.container.create(codeceptConfig, {});

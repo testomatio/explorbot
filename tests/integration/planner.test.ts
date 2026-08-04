@@ -63,7 +63,7 @@ const fakeState = {
   html: '<html><body>stub</body></html>',
 };
 
-function createMockExplorer(state = fakeState) {
+function createMockDeps(state = fakeState) {
   const mockExperienceTracker = { getSuccessfulExperience: () => [] };
   const mockKnowledgeTracker = { getRelevantKnowledge: () => [] };
   const mockStateManager = {
@@ -72,10 +72,13 @@ function createMockExplorer(state = fakeState) {
     getExperienceTracker: () => mockExperienceTracker,
   };
   return {
-    getStateManager: () => mockStateManager,
-    getKnowledgeTracker: () => mockKnowledgeTracker,
-    getConfig: () => ConfigParser.getInstance().getConfig(),
-  } as any;
+    explorer: {} as any,
+    config: ConfigParser.getInstance().getConfig(),
+    stateManager: mockStateManager,
+    knowledgeTracker: mockKnowledgeTracker,
+    requestStore: {},
+    playwrightRecorder: {},
+  };
 }
 
 function extractPromptText(entry: any): string {
@@ -124,7 +127,7 @@ describe('Planner with aimock', () => {
     clearSessionDedup();
     clearStyleCache();
 
-    planner = new Planner(createMockExplorer(), provider, { research: async () => taskBoardUiMap } as any);
+    planner = new Planner({ ...createMockDeps(), ai: provider } as any, { research: async () => taskBoardUiMap } as any);
 
     mock.on({}, { content: JSON.stringify(defaultScenarios) });
   });

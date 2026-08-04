@@ -8,7 +8,7 @@ export class ContextHtmlCommand extends BaseCommand {
 
   async execute(_args: string): Promise<void> {
     const explorer = this.explorBot.getExplorer();
-    const manager = explorer.getStateManager();
+    const manager = this.explorBot.stateManager();
     const state = manager.getCurrentState();
 
     if (!state) {
@@ -19,7 +19,7 @@ export class ContextHtmlCommand extends BaseCommand {
 
     if (!actionResult.html || actionResult.html.trim().length < 100) {
       tag('info').log('Capturing fresh page content...');
-      actionResult = await explorer.createAction().capturePageState();
+      actionResult = await explorer.capture();
     }
 
     const html = await actionResult.combinedHtml();

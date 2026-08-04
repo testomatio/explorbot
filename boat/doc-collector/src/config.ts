@@ -115,6 +115,7 @@ class DocbotConfigParser {
           output: 'docs',
           screenshot: true,
           interactive: false,
+          ignoreErrors: true,
           collapseDynamicPages: true,
           scope: 'site',
           includePaths: [],
@@ -151,6 +152,7 @@ interface DocbotConfig {
     maxPages?: number;
     output?: string;
     screenshot?: boolean;
+    ignoreErrors?: boolean | string[];
     prompt?: string;
     collapseDynamicPages?: boolean;
     scope?: 'site' | 'section' | 'subtree';

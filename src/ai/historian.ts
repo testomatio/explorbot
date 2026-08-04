@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { ExplorbotConfig } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
+import type Explorer from '../explorer.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { Reporter } from '../reporter.ts';
 import type { StateManager } from '../state-manager.ts';
@@ -23,10 +24,10 @@ export class Historian extends HistorianBase {
   declare reporter: Reporter | undefined;
   declare stateManager: StateManager | undefined;
   declare config: ExplorbotConfig | undefined;
-  declare playwright: { recorder: PlaywrightRecorder; helper: any } | undefined;
+  declare playwright: { recorder: PlaywrightRecorder; explorer: Explorer } | undefined;
   declare savedFiles: Set<string>;
 
-  constructor(provider: Provider, experienceTracker: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager, config?: ExplorbotConfig, playwright?: { recorder: PlaywrightRecorder; helper: any }) {
+  constructor(provider: Provider, experienceTracker: ExperienceTracker, reporter?: Reporter, stateManager?: StateManager, config?: ExplorbotConfig, playwright?: { recorder: PlaywrightRecorder; explorer: Explorer }) {
     super();
     this.provider = provider;
     this.experienceTracker = experienceTracker;

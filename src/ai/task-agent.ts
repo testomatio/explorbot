@@ -1,6 +1,11 @@
 import type { ActionResult } from '../action-result.js';
+import type { ExplorbotConfig } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.js';
+import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
+import type { StateManager } from '../state-manager.ts';
+import { HooksRunner } from '../utils/hooks-runner.ts';
+import type { AgentDeps, ToolDeps } from './agent.ts';
 import { Historian } from './historian.js';
 import type { Navigator } from './navigator.js';
 import type { Provider } from './provider.js';
@@ -17,6 +22,12 @@ function createNullProxy<T extends object>(): T {
 }
 
 export abstract class TaskAgent {
+  explorer!: Explorer;
+  provider!: Provider;
+  config!: ExplorbotConfig;
+  stateManager!: StateManager;
+  knowledgeTracker!: KnowledgeTracker;
+  protected hooksRunner!: HooksRunner;
   protected consecutiveFailures = 0;
   protected consecutiveEmptyResults = 0;
   protected recentToolCalls: any[] = [];
@@ -25,10 +36,41 @@ export abstract class TaskAgent {
   private _historian: Historian | null = null;
   private _quartermaster: Quartermaster | null = null;
 
+  constructor(deps?: AgentDeps) {
+    if (!deps) return;
+    this.explorer = deps.explorer;
+    this.provider = deps.ai;
+    this.config = deps.config;
+    this.stateManager = deps.stateManager;
+    this.knowledgeTracker = deps.knowledgeTracker;
+    this.hooksRunner = new HooksRunner(deps.explorer, deps.config);
+  }
+
+  setHistorian(historian: Historian): void {
+    this._historian = historian;
+  }
+
+  setQuartermaster(quartermaster: Quartermaster): void {
+    this._quartermaster = quartermaster;
+  }
+
   protected abstract getNavigator(): Navigator;
-  protected abstract getExperienceTracker(): ExperienceTracker;
-  protected abstract getKnowledgeTracker(): KnowledgeTracker;
-  protected abstract getProvider(): Provider;
+
+  protected get toolDeps(): ToolDeps {
+    return { explorer: this.explorer, stateManager: this.stateManager, ai: this.provider };
+  }
+
+  protected getExperienceTracker(): ExperienceTracker {
+    return this.stateManager.getExperienceTracker();
+  }
+
+  protected getKnowledgeTracker(): KnowledgeTracker {
+    return this.knowledgeTracker;
+  }
+
+  protected getProvider(): Provider {
+    return this.provider;
+  }
 
   protected getKnowledge(actionResult: ActionResult): string {
     return this.getKnowledgeTracker().renderRelevantKnowledge(actionResult);
@@ -38,17 +80,9 @@ export abstract class TaskAgent {
     return this.getExperienceTracker().renderExperienceTocFor(actionResult);
   }
 
-  setHistorian(historian: Historian): void {
-    this._historian = historian;
-  }
-
   protected getHistorian(): Historian {
     if (this._historian) return this._historian;
     return createNullProxy<Historian>();
-  }
-
-  setQuartermaster(quartermaster: Quartermaster): void {
-    this._quartermaster = quartermaster;
   }
 
   protected getQuartermaster(): Quartermaster {

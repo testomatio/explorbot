@@ -2,18 +2,18 @@ import { describe, expect, it } from 'bun:test';
 import { Captain } from '../../src/ai/captain.ts';
 
 function buildCaptain(opts: { state?: any; activeTest?: any; page?: any }) {
+  let page = opts.page || null;
+  if (page?.isClosed?.()) page = null;
   const explorer = {
     activeTest: opts.activeTest || null,
-    playwrightHelper: {
-      page: opts.page,
-    },
-    getStateManager: () => ({
-      getCurrentState: () => opts.state || null,
-    }),
+    page,
   };
 
   const explorBot = {
     getExplorer: () => explorer,
+    stateManager: () => ({
+      getCurrentState: () => opts.state || null,
+    }),
   };
 
   return Object.assign(Object.create(Captain.prototype), { explorBot }) as Captain;
@@ -64,7 +64,7 @@ describe('Captain modes', () => {
 describe('Captain execution recovery', () => {
   it('continues after a fatal browser error is recovered', async () => {
     const captain = buildCaptainWithExplorer({
-      handleExecutionError: async () => ({
+      recover: async () => ({
         action: 'continue',
         recovered: true,
         message: 'Browser was recovered after a fatal page error.',
@@ -80,7 +80,7 @@ describe('Captain execution recovery', () => {
 
   it('stops when a fatal browser error cannot be recovered', async () => {
     const captain = buildCaptainWithExplorer({
-      handleExecutionError: async () => ({
+      recover: async () => ({
         action: 'stop',
         recovered: false,
         message: 'Browser could not be recovered',
@@ -95,7 +95,7 @@ describe('Captain execution recovery', () => {
 
   it('continues when browser restart recovers after page recovery fails', async () => {
     const captain = buildCaptainWithExplorer({
-      handleExecutionError: async () => ({
+      recover: async () => ({
         action: 'continue',
         recovered: true,
         message: 'Browser was recovered after a fatal page error.',
@@ -110,7 +110,7 @@ describe('Captain execution recovery', () => {
 
   it('continues with guidance for non-fatal execution errors', async () => {
     const captain = buildCaptainWithExplorer({
-      handleExecutionError: async () => ({
+      recover: async () => ({
         action: 'continue',
         message: 'Previous execution error: Locator not found. Investigate the current state and choose a different approach.',
       }),

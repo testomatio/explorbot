@@ -14,6 +14,8 @@ npx explorbot start https://your-app.com
 
 It runs with no babysitting and reports back what it finds. This is vibe-testing.
 
+Explorbot works with any AI provider through the [Vercel AI SDK](https://sdk.vercel.ai/providers). See [`models.json`](models.json) for the current recommended provider and model setup, and [Providers](docs/basics/providers.md) for how to configure each one.
+
 New here? Read the [Getting Started guide](docs/basics/getting-started.md).
 
 ## Use Cases
@@ -92,7 +94,7 @@ Explorbot won't replace your regression tests — it covers what they can't. You
 ## Requirements
 
 - Node.js 24+ or **Bun**
-- An **AI provider key** — OpenRouter recommended; Groq, Cerebras, OpenAI, Anthropic, and others via the [Vercel AI SDK](https://sdk.vercel.ai/providers)
+- An **AI provider key** — OpenRouter recommended; Groq, Cerebras, [OpenAI](docs/basics/providers.md#openai), Anthropic, and others via the [Vercel AI SDK](https://sdk.vercel.ai/providers)
 - A **modern terminal** — iTerm2, WARP, Kitty, Ghostty, or Windows Terminal with WSL
 - A **compatible web app** — CRUD-heavy apps fit best. See [Prerequisites](docs/basics/prerequisites.md)
 
@@ -125,6 +127,19 @@ Type `/explore`, and Explorbot runs its loop on its own — research, plan, test
 
 That's the gist. The [**Getting Started guide**](docs/basics/getting-started.md) walks through the full setup — choosing models, teaching Explorbot to log in, and picking the right feature to start on.
 
+### Or skip the config file
+
+For a CI job, a demo, or a coding agent, pass everything as environment variables. Name a provider and Explorbot picks its recommended models:
+
+```bash
+EXPLORBOT_URL=https://app.example.com \
+EXPLORBOT_AI_PROVIDER=openrouter \
+EXPLORBOT_KNOWLEDGE="Log in as admin@example.com / secret123" \
+  npx explorbot explore /admin/users --max-tests 3
+```
+
+Output lands in a temp directory and nothing is written to your project. See [Agentic Usage](docs/workflow/agentic-usage.md).
+
 ## Teaching Explorbot
 
 Explorbot gets better when you tell it about your app:
@@ -146,12 +161,13 @@ When you're ready to go deeper, the [full documentation](docs/) covers everythin
 ## FAQ
 
 **Can I run it in Cursor or Claude Code?**
-No, Explorbot is a separate application designed for constant testing. Cursor, Codex, and Claude Code are coding agents — not relevant here.
-
-> However, Explorbot can be used as a subagent or terminal command controlled by a coding agent.
+Not as a replacement — Explorbot is a separate application designed for constant testing, while Cursor, Codex, and Claude Code are coding agents. But a coding agent can drive Explorbot as a terminal command or subagent: it writes the test plan, Explorbot executes it against the real app. See [Agentic Usage](docs/workflow/agentic-usage.md).
 
 **Can I bring a Cursor or OpenAI subscription?**
-No. Their models are too slow for the way Explorbot works. Use pay-per-token providers like Groq and OpenRouter.
+No. Explorbot needs an API key, not a chat subscription. Use pay-per-token access — Groq, OpenRouter, or OpenAI's own API.
+
+**Can I use OpenAI directly?**
+Yes. Add your `OPENAI_API_KEY` and point the models at OpenAI — a nano-class model for `model` and `visionModel`, a stronger one for `agenticModel`. Expect it to run a bit slower than hosted OSS models on Groq or Cerebras. See [Providers](docs/basics/providers.md#openai) for the config.
 
 **I want to use Opus!!!**
 Opus is great for coding. Testing needs a simpler model that can safely consume lots of HTML tokens, fast. Save the expensive models for sophisticated decision-making.

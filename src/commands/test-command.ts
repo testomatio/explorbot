@@ -48,7 +48,7 @@ export class TestCommand extends BaseCommand {
       if (matching.length > 0) {
         toExecute.push(...matching);
       } else {
-        const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+        const state = this.explorBot.stateManager().getCurrentState();
         if (!state) {
           throw new Error('No page loaded. Please navigate to a page first.');
         }

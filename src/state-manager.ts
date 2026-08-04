@@ -1,6 +1,6 @@
 import { ActionResult } from './action-result.js';
 import type { ExperienceTracker } from './experience-tracker.js';
-import type { KnowledgeTracker, Knowledge } from './knowledge-tracker.js';
+import type { Knowledge, KnowledgeTracker } from './knowledge-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
 import { createDebug } from './utils/logger.js';
 import { slugify } from './utils/strings.js';
@@ -67,9 +67,15 @@ export interface StateTransition {
 
 export type StateChangeListener = (event: StateTransition) => void;
 
+export interface TabInfo {
+  url: string;
+  title: string;
+}
+
 export type { Knowledge };
 
 export class StateManager {
+  otherTabs: TabInfo[] = [];
   private currentState: WebPageState | null = null;
   private stateHistory: StateTransition[] = [];
   private allVisitedUrls: Set<string> = new Set();

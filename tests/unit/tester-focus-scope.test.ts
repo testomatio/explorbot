@@ -5,24 +5,6 @@ import { renderExperienceToc } from '../../src/experience-tracker.ts';
 import { Test } from '../../src/test-plan.ts';
 
 function buildTester(): Tester {
-  const explorer: any = {
-    getConfig: () => ({}),
-    getStateManager: () => ({
-      getCurrentState: () => null,
-      getExperienceTracker: () => ({
-        getExperienceTableOfContents: () => [],
-        renderExperienceTocFor: () => '',
-      }),
-    }),
-    getKnowledgeTracker: () => ({
-      getRelevantKnowledge: () => [],
-      renderRelevantKnowledge: () => '',
-    }),
-    getCurrentIframeInfo: () => null,
-    hasOtherTabs: () => false,
-    getOtherTabsInfo: () => [],
-    clearOtherTabsInfo: () => {},
-  };
   const provider: any = {
     getSystemPromptForAgent: () => '',
   };
@@ -31,7 +13,26 @@ function buildTester(): Tester {
     researchOverlay: async () => null,
   };
   const navigator: any = {};
-  return new Tester(explorer, provider, researcher, navigator);
+  const deps: any = {
+    explorer: {},
+    ai: provider,
+    config: {},
+    stateManager: {
+      getCurrentState: () => null,
+      otherTabs: [],
+      getExperienceTracker: () => ({
+        getExperienceTableOfContents: () => [],
+        renderExperienceTocFor: () => '',
+      }),
+    },
+    knowledgeTracker: {
+      getRelevantKnowledge: () => [],
+      renderRelevantKnowledge: () => '',
+    },
+    requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
+    playwrightRecorder: {},
+  };
+  return new Tester(deps, researcher, navigator);
 }
 
 function buildTesterWithExperience(): Tester {
@@ -43,23 +44,28 @@ function buildTesterWithExperience(): Tester {
       sections: [{ index: 1, level: 2, title: 'FLOW: create item' }],
     },
   ];
-  const explorer: any = {
-    getConfig: () => ({ files: {} }),
-    getStateManager: () => ({
+  const provider: any = {};
+  const researcher: any = {};
+  const navigator: any = {};
+  const deps: any = {
+    explorer: {},
+    ai: provider,
+    config: { files: {} },
+    stateManager: {
+      otherTabs: [],
       getExperienceTracker: () => ({
         getExperienceTableOfContents: () => experienceToc,
         renderExperienceTocFor: () => renderExperienceToc(experienceToc),
       }),
-    }),
-    getKnowledgeTracker: () => ({
+    },
+    knowledgeTracker: {
       getRelevantKnowledge: () => [],
       renderRelevantKnowledge: () => '',
-    }),
+    },
+    requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
+    playwrightRecorder: {},
   };
-  const provider: any = {};
-  const researcher: any = {};
-  const navigator: any = {};
-  return new Tester(explorer, provider, researcher, navigator);
+  return new Tester(deps, researcher, navigator);
 }
 
 function buildState(ariaSnapshot: string, url = '/page'): ActionResult {

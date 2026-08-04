@@ -1,5 +1,6 @@
 import dedent from 'dedent';
 import { ActionResult, type Diff } from '../../action-result.js';
+import type { ExplorbotConfig } from '../../config.ts';
 import { executionController } from '../../execution-controller.ts';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
@@ -21,13 +22,14 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     declare explorer: Explorer;
     declare provider: Provider;
     declare stateManager: StateManager;
+    declare config: ExplorbotConfig;
     declare actionResult: ActionResult | undefined;
 
     async performDeepAnalysis(state: WebPageState, result: ResearchResult): Promise<void> {
       tag('info').log('Starting deep analysis of expandable elements');
       await (this as any).navigateTo(state.fullUrl || state.url);
 
-      const maxClicks = (this.explorer.getConfig().ai?.agents?.researcher as any)?.maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
+      const maxClicks = (this.config.ai?.agents?.researcher as any)?.maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
 
       const expandedSections: string[] = [];
       const navigationLinks: Array<{ code: string; url: string }> = [];
@@ -358,10 +360,10 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           const isCoordinateClick = el.commands[0].startsWith('I.clickXY(');
           if (!isCoordinateClick) {
             const hoverCmd = el.commands[0].replace('I.click(', 'I.moveCursorTo(');
-            await this.explorer.attemptAction(hoverCmd, undefined);
+            await this.explorer.action().attempt(hoverCmd);
             await new Promise((r) => setTimeout(r, 500));
 
-            await this.explorer.capturePageState();
+            await this.explorer.capture();
             const hoverAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
             const hoverDiff = await hoverAR.diff(previousState);
             const hoverHtmlSize = hoverDiff.htmlParts.reduce((sum, p) => sum + p.subtree.length, 0);
@@ -401,7 +403,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       const previousState = ActionResult.fromState(this.stateManager.getCurrentState()!);
 
       let clickCode: string | null = null;
-      const action = this.explorer.createAction();
+      const action = this.explorer.action();
       for (const cmd of commands) {
         if (await action.attempt(cmd, undefined)) {
           clickCode = cmd;
@@ -417,7 +419,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
       let diff: Diff;
       try {
-        await this.explorer.createAction().capturePageState();
+        await this.explorer.capture();
         const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
         diff = await currAR.diff(previousState);
       } catch (err) {
@@ -448,7 +450,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     private async _restorePageState(url: string, originalAria: string): Promise<void> {
       try {
         await (this as any).cancelInUi();
-        await this.explorer.capturePageState();
+        await this.explorer.capture();
         const currentAria = this.stateManager.getCurrentState()?.ariaSnapshot || '';
         if (!diffAriaSnapshots(originalAria, currentAria).text) return;
       } catch (err) {

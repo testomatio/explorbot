@@ -147,6 +147,36 @@ export class WebElement {
     return rawList.map((d) => WebElement.fromRawData(d));
   }
 
+  static async commonAncestor(page: any, eidxList: string[]): Promise<WebElement | null> {
+    const validEidxList = eidxList.filter((eidx) => /^e\d+$/i.test(eidx));
+    if (validEidxList.length < 2) return null;
+
+    const raw: RawElementData | null = await page.evaluate(
+      ([list, extractFnStr, config]: [string[], string, ElementExtractionConfig]) => {
+        const extract = new Function(`return ${extractFnStr}`)() as (el: Element, cfg: ElementExtractionConfig) => any;
+        const els: Element[] = [];
+        for (const eidx of list) {
+          const el = document.querySelector(`[${config.attrs.eidx}="${eidx}"]`);
+          if (el && !els.includes(el)) els.push(el);
+        }
+        if (els.length < 2) return null;
+
+        const containsAll = (node: Element) => els.every((el) => node.contains(el));
+        let ancestor: Element | null = els[0].parentElement;
+        while (ancestor && !containsAll(ancestor)) ancestor = ancestor.parentElement;
+        if (!ancestor) return null;
+
+        const tag = ancestor.tagName.toLowerCase();
+        if (tag === 'body' || tag === 'html') return null;
+        return extract(ancestor, config);
+      },
+      [validEidxList, getElementDataExtractorSource(), ELEMENT_EXTRACTION_CONFIG] as [string[], string, ElementExtractionConfig]
+    );
+
+    if (!raw) return null;
+    return WebElement.fromRawData(raw);
+  }
+
   static async findByXPath(html: string, xpath: string): Promise<{ totalFound: number; elements: WebElement[]; error?: string }> {
     const result = await evaluateXPath(html, xpath);
     if (result.error) return { totalFound: 0, elements: [], error: result.error };

@@ -1,9 +1,11 @@
 import { ActionResult } from '../action-result.js';
 import { Researcher } from '../ai/researcher.js';
+import { visuallyAnnotateContainers } from '../ai/researcher/coordinates.js';
 import { outputPath } from '../config.js';
 import { type ContextData, type ContextMode, formatContextSummary } from '../utils/context-formatter.js';
 import { tag } from '../utils/logger.js';
 import { extractValidContainers } from '../utils/research-parser.js';
+import { annotatePageElements } from '../utils/web-annotate.js';
 import { BaseCommand, type Suggestion } from './base-command.js';
 
 export class ContextCommand extends BaseCommand {
@@ -25,7 +27,7 @@ export class ContextCommand extends BaseCommand {
 
   async execute(args: string): Promise<void> {
     const explorer = this.explorBot.getExplorer();
-    const state = explorer.getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
 
     if (!state) {
       throw new Error('No active page to show context for');
@@ -34,16 +36,16 @@ export class ContextCommand extends BaseCommand {
     const { opts } = this.parseArgs(args);
     const isVisual = !!(opts.visual || opts.screenshot);
 
-    await explorer.annotateElements();
+    await explorer.withPage(annotatePageElements);
 
     if (isVisual) {
       const cachedResearch = Researcher.getCachedResearch(state);
       const containers = cachedResearch ? extractValidContainers(cachedResearch) : [];
-      await explorer.visuallyAnnotateElements({ containers });
+      await explorer.withPage((page) => visuallyAnnotateContainers(page, containers));
     }
 
-    const actionResult = await explorer.createAction().capturePageState({ includeScreenshot: isVisual });
-    const experienceTracker = explorer.getStateManager().getExperienceTracker();
+    const actionResult = await explorer.capture({ screenshot: isVisual });
+    const experienceTracker = this.explorBot.experienceTracker();
     const knowledgeTracker = this.explorBot.knowledgeTracker();
 
     let mode: ContextMode = 'compact';

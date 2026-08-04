@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 import { type Browser, type Page, chromium } from 'playwright';
-import { annotatePageElements } from '../../src/explorer.ts';
+import { annotatePageElements } from '../../src/utils/web-annotate.ts';
 import type { WebElement } from '../../src/utils/web-element.ts';
 
 let browser: Browser;

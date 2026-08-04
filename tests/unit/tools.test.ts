@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { createCodeceptJSTools, createIframeTools, createLearnExperienceTool } from '../../src/ai/tools.ts';
 
-function fakeExplorer(): any {
+function fakeDeps(): any {
   return {
-    getStateManager: () => ({}),
+    explorer: {},
+    stateManager: {},
+    ai: {},
   };
 }
 
@@ -18,7 +20,7 @@ function fakeTask(): any {
 describe('createCodeceptJSTools click validation', () => {
   it('rejects empty commands without touching the browser', async () => {
     const task = fakeTask();
-    const tools = createCodeceptJSTools(fakeExplorer(), task);
+    const tools = createCodeceptJSTools(fakeDeps(), task);
 
     const result = await tools.click.execute({ commands: [], explanation: 'nothing' }, {} as any);
 
@@ -29,7 +31,7 @@ describe('createCodeceptJSTools click validation', () => {
 
   it('rejects non-click I. commands as invalid', async () => {
     const task = fakeTask();
-    const tools = createCodeceptJSTools(fakeExplorer(), task);
+    const tools = createCodeceptJSTools(fakeDeps(), task);
 
     const result = await tools.click.execute({ commands: ['I.fillField("name", "value")'], explanation: 'type' }, {} as any);
 
@@ -40,7 +42,7 @@ describe('createCodeceptJSTools click validation', () => {
 
   it('rejects non-moveCursorTo commands in hover', async () => {
     const task = fakeTask();
-    const tools = createCodeceptJSTools(fakeExplorer(), task);
+    const tools = createCodeceptJSTools(fakeDeps(), task);
 
     const result = await tools.hover.execute({ commands: ['I.click("Save")'], explanation: 'hover' }, {} as any);
 
@@ -51,7 +53,7 @@ describe('createCodeceptJSTools click validation', () => {
 
 describe('createIframeTools', () => {
   it('always returns the exitIframe tool', () => {
-    const tools = createIframeTools(fakeExplorer());
+    const tools = createIframeTools(fakeDeps());
     expect(Object.keys(tools)).toContain('exitIframe');
   });
 });

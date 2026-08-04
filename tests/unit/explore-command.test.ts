@@ -148,7 +148,7 @@ describe('ExploreCommand picking algorithm (via dry-run execute)', () => {
 
   function setupCommand(plan: Plan, _configure: string, maxTests: number) {
     const explorBot = {
-      getExplorer: () => ({ getStateManager: () => ({ getCurrentState: () => ({ url: '/demo' }) }) }),
+      stateManager: () => ({ getCurrentState: () => ({ url: '/demo' }) }),
       generatePlanFilename: () => 'demo.md',
       loadPlans: () => [plan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
@@ -255,15 +255,13 @@ describe('ExploreCommand error page guard', () => {
     let testerCalled = 0;
     let saveCalled = 0;
     const explorBot = {
-      getExplorer: () => ({
-        getStateManager: () => ({
-          getCurrentState: () => ({
-            url: '/missing',
-            fullUrl: 'https://example.com/missing',
-            title: 'Application',
-            httpStatus: 404,
-            html: '<html><body>Short response</body></html>',
-          }),
+      stateManager: () => ({
+        getCurrentState: () => ({
+          url: '/missing',
+          fullUrl: 'https://example.com/missing',
+          title: 'Application',
+          httpStatus: 404,
+          html: '<html><body>Short response</body></html>',
         }),
       }),
       plan: async () => {
@@ -292,6 +290,46 @@ describe('ExploreCommand error page guard', () => {
   });
 });
 
+describe('ExploreCommand reporting survives a failed return to the main page', () => {
+  test('final visit failure does not suppress savePlans or session analysis', async () => {
+    const fakePlan = new Plan('Live');
+    fakePlan.url = '/live/plan';
+    fakePlan.addTest(new Test('seed loaded', 'critical', 'ok', '/live/plan'));
+
+    let savePlansCalled = false;
+    let analysisCalled = false;
+    const explorBot = {
+      stateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }),
+      generatePlanFilename: () => 'live.md',
+      loadPlans: () => [fakePlan],
+      agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
+      setCurrentPlan: () => {},
+      agentTester: () => ({ test: async () => {} }),
+      visit: async (url: string) => {
+        if (url === '/live') throw new Error('Navigation to /live failed: redirected to /live/new and could not resolve');
+      },
+      savePlans: () => {
+        savePlansCalled = true;
+        return null;
+      },
+      printSessionAnalysis: async () => {
+        analysisCalled = true;
+      },
+      agentHistorian: () => ({ getSavedFiles: () => [] }),
+      plan: async () => undefined,
+      getCurrentPlan: () => fakePlan,
+      lastPlanError: null,
+    } as unknown as ExplorBot;
+
+    const cmd = new ExploreCommand(explorBot);
+    cmd.maxTests = 1;
+    await cmd.execute('--configure "new:0%"');
+
+    expect(savePlansCalled).toBe(true);
+    expect(analysisCalled).toBe(true);
+  });
+});
+
 describe('ExploreCommand priority filter applies to NEW tests too', () => {
   test('new tests with disallowed priorities get disabled and do not run', async () => {
     const fakePlan = new Plan('Live');
@@ -300,7 +338,7 @@ describe('ExploreCommand priority filter applies to NEW tests too', () => {
 
     let planCalled = 0;
     const explorBot = {
-      getExplorer: () => ({ getStateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }) }),
+      stateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }),
       generatePlanFilename: () => 'live.md',
       loadPlans: () => [fakePlan],
       agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),

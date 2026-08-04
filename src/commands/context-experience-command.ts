@@ -10,14 +10,14 @@ export class ContextExperienceCommand extends BaseCommand {
 
   async execute(_args: string): Promise<void> {
     const explorer = this.explorBot.getExplorer();
-    const state = explorer.getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
 
     if (!state) {
       throw new Error('No active page');
     }
 
     const actionResult = ActionResult.fromState(state);
-    const experienceTracker = explorer.getStateManager().getExperienceTracker();
+    const experienceTracker = this.explorBot.experienceTracker();
     const experience = experienceTracker.getRelevantExperience(actionResult);
 
     if (experience.length === 0) {

@@ -77,7 +77,36 @@ npx explorbot navigate /login --session             # probe + capture auth in on
 npx explorbot research /dashboard --session auth.json   # reuse captured auth
 ```
 
-Without a file path, the flag defaults to `output/session.json`.
+Without a file path, the flag defaults to `session.json` inside the resolved configuration's output directory. In config-free mode that is the temporary or explicitly configured `EXPLORBOT_OUTPUT` directory.
+
+## Environment Variables
+
+Every command accepts `EXPLORBOT_*` variables in place of a config file. Set `EXPLORBOT_AI_PROVIDER` and Explorbot builds its configuration from the environment when no `explorbot.config.*` is found:
+
+```bash
+EXPLORBOT_URL=https://app.example.com \
+EXPLORBOT_AI_PROVIDER=openrouter \
+  npx explorbot explore /login --max-tests 3
+```
+
+<!-- START env -->
+| Variable | Meaning |
+|---|---|
+| `EXPLORBOT_AI_PROVIDER` | Provider name; fills every model role from its recommended models. Turns on config-free mode |
+| `EXPLORBOT_AI_MODEL` | Pins the main model — a model id for the provider, or a standalone provider/model-id |
+| `EXPLORBOT_URL` | Base URL to test; the API boat reads it as the base endpoint |
+| `EXPLORBOT_VISION_MODEL` | Screenshot analysis; overrides the provider recommendation |
+| `EXPLORBOT_AGENTIC_MODEL` | Captain and Pilot decisions; overrides the provider recommendation |
+| `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to a fresh temp directory |
+| `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
+| `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
+| `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
+| `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
+<!-- END env -->
+
+A config file always wins when present. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `openrouter`, `sambanova`.
+
+In this mode experience is not written and the Historian is off, so no generated test files appear. See [Agentic Usage](../workflow/agentic-usage.md) for the full picture.
 
 ## Persistent Browser
 

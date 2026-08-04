@@ -10,7 +10,7 @@ Reference implementation: `tests/integration/planner.test.ts`.
 
 - **The AI provider** — via the aimock HTTP server. Point the Vercel AI SDK at `mock.url/v1` with `createOpenAI({ compatibility: 'compatible' })` and `openai.chat('model-name')`. The `compatibility: 'compatible'` option keeps the mock on the Chat Completions API; without it, the SDK defaults to the Responses API, which aimock does not fully implement.
 - **Explorer, StateManager, Researcher, ExperienceTracker** — duck-typed mocks with only the methods the agent under test calls. Each agent runs in isolation; downstream agents (such as Researcher when testing Planner) return canned output.
-- **`playwrightLocatorCount`** — for agents that validate locators, since no browser runs in these tests.
+- **`withPage`** — resolves with a fake page object for agents that validate locators, since no browser runs in these tests.
 
 ### What we don't mock
 

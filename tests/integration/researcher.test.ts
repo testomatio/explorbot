@@ -48,7 +48,7 @@ const fakeState = {
   ariaSnapshot: '- region "main":\n  - button "Create Task"\n  - textbox "Search tasks"\n  - combobox "Assignee"\n  - combobox "Sort by"',
 };
 
-function createMockExplorer(state = fakeState) {
+function createMockDeps(state = fakeState) {
   const mockExperienceTracker = {
     getSuccessfulExperience: () => [],
     updateSummary: () => {},
@@ -63,21 +63,29 @@ function createMockExplorer(state = fakeState) {
     getExperienceTracker: () => mockExperienceTracker,
     getRelevantKnowledge: () => [],
   };
-  return {
-    getStateManager: () => mockStateManager,
-    getKnowledgeTracker: () => mockKnowledgeTracker,
-    getConfig: () => ConfigParser.getInstance().getConfig(),
-    visit: async () => {},
-    annotateElements: async () => [],
-    capturePageState: async () => ActionResult.fromState(state),
-    capturePageWithScreenshot: async () => ActionResult.fromState(state),
-    runWithBrowserRecovery: async (_label: string, operation: () => Promise<any>) => operation(),
-    createAction: () => ({
+  const fakePage: any = {};
+  fakePage.locator = () => fakePage;
+  fakePage.getByRole = () => fakePage;
+  fakePage.count = async () => 1;
+  fakePage.ariaSnapshot = async () => '';
+  fakePage.evaluateAll = async () => [];
+  const explorer = {
+    visit: async () => ActionResult.fromState(state),
+    capture: async () => ActionResult.fromState(state),
+    withPage: async (fn: any) => fn(fakePage),
+    action: () => ({
       capturePageState: async () => ActionResult.fromState(state),
     }),
-    playwrightLocatorCount: async () => 1,
-    playwrightHelper: { page: {} },
+    page: fakePage,
   } as any;
+  return {
+    explorer,
+    config: ConfigParser.getInstance().getConfig(),
+    stateManager: mockStateManager,
+    knowledgeTracker: mockKnowledgeTracker,
+    requestStore: {},
+    playwrightRecorder: {},
+  };
 }
 
 function extractPromptText(entry: any): string {
@@ -124,7 +132,7 @@ describe('Researcher with aimock', () => {
     clearResearchCache();
     ConfigParser.setupTestConfig();
 
-    researcher = new Researcher(createMockExplorer(), provider);
+    researcher = new Researcher({ ...createMockDeps(), ai: provider } as any);
 
     mock.on({}, { content: taskBoardResearch });
   });

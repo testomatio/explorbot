@@ -4,10 +4,10 @@ import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts'
 import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
 import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
-import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
 import { captureDocumentationScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
+import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
 
 describe('doc-collector path filter', () => {
   it('allows regular documentation pages', () => {
@@ -403,7 +403,7 @@ describe('doc-collector screenshots', () => {
     };
 
     const screenshots = await captureDocumentationScreenshots(
-      { playwrightHelper: { page } } as any,
+      { page } as any,
       { url: '/users/sign_in' },
       `
 ## Navigation
@@ -437,6 +437,24 @@ describe('doc-collector screenshots', () => {
 });
 
 describe('doc-collector scope and signal', () => {
+  it('supports all, none, and selected page error ignoring', () => {
+    const bot = new DocBot();
+
+    (bot as any).config = { docs: { ignoreErrors: true } };
+    expect((bot as any).shouldIgnoreError('Navigation timeout')).toBe(true);
+
+    (bot as any).config = { docs: { ignoreErrors: false } };
+    expect((bot as any).shouldIgnoreError('Navigation timeout')).toBe(false);
+
+    (bot as any).config = { docs: { ignoreErrors: ['timeout', 'connection refused'] } };
+    expect((bot as any).shouldIgnoreError(new Error('Navigation TIMEOUT after 30s'))).toBe(true);
+    expect((bot as any).shouldIgnoreError(Object.assign(new Error('Navigation failed'), { code: 'ERR_CONNECTION_REFUSED' }))).toBe(true);
+    expect((bot as any).shouldIgnoreError(new Error('Page crashed'))).toBe(false);
+
+    (bot as any).config = { docs: { ignoreErrors: [''] } };
+    expect((bot as any).shouldIgnoreError(new Error('Page crashed'))).toBe(false);
+  });
+
   it('keeps subtree scope around the start page', () => {
     const bot = new DocBot();
     (bot as any).config = { docs: { scope: 'subtree' } };
@@ -726,6 +744,7 @@ describe('documentarian interactive mode', () => {
       { url: '/suites', title: 'Suites', h1: 'Suites', ariaSnapshot: '- heading "Suites"\n- dialog "Import tests":\n  - heading "Import tests"' },
     ];
     let stateIndex = 0;
+    const screenshotLifecycle: string[] = [];
     const provider = {
       async generateObject() {
         return {
@@ -738,30 +757,40 @@ describe('documentarian interactive mode', () => {
         };
       },
     } as any;
+    const stateManager = { getCurrentState: () => states[stateIndex] } as any;
     const explorer = {
-      getStateManager() {
-        return { getCurrentState: () => states[stateIndex] };
-      },
-      createAction() {
+      action() {
         return {
           async attempt(command: string) {
+            screenshotLifecycle.push(command.startsWith('I.amOnPage') ? 'restore' : 'click');
             stateIndex = command.startsWith('I.amOnPage') ? 0 : 1;
             return true;
           },
         };
       },
     } as any;
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer, stateManager);
     const result = await documentarian.document(
       states[0],
       `## Content Controls
 
 | Element | Type | ARIA | CSS |
 |------|------|------|------|
-| 'Import tests' | button | { role: 'button', text: 'Import tests' } | 'button.import' |`
+| 'Import tests' | button | { role: 'button', text: 'Import tests' } | 'button.import' |`,
+      {
+        async before() {
+          screenshotLifecycle.push('before');
+          return Buffer.from('before');
+        },
+        async after(beforeScreenshot) {
+          screenshotLifecycle.push(`after:${beforeScreenshot?.toString()}`);
+          return null;
+        },
+      }
     );
 
     expect(result.interactions?.[0]?.targetState).toEqual({ kind: 'dialog', label: 'Import tests', url: '/suites' });
+    expect(screenshotLifecycle).toEqual(['before', 'click', 'after:before', 'restore']);
     expect(stateIndex).toBe(0);
   });
 
@@ -783,11 +812,9 @@ describe('documentarian interactive mode', () => {
         };
       },
     } as any;
+    const stateManager = { getCurrentState: () => states[stateIndex] } as any;
     const explorer = {
-      getStateManager() {
-        return { getCurrentState: () => states[stateIndex] };
-      },
-      createAction() {
+      action() {
         return {
           async attempt(command: string) {
             stateIndex = command.startsWith('I.amOnPage') ? 0 : 1;
@@ -796,7 +823,7 @@ describe('documentarian interactive mode', () => {
         };
       },
     } as any;
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, explorer, stateManager);
     const result = await documentarian.document(
       states[0],
       `## Content
@@ -841,7 +868,7 @@ describe('documentarian interactive mode', () => {
       { action: 'Clicked link: Item A', before: '1', after: '2', targetUrl: '/items/a' },
       { action: 'Clicked button: Save', before: '1', after: '2', changes: { urlChanged: false, newElements: 2, removedElements: 0 } },
       { action: 'Clicked tab: Merged', before: '1', after: '2', discoveredUrls: ['/branches/merged'] },
-      { action: 'Clicked button: No change', before: '1', after: '1', changes: { urlChanged: false, newElements: 0, removedElements: 0 } },
+      { action: 'Clicked button: No change', before: '1', after: '1', discoveredUrls: [], changes: { urlChanged: false, newElements: 0, removedElements: 0 } },
     ]);
 
     expect(interactions).toHaveLength(3);
@@ -892,19 +919,17 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const mockExplorer = {
-      getStateManager() {
+    const mockStateManager = {
+      getCurrentState() {
         return {
-          getCurrentState() {
-            return {
-              url: '/test',
-              title: 'Test',
-              ariaSnapshot: '[role: button]',
-            };
-          },
+          url: '/test',
+          title: 'Test',
+          ariaSnapshot: '[role: button]',
         };
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async execute(command: string) {
             return true;
@@ -913,7 +938,7 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer, mockStateManager);
 
     const result = await documentarian.document(
       {
@@ -946,19 +971,17 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const mockExplorer = {
-      getStateManager() {
+    const mockStateManager = {
+      getCurrentState() {
         return {
-          getCurrentState() {
-            return {
-              url: '/test',
-              title: 'Test',
-              ariaSnapshot: '[role: button]',
-            };
-          },
+          url: '/test',
+          title: 'Test',
+          ariaSnapshot: '[role: button]',
         };
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async execute(command: string) {
             return true;
@@ -967,7 +990,7 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer, mockStateManager);
 
     const result = await documentarian.document(
       {
@@ -1015,15 +1038,13 @@ describe('documentarian interactive mode', () => {
     ];
 
     let stateIndex = 0;
-    const mockExplorer = {
-      getStateManager() {
-        return {
-          getCurrentState() {
-            return states[stateIndex];
-          },
-        };
+    const mockStateManager = {
+      getCurrentState() {
+        return states[stateIndex];
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async attempt(command: string) {
             if (command.startsWith('I.click')) {
@@ -1040,7 +1061,7 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer, mockStateManager);
     const result = await documentarian.document(
       {
         url: '/items',
@@ -1082,19 +1103,17 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const mockExplorer = {
-      getStateManager() {
+    const mockStateManager = {
+      getCurrentState() {
         return {
-          getCurrentState() {
-            return {
-              url: '/test',
-              title: 'Test',
-              ariaSnapshot: '[role: tab]',
-            };
-          },
+          url: '/test',
+          title: 'Test',
+          ariaSnapshot: '[role: tab]',
         };
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async execute(command: string) {
             return true;
@@ -1103,7 +1122,7 @@ describe('documentarian interactive mode', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer);
+    const documentarian = new Documentarian(provider, { docs: { interactive: true } }, mockExplorer, mockStateManager);
 
     const result = await documentarian.document(
       {
@@ -1134,19 +1153,17 @@ describe('documentarian interactive defaults', () => {
       },
     } as any;
 
-    const mockExplorer = {
-      getStateManager() {
+    const mockStateManager = {
+      getCurrentState() {
         return {
-          getCurrentState() {
-            return {
-              url: '/test',
-              title: 'Test',
-              ariaSnapshot: '[role: button]',
-            };
-          },
+          url: '/test',
+          title: 'Test',
+          ariaSnapshot: '[role: button]',
         };
       },
-      createAction() {
+    } as any;
+    const mockExplorer = {
+      action() {
         return {
           async execute() {
             return true;
@@ -1155,7 +1172,7 @@ describe('documentarian interactive defaults', () => {
       },
     } as any;
 
-    const documentarian = new Documentarian(provider, {}, mockExplorer);
+    const documentarian = new Documentarian(provider, {}, mockExplorer, mockStateManager);
     const result = await documentarian.document(
       {
         url: '/test',

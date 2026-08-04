@@ -3,13 +3,11 @@ import { Navigator } from '../../src/ai/navigator.ts';
 
 describe('Navigator origin guard', () => {
   function createNavigator(baseUrl = 'http://192.168.1.162:3000') {
-    const navigator = Object.create(Navigator.prototype) as Navigator & { explorer: any };
-    navigator.explorer = {
-      getConfig: () => ({
-        playwright: {
-          url: baseUrl,
-        },
-      }),
+    const navigator = Object.create(Navigator.prototype) as Navigator & { config: any };
+    navigator.config = {
+      playwright: {
+        url: baseUrl,
+      },
     };
     return navigator;
   }

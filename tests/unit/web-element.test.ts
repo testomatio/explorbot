@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { WebElement, extractElementData } from '../../src/utils/web-element.ts';
+
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+
+afterEach(() => {
+  restoreGlobal('window', originalWindow);
+  restoreGlobal('document', originalDocument);
+});
 
 describe('extractElementData', () => {
   it('adds context, area, and variant hints for component drilling', () => {
@@ -91,6 +99,61 @@ describe('WebElement', () => {
     expect(element.ourAttr('coveredBy')).toBe('aside[role="dialog"]');
   });
 });
+
+describe('WebElement.commonAncestor', () => {
+  it('returns the closest wrapper containing all elements', async () => {
+    const dom = new JSDOM(`
+      <main>
+        <div class="detail detail-view-resizable">
+          <button data-explorbot-eidx="e1">Save</button>
+          <span><a data-explorbot-eidx="e2" href="/cancel">Cancel</a></span>
+        </div>
+      </main>
+    `);
+    useDom(dom);
+    const wrapper = dom.window.document.querySelector('.detail')!;
+    mockVisibleBox(wrapper);
+
+    const ancestor = await WebElement.commonAncestor(fakePage(), ['e1', 'e2']);
+
+    expect(ancestor?.tag).toBe('div');
+    expect(ancestor?.filteredClasses).toContain('detail-view-resizable');
+  });
+
+  it('returns null for a single element', async () => {
+    const dom = new JSDOM(`
+      <main>
+        <div class="panel"><button data-explorbot-eidx="e1">Save</button></div>
+      </main>
+    `);
+    useDom(dom);
+
+    expect(await WebElement.commonAncestor(fakePage(), ['e1'])).toBeNull();
+    expect(await WebElement.commonAncestor(fakePage(), ['e1', 'e404'])).toBeNull();
+  });
+
+  it('returns null when elements only share the body', async () => {
+    const dom = new JSDOM(`
+      <header><button data-explorbot-eidx="e1">Save</button></header>
+      <footer><button data-explorbot-eidx="e2">Cancel</button></footer>
+    `);
+    useDom(dom);
+
+    expect(await WebElement.commonAncestor(fakePage(), ['e1', 'e2'])).toBeNull();
+  });
+});
+
+function fakePage() {
+  return { evaluate: async (fn: (arg: any) => any, arg: any) => fn(arg) };
+}
+
+function restoreGlobal(name: string, descriptor: PropertyDescriptor | undefined) {
+  if (!descriptor) {
+    delete (globalThis as any)[name];
+    return;
+  }
+  Object.defineProperty(globalThis, name, descriptor);
+}
 
 function useDom(dom: JSDOM) {
   (globalThis as any).window = dom.window;

@@ -15,8 +15,9 @@ import { startFixture } from './tests/regression/fixture/server.ts';
 import { parsePlansFromMarkdown } from './src/utils/test-plan-markdown.ts';
 import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/html.js';
 import { analyzeDemoCandidates, createDemoVideo } from './.claude/skills/demo-video/demo-video.ts';
+import { EXPLORBOT_ENV_VARS } from './src/config.ts';
 
-const { exec, shell, writeToFile, task, ai } = global.bunosh;
+const { exec, shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
 
 const CLI = resolve('bin/explorbot-cli.ts');
 const REG_ROOT = resolve('tests/regression');
@@ -42,6 +43,75 @@ export async function worktreeCreate(name = '') {
   await exec`ln -sf node_modules ${newDir}/node_modules`;
 
   say(`Created worktree for feature ${worktreeName} in ${newDir}`);
+}
+
+const ENV_DOCS = [
+  { path: 'docs/workflow/agentic-usage.md', withRequired: true },
+  { path: 'docs/reference/commands.md', withRequired: false },
+];
+
+/**
+ * Regenerate generated docs: provider blocks from models.json, EXPLORBOT_* tables from src/config.ts
+ * @param {object} options
+ * @param {boolean} [options.check=false] - Fail if the docs are stale instead of rewriting them (for CI/release)
+ */
+export async function docsSync(options = { check: false }) {
+  stopOnFail();
+
+  await task('docs/basics/providers.md', () => syncProviderDocs(options.check));
+
+  for (const doc of ENV_DOCS) {
+    await task(doc.path, () => syncEnvDoc(doc, options.check));
+  }
+}
+
+function syncProviderDocs(check) {
+  const path = 'docs/basics/providers.md';
+  const original = readFileSync(resolve(path), 'utf8');
+  let updated = original;
+
+  const models = JSON.parse(readFileSync(resolve('models.json'), 'utf8'));
+  for (const [provider, roles] of Object.entries(models)) {
+    const config = Object.entries(roles)
+      .map(([role, id]) => `    ${role}: ${provider}('${id}'),`)
+      .join('\n');
+    let block = `\`\`\`javascript\nexport default {\n  ai: {\n${config}\n  },\n};\n\`\`\``;
+
+    const missing = ['model', 'visionModel', 'agenticModel'].filter((role) => !roles[role]);
+    if (missing.length) {
+      const list = missing.map((role) => `\`${role}\``).join(' and ');
+      block += `\n\n> [!NOTE]\n> This provider currently doesn't serve ${list}, which is required for Explorbot to run at optimal cost and speed.\n> It is recommended to pair it with another AI provider.`;
+    }
+
+    updated = updated.replace(new RegExp(`(<!-- START provider:${provider} -->)[\\s\\S]*?(<!-- END provider:${provider} -->)`), (_m, start, end) => `${start}\n${block}\n${end}`);
+  }
+
+  return applyGenerated(path, original, updated, check);
+}
+
+function syncEnvDoc({ path, withRequired }, check) {
+  const original = readFileSync(resolve(path), 'utf8');
+
+  let header = '| Variable | Meaning |\n|---|---|';
+  if (withRequired) header = '| Variable | Required | Meaning |\n|---|---|---|';
+
+  const rows = EXPLORBOT_ENV_VARS.map((v) => {
+    if (!withRequired) return `| \`${v.name}\` | ${v.description} |`;
+    if (v.required) return `| \`${v.name}\` | yes | ${v.description} |`;
+    return `| \`${v.name}\` | no | ${v.description} |`;
+  }).join('\n');
+
+  const updated = original.replace(/(<!-- START env -->)[\s\S]*?(<!-- END env -->)/, (_m, start, end) => `${start}\n${header}\n${rows}\n${end}`);
+
+  return applyGenerated(path, original, updated, check);
+}
+
+function applyGenerated(path, original, updated, check) {
+  if (updated === original) return 'already current';
+  if (check) throw new Error('stale — run `bunosh docs:sync` and commit');
+
+  writeFileSync(resolve(path), updated);
+  return 'regenerated';
 }
 
 /**

@@ -6,6 +6,7 @@ import { parseAriaLocator } from '../../utils/aria.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
 import { WebElement } from '../../utils/web-element.ts';
+import { isDynamicId } from '../../utils/xpath.ts';
 import type { Conversation } from '../conversation.ts';
 import type { Provider } from '../provider.js';
 import { locatorRule as generalLocatorRuleText } from '../rules.js';
@@ -38,7 +39,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
     declare provider: Provider;
     declare actionResult: ActionResult | undefined;
 
-    async testLocators(locators: Locator[]): Promise<void> {
+    async testLocators(locators: Locator[], opts: { scope?: boolean } = {}): Promise<void> {
       let broken = 0;
       for (const loc of locators) {
         if (executionController.isInterrupted()) break;
@@ -51,20 +52,21 @@ export function WithLocators<T extends Constructor>(Base: T) {
           continue;
         }
         try {
-          const count = await this.explorer.playwrightLocatorCount((page) => {
+          const count = await this.explorer.withPage((page) => {
             const base = loc.container ? page.locator(loc.container) : page;
             if (loc.type === 'aria') {
               const parsed = parseAriaLocator(loc.locator);
-              if (!parsed) return page.locator('__invalid__');
-              return base.getByRole(parsed.role as any, { name: parsed.text });
+              if (!parsed) return page.locator('__invalid__').count();
+              return base.getByRole(parsed.role as any, { name: parsed.text }).count();
             }
             const converted = loc.locator.replace(/:contains\(/g, ':has-text(');
             if (converted !== loc.locator) {
               loc.locator = converted;
             }
-            return base.locator(loc.locator);
+            return base.locator(loc.locator).count();
           });
           loc.valid = count === 1;
+          if (opts.scope && count > 1) loc.valid = true;
           loc.pwLocator = buildPwLocatorString(loc);
           if (!loc.valid) {
             loc.error = count === 0 ? '0 elements' : `${count} elements`;
@@ -194,7 +196,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
       }
 
       if (needsXpath.length > 0) {
-        const webElements = await this.explorer.runWithBrowserRecovery('backfillBrokenLocators', () => WebElement.fromEidxList(this.explorer.playwrightHelper.page, needsXpath));
+        const webElements = await this.explorer.withPage((page) => WebElement.fromEidxList(page, needsXpath));
         const changedSections = new Set<(typeof sections)[0]>();
         for (const w of webElements) {
           const entry = needsXpathEls.get(w.eidx!);
@@ -209,6 +211,60 @@ export function WithLocators<T extends Constructor>(Base: T) {
       await this.validateContainers(result);
     }
 
+    async resolveContainers(result: ResearchResult): Promise<Locator[]> {
+      const containerLocs = result.containerLocators;
+      await this.testLocators(containerLocs, { scope: true });
+      for (const loc of containerLocs.filter((l) => l.valid === false)) {
+        if (await this.recoverContainerFromChildren(result, loc.locator)) loc.valid = true;
+      }
+      return containerLocs.filter((l) => l.valid === false);
+    }
+
+    private async recoverContainerFromChildren(result: ResearchResult, css: string): Promise<boolean> {
+      const sections = parseResearchSections(result.text).filter((s) => s.containerCss === css);
+      let recovered = 0;
+
+      for (const section of sections) {
+        const eidxList = section.elements.map((el) => el.eidx).filter(Boolean) as string[];
+        if (eidxList.length < 2) continue;
+
+        const ancestor = await this.explorer.withPage((page) => WebElement.commonAncestor(page, eidxList));
+        if (!ancestor) continue;
+
+        const candidates: string[] = [];
+        const id = ancestor.attrs.id;
+        if (id && !isDynamicId(id)) candidates.push(`#${id}`);
+        for (const cls of ancestor.filteredClasses) {
+          if (!/^[\w-]+$/.test(cls)) continue;
+          candidates.push(`${ancestor.tag}.${cls}`);
+        }
+
+        let unique: string | null = null;
+        let multiple: string | null = null;
+        for (const candidate of candidates) {
+          let count = 0;
+          try {
+            count = await this.explorer.playwrightLocatorCount((page) => page.locator(candidate));
+          } catch {}
+          if (count === 1) {
+            unique = candidate;
+            break;
+          }
+          if (count > 1 && !multiple) multiple = candidate;
+        }
+
+        const newCss = unique || multiple;
+        if (!newCss) continue;
+
+        debugLog(`Recovered container: '${css}' → '${newCss}' in "${section.name}"`);
+        this.updateSectionContainer(result, section, newCss);
+        recovered++;
+      }
+
+      if (recovered > 0 && recovered < sections.length) debugLog(`Container '${css}' recovered in ${recovered}/${sections.length} sections, still broken for the rest`);
+      return recovered > 0 && recovered === sections.length;
+    }
+
     private async validateContainers(result: ResearchResult): Promise<void> {
       const sections = parseResearchSections(result.text);
 
@@ -217,7 +273,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
 
         let count = 0;
         try {
-          count = await this.explorer.playwrightLocatorCount((page) => page.locator(section.containerCss!));
+          count = await this.explorer.withPage((page) => page.locator(section.containerCss!).count());
         } catch {}
 
         if (count >= 1) continue;
@@ -226,7 +282,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
         if (simplified) {
           let simplifiedCount = 0;
           try {
-            simplifiedCount = await this.explorer.playwrightLocatorCount((page) => page.locator(simplified));
+            simplifiedCount = await this.explorer.withPage((page) => page.locator(simplified).count());
           } catch {}
 
           if (simplifiedCount >= 1) {
@@ -275,7 +331,8 @@ export interface Locator {
 }
 
 export interface LocatorMethods {
-  testLocators(locators: Locator[]): Promise<void>;
+  testLocators(locators: Locator[], opts?: { scope?: boolean }): Promise<void>;
   fixBrokenSections(result: ResearchResult, conversation: Conversation): Promise<void>;
   backfillBrokenLocators(result: ResearchResult): Promise<void>;
+  resolveContainers(result: ResearchResult): Promise<Locator[]>;
 }

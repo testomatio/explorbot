@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { Tester } from '../../src/ai/tester.ts';
 import { clearActivity, getCurrentActivity } from '../../src/activity.ts';
+import { Tester } from '../../src/ai/tester.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { Test, TestResult } from '../../src/test-plan.ts';
 
@@ -35,32 +35,11 @@ describe('Tester error page handling', () => {
     const currentState = createState('500 Internal Server Error', '<html><body><h1>500 Internal Server Error</h1></body></html>', '/broken');
     const startConversation = mock(() => createConversation());
     const visit = mock(async () => {});
-    const startTest = mock(async () => true);
     const stopTest = mock(async () => {});
+    const startTest = mock(async () => ({ started: true, stop: stopTest }));
 
     const explorer: any = {
-      getConfig: () => ({}),
-      getStateManager: () => ({
-        getCurrentState: () => currentState,
-        clearHistory: () => {},
-        getExperienceTracker: () => ({
-          getExperienceTableOfContents: () => [],
-          renderExperienceTocFor: () => '',
-        }),
-      }),
-      getKnowledgeTracker: () => ({
-        getRelevantKnowledge: () => [],
-        renderRelevantKnowledge: () => '',
-      }),
-      getRequestStore: () => null,
-      playwrightHelper: {
-        page: {
-          on: () => {},
-          off: () => {},
-        },
-      },
-      startTest,
-      stopTest,
+      beginTest: startTest,
       visit,
     };
     const provider: any = {
@@ -70,7 +49,27 @@ describe('Tester error page handling', () => {
     };
     const researcher: any = {};
     const navigator: any = {};
-    const tester = new Tester(explorer, provider, researcher, navigator);
+    const deps: any = {
+      explorer,
+      ai: provider,
+      config: {},
+      stateManager: {
+        getCurrentState: () => currentState,
+        clearHistory: () => {},
+        otherTabs: [],
+        getExperienceTracker: () => ({
+          getExperienceTableOfContents: () => [],
+          renderExperienceTocFor: () => '',
+        }),
+      },
+      knowledgeTracker: {
+        getRelevantKnowledge: () => [],
+        renderRelevantKnowledge: () => '',
+      },
+      requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
+      playwrightRecorder: {},
+    };
+    const tester = new Tester(deps, researcher, navigator);
     const task = new Test('check broken page', 'normal', 'page works', '/broken');
 
     const result = await tester.test(task);
@@ -93,36 +92,11 @@ describe('Tester error page handling', () => {
     const visit = mock(async () => {
       currentState = createState('Application', '<html><body>Short response</body></html>', '/missing', 404);
     });
-    const startTest = mock(async () => true);
     const stopTest = mock(async () => {});
+    const startTest = mock(async () => ({ started: true, stop: stopTest }));
 
     const explorer: any = {
-      getConfig: () => ({}),
-      getStateManager: () => ({
-        getCurrentState: () => currentState,
-        clearHistory: () => {},
-        getExperienceTracker: () => ({
-          getExperienceTableOfContents: () => [],
-          renderExperienceTocFor: () => '',
-        }),
-      }),
-      getKnowledgeTracker: () => ({
-        getRelevantKnowledge: () => [],
-        renderRelevantKnowledge: () => '',
-      }),
-      getRequestStore: () => null,
-      hasOtherTabs: () => false,
-      getOtherTabsInfo: () => [],
-      clearOtherTabsInfo: () => {},
-      getCurrentIframeInfo: () => null,
-      playwrightHelper: {
-        page: {
-          on: () => {},
-          off: () => {},
-        },
-      },
-      startTest,
-      stopTest,
+      beginTest: startTest,
       visit,
     };
     const provider: any = {
@@ -135,7 +109,27 @@ describe('Tester error page handling', () => {
       researchOverlay: mock(async () => null),
     };
     const navigator: any = {};
-    const tester = new Tester(explorer, provider, researcher, navigator);
+    const deps: any = {
+      explorer,
+      ai: provider,
+      config: {},
+      stateManager: {
+        getCurrentState: () => currentState,
+        clearHistory: () => {},
+        otherTabs: [],
+        getExperienceTracker: () => ({
+          getExperienceTableOfContents: () => [],
+          renderExperienceTocFor: () => '',
+        }),
+      },
+      knowledgeTracker: {
+        getRelevantKnowledge: () => [],
+        renderRelevantKnowledge: () => '',
+      },
+      requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
+      playwrightRecorder: {},
+    };
+    const tester = new Tester(deps, researcher, navigator);
     const task = new Test('check missing page', 'normal', 'page works', '/missing');
 
     const result = await tester.test(task);

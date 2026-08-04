@@ -4,6 +4,7 @@ import { outputPath } from '../config.js';
 import { normalizeUrl } from '../state-manager.js';
 import { Stats } from '../stats.js';
 import { type Plan, type Test, TestResult } from '../test-plan.js';
+import { browserErrorMessage } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import { ErrorPageError, getStateErrorPageError } from '../utils/error-page.ts';
 import { tag } from '../utils/logger.js';
@@ -38,7 +39,7 @@ export class ExploreCommand extends BaseCommand {
   private priorityFilter?: Set<string>;
 
   private getCurrentPageUrl(): string | undefined {
-    const state = this.explorBot.getExplorer().getStateManager().getCurrentState();
+    const state = this.explorBot.stateManager().getCurrentState();
     return state?.fullUrl || state?.url;
   }
 
@@ -56,7 +57,7 @@ export class ExploreCommand extends BaseCommand {
     Stats.mode ??= 'explore';
     Stats.focus ??= feature;
     const mainUrl = this.getCurrentPageUrl();
-    const error = getStateErrorPageError(this.explorBot.getExplorer().getStateManager().getCurrentState());
+    const error = getStateErrorPageError(this.explorBot.stateManager().getCurrentState());
     if (error) {
       tag('warning').log(error.message);
       return;
@@ -74,7 +75,7 @@ export class ExploreCommand extends BaseCommand {
       this.printResults();
       return;
     }
-    if (mainUrl) await this.explorBot.visit(mainUrl);
+    if (mainUrl) await this.explorBot.visit(mainUrl).catch((err) => tag('warning').log(`Could not return to ${mainUrl}: ${browserErrorMessage(err)}`));
     const savedPath = this.explorBot.savePlans(this.completedPlans);
     this.printResults();
     await this.explorBot.printSessionAnalysis();

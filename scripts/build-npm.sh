@@ -17,6 +17,7 @@ for dir in rules assets/sample-files; do
 done
 
 cp package.json "$DIST_DIR/package.json"
+cp models.json "$DIST_DIR/models.json"
 
 CLI="$DIST_DIR/bin/explorbot-cli.js"
 if [ -f "$CLI" ]; then

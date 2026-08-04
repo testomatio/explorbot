@@ -52,9 +52,9 @@ describe('Explorer recovery URL resolution', () => {
       updateStateFromBasic: () => {},
     };
 
-    const recovered = await explorer.recoverFromBrowserError();
+    const { ok } = await explorer.recover();
 
-    expect(recovered).toBe(true);
+    expect(ok).toBe(true);
     expect((explorer as any).playwrightHelper.page).toBe(newPage);
     expect(navigated).toEqual(['https://the-internet.herokuapp.com/']);
     expect(boundEvents).toContain('framenavigated');
@@ -67,12 +67,12 @@ describe('Explorer recovery URL resolution', () => {
     (explorer as any).playwrightHelper = {
       page: { isClosed: () => false },
     };
-    (explorer as any).recoverFromBrowserError = async () => {
+    (explorer as any).recoverPage = async () => {
       recoveries++;
       return true;
     };
 
-    const result = await explorer.runWithBrowserRecovery('test operation', async () => {
+    const result = await (explorer as any).runWithRecovery('test operation', async () => {
       attempts++;
       if (attempts === 1) throw new Error('Target closed');
       return 'recovered';
@@ -90,12 +90,12 @@ describe('Explorer recovery URL resolution', () => {
     (explorer as any).playwrightHelper = {
       page: { isClosed: () => false },
     };
-    (explorer as any).recoverFromBrowserError = async () => {
+    (explorer as any).recoverPage = async () => {
       recoveries++;
       return true;
     };
 
-    const result = await explorer.runWithBrowserRecovery('test operation', async () => {
+    const result = await (explorer as any).runWithRecovery('test operation', async () => {
       attempts++;
       if (attempts === 1) throw new Error('page.evaluate: Execution context was destroyed, most likely because of a navigation');
       if (attempts === 2) throw new Error('Target closed');
@@ -107,26 +107,23 @@ describe('Explorer recovery URL resolution', () => {
     expect(recoveries).toBe(1);
   });
 
-  it('recovers and retries action attempts through Explorer', async () => {
+  it('recovers and retries page operations through withPage', async () => {
     const explorer = buildExplorer('https://the-internet.herokuapp.com');
     let attempts = 0;
     let recoveries = 0;
     (explorer as any).playwrightHelper = {
       page: { isClosed: () => false },
     };
-    (explorer as any).recoverFromBrowserError = async () => {
+    (explorer as any).recoverPage = async () => {
       recoveries++;
       return true;
     };
-    (explorer as any).createAction = () => ({
-      attempt: async () => {
-        attempts++;
-        if (attempts === 1) throw new Error('Target page, context or browser has been closed');
-        return true;
-      },
-    });
 
-    const result = await explorer.attemptAction('I.click("Menu")', undefined);
+    const result = await explorer.withPage(async () => {
+      attempts++;
+      if (attempts === 1) throw new Error('Target page, context or browser has been closed');
+      return true;
+    });
 
     expect(result).toBe(true);
     expect(attempts).toBe(2);
@@ -138,18 +135,18 @@ describe('Explorer recovery URL resolution', () => {
     (explorer as any).playwrightHelper = {
       page: { isClosed: () => false },
     };
-    (explorer as any).recoverFromBrowserError = async () => true;
+    (explorer as any).recoverPage = async () => true;
 
     let error: unknown;
     try {
-      await explorer.runWithBrowserRecovery('capturePageState', async () => {
+      await (explorer as any).runWithRecovery('capturePageState', async () => {
         throw new Error('Target page, context or browser has been closed');
       });
     } catch (err) {
       error = err;
     }
 
-    const result = await explorer.handleExecutionError(error);
+    const result = await explorer.recover(error);
 
     expect(result.action).toBe('stop');
     expect(result.message).toContain('failed after browser recovery');
@@ -157,10 +154,10 @@ describe('Explorer recovery URL resolution', () => {
 
   it('returns a stop decision when browser recovery fails', async () => {
     const explorer = buildExplorer('https://the-internet.herokuapp.com');
-    (explorer as any).recoverFromBrowserError = async () => false;
+    (explorer as any).recoverPage = async () => false;
     (explorer as any).restartBrowser = async () => false;
 
-    const result = await explorer.handleExecutionError(new Error('Target closed'));
+    const result = await explorer.recover(new Error('Target closed'));
 
     expect(result.action).toBe('stop');
     expect(result.recovered).toBe(false);
@@ -169,7 +166,7 @@ describe('Explorer recovery URL resolution', () => {
   it('returns guidance for non-browser execution errors', async () => {
     const explorer = buildExplorer('https://the-internet.herokuapp.com');
 
-    const result = await explorer.handleExecutionError(new Error('Locator not found'));
+    const result = await explorer.recover(new Error('Locator not found'));
 
     expect(result.action).toBe('continue');
     expect(result.recovered).toBeUndefined();
