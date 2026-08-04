@@ -7,13 +7,17 @@ import { ConfigParser } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { Prima } from '../src/prima.ts';
 
+let artifactsRoot: string;
+
 beforeAll(() => {
   ConfigParser.resetForTesting();
   ConfigParser.setupTestConfig();
+  artifactsRoot = mkdtempSync(path.join(tmpdir(), 'prima-'));
 });
 
 afterAll(() => {
   ConfigParser.cleanupAllTestDirectories();
+  rmSync(artifactsRoot, { recursive: true, force: true });
 });
 
 function fakeState(over: Record<string, unknown> = {}) {
@@ -79,7 +83,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
     requestStore: () => ({ getRequests: () => [] }),
     getProvider: () => ({ chat: async () => '' }),
   };
-  (prima as any).artifactsDir = mkdtempSync(path.join(tmpdir(), 'prima-'));
+  (prima as any).artifactsDir = artifactsRoot;
   return { prima, executed };
 }
 

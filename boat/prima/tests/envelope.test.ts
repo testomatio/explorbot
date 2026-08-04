@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -107,5 +107,6 @@ describe('writeArtifacts', () => {
     expect(readFileSync(result.html, 'utf-8')).toContain('<html>');
     expect(readFileSync(result.network, 'utf-8')).toContain('/api/user');
     expect(path.isAbsolute(result.aria)).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
   });
 });

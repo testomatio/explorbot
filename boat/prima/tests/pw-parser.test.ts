@@ -20,8 +20,14 @@ describe('isFunctionExpression', () => {
 });
 
 describe('toCodeceptWrapper', () => {
-  test('interpolates the function verbatim into usePlaywrightTo', () => {
+  test('calls the function from an async wrapper the native helper API accepts', () => {
     const code = toCodeceptWrapper("({ page }) => page.click('text=Login')");
-    expect(code).toBe("I.usePlaywrightTo('pw', ({ page }) => page.click('text=Login'))");
+    expect(code).toBe("I.usePlaywrightTo('pw', async (playwright) => (({ page }) => page.click('text=Login'))(playwright))");
+  });
+
+  test('keeps an already async function callable', () => {
+    const code = toCodeceptWrapper("async ({ page }) => { await page.click('text=Login') }");
+    expect(code).toContain("async ({ page }) => { await page.click('text=Login') }");
+    expect(code).toStartWith("I.usePlaywrightTo('pw', async (playwright) =>");
   });
 });

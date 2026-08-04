@@ -45,6 +45,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Execute CodeceptJS command | `npx explorbot shell <url> <command>` | `I.click(...)` etc. inline | One-shot vs interactive |
 | Load saved plan | `npx explorbot plan:load <file> [index]` | `/plan:load <file>` | Preview a plan |
 | Collect documentation | `npx explorbot docs collect <path-or-url>` | — | See [doc-collector](../doc-collection/basics.md) |
+| Drive an already-open browser | `npx explorbot prima <command>` | — | One command per process, see [Prima boat](#prima-boat) |
 | Extract built-in rules | `npx explorbot extract-rules <agent>` | — | Customizable rules to `rules/` |
 | Create a rule file | `npx explorbot add-rule [agent] [name]` | `/add-rule [agent] [name]` | Writes `rules/<agent>/<name>.md` |
 | Manage persistent browser | `npx explorbot browser {start\|stop\|status}` | — | Share browser across runs |
@@ -77,7 +78,7 @@ npx explorbot navigate /login --session             # probe + capture auth in on
 npx explorbot research /dashboard --session auth.json   # reuse captured auth
 ```
 
-Without a file path, the flag defaults to `session.json` inside the resolved configuration's output directory. In config-free mode that is the temporary or explicitly configured `EXPLORBOT_OUTPUT` directory.
+Without a file path, the flag defaults to `session.json` inside the resolved configuration's output directory. In config-free mode that is the per-host state directory `~/.explorbot/state/<host>/`, or whatever `EXPLORBOT_OUTPUT` points at.
 
 ## Environment Variables
 
@@ -97,16 +98,17 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_URL` | Base URL to test; the API boat reads it as the base endpoint |
 | `EXPLORBOT_VISION_MODEL` | Screenshot analysis; overrides the provider recommendation |
 | `EXPLORBOT_AGENTIC_MODEL` | Captain and Pilot decisions; overrides the provider recommendation |
-| `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to a fresh temp directory |
+| `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to the per-host state dir under ~/.explorbot/state |
+| `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the per-host state dir |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
 <!-- END env -->
 
-A config file always wins when present. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `openrouter`, `sambanova`.
+A config file always wins when present. Explorbot looks for one in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then `~/.explorbot/config.*`, and only then builds a configuration from the environment. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `openrouter`, `sambanova`.
 
-In this mode experience is not written and the Historian is off, so no generated test files appear. See [Agentic Usage](../workflow/agentic-usage.md) for the full picture.
+In this mode output goes to `~/.explorbot/state/<host>/` (or `EXPLORBOT_OUTPUT`, or a temp directory with `EXPLORBOT_EPHEMERAL=1`), experience is not written, and the Historian is off, so no generated test files appear. See [Agentic Usage](../workflow/agentic-usage.md) for the full picture.
 
 ## Persistent Browser
 
@@ -602,6 +604,104 @@ Create a starter `docbot.config.ts` file.
 npx explorbot docs init
 npx explorbot docs init --path explorbot-testing
 ```
+
+## Prima boat
+
+Prima drives a browser that is already open, one command per process. Every page command prints a plain-text envelope on stdout and exits `0` when the envelope says `ok: true`, `1` when it does not — so a coding agent can act on the result without parsing JSON. The `browser` commands print a status line instead.
+
+Run it as `npx explorbot prima <command>` or through the standalone `prima` bin.
+
+| Command | Purpose |
+|---|---|
+| `prima pw <fn>` | Run a Playwright function expression against the open page |
+| `prima do <steps...>` | Run several described steps tester-style, one argument per step |
+| `prima click <target>` | Click an element described in plain words |
+| `prima fill <field> <value>` | Fill a field described in plain words |
+| `prima ask <question>` | Answer a question about the current page |
+| `prima verify <assertion>` | Assert a statement about the current page (alias: `assert`) |
+| `prima research` | Map the current page and return verified locators |
+| `prima go <target>` | Navigate to a url, a path, or a page described in plain words |
+| `prima browser {start\|stop\|status\|list}` | Manage the browsers prima drives |
+
+### Choosing a command
+
+Pick by what you hold, not by how hard the step looks.
+
+- **`pw`** is precise: a function expression built from a locator you already verified. No AI on the happy path, so it also works when no model is configured.
+- **`click` and `fill`** take one action described in words and let AI resolve it against the current page.
+- **`do`** takes several described steps and runs them tester-style in one process.
+
+Never pass a locator or a function expression to `click`, `fill`, or `do` — describe the target. Never pass a description to `pw` — it takes executable code only.
+
+The loop that works: `go` to the page, `research` it once for verified locators, drive it with `pw`, then `verify` the outcome. Fall back to `click`, `fill`, or `do` whenever research left you no locator to hold.
+
+### The envelope
+
+```
+### Result
+ok: true
+command: pw ({ page }) => page.click('[data-test=submit]')
+used: ({ page }) => page.click('[data-test=submit]')
+
+### Page
+url: /orders/4821                     (changed: /orders/new → /orders/4821)
+title: Order 4821 - Widget Depot
+state: orders_4821_h1_order_placed    (visit #1)
+
+### Changes
+ariaDiff:
+  added:
+    - heading "Order placed" [level=1]
+  removed:
+    - button "Submit"
+
+### Instance
+instance: default (1 tab) | other instances: none
+browser: attached (playwright-cli session "default", workspace /home/you/projects/shop)
+
+### Artifacts
+aria: /home/you/.explorbot/state/app.example.com/prima/2026-08-04T10-04-22-285Z/aria.yml
+html: /home/you/.explorbot/state/app.example.com/prima/2026-08-04T10-04-22-285Z/page.html
+network: /home/you/.explorbot/state/app.example.com/prima/2026-08-04T10-04-22-285Z/network.jsonl
+```
+
+`used:` is code that already executed — copy it into a test as is. Log lines can precede the envelope, so start parsing at the first `###` line.
+
+`ask`, `research`, and `verify` replace the `### Changes` block with `### Answer`, `### Research`, or `### Verdict`. A failure adds `### Failure` with the error and the compact ARIA of the page, so you can retarget from the envelope itself instead of opening the artifact files.
+
+When an action fails, AI retries it along a different route; `healed: true` means the outcome was reached another way and `used:` holds the code that worked. `--no-heal` skips that and fails fast.
+
+### Browsers and sessions
+
+Prima never launches a browser implicitly. Open one first:
+
+```bash
+playwright-cli open https://app.example.com   # the session prima attaches to by default
+npx explorbot prima browser start             # a prima-owned browser instead
+```
+
+By default prima attaches to the playwright-cli browser of the current workspace and works on the tabs it already has open — driving the same session from both tools is the intended usage. Stopping prima disconnects from an attached browser; it never closes it. `prima browser list` shows both kinds of browser, and the `### Instance` block names the one you are on.
+
+| Option | Description |
+|---|---|
+| `--pw-session <title>` | Which playwright-cli session, when several are open for the workspace |
+| `--endpoint <ep>` | Attach to a browser server endpoint directly, skipping discovery |
+| `--instance <name>` | Which prima-owned browser to talk to; parallel work needs one each |
+| `--session [file]` | Cookies and storage persisted across processes; ignored while attached, since the attached session keeps its own |
+| `--no-heal` | Fail immediately instead of letting AI retry a failed action |
+| `--ephemeral` | Keep no state between runs; output goes to a temp directory |
+
+`--instance` and `--session` answer different questions: `--instance` picks *which browser process* prima drives, `--session` decides *whose cookies* it starts from.
+
+### Without a config file
+
+Prima follows the same [configuration ladder](#environment-variables) as every other command, so a provider name in the environment is enough:
+
+```bash
+EXPLORBOT_AI_PROVIDER=groq npx explorbot prima go https://app.example.com
+```
+
+`pw` still works when no model is usable at all; commands that need one say so and point at the fallback.
 
 ## Plan Management
 

@@ -13,5 +13,5 @@ export function isFunctionExpression(expr: string): { valid: boolean; error?: st
 }
 
 export function toCodeceptWrapper(expr: string): string {
-  return `I.usePlaywrightTo('pw', ${expr.trim()})`;
+  return `I.usePlaywrightTo('pw', async (playwright) => (${expr.trim()})(playwright))`;
 }
