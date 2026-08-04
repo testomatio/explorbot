@@ -48,15 +48,23 @@ const helpContract = dedent`
     the artifact files only when the inline snapshot is not enough.
 
   SESSIONS
-    --instance <name>  which browser process you talk to; parallel work needs one each
-    --session [file]   cookies and storage persisted across processes
-    Prima never launches a browser implicitly. The session it drives is the one from
-    prima browser start; close it when finished - ### Instance lists what you own.
+    By default prima attaches to the playwright-cli browser of this workspace and works
+    on the tabs it already has open; driving the same session from both tools is the
+    intended usage.
+    playwright-cli open <url>  the session prima attaches to
+    --pw-session <title>       which playwright-cli session, when several are open
+    --endpoint <ep>            attach to a browser server endpoint directly
+    prima browser start        a prima-owned browser instead, when no session is open
+    --instance <name>          which prima-owned browser you talk to; parallel work
+                               needs one each
+    --session [file]           cookies and storage persisted across processes; ignored
+                               while attached, the attached session keeps its own
+    Prima never launches a browser implicitly and never closes an attached one - it
+    disconnects. browser list shows both kinds; ### Instance names the one you are on.
     When no AI model is usable pw still works; for everything else drive
     playwright-cli directly.
-    Parsed but not active yet: --endpoint and --pw-session, so a browser opened by
-    playwright-cli cannot be reached yet; and --framework, so reported code is
-    CodeceptJS whatever you pass.
+    Parsed but not active yet: --framework, so reported code is CodeceptJS whatever
+    you pass.
 `;
 
 function buildOptions(options: any): PrimaOptions {
@@ -90,8 +98,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--ephemeral', 'Keep no state between runs, output goes to a temp directory')
     .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')
-    .option('--endpoint <ep>', 'Not active yet: websocket endpoint of a playwright-cli browser to attach to')
-    .option('--pw-session <title>', 'Not active yet: title of a playwright-cli session to attach to');
+    .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')
+    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
 }
 
 function primaFor(options: any): Prima {

@@ -6,7 +6,7 @@ import stepsListener from 'codeceptjs/lib/listener/steps';
 import storeListener from 'codeceptjs/lib/listener/store';
 import { createTest } from 'codeceptjs/lib/mocha/test';
 import dedent from 'dedent';
-import type { BrowserContextOptions, Page } from 'playwright';
+import type { Browser, BrowserContextOptions, Page } from 'playwright';
 import { ActionResult } from './action-result.ts';
 import Action from './action.js';
 import type { RequestStore } from './api/request-store.ts';
@@ -103,8 +103,8 @@ class Explorer {
       throw new Error('Playwright helper not available');
     }
     await this.connectOrLaunchBrowser();
-    const hasSession = this.options?.session && existsSync(this.options.session);
-    await this.playwrightHelper._createContextPage(this.createBrowserContextOptions());
+    const hasSession = !this.options?.attachedBrowser && this.options?.session && existsSync(this.options.session);
+    await this.openContextPage();
     await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
     this.attachXhrCapture();
     if (hasSession) {
@@ -123,10 +123,11 @@ class Explorer {
   async stop(): Promise<void> {
     if (!this.started) return;
     this.started = false;
+    const attached = !!this.options?.attachedBrowser;
 
     await this.stopCaptures();
 
-    if (this.options?.session && this.playwrightHelper?.browserContext) {
+    if (!attached && this.options?.session && this.playwrightHelper?.browserContext) {
       const dir = path.dirname(this.options.session);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       await this.playwrightHelper.browserContext.storageState({ path: this.options.session });
@@ -141,7 +142,14 @@ class Explorer {
       return;
     }
 
-    tag('info').log('Closing browser context (persistent browser stays running)');
+    if (attached) {
+      tag('info').log('Disconnecting from attached browser (its pages stay open)');
+      await this.playwrightHelper.browser?.close().catch((err: unknown) => {
+        debugLog('Failed to disconnect from attached browser:', err);
+      });
+    }
+
+    if (!attached) tag('info').log('Closing browser context (persistent browser stays running)');
     await this.closeBrowserContext();
     this.playwrightHelper.browser = null;
     this.playwrightHelper.isRunning = false;
@@ -309,6 +317,14 @@ class Explorer {
   }
 
   private async connectOrLaunchBrowser(): Promise<void> {
+    if (this.options?.attachedBrowser) {
+      this.playwrightHelper.browser = this.options.attachedBrowser;
+      this.playwrightHelper.isRunning = true;
+      this.isSharedBrowser = true;
+      tag('success').log('Attached to a browser opened by another tool');
+      return;
+    }
+
     const { getAliveEndpoint } = await import('./browser-server.js');
     const endpoint = await getAliveEndpoint(this.options?.instance);
 
@@ -324,6 +340,21 @@ class Explorer {
     }
 
     await this.playwrightHelper._startBrowser();
+  }
+
+  private async openContextPage(): Promise<void> {
+    const attached = this.options?.attachedBrowser;
+    if (!attached) {
+      await this.playwrightHelper._createContextPage(this.createBrowserContextOptions());
+      return;
+    }
+
+    const context = attached.contexts()[0] || (await attached.newContext());
+    const pages = context.pages();
+    const page = pages[pages.length - 1] || (await context.newPage());
+    this.playwrightHelper.browserContext = context;
+    await this.playwrightHelper._setPage(page);
+    debugLog(`Adopted attached browser page: ${page.url()}`);
   }
 
   private createBrowserContextOptions(): BrowserContextOptions {
@@ -506,6 +537,10 @@ class Explorer {
   }
 
   private async closeBrowserContext(): Promise<void> {
+    if (this.options?.attachedBrowser) {
+      this.playwrightHelper.browserContext = null;
+      return;
+    }
     if (!this.playwrightHelper.browserContext) return;
     await this.playwrightHelper.browserContext.close().catch((err: unknown) => {
       debugLog('Failed to close browser context:', err);
@@ -529,7 +564,7 @@ class Explorer {
       }
 
       await this.connectOrLaunchBrowser();
-      await this.playwrightHelper._createContextPage(this.createBrowserContextOptions());
+      await this.openContextPage();
       await this.playwrightRecorder.start(this.playwrightHelper.browserContext);
       this.attachXhrCapture();
       this.listenToStateChanged();
@@ -631,6 +666,7 @@ class Explorer {
 
   private async closeOtherTabs(): Promise<void> {
     if (!this.playwrightHelper) return;
+    if (this.options?.attachedBrowser) return;
 
     const context = this.playwrightHelper.page.context();
     const pages = context.pages();
@@ -734,6 +770,7 @@ export interface ExplorerOptions {
   incognito?: boolean;
   session?: string;
   instance?: string;
+  attachedBrowser?: Browser;
 }
 
 export interface ExplorerDeps {

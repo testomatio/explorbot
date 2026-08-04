@@ -1,5 +1,8 @@
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import dedent from 'dedent';
+import type { Browser } from 'playwright';
+import * as playwright from 'playwright-core';
 import { ActionResult } from '../../../src/action-result.ts';
 import type { Navigator } from '../../../src/ai/navigator.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
@@ -14,16 +17,20 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { type EnvelopeData, type HealAttempt, type InstanceInfo, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, toCodeceptWrapper } from './pw-parser.ts';
+import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 
 const MAX_INSTRUCTION_ITERATIONS = 6;
 const MAX_TOOL_ROUNDTRIPS = 5;
 const AI_AGENT_NAME = 'prima';
+const CONNECT_TIMEOUT = 3000;
+const requireLib = createRequire(import.meta.url);
 
 export class Prima {
   private options: PrimaOptions;
   private bot: ExplorBot;
   private artifactsDir?: string;
   private server: { close: () => Promise<void> } | null = null;
+  private attached: string | null = null;
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -39,19 +46,8 @@ export class Prima {
   }
 
   async start(): Promise<void> {
-    await this.loadConfig();
-
-    if (!(await this.connectOwnInstance())) {
-      throw new Error(dedent`
-        No browser session found for instance "${this.instanceName()}".
-        Create one first:
-          prima browser start   starts a prima-owned browser
-        Prima never launches a browser implicitly.
-        Attaching to a browser opened by playwright-cli is not wired yet, so --endpoint
-        and --pw-session cannot reach one.
-      `);
-    }
-
+    const config = await this.loadConfig();
+    await this.attachBrowser(config);
     await this.bot.start();
 
     if (!this.options.url) return;
@@ -229,6 +225,7 @@ export class Prima {
 
   async browserStop(all = false): Promise<boolean> {
     await this.loadConfig();
+    if (this.attached) return false;
 
     if (!all) return this.stopInstance(this.instanceName());
 
@@ -257,7 +254,11 @@ export class Prima {
     for (const instance of listInstances()) {
       const endpoint = await getAliveEndpoint(instance.name);
       if (!endpoint) continue;
-      lines.push(`${instance.name}  ${endpoint}`);
+      lines.push(`prima --instance ${instance.name}  ${endpoint}`);
+    }
+
+    for (const descriptor of this.discover().candidates) {
+      lines.push(`playwright-cli --pw-session ${descriptor.title}  ${descriptor.endpoint}`);
     }
 
     if (!lines.length) return 'no browser instances running';
@@ -270,7 +271,9 @@ export class Prima {
       .filter((instance) => instance.name !== name)
       .map((instance) => ({ name: instance.name, tabs: 0 }));
 
-    return { name, tabs: this.tabCount(), others };
+    const info: InstanceInfo = { name, tabs: this.tabCount(), others };
+    if (this.attached) info.attached = this.attached;
+    return info;
   }
 
   async toolFailureEnvelope(command: string, error: unknown): Promise<EnvelopeData> {
@@ -290,6 +293,84 @@ export class Prima {
 
   private async loadConfig(): Promise<ExplorbotConfig> {
     return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path });
+  }
+
+  private async attachBrowser(config: ExplorbotConfig): Promise<void> {
+    if (this.options.endpoint) {
+      const endpoint = this.options.endpoint;
+      const browserName = config.playwright.browser || 'chromium';
+      if (await this.attachToEndpoint({ file: '', title: '', endpoint, workspaceDir: '', browserName, playwrightLib: '' })) return;
+      throw new Error(dedent`
+        No browser answered at ${endpoint}.
+        Check the endpoint of the running session, or drop --endpoint to attach to the
+        playwright-cli browser of this workspace.
+      `);
+    }
+
+    const { match, candidates } = this.discover();
+    if (match && (await this.attachToEndpoint(match))) return;
+
+    if (!match && candidates.length) {
+      const titles = candidates.map((candidate) => candidate.title).join(', ');
+      throw new Error(dedent`
+        Several playwright-cli sessions are open for this workspace: ${titles}
+        Pick one with --pw-session <title>.
+      `);
+    }
+
+    if (await this.connectOwnInstance()) return;
+
+    throw new Error(dedent`
+      No browser to drive for instance "${this.instanceName()}".
+      Open one first:
+        playwright-cli open <url>   prima attaches to this workspace session by default
+        prima browser start         starts a prima-owned browser instead
+      Prima never launches a browser implicitly.
+    `);
+  }
+
+  private discover(): { match?: PwServerDescriptor; candidates: PwServerDescriptor[] } {
+    const title = this.options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION;
+    return selectDescriptor(readDescriptors(), { workspaceDir: this.workspaceDir(), title });
+  }
+
+  private async attachToEndpoint(descriptor: PwServerDescriptor): Promise<boolean> {
+    const browser = await this.connectDescriptor(descriptor);
+    if (!browser) return false;
+
+    this.bot.attachBrowser(browser);
+    this.attached = this.attachmentLabel(descriptor);
+    return true;
+  }
+
+  private async connectDescriptor(descriptor: PwServerDescriptor): Promise<Browser | null> {
+    const connected = await this.connectWith(playwright, descriptor);
+    if (connected) return connected;
+    return this.connectWith(this.descriptorLib(descriptor), descriptor);
+  }
+
+  private async connectWith(lib: any, descriptor: PwServerDescriptor): Promise<Browser | null> {
+    const launcher = lib?.[descriptor.browserName];
+    if (!launcher?.connect) return null;
+    return launcher.connect(descriptor.endpoint, { timeout: CONNECT_TIMEOUT }).catch(() => null);
+  }
+
+  private descriptorLib(descriptor: PwServerDescriptor): any {
+    if (!descriptor.playwrightLib) return null;
+    try {
+      return requireLib(descriptor.playwrightLib);
+    } catch {
+      return null;
+    }
+  }
+
+  private attachmentLabel(descriptor: PwServerDescriptor): string {
+    if (!descriptor.title) return `endpoint ${descriptor.endpoint}`;
+    return `playwright-cli session "${descriptor.title}", workspace ${descriptor.workspaceDir}`;
+  }
+
+  private workspaceDir(): string {
+    return path.resolve(this.options.path || process.cwd());
   }
 
   private async connectOwnInstance(): Promise<boolean> {

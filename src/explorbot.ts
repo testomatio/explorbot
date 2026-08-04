@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import type { Browser } from 'playwright';
 import type { AgentDeps } from './ai/agent.ts';
 import { Captain } from './ai/captain.ts';
 import { Driller } from './ai/driller.ts';
@@ -48,6 +49,7 @@ export interface ExplorBotOptions {
   session?: string | boolean;
   instance?: string;
   optionalAi?: boolean;
+  attachedBrowser?: Browser;
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -89,6 +91,10 @@ export class ExplorBot {
 
   setUserResolve(fn: UserResolveFunction): void {
     this.userResolveFn = fn;
+  }
+
+  attachBrowser(browser: Browser): void {
+    this.options.attachedBrowser = browser;
   }
 
   async start(): Promise<void> {

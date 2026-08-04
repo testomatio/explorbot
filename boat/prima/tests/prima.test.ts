@@ -246,8 +246,155 @@ describe('Prima.start', () => {
         started = true;
       },
     };
-    await expect(prima.start()).rejects.toThrow(/not wired yet/);
+    (prima as any).discover = () => ({ candidates: [] });
+    await expect(prima.start()).rejects.toThrow(/playwright-cli open/);
     expect(started).toBe(false);
+  });
+});
+
+describe('Prima attach ladder', () => {
+  const descriptor = { file: 'a', title: 'default', endpoint: '/tmp/pw/a.sock', workspaceDir: process.cwd(), browserName: 'chromium', playwrightLib: '/lib/pw' };
+
+  function ladderPrima(options: Record<string, unknown> = {}) {
+    const prima = new Prima({ instance: 'default', ...options });
+    const calls: string[] = [];
+    (prima as any).bot = { start: async () => calls.push('bot.start'), getCurrentState: () => null };
+    return { prima, calls };
+  }
+
+  test('start attaches to workspace playwright-cli browser before own daemon', async () => {
+    const { prima, calls } = ladderPrima();
+    (prima as any).discover = () => ({ match: descriptor, candidates: [] });
+    (prima as any).attachToEndpoint = async () => {
+      calls.push('attach');
+      return true;
+    };
+    (prima as any).connectOwnInstance = async () => {
+      calls.push('own');
+      return true;
+    };
+
+    await prima.start();
+    expect(calls).toEqual(['attach', 'bot.start']);
+  });
+
+  test('dead playwright-cli descriptor falls through to the own instance', async () => {
+    const { prima, calls } = ladderPrima();
+    (prima as any).discover = () => ({ match: descriptor, candidates: [descriptor] });
+    (prima as any).attachToEndpoint = async () => {
+      calls.push('attach');
+      return false;
+    };
+    (prima as any).connectOwnInstance = async () => {
+      calls.push('own');
+      return true;
+    };
+
+    await prima.start();
+    expect(calls).toEqual(['attach', 'own', 'bot.start']);
+  });
+
+  test('start uses explicitly started own instance when nothing attachable', async () => {
+    const { prima, calls } = ladderPrima();
+    (prima as any).discover = () => ({ candidates: [] });
+    (prima as any).attachToEndpoint = async () => {
+      calls.push('attach');
+      return true;
+    };
+    (prima as any).connectOwnInstance = async () => {
+      calls.push('own');
+      return true;
+    };
+
+    await prima.start();
+    expect(calls).toEqual(['own', 'bot.start']);
+  });
+
+  test('explicit endpoint attaches without discovery', async () => {
+    const { prima } = ladderPrima({ endpoint: 'ws://127.0.0.1:4321/session' });
+    const attached: any[] = [];
+    (prima as any).discover = () => {
+      throw new Error('discovery must be skipped for an explicit endpoint');
+    };
+    (prima as any).attachToEndpoint = async (target: unknown) => {
+      attached.push(target);
+      return true;
+    };
+
+    await prima.start();
+    expect(attached.length).toBe(1);
+    expect(attached[0].endpoint).toBe('ws://127.0.0.1:4321/session');
+  });
+
+  test('unreachable explicit endpoint fails naming the endpoint', async () => {
+    const { prima } = ladderPrima({ endpoint: 'ws://127.0.0.1:4321/session' });
+    (prima as any).attachToEndpoint = async () => false;
+
+    await expect(prima.start()).rejects.toThrow(/ws:\/\/127.0.0.1:4321\/session/);
+  });
+
+  test('start fails with playwright-cli guidance when no session exists anywhere', async () => {
+    const { prima } = ladderPrima();
+    (prima as any).discover = () => ({ candidates: [] });
+    (prima as any).connectOwnInstance = async () => false;
+
+    await expect(prima.start()).rejects.toThrow(/playwright-cli open/);
+    await expect(prima.start()).rejects.toThrow(/prima browser start/);
+  });
+
+  test('ambiguous sessions surface as tool error listing candidates', async () => {
+    const { prima } = ladderPrima();
+    (prima as any).discover = () => ({ candidates: [{ title: 'auth' }, { title: 'smoke' }] });
+
+    await expect(prima.start()).rejects.toThrow(/auth.*smoke|smoke.*auth/);
+  });
+
+  test('attached session is injected into the browser and reported in the instance block', async () => {
+    const { prima } = fakePrima();
+    const injected: any[] = [];
+    (prima as any).bot.attachBrowser = (browser: unknown) => injected.push(browser);
+    (prima as any).connectDescriptor = async () => ({ contexts: () => [] });
+
+    const attached = await (prima as any).attachToEndpoint({ ...descriptor, title: 'auth', workspaceDir: '/work/app' });
+    expect(attached).toBe(true);
+    expect(injected.length).toBe(1);
+
+    const info = await prima.instanceInfo();
+    expect(info.attached).toContain('auth');
+    expect(info.attached).toContain('/work/app');
+  });
+
+  test('endpoint attachment is reported by its endpoint', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.attachBrowser = () => {};
+    (prima as any).connectDescriptor = async () => ({ contexts: () => [] });
+
+    await (prima as any).attachToEndpoint({ ...descriptor, title: '', workspaceDir: '', endpoint: 'ws://127.0.0.1:4321/session' });
+    const info = await prima.instanceInfo();
+    expect(info.attached).toContain('ws://127.0.0.1:4321/session');
+  });
+
+  test('descriptor that cannot be connected reports no attachment', async () => {
+    const { prima } = fakePrima();
+    (prima as any).connectDescriptor = async () => null;
+
+    expect(await (prima as any).attachToEndpoint(descriptor)).toBe(false);
+    expect((await prima.instanceInfo()).attached).toBeUndefined();
+  });
+
+  test('stop in attached mode never reaches the browser server kill path', async () => {
+    const { prima } = fakePrima();
+    const calls: string[] = [];
+    (prima as any).attached = 'playwright-cli session "default", workspace /work/app';
+    (prima as any).bot.stop = async () => calls.push('bot.stop');
+    (prima as any).stopInstance = async (instance: string) => {
+      calls.push(`stopInstance:${instance}`);
+      return true;
+    };
+
+    await prima.stop();
+    expect(await prima.browserStop()).toBe(false);
+    expect(calls).toEqual(['bot.stop']);
   });
 });
 
@@ -485,6 +632,7 @@ describe('Prima AI availability', () => {
   test('start survives a failing ai provider bootstrap and do reports the fallback', async () => {
     const { prima } = fakePrima();
     const bot = new ExplorBot({ optionalAi: true });
+    (prima as any).discover = () => ({ candidates: [] });
     (prima as any).connectOwnInstance = async () => true;
     (prima as any).bot.start = () => bot.startProviderOnly();
     (prima as any).bot.getProvider = () => bot.getProvider();
@@ -616,6 +764,7 @@ describe('Prima.go', () => {
         started = true;
       },
     };
+    (prima as any).discover = () => ({ candidates: [] });
 
     await expect(prima.start()).rejects.toThrow(/prima browser start/);
     expect(started).toBe(false);
