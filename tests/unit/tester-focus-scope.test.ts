@@ -146,3 +146,19 @@ describe('Tester experience context', () => {
     expect(scenarioBlock).not.toContain('```');
   });
 });
+
+describe('Tester stalled execution', () => {
+  it('hands a verified scenario to final review without marking it failed', () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', 'filtered items appear', '/page');
+    const state = buildState('- main:', '/page');
+    (tester as any).stateManager.getCurrentState = () => state;
+    (tester as any).hasSuccessfulAssertion = true;
+
+    expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
+    expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
+    expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(true);
+    expect(task.hasFinished).toBe(false);
+    expect(task.getPrintableNotes()).toContain('No further browser progress after successful verification; requesting final review');
+  });
+});
