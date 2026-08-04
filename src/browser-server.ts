@@ -8,6 +8,7 @@ import { type NextStepSection, printNextSteps } from './utils/next-steps.ts';
 
 const ENDPOINT_FILENAME = '.browser-endpoint';
 const INSTANCE_NAME_PATTERN = /^[a-z0-9-]+$/;
+const KEEP_ALIVE_INTERVAL = 1 << 30;
 
 function getEndpointFilePath(instance = 'default'): string {
   if (!INSTANCE_NAME_PATTERN.test(instance)) {
@@ -114,6 +115,21 @@ async function stopServer(instance = 'default'): Promise<boolean> {
   return true;
 }
 
+function keepServerRunning(stop: () => void | Promise<void>): void {
+  console.log('Browser server is running. Press Ctrl+C to stop.');
+  const heartbeat = setInterval(() => {}, KEEP_ALIVE_INTERVAL);
+
+  const cleanup = async () => {
+    console.log('\nStopping browser server...');
+    clearInterval(heartbeat);
+    await stop();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+}
+
 async function getAliveEndpoint(instance = 'default'): Promise<string | null> {
   const endpoint = readEndpoint(instance);
   if (!endpoint) return null;
@@ -122,4 +138,4 @@ async function getAliveEndpoint(instance = 'default'): Promise<string | null> {
   return null;
 }
 
-export { readEndpoint, removeEndpointFile, isServerRunning, launchServer, stopServer, getEndpointFilePath, getAliveEndpoint, listInstances };
+export { readEndpoint, removeEndpointFile, isServerRunning, launchServer, stopServer, getEndpointFilePath, getAliveEndpoint, listInstances, keepServerRunning };

@@ -16,7 +16,22 @@
   "bin": {
     "explorbot": "./dist/bin/explorbot-cli.js"
   },
-  "files": ["dist/", "src/**/*.ts", "src/**/*.tsx", "bin/**/*.ts", "boat/api-tester/src/**/*.ts", "boat/doc-collector/src/**/*.ts", "boat/doc-collector/bin/**/*.ts", "boat/doc-collector/package.json", "rules/", "assets/sample-files/", "models.json"],
+  "files": [
+    "dist/",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "bin/**/*.ts",
+    "boat/api-tester/src/**/*.ts",
+    "boat/doc-collector/src/**/*.ts",
+    "boat/doc-collector/bin/**/*.ts",
+    "boat/doc-collector/package.json",
+    "boat/prima/src/**/*.ts",
+    "boat/prima/bin/**/*.ts",
+    "boat/prima/package.json",
+    "rules/",
+    "assets/sample-files/",
+    "models.json"
+  ],
   "scripts": {
     "build": "bun run build:bin",
     "build:bin": "bun build bin/explorbot-cli.ts --outdir bin --target node --external commander --format esm",

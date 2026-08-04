@@ -744,7 +744,7 @@ browserCmd
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
-    const { launchServer, removeEndpointFile } = await import('../src/browser-server.js');
+    const { launchServer, removeEndpointFile, keepServerRunning } = await import('../src/browser-server.js');
     await ConfigParser.getInstance().loadConfig({
       config: options.config,
       path: options.path,
@@ -763,17 +763,10 @@ browserCmd
       options.instance
     );
 
-    console.log('Browser server is running. Press Ctrl+C to stop.');
-
-    const cleanup = () => {
-      console.log('\nStopping browser server...');
-      server.close();
+    keepServerRunning(async () => {
+      await server.close();
       removeEndpointFile(options.instance);
-      process.exit(0);
-    };
-
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
+    });
   });
 
 browserCmd
@@ -869,8 +862,10 @@ program
 
 import { createApiCommands } from '../boat/api-tester/src/cli.ts';
 import { createDocsCommands } from '../boat/doc-collector/src/cli.ts';
+import { createPrimaCommands } from '../boat/prima/src/cli.ts';
 program.addCommand(createApiCommands('api'));
 program.addCommand(createDocsCommands('docs'));
+program.addCommand(createPrimaCommands('prima'));
 
 const envHelp = () => {
   const width = Math.max(...EXPLORBOT_ENV_VARS.map((v) => v.name.length));

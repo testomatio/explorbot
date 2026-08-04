@@ -75,6 +75,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
       getCurrentState: () => fakeState(),
       getVisitCount: () => 1,
     }),
+    getCurrentState: () => fakeState(),
     requestStore: () => ({ getRequests: () => [] }),
     getProvider: () => ({ chat: async () => '' }),
   };

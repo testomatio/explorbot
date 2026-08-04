@@ -5,7 +5,7 @@ import type { Navigator } from '../../../src/ai/navigator.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createCodeceptJSTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
-import { ConfigParser, outputPath } from '../../../src/config.ts';
+import { ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Task } from '../../../src/test-plan.ts';
@@ -39,6 +39,8 @@ export class Prima {
   }
 
   async start(): Promise<void> {
+    await this.loadConfig();
+
     if (!(await this.connectOwnInstance())) {
       throw new Error(dedent`
         No browser session found for instance "${this.instanceName()}".
@@ -217,11 +219,16 @@ export class Prima {
   }
 
   async browserStart(): Promise<void> {
-    const config = await ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path });
-    this.server = await this.launchOwnServer({ browser: config.playwright.browser, show: config.playwright.show }, this.instanceName());
+    const config = await this.loadConfig();
+    let show = config.playwright.show || false;
+    if (this.options.show) show = true;
+    if (this.options.headless) show = false;
+    this.server = await this.launchOwnServer({ browser: config.playwright.browser, show }, this.instanceName());
   }
 
   async browserStop(all = false): Promise<void> {
+    await this.loadConfig();
+
     if (!all) {
       await this.stopInstance(this.instanceName());
       return;
@@ -233,12 +240,27 @@ export class Prima {
   }
 
   async browserStatus(): Promise<string> {
+    await this.loadConfig();
     const info = await this.instanceInfo();
     const endpoint = await getAliveEndpoint(info.name);
     const others = info.others.map((other) => other.name).join(', ') || 'none';
     const lines = [`instance: ${info.name} (${info.tabs} ${pluralize(info.tabs, 'tab')}) | other instances: ${others}`];
     if (!endpoint) lines.push('browser: not running');
     if (endpoint) lines.push(`browser: running at ${endpoint}`);
+    return lines.join('\n');
+  }
+
+  async browserList(): Promise<string> {
+    await this.loadConfig();
+
+    const lines: string[] = [];
+    for (const instance of listInstances()) {
+      const endpoint = await getAliveEndpoint(instance.name);
+      if (!endpoint) continue;
+      lines.push(`${instance.name}  ${endpoint}`);
+    }
+
+    if (!lines.length) return 'no browser instances running';
     return lines.join('\n');
   }
 
@@ -249,6 +271,23 @@ export class Prima {
       .map((instance) => ({ name: instance.name, tabs: 0 }));
 
     return { name, tabs: this.tabCount(), others };
+  }
+
+  async toolFailureEnvelope(command: string, error: unknown): Promise<EnvelopeData> {
+    const state = this.bot.getCurrentState();
+    const instance = await this.instanceInfo().catch(() => ({ name: this.instanceName(), tabs: 0, others: [] }));
+
+    return {
+      ok: false,
+      command,
+      page: { url: state?.url || '', title: state?.title || '', state: state?.hash || '', visits: 0 },
+      failure: { error: `tool: ${browserErrorMessage(error)}`, attempts: [] },
+      instance,
+    };
+  }
+
+  private async loadConfig(): Promise<ExplorbotConfig> {
+    return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path });
   }
 
   private async connectOwnInstance(): Promise<boolean> {
@@ -482,18 +521,6 @@ export class Prima {
     };
   }
 
-  private async toolFailureEnvelope(command: string, error: string): Promise<EnvelopeData> {
-    const state = this.bot.stateManager().getCurrentState();
-
-    return {
-      ok: false,
-      command,
-      page: { url: state?.url || '', title: state?.title || '', state: state?.hash || '', visits: 0 },
-      failure: { error: `tool: ${error}`, attempts: [] },
-      instance: await this.instanceInfo(),
-    };
-  }
-
   private async capturedResult(previousState: WebPageState | null, opts: { screenshot?: boolean } = {}): Promise<ActionResult> {
     const captured = await this.bot
       .getExplorer()
@@ -549,10 +576,14 @@ export interface PrimaOptions {
   config?: string;
   path?: string;
   instance?: string;
-  session?: string;
+  session?: string | boolean;
   heal?: boolean;
   ephemeral?: boolean;
   framework?: 'codeceptjs' | 'playwright';
   noVision?: boolean;
   url?: string;
+  show?: boolean;
+  headless?: boolean;
+  endpoint?: string;
+  pwSession?: string;
 }
