@@ -74,7 +74,22 @@ In global mode the target site comes from the command's URL argument, else `EXPL
 
 `explorbot sites` lists registered sites — folder name, base URL, last run — via a `SitesCommand` class in `src/commands/`.
 
-## `explorbot init --global`
+## `explorbot init` — Local or Global
+
+Plain `explorbot init` in an interactive terminal first asks which installation to set up:
+
+```
+? Where should explorbot be initialized?
+❯ Local    — creates the config file in the current directory
+  Global   — initializes explorbot to run from anywhere on this machine
+```
+
+- **Local** runs the existing project flow, unchanged.
+- **Global** runs the global wizard below.
+- When a global config already exists, the Global option is disabled and labeled `(already installed)`; reinstalling requires `explorbot init --global --force`.
+- Outside a TTY (agents, CI), plain `init` skips the chooser and runs the local flow exactly as today. `--global` skips the chooser and goes straight to the global wizard; any other init flag (`--config-path`, `--path`) implies local.
+
+### The global wizard
 
 An interactive React Ink wizard (same interaction pattern as `explorbot learn`):
 
@@ -87,7 +102,7 @@ Prints next steps: `explorbot explore https://your-app.example.com` from anywher
 
 Non-interactive path for agents: `explorbot init --global --provider <name> [--api-key <key>]` skips the wizard; the key may also come from the environment. `--force` overwrites an existing global config, mirroring project `init`. Logic lives in the init command class in `src/commands/`; the CLI handler stays thin.
 
-Project `init` is unchanged.
+The local flow itself is unchanged.
 
 ## Boats
 
@@ -110,6 +125,7 @@ Unit tests only — nothing here prompts a model except the wizard's optional ke
 - Auto-registration: folder + `site.json` created once, `lastRunAt` updated.
 - Bare-reference resolution: folder name, host match, unknown-reference error listing sites.
 - Non-interactive `init --global --provider` writes both files; `--force` semantics.
+- Init chooser: Global option disabled when the global config exists; non-TTY plain `init` falls back to the local flow.
 
 ## Decisions Log
 
@@ -118,4 +134,5 @@ Unit tests only — nothing here prompts a model except the wizard's optional ke
 - Global mode runs with full project semantics (experience on, Historian on) — the point is memory across runs.
 - Config file beats env vars wholesale, consistent with existing docs; prima spec's per-setting wording amended.
 - `init --global` is an interactive wizard with a `--provider` non-interactive escape for agents.
+- Plain `init` opens a Local/Global chooser in interactive terminals; Global shows `(already installed)` and is disabled once configured.
 - `web.url` in global config errors; `dirs` in global config is ignored.
