@@ -57,6 +57,21 @@ describe('resolveStateRoot', () => {
     expect(resolveStateRoot('http://localhost:3000/')).toBe(path.join(home, '.explorbot', 'state', 'localhost:3000'));
   });
 
+  test('falls back to a temp dir when the url has no scheme', () => {
+    const dir = resolveStateRoot('example.com');
+
+    expect(dir.startsWith(home)).toBe(false);
+    expect(existsSync(dir)).toBe(true);
+    expect(existsSync(path.join(home, '.explorbot', 'state'))).toBe(false);
+  });
+
+  test('falls back to a temp dir when the url has no host', () => {
+    const dir = resolveStateRoot('localhost:3000');
+
+    expect(dir.startsWith(home)).toBe(false);
+    expect(existsSync(path.join(home, '.explorbot', 'state'))).toBe(false);
+  });
+
   test('ephemeral returns fresh temp dir', () => {
     const a = resolveStateRoot('https://app.example.com', true);
     const b = resolveStateRoot('https://app.example.com', true);
@@ -149,6 +164,17 @@ describe('config-free state root', () => {
     expect(parser.getOutputDir()).toContain('explorbot');
   });
 
+  test('leaves an unparseable url to config validation', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'example.com';
+
+    const parser = ConfigParser.getInstance();
+    const config = await parser.loadConfig({ path: project });
+
+    expect(parser.getOutputDir().startsWith(home)).toBe(false);
+    expect(() => parser.validateConfig(config)).toThrow(/Invalid URL in configuration: example.com/);
+  });
+
   test('keeps EXPLORBOT_OUTPUT ahead of the state dir', async () => {
     process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
     process.env.EXPLORBOT_URL = 'https://app.example.com';
@@ -158,5 +184,28 @@ describe('config-free state root', () => {
     await parser.loadConfig({ path: project });
 
     expect(parser.getOutputDir()).toBe(project);
+  });
+
+  test('keeps env knowledge per run and leaves authored files alone', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+    process.env.EXPLORBOT_KNOWLEDGE = 'Credentials: admin/admin123';
+
+    const parser = ConfigParser.getInstance();
+    await parser.loadConfig({ path: project });
+
+    const knowledgeDir = path.join(home, '.explorbot', 'state', 'app.example.com', 'knowledge');
+    const globalFile = path.join(knowledgeDir, 'global.md');
+    expect(existsSync(globalFile)).toBe(true);
+
+    const authored = path.join(knowledgeDir, 'login.md');
+    writeFileSync(authored, '---\nurl: /login\n---\n\nAuthored by hand\n');
+
+    delete process.env.EXPLORBOT_KNOWLEDGE;
+    ConfigParser.resetForTesting();
+    await ConfigParser.getInstance().loadConfig({ path: project });
+
+    expect(existsSync(globalFile)).toBe(false);
+    expect(existsSync(authored)).toBe(true);
   });
 });

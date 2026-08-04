@@ -705,10 +705,11 @@ export function resolveOutputRoot(baseUrl?: string): string {
 }
 
 export function resolveStateRoot(baseUrl: string, ephemeral?: boolean): string {
-  if (ephemeral) return mkdtempSync(join(tmpdir(), 'explorbot-'));
+  const host = URL.parse(baseUrl)?.host;
+  if (ephemeral || !host) return mkdtempSync(join(tmpdir(), 'explorbot-'));
 
-  const stateRoot = join(globalDir(), 'state', new URL(baseUrl).host);
-  mkdirSync(stateRoot, { recursive: true });
+  const stateRoot = join(globalDir(), 'state', host);
+  mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
   return stateRoot;
 }
 
@@ -719,13 +720,16 @@ export function globalDir(): string {
 export function materializeKnowledge(outputRoot: string): void {
   const inline = process.env.EXPLORBOT_KNOWLEDGE;
   const knowledgeFile = process.env.EXPLORBOT_KNOWLEDGE_FILE;
+  const knowledgeDir = join(outputRoot, 'knowledge');
+  const globalFile = join(knowledgeDir, 'global.md');
+
+  if (!inline) rmSync(globalFile, { force: true });
   if (!inline && !knowledgeFile) return;
 
-  const knowledgeDir = join(outputRoot, 'knowledge');
   mkdirSync(knowledgeDir, { recursive: true });
 
   if (inline) {
-    writeFileSync(join(knowledgeDir, 'global.md'), matter.stringify(inline, { url: '*', endpoint: '*' }));
+    writeFileSync(globalFile, matter.stringify(inline, { url: '*', endpoint: '*' }));
   }
 
   if (!knowledgeFile) return;
