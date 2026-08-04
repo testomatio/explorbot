@@ -1,0 +1,162 @@
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { ConfigParser, resolveStateRoot } from '../../src/config.ts';
+
+const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE', 'LADDER_SHARED_KEY', 'LADDER_GLOBAL_KEY', 'LADDER_PRESET_KEY'];
+
+const CONFIG_MODULE = (url: string) => `export default {\n  playwright: { url: '${url}', browser: 'chromium' },\n  ai: { model: { modelId: 'ladder-model', provider: 'test' } },\n};\n`;
+
+let home: string;
+let project: string;
+let savedEnv: Record<string, string | undefined>;
+let homedirSpy: ReturnType<typeof spyOn>;
+
+beforeEach(() => {
+  home = mkdtempSync(path.join(os.tmpdir(), 'explorbot-home-'));
+  project = mkdtempSync(path.join(os.tmpdir(), 'explorbot-project-'));
+  homedirSpy = spyOn(os, 'homedir').mockReturnValue(home);
+
+  savedEnv = {};
+  for (const key of ENV_KEYS) {
+    savedEnv[key] = process.env[key];
+    delete process.env[key];
+  }
+
+  ConfigParser.resetForTesting();
+});
+
+afterEach(() => {
+  homedirSpy.mockRestore();
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
+  rmSync(home, { recursive: true, force: true });
+  rmSync(project, { recursive: true, force: true });
+  ConfigParser.resetForTesting();
+});
+
+function writeGlobalFile(name: string, content: string): string {
+  const dir = path.join(home, '.explorbot');
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, name);
+  writeFileSync(file, content);
+  return file;
+}
+
+describe('resolveStateRoot', () => {
+  test('derives persistent per-host dir', () => {
+    const dir = resolveStateRoot('https://app.example.com/login');
+    expect(dir).toBe(path.join(os.homedir(), '.explorbot', 'state', 'app.example.com'));
+    expect(existsSync(dir)).toBe(true);
+  });
+
+  test('keeps the port as part of the host', () => {
+    expect(resolveStateRoot('http://localhost:3000/')).toBe(path.join(home, '.explorbot', 'state', 'localhost:3000'));
+  });
+
+  test('ephemeral returns fresh temp dir', () => {
+    const a = resolveStateRoot('https://app.example.com', true);
+    const b = resolveStateRoot('https://app.example.com', true);
+    expect(a).not.toBe(b);
+    expect(a).toContain('explorbot');
+    expect(a.startsWith(home)).toBe(false);
+    expect(existsSync(a)).toBe(true);
+  });
+});
+
+describe('config ladder', () => {
+  test('loads the global config when the project has none', async () => {
+    writeGlobalFile('config.js', CONFIG_MODULE('https://global.example.com'));
+
+    const parser = ConfigParser.getInstance();
+    const config = await parser.loadConfig({ path: project });
+
+    expect(config.playwright.url).toBe('https://global.example.com');
+    expect(parser.getConfigPath()).toBe(path.join(home, '.explorbot', 'config.js'));
+  });
+
+  test('loads a global typescript config', async () => {
+    writeGlobalFile('config.ts', CONFIG_MODULE('https://global-ts.example.com'));
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: project });
+
+    expect(config.playwright.url).toBe('https://global-ts.example.com');
+  });
+
+  test('prefers the project config over the global one', async () => {
+    writeGlobalFile('config.js', CONFIG_MODULE('https://global.example.com'));
+    writeFileSync(path.join(project, 'explorbot.config.js'), CONFIG_MODULE('https://project.example.com'));
+
+    const parser = ConfigParser.getInstance();
+    const config = await parser.loadConfig({ path: project });
+
+    expect(config.playwright.url).toBe('https://project.example.com');
+    expect(parser.getConfigPath()).toBe(path.join(project, 'explorbot.config.js'));
+  });
+
+  test('prefers an explicit config path over the global one', async () => {
+    writeGlobalFile('config.js', CONFIG_MODULE('https://global.example.com'));
+    const explicit = path.join(project, 'custom.config.js');
+    writeFileSync(explicit, CONFIG_MODULE('https://explicit.example.com'));
+
+    const config = await ConfigParser.getInstance().loadConfig({ config: explicit });
+
+    expect(config.playwright.url).toBe('https://explicit.example.com');
+  });
+});
+
+describe('global .env', () => {
+  test('fills keys the project .env and the environment leave unset', async () => {
+    writeGlobalFile('config.js', CONFIG_MODULE('https://global.example.com'));
+    writeGlobalFile('.env', 'LADDER_GLOBAL_KEY=from-global\nLADDER_SHARED_KEY=from-global\nLADDER_PRESET_KEY=from-global\n');
+    writeFileSync(path.join(project, '.env'), 'LADDER_SHARED_KEY=from-project\n');
+    process.env.LADDER_PRESET_KEY = 'from-environment';
+
+    await ConfigParser.getInstance().loadConfig({ path: project });
+
+    expect(process.env.LADDER_GLOBAL_KEY).toBe('from-global');
+    expect(process.env.LADDER_SHARED_KEY).toBe('from-project');
+    expect(process.env.LADDER_PRESET_KEY).toBe('from-environment');
+  });
+});
+
+describe('config-free state root', () => {
+  test('roots knowledge, experience and output under the per-host state dir', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+
+    const parser = ConfigParser.getInstance();
+    const config = await parser.loadConfig({ path: project });
+    const stateRoot = path.join(home, '.explorbot', 'state', 'app.example.com');
+
+    expect(parser.getOutputDir()).toBe(stateRoot);
+    expect(parser.resolveProjectDir(config.dirs!.knowledge)).toBe(path.join(stateRoot, 'knowledge'));
+    expect(parser.resolveProjectDir(config.dirs!.experience)).toBe(path.join(stateRoot, 'experience'));
+  });
+
+  test('uses a temp state root when EXPLORBOT_EPHEMERAL is set', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+    process.env.EXPLORBOT_EPHEMERAL = '1';
+
+    const parser = ConfigParser.getInstance();
+    await parser.loadConfig({ path: project });
+
+    expect(parser.getOutputDir().startsWith(home)).toBe(false);
+    expect(parser.getOutputDir()).toContain('explorbot');
+  });
+
+  test('keeps EXPLORBOT_OUTPUT ahead of the state dir', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+    process.env.EXPLORBOT_OUTPUT = project;
+
+    const parser = ConfigParser.getInstance();
+    await parser.loadConfig({ path: project });
+
+    expect(parser.getOutputDir()).toBe(project);
+  });
+});
