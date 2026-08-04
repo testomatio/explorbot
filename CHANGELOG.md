@@ -19,6 +19,7 @@ npx explorbot prima verify "the confirmation page shows an order number"
 - **Attaching to playwright-cli** — prima never launches a browser. By default it attaches to the playwright-cli browser of the current workspace and works on the tabs already open there, so both tools drive the same session. `--pw-session <title>` picks between several open sessions, `--endpoint <ep>` attaches to a browser server directly. Stopping prima disconnects and leaves the browser open.
 - **Named instances** — `prima browser start` runs a prima-owned browser when no playwright-cli session is open, and `--instance <name>` says which one a command talks to, so parallel work gets a browser each. `prima browser list` shows both kinds.
 - **Without a config file** — `EXPLORBOT_AI_PROVIDER=groq npx explorbot prima go https://app.example.com` is enough to start. `pw` still works when no model is usable at all, and the commands that need one say so and point at the fallback.
+- **Runtime** — prima reaches its browser over a Playwright browser-server endpoint, and that client needs the Node build: run it as `npx explorbot prima …` or through the published `prima` bin. Driving a browser by running the CLI from source under Bun does not connect.
 
 Prima also ships as a standalone `prima` bin. See [Commands](docs/reference/commands.md#prima-boat) for the full reference.
 

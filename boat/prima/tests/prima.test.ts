@@ -58,6 +58,7 @@ function fakeProvider(invokeConversation: (...args: any[]) => Promise<any>, prom
 function fakePrima(options: Record<string, unknown> = {}) {
   const prima = new Prima({ instance: 'default', ...options });
   const executed: string[] = [];
+  const executeOptions: unknown[] = [];
   const after = fakeState({
     url: 'https://app.example.com/dashboard',
     title: 'Dashboard',
@@ -68,8 +69,9 @@ function fakePrima(options: Record<string, unknown> = {}) {
   (prima as any).bot = {
     getExplorer: () => ({
       action: () => ({
-        execute: async (code: string) => {
+        execute: async (code: string, opts?: unknown) => {
           executed.push(code);
+          executeOptions.push(opts);
           return { actionResult: after, lastError: null };
         },
       }),
@@ -84,7 +86,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
     getProvider: () => ({ chat: async () => '' }),
   };
   (prima as any).artifactsDir = artifactsRoot;
-  return { prima, executed };
+  return { prima, executed, executeOptions };
 }
 
 describe('Prima.pw', () => {
@@ -99,9 +101,10 @@ describe('Prima.pw', () => {
   });
 
   test('executes wrapped function and returns success envelope data', async () => {
-    const { prima, executed } = fakePrima();
+    const { prima, executed, executeOptions } = fakePrima();
     const envelope = await prima.pw("({ page }) => page.click('text=Login')");
     expect(executed[0]).toContain('I.usePlaywrightTo');
+    expect(executeOptions[0]).toEqual({ verbatim: true });
     expect(envelope.ok).toBe(true);
     expect(envelope.command).toBe("pw ({ page }) => page.click('text=Login')");
     expect(envelope.used).toEqual(["({ page }) => page.click('text=Login')"]);

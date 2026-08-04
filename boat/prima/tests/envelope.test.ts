@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
 import { type EnvelopeData, renderEnvelope, writeArtifacts } from '../src/envelope.ts';
 
 const base: EnvelopeData = {

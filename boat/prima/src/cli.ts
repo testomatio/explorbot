@@ -61,6 +61,9 @@ const helpContract = dedent`
                                while attached, the attached session keeps its own
     Prima never launches a browser implicitly and never closes an attached one - it
     disconnects. browser list shows both kinds; ### Instance names the one you are on.
+    Every browser is reached over a Playwright browser-server endpoint, which needs the
+    Node build - run prima as "npx explorbot prima ..." or through the published prima
+    bin; from source under Bun the connection does not open.
     When no AI model is usable pw still works; for everything else drive
     playwright-cli directly.
     Parsed but not active yet: --framework, so reported code is CodeceptJS whatever
@@ -95,7 +98,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-i, --instance <name>', 'Browser instance to drive')
     .option('--session [file]', 'Persist cookies and storage to a session file')
     .option('--no-heal', 'Fail immediately instead of letting AI retry a failed action')
-    .option('--ephemeral', 'Keep no state between runs, output goes to a temp directory')
+    .option('--ephemeral', 'Keep no state between runs; applies to config-free runs, where output goes to a temp directory')
     .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')
     .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')

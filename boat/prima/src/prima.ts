@@ -69,7 +69,7 @@ export class Prima {
     let executionError: unknown = null;
 
     try {
-      const executed = await this.bot.getExplorer().action().execute(toCodeceptWrapper(expression));
+      const executed = await this.bot.getExplorer().action().execute(toCodeceptWrapper(expression), { verbatim: true });
       result = executed.actionResult;
     } catch (error) {
       executionError = error;

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { chromium, firefox, webkit } from 'playwright-core';
+import { chromium, firefox, webkit } from 'playwright';
 import { ConfigParser } from './config.js';
 import { getCliName } from './utils/cli-name.ts';
 import { log } from './utils/logger.js';

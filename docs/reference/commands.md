@@ -665,7 +665,7 @@ html: /home/you/.explorbot/state/app.example.com/prima/2026-08-04T10-04-22-285Z/
 network: /home/you/.explorbot/state/app.example.com/prima/2026-08-04T10-04-22-285Z/network.jsonl
 ```
 
-`used:` is code that already executed — copy it into a test as is. Log lines can precede the envelope, so start parsing at the first `###` line.
+`used:` is code that already executed. For `click`, `fill`, `do`, and `go` those are CodeceptJS steps you can copy into a test as they are; for `pw` it is the Playwright expression you passed, which a CodeceptJS test needs wrapped in `I.usePlaywrightTo(...)`. Log lines can precede the envelope, so start parsing at the first `###` line.
 
 `ask`, `research`, and `verify` replace the `### Changes` block with `### Answer`, `### Research`, or `### Verdict`. A failure adds `### Failure` with the error and the compact ARIA of the page, so you can retarget from the envelope itself instead of opening the artifact files.
 
@@ -682,16 +682,34 @@ npx explorbot prima browser start             # a prima-owned browser instead
 
 By default prima attaches to the playwright-cli browser of the current workspace and works on the tabs it already has open — driving the same session from both tools is the intended usage. Stopping prima disconnects from an attached browser; it never closes it. `prima browser list` shows both kinds of browser, and the `### Instance` block names the one you are on.
 
+Prima reaches every browser over a Playwright browser-server endpoint — a playwright-cli session, an `--endpoint`, or a `prima browser start` instance — and that client needs the Node build, which is what `npx explorbot prima` and the published `prima` bin run on. Driving a browser by running the CLI from source under Bun does not connect.
+
+Every command takes these:
+
 | Option | Description |
 |---|---|
 | `--pw-session <title>` | Which playwright-cli session, when several are open for the workspace |
 | `--endpoint <ep>` | Attach to a browser server endpoint directly, skipping discovery |
-| `--instance <name>` | Which prima-owned browser to talk to; parallel work needs one each |
+| `-i, --instance <name>` | Which prima-owned browser to talk to; parallel work needs one each |
 | `--session [file]` | Cookies and storage persisted across processes; ignored while attached, since the attached session keeps its own |
+| `--url <url>` | Page to open when the session has no page yet |
 | `--no-heal` | Fail immediately instead of letting AI retry a failed action |
-| `--ephemeral` | Keep no state between runs; output goes to a temp directory |
+| `--ephemeral` | Keep no state between runs. Applies to config-free runs only — with a config file the output directory comes from the config |
+| `--framework <name>` | Parsed but not active yet; reported code is CodeceptJS whatever you pass |
+| `-v, --verbose`, `--debug`, `-c, --config <path>`, `-p, --path <path>` | As on every other Explorbot command |
 
 `--instance` and `--session` answer different questions: `--instance` picks *which browser process* prima drives, `--session` decides *whose cookies* it starts from.
+
+A few commands add their own:
+
+| Command | Option | Description |
+|---|---|---|
+| `ask` | `--no-vision` | Answer from page structure only, without a screenshot |
+| `research` | `--data` | Include data extraction in the map |
+| `research` | `--deep` | Expand hidden elements for a deeper map |
+| `research` | `--fresh` | Ignore the cached map and research the page again |
+| `browser start` | `-s, --show` / `--headless` | Launch the browser with or without a window |
+| `browser stop` | `--all` | Stop every running instance |
 
 ### Without a config file
 

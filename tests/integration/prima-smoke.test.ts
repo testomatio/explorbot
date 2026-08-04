@@ -117,6 +117,16 @@ describe('Prima drives a real page', () => {
     expect(rendered).toContain('### Instance');
   });
 
+  test('pw runs a multi-line function without losing any of its lines', async () => {
+    const expression = ['async ({ page }) => {', "  await page.fill('#note', 'the hinge arrived bent');", "  await page.click('text=Submit');", '}'].join('\n');
+
+    const envelope = await prima.pw(expression);
+
+    expect(envelope.ok).toBe(true);
+    expect(envelope.page.title).toBe('Widget Depot Thanks');
+    expect(envelope.page.url).toContain('note=the+hinge+arrived+bent');
+  });
+
   test('pw writes the aria, html and network artifacts to disk', async () => {
     const envelope = await prima.pw("({ page }) => page.click('text=Submit')");
 
