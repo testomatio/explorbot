@@ -3,16 +3,21 @@ import { existsSync, rmSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.js';
+import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
 import { ConfigParser } from '../../src/config';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
 import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
 
 const knowledgeDir = '/tmp/explorbot-test-knowledge';
+const applicationSpecDir = '/tmp/explorbot-test-application-spec';
 
 describe('KnowledgeTracker', () => {
   beforeEach(() => {
     if (existsSync(knowledgeDir)) {
       rmSync(knowledgeDir, { recursive: true, force: true });
+    }
+    if (existsSync(applicationSpecDir)) {
+      rmSync(applicationSpecDir, { recursive: true, force: true });
     }
     mkdirSync(knowledgeDir, { recursive: true });
 
@@ -28,6 +33,9 @@ describe('KnowledgeTracker', () => {
   afterEach(() => {
     if (existsSync(knowledgeDir)) {
       rmSync(knowledgeDir, { recursive: true, force: true });
+    }
+    if (existsSync(applicationSpecDir)) {
+      rmSync(applicationSpecDir, { recursive: true, force: true });
     }
   });
 
@@ -53,6 +61,29 @@ describe('KnowledgeTracker', () => {
       expect(rendered).toContain('<knowledge>');
       expect(rendered).toContain('Use admin credentials');
       expect(rendered).toContain('</knowledge>');
+    });
+
+    it('combines matching knowledge with a configured application spec', () => {
+      writeKnowledgeFile('login.md', '/login', 'Use admin credentials');
+      mkdirSync(`${applicationSpecDir}/pages`, { recursive: true });
+      writeFileSync(`${applicationSpecDir}/index.md`, '# Website Spec', 'utf8');
+      writeFileSync(
+        `${applicationSpecDir}/pages/login.md`,
+        matter.stringify('# /login\n\n## Purpose\n\nSign in to the application.', {
+          url: '/login',
+          format: APPLICATION_SPEC_FORMAT,
+          version: APPLICATION_SPEC_VERSION,
+        }),
+        'utf8'
+      );
+      const tracker = new KnowledgeTracker(applicationSpecDir);
+      const state = new ActionResult({ url: '/login', html: '<html></html>' });
+
+      const rendered = tracker.renderRelevantContext(state);
+
+      expect(rendered).toContain('<knowledge>');
+      expect(rendered).toContain('<application_spec>');
+      expect(rendered).toContain('Sign in to the application.');
     });
   });
 

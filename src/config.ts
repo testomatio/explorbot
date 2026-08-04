@@ -218,6 +218,7 @@ interface WebConfig {
 }
 
 interface ExplorbotConfig {
+  applicationSpec?: string;
   web?: WebConfig;
   playwright: PlaywrightConfig;
   ai: AIConfig;

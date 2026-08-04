@@ -1,9 +1,11 @@
 import path from 'node:path';
+import matter from 'gray-matter';
+import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../../src/application-spec-contract.ts';
 import { type WebPageState } from '../../../src/state-manager.ts';
+import { normalizeInlineText } from '../../../src/utils/strings.ts';
 import type { PageDocumentation, StateTransition } from './ai/documentarian.ts';
 import type { DocumentationScreenshot } from './screenshots.ts';
-import { buildStateGraph, renderMermaidFromGraph, renderStateMapFromGraph, type DocumentedPage, type SkippedPage } from './state-diagram.ts';
-import { normalizeInlineText } from '../../../src/utils/strings.ts';
+import { type DocumentedPage, type SkippedPage, buildStateGraph, renderMermaidFromGraph, renderStateMapFromGraph } from './state-diagram.ts';
 
 function renderPageDocumentation(state: WebPageState, documentation: PageDocumentation, screenshots: DocumentationScreenshot[] = []): string {
   const lines: string[] = [];
@@ -101,7 +103,11 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
     lines.push('');
   }
 
-  return `${lines.join('\n').trimEnd()}\n`;
+  return matter.stringify(`${lines.join('\n').trimEnd()}\n`, {
+    url: state.url,
+    format: APPLICATION_SPEC_FORMAT,
+    version: APPLICATION_SPEC_VERSION,
+  });
 }
 
 function renderSpecIndex(outputDir: string, startPath: string, pages: DocumentedPage[], skipped: SkippedPage[], maxPages: number): string {
