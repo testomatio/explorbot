@@ -349,6 +349,52 @@ describe('Prima attach ladder', () => {
     await expect(prima.start()).rejects.toThrow(/auth.*smoke|smoke.*auth/);
   });
 
+  test('a stale descriptor is skipped so a live session beside it still wins', async () => {
+    const { prima } = fakePrima();
+    const stale = { ...descriptor, title: 'default', endpoint: '/tmp/pw/stale.sock' };
+    const live = { ...descriptor, title: 'auth', endpoint: '/tmp/pw/auth.sock' };
+    const disconnected: string[] = [];
+    (prima as any).connectDescriptor = async (candidate: any) => {
+      if (candidate.endpoint === stale.endpoint) return null;
+      return { endpoint: candidate.endpoint, close: async () => disconnected.push(candidate.endpoint) };
+    };
+
+    const discovery = await (prima as any).discover([stale, live]);
+    expect(discovery.match?.title).toBe('auth');
+    expect(discovery.candidates.map((candidate: any) => candidate.title)).toEqual(['auth']);
+    expect(discovery.browser?.endpoint).toBe(live.endpoint);
+    expect(disconnected).toEqual([]);
+  });
+
+  test('probe connections that are not attached to are disconnected', async () => {
+    const { prima } = fakePrima();
+    const first = { ...descriptor, title: 'auth' };
+    const second = { ...descriptor, title: 'smoke', endpoint: '/tmp/pw/smoke.sock' };
+    const disconnected: string[] = [];
+    (prima as any).connectDescriptor = async (candidate: any) => ({ close: async () => disconnected.push(candidate.title) });
+
+    const discovery = await (prima as any).discover([first, second]);
+    expect(discovery.match).toBeUndefined();
+    expect(discovery.candidates.length).toBe(2);
+    expect(disconnected.sort()).toEqual(['auth', 'smoke']);
+  });
+
+  test('the probed connection is reused instead of connecting twice', async () => {
+    const { prima } = fakePrima();
+    let connects = 0;
+    const injected: any[] = [];
+    (prima as any).bot.attachBrowser = (browser: unknown) => injected.push(browser);
+    (prima as any).connectDescriptor = async () => {
+      connects++;
+      return { contexts: () => [] };
+    };
+
+    const discovery = await (prima as any).discover([descriptor]);
+    expect(await (prima as any).attachToEndpoint(discovery.match, discovery.browser)).toBe(true);
+    expect(connects).toBe(1);
+    expect(injected[0]).toBe(discovery.browser);
+  });
+
   test('attached session is injected into the browser and reported in the instance block', async () => {
     const { prima } = fakePrima();
     const injected: any[] = [];

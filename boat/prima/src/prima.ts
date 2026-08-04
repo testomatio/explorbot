@@ -1,8 +1,8 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import dedent from 'dedent';
+import * as playwright from 'playwright';
 import type { Browser } from 'playwright';
-import * as playwright from 'playwright-core';
 import { ActionResult } from '../../../src/action-result.ts';
 import type { Navigator } from '../../../src/ai/navigator.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
@@ -47,7 +47,7 @@ export class Prima {
 
   async start(): Promise<void> {
     const config = await this.loadConfig();
-    await this.attachBrowser(config);
+    await this.resolveBrowser(config);
     await this.bot.start();
 
     if (!this.options.url) return;
@@ -257,7 +257,9 @@ export class Prima {
       lines.push(`prima --instance ${instance.name}  ${endpoint}`);
     }
 
-    for (const descriptor of this.discover().candidates) {
+    const discovery = await this.discover();
+    await discovery.browser?.close().catch(() => {});
+    for (const descriptor of discovery.candidates) {
       lines.push(`playwright-cli --pw-session ${descriptor.title}  ${descriptor.endpoint}`);
     }
 
@@ -295,7 +297,7 @@ export class Prima {
     return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path });
   }
 
-  private async attachBrowser(config: ExplorbotConfig): Promise<void> {
+  private async resolveBrowser(config: ExplorbotConfig): Promise<void> {
     if (this.options.endpoint) {
       const endpoint = this.options.endpoint;
       const browserName = config.playwright.browser || 'chromium';
@@ -307,8 +309,8 @@ export class Prima {
       `);
     }
 
-    const { match, candidates } = this.discover();
-    if (match && (await this.attachToEndpoint(match))) return;
+    const { match, candidates, browser } = await this.discover();
+    if (match && (await this.attachToEndpoint(match, browser))) return;
 
     if (!match && candidates.length) {
       const titles = candidates.map((candidate) => candidate.title).join(', ');
@@ -329,13 +331,30 @@ export class Prima {
     `);
   }
 
-  private discover(): { match?: PwServerDescriptor; candidates: PwServerDescriptor[] } {
+  private async discover(descriptors = readDescriptors()): Promise<Discovery> {
     const title = this.options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION;
-    return selectDescriptor(readDescriptors(), { workspaceDir: this.workspaceDir(), title });
+    const opts = { workspaceDir: this.workspaceDir(), title };
+
+    const alive = new Map<PwServerDescriptor, Browser>();
+    for (const candidate of selectDescriptor(descriptors, opts).candidates) {
+      const browser = await this.connectDescriptor(candidate);
+      if (browser) alive.set(candidate, browser);
+    }
+
+    const selected = selectDescriptor([...alive.keys()], opts);
+    const discovery: Discovery = { match: selected.match, candidates: selected.candidates };
+    if (selected.match) discovery.browser = alive.get(selected.match);
+
+    for (const [descriptor, browser] of alive) {
+      if (descriptor === selected.match) continue;
+      await browser.close().catch(() => {});
+    }
+
+    return discovery;
   }
 
-  private async attachToEndpoint(descriptor: PwServerDescriptor): Promise<boolean> {
-    const browser = await this.connectDescriptor(descriptor);
+  private async attachToEndpoint(descriptor: PwServerDescriptor, probed?: Browser): Promise<boolean> {
+    const browser = probed || (await this.connectDescriptor(descriptor));
     if (!browser) return false;
 
     this.bot.attachBrowser(browser);
@@ -650,6 +669,12 @@ export class Prima {
   private instanceName(): string {
     return this.options.instance || 'default';
   }
+}
+
+interface Discovery {
+  match?: PwServerDescriptor;
+  candidates: PwServerDescriptor[];
+  browser?: Browser;
 }
 
 export interface PrimaOptions {
