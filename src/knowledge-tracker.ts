@@ -243,10 +243,3 @@ export class KnowledgeTracker {
     return result;
   }
 }
-
-export function renderKnowledgeContext(tracker: KnowledgeContextSource, state: ActionResult): string {
-  if (tracker.renderRelevantContext) return tracker.renderRelevantContext(state);
-  return tracker.renderRelevantKnowledge(state);
-}
-
-type KnowledgeContextSource = Pick<KnowledgeTracker, 'renderRelevantKnowledge'> & Partial<Pick<KnowledgeTracker, 'renderRelevantContext'>>;

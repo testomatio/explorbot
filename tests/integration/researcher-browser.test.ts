@@ -105,7 +105,7 @@ describe('Researcher with real browser + aimock', () => {
       explorer,
       config: ConfigParser.getInstance().getConfig(),
       stateManager: mockStateManager,
-      knowledgeTracker: { getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '' },
+      knowledgeTracker: { getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '', renderRelevantContext: () => '' },
       requestStore: {},
       playwrightRecorder: {},
     };

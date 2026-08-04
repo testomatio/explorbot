@@ -28,6 +28,7 @@ function buildTester(): Tester {
     knowledgeTracker: {
       getRelevantKnowledge: () => [],
       renderRelevantKnowledge: () => '',
+      renderRelevantContext: () => '',
     },
     requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
     playwrightRecorder: {},
@@ -61,6 +62,7 @@ function buildTesterWithExperience(): Tester {
     knowledgeTracker: {
       getRelevantKnowledge: () => [],
       renderRelevantKnowledge: () => '',
+      renderRelevantContext: () => '',
     },
     requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
     playwrightRecorder: {},

@@ -2,7 +2,7 @@ import type { ActionResult } from '../action-result.js';
 import type { ExplorbotConfig } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import type Explorer from '../explorer.ts';
-import { type KnowledgeTracker, renderKnowledgeContext } from '../knowledge-tracker.js';
+import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import type { StateManager } from '../state-manager.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import type { AgentDeps, ToolDeps } from './agent.ts';
@@ -73,7 +73,7 @@ export abstract class TaskAgent {
   }
 
   protected getKnowledge(actionResult: ActionResult): string {
-    return renderKnowledgeContext(this.getKnowledgeTracker(), actionResult);
+    return this.getKnowledgeTracker().renderRelevantContext(actionResult);
   }
 
   protected getExperience(actionResult: ActionResult): string {

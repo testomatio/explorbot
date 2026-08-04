@@ -5,7 +5,7 @@ import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.js';
 import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
 import { ConfigParser } from '../../src/config';
-import { KnowledgeTracker, renderKnowledgeContext } from '../../src/knowledge-tracker';
+import { KnowledgeTracker } from '../../src/knowledge-tracker';
 import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
 
 const knowledgeDir = '/tmp/explorbot-test-knowledge';
@@ -84,15 +84,6 @@ describe('KnowledgeTracker', () => {
       expect(rendered).toContain('<knowledge>');
       expect(rendered).toContain('<application_spec>');
       expect(rendered).toContain('Sign in to the application.');
-    });
-  });
-
-  describe('renderKnowledgeContext', () => {
-    it('supports knowledge-only tracker implementations', () => {
-      const state = new ActionResult({ url: '/login' });
-      const tracker = { renderRelevantKnowledge: () => '<knowledge>Legacy context</knowledge>' };
-
-      expect(renderKnowledgeContext(tracker, state)).toContain('Legacy context');
     });
   });
 
