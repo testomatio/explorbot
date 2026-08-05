@@ -6,7 +6,7 @@ describe('Navigator resolveState attempt hook', () => {
     const navigator = Object.create(Navigator.prototype) as any;
     navigator.MAX_ATTEMPTS = 5;
     navigator.config = { playwright: { url: 'http://localhost:3000' } };
-    navigator.knowledgeTracker = { renderRelevantKnowledge: () => '' };
+    navigator.knowledgeTracker = { renderRelevantKnowledge: () => '', renderRelevantContext: () => '' };
     navigator.experienceTracker = { getSuccessfulExperience: () => [], writeFlow: () => {} };
     navigator.provider = {
       startConversation: () => ({ addUserText: () => {} }),

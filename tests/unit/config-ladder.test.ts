@@ -4,7 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { ConfigParser, resolveStateRoot } from '../../src/config.ts';
 
-const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE', 'LADDER_SHARED_KEY', 'LADDER_GLOBAL_KEY', 'LADDER_PRESET_KEY'];
+const KNOWLEDGE_ENV = 'EXPLORBOT_KNOWLEDGE';
+const KNOWLEDGE_FILE_ENV = 'EXPLORBOT_KNOWLEDGE_FILE';
+const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', KNOWLEDGE_ENV, KNOWLEDGE_FILE_ENV, 'LADDER_SHARED_KEY', 'LADDER_GLOBAL_KEY', 'LADDER_PRESET_KEY'];
 
 const CONFIG_MODULE = (url: string) => `export default {\n  playwright: { url: '${url}', browser: 'chromium' },\n  ai: { model: { modelId: 'ladder-model', provider: 'test' } },\n};\n`;
 
@@ -53,8 +55,15 @@ describe('resolveStateRoot', () => {
     expect(existsSync(dir)).toBe(true);
   });
 
-  test('keeps the port as part of the host', () => {
-    expect(resolveStateRoot('http://localhost:3000/')).toBe(path.join(home, '.explorbot', 'state', 'localhost:3000'));
+  test('keeps the port as part of the host, in a name every filesystem accepts', () => {
+    const dir = resolveStateRoot('http://localhost:3000/');
+
+    expect(dir).toBe(path.join(home, '.explorbot', 'state', 'localhost_3000'));
+    expect(existsSync(dir)).toBe(true);
+  });
+
+  test('separates hosts that differ only by port', () => {
+    expect(resolveStateRoot('http://localhost:3000/')).not.toBe(resolveStateRoot('http://localhost:4000/'));
   });
 
   test('falls back to a temp dir when the url has no scheme', () => {
@@ -208,7 +217,7 @@ describe('config-free state root', () => {
   test('keeps env knowledge per run and leaves authored files alone', async () => {
     process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
     process.env.EXPLORBOT_URL = 'https://app.example.com';
-    process.env.EXPLORBOT_KNOWLEDGE = 'Credentials: admin/admin123';
+    process.env[KNOWLEDGE_ENV] = 'Credentials: admin/admin123';
 
     const parser = ConfigParser.getInstance();
     await parser.loadConfig({ path: project });
@@ -220,11 +229,46 @@ describe('config-free state root', () => {
     const authored = path.join(knowledgeDir, 'login.md');
     writeFileSync(authored, '---\nurl: /login\n---\n\nAuthored by hand\n');
 
-    delete process.env.EXPLORBOT_KNOWLEDGE;
+    delete process.env[KNOWLEDGE_ENV];
     ConfigParser.resetForTesting();
     await ConfigParser.getInstance().loadConfig({ path: project });
 
     expect(existsSync(globalFile)).toBe(false);
+    expect(existsSync(authored)).toBe(true);
+  });
+
+  test('drops a knowledge file of an earlier run and leaves authored files alone', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+
+    const first = path.join(project, 'staging.md');
+    writeFileSync(first, '---\nurl: /login\n---\n\nCredentials: admin/admin123\n');
+    process.env[KNOWLEDGE_FILE_ENV] = first;
+
+    const parser = ConfigParser.getInstance();
+    await parser.loadConfig({ path: project });
+
+    const knowledgeDir = path.join(home, '.explorbot', 'state', 'app.example.com', 'knowledge');
+    expect(existsSync(path.join(knowledgeDir, 'env', 'staging.md'))).toBe(true);
+
+    const authored = path.join(knowledgeDir, 'checkout.md');
+    writeFileSync(authored, '---\nurl: /checkout\n---\n\nAuthored by hand\n');
+
+    const second = path.join(project, 'production.md');
+    writeFileSync(second, '---\nurl: /login\n---\n\nCredentials: guest/guest\n');
+    process.env[KNOWLEDGE_FILE_ENV] = second;
+    ConfigParser.resetForTesting();
+    await ConfigParser.getInstance().loadConfig({ path: project });
+
+    expect(existsSync(path.join(knowledgeDir, 'env', 'staging.md'))).toBe(false);
+    expect(existsSync(path.join(knowledgeDir, 'env', 'production.md'))).toBe(true);
+    expect(existsSync(authored)).toBe(true);
+
+    delete process.env[KNOWLEDGE_FILE_ENV];
+    ConfigParser.resetForTesting();
+    await ConfigParser.getInstance().loadConfig({ path: project });
+
+    expect(existsSync(path.join(knowledgeDir, 'env'))).toBe(false);
     expect(existsSync(authored)).toBe(true);
   });
 });

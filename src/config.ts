@@ -709,7 +709,7 @@ export function resolveStateRoot(baseUrl: string, ephemeral?: boolean): string {
   const host = URL.parse(baseUrl)?.host;
   if (ephemeral || !host) return mkdtempSync(join(tmpdir(), 'explorbot-'));
 
-  const stateRoot = join(globalDir(), 'state', host);
+  const stateRoot = join(globalDir(), 'state', host.replaceAll(':', '_'));
   mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
   return stateRoot;
 }
@@ -723,8 +723,10 @@ export function materializeKnowledge(outputRoot: string): void {
   const knowledgeFile = process.env.EXPLORBOT_KNOWLEDGE_FILE;
   const knowledgeDir = join(outputRoot, 'knowledge');
   const globalFile = join(knowledgeDir, 'global.md');
+  const envDir = join(knowledgeDir, 'env');
 
   if (!inline) rmSync(globalFile, { force: true });
+  rmSync(envDir, { recursive: true, force: true });
   if (!inline && !knowledgeFile) return;
 
   mkdirSync(knowledgeDir, { recursive: true });
@@ -739,7 +741,8 @@ export function materializeKnowledge(outputRoot: string): void {
   if (!existsSync(source)) {
     throw new Error(`Knowledge file from EXPLORBOT_KNOWLEDGE_FILE not found: ${source}`);
   }
-  copyFileSync(source, join(knowledgeDir, basename(source)));
+  mkdirSync(envDir, { recursive: true });
+  copyFileSync(source, join(envDir, basename(source)));
 }
 
 export async function createModel(provider: string, modelId: string): Promise<any> {

@@ -253,7 +253,7 @@ describe('ConfigParser environment mode', () => {
 
     materializeKnowledge(scratchDir);
 
-    expect(readFileSync(join(scratchDir, 'knowledge', 'login.md'), 'utf8')).toContain('url: /login');
+    expect(readFileSync(join(scratchDir, 'knowledge', 'env', 'login.md'), 'utf8')).toContain('url: /login');
   });
 
   it('throws when EXPLORBOT_KNOWLEDGE_FILE does not exist', () => {
@@ -270,7 +270,7 @@ describe('ConfigParser environment mode', () => {
     materializeKnowledge(scratchDir);
 
     expect(existsSync(join(scratchDir, 'knowledge', 'global.md'))).toBe(true);
-    expect(existsSync(join(scratchDir, 'knowledge', 'checkout.md'))).toBe(true);
+    expect(existsSync(join(scratchDir, 'knowledge', 'env', 'checkout.md'))).toBe(true);
   });
 
   it('writes no knowledge dir when neither knowledge var is set', () => {

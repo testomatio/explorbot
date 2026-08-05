@@ -67,7 +67,7 @@ describe('Prima heal with aimock', () => {
       ai: provider,
       config: ConfigParser.getInstance().getConfig(),
       stateManager: { getCurrentState: () => checkoutState, getVisitCount: () => 1, getExperienceTracker: () => experienceTracker } as any,
-      knowledgeTracker: { renderRelevantKnowledge: () => '', getRelevantKnowledge: () => [] } as any,
+      knowledgeTracker: { renderRelevantKnowledge: () => '', renderRelevantContext: () => '', getRelevantKnowledge: () => [] } as any,
       requestStore: {} as any,
       playwrightRecorder: {} as any,
     });
