@@ -18,7 +18,7 @@ The build runs the TypeScript compiler (`tsc`) with a dedicated `tsconfig.build.
 2. **Import rewriting** - `rewriteRelativeImportExtensions` rewrites `.ts` imports to `.js` in the output (a TypeScript 5.7+ feature).
 3. **Type declarations** - `scripts/build-types.ts` emits `.d.ts` files for the library API (see [Type Declarations](#type-declarations)).
 4. **Asset copying** - Copies `rules/` and `assets/sample-files/` into `dist/` so runtime path resolution works.
-5. **Shebang replacement** - Replaces `#!/usr/bin/env bun` with `#!/usr/bin/env node` in the CLI entry point.
+5. **Shebang replacement** - Replaces `#!/usr/bin/env bun` with `#!/usr/bin/env node` in every CLI entry point declared in `bin`: `dist/bin/explorbot-cli.js` and `dist/boat/prima/bin/prima-cli.js`.
 
 ### Build Configuration
 
@@ -65,7 +65,10 @@ Key `package.json` fields:
 
 ```json
 {
-  "bin": { "explorbot": "./dist/bin/explorbot-cli.js" },
+  "bin": {
+    "explorbot": "./dist/bin/explorbot-cli.js",
+    "prima": "./dist/boat/prima/bin/prima-cli.js"
+  },
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "exports": {
@@ -84,12 +87,17 @@ Key `package.json` fields:
     "boat/doc-collector/src/**/*.ts",
     "boat/doc-collector/bin/**/*.ts",
     "boat/doc-collector/package.json",
+    "boat/prima/src/**/*.ts",
+    "boat/prima/bin/**/*.ts",
+    "boat/prima/package.json",
     "rules/",
     "assets/sample-files/"
   ],
   "engines": { "node": ">=24.0.0" }
 }
 ```
+
+The package ships two commands: `explorbot`, and `prima` for the [prima boat](../reference/commands.md#prima-boat), so `npx -p explorbot prima <command>` works without a separate install.
 
 Explorbot is both a CLI (`bin`) and a library (`exports`). The `.` entry point is `src/index.ts`, a side-effect-free barrel that re-exports the public API (`ExplorBot`, `Plan`, `Test`, and their types). The `exports` conditions are ordered so each consumer gets the right entry: `types` (the emitted `.d.ts`) for type-checking, `bun` (the TypeScript source) under Bun, and `import` (the compiled JS) under Node.js. This is why the source `src/**` files ship alongside `dist/`.
 
@@ -99,8 +107,9 @@ Explorbot is both a CLI (`bin`) and a library (`exports`). The `.` entry point i
 # Build the npm package
 bun run build:npm
 
-# Verify the CLI works on Node.js
+# Verify the CLIs work on Node.js
 node dist/bin/explorbot-cli.js --help
+node dist/boat/prima/bin/prima-cli.js --help
 
 # Check what would be published
 npm pack --dry-run

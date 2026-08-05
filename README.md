@@ -138,7 +138,7 @@ EXPLORBOT_KNOWLEDGE="Log in as admin@example.com / secret123" \
   npx explorbot explore /admin/users --max-tests 3
 ```
 
-Output lands in a temp directory and nothing is written to your project. See [Agentic Usage](docs/workflow/agentic-usage.md).
+Output lands in a per-host state directory, `~/.explorbot/state/<host>/`, so runs against the same app collect in one place and nothing is written to your project. Set `EXPLORBOT_EPHEMERAL=1` to keep nothing between runs. See [Agentic Usage](docs/workflow/agentic-usage.md).
 
 ## Teaching Explorbot
 

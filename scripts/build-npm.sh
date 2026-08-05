@@ -19,14 +19,15 @@ done
 cp package.json "$DIST_DIR/package.json"
 cp models.json "$DIST_DIR/models.json"
 
-CLI="$DIST_DIR/bin/explorbot-cli.js"
-if [ -f "$CLI" ]; then
-  if [[ "$(uname)" == "Darwin" ]]; then
-    sed -i '' '1s|^#!.*|#!/usr/bin/env node|' "$CLI"
-  else
-    sed -i '1s|^#!.*|#!/usr/bin/env node|' "$CLI"
+for CLI in "$DIST_DIR/bin/explorbot-cli.js" "$DIST_DIR/boat/prima/bin/prima-cli.js"; do
+  if [ -f "$CLI" ]; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' '1s|^#!.*|#!/usr/bin/env node|' "$CLI"
+    else
+      sed -i '1s|^#!.*|#!/usr/bin/env node|' "$CLI"
+    fi
+    chmod +x "$CLI"
   fi
-  chmod +x "$CLI"
-fi
+done
 
 echo "Build complete: $DIST_DIR/"
