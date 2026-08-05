@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { ConfigParser } from '../../src/config';
 import { normalizeUrl } from '../../src/state-manager';
-import { extractStatePath, generalizeSegment, generalizeUrl, hasDynamicUrlSegment, isDynamicSegment, matchesUrl } from '../../src/utils/url-matcher';
+import { extractStatePath, generalizeSegment, generalizeUrl, hasDynamicUrlSegment, isDynamicSegment, matchesNavigationUrl, matchesUrl } from '../../src/utils/url-matcher';
 
 describe('url-matcher', () => {
   beforeEach(() => {
@@ -181,6 +181,20 @@ describe('url-matcher', () => {
 
     it('returns original string when URL is unparseable', () => {
       expect(extractStatePath('not a url')).toBe('not a url');
+    });
+  });
+
+  describe('matchesNavigationUrl', () => {
+    it('accepts a fragment added by a client-side router when none was requested', () => {
+      expect(matchesNavigationUrl('/todomvc/', '/todomvc/#/')).toBe(true);
+    });
+
+    it('requires an explicitly requested fragment', () => {
+      expect(matchesNavigationUrl('/todomvc/#/active', '/todomvc/#/completed')).toBe(false);
+    });
+
+    it('compares absolute and relative URLs by path', () => {
+      expect(matchesNavigationUrl('/users', 'https://example.test/users#details')).toBe(true);
     });
   });
 

@@ -46,6 +46,7 @@ export interface ExplorBotOptions {
   headless?: boolean;
   incognito?: boolean;
   session?: string | boolean;
+  applicationSpec?: string;
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -149,7 +150,7 @@ export class ExplorBot {
   }
 
   knowledgeTracker(): KnowledgeTracker {
-    return (this._knowledgeTracker ||= new KnowledgeTracker());
+    return (this._knowledgeTracker ||= new KnowledgeTracker(this.options.applicationSpec));
   }
 
   experienceTracker(): ExperienceTracker {

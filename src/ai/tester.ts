@@ -62,6 +62,7 @@ export class Tester extends TaskAgent implements Agent {
   private seenUiMapUrls = new Set<string>();
   private lastAnalyzedStateHash: string | null = null;
   private stalledIterations = 0;
+  private hasSuccessfulAssertion = false;
   private readonly MAX_STALLED_ITERATIONS = 3;
 
   constructor(deps: AgentDeps, researcher: Researcher, navigator: Navigator, agentTools?: any) {
@@ -110,6 +111,7 @@ export class Tester extends TaskAgent implements Agent {
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
     this.stalledIterations = 0;
+    this.hasSuccessfulAssertion = false;
     this.stateManager.clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
@@ -312,8 +314,16 @@ export class Tester extends TaskAgent implements Agent {
           const allToolNames = result?.toolExecutions?.map((execution: any) => execution.toolName) || [];
           const successfulToolNames = result?.toolExecutions?.filter((execution: any) => execution.wasSuccessful)?.map((execution: any) => execution.toolName) || [];
           const actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
+          const successfulActionPerformed = !!successfulToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
           assertionPerformed = !!successfulToolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
           const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
+
+          if (successfulActionPerformed) {
+            this.hasSuccessfulAssertion = false;
+          }
+          if (assertionPerformed) {
+            this.hasSuccessfulAssertion = true;
+          }
 
           this.trackToolExecutions(result?.toolExecutions || []);
 
@@ -463,6 +473,11 @@ export class Tester extends TaskAgent implements Agent {
 
     this.stalledIterations++;
     if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
+
+    if (this.hasSuccessfulAssertion) {
+      task.addNote('No further browser progress after successful verification; requesting final review');
+      return true;
+    }
 
     task.addNote('No browser progress after repeated attempts on unchanged page', TestResult.FAILED);
     task.finish(TestResult.FAILED);

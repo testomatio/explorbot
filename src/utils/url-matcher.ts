@@ -93,3 +93,13 @@ export function extractStatePath(url: string): string {
     return url;
   }
 }
+
+export function matchesNavigationUrl(expected: string, current: string): boolean {
+  const expectedPath = extractStatePath(expected);
+  let currentPath = extractStatePath(current);
+  if (!expectedPath.includes('#')) {
+    currentPath = currentPath.split('#')[0];
+  }
+  const normalize = (value: string) => value.replace(/^\/+|\/+$/g, '').toLowerCase();
+  return normalize(expectedPath) === normalize(currentPath);
+}

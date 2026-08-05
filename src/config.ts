@@ -227,6 +227,7 @@ interface ExplorbotConfig {
     knowledge: string;
     experience: string;
     output: string;
+    spec?: string;
   };
   experience?: {
     maxReadLines?: number;
