@@ -50,6 +50,7 @@ export interface ExplorBotOptions {
   instance?: string;
   optionalAi?: boolean;
   attachedBrowser?: Browser;
+  applicationSpec?: string;
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -163,7 +164,7 @@ export class ExplorBot {
   }
 
   knowledgeTracker(): KnowledgeTracker {
-    return (this._knowledgeTracker ||= new KnowledgeTracker());
+    return (this._knowledgeTracker ||= new KnowledgeTracker(this.options.applicationSpec));
   }
 
   experienceTracker(): ExperienceTracker {

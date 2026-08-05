@@ -40,6 +40,7 @@ interface CLIOptions {
   headless?: boolean;
   incognito?: boolean;
   session?: string | boolean;
+  spec?: string;
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
@@ -52,6 +53,7 @@ function buildExplorBotOptions(from: string | undefined, options: CLIOptions): E
     headless: options.headless,
     incognito: options.incognito,
     session: options.session,
+    applicationSpec: options.spec,
   } as ExplorBotOptions;
 }
 
@@ -64,6 +66,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-s, --show', 'Show browser window')
     .option('--headless', 'Run browser in headless mode')
     .option('--incognito', 'Run without recording experiences')
+    .option('--spec <path>', 'Use a Docbot application spec directory or index.md')
     .option('--session [file]', 'Save/restore browser session from file');
 }
 

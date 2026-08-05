@@ -65,7 +65,7 @@ const fakeState = {
 
 function createMockDeps(state = fakeState) {
   const mockExperienceTracker = { getSuccessfulExperience: () => [] };
-  const mockKnowledgeTracker = { getRelevantKnowledge: () => [] };
+  const mockKnowledgeTracker = { getRelevantKnowledge: () => [], renderApplicationSpec: () => '' };
   const mockStateManager = {
     getCurrentState: () => state,
     getVisitCount: () => 0,

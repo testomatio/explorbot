@@ -438,7 +438,7 @@ export class Researcher extends ResearcherBase implements Agent {
     if (!this.actionResult) throw new Error('actionResult is not set');
 
     const html = await this.actionResult.combinedHtml();
-    const knowledge = this.knowledgeTracker.renderRelevantKnowledge(this.actionResult);
+    const knowledge = this.knowledgeTracker.renderRelevantContext(this.actionResult);
 
     const ariaSnapshot = this.actionResult.getCompactARIA();
 

@@ -335,6 +335,7 @@ Change the paths:
 
 ```javascript
 dirs: {
+  spec: './test/spec',
   knowledge: './test/knowledge',
   experience: './test/experience',
   output: './test/output',
@@ -504,6 +505,7 @@ export default {
 
   // Directory paths
   dirs: {
+    spec: 'spec',                     // Application specification bundle
     knowledge: 'knowledge',        // Domain knowledge files
     experience: 'experience',      // Learned patterns
     output: 'output',              // Test results and logs
@@ -526,4 +528,5 @@ export default {
 - [Researcher agent](../web-testing/researcher.md) — Researcher configuration and usage
 - [Planner agent](../web-testing/planner.md) — planning styles and customization
 - [Knowledge files](../workflow/knowledge.md) — domain knowledge format
+- [Application specs](../workflow/application-spec.md) — reusable application documentation format
 - [Observability](../contributing/observability.md) — Langfuse integration
