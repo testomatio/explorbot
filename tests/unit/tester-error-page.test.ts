@@ -65,6 +65,7 @@ describe('Tester error page handling', () => {
       knowledgeTracker: {
         getRelevantKnowledge: () => [],
         renderRelevantKnowledge: () => '',
+        renderRelevantContext: () => '',
       },
       requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
       playwrightRecorder: {},
@@ -125,6 +126,7 @@ describe('Tester error page handling', () => {
       knowledgeTracker: {
         getRelevantKnowledge: () => [],
         renderRelevantKnowledge: () => '',
+        renderRelevantContext: () => '',
       },
       requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
       playwrightRecorder: {},

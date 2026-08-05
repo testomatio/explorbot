@@ -55,6 +55,7 @@ export function createDocsCommands(name = 'docs'): Command {
       console.log(`Skipped ${result.skipped.length} page(s)`);
       console.log(`Spec index: ${result.indexPath}`);
       console.log(`Pages dir: ${path.join(result.outputDir, 'pages')}`);
+      console.log(`Use in Explorbot: npx explorbot start ${startPath} --spec "${result.outputDir}"`);
 
       await bot.stop();
       process.exit(0);

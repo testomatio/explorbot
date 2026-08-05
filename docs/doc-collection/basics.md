@@ -80,6 +80,20 @@ output/docs/
 
 `state-diagram.mmd` is the same state-transition map as a standalone Mermaid file (no markdown fences), so other agents can embed or post-process it without re-rendering `index.md`.
 
+## Use the spec in Explorbot
+
+Pass the generated directory or its `index.md` to any Explorbot web command:
+
+```bash
+npx explorbot start / --spec output/docs
+npx explorbot plan /admin/users --spec output/docs
+npx explorbot explore / --spec output/docs
+```
+
+You can also set `dirs.spec: 'output/docs'` in `explorbot.config.js` to use it by default. Explorbot selects documentation for the current URL instead of loading the whole site spec into every prompt. Proven capabilities and observed transitions are supporting context; possible capabilities remain explicitly unverified until the live UI confirms them.
+
+The format is not tied to Docbot. See [Application Specs](../workflow/application-spec.md) to create or generate a compatible bundle with another tool.
+
 Each page file follows the same shape:
 
 ```markdown

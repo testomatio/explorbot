@@ -56,6 +56,7 @@ function createMockDeps(state = fakeState) {
   const mockKnowledgeTracker = {
     getRelevantKnowledge: () => [],
     renderRelevantKnowledge: () => '',
+    renderRelevantContext: () => '',
   };
   const mockStateManager = {
     getCurrentState: () => state,

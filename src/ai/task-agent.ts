@@ -73,7 +73,7 @@ export abstract class TaskAgent {
   }
 
   protected getKnowledge(actionResult: ActionResult): string {
-    return this.getKnowledgeTracker().renderRelevantKnowledge(actionResult);
+    return this.getKnowledgeTracker().renderRelevantContext(actionResult);
   }
 
   protected getExperience(actionResult: ActionResult): string {
