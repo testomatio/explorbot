@@ -36,7 +36,7 @@ export class KnowledgeTracker {
       mkdirSync(this.knowledgeDir, { recursive: true });
     }
 
-    const specPath = applicationSpecPath || config.applicationSpec;
+    const specPath = applicationSpecPath || config.dirs?.spec;
     if (specPath) {
       this.applicationSpec = new ApplicationSpec(specPath);
       tag('info').log(`Loaded application spec with ${this.applicationSpec.pageCount} documented pages`);

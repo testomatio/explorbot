@@ -52,6 +52,7 @@
       "description": "These pages apply to web and API testing alike",
       "pages": [
         { "title": "Knowledge", "file": "workflow/knowledge.md", "description": "Teach Explorbot about your app" },
+        { "title": "Application Specs", "file": "workflow/application-spec.md", "description": "Reuse versioned application documentation" },
         { "title": "Test plans", "file": "workflow/test-plans.md", "description": "The plan file format and how plans are reused" },
         { "title": "Planning styles", "file": "workflow/planning-styles.md", "description": "Normal, curious, psycho, and your own" },
         { "title": "Reporting", "file": "workflow/reporting.md", "description": "Local reports and Testomat.io" },

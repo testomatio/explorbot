@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import dedent from 'dedent';
 import { ActionResult } from './action-result.ts';
-import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from './application-spec-contract.ts';
+import { APPLICATION_SPEC_PAGE_SCHEMA } from './application-spec-contract.ts';
 import { ConfigParser } from './config.ts';
 import { tag } from './utils/logger.ts';
 import { loadMarkdownFiles } from './utils/markdown-files.ts';
@@ -56,17 +56,17 @@ export class ApplicationSpec {
     }
 
     for (const file of loadMarkdownFiles(pagesPath, { recursive: true })) {
-      if (file.data.format !== APPLICATION_SPEC_FORMAT) {
+      const parsed = APPLICATION_SPEC_PAGE_SCHEMA.safeParse(file.data);
+      if (!parsed.success && parsed.error.issues.some((issue) => issue.path[0] === 'format')) {
         throw new Error(`Invalid application spec format in ${file.filePath}`);
       }
-      if (file.data.version !== APPLICATION_SPEC_VERSION) {
+      if (!parsed.success && parsed.error.issues.some((issue) => issue.path[0] === 'version')) {
         throw new Error(`Unsupported application spec version in ${file.filePath}: ${String(file.data.version)}`);
       }
-      const url = String(file.data.url || '').trim();
-      if (!url) {
+      if (!parsed.success) {
         throw new Error(`Application spec page URL is missing in ${file.filePath}`);
       }
-      this.pages.push({ url, content: file.content.trim() });
+      this.pages.push({ url: parsed.data.url, content: file.content.trim() });
     }
 
     if (this.pages.length === 0) {

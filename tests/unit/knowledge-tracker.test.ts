@@ -85,6 +85,26 @@ describe('KnowledgeTracker', () => {
       expect(rendered).toContain('<application_spec>');
       expect(rendered).toContain('Sign in to the application.');
     });
+
+    it('loads an application spec from the configured directory', () => {
+      mkdirSync(`${applicationSpecDir}/pages`, { recursive: true });
+      writeFileSync(`${applicationSpecDir}/index.md`, '# Website Spec', 'utf8');
+      writeFileSync(
+        `${applicationSpecDir}/pages/login.md`,
+        matter.stringify('# /login\n\n## Purpose\n\nSign in to the application.', {
+          url: '/login',
+          format: APPLICATION_SPEC_FORMAT,
+          version: APPLICATION_SPEC_VERSION,
+        }),
+        'utf8'
+      );
+      (ConfigParser.getInstance() as any).config.dirs.spec = 'explorbot-test-application-spec';
+
+      const tracker = new KnowledgeTracker();
+      const rendered = tracker.renderApplicationSpec(new ActionResult({ url: '/login' }));
+
+      expect(rendered).toContain('Sign in to the application.');
+    });
   });
 
   describe('interpolateVars', () => {

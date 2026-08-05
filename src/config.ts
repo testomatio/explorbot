@@ -218,7 +218,6 @@ interface WebConfig {
 }
 
 interface ExplorbotConfig {
-  applicationSpec?: string;
   web?: WebConfig;
   playwright: PlaywrightConfig;
   ai: AIConfig;
@@ -228,6 +227,7 @@ interface ExplorbotConfig {
     knowledge: string;
     experience: string;
     output: string;
+    spec?: string;
   };
   experience?: {
     maxReadLines?: number;
