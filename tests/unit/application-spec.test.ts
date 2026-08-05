@@ -68,21 +68,13 @@ describe('ApplicationSpec', () => {
   });
 
   it('rejects an unsupported page version', () => {
-    writeFileSync(
-      `${projectDir}/output/docs/pages/invalid.md`,
-      matter.stringify('# /invalid', { url: '/invalid', format: APPLICATION_SPEC_FORMAT, version: APPLICATION_SPEC_VERSION + 1 }),
-      'utf8'
-    );
+    writeFileSync(`${projectDir}/output/docs/pages/invalid.md`, matter.stringify('# /invalid', { url: '/invalid', format: APPLICATION_SPEC_FORMAT, version: APPLICATION_SPEC_VERSION + 1 }), 'utf8');
 
     expect(() => new ApplicationSpec('output/docs')).toThrow('Unsupported application spec version');
   });
 
   it('rejects a page without a URL', () => {
-    writeFileSync(
-      `${projectDir}/output/docs/pages/invalid.md`,
-      matter.stringify('# Invalid', { format: APPLICATION_SPEC_FORMAT, version: APPLICATION_SPEC_VERSION }),
-      'utf8'
-    );
+    writeFileSync(`${projectDir}/output/docs/pages/invalid.md`, matter.stringify('# Invalid', { format: APPLICATION_SPEC_FORMAT, version: APPLICATION_SPEC_VERSION }), 'utf8');
 
     expect(() => new ApplicationSpec('output/docs')).toThrow('Application spec page URL is missing');
   });
