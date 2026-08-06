@@ -26,7 +26,8 @@ No `init`, no config file, no project directory, no model IDs to look up. A conf
 | `EXPLORBOT_URL` | yes | Base URL to test; the API boat reads it as the base endpoint |
 | `EXPLORBOT_VISION_MODEL` | no | Screenshot analysis; overrides the provider recommendation |
 | `EXPLORBOT_AGENTIC_MODEL` | no | Captain and Pilot decisions; overrides the provider recommendation |
-| `EXPLORBOT_OUTPUT` | no | Output root for states, plans, research, and reports. Defaults to a fresh temp directory |
+| `EXPLORBOT_OUTPUT` | no | Output root for states, plans, research, and reports. Defaults to the per-host state dir under ~/.explorbot/state |
+| `EXPLORBOT_EPHEMERAL` | no | Keep no state between runs — output goes to a fresh temp directory instead of the per-host state dir |
 | `EXPLORBOT_KNOWLEDGE` | no | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | no | Path to a knowledge markdown file |
 | `EXPLORBOT_API_SPEC` | no | OpenAPI spec path for the API boat |
@@ -100,11 +101,12 @@ EXPLORBOT_KNOWLEDGE_FILE=./checkout-knowledge.md npx explorbot explore /checkout
 
 Config-free runs are built to leave no trace in the working directory:
 
-- **Output goes to a temp directory** unless `EXPLORBOT_OUTPUT` is set. Read the path from the `Configuration built from EXPLORBOT_* environment variables. Output: …` line.
-- **Experience is not written.** Nothing accumulates between runs, so a run is reproducible. Reading existing experience still works if the directory has any.
+- **Output goes to a per-host state directory** — `~/.explorbot/state/<host>/`, keyed by the host of the URL under test, so repeated runs against the same app collect their states, plans, research, and reports in one place. `EXPLORBOT_OUTPUT` points them somewhere else. Read the path Explorbot resolved from the `Configuration built from EXPLORBOT_* environment variables. Output: …` line.
+- **`EXPLORBOT_EPHEMERAL=1` keeps nothing between runs** — output goes to a fresh temp directory instead, for throwaway CI jobs and demos. The [prima boat](../reference/commands.md#prima-boat) exposes the same switch as `--ephemeral`.
+- **Experience is written into the per-host state directory.** What worked on a page is remembered and reused by later runs against the same host. `EXPLORBOT_EPHEMERAL=1` turns writing off, so an ephemeral run stays reproducible.
 - **The Historian is off.** No generated CodeceptJS or Playwright test files. Plans and reports are still written.
 
-For a long-lived agent that should learn across runs, use a real config file with experience writing enabled. A stable `EXPLORBOT_OUTPUT` preserves run artifacts, but config-free mode still does not write experience.
+For a long-lived agent, the per-host state directory is what carries knowledge across runs; a real config file gives the same memory in a location you choose and check in.
 
 ### Reading results
 

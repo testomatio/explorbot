@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import os, { tmpdir } from 'node:os';
 import path, { basename, dirname, join, resolve } from 'node:path';
 import { parseEnv } from 'node:util';
 import matter from 'gray-matter';
@@ -255,13 +255,16 @@ type RuleEntry = string | Record<string, string>;
 
 export const EXPLORBOT_CONFIG_PATHS = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts'];
 
+export const GLOBAL_CONFIG_NAMES = ['config.js', 'config.mjs', 'config.ts'];
+
 export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_AI_PROVIDER', required: true, description: 'Provider name; fills every model role from its recommended models. Turns on config-free mode' },
   { name: 'EXPLORBOT_AI_MODEL', description: 'Pins the main model — a model id for the provider, or a standalone provider/model-id' },
   { name: 'EXPLORBOT_URL', required: true, description: 'Base URL to test; the API boat reads it as the base endpoint' },
   { name: 'EXPLORBOT_VISION_MODEL', description: 'Screenshot analysis; overrides the provider recommendation' },
   { name: 'EXPLORBOT_AGENTIC_MODEL', description: 'Captain and Pilot decisions; overrides the provider recommendation' },
-  { name: 'EXPLORBOT_OUTPUT', description: 'Output root for states, plans, research, and reports. Defaults to a fresh temp directory' },
+  { name: 'EXPLORBOT_OUTPUT', description: 'Output root for states, plans, research, and reports. Defaults to the per-host state dir under ~/.explorbot/state' },
+  { name: 'EXPLORBOT_EPHEMERAL', description: 'Keep no state between runs — output goes to a fresh temp directory instead of the per-host state dir' },
   { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
   { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
@@ -304,10 +307,20 @@ export class ConfigParser {
 
   private constructor() {}
 
-  public static loadEnv(filePath: string): void {
+  public static loadEnv(filePath: string, keepExisting = false): void {
     const resolved = resolve(filePath);
     if (!existsSync(resolved)) return;
-    Object.assign(process.env, parseEnv(readFileSync(resolved, 'utf8')));
+
+    const parsed = parseEnv(readFileSync(resolved, 'utf8'));
+    if (!keepExisting) {
+      Object.assign(process.env, parsed);
+      return;
+    }
+
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key in process.env) continue;
+      process.env[key] = value as string;
+    }
   }
 
   public static recommendedModels(): Record<string, Record<string, string>> {
@@ -343,6 +356,7 @@ export class ConfigParser {
     }
 
     ConfigParser.loadEnv('.env');
+    ConfigParser.loadEnv(join(globalDir(), '.env'), true);
 
     try {
       const resolvedPath = options?.config || this.findConfigFile();
@@ -362,7 +376,7 @@ export class ConfigParser {
       }
 
       if (!resolvedPath) {
-        const outputRoot = resolveOutputRoot();
+        const outputRoot = resolveOutputRoot(process.env.EXPLORBOT_URL || options?.baseUrl);
         loadedConfig = await this.buildEnvConfig(options?.baseUrl, outputRoot);
         sourcePath = join(outputRoot, 'explorbot.config.js');
 
@@ -529,7 +543,7 @@ export class ConfigParser {
       playwright: { browser: 'chromium', url, show: false },
       ai,
       dirs: { knowledge: 'knowledge', experience: 'experience', output: '.' },
-      experience: { disabled: true },
+      experience: { disabled: !!process.env.EXPLORBOT_EPHEMERAL },
     };
   }
 
@@ -540,6 +554,13 @@ export class ConfigParser {
       const fullPath = resolve(process.cwd(), path);
       if (existsSync(fullPath)) {
         return fullPath;
+      }
+    }
+
+    for (const name of GLOBAL_CONFIG_NAMES) {
+      const globalPath = join(globalDir(), name);
+      if (existsSync(globalPath)) {
+        return globalPath;
       }
     }
 
@@ -665,30 +686,53 @@ export async function resolveModel(spec: string, role: ModelRole = 'model'): Pro
   return createModel(spec, modelId);
 }
 
-export function resolveOutputRoot(): string {
+export function resolveOutputRoot(baseUrl?: string): string {
   if (cachedOutputRoot) return cachedOutputRoot;
 
   const configured = process.env.EXPLORBOT_OUTPUT;
-  if (!configured) {
-    cachedOutputRoot = mkdtempSync(join(tmpdir(), 'explorbot-'));
+  if (configured) {
+    cachedOutputRoot = resolve(configured);
+    mkdirSync(cachedOutputRoot, { recursive: true });
     return cachedOutputRoot;
   }
 
-  cachedOutputRoot = resolve(configured);
-  mkdirSync(cachedOutputRoot, { recursive: true });
+  if (baseUrl) {
+    cachedOutputRoot = resolveStateRoot(baseUrl, !!process.env.EXPLORBOT_EPHEMERAL);
+    return cachedOutputRoot;
+  }
+
+  cachedOutputRoot = mkdtempSync(join(tmpdir(), 'explorbot-'));
   return cachedOutputRoot;
+}
+
+export function resolveStateRoot(baseUrl: string, ephemeral?: boolean): string {
+  const host = URL.parse(baseUrl)?.host;
+  if (ephemeral || !host) return mkdtempSync(join(tmpdir(), 'explorbot-'));
+
+  const stateRoot = join(globalDir(), 'state', host.replaceAll(':', '_'));
+  mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
+  return stateRoot;
+}
+
+export function globalDir(): string {
+  return join(os.homedir(), '.explorbot');
 }
 
 export function materializeKnowledge(outputRoot: string): void {
   const inline = process.env.EXPLORBOT_KNOWLEDGE;
   const knowledgeFile = process.env.EXPLORBOT_KNOWLEDGE_FILE;
+  const knowledgeDir = join(outputRoot, 'knowledge');
+  const globalFile = join(knowledgeDir, 'global.md');
+  const envDir = join(knowledgeDir, 'env');
+
+  if (!inline) rmSync(globalFile, { force: true });
+  rmSync(envDir, { recursive: true, force: true });
   if (!inline && !knowledgeFile) return;
 
-  const knowledgeDir = join(outputRoot, 'knowledge');
   mkdirSync(knowledgeDir, { recursive: true });
 
   if (inline) {
-    writeFileSync(join(knowledgeDir, 'global.md'), matter.stringify(inline, { url: '*', endpoint: '*' }));
+    writeFileSync(globalFile, matter.stringify(inline, { url: '*', endpoint: '*' }));
   }
 
   if (!knowledgeFile) return;
@@ -697,7 +741,8 @@ export function materializeKnowledge(outputRoot: string): void {
   if (!existsSync(source)) {
     throw new Error(`Knowledge file from EXPLORBOT_KNOWLEDGE_FILE not found: ${source}`);
   }
-  copyFileSync(source, join(knowledgeDir, basename(source)));
+  mkdirSync(envDir, { recursive: true });
+  copyFileSync(source, join(envDir, basename(source)));
 }
 
 export async function createModel(provider: string, modelId: string): Promise<any> {

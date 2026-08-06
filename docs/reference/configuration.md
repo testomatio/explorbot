@@ -392,7 +392,7 @@ npx explorbot explore /dashboard --config ./custom/path/config.js
 
 ### Running without a config file
 
-When no config file is found and `EXPLORBOT_AI_PROVIDER` is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables. Output goes to a temp directory, experience is not written, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
+When no config file is found — neither in the working directory nor at `~/.explorbot/config.*` — and `EXPLORBOT_AI_PROVIDER` is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables. Output goes to the per-host state directory `~/.explorbot/state/<host>/` (`EXPLORBOT_OUTPUT` overrides it, `EXPLORBOT_EPHEMERAL=1` sends it to a temp directory instead), experience is written there and reused by later runs against the same host unless the run is ephemeral, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
 
 ## Full configuration reference
 

@@ -26,6 +26,21 @@ describe('npm build', () => {
     assert.ok(output.includes('explorbot'), 'CLI help output missing explorbot');
   });
 
+  it('every bin of the package is built with a node shebang', () => {
+    const bins = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).bin;
+    for (const [name, relative] of Object.entries(bins)) {
+      const file = join(root, relative);
+      assert.ok(existsSync(file), `${name} bin not found at ${relative}`);
+      assert.strictEqual(readFileSync(file, 'utf8').split('\n')[0], '#!/usr/bin/env node', `${name} bin missing node shebang`);
+    }
+  });
+
+  it('prima CLI --help runs on Node.js', () => {
+    const output = execSync(`node ${join(dist, 'boat/prima/bin/prima-cli.js')} --help`, { encoding: 'utf8' });
+    assert.ok(output.includes('Usage: prima'), 'prima help output missing Usage: prima');
+    assert.ok(output.includes('pw'), 'prima help output missing the pw command');
+  });
+
   it('fingerprint worker resolves to .js in compiled output', () => {
     const cacheFile = join(dist, 'src/ai/researcher/cache.js');
     assert.ok(existsSync(cacheFile), 'compiled cache.js not found');

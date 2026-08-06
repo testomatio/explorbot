@@ -65,8 +65,8 @@ class Action {
     return this.recovery(() => this.captureOnce(opts));
   }
 
-  async execute(code: string): Promise<Action> {
-    return this.recovery(() => this.executeOnce(code));
+  async execute(code: string, opts: ExecuteOptions = {}): Promise<Action> {
+    return this.recovery(() => this.executeOnce(code, opts.verbatim));
   }
 
   private async captureOnce({ includeScreenshot = false, codeBlock }: { includeScreenshot?: boolean; codeBlock?: string } = {}): Promise<ActionResult> {
@@ -270,7 +270,7 @@ class Action {
     }
   }
 
-  private async executeOnce(code: string): Promise<Action> {
+  private async executeOnce(code: string, verbatim = false): Promise<Action> {
     let error: Error | null = null;
 
     setActivity('🔎 Browsing...', 'action');
@@ -287,8 +287,8 @@ class Action {
     const tracer = trace.getTracer('ai');
     const stepSpan = activeSpan ? tracer.startSpan('codeceptjs.step', undefined, trace.setSpan(context.active(), activeSpan)) : null;
     setStepSpanParent(stepSpan);
-    const sanitizedCode = sanitizeCodeBlock(codeString);
-    const isPlaywright = hasPlaywrightCommands(sanitizedCode);
+    const sanitizedCode = verbatim ? codeString : sanitizeCodeBlock(codeString);
+    const isPlaywright = !verbatim && hasPlaywrightCommands(sanitizedCode);
 
     try {
       debugLog('Executing action:', codeString);
@@ -385,6 +385,10 @@ class Action {
 export default Action;
 
 export type RecoveryRunner = <T>(fn: () => Promise<T>) => Promise<T>;
+
+export interface ExecuteOptions {
+  verbatim?: boolean;
+}
 
 function errorToString(error: any): string {
   if (error.cliMessage) {

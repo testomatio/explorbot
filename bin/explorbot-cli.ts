@@ -743,10 +743,11 @@ browserCmd
   .description('Launch a persistent browser server')
   .option('-s, --show', 'Launch browser in headed mode (visible window)')
   .option('--headless', 'Launch browser in headless mode')
+  .option('--instance <name>', 'Named browser instance (lowercase letters, digits, dashes)')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
-    const { launchServer, removeEndpointFile } = await import('../src/browser-server.js');
+    const { launchServer, removeEndpointFile, keepServerRunning } = await import('../src/browser-server.js');
     await ConfigParser.getInstance().loadConfig({
       config: options.config,
       path: options.path,
@@ -757,55 +758,45 @@ browserCmd
     if (options.show !== undefined) show = true;
     if (options.headless !== undefined) show = false;
 
-    const server = await launchServer({
-      browser: config.playwright.browser,
-      show,
+    const server = await launchServer(
+      {
+        browser: config.playwright.browser,
+        show,
+      },
+      options.instance
+    );
+
+    await keepServerRunning(async () => {
+      await server.close();
+      removeEndpointFile(options.instance);
     });
-
-    console.log('Browser server is running. Press Ctrl+C to stop.');
-
-    const cleanup = () => {
-      console.log('\nStopping browser server...');
-      server.close();
-      removeEndpointFile();
-      process.exit(0);
-    };
-
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
   });
 
 browserCmd
   .command('stop')
   .description('Stop a running browser server')
+  .option('--instance <name>', 'Named browser instance (lowercase letters, digits, dashes)')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
-    const { getAliveEndpoint, removeEndpointFile } = await import('../src/browser-server.js');
+    const { stopServer } = await import('../src/browser-server.js');
     await ConfigParser.getInstance().loadConfig({
       config: options.config,
       path: options.path,
     });
 
-    const endpoint = await getAliveEndpoint();
-    if (!endpoint) {
+    if (!(await stopServer(options.instance))) {
       console.log('No running browser server found.');
       process.exit(0);
     }
 
-    try {
-      const { chromium } = await import('playwright-core');
-      const browser = await chromium.connect(endpoint, { timeout: 3000 });
-      await browser.close();
-    } catch {}
-
-    removeEndpointFile();
     console.log('Browser server stopped.');
   });
 
 browserCmd
   .command('status')
   .description('Check if a browser server is running')
+  .option('--instance <name>', 'Named browser instance (lowercase letters, digits, dashes)')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
   .action(async (options) => {
@@ -815,7 +806,7 @@ browserCmd
       path: options.path,
     });
 
-    const endpoint = await getAliveEndpoint();
+    const endpoint = await getAliveEndpoint(options.instance);
     if (endpoint) {
       console.log(`Browser server is running at: ${endpoint}`);
     } else {
@@ -874,8 +865,10 @@ program
 
 import { createApiCommands } from '../boat/api-tester/src/cli.ts';
 import { createDocsCommands } from '../boat/doc-collector/src/cli.ts';
+import { createPrimaCommands } from '../boat/prima/src/cli.ts';
 program.addCommand(createApiCommands('api'));
 program.addCommand(createDocsCommands('docs'));
+program.addCommand(createPrimaCommands('prima'));
 
 const envHelp = () => {
   const width = Math.max(...EXPLORBOT_ENV_VARS.map((v) => v.name.length));

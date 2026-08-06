@@ -44,7 +44,7 @@ describe('ConfigParser runtime baseUrl overrides', () => {
   });
 });
 
-const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_VISION_MODEL', 'EXPLORBOT_AGENTIC_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE'];
+const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_VISION_MODEL', 'EXPLORBOT_AGENTIC_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_EPHEMERAL', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE'];
 
 let savedEnv: Record<string, string | undefined> = {};
 let scratchDir: string;
@@ -209,7 +209,7 @@ describe('ConfigParser environment mode', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('disables experience and historian and keeps output at the config root', async () => {
+  it('keeps experience, disables historian and keeps output at the config root', async () => {
     process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
     process.env.EXPLORBOT_URL = 'https://example.com';
     process.env.EXPLORBOT_OUTPUT = scratchDir;
@@ -217,7 +217,7 @@ describe('ConfigParser environment mode', () => {
     const config = await parser.loadConfig();
 
     expect(config.dirs?.output).toBe('.');
-    expect(config.experience?.disabled).toBe(true);
+    expect(config.experience?.disabled).toBe(false);
     expect(config.ai.agents?.historian?.enabled).toBe(false);
     expect(parser.getOutputDir()).toBe(scratchDir);
   });
@@ -253,7 +253,7 @@ describe('ConfigParser environment mode', () => {
 
     materializeKnowledge(scratchDir);
 
-    expect(readFileSync(join(scratchDir, 'knowledge', 'login.md'), 'utf8')).toContain('url: /login');
+    expect(readFileSync(join(scratchDir, 'knowledge', 'env', 'login.md'), 'utf8')).toContain('url: /login');
   });
 
   it('throws when EXPLORBOT_KNOWLEDGE_FILE does not exist', () => {
@@ -270,7 +270,7 @@ describe('ConfigParser environment mode', () => {
     materializeKnowledge(scratchDir);
 
     expect(existsSync(join(scratchDir, 'knowledge', 'global.md'))).toBe(true);
-    expect(existsSync(join(scratchDir, 'knowledge', 'checkout.md'))).toBe(true);
+    expect(existsSync(join(scratchDir, 'knowledge', 'env', 'checkout.md'))).toBe(true);
   });
 
   it('writes no knowledge dir when neither knowledge var is set', () => {
