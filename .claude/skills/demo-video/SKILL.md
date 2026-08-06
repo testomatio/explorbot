@@ -43,7 +43,9 @@ bun .claude/skills/demo-video/demo-video.ts render \
   --duration 30 --size vertical --output output/demo.mp4
 ```
 
-4. The renderer writes `<output>-frame-first.png`, `-mid.png`, `-last.png` next to the video. Read all three and confirm: browser content visible and uncropped, terminal text readable, layout correct, and the mid-frame terminal lines plausibly match mid-segment browser activity. Then present the output path to the user.
+4. The renderer removes browser flicker automatically: Playwright pads the recording with flat gray outside the page viewport, and when the viewport resizes mid-recording those few frames are drawn at a different scale — a visible flicker. The render probes each frame's viewport geometry, drops the ones that deviate from the segment's dominant geometry, and holds the previous good frame, printing `browser: dropped N resized frames`. Nothing else is needed; see [Resized browser frames](#resized-browser-frames) for the mechanism and its safety limit.
+
+5. The renderer writes `<output>-frame-first.png`, `-mid.png`, `-last.png` next to the video. Read all three and confirm: browser content visible and uncropped, terminal text readable, layout correct, and the mid-frame terminal lines plausibly match mid-segment browser activity. If a flicker was reported near a timestamp, extract frames densely around it (`ffmpeg -ss <t> -t 2 -i out.mp4 -vf fps=30 f-%02d.png`) and confirm the browser holds a stable size across them. Then present the output path to the user.
 
 ## CLI reference
 
@@ -77,6 +79,8 @@ Parameters:
 
 Wide canvases are cropped left/right so side margins never exceed 5% of the frame — the actual output width can be smaller than requested (height is kept). Both windows have rounded corners and drop shadows; the browser gets a drawn title bar (traffic lights + scenario name); the terminal is 70% opaque so the backdrop shows through. Duplicate step lines in the log are suppressed the same way Explorbot's live console does it (repeated `I.` command within 15s).
 
+The terminal font is sized to fill the terminal panel legibly for social playback — `FONT_FILL_DIVISOR` in `lib/layout.ts` sets it (smaller divisor = larger text, fewer rows and columns; long command lines truncate with `…` when columns run out). `cols` and `rows` re-derive from the font automatically, so change only the divisor to rescale.
+
 ## How timing works
 
 - The webm timeline is calibrated from the log: video start = `Saved screencast:` line timestamp minus ffprobe duration.
@@ -85,11 +89,24 @@ Wide canvases are cropped left/right so side margins never exceed 5% of the fram
 - `speed = clamp(segment/target, 1.0, 1.25)` is applied identically to the browser video (`setpts`) and the terminal replay delays, so both stay in sync.
 - The terminal replay schedules each line at its absolute offset, so print latency never accumulates; a 0.8s startup pad is trimmed during compositing.
 
+## Resized browser frames
+
+Playwright records at a fixed video size and pads the area outside the page viewport with flat gray (`#808080`), so the viewport occupies a stable sub-rect of each frame. When the viewport resizes mid-recording the pad extent changes for a few frames and the page is drawn at a different scale — on playback that reads as a flicker.
+
+Before compositing, every frame is probed for the extent of its gray pad and reduced to a viewport geometry. Within the selected segment, frames whose geometry differs from the segment's dominant one are dropped and the previous good frame is held in their place (`select` + `fps=…:start_time=0`), so the timeline and the terminal sync are untouched. The render prints how many frames were dropped.
+
+Screencasts are variable-frame-rate, so the probe reads each frame's real `pts_time` (`ffprobe` + `-vsync 0`) and drops by exact timestamp. Probing on a fixed fps grid instead reports *sample* times that can sit a frame away from the source frame that produced them, and the resulting ranges silently miss the frames they were meant to remove.
+
+Dominance is measured over the segment, not the whole recording — a recording can spend most of its length at a geometry the segment never uses, and judging the segment by that would drop the segment itself.
+
+Safety limit: if more than 30% of the segment's frames deviate, nothing is dropped and a warning is emitted instead — the page genuinely resizes throughout, and holding frames would freeze the browser rather than fix it.
+
 ## Troubleshooting
 
 - **No candidates** — only successful tests with an existing webm ≥ 10s qualify. Check `Saved screencast:` and `Successful test:` lines exist in the log; use `--start`/`--end` to force a window.
 - **Log/screencast mismatch** — screencast files are overwritten on re-run; only the last `Saved screencast:` occurrence per file matches the file on disk. A `scenario name does not match webm filename` warning means the join is suspect.
 - **Static browser / looks desynced** — timing calibration is almost never the cause. The recording is a retry loop (render warns when `uniqueSteps < 85%`) or has long dead air (warns when a gap exceeds 7s): the browser sits still while the terminal keeps printing. Pick a cleaner scenario — `--by-area` lists candidates with their `uniqueSteps`/`maxGap` so you can avoid these.
+- **Browser flickers / changes size** — the page viewport resized mid-recording. Deviant frames are dropped automatically; if the render warns that too many frames deviate, the recording resizes throughout and needs a different scenario.
 - **VHS parse errors** — VHS tapes cannot contain long absolute `Output` paths; the tool always runs VHS with `cwd` set to the temp dir and a relative output. Use `--keep-temp` and re-run `vhs demo.tape` there to debug.
 - **Terminal drift warning** — if the VHS render duration deviates >1.5s from expected, a corrective `setpts` is applied automatically; the composite is also padded/trimmed so it cannot desync the cut.
 

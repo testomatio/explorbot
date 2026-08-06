@@ -4,6 +4,9 @@
     "visionModel": "google/gemma-4-31b-it:nitro",
     "agenticModel": "google/gemma-4-31b-it:nitro"
   },
+  "poolside": {
+    "model": "poolside/laguna-xs-2.1"
+  },
   "groq": {
     "model": "openai/gpt-oss-20b",
     "visionModel": "qwen/qwen3.6-27b",

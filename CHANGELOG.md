@@ -48,6 +48,18 @@ The per-host directory config-free runs introduced in the previous release moved
 - Every command and boat now answers a missing configuration the same way, with the three ways to set Explorbot up in order: `init --global`, `init`, or `EXPLORBOT_*` variables. Previously the message named only the project config file and the environment variables, and prima wrapped it as an internal tool error.
 - A site can be given by host once it is registered, and an absolute URL keeps its fragment, so hash-routed apps can be explored at `https://app.example.com/#/login`.
 - The API key typed into the global setup wizard is masked while typing.
+### Configuration
+
+- **`action.timeout`** — Longest a single click, fill, or other page interaction may block before it is reported as failed. Default: `3000` (ms). Previously an interaction inherited `playwright.timeout`, so a click on a disabled or unreachable control could hold the test for the full 30 seconds Playwright allows by default.
+
+### Changes
+
+- Added Poolside as a supported AI provider — `poolside/laguna-xs-2.1` for the token-heavy `model` role, reached through the OpenAI-compatible endpoint at `https://inference.poolside.ai/v1` with `POOLSIDE_API_KEY`. It is also selectable config-free as `EXPLORBOT_AI_PROVIDER=poolside`. Poolside serves no `visionModel` or `agenticModel`: its models take text only, and its endpoint accepts a JSON schema without enforcing it, so pair it with another provider for those two roles.
+- [Tester] When the vision model is unavailable, `see` and `visualClick` are now withdrawn from the tools offered to the AI instead of staying available and answering every call with an error. The AI moves to ARIA snapshots and `xpathCheck` immediately rather than spending test steps on visual tools that cannot work.
+- [Tester] A failed click now says why it failed. Disabled controls, elements hidden behind an overlay, invisible elements, a wrong container, and a genuinely absent element are reported separately, each with the next step that fits. Previously a disabled button was described as covered by an overlay, and an element missing from a wrong container was described as missing from the page — so the AI kept re-clicking instead of fixing the real cause.
+- [Tester] ARIA locators must now be copied from the ARIA snapshot or UI map rather than guessed. When an element is absent from the snapshot, text or CSS is used instead of an invented role and name.
+- [Tester] Container locators are now used when a target may match several elements, rather than on every interaction. Every click must still offer one fallback without a container, since a stale container fails on its own.
+- Fixed an invalid example in the locator rules that suggested `role: "input"`. That is not an ARIA role and never matches; the correct role for a text field is `textbox`.
 
 ## 2026-08-04
 
