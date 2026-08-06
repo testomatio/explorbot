@@ -422,7 +422,7 @@ npx explorbot explore app.example.com/dashboard       # later runs: reference it
 npx explorbot sites                                   # list registered sites
 ```
 
-Two rules keep the global config site-agnostic: a `web.url` in it is an error, and a `dirs` section is ignored in favor of the layout above.
+A `dirs` section in the global config is ignored in favor of the layout above. A `web.url` is allowed and acts as the default site for commands that pass no URL of their own.
 
 ### Running without a config file
 

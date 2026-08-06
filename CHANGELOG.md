@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-08-05
+## 2026-08-06
 
 ### Global Installation
 
@@ -15,7 +15,9 @@ npx explorbot sites
 
 Each explored site gets its own folder under `~/.explorbot/sites/<host>/` holding `knowledge/`, `experience/`, and `output/`, so what Explorbot learns about an app accumulates between runs. The folder name is the host and port of the site, lowercased, with characters invalid in directory names replaced by `_` — `localhost:3000` becomes `localhost_3000`.
 
-Unlike the environment-variable mode, global runs keep full project behavior: experience is read and written, generated test files are saved, and reports land in the site's `output/`. A project `explorbot.config.js` still wins whenever one is present, so nothing changes inside existing projects. Environment files load global first, then the current directory, so a project `.env` overrides a global key.
+Config-free runs use the same folder, so a site keeps one memory however it was started; a global run adds full project behavior on top — generated test files are saved and the Historian is on. A project `explorbot.config.js` still wins whenever one is present, so nothing changes inside existing projects.
+
+The per-host directory config-free runs introduced in the previous release moved from `~/.explorbot/state/<host>/` to `~/.explorbot/sites/<host>/`, and its artifacts now sit under that folder's `output/`. Delete the old `state/` directory; nothing reads it anymore.
 
 ### New CLI Options
 - **`init --global`** — Set up `~/.explorbot` instead of the current directory. Opens a wizard: pick a provider, paste the API key, optionally check it with one test AI call. Plain `init` in a terminal now asks Local or Global first; the Global option is disabled once a global config exists. Passing `--config-path` or `--path`, or running outside a terminal, means Local as before.
@@ -41,7 +43,10 @@ Unlike the environment-variable mode, global runs keep full project behavior: ex
 - **`ai.model`, `ai.visionModel`, `ai.agenticModel`, `ai.agents.<name>.model`** — Accept a `'provider/model-id'` string in addition to a model instance, so a config file needs no provider imports. `'openrouter'` on its own resolves to that provider's recommended model for the role. This is how the global config is written, since `~/.explorbot` has no `node_modules` to import provider packages from.
 
 ### Changes
-- The error shown when no configuration is found now suggests `explorbot init --global` alongside creating a config file and setting environment variables.
+- Every command and boat now answers a missing configuration the same way, with the three ways to set Explorbot up in order: `init --global`, `init`, or `EXPLORBOT_*` variables. Previously the message named only the project config file and the environment variables, and prima wrapped it as an internal tool error.
+- A site can be given by host once it is registered, and an absolute URL keeps its fragment, so hash-routed apps can be explored at `https://app.example.com/#/login`.
+- The API key typed into the global setup wizard is masked while typing.
+
 ## 2026-08-04
 
 ### Prima
