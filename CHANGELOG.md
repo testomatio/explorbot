@@ -9,6 +9,10 @@
 ### Changes
 
 - [Tester] When the vision model is unavailable, `see` and `visualClick` are now withdrawn from the tools offered to the AI instead of staying available and answering every call with an error. The AI moves to ARIA snapshots and `xpathCheck` immediately rather than spending test steps on visual tools that cannot work.
+- [Tester] A failed click now says why it failed. Disabled controls, elements hidden behind an overlay, invisible elements, a wrong container, and a genuinely absent element are reported separately, each with the next step that fits. Previously a disabled button was described as covered by an overlay, and an element missing from a wrong container was described as missing from the page — so the AI kept re-clicking instead of fixing the real cause.
+- [Tester] ARIA locators must now be copied from the ARIA snapshot or UI map rather than guessed. When an element is absent from the snapshot, text or CSS is used instead of an invented role and name.
+- [Tester] Container locators are now used when a target may match several elements, rather than on every interaction. Every click must still offer one fallback without a container, since a stale container fails on its own.
+- Fixed an invalid example in the locator rules that suggested `role: "input"`. That is not an ARIA role and never matches; the correct role for a text field is `textbox`.
 
 ## 2026-08-04
 

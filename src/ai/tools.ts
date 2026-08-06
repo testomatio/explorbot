@@ -51,14 +51,13 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
         commands: z.array(z.string()).describe(dedent`
           FALLBACK LOCATORS for ONE element. All commands must click the SAME element.
           Never mix different elements — use separate click() calls instead.
+          REQUIRED: include at least one command WITHOUT a container — a wrong or stale container always fails.
           Order by reliability:
-          1. I.click(text, container) - PREFERRED when container is known - e.g. I.click("Save", ".modal")
+          1. I.click(text, container) - when the container is verified - e.g. I.click("Save", ".modal")
           2. I.click(ARIA, container) - e.g. I.click({"role":"button","text":"Save"}, ".modal")
           3. I.click(CSS, container) - e.g. I.click("#btn", ".modal")
           4. I.click(CSS) or I.click(XPath) - when locator already includes context (ID, XPath)
           5. I.clickXY(x, y) - coordinates fallback
-          IMPORTANT: Always include at least one command WITHOUT a container as fallback,
-          in case the element moved to a different section (e.g. I.click("Save") without container).
         `),
         explanation: z.string().describe('Why you are clicking this element'),
       }),
@@ -132,13 +131,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
         const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, commands[0]);
         await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
-        let suggestion = "Try xpathCheck() to find the element's actual position, see() for visual analysis, or visualClick() to click by visual appearance.";
-        const lastError = attempts[attempts.length - 1]?.error || '';
-        if (lastError.includes('was not found') || lastError.includes('not found by text')) {
-          suggestion = 'Element was not found in the DOM. Use xpathCheck() to locate it, context() to refresh snapshot, or visualClick() to click by visual appearance.';
-        } else if (lastError.includes('Timeout') || lastError.includes('intercept')) {
-          suggestion = 'Element exists but could not be clicked (possibly covered by overlay or not interactable). Try closing overlapping panels first, or use visualClick().';
-        }
+        const suggestion = clickFailureSuggestion(attempts);
 
         return failedToolResult(
           'click',
@@ -1195,6 +1188,34 @@ function getMultipleElementsSuggestion(): string {
     5. Use xpathCheck() to inspect matched elements and pick the correct one
     6. Use visualClick() to click the right element by visual appearance
   `;
+}
+
+export function clickFailureSuggestion(attempts: Array<{ error?: string }>): string {
+  const errors = attempts.map((a) => a.error || '');
+
+  if (errors.some((e) => e.includes('not enabled'))) {
+    return 'Element exists but is DISABLED — clicking it again cannot work. A precondition is unmet: a required field is empty, nothing is selected, or a dialog is blocking. Satisfy it, then retry.';
+  }
+
+  if (errors.some((e) => e.includes('intercepts pointer events'))) {
+    return 'Element exists but another element covers it. Close the overlapping panel or dialog, then retry.';
+  }
+
+  if (errors.some((e) => e.includes('is not visible'))) {
+    return 'Element is in the DOM but not visible. Reveal it first — scroll to it, expand its section, or open the panel holding it.';
+  }
+
+  const notFound = errors.filter((e) => e.includes('was not found'));
+
+  if (notFound.length && notFound.every((e) => e.includes('was not found inside element'))) {
+    return 'Element was not found inside that container — the container is wrong or stale, and the element may exist elsewhere on the page. Retry the same locator WITHOUT a container, or verify the container with xpathCheck().';
+  }
+
+  if (notFound.length) {
+    return 'Element was not found in the DOM. Use xpathCheck() to locate it, context() to refresh snapshot, or visualClick() to click by visual appearance.';
+  }
+
+  return "Try xpathCheck() to find the element's actual position, see() for visual analysis, or visualClick() to click by visual appearance.";
 }
 
 const MAX_DISAMBIGUATE_ELEMENTS = 10;
