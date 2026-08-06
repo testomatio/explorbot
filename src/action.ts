@@ -19,6 +19,7 @@ import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCo
 
 const debugLog = createDebug('explorbot:action');
 const CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS = 3;
+const DEFAULT_ACTION_TIMEOUT = 3000;
 
 class Action {
   private actor: CodeceptJS.I;
@@ -296,6 +297,8 @@ class Action {
       if (!sanitizedCode) {
         throw new Error('No valid I.* or page.* commands found in code block');
       }
+
+      this.playwrightHelper?.page?.setDefaultTimeout(this.config.action?.timeout ?? DEFAULT_ACTION_TIMEOUT);
 
       if (isPlaywright) {
         const page = this.playwrightHelper.page;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-06
+
+### Configuration
+
+- **`action.timeout`** — Longest a single click, fill, or other page interaction may block before it is reported as failed. Default: `3000` (ms). Previously an interaction inherited `playwright.timeout`, so a click on a disabled or unreachable control could hold the test for the full 30 seconds Playwright allows by default.
+
+### Changes
+
+- [Tester] When the vision model is unavailable, `see` and `visualClick` are now withdrawn from the tools offered to the AI instead of staying available and answering every call with an error. The AI moves to ARIA snapshots and `xpathCheck` immediately rather than spending test steps on visual tools that cannot work.
+
 ## 2026-08-04
 
 ### Prima

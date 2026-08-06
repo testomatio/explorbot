@@ -497,6 +497,7 @@ export default {
   action: {
     delay: 1000,                   // Delay between actions (ms)
     retries: 3,                    // Retry failed actions
+    timeout: 3000,                 // Max time a single click/fill may block (ms)
   },
 
   // Regex to detect dynamic URL segments (IDs, slugs) for plan deduplication

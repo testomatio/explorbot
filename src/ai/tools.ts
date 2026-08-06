@@ -583,8 +583,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
         } catch (error) {
           throwIfFatalBrowserError(error);
           const errorMessage = errorText(error);
-          visionDisabled = true;
-          tag('warning').log('⚠️ Vision model is not available. Visual checks are disabled for this session.');
+          disableVision();
           return failedToolResult('see', `See tool failed: ${errorMessage}`, {
             suggestion: 'Vision is now disabled. Use context() to get fresh ARIA snapshot and analyze page state from ARIA data.',
           });
@@ -860,8 +859,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
         } catch (error) {
           throwIfFatalBrowserError(error);
           const errorMessage = errorText(error);
-          visionDisabled = true;
-          tag('warning').log('⚠️ Vision model is not available. Visual clicks are disabled for this session.');
+          disableVision();
           return failedToolResult('visualClick', `visualClick tool failed: ${errorMessage}`, {
             suggestion: 'Vision is now disabled. Use xpathCheck() to find the element, then click() with the discovered locator.',
           });
@@ -1009,6 +1007,13 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
         });
       },
     }),
+  };
+
+  const disableVision = (): void => {
+    visionDisabled = true;
+    Reflect.deleteProperty(tools, 'see');
+    Reflect.deleteProperty(tools, 'visualClick');
+    tag('warning').log('⚠️ Vision model is not available. Visual tools are disabled for this session.');
   };
 
   if (withExperience !== false) {
