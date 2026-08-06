@@ -51,14 +51,14 @@ function writeGlobalFile(name: string, content: string): string {
 describe('resolveStateRoot', () => {
   test('derives persistent per-host dir', () => {
     const dir = resolveStateRoot('https://app.example.com/login');
-    expect(dir).toBe(path.join(os.homedir(), '.explorbot', 'state', 'app.example.com'));
+    expect(dir).toBe(path.join(os.homedir(), '.explorbot', 'sites', 'app.example.com'));
     expect(existsSync(dir)).toBe(true);
   });
 
   test('keeps the port as part of the host, in a name every filesystem accepts', () => {
     const dir = resolveStateRoot('http://localhost:3000/');
 
-    expect(dir).toBe(path.join(home, '.explorbot', 'state', 'localhost_3000'));
+    expect(dir).toBe(path.join(home, '.explorbot', 'sites', 'localhost_3000'));
     expect(existsSync(dir)).toBe(true);
   });
 
@@ -71,14 +71,14 @@ describe('resolveStateRoot', () => {
 
     expect(dir.startsWith(home)).toBe(false);
     expect(existsSync(dir)).toBe(true);
-    expect(existsSync(path.join(home, '.explorbot', 'state'))).toBe(false);
+    expect(existsSync(path.join(home, '.explorbot', 'sites'))).toBe(false);
   });
 
   test('falls back to a temp dir when the url has no host', () => {
     const dir = resolveStateRoot('localhost:3000');
 
     expect(dir.startsWith(home)).toBe(false);
-    expect(existsSync(path.join(home, '.explorbot', 'state'))).toBe(false);
+    expect(existsSync(path.join(home, '.explorbot', 'sites'))).toBe(false);
   });
 
   test('ephemeral returns fresh temp dir', () => {
@@ -154,9 +154,9 @@ describe('config-free state root', () => {
 
     const parser = ConfigParser.getInstance();
     const config = await parser.loadConfig({ path: project });
-    const stateRoot = path.join(home, '.explorbot', 'state', 'app.example.com');
+    const stateRoot = path.join(home, '.explorbot', 'sites', 'app.example.com');
 
-    expect(parser.getOutputDir()).toBe(stateRoot);
+    expect(parser.getOutputDir()).toBe(path.join(stateRoot, 'output'));
     expect(parser.resolveProjectDir(config.dirs!.knowledge)).toBe(path.join(stateRoot, 'knowledge'));
     expect(parser.resolveProjectDir(config.dirs!.experience)).toBe(path.join(stateRoot, 'experience'));
   });
@@ -222,7 +222,7 @@ describe('config-free state root', () => {
     const parser = ConfigParser.getInstance();
     await parser.loadConfig({ path: project });
 
-    const knowledgeDir = path.join(home, '.explorbot', 'state', 'app.example.com', 'knowledge');
+    const knowledgeDir = path.join(home, '.explorbot', 'sites', 'app.example.com', 'knowledge');
     const globalFile = path.join(knowledgeDir, 'global.md');
     expect(existsSync(globalFile)).toBe(true);
 
@@ -248,7 +248,7 @@ describe('config-free state root', () => {
     const parser = ConfigParser.getInstance();
     await parser.loadConfig({ path: project });
 
-    const knowledgeDir = path.join(home, '.explorbot', 'state', 'app.example.com', 'knowledge');
+    const knowledgeDir = path.join(home, '.explorbot', 'sites', 'app.example.com', 'knowledge');
     expect(existsSync(path.join(knowledgeDir, 'env', 'staging.md'))).toBe(true);
 
     const authored = path.join(knowledgeDir, 'checkout.md');

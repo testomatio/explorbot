@@ -1,5 +1,66 @@
 # Changelog
 
+## 2026-08-06
+
+### Global Installation
+
+Explorbot can now be configured once for the whole machine instead of per project. `npx explorbot init --global` stores AI models and keys in `~/.explorbot`, and every explorbot command then works from any directory — no project, no config file to copy around.
+
+```bash
+npx explorbot init --global
+npx explorbot explore https://app.example.com/login   # first visit registers the site
+npx explorbot explore app.example.com/dashboard       # later runs: reference it by host
+npx explorbot sites
+```
+
+Each explored site gets its own folder under `~/.explorbot/sites/<host>/` holding `knowledge/`, `experience/`, and `output/`, so what Explorbot learns about an app accumulates between runs. The folder name is the host and port of the site, lowercased, with characters invalid in directory names replaced by `_` — `localhost:3000` becomes `localhost_3000`.
+
+Config-free runs use the same folder, so a site keeps one memory however it was started; a global run adds full project behavior on top — generated test files are saved and the Historian is on.
+
+Precedence, highest first: `--config`, a project `explorbot.config.*`, the `EXPLORBOT_*` variables, the global config. Setting `EXPLORBOT_AI_PROVIDER` or `EXPLORBOT_AI_MODEL` therefore overrides a global installation for that one command, while a project config still wins over everything — nothing changes inside existing projects.
+
+The per-host directory config-free runs introduced in the previous release moved from `~/.explorbot/state/<host>/` to `~/.explorbot/sites/<host>/`, and its artifacts now sit under that folder's `output/`. Delete the old `state/` directory; nothing reads it anymore.
+
+### New CLI Options
+- **`init --global`** — Set up `~/.explorbot` instead of the current directory. Opens a wizard: pick a provider, paste the API key, optionally check it with one test AI call. Plain `init` in a terminal now asks Local or Global first; the Global option is disabled once a global config exists. Passing `--config-path` or `--path`, or running outside a terminal, means Local as before.
+  ```bash
+  npx explorbot init                      # asks Local or Global
+  npx explorbot init --global             # wizard
+  npx explorbot init --global --force     # reinstall over an existing global config
+  ```
+- **`init --provider <name>`** — Skip the wizard and write the global config for that provider, for agents and scripts. Providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
+  ```bash
+  npx explorbot init --global --provider openrouter
+  ```
+- **`init --api-key <key>`** — Store the provider's API key in `~/.explorbot/.env`. Without it the key is expected in the environment; an existing stored key is never overwritten.
+  ```bash
+  npx explorbot init --global --provider groq --api-key gsk_...
+  ```
+- **`sites`** — List the sites registered in the global installation: folder name, base URL, and last run.
+  ```bash
+  npx explorbot sites
+  ```
+
+### Configuration
+- **`ai.model`, `ai.visionModel`, `ai.agenticModel`, `ai.agents.<name>.model`** — Accept a `'provider/model-id'` string in addition to a model instance, so a config file needs no provider imports. `'openrouter'` on its own resolves to that provider's recommended model for the role. This is how the global config is written, since `~/.explorbot` has no `node_modules` to import provider packages from.
+
+### Changes
+- Every command and boat now answers a missing configuration the same way, with the three ways to set Explorbot up in order: `init --global`, `init`, or `EXPLORBOT_*` variables. Previously the message named only the project config file and the environment variables, and prima wrapped it as an internal tool error.
+- A site can be given by host once it is registered, and an absolute URL keeps its fragment, so hash-routed apps can be explored at `https://app.example.com/#/login`.
+- The API key typed into the global setup wizard is masked while typing.
+### Configuration
+
+- **`action.timeout`** — Longest a single click, fill, or other page interaction may block before it is reported as failed. Default: `3000` (ms). Previously an interaction inherited `playwright.timeout`, so a click on a disabled or unreachable control could hold the test for the full 30 seconds Playwright allows by default.
+
+### Changes
+
+- Added Poolside as a supported AI provider — `poolside/laguna-xs-2.1` for the token-heavy `model` role, reached through the OpenAI-compatible endpoint at `https://inference.poolside.ai/v1` with `POOLSIDE_API_KEY`. It is also selectable config-free as `EXPLORBOT_AI_PROVIDER=poolside`. Poolside serves no `visionModel` or `agenticModel`: its models take text only, and its endpoint accepts a JSON schema without enforcing it, so pair it with another provider for those two roles.
+- [Tester] When the vision model is unavailable, `see` and `visualClick` are now withdrawn from the tools offered to the AI instead of staying available and answering every call with an error. The AI moves to ARIA snapshots and `xpathCheck` immediately rather than spending test steps on visual tools that cannot work.
+- [Tester] A failed click now says why it failed. Disabled controls, elements hidden behind an overlay, invisible elements, a wrong container, and a genuinely absent element are reported separately, each with the next step that fits. Previously a disabled button was described as covered by an overlay, and an element missing from a wrong container was described as missing from the page — so the AI kept re-clicking instead of fixing the real cause.
+- [Tester] ARIA locators must now be copied from the ARIA snapshot or UI map rather than guessed. When an element is absent from the snapshot, text or CSS is used instead of an invented role and name.
+- [Tester] Container locators are now used when a target may match several elements, rather than on every interaction. Every click must still offer one fallback without a container, since a stale container fails on its own.
+- Fixed an invalid example in the locator rules that suggested `role: "input"`. That is not an ARIA role and never matches; the correct role for a text field is `textbox`.
+
 ## 2026-08-04
 
 ### Prima
@@ -34,7 +95,7 @@ Prima also ships as a standalone `prima` bin. See [Commands](docs/reference/comm
 
 ### Configuration
 
-- **`~/.explorbot/config.js|mjs|ts`** — Global configuration, used when the working directory has no `explorbot.config.*`. Lookup order: `--config`, the project config, the global config, then `EXPLORBOT_*` variables.
+- **`~/.explorbot/config.js|mjs|ts`** — Global configuration, used when the working directory has no `explorbot.config.*`. Lookup order: `--config`, the project config, the `EXPLORBOT_*` variables, then the global config.
 - **`~/.explorbot/.env`** — Loaded after the working directory's `.env`, for keys that are not set yet. API keys can live there once instead of in every project.
 
 ### Environment Variables

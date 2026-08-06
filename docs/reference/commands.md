@@ -49,7 +49,8 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Extract built-in rules | `npx explorbot extract-rules <agent>` | — | Customizable rules to `rules/` |
 | Create a rule file | `npx explorbot add-rule [agent] [name]` | `/add-rule [agent] [name]` | Writes `rules/<agent>/<name>.md` |
 | Manage persistent browser | `npx explorbot browser {start\|stop\|status}` | — | Share browser across runs |
-| Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*` |
+| Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*`, or `~/.explorbot` with `--global` |
+| List registered sites | `npx explorbot sites` | — | Sites stored in the global installation |
 | Clean generated files | `npx explorbot clean [target]` | `/clean [target]` | Same targets both ways |
 
 ## Common CLI Options
@@ -78,7 +79,7 @@ npx explorbot navigate /login --session             # probe + capture auth in on
 npx explorbot research /dashboard --session auth.json   # reuse captured auth
 ```
 
-Without a file path, the flag defaults to `session.json` inside the resolved configuration's output directory. In config-free mode that is the per-host state directory `~/.explorbot/state/<host>/`, or whatever `EXPLORBOT_OUTPUT` points at.
+Without a file path, the flag defaults to `session.json` inside the resolved configuration's output directory. In config-free mode that is the site folder `~/.explorbot/sites/<host>/output/`, or whatever `EXPLORBOT_OUTPUT` points at.
 
 ## Environment Variables
 
@@ -98,17 +99,17 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_URL` | Base URL to test; the API boat reads it as the base endpoint |
 | `EXPLORBOT_VISION_MODEL` | Screenshot analysis; overrides the provider recommendation |
 | `EXPLORBOT_AGENTIC_MODEL` | Captain and Pilot decisions; overrides the provider recommendation |
-| `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to the per-host state dir under ~/.explorbot/state |
-| `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the per-host state dir |
+| `EXPLORBOT_OUTPUT` | Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites |
+| `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
 <!-- END env -->
 
-A config file always wins when present. Explorbot looks for one in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then `~/.explorbot/config.*`, and only then builds a configuration from the environment. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `openrouter`, `sambanova`.
+Explorbot resolves its configuration in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then the `EXPLORBOT_*` variables, and finally `~/.explorbot/config.*` from the global installation. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `openrouter`, `sambanova`.
 
-In this mode output goes to `~/.explorbot/state/<host>/` (or `EXPLORBOT_OUTPUT`, or a temp directory with `EXPLORBOT_EPHEMERAL=1`), experience is kept beside it unless the run is ephemeral, and the Historian is off, so no generated test files appear. See [Agentic Usage](../workflow/agentic-usage.md) for the full picture.
+In this mode output goes to `~/.explorbot/sites/<host>/output/` (or `EXPLORBOT_OUTPUT`, or a temp directory with `EXPLORBOT_EPHEMERAL=1`), experience is kept beside it unless the run is ephemeral, and the Historian is off, so no generated test files appear. See [Agentic Usage](../workflow/agentic-usage.md) for the full picture.
 
 ## Persistent Browser
 
@@ -660,9 +661,9 @@ instance: default (1 tab) | other instances: none
 browser: attached (playwright-cli session "default", workspace /home/you/projects/shop)
 
 ### Artifacts
-aria: /home/you/.explorbot/state/app.example.com/prima/2026-08-04T10-04-22-285Z/aria.yml
-html: /home/you/.explorbot/state/app.example.com/prima/2026-08-04T10-04-22-285Z/page.html
-network: /home/you/.explorbot/state/app.example.com/prima/2026-08-04T10-04-22-285Z/network.jsonl
+aria: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-22-285Z/aria.yml
+html: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-22-285Z/page.html
+network: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-22-285Z/network.jsonl
 ```
 
 `used:` is code that already executed. For `click`, `fill`, `do`, and `go` those are CodeceptJS steps you can copy into a test as they are; for `pw` it is the Playwright expression you passed, which a CodeceptJS test needs wrapped in `I.usePlaywrightTo(...)`. Log lines can precede the envelope, so start parsing at the first `###` line.
@@ -828,12 +829,41 @@ Exit the application gracefully.
 
 ### `npx explorbot init`
 
-Initialize project configuration.
+Initialize configuration. In an interactive terminal, plain `init` first asks where it should go: **Local** writes `explorbot.config.js` in the current directory, **Global** sets up `~/.explorbot` so explorbot runs from anywhere. The Global option is disabled once a global config exists — reinstall with `--global --force`.
 
 ```bash
 npx explorbot init
 npx explorbot init --config-path ./explorbot.config.js
 npx explorbot init --force
+```
+
+Passing `--config-path` or `--path` means local, and so does running outside a terminal (agents, CI): the chooser is skipped and the project config is written as before.
+
+`--global` runs the global wizard instead — pick a provider, paste the API key, optionally check it with one test AI call. The wizard writes `~/.explorbot/config.js` with the recommended model ids of this Explorbot version and stores the key in `~/.explorbot/.env`.
+
+```bash
+npx explorbot init --global
+npx explorbot init --global --provider openrouter --api-key sk-...   # no wizard
+npx explorbot init --global --force                                  # reinstall
+```
+
+| Option | Description |
+|--------|-------------|
+| `-c, --config-path <path>` | Path for the project config file |
+| `-f, --force` | Overwrite an existing config file |
+| `-p, --path <path>` | Working directory for initialization |
+| `-g, --global` | Configure `~/.explorbot` to run from anywhere |
+| `--provider <name>` | AI provider for the global config, skips the wizard |
+| `--api-key <key>` | API key stored in `~/.explorbot/.env` |
+
+See [Configuration](configuration.md#running-from-anywhere-the-global-installation) for the directory layout and how a site is resolved.
+
+### `npx explorbot sites`
+
+List the sites registered in the global installation — folder name, base URL, and last run. Sites register themselves the first time you explore them by URL.
+
+```bash
+npx explorbot sites
 ```
 
 ### `npx explorbot clean [target]`

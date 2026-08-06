@@ -225,7 +225,7 @@ describe('Prima without a config file', () => {
     expect(run.stdout).not.toContain('No URL to explore');
     expect(run.stdout).toContain('playwright-cli open');
     expect(run.exitCode).toBe(1);
-    expect(existsSync(path.join(home, '.explorbot', 'state', 'app.example.com'))).toBe(true);
+    expect(existsSync(path.join(home, '.explorbot', 'sites', 'app.example.com'))).toBe(true);
   }, 60000);
 
   test('--url is the url the configuration is built around', () => {
@@ -234,7 +234,7 @@ describe('Prima without a config file', () => {
     expect(run.stdout).not.toContain('No URL to explore');
     expect(run.stdout).toContain('playwright-cli open');
     expect(run.exitCode).toBe(1);
-    expect(existsSync(path.join(home, '.explorbot', 'state', 'shop.example.com'))).toBe(true);
+    expect(existsSync(path.join(home, '.explorbot', 'sites', 'shop.example.com'))).toBe(true);
   }, 60000);
 });
 

@@ -16,7 +16,7 @@ export interface ModeContext {
 }
 
 export function resolveProjectRoot(): string | null {
-  const configPath = ConfigParser.getInstance().getConfigPath();
-  if (!configPath) return null;
-  return dirname(configPath);
+  const configParser = ConfigParser.getInstance();
+  if (!configParser.getConfigPath()) return null;
+  return configParser.getProjectRoot();
 }

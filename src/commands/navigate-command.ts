@@ -15,7 +15,7 @@ export class NavigateCommand extends BaseCommand {
       throw new Error('Navigate command requires a target URI or state');
     }
 
-    await this.explorBot.agentNavigator().visit(destination);
+    await this.explorBot.visit(destination);
     tag('success').log(`Navigation requested: ${destination}`);
   }
 }

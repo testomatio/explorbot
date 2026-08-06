@@ -8,7 +8,7 @@ import type { Navigator } from '../../../src/ai/navigator.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createCodeceptJSTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
-import { ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Task } from '../../../src/test-plan.ts';
@@ -283,6 +283,7 @@ export class Prima {
     const state = this.bot.getCurrentState();
     const instance = await this.instanceInfo().catch(() => ({ name: this.instanceName(), tabs: 0, others: [] }));
     const failure: EnvelopeData['failure'] = { error: `tool: ${browserErrorMessage(error)}`, attempts: [] };
+    if (error instanceof ConfigMissingError) failure.error = browserErrorMessage(error);
     if (state?.ariaSnapshot) failure.compactAria = compactAriaSnapshot(state.ariaSnapshot, true);
 
     return {

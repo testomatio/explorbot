@@ -15,12 +15,7 @@ export const CLEAN_TARGETS: Record<string, { description: string; getDir: () => 
 
 function getExperienceDir(): string {
   const configParser = ConfigParser.getInstance();
-  const config = configParser.getConfig();
-  const configPath = configParser.getConfigPath();
-  if (configPath) {
-    return join(dirname(configPath), config.dirs?.experience || 'experience');
-  }
-  return config.dirs?.experience || 'experience';
+  return configParser.resolveProjectDir(configParser.getConfig().dirs?.experience || 'experience');
 }
 
 function cleanDirectoryContents(dirPath: string): number {

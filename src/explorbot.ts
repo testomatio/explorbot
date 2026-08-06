@@ -143,12 +143,11 @@ export class ExplorBot {
   }
 
   async visitInitialState(): Promise<void> {
-    const url = this.options.from || '/';
-    await this.visit(url);
+    await this.visit(this.options.from || '/');
   }
 
   async visit(url: string): Promise<void> {
-    return this.agentNavigator().visit(url);
+    return this.agentNavigator().visit(this.configParser.resolveTargetPath(url));
   }
 
   async openTab(): Promise<void> {
