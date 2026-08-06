@@ -381,8 +381,11 @@ export class ConfigParser {
       }
 
       if (!resolvedPath) {
-        const outputRoot = resolveOutputRoot(process.env.EXPLORBOT_URL || options?.baseUrl);
-        loadedConfig = await this.buildEnvConfig(options?.baseUrl, outputRoot);
+        let envUrl = options?.baseUrl;
+        if (!envUrl && target?.startsWith('http')) envUrl = target;
+
+        const outputRoot = resolveOutputRoot(process.env.EXPLORBOT_URL || envUrl);
+        loadedConfig = await this.buildEnvConfig(envUrl, outputRoot);
         sourcePath = join(outputRoot, 'explorbot.config.js');
 
         log(`Configuration built from EXPLORBOT_* environment variables. Output: ${outputRoot}`);
@@ -601,6 +604,7 @@ export class ConfigParser {
       }
     }
 
+    if (envConfigRequested()) return null;
     return findGlobalConfig();
   }
 
@@ -724,6 +728,10 @@ export async function resolveModel(spec: string, role: ModelRole = 'model'): Pro
 }
 
 export class ConfigMissingError extends Error {}
+
+export function envConfigRequested(): boolean {
+  return !!(process.env.EXPLORBOT_AI_PROVIDER || process.env.EXPLORBOT_AI_MODEL);
+}
 
 export function missingConfigMessage(configFile = 'explorbot.config.js'): string {
   const cli = getCliName();

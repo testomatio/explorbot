@@ -15,7 +15,9 @@ npx explorbot sites
 
 Each explored site gets its own folder under `~/.explorbot/sites/<host>/` holding `knowledge/`, `experience/`, and `output/`, so what Explorbot learns about an app accumulates between runs. The folder name is the host and port of the site, lowercased, with characters invalid in directory names replaced by `_` — `localhost:3000` becomes `localhost_3000`.
 
-Config-free runs use the same folder, so a site keeps one memory however it was started; a global run adds full project behavior on top — generated test files are saved and the Historian is on. A project `explorbot.config.js` still wins whenever one is present, so nothing changes inside existing projects.
+Config-free runs use the same folder, so a site keeps one memory however it was started; a global run adds full project behavior on top — generated test files are saved and the Historian is on.
+
+Precedence, highest first: `--config`, a project `explorbot.config.*`, the `EXPLORBOT_*` variables, the global config. Setting `EXPLORBOT_AI_PROVIDER` or `EXPLORBOT_AI_MODEL` therefore overrides a global installation for that one command, while a project config still wins over everything — nothing changes inside existing projects.
 
 The per-host directory config-free runs introduced in the previous release moved from `~/.explorbot/state/<host>/` to `~/.explorbot/sites/<host>/`, and its artifacts now sit under that folder's `output/`. Delete the old `state/` directory; nothing reads it anymore.
 
@@ -81,7 +83,7 @@ Prima also ships as a standalone `prima` bin. See [Commands](docs/reference/comm
 
 ### Configuration
 
-- **`~/.explorbot/config.js|mjs|ts`** — Global configuration, used when the working directory has no `explorbot.config.*`. Lookup order: `--config`, the project config, the global config, then `EXPLORBOT_*` variables.
+- **`~/.explorbot/config.js|mjs|ts`** — Global configuration, used when the working directory has no `explorbot.config.*`. Lookup order: `--config`, the project config, the `EXPLORBOT_*` variables, then the global config.
 - **`~/.explorbot/.env`** — Loaded after the working directory's `.env`, for keys that are not set yet. API keys can live there once instead of in every project.
 
 ### Environment Variables

@@ -22,7 +22,7 @@ npx explorbot explore app.example.com/dashboard
 npx explorbot sites                                # what is registered, and when it last ran
 ```
 
-Because it is a config file, it wins over the `EXPLORBOT_*` variables below. An agent that needs a stateless run on a machine that has a global config should pass `--config <file>` or `EXPLORBOT_EPHEMERAL=1`.
+The `EXPLORBOT_*` variables below still win over it: setting `EXPLORBOT_AI_PROVIDER` or `EXPLORBOT_AI_MODEL` builds the configuration from the environment and the global config is skipped. So an agent can install once and still override models or the URL per command.
 
 ## One-liner API
 
@@ -34,7 +34,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
   npx explorbot explore /login --max-tests 3
 ```
 
-No `init`, no config file, no project directory, no model IDs to look up. Any config file — project or global — wins when present, so adding these variables never changes the behavior of an existing project.
+No `init`, no config file, no project directory, no model IDs to look up. These variables win over the global installation, so a run can always be pinned to its own models. A project `explorbot.config.js` still wins over them, so adding these variables never changes the behavior of an existing project.
 
 ### Variables
 

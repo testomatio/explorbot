@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
-import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
+import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, envConfigRequested, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
 
 export type { AIConfig };
@@ -207,6 +207,7 @@ export class ApibotConfigParser {
       if (existsSync(fullPath)) return fullPath;
     }
 
+    if (envConfigRequested()) return null;
     return findGlobalConfig();
   }
 

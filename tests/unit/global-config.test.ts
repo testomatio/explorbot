@@ -135,15 +135,37 @@ describe('config resolution ladder', () => {
     expect(ConfigParser.getInstance().isGlobalMode()).toBe(false);
   });
 
-  it('prefers the global config over EXPLORBOT_ environment variables', async () => {
+  it('prefers EXPLORBOT_ environment variables over the global config', async () => {
+    const parser = ConfigParser.getInstance();
     writeGlobalConfig();
+    process.env.EXPLORBOT_AI_PROVIDER = 'openrouter';
+    process.env.EXPLORBOT_URL = 'https://env.example.com';
+
+    const config = await parser.loadConfig({ path: workDir });
+
+    expect(config.ai.model.modelId).toBe(ConfigParser.recommendedModels().openrouter.model);
+    expect(config.playwright.url).toBe('https://env.example.com');
+    expect(parser.isGlobalMode()).toBe(false);
+  });
+
+  it('prefers a project config over EXPLORBOT_ environment variables', async () => {
+    writeGlobalConfig();
+    writeFileSync(join(workDir, 'explorbot.config.js'), "export default { playwright: { browser: 'chromium', url: 'https://project.example.com' }, ai: { model: { modelId: 'project-model' } } };\n", 'utf8');
     process.env.EXPLORBOT_AI_PROVIDER = 'openrouter';
     process.env.EXPLORBOT_URL = 'https://env.example.com';
 
     const config = await ConfigParser.getInstance().loadConfig({ path: workDir });
 
-    expect(config.ai.model.modelId).toBe('global-model');
-    expect(config.playwright.url).toBe('https://env.example.com');
+    expect(config.ai.model.modelId).toBe('project-model');
+  });
+
+  it('takes the env-mode URL from an absolute command target', async () => {
+    writeGlobalConfig();
+    process.env.EXPLORBOT_AI_PROVIDER = 'openrouter';
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://from-argument.example.com/login' });
+
+    expect(config.playwright.url).toBe('https://from-argument.example.com/login');
   });
 
   it('suggests init --global when no configuration is found at all', async () => {

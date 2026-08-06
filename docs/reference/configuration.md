@@ -391,7 +391,9 @@ Or pass a custom path:
 npx explorbot explore /dashboard --config ./custom/path/config.js
 ```
 
-The first file found wins as a whole: a project config never merges with the global one, and a config file always beats `EXPLORBOT_*` variables. Env files load in the opposite direction — `~/.explorbot/.env` first, then the `.env` of the current directory, so a project key overrides a global one.
+The `EXPLORBOT_*` variables sit between the two files: they are used when the working directory has no config of its own, and they win over the global installation, so a machine-wide setup never overrides what a single command asked for. Whatever wins is used as a whole — configs never merge with each other.
+
+Env files fill in rather than override: the `.env` of the working directory is read first, then `~/.explorbot/.env` supplies only the keys still unset, so a project key and a real environment variable both beat a global one.
 
 ### Running from anywhere: the global installation
 
@@ -426,7 +428,7 @@ A `dirs` section in the global config is ignored in favor of the layout above. A
 
 ### Running without a config file
 
-When no config file is found — neither in the working directory nor at `~/.explorbot/config.*` — and `EXPLORBOT_AI_PROVIDER` is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables. Output goes to the site folder `~/.explorbot/sites/<host>/` (`EXPLORBOT_OUTPUT` overrides it, `EXPLORBOT_EPHEMERAL=1` sends it to a temp directory instead), experience is written there and reused by later runs against the same host unless the run is ephemeral, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
+When the working directory has no config file and `EXPLORBOT_AI_PROVIDER` (or `EXPLORBOT_AI_MODEL`) is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables, in preference to a global installation. Output goes to the site folder `~/.explorbot/sites/<host>/` (`EXPLORBOT_OUTPUT` overrides it, `EXPLORBOT_EPHEMERAL=1` sends it to a temp directory instead), experience is written there and reused by later runs against the same host unless the run is ephemeral, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
 
 ## Full configuration reference
 
