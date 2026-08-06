@@ -13,7 +13,7 @@ import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
-import { extractStatePath } from '../utils/url-matcher.js';
+import { extractStatePath, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
@@ -134,7 +134,7 @@ class Navigator implements Agent {
       return false;
     }
     const currentUrl = this.getComparableCurrentUrl(stateManager, expectedUrl);
-    return normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
+    return matchesNavigationUrl(expectedUrl, currentUrl);
   }
 
   async visit(url: string): Promise<void> {
@@ -189,14 +189,16 @@ class Navigator implements Agent {
     }
   }
 
-  async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string }): Promise<boolean> {
+  async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string; onAttempt?: (attempt: { code: string; error?: string }) => void }): Promise<boolean> {
+    if (!this.provider) throw new Error('AI-assisted recovery is unavailable: no AI model is configured.');
+
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
 
     const action = opts?.action ?? this.explorer.action();
     const expectedUrl = opts?.expectedUrl;
 
-    const knowledge = this.knowledgeTracker.renderRelevantKnowledge(actionResult);
+    const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
     let experience = '';
 
     if (!actionResult.isInsideIframe) {
@@ -363,24 +365,27 @@ class Navigator implements Agent {
           }
         }
 
+        if (attemptOk) opts?.onAttempt?.({ code: codeBlock });
+
         if (!attemptOk) {
           const raw = action.lastError?.message || 'attempt failed';
           const firstMeaningful = raw.split('\n').find((l) => l.trim() && !l.trim().startsWith('at ')) || raw;
           const shortErr = firstMeaningful.replace(/\s+/g, ' ').trim().slice(0, 220);
           batchFailures.push({ code: codeBlock, error: shortErr });
+          opts?.onAttempt?.({ code: codeBlock, error: shortErr });
         }
 
         if (expectedUrl) {
           if (page) {
             try {
-              await page.waitForURL((url: URL) => normalizeUrl(url.pathname) === normalizeUrl(expectedUrl), { timeout: 5000 });
+              await page.waitForURL((url: URL) => matchesNavigationUrl(expectedUrl, `${url.pathname}${url.search}${url.hash}`), { timeout: 5000 });
             } catch {
               // URL did not transition to expectedUrl within timeout
             }
           }
           const freshState = await this.explorer.capture();
           const currentUrl = /^https?:\/\//i.test(expectedUrl) ? freshState.fullUrl || freshState.url || '' : freshState.url || '';
-          const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && normalizeUrl(currentUrl) === normalizeUrl(expectedUrl);
+          const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && matchesNavigationUrl(expectedUrl, currentUrl);
           const stateChanged = freshState.getStateHash() !== actionResult.getStateHash();
           resolved = urlMatches && stateChanged;
 
@@ -625,7 +630,7 @@ class Navigator implements Agent {
       return { verified: cachedVerification, successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
-    const knowledge = this.knowledgeTracker.renderRelevantKnowledge(actionResult);
+    const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
     let experience = '';
 
     if (!actionResult.isInsideIframe) {

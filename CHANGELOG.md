@@ -42,6 +42,52 @@ Unlike the environment-variable mode, global runs keep full project behavior: ex
 
 ### Changes
 - The error shown when no configuration is found now suggests `explorbot init --global` alongside creating a config file and setting environment variables.
+## 2026-08-04
+
+### Prima
+
+`explorbot prima` drives a browser that is already open, one command per process, and reports back in plain text. It is meant for coding agents that keep the browser themselves: the agent decides the next step, prima performs it and describes what changed.
+
+```bash
+playwright-cli open https://app.example.com
+npx explorbot prima research
+npx explorbot prima pw "({ page }) => page.click('[data-test=submit]')"
+npx explorbot prima verify "the confirmation page shows an order number"
+```
+
+- **Commands** — `pw` runs a Playwright function expression built from a locator you already verified, `click` and `fill` take one action described in words, `do` runs several described steps tester-style, `go` navigates, `research` maps the page into verified locators, `ask` answers a question about the page, `verify` asserts a statement, and `browser` manages the browsers prima drives.
+- **The envelope** — every page command prints `### Result`, `### Page`, `### Changes`, `### Instance`, and `### Artifacts` on stdout, and exits `0` when the envelope says `ok: true`, `1` when it does not. `used:` holds the code that actually executed, ready to paste into a test. A failure adds the error and the compact ARIA of the page, so the next locator can be picked from the output itself; the full aria, html, and network dumps are written beside it.
+- **Healing** — a failed action is retried along a different route, and `healed: true` means the outcome was reached another way. `--no-heal` fails fast instead.
+- **Attaching to playwright-cli** — prima never launches a browser. By default it attaches to the playwright-cli browser of the current workspace and works on the tabs already open there, so both tools drive the same session. `--pw-session <title>` picks between several open sessions, `--endpoint <ep>` attaches to a browser server directly. Stopping prima disconnects and leaves the browser open.
+- **Named instances** — `prima browser start` runs a prima-owned browser when no playwright-cli session is open, and `--instance <name>` says which one a command talks to, so parallel work gets a browser each. `prima browser list` shows both kinds.
+- **Without a config file** — `EXPLORBOT_AI_PROVIDER=groq npx explorbot prima go https://app.example.com` is enough to start. `pw` still works when no model is usable at all, and the commands that need one say so and point at the fallback.
+- **Runtime** — prima reaches its browser over a Playwright browser-server endpoint, and that client needs the Node build: run it as `npx explorbot prima …` or through the published `prima` bin. Driving a browser by running the CLI from source under Bun does not connect.
+
+Prima also ships as a standalone `prima` bin. See [Commands](docs/reference/commands.md#prima-boat) for the full reference.
+
+### New CLI Options
+
+- **`--instance <name>`** — Which named browser server to start, stop, or check. Parallel runs get a browser each instead of sharing one.
+  ```bash
+  explorbot browser start --instance staging
+  explorbot browser status --instance staging
+  explorbot browser stop --instance staging
+  ```
+
+### Configuration
+
+- **`~/.explorbot/config.js|mjs|ts`** — Global configuration, used when the working directory has no `explorbot.config.*`. Lookup order: `--config`, the project config, the global config, then `EXPLORBOT_*` variables.
+- **`~/.explorbot/.env`** — Loaded after the working directory's `.env`, for keys that are not set yet. API keys can live there once instead of in every project.
+
+### Environment Variables
+
+- **`EXPLORBOT_EPHEMERAL`** — Keep no state between runs: output goes to a fresh temp directory instead of the per-host state directory. `prima --ephemeral` sets it for a single command.
+
+### Changes
+
+- Config-free runs now keep their output in a per-host state directory, `~/.explorbot/state/<host>/`, instead of a fresh temp directory every time — states, plans, research, and reports for the same app collect in one place. `EXPLORBOT_OUTPUT` still overrides the location, and `EXPLORBOT_EPHEMERAL=1` restores the throwaway behavior.
+- Config-free runs now write experience into that state directory, so what worked on a page is remembered for the next run against the same host. Ephemeral runs still write none.
+- `explorbot browser start` now stays in the foreground until Ctrl+C. Previously the process could exit as soon as it had printed the endpoint.
 
 ## 2026-07-22
 

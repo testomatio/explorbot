@@ -335,6 +335,7 @@ Change the paths:
 
 ```javascript
 dirs: {
+  spec: './test/spec',
   knowledge: './test/knowledge',
   experience: './test/experience',
   output: './test/output',
@@ -425,7 +426,7 @@ Two rules keep the global config site-agnostic: a `web.url` in it is an error, a
 
 ### Running without a config file
 
-When no config file is found and `EXPLORBOT_AI_PROVIDER` is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables. Output goes to a temp directory, experience is not written, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
+When no config file is found — neither in the working directory nor at `~/.explorbot/config.*` — and `EXPLORBOT_AI_PROVIDER` is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables. Output goes to the site folder `~/.explorbot/sites/<host>/` (`EXPLORBOT_OUTPUT` overrides it, `EXPLORBOT_EPHEMERAL=1` sends it to a temp directory instead), experience is written there and reused by later runs against the same host unless the run is ephemeral, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
 
 ## Full configuration reference
 
@@ -538,6 +539,7 @@ export default {
 
   // Directory paths
   dirs: {
+    spec: 'spec',                     // Application specification bundle
     knowledge: 'knowledge',        // Domain knowledge files
     experience: 'experience',      // Learned patterns
     output: 'output',              // Test results and logs
@@ -560,4 +562,5 @@ export default {
 - [Researcher agent](../web-testing/researcher.md) — Researcher configuration and usage
 - [Planner agent](../web-testing/planner.md) — planning styles and customization
 - [Knowledge files](../workflow/knowledge.md) — domain knowledge format
+- [Application specs](../workflow/application-spec.md) — reusable application documentation format
 - [Observability](../contributing/observability.md) — Langfuse integration

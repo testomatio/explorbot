@@ -53,6 +53,7 @@ export class Planner extends PlannerBase implements Agent {
   provider: Provider;
   stateManager: StateManager;
   private experienceTracker: ExperienceTracker;
+  private knowledgeTracker: AgentDeps['knowledgeTracker'];
 
   MIN_TASKS = 3;
   MAX_TASKS = 12;
@@ -70,6 +71,7 @@ export class Planner extends PlannerBase implements Agent {
     this.researcher = researcher;
     this.stateManager = deps.stateManager;
     this.experienceTracker = deps.stateManager.getExperienceTracker();
+    this.knowledgeTracker = deps.knowledgeTracker;
   }
 
   setFisherman(fisherman: Fisherman): void {
@@ -410,6 +412,11 @@ export class Planner extends PlannerBase implements Agent {
       ${plannerResearch}
       </page_research>
     `);
+
+    const applicationContext = this.knowledgeTracker.renderApplicationSpec(state);
+    if (applicationContext) {
+      conversation.addUserText(applicationContext);
+    }
 
     conversation.addUserText(dedent`
       ${this.buildApproach(style)}

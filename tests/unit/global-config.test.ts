@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { render } from 'ink-testing-library';
 import React from 'react';
@@ -8,7 +8,7 @@ import InitWizard from '../../src/components/InitWizard.tsx';
 import { ApibotConfigParser } from '../../boat/api-tester/src/config.ts';
 import { runInit } from '../../src/commands/init-command.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { listSites, registerSite, resolveSiteTarget, setGlobalDirForTesting, siteFolderName } from '../../src/global-config.ts';
+import { listSites, registerSite, resolveSiteTarget, siteFolderName } from '../../src/global-config.ts';
 
 const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'GLOBAL_ONLY_KEY', 'SHARED_KEY'];
 const GLOBAL_CONFIG = "export default { ai: { model: { modelId: 'global-model' } } };\n";
@@ -16,6 +16,7 @@ const GLOBAL_CONFIG = "export default { ai: { model: { modelId: 'global-model' }
 let home: string;
 let workDir: string;
 let savedEnv: Record<string, string | undefined> = {};
+let homedirSpy: ReturnType<typeof spyOn>;
 
 function writeGlobalConfig(body = GLOBAL_CONFIG): string {
   const dir = join(home, '.explorbot');
@@ -39,7 +40,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'explorbot-home-'));
   workDir = mkdtempSync(join(tmpdir(), 'explorbot-work-'));
   process.env.HOME = home;
-  setGlobalDirForTesting(join(home, '.explorbot'));
+  homedirSpy = spyOn(os, 'homedir').mockReturnValue(home);
   ConfigParser.resetForTesting();
 });
 
@@ -48,7 +49,7 @@ afterEach(() => {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
-  setGlobalDirForTesting(null);
+  homedirSpy.mockRestore();
   rmSync(home, { recursive: true, force: true });
   rmSync(workDir, { recursive: true, force: true });
   ConfigParser.resetForTesting();
@@ -223,10 +224,31 @@ describe('global mode', () => {
     expect(parser.getOutputDir()).toBe(join(siteDir('app.example.com'), 'output'));
   });
 
-  it('rejects a global config that pins a URL', async () => {
-    writeGlobalConfig("export default { web: { url: 'https://app.example.com' }, ai: { model: { modelId: 'global-model' } } };\n");
+  it('falls back to a URL pinned in the global config when the command passes none', async () => {
+    const parser = ConfigParser.getInstance();
+    writeGlobalConfig("export default { web: { url: 'https://pinned.example.com' }, ai: { model: { modelId: 'global-model' } } };\n");
 
-    await expect(ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://app.example.com' })).rejects.toThrow(/web.url/);
+    const config = await parser.loadConfig({ path: workDir });
+
+    expect(config.playwright.url).toBe('https://pinned.example.com');
+    expect(parser.getProjectRoot()).toBe(siteDir('pinned.example.com'));
+  });
+
+  it('lets the command URL win over a URL pinned in the global config', async () => {
+    const parser = ConfigParser.getInstance();
+    writeGlobalConfig("export default { web: { url: 'https://pinned.example.com' }, ai: { model: { modelId: 'global-model' } } };\n");
+
+    const config = await parser.loadConfig({ path: workDir, from: 'https://asked.example.com/login' });
+
+    expect(config.playwright.url).toBe('https://asked.example.com');
+    expect(parser.getProjectRoot()).toBe(siteDir('asked.example.com'));
+  });
+
+  it('keeps the fragment of a hash-routed URL', () => {
+    expect(resolveSiteTarget('https://app.example.com/#/login')).toEqual({
+      baseUrl: 'https://app.example.com',
+      path: '/#/login',
+    });
   });
 
   it('errors with the registered sites when no site is given', async () => {
@@ -308,6 +330,20 @@ describe('explorbot init', () => {
     } finally {
       (process as any).exit = originalExit;
     }
+  });
+
+  it('never renders the API key in clear text', async () => {
+    const noop = () => {};
+    const wizard = render(React.createElement(InitWizard, { mode: 'global', globalConfigExists: false, onLocal: noop, onComplete: noop, onCancel: noop }));
+
+    wizard.stdin.write('\r');
+    await Bun.sleep(20);
+    wizard.stdin.write('sk-secret-value');
+    await Bun.sleep(20);
+
+    expect(wizard.lastFrame()).toContain('Enter the API key');
+    expect(wizard.lastFrame()).not.toContain('sk-secret-value');
+    expect(wizard.lastFrame()).toContain('•');
   });
 
   it('offers both installations and marks global as installed', () => {

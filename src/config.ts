@@ -2,8 +2,10 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from 'node:os';
 import path, { basename, dirname, join, resolve } from 'node:path';
 import { parseEnv } from 'node:util';
+import dedent from 'dedent';
 import matter from 'gray-matter';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from './global-config.js';
+import { getCliName } from './utils/cli-name.js';
 import { log } from './utils/logger.js';
 
 export const PROVIDERS: Record<string, ProviderInfo> = {
@@ -228,6 +230,7 @@ interface ExplorbotConfig {
     knowledge: string;
     experience: string;
     output: string;
+    spec?: string;
   };
   experience?: {
     maxReadLines?: number;
@@ -261,7 +264,8 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_URL', required: true, description: 'Base URL to test; the API boat reads it as the base endpoint' },
   { name: 'EXPLORBOT_VISION_MODEL', description: 'Screenshot analysis; overrides the provider recommendation' },
   { name: 'EXPLORBOT_AGENTIC_MODEL', description: 'Captain and Pilot decisions; overrides the provider recommendation' },
-  { name: 'EXPLORBOT_OUTPUT', description: 'Output root for states, plans, research, and reports. Defaults to a fresh temp directory' },
+  { name: 'EXPLORBOT_OUTPUT', description: 'Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites' },
+  { name: 'EXPLORBOT_EPHEMERAL', description: 'Keep no state between runs — output goes to a fresh temp directory instead of the site dir' },
   { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
   { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
@@ -306,10 +310,20 @@ export class ConfigParser {
 
   private constructor() {}
 
-  public static loadEnv(filePath: string): void {
+  public static loadEnv(filePath: string, keepExisting = false): void {
     const resolved = resolve(filePath);
     if (!existsSync(resolved)) return;
-    Object.assign(process.env, parseEnv(readFileSync(resolved, 'utf8')));
+
+    const parsed = parseEnv(readFileSync(resolved, 'utf8'));
+    if (!keepExisting) {
+      Object.assign(process.env, parsed);
+      return;
+    }
+
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key in process.env) continue;
+      process.env[key] = value as string;
+    }
   }
 
   public static recommendedModels(): Record<string, Record<string, string>> {
@@ -346,8 +360,8 @@ export class ConfigParser {
       process.chdir(resolvedWorkingPath);
     }
 
-    ConfigParser.loadEnv(globalEnvPath());
     ConfigParser.loadEnv('.env');
+    ConfigParser.loadEnv(globalEnvPath(), true);
 
     try {
       const resolvedPath = options?.config || this.findConfigFile();
@@ -367,7 +381,7 @@ export class ConfigParser {
       }
 
       if (!resolvedPath) {
-        const outputRoot = resolveOutputRoot();
+        const outputRoot = resolveOutputRoot(process.env.EXPLORBOT_URL || options?.baseUrl);
         loadedConfig = await this.buildEnvConfig(options?.baseUrl, outputRoot);
         sourcePath = join(outputRoot, 'explorbot.config.js');
 
@@ -395,6 +409,7 @@ export class ConfigParser {
       if (options?.path && originalCwd !== process.cwd()) {
         process.chdir(originalCwd);
       }
+      if (error instanceof ConfigMissingError) throw error;
       throw new Error(`Failed to load configuration: ${error}`);
     }
   }
@@ -517,11 +532,7 @@ export class ConfigParser {
   }
 
   private enterGlobalMode(config: ExplorbotConfig, target: string | null): void {
-    if (config.web?.url) {
-      throw new Error('Global config must not set web.url — the site comes from the command URL or a registered site');
-    }
-
-    const site = resolveSiteTarget(target || undefined);
+    const site = resolveSiteTarget(target || undefined, config.web?.url || config.playwright?.url);
     this.site = registerSite(site.baseUrl);
     this.siteStartPath = site.path;
 
@@ -535,7 +546,7 @@ export class ConfigParser {
     const provider = process.env.EXPLORBOT_AI_PROVIDER;
     const modelSpec = process.env.EXPLORBOT_AI_MODEL;
     if (!provider && !modelSpec) {
-      throw new Error('No configuration file found. Create explorbot.config.js, run "explorbot init --global" to configure explorbot for this machine, or set EXPLORBOT_URL and EXPLORBOT_AI_PROVIDER environment variables');
+      throw new ConfigMissingError(missingConfigMessage());
     }
     if (modelSpec && !provider && !modelSpec.includes('/')) {
       throw new Error('EXPLORBOT_AI_MODEL needs a provider — set EXPLORBOT_AI_PROVIDER, or write it as "provider/model-id"');
@@ -569,11 +580,14 @@ export class ConfigParser {
     if (agenticSpec) ai.agenticModel = await resolveModel(agenticSpec, 'agenticModel');
     if (!agenticSpec && recommended.agenticModel) ai.agenticModel = await resolveModel(provider!, 'agenticModel');
 
+    const dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
+    if (process.env.EXPLORBOT_OUTPUT) dirs.output = '.';
+
     return {
       playwright: { browser: 'chromium', url, show: false },
       ai,
-      dirs: { knowledge: 'knowledge', experience: 'experience', output: '.' },
-      experience: { disabled: true },
+      dirs,
+      experience: { disabled: !!process.env.EXPLORBOT_EPHEMERAL },
     };
   }
 
@@ -709,6 +723,26 @@ export async function resolveModel(spec: string, role: ModelRole = 'model'): Pro
   return createModel(spec, modelId);
 }
 
+export class ConfigMissingError extends Error {}
+
+export function missingConfigMessage(configFile = 'explorbot.config.js'): string {
+  const cli = getCliName();
+  return dedent`
+    No AI configuration found. Set up explorbot in one of these ways:
+
+      Global - configure this machine once, then run from any directory:
+        ${cli} init --global
+
+      Local - create ${configFile} for this project:
+        ${cli} init
+
+      Environment - one-off run, no files written:
+        EXPLORBOT_AI_PROVIDER=openrouter EXPLORBOT_URL=https://your-app.example.com ${cli} ...
+
+    Providers: ${Object.keys(PROVIDERS).join(', ')}
+  `;
+}
+
 export async function resolveConfigModels(ai?: AIConfig): Promise<void> {
   if (!ai) return;
 
@@ -722,30 +756,47 @@ export async function resolveConfigModels(ai?: AIConfig): Promise<void> {
   }
 }
 
-export function resolveOutputRoot(): string {
+export function resolveOutputRoot(baseUrl?: string): string {
   if (cachedOutputRoot) return cachedOutputRoot;
 
   const configured = process.env.EXPLORBOT_OUTPUT;
-  if (!configured) {
-    cachedOutputRoot = mkdtempSync(join(tmpdir(), 'explorbot-'));
+  if (configured) {
+    cachedOutputRoot = resolve(configured);
+    mkdirSync(cachedOutputRoot, { recursive: true });
     return cachedOutputRoot;
   }
 
-  cachedOutputRoot = resolve(configured);
-  mkdirSync(cachedOutputRoot, { recursive: true });
+  if (baseUrl) {
+    cachedOutputRoot = resolveStateRoot(baseUrl, !!process.env.EXPLORBOT_EPHEMERAL);
+    return cachedOutputRoot;
+  }
+
+  cachedOutputRoot = mkdtempSync(join(tmpdir(), 'explorbot-'));
   return cachedOutputRoot;
+}
+
+export function resolveStateRoot(baseUrl: string, ephemeral?: boolean): string {
+  const url = URL.parse(baseUrl);
+  if (ephemeral || !url?.host) return mkdtempSync(join(tmpdir(), 'explorbot-'));
+
+  return registerSite(url.origin).dir;
 }
 
 export function materializeKnowledge(outputRoot: string): void {
   const inline = process.env.EXPLORBOT_KNOWLEDGE;
   const knowledgeFile = process.env.EXPLORBOT_KNOWLEDGE_FILE;
+  const knowledgeDir = join(outputRoot, 'knowledge');
+  const globalFile = join(knowledgeDir, 'global.md');
+  const envDir = join(knowledgeDir, 'env');
+
+  if (!inline) rmSync(globalFile, { force: true });
+  rmSync(envDir, { recursive: true, force: true });
   if (!inline && !knowledgeFile) return;
 
-  const knowledgeDir = join(outputRoot, 'knowledge');
   mkdirSync(knowledgeDir, { recursive: true });
 
   if (inline) {
-    writeFileSync(join(knowledgeDir, 'global.md'), matter.stringify(inline, { url: '*', endpoint: '*' }));
+    writeFileSync(globalFile, matter.stringify(inline, { url: '*', endpoint: '*' }));
   }
 
   if (!knowledgeFile) return;
@@ -754,7 +805,8 @@ export function materializeKnowledge(outputRoot: string): void {
   if (!existsSync(source)) {
     throw new Error(`Knowledge file from EXPLORBOT_KNOWLEDGE_FILE not found: ${source}`);
   }
-  copyFileSync(source, join(knowledgeDir, basename(source)));
+  mkdirSync(envDir, { recursive: true });
+  copyFileSync(source, join(envDir, basename(source)));
 }
 
 export async function createModel(provider: string, modelId: string): Promise<any> {

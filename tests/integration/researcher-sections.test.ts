@@ -55,7 +55,7 @@ function createMockDeps(configOverrides: Record<string, unknown> = {}, locatorCo
     explorer,
     config,
     stateManager,
-    knowledgeTracker: { getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '' },
+    knowledgeTracker: { getRelevantKnowledge: () => [], renderRelevantKnowledge: () => '', renderRelevantContext: () => '' },
     requestStore: {},
     playwrightRecorder: {},
   };

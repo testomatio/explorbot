@@ -131,7 +131,7 @@ const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLoc
             Enter the API key for {provider} <Text dimColor>(stored as {envKey})</Text>
           </Text>
           <Box borderStyle="single" borderColor="blue" paddingX={1}>
-            <InputReadline value={apiKey} onChange={setApiKey} onSubmit={() => setStep('validate')} placeholder={process.env[envKey] ? 'leave empty to keep the key from your environment' : 'paste the key'} isActive showPrompt={false} />
+            <InputReadline value={apiKey} onChange={setApiKey} onSubmit={() => setStep('validate')} placeholder={process.env[envKey] ? 'leave empty to keep the key from your environment' : 'paste the key'} isActive showPrompt={false} mask />
           </Box>
         </Box>
       )}

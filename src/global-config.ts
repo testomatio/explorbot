@@ -1,19 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import os from 'node:os';
 import { join } from 'node:path';
 
 const GLOBAL_CONFIG_NAMES = ['config.js', 'config.mjs', 'config.ts'];
 const SITE_DIRS = ['knowledge', 'experience', 'output'];
 
-let globalDirOverride: string | null = null;
-
 export function globalDir(): string {
-  return globalDirOverride || join(homedir(), '.explorbot');
-}
-
-// For testing purposes only
-export function setGlobalDirForTesting(dir: string | null): void {
-  globalDirOverride = dir;
+  return join(os.homedir(), '.explorbot');
 }
 
 export function globalEnvPath(): string {
@@ -58,7 +51,7 @@ export function registerSite(baseUrl: string): SiteRecord {
   const folder = siteFolderName(baseUrl);
   const dir = join(sitesDir(), folder);
   for (const subDir of SITE_DIRS) {
-    mkdirSync(join(dir, subDir), { recursive: true });
+    mkdirSync(join(dir, subDir), { recursive: true, mode: 0o700 });
   }
 
   const now = new Date().toISOString();
@@ -73,14 +66,14 @@ export function registerSite(baseUrl: string): SiteRecord {
 }
 
 export function resolveSiteTarget(target?: string, defaultBaseUrl?: string): SiteTarget {
-  const raw = (target || process.env.EXPLORBOT_URL || '').trim();
+  const raw = (target || process.env.EXPLORBOT_URL || defaultBaseUrl || '').trim();
   if (!raw) {
     throw new Error(withSites('No site to explore. Pass a URL to the command or set EXPLORBOT_URL.'));
   }
 
   if (raw.startsWith('http://') || raw.startsWith('https://')) {
     const url = new URL(raw);
-    return { baseUrl: url.origin, path: `${url.pathname}${url.search}` };
+    return { baseUrl: url.origin, path: `${url.pathname}${url.search}${url.hash}` };
   }
 
   if (raw.startsWith('/')) {

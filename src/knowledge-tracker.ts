@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import dedent from 'dedent';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
+import { ApplicationSpec } from './application-spec.ts';
 import { ConfigParser } from './config.js';
 import { getCliName } from './utils/cli-name.ts';
 import { createDebug, pluralize, tag } from './utils/logger.js';
@@ -24,14 +25,21 @@ export class KnowledgeTracker {
   private knowledgeDir: string;
   private knowledgeFiles: Knowledge[] = [];
   private isLoaded = false;
+  private applicationSpec?: ApplicationSpec;
 
-  constructor() {
+  constructor(applicationSpecPath?: string) {
     const configParser = ConfigParser.getInstance();
     const config = configParser.getConfig();
     this.knowledgeDir = configParser.resolveProjectDir(config.dirs?.knowledge || 'knowledge');
 
     if (!existsSync(this.knowledgeDir)) {
       mkdirSync(this.knowledgeDir, { recursive: true });
+    }
+
+    const specPath = applicationSpecPath || config.dirs?.spec;
+    if (specPath) {
+      this.applicationSpec = new ApplicationSpec(specPath);
+      tag('info').log(`Loaded application spec with ${this.applicationSpec.pageCount} documented pages`);
     }
   }
 
@@ -77,6 +85,14 @@ export class KnowledgeTracker {
       ${knowledgeContent}
       </knowledge>
     `;
+  }
+
+  renderRelevantContext(state: ActionResult): string {
+    return [this.renderRelevantKnowledge(state), this.renderApplicationSpec(state)].filter(Boolean).join('\n\n');
+  }
+
+  renderApplicationSpec(state: ActionResult): string {
+    return this.applicationSpec?.renderFor(state) || '';
   }
 
   addKnowledge(urlPattern: string, description: string): { filename: string; filePath: string; isNewFile: boolean } {

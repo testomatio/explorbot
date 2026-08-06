@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { parseEnv } from 'node:util';
-import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, EXPLORBOT_CONFIG_PATHS, createModel, materializeKnowledge, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
+import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
 
 export type { AIConfig };
@@ -160,7 +160,7 @@ export class ApibotConfigParser {
     const provider = process.env.EXPLORBOT_AI_PROVIDER;
     const modelSpec = process.env.EXPLORBOT_AI_MODEL;
     if (!provider && !modelSpec) {
-      throw new Error('No configuration file found. Create apibot.config.js or set EXPLORBOT_URL and EXPLORBOT_AI_PROVIDER environment variables');
+      throw new ConfigMissingError(missingConfigMessage('apibot.config.js'));
     }
     if (modelSpec && !provider && !modelSpec.includes('/')) {
       throw new Error('EXPLORBOT_AI_MODEL needs a provider — set EXPLORBOT_AI_PROVIDER, or write it as "provider/model-id"');

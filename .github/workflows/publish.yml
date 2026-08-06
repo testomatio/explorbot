@@ -47,6 +47,9 @@ jobs:
     - name: Verify CLI on Node.js
       run: node dist/bin/explorbot-cli.js --help
 
+    - name: Verify prima CLI on Node.js
+      run: node dist/boat/prima/bin/prima-cli.js --help
+
     - name: Set version from tag
       id: check
       run: |
