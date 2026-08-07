@@ -69,17 +69,17 @@ function buildStateGraph(outputDir: string, pages: DocumentedPage[]): StateGraph
         continue;
       }
 
-      const pairKey = `${sourceId}>${targetId}`;
-      if (adjacency.get(targetId)?.has(sourceId)) {
+      if (adjacency.get(sourceId)?.has(targetId)) {
+        continue;
+      }
+
+      if (createsCycle(sourceId, targetId, adjacency)) {
+        const pairKey = `${sourceId}>${targetId}`;
         if (drawnBack.has(pairKey)) {
           continue;
         }
         drawnBack.add(pairKey);
         edges.push({ source: sourceId, target: targetId, action: transition.action, isBack: true });
-        continue;
-      }
-
-      if (adjacency.get(sourceId)?.has(targetId) || createsCycle(sourceId, targetId, adjacency)) {
         continue;
       }
       adjacency.get(sourceId)?.add(targetId);
@@ -104,8 +104,8 @@ function renderMermaidBody(outputDir: string, pages: DocumentedPage[]): string {
   return renderMermaidFromGraph(buildStateGraph(outputDir, pages));
 }
 
-function renderMermaidFromGraph(graph: StateGraph): string {
-  const lines: string[] = ['flowchart TD'];
+function renderMermaidFromGraph(graph: StateGraph, compact = false): string {
+  const lines: string[] = [compact ? 'flowchart LR' : 'flowchart TD'];
   if (graph.pages.length === 0) {
     lines.push('  empty["No documented states"]');
     return lines.join('\n');
@@ -117,6 +117,12 @@ function renderMermaidFromGraph(graph: StateGraph): string {
     if (!children || children.length === 0) {
       continue;
     }
+    if (compact) {
+      for (const child of children) {
+        lines.push(`  ${renderNodeLine(child)}`);
+      }
+      continue;
+    }
     lines.push(`  subgraph sg_${page.id} ["${escapeMermaidLabel(page.label)} — transient states"]`);
     for (const child of children) {
       lines.push(`    ${renderNodeLine(child)}`);
@@ -125,11 +131,12 @@ function renderMermaidFromGraph(graph: StateGraph): string {
   }
 
   for (const edge of graph.edges) {
-    let arrow = '-->';
-    if (edge.isBack) {
-      arrow = '-.->';
+    const arrow = edge.isBack ? '-.->' : '-->';
+    if (compact) {
+      lines.push(`  ${edge.source} ${arrow} ${edge.target}`);
+    } else {
+      lines.push(`  ${edge.source} ${arrow}|"${escapeMermaidLabel(edge.action)}"| ${edge.target}`);
     }
-    lines.push(`  ${edge.source} ${arrow}|"${escapeMermaidLabel(edge.action)}"| ${edge.target}`);
   }
 
   lines.push('  classDef page fill:#dbeafe,stroke:#2563eb,color:#0f172a;');
@@ -174,6 +181,46 @@ function renderStateMapFromGraph(graph: StateGraph): string {
   return rows.join('\n');
 }
 
+function renderPageStateDiagram(label: string, url: string, interactions: StateTransition[]): string {
+  const targets = new Map<string, { node: StateNode; action: string; screenshot?: { title: string; relativePath: string } }>();
+  let index = 0;
+  for (const interaction of interactions) {
+    const targetState = interaction.targetState;
+    if (!targetState) {
+      continue;
+    }
+    const key = `${targetState.kind}:${targetState.label}:${normalizeUrl(targetState.url)}`;
+    if (targets.has(key)) {
+      continue;
+    }
+    targets.set(key, {
+      node: { id: `target${index++}`, kind: targetState.kind, label: targetState.label, subLabel: targetState.kind },
+      action: interaction.action,
+      screenshot: interaction.screenshot,
+    });
+  }
+
+  if (targets.size === 0) {
+    return '';
+  }
+
+  const lines: string[] = ['flowchart LR'];
+  lines.push(`  ${renderNodeLine({ id: 'self', kind: 'page', label, subLabel: url })}`);
+  for (const target of targets.values()) {
+    lines.push(`  ${renderNodeLine(target.node)}`);
+  }
+  for (const target of targets.values()) {
+    lines.push(`  self -->|"${escapeMermaidLabel(target.action)}"| ${target.node.id}`);
+  }
+  for (const target of targets.values()) {
+    if (target.screenshot) {
+      lines.push(`  click ${target.node.id} "${target.screenshot.relativePath}" "${escapeMermaidLabel(target.screenshot.title)}"`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function renderNodeLine(node: StateNode): string {
   const label = `${escapeMermaidLabel(node.label)}<br/>${escapeMermaidLabel(node.subLabel)}`;
   if (node.kind === 'dialog' || node.kind === 'modal') {
@@ -207,7 +254,13 @@ function createsCycle(sourceId: string, targetId: string, adjacency: Map<string,
 }
 
 function escapeMermaidLabel(value: string): string {
-  return normalizeInlineText(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('|', '&#124;');
+  return normalizeInlineText(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('#', '&#35;')
+    .replaceAll('<', '&#60;')
+    .replaceAll('>', '&#62;')
+    .replaceAll('|', '&#124;');
 }
 
 function escapeTable(value: string): string {
@@ -277,5 +330,5 @@ interface StateGraph {
   classAssignment: Map<StateClass, string[]>;
 }
 
-export { buildStateGraph, renderMermaidBody, renderMermaidFromGraph, renderStateMapFromGraph };
+export { buildStateGraph, renderMermaidBody, renderMermaidFromGraph, renderPageStateDiagram, renderStateMapFromGraph };
 export type { DocumentedPage, SkippedPage, StateGraph, StateNode, StateEdge, StateClick };
