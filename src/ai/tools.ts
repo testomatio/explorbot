@@ -676,6 +676,13 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
             );
           }
 
+          if (result.inexpressible) {
+            return failedToolResult('verify', `No assertion could express this claim: ${assertion}`, {
+              inexpressible: true,
+              suggestion: 'This is not evidence the page is wrong — the claim could not be turned into an assertion. Restate it in terms of what is visible or of a control state, or check it with see().',
+            });
+          }
+
           return failedToolResult('verify', `Verification failed: ${assertion}`, {
             suggestion: 'The assertion could not be verified. Check if the condition is actually present on the page or try a different assertion.',
           });
@@ -1112,14 +1119,14 @@ function errorText(error: unknown): string {
   return 'Unknown error occurred';
 }
 
-async function commitNote(activeNote: any, result: TestResult, toolResult: any, action: any): Promise<void> {
+export async function commitNote(activeNote: any, result: TestResult, toolResult: any, action: any): Promise<void> {
   if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
     activeNote.screenshot = await action.saveScreenshot();
   }
   activeNote.commit(result);
 }
 
-function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
+export function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
   const result: Record<string, any> = { success: true, action, ...data };
   if (source?.playwrightGroupId) {
     result.playwrightGroupId = source.playwrightGroupId;
@@ -1155,7 +1162,7 @@ function hasObservablePageChange(data?: Record<string, any>): boolean {
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 
-async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
+export async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
   const result: Record<string, any> = { success: false, action, message, ...data };
   if (data?.pageDiff) {
     result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;

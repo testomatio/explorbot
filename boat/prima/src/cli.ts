@@ -30,21 +30,22 @@ const helpContract = dedent`
     Fall back to click/fill/do whenever research left you no locator to hold.
 
   ENVELOPE
-    ### Result     ok, command, healed, used
+    ### Result     ok, command, used
     ### Page       url, title, state hash, visit count
-    ### Changes    what the accessibility tree gained or lost
+    ### Changes    what the accessibility tree gained or lost, or 'no change'
+    ### Steps      per-instruction outcome of do, each with the change that proves it
     ### Answer | ### Research | ### Verdict   output of ask, research, verify
-    ### Failure    error, reasoning, healing attempts, compact ARIA of the page
+    ### Failure    error, compact ARIA of the page
     ### Instance   the browser you are on and the other instances running
     ### Artifacts  paths to the full aria.yml, page.html and network.jsonl
     used: is code that already executed - CodeceptJS steps to copy as they are, except
           for pw, whose Playwright expression a test needs inside I.usePlaywrightTo(...).
     Log lines can precede the envelope; start parsing at the first ### line.
 
-  HEALING AND FAILURE
-    A failed action is retried by AI along a different route; healed: true means the
-    outcome was reached another way and used: holds the code that worked.
-    --no-heal skips that and fails fast.
+  FAILURE
+    A failed action fails. Nothing is retried along a different route and no other
+    element is ever substituted for the one you asked for, so ok: true always means
+    your own action landed.
     Failures print compact ARIA inline, so retarget from the envelope itself and open
     the artifact files only when the inline snapshot is not enough.
 
@@ -78,7 +79,6 @@ function buildOptions(options: any): PrimaOptions {
     path: options.path,
     instance: options.instance,
     session: options.session,
-    heal: options.heal,
     ephemeral: options.ephemeral,
     framework: options.framework,
     noVision: options.vision === false,
@@ -99,7 +99,6 @@ function addCommonOptions(cmd: Command): Command {
     .option('-p, --path <path>', 'Working directory path')
     .option('-i, --instance <name>', 'Browser instance to drive')
     .option('--session [file]', 'Persist cookies and storage to a session file')
-    .option('--no-heal', 'Fail immediately instead of letting AI retry a failed action')
     .option('--ephemeral', 'Keep no state between runs; applies to config-free runs, where output goes to a temp directory')
     .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')

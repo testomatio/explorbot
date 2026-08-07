@@ -196,6 +196,19 @@ describe('url-matcher', () => {
     it('compares absolute and relative URLs by path', () => {
       expect(matchesNavigationUrl('/users', 'https://example.test/users#details')).toBe(true);
     });
+
+    it('accepts a query the app appended when none was requested', () => {
+      expect(matchesNavigationUrl('/', '/?session=8f2c1e&ws=1')).toBe(true);
+      expect(matchesNavigationUrl('http://localhost:3050', 'http://localhost:3050/?session=8f2c1e&ws=1')).toBe(true);
+    });
+
+    it('still requires the path to match when a query was appended', () => {
+      expect(matchesNavigationUrl('/billing', '/login?redirect=/billing')).toBe(false);
+    });
+
+    it('requires an explicitly requested query', () => {
+      expect(matchesNavigationUrl('/search?q=shoes', '/search?q=hats')).toBe(false);
+    });
   });
 
   describe('normalizeUrl', () => {

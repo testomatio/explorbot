@@ -125,6 +125,15 @@ export class WebElement {
     return WebElement.fromPlaywrightLocator(page.locator(`[${EXPLORBOT_ATTRS.eidx}="${eidx}"]`));
   }
 
+  static isAriaRef(ref: string): boolean {
+    return /^(f\d+)?e\d+$/i.test(ref);
+  }
+
+  static async fromAriaRef(page: any, ref: string): Promise<WebElement | null> {
+    if (!WebElement.isAriaRef(ref)) return null;
+    return WebElement.fromPlaywrightLocator(page.locator(`aria-ref=${ref}`));
+  }
+
   static async fromEidxList(page: any, eidxList: string[]): Promise<WebElement[]> {
     const validEidxList = eidxList.filter((eidx) => /^e\d+$/i.test(eidx));
     if (validEidxList.length === 0) return [];

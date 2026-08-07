@@ -620,7 +620,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number }> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; inexpressible: boolean; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -773,10 +773,16 @@ class Navigator implements Agent {
     let verified = successfulCodes.length >= majorityNeeded;
     if (alreadyVerified) verified = true;
 
+    const inexpressible = !alreadyVerified && totalAttempted === 0;
+    if (inexpressible) {
+      tag('warning').log('No assertion could express this claim');
+      return { verified: false, inexpressible, successfulCodes, assertionSteps, totalAttempted };
+    }
+
     actionResult.addVerification(message, verified);
     this.stateManager.updateState(actionResult);
 
-    return { verified, successfulCodes, assertionSteps, totalAttempted };
+    return { verified, inexpressible, successfulCodes, assertionSteps, totalAttempted };
   }
 
   private checkAlreadyVerified(aiResponse: string, actionResult: ActionResult): boolean {

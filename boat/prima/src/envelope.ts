@@ -9,57 +9,46 @@ export interface InstanceInfo {
   others: Array<{ name: string; tabs: number }>;
 }
 
-export interface HealAttempt {
-  code: string;
-  outcome: string;
-}
-
 export interface EnvelopeData {
   ok: boolean;
   command: string;
-  healed?: boolean;
-  healNote?: string;
   used?: string[];
   page: { url: string; previousUrl?: string; title: string; state: string; visits: number };
   changes?: string | null;
+  steps?: Array<{ instruction: string; proof: string | null }>;
   answer?: string;
   research?: string;
   verdict?: { passed: boolean; evidence: string; code: string };
-  failure?: { error: string; attempts: HealAttempt[]; reasoning?: string; compactAria?: string };
+  failure?: { error: string; compactAria?: string };
   instance: InstanceInfo;
-  artifacts?: { aria: string; html: string; network: string };
+  artifacts?: { aria: string; html: string; network?: string };
 }
 
 export function renderEnvelope(data: EnvelopeData): string {
-  const sections = [renderResult(data), renderPage(data), renderOutcome(data), ...renderFailure(data), renderInstance(data.instance), renderArtifacts(data)];
+  const sections = [renderResult(data), renderPage(data), renderChanges(data), renderSteps(data), renderOutcome(data), ...renderFailure(data), renderInstance(data.instance), renderArtifacts(data)];
   return sections.filter((section) => section).join('\n\n');
 }
 
-export function writeArtifacts(dir: string, snapshot: { aria: string | null; html: string | null; requests: unknown[] }): { aria: string; html: string; network: string } {
+export function writeArtifacts(dir: string, snapshot: { aria: string | null; html: string | null; requests: unknown[] }): { aria: string; html: string; network?: string } {
   mkdirSync(dir, { recursive: true });
-  const paths = {
+  const paths: { aria: string; html: string; network?: string } = {
     aria: path.resolve(dir, 'aria.yml'),
     html: path.resolve(dir, 'page.html'),
-    network: path.resolve(dir, 'network.jsonl'),
   };
   writeFileSync(paths.aria, snapshot.aria ?? '', 'utf-8');
   writeFileSync(paths.html, snapshot.html ?? '', 'utf-8');
+
+  if (!snapshot.requests.length) return paths;
+
+  paths.network = path.resolve(dir, 'network.jsonl');
   writeFileSync(paths.network, snapshot.requests.map((request) => `${JSON.stringify(request)}\n`).join(''), 'utf-8');
   return paths;
 }
 
 function renderResult(data: EnvelopeData): string {
   const lines = [`ok: ${data.ok}`, `command: ${data.command}`];
-  const healed = renderHealed(data);
-  if (healed) lines.push(healed);
   if (data.used?.length) lines.push(`used: ${data.used.join('; ')}`);
   return section('Result', lines.join('\n'));
-}
-
-function renderHealed(data: EnvelopeData): string | null {
-  if (data.healed === undefined) return null;
-  if (data.healNote) return `healed: ${data.healed} (${data.healNote})`;
-  return `healed: ${data.healed}`;
 }
 
 function renderPage(data: EnvelopeData): string {
@@ -73,8 +62,21 @@ function renderPage(data: EnvelopeData): string {
   return section('Page', lines.join('\n'));
 }
 
+function renderChanges(data: EnvelopeData): string | null {
+  if (data.changes === undefined || data.changes === null) return null;
+  return section('Changes', data.changes);
+}
+
+function renderSteps(data: EnvelopeData): string | null {
+  if (!data.steps?.length) return null;
+  const lines = data.steps.map((step, index) => {
+    if (!step.proof) return `${index + 1}. ${step.instruction} — unproven`;
+    return `${index + 1}. ${step.instruction} — proven by ${step.proof}`;
+  });
+  return section('Steps', lines.join('\n'));
+}
+
 function renderOutcome(data: EnvelopeData): string | null {
-  if (data.changes) return section('Changes', data.changes);
   if (data.answer) return section('Answer', data.answer);
   if (data.research) return section('Research', data.research);
   if (!data.verdict) return null;
@@ -84,17 +86,7 @@ function renderOutcome(data: EnvelopeData): string | null {
 
 function renderFailure(data: EnvelopeData): Array<string | null> {
   if (!data.failure) return [];
-  const lines = [`error: ${data.failure.error}`];
-  if (data.failure.reasoning) lines.push(`reasoning: ${data.failure.reasoning}`);
-  return [section('Failure', lines.join('\n')), renderAttempts(data.failure.attempts), renderCompactAria(data.failure.compactAria)];
-}
-
-function renderAttempts(attempts: HealAttempt[]): string | null {
-  if (!attempts?.length) return null;
-  const labels = attempts.map((attempt, index) => `${index + 1}. ${attempt.code}`);
-  const width = Math.max(...labels.map((label) => label.length)) + 3;
-  const lines = labels.map((label, index) => align(label, `→ ${attempts[index].outcome}`, width));
-  return section(`Healing attempts (${attempts.length})`, lines.join('\n'));
+  return [section('Failure', `error: ${data.failure.error}`), renderCompactAria(data.failure.compactAria)];
 }
 
 function renderCompactAria(compactAria?: string): string | null {
@@ -127,7 +119,8 @@ function tabsLabel(tabs: number): string {
 
 function renderArtifacts(data: EnvelopeData): string | null {
   if (!data.artifacts) return null;
-  const lines = [`aria: ${data.artifacts.aria}`, `html: ${data.artifacts.html}`, `network: ${data.artifacts.network}`];
+  const lines = [`aria: ${data.artifacts.aria}`, `html: ${data.artifacts.html}`];
+  if (data.artifacts.network) lines.push(`network: ${data.artifacts.network}`);
   return section('Artifacts', lines.join('\n'));
 }
 

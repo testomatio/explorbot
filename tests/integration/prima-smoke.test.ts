@@ -127,12 +127,11 @@ describe('Prima drives a real page', () => {
     expect(envelope.page.url).toContain('note=the+hinge+arrived+bent');
   });
 
-  test('pw writes the aria, html and network artifacts to disk', async () => {
+  test('pw writes the aria and html artifacts to disk', async () => {
     const envelope = await prima.pw("({ page }) => page.click('text=Submit')");
 
     expect(existsSync(envelope.artifacts!.aria)).toBe(true);
     expect(existsSync(envelope.artifacts!.html)).toBe(true);
-    expect(existsSync(envelope.artifacts!.network)).toBe(true);
     expect(await Bun.file(envelope.artifacts!.aria).text()).toContain('Thanks for the note');
     expect(await Bun.file(envelope.artifacts!.html).text()).toContain('Thanks for the note');
   });
@@ -149,12 +148,11 @@ describe('Prima drives a real page', () => {
     expect(await page.title()).toBe('Widget Depot Feedback');
   });
 
-  test('a failing pw without a usable AI model reports healing as unavailable', async () => {
+  test('a failing pw without a usable AI model fails with the page inlined', async () => {
     const envelope = await prima.pw("({ page }) => page.click('text=Ship the order')");
 
     expect(envelope.ok).toBe(false);
-    expect(envelope.healed).toBe(false);
-    expect(envelope.healNote).toContain('ai unavailable');
+    expect(envelope).not.toHaveProperty('healed');
     expect(envelope.failure?.compactAria).toContain('button "Submit"');
   });
 });

@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-08-07
+
+### Prima drives by element refs, and never substitutes your target
+
+A failed action now fails. Previously a `pw` call on a selector that did not exist could be
+"healed" into clicking a different element and still report `ok: true` — so `ok: true` did not
+mean your own action landed. Automatic retry along a different route is gone entirely, together
+with the `--no-heal` flag that used to switch it off, and the `healed:` line and
+`### Healing attempts` block in the envelope.
+
+`prima do` now works from the refs Playwright puts in the page snapshot. New `clickRef` and
+`hoverRef` steps take the ref of the element they want instead of composing a locator and hoping,
+so one instruction becomes one command rather than a list of fallbacks. A ref that no longer
+resolves is reported as stale instead of being replaced by a guess. The existing `click` and
+`hover` steps are unchanged and still available for pages without refs.
+
+### Configuration
+
+- **`ai.agents.prima.researchAfterVisits`** — how many visits to a page before `prima do` works
+  from that page's stored research map instead of its accessibility tree. Default: `3`.
+
+### Changes
+
+- [Prima] `### Changes` now appears on every action, showing what the accessibility tree gained,
+  lost or toggled — or saying `no change` outright. It previously went missing whenever the
+  command also produced an answer, a research map or a verdict, so a successful click proved
+  nothing.
+- [Prima] Attaching to a running `playwright-cli` session works again. Prima was matching on a
+  field that no release of `playwright-cli` writes, so it reported no browser while one was open
+  and told you to open the session you already had.
+- [Prima] Attached sessions are driven through the browser's own Playwright build, which is what
+  makes reading the page work across versions.
+- [Prima] New `context()` step for `do`: when a ref goes stale mid-run it returns the page again
+  with fresh refs, and drops to raw markup if asked a second time on the same page.
+- [Prima] `click` and `fill` report themselves in the envelope instead of appearing as `do`.
+- [Prima] `network.jsonl` is listed only when requests were actually recorded, instead of always
+  pointing at an empty file.
+- [Navigator] `verify` now separates "this claim is false" from "no assertion can express this
+  claim". A claim it cannot phrase is no longer reported as a failing check, and is no longer
+  remembered as one.
+- [Navigator] Verification can assert whether a control is enabled, disabled, checked, selected or
+  expanded. Only presence and text could be asserted before, so state claims always failed.
+- Navigation: a redirect that only adds query parameters — a session id, a workspace flag — counts
+  as arriving. Reaching such a page previously burned minutes of retries and could still end in a
+  failure while the page sat correctly loaded.
+- Page snapshots keep every attribute on an element. A control marked `[pressed]` or `[disabled]`
+  used to lose its ref, which hid exactly the controls worth acting on.
+- Playwright updated to 1.62.
+
 ## 2026-08-06
 
 ### Global Installation

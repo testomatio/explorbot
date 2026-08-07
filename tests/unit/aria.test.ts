@@ -148,4 +148,25 @@ describe('aria', () => {
     expect(result).toContain('link "Keep 9"');
     expect(result).not.toContain('omitted');
   });
+
+  it.each([
+    ['- button "Plain" [ref=e10]', 'ref=e10'],
+    ['- button "Active" [active] [ref=e13]', 'active ref=e13'],
+    ['- button "Disabled" [disabled] [ref=e14]', 'disabled ref=e14'],
+    ['- button "Pressed" [pressed] [ref=e15]', 'pressed ref=e15'],
+    ['- button "Expanded" [expanded] [ref=e16]', 'expanded ref=e16'],
+    ['- checkbox "Checked" [checked] [ref=e17]', 'checked ref=e17'],
+    ['- button "Cursor" [ref=e18] [cursor=pointer]', 'cursor=pointer ref=e18'],
+  ])('keeps every bracket group of %p', (snapshot, expected) => {
+    expect(compactAriaSnapshot(snapshot, true)).toContain(`[${expected}]`);
+  });
+
+  it('keeps refs on stateful nodes nested in a tree', () => {
+    const snapshot = ['- navigation "Panel sections" [ref=e6]:', '  - button "Workspace" [ref=e10]', '  - button "Workflows" [active] [ref=e13]'].join('\n');
+
+    const result = compactAriaSnapshot(snapshot, true);
+
+    expect(result).toContain('ref=e10');
+    expect(result).toContain('ref=e13');
+  });
 });

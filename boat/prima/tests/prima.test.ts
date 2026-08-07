@@ -29,6 +29,7 @@ function fakeState(over: Record<string, unknown> = {}) {
     getStateHash: () => 'login_h1_login',
     ariaSnapshot: '- textbox "Email"\n- button "Sign in"',
     combinedHtml: () => '<form></form>',
+    simplifiedHtml: async () => '<form><button>Sign in</button></form>',
     toToolResult: async () => ({ pageDiff: { urlChanged: false, ariaChanges: null } }),
     ...over,
   };
@@ -77,12 +78,14 @@ function fakePrima(options: Record<string, unknown> = {}) {
         },
       }),
       capture: async () => after,
+      withPage: async (fn: (page: any) => any) => fn({ locator: () => ({ ariaSnapshot: async () => `${(prima as any).bot.stateManager().getCurrentState().ariaSnapshot}\n- button "Refreshed" [ref=e7]` }) }),
     }),
     stateManager: () => ({
       getCurrentState: () => fakeState(),
       getVisitCount: () => 1,
     }),
     getCurrentState: () => fakeState(),
+    getConfig: () => ({}),
     requestStore: () => ({ getRequests: () => [] }),
     getProvider: () => ({ chat: async () => '' }),
   };
@@ -121,7 +124,7 @@ describe('Prima.pw', () => {
     expect(envelope.changes).toContain('heading "Dashboard"');
     expect(existsSync(envelope.artifacts!.aria)).toBe(true);
     expect(existsSync(envelope.artifacts!.html)).toBe(true);
-    expect(existsSync(envelope.artifacts!.network)).toBe(true);
+    expect(envelope.artifacts!.network).toBeUndefined();
     expect(envelope.instance.name).toBe('default');
   });
 
@@ -138,7 +141,6 @@ describe('Prima.pw', () => {
     const envelope = await prima.pw("({ page }) => page.click('text=Login')");
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toContain("locator 'text=Login' not found");
-    expect(envelope.failure?.attempts).toEqual([]);
     expect(envelope.page.url).toBe('https://app.example.com/login');
     expect(envelope.artifacts).toBeTruthy();
   });
@@ -172,76 +174,34 @@ describe('Prima.pw', () => {
   });
 });
 
-describe('Prima heal', () => {
-  test('failed pw heals via navigator and reports healed envelope', async () => {
+describe('Prima failure never substitutes a target', () => {
+  test('a failed pw fails without consulting the navigator', async () => {
     const { prima } = fakePrima();
+    let called = false;
     (prima as any).bot.getExplorer = failingExplorer;
-    (prima as any).bot.agentNavigator = () => ({
-      resolveState: async (_msg: string, _result: unknown, opts: any) => {
-        opts?.onAttempt?.({ code: "I.click('Login')", error: 'not visible' });
-        opts?.onAttempt?.({ code: "I.click('#login-btn')" });
-        return true;
-      },
-    });
-    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
-    expect(envelope.ok).toBe(true);
-    expect(envelope.healed).toBe(true);
-    expect(envelope.healNote).toBeTruthy();
-    expect(envelope.used).toEqual(["I.click('#login-btn')"]);
-  });
+    (prima as any).bot.agentNavigator = () => {
+      called = true;
+      return { resolveState: async () => true };
+    };
 
-  test('exhausted heal returns failure envelope with attempts and compact aria', async () => {
-    const { prima } = fakePrima();
-    (prima as any).bot.getExplorer = failingExplorer;
-    (prima as any).bot.agentNavigator = () => ({
-      resolveState: async (_msg: string, _result: unknown, opts: any) => {
-        opts?.onAttempt?.({ code: "I.click('Login')", error: 'not visible' });
-        return false;
-      },
-    });
     const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+
+    expect(called).toBe(false);
     expect(envelope.ok).toBe(false);
+    expect(envelope.used).toBeUndefined();
     expect(envelope.failure?.error).toContain("locator 'text=Login' not found");
-    expect(envelope.failure?.attempts).toEqual([{ code: "I.click('Login')", outcome: 'not visible' }]);
-    expect(envelope.failure?.reasoning).toBe('not visible');
     expect(envelope.failure?.compactAria).toContain('button');
     expect(envelope.artifacts).toBeTruthy();
   });
 
-  test('heal disabled skips navigator entirely', async () => {
-    const { prima } = fakePrima({ heal: false });
-    let called = false;
-    (prima as any).bot.getExplorer = failingExplorer;
-    (prima as any).bot.agentNavigator = () => {
-      called = true;
-      return { resolveState: async () => true };
-    };
-    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
-    expect(called).toBe(false);
-    expect(envelope.ok).toBe(false);
-    expect(envelope.healed).toBeUndefined();
-    expect(envelope.failure?.attempts).toEqual([]);
-    expect(envelope.failure?.compactAria).toContain('button');
-  });
-
-  test('unusable ai provider skips healing and notes it in the envelope', async () => {
+  test('a failed pw carries no healed marker', async () => {
     const { prima } = fakePrima();
-    let called = false;
     (prima as any).bot.getExplorer = failingExplorer;
-    (prima as any).bot.getProvider = () => {
-      throw new Error('AI provider is not configured');
-    };
-    (prima as any).bot.agentNavigator = () => {
-      called = true;
-      return { resolveState: async () => true };
-    };
+
     const envelope = await prima.pw("({ page }) => page.click('text=Login')");
-    expect(called).toBe(false);
-    expect(envelope.ok).toBe(false);
-    expect(envelope.healed).toBe(false);
-    expect(envelope.healNote).toContain('ai unavailable');
-    expect(envelope.healNote).toContain('AI provider is not configured');
-    expect(envelope.failure?.error).toContain("locator 'text=Login' not found");
+
+    expect(envelope).not.toHaveProperty('healed');
+    expect(envelope).not.toHaveProperty('healNote');
   });
 });
 
@@ -491,20 +451,20 @@ describe('Prima.do', () => {
     expect(calls).toBe(6);
   });
 
-  test('routes a failed tool execution through heal', async () => {
+  test('a failed tool execution fails the command instead of reaching for another element', async () => {
     const { prima } = fakePrima();
+    let called = false;
     (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [toolExecution("I.click('Login')", false, 'element not found')] }));
-    (prima as any).bot.agentNavigator = () => ({
-      resolveState: async (_msg: string, _result: unknown, opts: any) => {
-        opts?.onAttempt?.({ code: "I.click('#login-btn')" });
-        return true;
-      },
-    });
+    (prima as any).bot.agentNavigator = () => {
+      called = true;
+      return { resolveState: async () => true };
+    };
 
     const envelope = await prima.do(['click the login link']);
-    expect(envelope.ok).toBe(true);
-    expect(envelope.healed).toBe(true);
-    expect(envelope.used).toEqual(["I.click('#login-btn')"]);
+
+    expect(called).toBe(false);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('element not found');
   });
 
   test('reports a failure when the model performs no action and keeps its explanation', async () => {
@@ -552,6 +512,25 @@ describe('Prima.do', () => {
 
     await prima.do(['open the invoices page', 'read the first invoice']);
     expect(prompts.length).toBe(1);
+  });
+
+  test('context() hands back refs first and drops to markup only when asked again', async () => {
+    const { prima } = fakePrima();
+    let captured: any;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async (_conversation: unknown, tools: any) => {
+        captured = tools.context;
+        return { toolExecutions: [] };
+      });
+
+    await prima.do(['open the invoices page']);
+
+    const first = await captured.execute({ reason: 'the ref no longer resolves' });
+    expect(first.context).toContain('ref=e7');
+
+    const second = await captured.execute({ reason: 'still cannot reach it' });
+    expect(second.context).not.toContain('ref=e7');
+    expect(second.context).toContain('<form>');
   });
 
   test('click is a single-instruction alias over do', async () => {
@@ -795,27 +774,28 @@ describe('Prima.go', () => {
 
     const envelope = await prima.go('/billing');
     expect(envelope.ok).toBe(false);
-    expect(envelope.healed).toBe(false);
-    expect(envelope.healNote).toContain('ai unavailable');
+    expect(envelope).not.toHaveProperty('healed');
     expect(envelope.failure?.error).toContain('AI-assisted recovery is unavailable');
   });
 
-  test('navigation error is routed through heal', async () => {
+  test('navigation error fails instead of reaching the target another way', async () => {
     const { prima } = fakePrima();
+    let resolved = false;
     (prima as any).bot.agentNavigator = () => ({
       visit: async () => {
         throw new Error('Navigation to /billing failed');
       },
-      resolveState: async (_message: string, _result: unknown, opts: any) => {
-        opts?.onAttempt?.({ code: "I.click('Billing')" });
+      resolveState: async () => {
+        resolved = true;
         return true;
       },
     });
 
     const envelope = await prima.go('/billing');
-    expect(envelope.ok).toBe(true);
-    expect(envelope.healed).toBe(true);
-    expect(envelope.used).toEqual(["I.click('Billing')"]);
+
+    expect(resolved).toBe(false);
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('Navigation to /billing failed');
   });
 
   test('go cannot run before a session exists and never launches a browser', async () => {

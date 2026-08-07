@@ -32,26 +32,21 @@ describe('renderEnvelope', () => {
     expect(out).not.toContain('(changed:');
   });
 
-  test('failure envelope renders attempts, reasoning and compact aria', () => {
+  test('failure envelope renders the error and compact aria, and nothing about retries', () => {
     const out = renderEnvelope({
       ...base,
       ok: false,
       failure: {
         error: "locator 'text=Login' not found",
-        attempts: [
-          { code: "I.click('Login')", outcome: 'not visible' },
-          { code: 'scroll + retry', outcome: 'covered by cookie banner' },
-        ],
-        reasoning: 'element hidden behind consent overlay',
         compactAria: '- button "Accept all"',
       },
     });
     expect(out).toContain('### Failure');
-    expect(out).toContain('### Healing attempts (2)');
-    expect(out).toContain("1. I.click('Login')");
-    expect(out).toContain('→ not visible');
+    expect(out).toContain("locator 'text=Login' not found");
     expect(out).toContain('### Current page (compact ARIA)');
     expect(out).toContain('- button "Accept all"');
+    expect(out).not.toContain('Healing');
+    expect(out).not.toContain('healed');
   });
 
   test('answer replaces changes for ask', () => {
@@ -75,9 +70,26 @@ describe('renderEnvelope', () => {
     expect(out).toContain("I.see('Dashboard')");
   });
 
-  test('healed success carries note', () => {
-    const out = renderEnvelope({ ...base, healed: true, healNote: 'dismissed overlay first' });
-    expect(out).toContain('healed: true (dismissed overlay first)');
+  test('changes render on every action envelope, including when nothing moved', () => {
+    expect(renderEnvelope({ ...base, changes: 'no change' })).toContain('### Changes\nno change');
+  });
+
+  test('changes render alongside a verdict rather than replacing it', () => {
+    const out = renderEnvelope({ ...base, changes: 'no change', verdict: { passed: true, evidence: 'I.seeElement()', code: 'I.seeElement()' } });
+    expect(out).toContain('### Changes');
+    expect(out).toContain('### Verdict');
+  });
+
+  test('steps report per-instruction proof and name what stayed unproven', () => {
+    const out = renderEnvelope({
+      ...base,
+      steps: [
+        { instruction: 'open the account menu', proof: 'added menu "Account"' },
+        { instruction: 'choose the settings entry', proof: null },
+      ],
+    });
+    expect(out).toContain('1. open the account menu — proven by added menu "Account"');
+    expect(out).toContain('2. choose the settings entry — unproven');
   });
 
   test('attached instance renders attached browser line', () => {

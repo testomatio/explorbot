@@ -105,9 +105,26 @@ Checks that page source does NOT contain expected text.
   I.dontSeeInSource('error-class');
 </example>
 
+### I.seeAttributesOnElements
+
+I.seeAttributesOnElements(<locator>, <attributes>)
+
+Checks the interactive state of a control: enabled, disabled, checked, selected, expanded, required, read-only.
+This is the ONLY way to assert state — presence assertions cannot express it.
+Assert the state you expect; to assert the opposite state, assert that value explicitly rather than negating.
+
+<example>
+  I.seeAttributesOnElements('#submit', { disabled: null });
+  I.seeAttributesOnElements({"role":"button","text":"Save"}, { 'aria-disabled': 'false' });
+  I.seeAttributesOnElements({"role":"checkbox","text":"Accept"}, { checked: true });
+  I.seeAttributesOnElements({"role":"button","text":"Details"}, { 'aria-expanded': 'true' });
+</example>
+
 <verification_rules>
 Be strict in assertions to avoid false positives.
 Prefer I.seeElement() with ARIA locators - most reliable.
+For a claim about a control's state, use I.seeAttributesOnElements() — presence of the element is not evidence of its state.
+If no assertion above can express the claim, say so instead of proposing an assertion that checks something weaker.
 I.see() and I.dontSee() MUST include context parameter.
 For input field values, ALWAYS use I.seeInField() — never check value via CSS attribute selectors or I.seeInSource.
 Prefer text locators (label, name, placeholder) for form fields: I.seeInField('Search', 'value') over I.seeInField('input[name="search"]', 'value').

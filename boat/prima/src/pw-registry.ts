@@ -20,9 +20,8 @@ export function readDescriptors(dir = registryDir()): PwServerDescriptor[] {
   return descriptors;
 }
 
-export function selectDescriptor(descriptors: PwServerDescriptor[], opts: { workspaceDir: string; title?: string }): { match?: PwServerDescriptor; candidates: PwServerDescriptor[] } {
-  const workspaceDir = path.resolve(opts.workspaceDir);
-  const candidates = descriptors.filter((descriptor) => path.resolve(descriptor.workspaceDir) === workspaceDir);
+export function selectDescriptor(descriptors: PwServerDescriptor[], opts: { title?: string } = {}): { match?: PwServerDescriptor; candidates: PwServerDescriptor[] } {
+  const candidates = descriptors;
   if (!candidates.length) return { candidates };
 
   if (opts.title) {
@@ -53,13 +52,13 @@ function parseDescriptor(file: string): PwServerDescriptor | null {
     return null;
   }
 
-  if (!data?.endpoint || !data?.title || !data?.workspaceDir) return null;
+  if (!data?.endpoint || !data?.title) return null;
 
   return {
     file,
     title: data.title,
     endpoint: data.endpoint,
-    workspaceDir: data.workspaceDir,
+    workspaceDir: data.workspaceDir || '',
     browserName: data.browser?.browserName || DEFAULT_BROWSER,
     playwrightLib: data.playwrightLib || '',
   };

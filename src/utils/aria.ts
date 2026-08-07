@@ -85,8 +85,7 @@ const parseLabel = (label: string): { role: string; name?: string; attributes: R
   }
 
   const attributes: Record<string, string | boolean | null> = {};
-  const attrMatch = rest.match(/\[([^\]]*)\]/);
-  if (attrMatch) {
+  for (const attrMatch of rest.matchAll(/\[([^\]]*)\]/g)) {
     for (const tok of attrMatch[1].split(/[\s,]+/).filter(Boolean)) {
       const eq = tok.indexOf('=');
       if (eq === -1) {
