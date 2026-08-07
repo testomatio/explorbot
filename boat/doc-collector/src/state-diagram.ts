@@ -254,13 +254,7 @@ function createsCycle(sourceId: string, targetId: string, adjacency: Map<string,
 }
 
 function escapeMermaidLabel(value: string): string {
-  return normalizeInlineText(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('#', '&#35;')
-    .replaceAll('<', '&#60;')
-    .replaceAll('>', '&#62;')
-    .replaceAll('|', '&#124;');
+  return normalizeInlineText(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('#', '&#35;').replaceAll('<', '&#60;').replaceAll('>', '&#62;').replaceAll('|', '&#124;');
 }
 
 function escapeTable(value: string): string {

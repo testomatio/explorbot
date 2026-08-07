@@ -465,23 +465,20 @@ describe('doc-collector renderer', () => {
   });
 
   it('renders a focused per-page state map when interactions target a transient state', () => {
-    const markdown = renderPageDocumentation(
-      { url: '/suites', title: 'Suites' },
-      {
-        summary: 'Suites page',
-        can: [],
-        might: [],
-        interactions: [
-          {
-            action: 'Clicked button: Import tests',
-            before: 'Suites',
-            after: 'Import tests',
-            targetState: { kind: 'dialog', label: 'Import tests', url: '/suites' },
-            screenshot: { title: 'Import tests', relativePath: '../screenshots/suites_import.png' },
-          },
-        ],
-      } as any
-    );
+    const markdown = renderPageDocumentation({ url: '/suites', title: 'Suites' }, {
+      summary: 'Suites page',
+      can: [],
+      might: [],
+      interactions: [
+        {
+          action: 'Clicked button: Import tests',
+          before: 'Suites',
+          after: 'Import tests',
+          targetState: { kind: 'dialog', label: 'Import tests', url: '/suites' },
+          screenshot: { title: 'Import tests', relativePath: '../screenshots/suites_import.png' },
+        },
+      ],
+    } as any);
 
     expect(markdown).toContain('## State Map');
     expect(markdown).toContain('flowchart LR');
@@ -492,15 +489,12 @@ describe('doc-collector renderer', () => {
   });
 
   it('omits the per-page state map when no interaction targets a state', () => {
-    const markdown = renderPageDocumentation(
-      { url: '/x', title: 'X' },
-      {
-        summary: 'Static',
-        can: [],
-        might: [],
-        interactions: [{ action: 'Clicked button: Save', before: 'x', after: 'y', changes: { urlChanged: false, newElements: 2, removedElements: 0 } }],
-      } as any
-    );
+    const markdown = renderPageDocumentation({ url: '/x', title: 'X' }, {
+      summary: 'Static',
+      can: [],
+      might: [],
+      interactions: [{ action: 'Clicked button: Save', before: 'x', after: 'y', changes: { urlChanged: false, newElements: 2, removedElements: 0 } }],
+    } as any);
 
     expect(markdown).not.toContain('## State Map');
   });
