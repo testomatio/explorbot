@@ -11,6 +11,7 @@ import { ActionResult } from '../../../src/action-result.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
+import { listSites } from '../../../src/global-config.ts';
 import { ConfigMissingError, ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
@@ -427,6 +428,32 @@ export class Prima {
       if (await this.stopInstance(instance.name)) stopped = true;
     }
     return stopped;
+  }
+
+  async models(): Promise<string> {
+    const [site] = listSites();
+    if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
+    const config = await this.loadConfig();
+
+    const named = (model: unknown): string => {
+      if (typeof model === 'string') return model;
+      return (model as any)?.modelId || (model as any)?.model || 'unknown';
+    };
+
+    const ai = config.ai || ({} as any);
+    const roles: Array<[string, unknown]> = [
+      ['model', ai.model],
+      ['agenticModel', ai.agenticModel],
+      ['visionModel', ai.visionModel],
+    ];
+    for (const [agent, agentConfig] of Object.entries(ai.agents || {})) {
+      if ((agentConfig as any)?.model) roles.push([agent, (agentConfig as any).model]);
+    }
+
+    const lines = roles.filter(([, model]) => model).map(([role, model]) => `${role.padEnd(14)} ${named(model)}`);
+    lines.push(`config         ${ConfigParser.getInstance().getConfigPath() || 'built-in defaults'}`);
+    if (ai.langfuse?.enabled) lines.push('telemetry      langfuse');
+    return lines.join('\n');
   }
 
   async browserStatus(): Promise<string> {

@@ -178,6 +178,14 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
 
+  addCommonOptions(cmd.command('models').description('Show which AI model answers for each role')).action(async (options) => {
+    setQuietMode(!options.verbose && !options.debug);
+    const prima = primaFor(options);
+    console.log(await prima.models().catch((error: unknown) => browserErrorMessage(error)));
+    await prima.stop().catch(() => {});
+    process.exit(0);
+  });
+
   addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
     await runPrima(options, `status ${hash}`, (prima) => prima.status(hash));
   });
