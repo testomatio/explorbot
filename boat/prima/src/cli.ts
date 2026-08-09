@@ -10,34 +10,35 @@ const helpContract = dedent`
   Prima is a high-level AI extension to playwright-cli. It drives the browser that
   playwright-cli already has open.
 
-    playwright-cli open <url>    start the session
-    prima <command> ...          drive it
-    playwright-cli close         end it
+    playwright-cli open <url>    starts the session
+    prima <command> ...          drives it
+    playwright-cli close         ends it
 
-  Give check and do a whole job, never a single click - one call carries the sequence,
-  and that is what makes them cheaper than driving playwright-cli step by step.
+  check and do each carry a whole job in one call - a behaviour to verify, or a sequence
+  of steps to carry out. That is where they cost less than the same work driven through
+  playwright-cli one command at a time.
 
     prima check "a workflow can be created and appears in the list" --expected "the new workflow is listed"
     prima do "open the account menu" "choose the settings entry" "switch the theme to dark" "check it took effect"
     prima pw "({ page }) => page.click('[data-test=submit]')"
 
-  Describe targets to check and do; give pw executable code only.
+  check and do take targets described in words. pw takes executable code.
 `;
 
 const checkHelp = dedent`
-  Give it an outcome, not a click path - it decides how to get there.
-  --expected  one outcome the run must reach; repeat it for several. Without it the
+  check takes an outcome rather than a click path, and works out how to reach it.
+  --expected  one outcome the run must reach, repeatable for several. Without it the
               scenario text is the single expected outcome. Each comes back under
               ### Expected outcomes as PASSED, FAILED or not verified - "not verified"
               means the run never checked it, which is not the same as false.
-  Page problems seen on the way are reported under ### Answer, not as step failures.
+  Page problems seen on the way appear under ### Answer, not as step failures.
 `;
 
 const doHelp = dedent`
-  Every instruction is numbered and accounted for: ### Steps reports each as ok or FAIL
+  Each instruction is numbered and accounted for: ### Steps reports each as ok or FAIL
   with what proved it. One that could not be carried out fails the command and says why.
-  Nothing runs past the last instruction you gave.
-  Pass the whole remaining sequence in one call - that is what makes this tier cheap.
+  Nothing runs past the last instruction given. A whole remaining sequence in one call is
+  what makes this tier cheap.
 `;
 
 const verifyHelp = dedent`
