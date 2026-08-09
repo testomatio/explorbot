@@ -146,7 +146,6 @@ export class Prima {
     conversation.addUserText(await this.instructionPrompt(instructions, await this.capturedResult(previousState)));
 
     const used: string[] = [];
-    const checks = new Map<string, boolean>();
     const trace: Array<{ label: string; ok: boolean; proof: string }> = [];
     let failure: { code: string; message: string } | null = null;
     let aiError: unknown = null;
@@ -201,7 +200,6 @@ export class Prima {
           const claim = execution.input?.assertion || 'verification';
           let passed = execution.wasSuccessful;
           if (output.alreadyVerified) passed = output.verifications?.[claim] === true;
-          checks.set(claim, passed);
           trace.push({ label: `verify: ${claim}`, ok: passed, proof: output.code || '' });
           continue;
         }
@@ -253,9 +251,6 @@ export class Prima {
     envelope.changes = undefined;
 
     const unmet = unfinished.map((entry) => `${entry.status}: ${entry.text}${entry.proof ? ` — ${entry.proof}` : ''}`);
-    for (const [claim, passed] of checks) {
-      if (!passed) unmet.push(`unproven: ${claim}`);
-    }
     if (unmet.length) {
       envelope.ok = false;
       envelope.failure = { error: unmet.join('\n') };

@@ -723,7 +723,7 @@ describe('Prima.do', () => {
     expect(envelope.failure?.error).toContain('blocked: download the PDF — no PDF link exists on this page');
   });
 
-  test('a check that never passed fails the command even after later actions succeed', async () => {
+  test('a failed check is logged but does not overrule the instruction the model closed', async () => {
     const { prima } = fakePrima();
     let calls = 0;
     (prima as any).bot.getProvider = () =>
@@ -731,17 +731,16 @@ describe('Prima.do', () => {
         calls++;
         if (calls === 1) {
           return {
-            toolExecutions: [{ toolName: 'verify', input: { assertion: 'unsaved indicator is visible' }, output: { success: false, action: 'verify', message: 'Verification failed' }, wasSuccessful: false }, toolExecution("I.click('Close')")],
+            toolExecutions: [{ toolName: 'verify', input: { assertion: 'debug panel is enabled' }, output: { success: false, action: 'verify', message: 'Verification failed' }, wasSuccessful: false }, toolExecution("I.click('Enable debug panel')")],
           };
         }
-        return { toolExecutions: [completedExecution([1, 2], 'the editor is closed')] };
+        return { toolExecutions: [completedExecution([1], 'the debug switch is on')] };
       });
 
-    const envelope = await prima.do(['confirm the unsaved indicator', 'close the editor']);
+    const envelope = await prima.do(['enable debug mode']);
 
-    expect(envelope.ok).toBe(false);
-    expect(envelope.failure?.error).toContain('unproven: unsaved indicator is visible');
-    expect(envelope.steps?.[0]).toMatchObject({ label: 'verify: unsaved indicator is visible', ok: false });
+    expect(envelope.ok).toBe(true);
+    expect(envelope.steps?.[0]).toMatchObject({ label: 'verify: debug panel is enabled', ok: false });
   });
 
   test('a check that passes on a retry does not fail the command', async () => {
