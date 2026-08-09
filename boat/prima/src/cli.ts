@@ -29,66 +29,58 @@ const helpContract = dedent`
     Coming down a tier to run steps one at a time costs more than the tier above, in
     both time and what you have to read - it is a fallback, not a default.
 
-  CHECK
-    Give it an outcome, not a click path - it decides how to get there.
-    --expected  one outcome the run must reach; repeat it for several. Without it the
-                scenario text is the single expected outcome. Each comes back under
-                ### Expected outcomes as PASSED, FAILED or not verified - "not verified"
-                means the run never checked it, which is not the same as false.
-    Page problems seen on the way are reported under ### Answer, not as step failures.
-
-  DO
-    Each instruction is numbered and accounted for: ### Steps reports every one as ok or
-    FAIL with what proved it. One that could not be carried out fails the command and
-    says why. Nothing runs past the last instruction you gave.
-
-  VERIFY
-    Reports each assertion it could express as PASSED or FAILED with its playwright form,
-    and gives no overall verdict - read the lines and decide. "none ran" means the claim
-    could not be expressed, which is not the same as false.
+    Also: ask, verify, research, go, status, browser. Run <command> --help for what
+    each of them reports.
 
   ENVELOPE
-    ### Result     ok, command, used
-    ### Page       url, title, state hash, visit count
-    ### Changes    what the accessibility tree gained, lost, toggled or had typed into it
-    ### Steps      per-instruction outcome of do, each with the change that proves it
-    ### Expected outcomes  each --expected of check, as PASSED, FAILED or not verified
-    ### Answer | ### Research | ### Assertions   output of ask, research, verify
-    ### Failure    error, compact ARIA of the page
-    ### Instance   the browser you are on and the other instances running
-    ### Artifacts  paths to the full aria.yml, page.html and network.jsonl
-    used: is code that already executed - CodeceptJS steps to copy as they are, except
-          for pw, whose Playwright expression a test needs inside I.usePlaywrightTo(...).
-    Log lines can precede the envelope; start parsing at the first ### line.
-
-  FAILURE
-    A failed action fails. Nothing is retried along a different route and no other
-    element is ever substituted for the one you asked for, so ok: true always means
-    your own action landed.
-    Failures print compact ARIA inline, so retarget from the envelope itself and open
-    the artifact files only when the inline snapshot is not enough.
+    ### Result ok/command/used · ### Page url/title/state · ### Changes what the
+    accessibility tree gained, lost, toggled or had typed · ### Steps per-instruction
+    outcome with its proof · ### Expected outcomes each --expected as PASSED, FAILED or
+    not verified · ### Answer|Research|Assertions · ### Failure error and compact ARIA ·
+    ### Instance · ### Artifacts. Start at the first ### line; logs can precede it.
+    used: is code that already executed. A failed action fails - nothing is retried along
+    a different route, so ok: true means your own action landed.
 
   SESSIONS
-    By default prima attaches to the playwright-cli browser of this workspace and works
-    on the tabs it already has open; driving the same session from both tools is the
-    intended usage.
-    playwright-cli open <url>  the session prima attaches to
-    --pw-session <title>       which playwright-cli session, when several are open
-    --endpoint <ep>            attach to a browser server endpoint directly
-    prima browser start        a prima-owned browser instead, when no session is open
-    --instance <name>          which prima-owned browser you talk to; parallel work
-                               needs one each
-    --session [file]           cookies and storage persisted across processes; ignored
-                               while attached, the attached session keeps its own
-    Prima never launches a browser implicitly and never closes an attached one - it
-    disconnects. browser list shows both kinds; ### Instance names the one you are on.
-    Every browser is reached over a Playwright browser-server endpoint, which needs the
-    Node build - run prima as "npx explorbot prima ..." or through the published prima
-    bin; from source under Bun the connection does not open.
-    When no AI model is usable pw still works; for everything else drive
-    playwright-cli directly.
-    Parsed but not active yet: --framework, so reported code is CodeceptJS whatever
-    you pass.
+    Prima attaches to the playwright-cli browser of this workspace and drives the tabs it
+    already has open; using the same session from both tools is the intended usage.
+      playwright-cli open <url>  the session prima attaches to
+      --pw-session <title>       which session, when several are open
+      prima browser start        a prima-owned browser instead, when none is open
+    Prima never launches a browser implicitly and never closes an attached one.
+    Run it as "npx explorbot prima ..." or through the published prima bin - the
+    browser-server connection needs the Node build.
+`;
+
+const checkHelp = dedent`
+  Give it an outcome, not a click path - it decides how to get there.
+  --expected  one outcome the run must reach; repeat it for several. Without it the
+              scenario text is the single expected outcome. Each comes back under
+              ### Expected outcomes as PASSED, FAILED or not verified - "not verified"
+              means the run never checked it, which is not the same as false.
+  Page problems seen on the way are reported under ### Answer, not as step failures.
+`;
+
+const doHelp = dedent`
+  Every instruction is numbered and accounted for: ### Steps reports each as ok or FAIL
+  with what proved it. One that could not be carried out fails the command and says why.
+  Nothing runs past the last instruction you gave.
+  Pass the whole remaining sequence in one call - that is what makes this tier cheap.
+`;
+
+const verifyHelp = dedent`
+  Reports each assertion it could express as PASSED or FAILED with its playwright form,
+  and gives no overall verdict - read the lines and decide. "none ran" means the claim
+  could not be expressed, which is not the same as false.
+`;
+
+const sessionHelp = dedent`
+  --endpoint <ep>    attach to a browser server endpoint directly, skipping discovery
+  --instance <name>  which prima-owned browser you talk to; parallel work needs one each
+  --session [file]   cookies and storage persisted across processes; ignored while
+                     attached, since the attached session keeps its own
+  --framework        parsed but not active yet; reported code is CodeceptJS either way
+  When no AI model is usable pw still works; for everything else drive playwright-cli.
 `;
 
 let rootOptions: () => any = () => ({});
@@ -134,7 +126,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')
     .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')
-    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
+    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to')
+    .addHelpText('after', `\n${sessionHelp}`);
 }
 
 function primaFor(options: any): Prima {
@@ -183,12 +176,15 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
   });
 
-  addCommonOptions(cmd.command('do <instructions...>').description('Run high-level instructions tester-style, one argument per instruction')).action(async (instructions, options) => {
-    await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
-  });
+  addCommonOptions(cmd.command('do <instructions...>').description('Run high-level instructions tester-style, one argument per instruction'))
+    .addHelpText('after', `\n${doHelp}`)
+    .action(async (instructions, options) => {
+      await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
+    });
 
   addCommonOptions(cmd.command('check <scenario>').description('Run a scenario end to end as a test, with its own verification, and report the steps it took'))
     .option('--expected <outcome>', 'An outcome the run must reach; repeat the flag for several', (value: string, all: string[]) => [...all, value], [])
+    .addHelpText('after', `\n${checkHelp}`)
     .action(async (scenario, options) => {
       await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
     });
@@ -197,9 +193,11 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
   });
 
-  addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page')).action(async (assertion, options) => {
-    await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
-  });
+  addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page'))
+    .addHelpText('after', `\n${verifyHelp}`)
+    .action(async (assertion, options) => {
+      await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
+    });
 
   addCommonOptions(
     cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again')
