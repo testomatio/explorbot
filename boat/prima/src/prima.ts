@@ -196,28 +196,7 @@ export class Prima {
       for (const execution of executions) {
         const output = execution.output || {};
 
-        if (output.action === 'completed') {
-          for (const number of execution.input?.numbers || []) {
-            const entry = ledger[number - 1];
-            if (entry?.status !== 'open') continue;
-            entry.status = 'done';
-            entry.proof = execution.input?.proof || '';
-            entry.evidence = [...evidence];
-          }
-          evidence.length = 0;
-          continue;
-        }
-
-        if (output.action === 'blocked') {
-          const entry = ledger[(execution.input?.instruction || 0) - 1];
-          if (entry?.status === 'open') {
-            entry.status = 'blocked';
-            entry.proof = execution.input?.reason || '';
-            entry.evidence = [...evidence];
-          }
-          evidence.length = 0;
-          continue;
-        }
+        if (this.applyLedgerReport(execution, ledger, evidence)) continue;
 
         if (output.action === 'verify' && !output.inexpressible) {
           const claim = execution.input?.assertion || 'verification';
@@ -245,6 +224,10 @@ export class Prima {
     }
 
     if (aiError) return this.failureEnvelope(command, aiError, previousState);
+
+    if (used.length && ledger.some((entry) => entry.status === 'open')) {
+      await this.settleLedger(conversation, provider, ledger, evidence);
+    }
 
     const steps = ledger.map((entry) => ({ label: entry.text, ok: entry.status === 'done', proof: [entry.proof || UNACCOUNTED[entry.status], ...entry.evidence].filter(Boolean).join('\n') }));
     const unfinished = ledger.filter((entry) => entry.status !== 'done');
@@ -282,6 +265,50 @@ export class Prima {
       .filter(({ entry }) => entry.status === 'open')
       .map(({ entry, number }) => `${number}. ${entry.text}`)
       .join('\n');
+  }
+
+  private applyLedgerReport(execution: any, ledger: LedgerEntry[], evidence: string[]): boolean {
+    const action = execution.output?.action;
+
+    if (action === 'completed') {
+      for (const number of execution.input?.numbers || []) {
+        const entry = ledger[number - 1];
+        if (entry?.status !== 'open') continue;
+        entry.status = 'done';
+        entry.proof = execution.input?.proof || '';
+        entry.evidence = [...evidence];
+      }
+      evidence.length = 0;
+      return true;
+    }
+
+    if (action !== 'blocked') return false;
+
+    const entry = ledger[(execution.input?.instruction || 0) - 1];
+    if (entry?.status === 'open') {
+      entry.status = 'blocked';
+      entry.proof = execution.input?.reason || '';
+      entry.evidence = [...evidence];
+    }
+    evidence.length = 0;
+    return true;
+  }
+
+  private async settleLedger(conversation: any, provider: any, ledger: LedgerEntry[], evidence: string[]): Promise<void> {
+    conversation.addUserText(dedent`
+      The run is over and these instructions were never reported:
+
+      ${this.openInstructions(ledger)}
+
+      Account for each one from what you actually did. completed() for the ones the page ended up showing were
+      carried out, blocked() for the ones it could not do. Report every one — nothing else runs after this.
+    `);
+
+    const invoked = await provider.invokeConversation(conversation, { completed: this.completedTool(), blocked: this.blockedTool() }, { maxToolRoundtrips: 2, toolChoice: 'required', agentName: AI_AGENT_NAME }).catch(() => null);
+
+    for (const execution of invoked?.toolExecutions || []) {
+      this.applyLedgerReport(execution, ledger, evidence);
+    }
   }
 
   private ledgerProgress(ledger: LedgerEntry[]): string {

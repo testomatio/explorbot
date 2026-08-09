@@ -523,7 +523,27 @@ describe('Prima.do', () => {
     const envelope = await prima.do(['open the invoices page']);
 
     expect(envelope.ok).toBe(false);
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
+  });
+
+  test('instructions left unreported are settled from what the run actually did', async () => {
+    const { prima } = fakePrima();
+    const prompts: string[] = [];
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async () => {
+        calls++;
+        if (calls === 1) return { toolExecutions: [toolExecution("I.click('Invoices')"), toolExecution("I.click('Download')")] };
+        if (calls === 2) return { toolExecutions: [], response: { text: 'Both done.' } };
+        if (calls === 3) return { toolExecutions: [], response: { text: 'Still both done.' } };
+        return { toolExecutions: [completedExecution([1, 2], 'the invoice list opened and the PDF downloaded')] };
+      }, prompts);
+
+    const envelope = await prima.do(['open the invoices page', 'download the PDF']);
+
+    expect(envelope.ok).toBe(true);
+    expect(prompts.join('\n')).toContain('The run is over and these instructions were never reported');
+    expect(envelope.steps?.every((step) => step.ok)).toBe(true);
   });
 
   test('an instruction the model never reported is named as unaccounted for', async () => {
@@ -559,16 +579,17 @@ describe('Prima.do', () => {
         return { toolExecutions: [toolExecution("I.click('Next')")] };
       });
 
+    // one extra call past each cap is the closing pass that asks for the unreported instructions
     await prima.do(['first step', 'second step']);
-    expect(calls).toBe(6);
+    expect(calls).toBe(6 + 1);
 
     calls = 0;
     await prima.do(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
-    expect(calls).toBe(16);
+    expect(calls).toBe(16 + 1);
 
     calls = 0;
     await prima.do(Array.from({ length: 20 }, (_, i) => `step ${i}`));
-    expect(calls).toBe(24);
+    expect(calls).toBe(24 + 1);
   });
 
   test('a failed tool execution fails the command instead of reaching for another element', async () => {
