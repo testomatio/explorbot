@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import { type Task, TestResult } from '../test-plan.js';
-import { LARGE_ARIA_CHANGE_THRESHOLD, extractFocusedElement } from '../utils/aria.ts';
+import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
@@ -299,15 +299,11 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           const focusFreeKeys = new Set(['Escape', 'Esc', 'Tab', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']);
           const needsFocus = !focusFreeKeys.has(keyToUse) && !modifier;
 
-          if (needsFocus) {
-            const currentAriaState = stateManager.getCurrentState()?.ariaSnapshot;
-            const focused = extractFocusedElement(currentAriaState ?? null);
-            if (!focused) {
-              activeNote.commit(TestResult.FAILED);
-              return failedToolResult('pressKey', `No element is focused. Key '${keyToUse}' requires a focused element.`, {
-                suggestion: 'Click the target element first, then press the key.',
-              });
-            }
+          if (needsFocus && !(await hasFocusedElement(explorer))) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('pressKey', `No element is focused. Key '${keyToUse}' requires a focused element.`, {
+              suggestion: 'Click the target element first, then press the key.',
+            });
           }
 
           const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
@@ -1124,6 +1120,10 @@ export async function commitNote(activeNote: any, result: TestResult, toolResult
     activeNote.screenshot = await action.saveScreenshot();
   }
   activeNote.commit(result);
+}
+
+async function hasFocusedElement(explorer: any): Promise<boolean> {
+  return explorer.withPage((page: any) => page.evaluate(() => !!document.activeElement && document.activeElement !== document.body)).catch(() => true);
 }
 
 export function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
