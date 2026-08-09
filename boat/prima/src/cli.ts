@@ -134,7 +134,7 @@ async function runBrowser(options: any, run: (prima: Prima) => Promise<boolean>)
 
 export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
-  cmd.description('Drive an already-open browser one command at a time and report back in a plain-text envelope');
+  cmd.description('Tests and drives a web app through described behaviour instead of locators: one command carries a whole scenario, verifies it, and reports the proof');
   cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
   cmd.option('--url <url>', 'Page to open when the session has no page yet');
   cmd.addHelpText('after', `\n${helpContract}`);
