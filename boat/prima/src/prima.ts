@@ -154,7 +154,6 @@ export class Prima {
     let narration = '';
     let nudged = false;
     let contextHash = this.bot.stateManager().getCurrentState()?.hash;
-    let openList = this.openInstructions(ledger);
 
     for (let iteration = 1; iteration <= Math.min(instructions.length * ITERATIONS_PER_INSTRUCTION + 2, MAX_INSTRUCTION_ITERATIONS); iteration++) {
       const state = this.bot.stateManager().getCurrentState();
@@ -163,10 +162,8 @@ export class Prima {
         conversation.addUserText(await this.pageContext(ActionResult.fromState(state)));
       }
 
-      const remaining = this.openInstructions(ledger);
-      if (iteration > 1 && remaining !== openList) {
-        openList = remaining;
-        conversation.addUserText(`<remaining>\n${remaining}\n</remaining>`);
+      if (iteration > 1) {
+        conversation.addUserText(`<remaining>\n${this.openInstructions(ledger)}\n</remaining>`);
       }
 
       const invoked = await provider.invokeConversation(conversation, tools, { maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS, agentName: AI_AGENT_NAME }).catch((error: unknown) => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { Tester } from '../../src/ai/tester.ts';
 import { renderExperienceToc } from '../../src/experience-tracker.ts';
-import { Test } from '../../src/test-plan.ts';
+import { Test, TestResult } from '../../src/test-plan.ts';
 
 function buildTester(): Tester {
   const provider: any = {
@@ -171,5 +171,29 @@ describe('Tester stalled execution', () => {
     expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(true);
     expect(task.hasFinished).toBe(false);
     expect(task.result).toBe(null);
+  });
+});
+
+describe('Tester verdict', () => {
+  it('passes a test whose expectations were all achieved, instead of leaving it without a result', () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', ['filtered items appear', 'the count updates'], '/page');
+    task.addNote('filtered items appear', TestResult.PASSED);
+    task.addNote('the count updates', TestResult.PASSED);
+
+    (tester as any).finishTest(task);
+
+    expect(task.result).toBe(TestResult.PASSED);
+    expect(task.isSuccessful).toBe(true);
+  });
+
+  it('fails a test that stopped without achieving every expectation', () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', ['filtered items appear', 'the count updates'], '/page');
+    task.addNote('filtered items appear', TestResult.PASSED);
+
+    (tester as any).finishTest(task);
+
+    expect(task.result).toBe(TestResult.FAILED);
   });
 });

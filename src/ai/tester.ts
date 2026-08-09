@@ -639,19 +639,20 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private finishTest(task: Test): void {
-    if (!task.hasFinished) {
-      task.finish(TestResult.FAILED);
+    if (!task.result) {
+      if (task.hasAchievedAll()) task.finish(TestResult.PASSED);
+      else task.finish(TestResult.FAILED);
     }
 
     if (task.isSuccessful) {
       tag('success').log(`Successful test: ${task.scenario}`);
-    } else if (task.isSkipped) {
-      tag('warning').log(`Skipped test: ${task.scenario}`);
-    } else if (task.hasFailed) {
-      tag('error').log(`Failed test: ${task.scenario}`);
-    } else {
-      tag('warning').log(`Test with no result: ${task.scenario}`);
+      return;
     }
+    if (task.isSkipped) {
+      tag('warning').log(`Skipped test: ${task.scenario}`);
+      return;
+    }
+    tag('error').log(`Failed test: ${task.scenario}`);
   }
 
   private async abortStartedTestOnErrorPage(task: Test, actionResult: ActionResult): Promise<{ success: boolean }> {
