@@ -203,7 +203,7 @@ export class Prima {
       return envelope;
     }
 
-    if (!used.length) {
+    if (!used.length && !report.called) {
       const reason = ['No action was performed for these instructions on the current page.', narration].filter(Boolean).join(' ');
       return this.failureEnvelope(command, reason, previousState);
     }

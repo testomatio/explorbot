@@ -577,6 +577,20 @@ describe('Prima.do', () => {
     expect(envelope.steps?.[0]).toMatchObject({ label: 'verify: unsaved indicator is visible', ok: false });
   });
 
+  test('an instruction satisfied without acting still succeeds when the model closes the sequence', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async (_conversation: unknown, tools: any) => {
+        await tools.done.execute({ summary: 'no cookie banner is present on this page', unmet: [] });
+        return { toolExecutions: [{ toolName: 'done', input: {}, output: { success: true, action: 'done' }, wasSuccessful: true }] };
+      });
+
+    const envelope = await prima.do(['dismiss the cookie banner if one appeared']);
+
+    expect(envelope.ok).toBe(true);
+    expect(envelope.answer).toBe('no cookie banner is present on this page');
+  });
+
   test('a check that passes on a retry does not fail the command', async () => {
     const { prima } = fakePrima();
     let calls = 0;
