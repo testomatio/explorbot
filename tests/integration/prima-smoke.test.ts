@@ -127,13 +127,27 @@ describe('Prima drives a real page', () => {
     expect(envelope.page.url).toContain('note=the+hinge+arrived+bent');
   });
 
-  test('pw writes the aria and html artifacts to disk', async () => {
+  test('an action reports a status hash instead of artifact paths, and status resolves it', async () => {
     const envelope = await prima.pw("({ page }) => page.click('text=Submit')");
 
-    expect(existsSync(envelope.artifacts!.aria)).toBe(true);
-    expect(existsSync(envelope.artifacts!.html)).toBe(true);
-    expect(await Bun.file(envelope.artifacts!.aria).text()).toContain('Thanks for the note');
-    expect(await Bun.file(envelope.artifacts!.html).text()).toContain('Thanks for the note');
+    expect(envelope.status).toMatch(/^[0-9a-f]{15}$/);
+    expect(envelope.artifacts).toBeUndefined();
+    expect(renderEnvelope(envelope)).toContain(`prima status ${envelope.status}`);
+
+    const status = await prima.status(envelope.status!);
+
+    expect(status.ok).toBe(true);
+    expect(existsSync(status.artifacts!.aria)).toBe(true);
+    expect(existsSync(status.artifacts!.html)).toBe(true);
+    expect(await Bun.file(status.artifacts!.aria).text()).toContain('Thanks for the note');
+    expect(await Bun.file(status.artifacts!.html).text()).toContain('Thanks for the note');
+  });
+
+  test('status on an unknown hash is a tool error, not a crash', async () => {
+    const envelope = await prima.status('000000000000000');
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('No command was recorded');
   });
 
   test('a non-function argument is a tool error and leaves the page alone', async () => {

@@ -79,14 +79,20 @@ const debugFilter = new DebugFilter();
 class ConsoleDestination implements LogDestination {
   private verboseMode = false;
   private forceEnabled = false;
+  private quiet = false;
   private recentSteps = new RecentStepFilter();
 
   isEnabled(): boolean {
+    if (this.quiet) return false;
     return this.forceEnabled || !process.env.INK_RUNNING;
   }
 
   forceEnable(enabled: boolean): void {
     this.forceEnabled = enabled;
+  }
+
+  setQuiet(enabled: boolean): void {
+    this.quiet = enabled;
   }
 
   setVerboseMode(enabled: boolean): void {
@@ -360,6 +366,10 @@ class Logger {
     this.console.forceEnable(enabled);
   }
 
+  setQuietMode(enabled: boolean): void {
+    this.console.setQuiet(enabled);
+  }
+
   isVerboseMode(): boolean {
     return this.debugDestination.isEnabled();
   }
@@ -537,6 +547,7 @@ export const startLogCapture = () => logger.captain.startCapture();
 export const stopLogCapture = () => logger.captain.stopCapture();
 export const setVerboseMode = (enabled: boolean) => logger.setVerboseMode(enabled);
 export const setPreserveConsoleLogs = (enabled: boolean) => logger.setPreserveConsoleLogs(enabled);
+export const setQuietMode = (enabled: boolean) => logger.setQuietMode(enabled);
 export const isVerboseMode = () => logger.isVerboseMode();
 export const setDebugMode = (enabled: boolean) => logger.setDebugMode(enabled);
 export const isDebugMode = () => logger.isDebugMode();

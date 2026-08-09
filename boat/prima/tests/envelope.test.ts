@@ -17,14 +17,15 @@ const base: EnvelopeData = {
 describe('renderEnvelope', () => {
   test('success envelope contains all sections in order', () => {
     const out = renderEnvelope(base);
-    const sections = ['### Result', '### Page', '### Changes', '### Instance', '### Artifacts'];
+    const sections = ['### Result', '### Page', '### Changes', '### Instance'];
     const positions = sections.map((s) => out.indexOf(s));
     expect(positions.every((p) => p >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
     expect(out).toContain('ok: true');
     expect(out).toContain("used: I.click('Login')");
     expect(out).toContain('(changed: https://app.example.com/login → https://app.example.com/dashboard)');
-    expect(out).toContain('instance: default (3 tabs) | other instances: auth-test (1 tab)');
+    expect(out).toContain('default (3 tabs)');
+    expect(out).toContain('other instances: auth-test (1 tab)');
   });
 
   test('unchanged url renders without changed marker', () => {
@@ -63,49 +64,106 @@ describe('renderEnvelope', () => {
     expect(out).not.toContain('### Answer');
   });
 
-  test('verdict replaces changes for verify', () => {
-    const out = renderEnvelope({ ...base, changes: undefined, verdict: { passed: true, evidence: 'heading "Dashboard" present', code: "I.see('Dashboard')" } });
-    expect(out).toContain('### Verdict');
-    expect(out).toContain('passed: true');
-    expect(out).toContain("I.see('Dashboard')");
+  test('assertions render one line per check with its own result, and no overall verdict', () => {
+    const out = renderEnvelope({
+      ...base,
+      changes: undefined,
+      assertions: [
+        { code: "I.see('Dashboard')", passed: true, proof: ['await expect(page).toContainText("Dashboard");'] },
+        { code: "I.seeElement('.chart')", passed: false, proof: [] },
+      ],
+    });
+
+    expect(out).toContain('### Assertions');
+    expect(out).toContain("I.see('Dashboard')  => PASSED");
+    expect(out).toContain("I.seeElement('.chart')  => FAILED");
+    expect(out).toContain('playwright:');
+    expect(out).toContain('await expect(page).toContainText("Dashboard");');
+    expect(out).not.toContain('passed: ');
+  });
+
+  test('a multi-line assertion gets one result, not one per line', () => {
+    const out = renderEnvelope({
+      ...base,
+      changes: undefined,
+      assertions: [{ code: '// check the box\nI.seeElement({\n  role: "button",\n  text: "Submit"\n});', passed: false, proof: [] }],
+    });
+
+    expect(out).toContain('I.seeElement({ role: "button", text: "Submit" });  => FAILED');
+    expect(out.match(/=> FAILED/g)).toHaveLength(1);
+    expect(out).not.toContain('// check the box');
+  });
+
+  test('no expressible assertion is stated as such, not as a failure', () => {
+    const out = renderEnvelope({ ...base, changes: undefined, assertions: [] });
+    expect(out).toContain('none ran');
+    expect(out).not.toContain('FAILED');
   });
 
   test('changes render on every action envelope, including when nothing moved', () => {
     expect(renderEnvelope({ ...base, changes: 'no change' })).toContain('### Changes\nno change');
   });
 
-  test('changes render alongside a verdict rather than replacing it', () => {
-    const out = renderEnvelope({ ...base, changes: 'no change', verdict: { passed: true, evidence: 'I.seeElement()', code: 'I.seeElement()' } });
+  test('changes render alongside assertions rather than replacing them', () => {
+    const out = renderEnvelope({ ...base, changes: 'no change', assertions: [{ code: 'I.seeElement()', passed: true, proof: [] }] });
     expect(out).toContain('### Changes');
-    expect(out).toContain('### Verdict');
+    expect(out).toContain('### Assertions');
   });
 
-  test('steps report per-instruction proof and name what stayed unproven', () => {
+  test('steps report every action and check in order, with its proof', () => {
     const out = renderEnvelope({
       ...base,
       steps: [
-        { instruction: 'open the account menu', proof: 'added menu "Account"' },
-        { instruction: 'choose the settings entry', proof: null },
+        { label: "I.click('Add workflow')", ok: true, proof: 'ariaDiff:\n  added:\n    - textbox "Title"' },
+        { label: 'I.seeAttributesOnElements({"role":"button"}, { disabled: true })', ok: true, proof: 'await expect(page.getByRole("button")).toBeDisabled();' },
+        { label: "I.fillField('Title', 'x')", ok: false, proof: 'element not found' },
       ],
     });
-    expect(out).toContain('1. open the account menu — proven by added menu "Account"');
-    expect(out).toContain('2. choose the settings entry — unproven');
+
+    expect(out).toContain("1. ok   I.click('Add workflow')");
+    expect(out).toContain('2. ok   I.seeAttributesOnElements');
+    expect(out).toContain("3. FAIL I.fillField('Title', 'x')");
+    expect(out).toContain('      element not found');
+    expect(out).toContain('      await expect(page.getByRole("button")).toBeDisabled();');
+  });
+
+  test('every expected outcome is echoed with its own result, including the ones nothing checked', () => {
+    const out = renderEnvelope({
+      ...base,
+      changes: undefined,
+      expectations: [
+        { text: 'the editor opens', status: 'passed' },
+        { text: 'the draft is saved', status: 'failed' },
+        { text: 'the list refreshes', status: 'unverified' },
+      ],
+    });
+
+    expect(out).toContain('### Expected outcomes');
+    expect(out).toContain('1. PASSED       the editor opens');
+    expect(out).toContain('2. FAILED       the draft is saved');
+    expect(out).toContain('3. not verified the list refreshes');
   });
 
   test('attached instance renders attached browser line', () => {
     const out = renderEnvelope({ ...base, instance: { ...base.instance, attached: 'playwright-cli session "default", workspace /w' } });
-    expect(out).toContain('browser: attached (playwright-cli session "default"');
+    expect(out).toContain('attached to playwright-cli session "default"');
     expect(out).not.toContain('started 12m ago');
   });
 
   test('instance without evidence of a live browser reports it as not running', () => {
     const out = renderEnvelope({ ...base, instance: { name: 'default', tabs: 0, others: [] } });
-    expect(out).toContain('browser: not running');
+    expect(out).toContain('not running');
+  });
+
+  test('the status hash is offered as the way to reach details', () => {
+    const out = renderEnvelope({ ...base, status: 'abc123def456789', artifacts: undefined });
+    expect(out).toContain('details: prima status abc123def456789');
+    expect(out).not.toContain('### Artifacts');
   });
 
   test('open tabs alone are evidence enough for a running browser', () => {
     const out = renderEnvelope({ ...base, instance: { name: 'default', tabs: 2, others: [] } });
-    expect(out).toContain('browser: running');
+    expect(out).toContain('| running');
     expect(out).not.toContain('browser: not running');
   });
 });

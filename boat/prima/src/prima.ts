@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { tool } from 'ai';
@@ -7,28 +9,53 @@ import * as playwright from 'playwright';
 import type { Browser } from 'playwright';
 import { ActionResult } from '../../../src/action-result.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
-import { createCodeceptJSTools } from '../../../src/ai/tools.ts';
+import { createAgentTools, createCodeceptJSTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
 import { ConfigMissingError, ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
-import { Task } from '../../../src/test-plan.ts';
+import { Task, Test, TestResult } from '../../../src/test-plan.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
+import { mdq } from '../../../src/utils/markdown-query.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { type EnvelopeData, type InstanceInfo, writeArtifacts } from './envelope.ts';
-import { isFunctionExpression, toCodeceptWrapper } from './pw-parser.ts';
-import { createRefTools } from './tools.ts';
+import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 
-const MAX_INSTRUCTION_ITERATIONS = 6;
+const TESTER_ONLY_TOOLS = ['learnExperience', 'askUser'];
+const ITERATIONS_PER_INSTRUCTION = 2;
+const MAX_INSTRUCTION_ITERATIONS = 24;
 const DEFAULT_RESEARCH_AFTER_VISITS = 3;
 const CONTEXT_HTML_CAP = 6000;
 const MAX_TOOL_ROUNDTRIPS = 5;
 const AI_AGENT_NAME = 'prima';
 const CONNECT_TIMEOUT = 3000;
 const requireLib = createRequire(import.meta.url);
+
+const VOLATILE_COLUMNS = ['CSS', 'XPath', 'Coordinates', 'eidx'];
+
+function dropVolatileColumns(markdown: string): string {
+  return mdq(markdown)
+    .query('table')
+    .replaceEach((table) => {
+      const rows = table.toJson();
+      if (!rows.length) return table.text();
+
+      const columns = Object.keys(rows[0]).filter((name) => !VOLATILE_COLUMNS.includes(name));
+      if (!columns.length) return table.text();
+
+      const header = `| ${columns.join(' | ')} |`;
+      const divider = `|${columns.map(() => '------').join('|')}|`;
+      const body = rows.map((row) => `| ${columns.map((name) => row[name] || '-').join(' | ')} |`);
+      return [header, divider, ...body, ''].join('\n');
+    });
+}
+
+function stripRefs(tree: string): string {
+  return tree.replace(/\s*\[ref=[^\]]+\]/g, '');
+}
 
 function cap(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -39,6 +66,7 @@ export class Prima {
   private options: PrimaOptions;
   private bot: ExplorBot;
   private artifactsDir?: string;
+  private hash?: string;
   private server: { close: () => Promise<void> } | null = null;
   private attached: string | null = null;
 
@@ -77,11 +105,13 @@ export class Prima {
 
     const previousState = await this.baselineState();
     let result: ActionResult | null = null;
+    let returnedValue: unknown;
     let executionError: unknown = null;
 
     try {
       const executed = await this.bot.getExplorer().action().execute(toCodeceptWrapper(expression), { verbatim: true });
       result = executed.actionResult;
+      returnedValue = executed.lastValue;
     } catch (error) {
       executionError = error;
     }
@@ -89,7 +119,9 @@ export class Prima {
     if (executionError) return this.failureEnvelope(command, executionError, previousState);
 
     result ||= await this.capturedResult(previousState);
-    return this.successEnvelope(command, [expression], result, previousState);
+    const envelope = await this.successEnvelope(command, [expression], result, previousState);
+    envelope.value = takePwValue(returnedValue);
+    return envelope;
   }
 
   async do(instructions: string[], label?: string): Promise<EnvelopeData> {
@@ -102,16 +134,19 @@ export class Prima {
     const conversation = provider.startConversation(this.instructionSystemPrompt(), AI_AGENT_NAME);
     const task = new Task(instructions.join('; '), previousState?.url || '');
     const deps = { explorer: this.bot.getExplorer(), stateManager: this.bot.stateManager(), ai: provider };
-    const tools = { ...createCodeceptJSTools(deps, task), ...createRefTools(deps, task), context: this.contextTool() };
+    const report: { called: boolean; summary: string; unmet: string[] } = { called: false, summary: '', unmet: [] };
+    const tools = { ...createCodeceptJSTools(deps, task), ...this.testerTools(deps), context: this.contextTool(), done: this.doneTool(report) };
     conversation.addUserText(await this.instructionPrompt(instructions, await this.capturedResult(previousState)));
 
     const used: string[] = [];
+    const checks = new Map<string, boolean>();
+    const steps: Array<{ label: string; ok: boolean; proof: string }> = [];
     let failure: { code: string; message: string } | null = null;
     let aiError: unknown = null;
     let narration = '';
     let contextHash = this.bot.stateManager().getCurrentState()?.hash;
 
-    for (let iteration = 1; iteration <= Math.min(instructions.length + 2, MAX_INSTRUCTION_ITERATIONS); iteration++) {
+    for (let iteration = 1; iteration <= Math.min(instructions.length * ITERATIONS_PER_INSTRUCTION + 2, MAX_INSTRUCTION_ITERATIONS); iteration++) {
       const state = this.bot.stateManager().getCurrentState();
       if (iteration > 1 && state && state.hash !== contextHash) {
         contextHash = state.hash;
@@ -131,13 +166,32 @@ export class Prima {
       }
 
       for (const execution of executions) {
-        if (!execution.wasSuccessful) {
-          failure = { code: execution.output?.code || '', message: execution.output?.message || 'action failed' };
+        const output = execution.output || {};
+
+        if (output.action === 'done') continue;
+
+        if (output.action === 'verify' && !output.inexpressible) {
+          const claim = execution.input?.assertion || 'verification';
+          let passed = execution.wasSuccessful;
+          if (output.alreadyVerified) passed = output.verifications?.[claim] === true;
+          checks.set(claim, passed);
+          steps.push({ label: `verify: ${claim}`, ok: passed, proof: output.code || output.message || '' });
           continue;
         }
-        used.push(...this.executedCodes(execution.output?.code));
+
+        if (!execution.wasSuccessful) {
+          failure = { code: output.code || '', message: output.message || 'action failed' };
+          steps.push({ label: output.code || execution.toolName || 'action', ok: false, proof: output.message || '' });
+          continue;
+        }
+
+        const codes = this.executedCodes(output.code);
+        used.push(...codes);
+        steps.push({ label: codes.join('; ') || execution.toolName || 'action', ok: true, proof: output.pageDiff?.ariaChanges || '' });
         failure = null;
       }
+
+      if (report.called) break;
     }
 
     if (aiError) return this.failureEnvelope(command, aiError, previousState);
@@ -145,6 +199,7 @@ export class Prima {
     if (failure) {
       const envelope = await this.failureEnvelope(command, failure.message, previousState);
       envelope.used = used;
+      envelope.steps = steps;
       return envelope;
     }
 
@@ -154,15 +209,47 @@ export class Prima {
     }
 
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
-    return this.successEnvelope(command, used, result, previousState);
+    const envelope = await this.successEnvelope(command, used, result, previousState);
+    envelope.steps = steps;
+    if (report.summary) envelope.answer = report.summary;
+
+    const unmet = [...report.unmet];
+    for (const [claim, passed] of checks) {
+      if (!passed) unmet.push(`unproven: ${claim}`);
+    }
+    if (unmet.length) {
+      envelope.ok = false;
+      envelope.failure = { error: unmet.join('\n') };
+    }
+    return envelope;
   }
 
-  async click(target: string): Promise<EnvelopeData> {
-    return this.do([`click ${target}`], `click ${target}`);
-  }
+  async check(scenario: string, expected: string[] = []): Promise<EnvelopeData> {
+    const command = `check ${scenario}`;
+    const guard = await this.aiGuard(command);
+    if (guard) return guard;
 
-  async fill(field: string, value: string): Promise<EnvelopeData> {
-    return this.do([`fill ${field} with value: ${value}`], `fill ${field} ${value}`);
+    const previousState = await this.baselineState();
+    const outcomes = expected.length ? expected : [scenario];
+    const test = new Test(scenario, 'normal', outcomes, previousState?.url || this.options.url || '');
+    const tester = this.bot.agentTester();
+
+    const outcome = await tester.test(test);
+
+    const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
+    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+    const envelope = await this.reportEnvelope(command, result, previousState, { ok: outcome.success });
+    envelope.steps = notes.filter((note) => !note.observation).map((note) => ({ label: note.message, ok: note.status !== TestResult.FAILED, proof: note.log || '' }));
+    envelope.expectations = outcomes.map((text) => {
+      const checked = notes.findLast((note) => note.message === text && !!note.status);
+      if (checked?.status === TestResult.PASSED) return { text, status: 'passed' as const };
+      if (checked?.status === TestResult.FAILED) return { text, status: 'failed' as const };
+      return { text, status: 'unverified' as const };
+    });
+
+    const observations = notes.filter((note) => note.observation).map((note) => note.message);
+    if (observations.length) envelope.answer = ['Page problems noticed while running, not step failures:', ...observations.map((line) => `- ${line}`)].join('\n');
+    return envelope;
   }
 
   async ask(question: string): Promise<EnvelopeData> {
@@ -183,13 +270,7 @@ export class Prima {
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
     const verification = await this.bot.agentNavigator().verifyState(assertion, result);
-    const codes = verification.successfulCodes || [];
-    if (verification.inexpressible) {
-      return this.reportEnvelope(command, result, previousState, { ok: false, verdict: { passed: false, evidence: 'not checked: no assertion can express this claim, so this is not a statement about the page', code: '' } });
-    }
-
-    const verdict = { passed: verification.verified, evidence: this.verdictEvidence(verification.verified, codes), code: codes.join('\n') };
-    return this.reportEnvelope(command, result, previousState, { ok: verification.verified, verdict });
+    return this.reportEnvelope(command, result, previousState, { assertions: verification.results || [] });
   }
 
   async research(opts: { data?: boolean; deep?: boolean; fresh?: boolean } = {}): Promise<EnvelopeData> {
@@ -201,7 +282,7 @@ export class Prima {
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
     const uiMap = await this.bot.agentResearcher().research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
-    return this.reportEnvelope(command, result, previousState, { research: uiMap });
+    return this.reportEnvelope(command, result, previousState, { research: dropVolatileColumns(uiMap) });
   }
 
   async go(target: string): Promise<EnvelopeData> {
@@ -465,26 +546,31 @@ export class Prima {
       2. Interact with the page only through the provided tools.
       3. Pick the smallest interaction that fulfills an instruction, then move to the next one.
       4. After the page changes, work from the updated context you are given, not from the earlier one.
-      5. Stop calling tools when every instruction is done, or when an instruction cannot be performed on this page — say what is missing instead.
+      5. Call done() once the last instruction is carried out, or once it is clear it cannot be on this page — list the ones you could not carry out there.
       </approach>
 
       <scope>
       Do only what the instructions ask. An action that looks helpful but was not asked for is out of scope — report it as something you noticed, never perform it.
       Continuing past the last instruction is a failure, even when the next step seems obvious.
+      An instruction worded as a condition — do X if Y appears — is satisfied the moment you can see Y is absent. Say so and move on. Never search for something the page does not show.
       </scope>
+
+      <pace>
+      Work in as few turns as you can. When the next actions are already determined by what you can see, ask for them together in one turn rather than one at a time — each turn costs a full round trip.
+      Only stop to look again when what you find changes what you would do next.
+      A batch may not run past an instruction that inspects the page — settle that one first, because the actions after it destroy the state it would have read.
+      </pace>
 
       <proof>
       An instruction is done only when a change on the page shows it. After each action read the reported change and decide which part of it proves the instruction.
       When nothing observable followed, say the instruction is unproven and why. Do not restate the action as if it were the outcome.
       </proof>
 
-      <refs>
-      Page context lists refs for the elements you can act on. When your target has one, act on it with the ref tools rather than composing a locator — the ref names that exact element.
-      Fall back to the locator tools only for a target the context describes without a ref.
-      Refs belong to the context they came in. Once new context arrives the earlier refs are dead — use only the ones in the newest context you were given.
-      When a ref no longer resolves, or the element an instruction needs is missing from your newest context, call context() to look again and act on what it returns.
-      Never adapt a ref from an earlier context, invent one, or fall back to a locator you guessed.
-      </refs>
+      <targets>
+      The page context lists every element by role and name. Target what you act on that way — a role with its name is stable while the page re-renders, so it keeps working after your own actions change the page.
+      Narrow with the container it sits in when a name appears more than once, rather than guessing at an id or a class.
+      When the element an instruction needs is missing from your newest context, call context() to look again and act on what it returns. Never invent a locator the context does not support.
+      </targets>
 
       ${locatorRule}
 
@@ -501,6 +587,35 @@ export class Prima {
 
       ${await this.pageContext(result)}
     `;
+  }
+
+  private testerTools(deps: any): any {
+    const researcher = this.bot.agentResearcher?.();
+    const navigator = this.bot.agentNavigator?.();
+    if (!researcher || !navigator) return {};
+
+    const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
+    for (const name of TESTER_ONLY_TOOLS) delete tools[name];
+    return tools;
+  }
+
+  private doneTool(report: { called: boolean; summary: string; unmet: string[] }): any {
+    return tool({
+      description: dedent`
+        End the sequence. Call it once every instruction is either carried out or established as impossible on this page.
+        Nothing runs after this call, so do not call it while an instruction is still worth another attempt.
+      `,
+      inputSchema: z.object({
+        summary: z.string().describe('One sentence on what the page shows now that proves the instructions were carried out'),
+        unmet: z.array(z.string()).describe('Instructions that could not be carried out, each with what blocked it. Empty when all of them were carried out.'),
+      }),
+      execute: async ({ summary, unmet }) => {
+        report.called = true;
+        report.summary = summary;
+        report.unmet = unmet || [];
+        return { success: true, action: 'done' };
+      },
+    });
   }
 
   private contextTool(): any {
@@ -541,7 +656,7 @@ export class Prima {
 
     return dedent`
       <page url="${result.url}" title="${result.title}">
-      ${compactAriaSnapshot(await this.refAriaSnapshot(result), true)}
+      ${stripRefs(compactAriaSnapshot(await this.refAriaSnapshot(result), true, (value) => this.offloadValue(value)))}
       </page>
 
       ${experience}
@@ -557,6 +672,18 @@ export class Prima {
     const configured = this.bot.getConfig?.()?.ai?.agents?.prima?.researchAfterVisits;
     if (typeof configured === 'number') return configured;
     return DEFAULT_RESEARCH_AFTER_VISITS;
+  }
+
+  private offloadValue(value: string): string | undefined {
+    const dir = this.statusDir();
+    const name = `value-${createHash('sha1').update(value).digest('hex').slice(0, 8)}.txt`;
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, name), value, 'utf-8');
+    } catch {
+      return undefined;
+    }
+    return path.join(path.basename(dir), name);
   }
 
   private async refAriaSnapshot(result: ActionResult): Promise<string | null> {
@@ -617,12 +744,6 @@ export class Prima {
     return response?.text || '';
   }
 
-  private verdictEvidence(verified: boolean, codes: string[]): string {
-    if (!verified) return 'no assertion held on the current page';
-    if (!codes.length) return 'already verified on this page';
-    return `${codes[0]} passed`;
-  }
-
   private async successEnvelope(command: string, used: string[], result: ActionResult, previousState: WebPageState | null): Promise<EnvelopeData> {
     return {
       ok: true,
@@ -631,7 +752,7 @@ export class Prima {
       page: this.pageBlock(result, previousState),
       changes: await this.pageChanges(result, previousState, used[0]),
       instance: await this.instanceInfo(),
-      artifacts: await this.writeSnapshot(result),
+      status: await this.saveStatus(result),
     };
   }
 
@@ -646,7 +767,7 @@ export class Prima {
       page: this.pageBlock(result, previousState),
       failure,
       instance: await this.instanceInfo(),
-      artifacts: await this.writeSnapshot(result),
+      status: await this.saveStatus(result),
     };
   }
 
@@ -657,7 +778,7 @@ export class Prima {
       page: this.pageBlock(result, previousState),
       ...outcome,
       instance: await this.instanceInfo(),
-      artifacts: await this.writeSnapshot(result),
+      status: await this.saveStatus(result),
     };
   }
 
@@ -696,17 +817,49 @@ export class Prima {
     return toolResult.pageDiff?.ariaChanges || 'no change';
   }
 
-  private async writeSnapshot(result: ActionResult): Promise<EnvelopeData['artifacts']> {
-    return writeArtifacts(this.nextArtifactDir(), {
+  async status(hash: string): Promise<EnvelopeData> {
+    const dir = this.statusDir(hash);
+    const statusFile = path.join(dir, 'status.json');
+    if (!existsSync(statusFile)) return this.toolFailureEnvelope(`status ${hash}`, `No command was recorded under ${hash}. Every envelope prints its own hash on the Instance line.`);
+
+    const saved = JSON.parse(readFileSync(statusFile, 'utf-8'));
+    return {
+      ok: true,
+      command: `status ${hash}`,
+      page: saved.page,
+      changes: saved.changes,
+      instance: await this.instanceInfo(),
+      artifacts: { aria: path.join(dir, 'aria.yml'), html: path.join(dir, 'page.html') },
+    };
+  }
+
+  private async saveStatus(result: ActionResult): Promise<string> {
+    const hash = this.statusHash();
+    await this.writeSnapshot(result);
+    writeFileSync(path.join(this.statusDir(hash), 'status.json'), JSON.stringify({ page: this.pageBlock(result, null), changes: compactAriaSnapshot(result.ariaSnapshot, true) }), 'utf-8');
+    return hash;
+  }
+
+  private async writeSnapshot(result: ActionResult): Promise<undefined> {
+    writeArtifacts(this.statusDir(), {
       aria: result.ariaSnapshot,
       html: await result.combinedHtml(),
       requests: this.bot.requestStore().getRequests(),
     });
+    return undefined;
   }
 
-  private nextArtifactDir(): string {
+  private statusHash(): string {
+    this.hash ||= createHash('sha1')
+      .update(`${this.options.path || process.cwd()}-${Date.now()}`)
+      .digest('hex')
+      .slice(0, 15);
+    return this.hash;
+  }
+
+  private statusDir(hash = this.statusHash()): string {
     this.artifactsDir ||= outputPath('prima');
-    return path.join(this.artifactsDir, new Date().toISOString().replace(/[:.]/g, '-'));
+    return path.join(this.artifactsDir, hash);
   }
 
   private tabCount(): number {

@@ -32,6 +32,7 @@ class Action {
   public playwrightHelper: any;
   public playwrightGroupId: string | null = null;
   public assertionSteps: Array<{ name: string; args: any[] }> = [];
+  public lastValue: unknown;
   private recorder?: PlaywrightRecorder;
   private recovery: RecoveryRunner;
   private mainDocumentStatus: number | undefined = undefined;
@@ -302,9 +303,10 @@ class Action {
         await playwrightSandbox(page, sanitizedCode);
         await sleep(this.config.action?.delay || 500);
       } else {
-        codeceptJSSandbox(this.actor, sanitizedCode);
+        const returned = codeceptJSSandbox(this.actor, sanitizedCode);
         await recorder.add(() => sleep(this.config.action?.delay || 500));
         await recorder.promise();
+        this.lastValue = await returned;
       }
 
       if (executedSteps.length > 0) {

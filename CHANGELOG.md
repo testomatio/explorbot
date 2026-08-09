@@ -1,20 +1,79 @@
 # Changelog
 
+## 2026-08-09
+
+### `prima check` runs a whole scenario and reports what it proved
+
+`prima check` takes a behaviour, not a click path, and runs it the way a tester would: it drives
+the page, verifies the outcome itself, and reports every step with the proof for each. Use it when
+you want a verdict; use `prima do` when you already know the steps.
+
+```bash
+prima check "a workflow can be created and appears in the list" --url http://app.test
+prima check "signup rejects a duplicate email" \
+  --expected "an error names the email as taken" \
+  --expected "no second account is created"
+```
+
+- **`--expected <outcome>`** — an outcome the run must reach; repeat the flag for several. Without
+  it the scenario text is the single expected outcome. Each one comes back under
+  `### Expected outcomes` as `PASSED`, `FAILED` or `not verified` — "not verified" means the run
+  never checked it, which is not the same as false.
+- **`--url <url>`** — open that page before starting, when the browser is not already on it.
+
+### `prima status <hash>` reopens an earlier command
+
+Every envelope prints a hash on its `### Instance` line. `prima status <hash>` returns the page
+detail and artifact paths recorded for that command, so envelopes stay short and the full ARIA
+tree, HTML and network log are one command away instead of inline.
+
+```bash
+prima status 66800d6d2c8c553
+```
+
+### Changes
+
+- [Prima] `do` now ends at the last step you gave it. It used to keep acting after the sequence
+  was finished, and could report success while a step it was asked to check never held. A step it
+  could not carry out is named under `### Failure` and fails the command.
+- [Prima] `do` carries the same tools a test run does, so a single call can act, look and assert
+  across a long sequence rather than being split into one command per step.
+- [Prima] `pw` returns the value of the expression under `### Value`. A `page.title()` or
+  `locator.count()` used to run and have its answer thrown away.
+- [Prima] `verify` lists every assertion it ran with its own `PASSED` or `FAILED`, plus the
+  Playwright form of the ones that held, and gives no overall verdict — read the lines and decide.
+- [Prima] Research output drops CSS selectors, XPaths and coordinates, which were the bulk of the
+  map and are not what you act on.
+- [Prima] Prima commands print the envelope and nothing else. The banner, config line, browser
+  startup and disconnect chatter are hidden unless `--verbose` or `--debug` is passed.
+- [Prima] `click` and `fill` are removed — describe the whole sequence to `do` instead, which
+  attaches once and carries all of it.
+- [Tester] A test that stops making progress is handed to final review instead of being marked
+  failed on the spot. A run that had already done its work and gone quiet was reported as a
+  failure; the verdict now comes from reviewing the result.
+- [Tester] Console and network errors seen during a run are reported as page problems rather than
+  as failed steps, so they no longer sink a test that otherwise passed.
+- [Tester] An expected outcome counts as settled only when it is recorded back word for word,
+  and the prompt now says so — outcomes phrased differently were silently left unaccounted for.
+- Page changes report values typed into fields, under a `typed:` section, alongside what was added,
+  removed and toggled. Filling a form previously showed as no change at all.
+- Long field values in page snapshots are cut to an excerpt with a pointer to the full text, which
+  keeps a page holding a large document readable.
+- Pages are considered ready as soon as the DOM goes quiet, instead of waiting on network idle.
+  Applications with a live websocket never reached network idle, so every snapshot paid the full
+  timeout.
+- Generated tests assert element visibility, hidden state and field values through real Playwright
+  locators instead of leaving a TODO comment.
+
 ## 2026-08-07
 
-### Prima drives by element refs, and never substitutes your target
+### Prima never substitutes your target
 
 A failed action now fails. Previously a `pw` call on a selector that did not exist could be
 "healed" into clicking a different element and still report `ok: true` — so `ok: true` did not
 mean your own action landed. Automatic retry along a different route is gone entirely, together
 with the `--no-heal` flag that used to switch it off, and the `healed:` line and
 `### Healing attempts` block in the envelope.
-
-`prima do` now works from the refs Playwright puts in the page snapshot. New `clickRef` and
-`hoverRef` steps take the ref of the element they want instead of composing a locator and hoping,
-so one instruction becomes one command rather than a list of fallbacks. A ref that no longer
-resolves is reported as stale instead of being replaced by a guess. The existing `click` and
-`hover` steps are unchanged and still available for pages without refs.
 
 ### Configuration
 
@@ -32,9 +91,9 @@ resolves is reported as stale instead of being replaced by a guess. The existing
   and told you to open the session you already had.
 - [Prima] Attached sessions are driven through the browser's own Playwright build, which is what
   makes reading the page work across versions.
-- [Prima] New `context()` step for `do`: when a ref goes stale mid-run it returns the page again
-  with fresh refs, and drops to raw markup if asked a second time on the same page.
-- [Prima] `click` and `fill` report themselves in the envelope instead of appearing as `do`.
+- [Prima] New `context()` step for `do`: when the element an instruction needs is missing from the
+  context it holds, it returns the page again, and drops to raw markup if asked a second time on
+  the same page.
 - [Prima] `network.jsonl` is listed only when requests were actually recorded, instead of always
   pointing at an empty file.
 - [Navigator] `verify` now separates "this claim is false" from "no assertion can express this

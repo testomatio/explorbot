@@ -191,7 +191,9 @@ const dropEmpty = (nodes: AriaNode[], opts: { keepNamed?: boolean } = {}): AriaN
 // ─────────────────────────────────────────────────────────────────
 
 // One-line representation of a node. Stable attr order so diff comparisons are deterministic.
-const formatNode = (node: AriaNode): string => {
+const MAX_INLINE_VALUE = 400;
+
+const formatNode = (node: AriaNode, offload?: ValueOffload): string => {
   let line = node.role;
   if (node.name?.trim()) line += ` "${node.name.trim()}"`;
   const attrStr = Object.keys(node.attributes)
@@ -207,9 +209,17 @@ const formatNode = (node: AriaNode): string => {
   if (attrStr) line += ` [${attrStr}]`;
   if (node.value !== undefined && node.value !== null) {
     const text = String(node.value).trim();
-    if (text) line += `: ${text}`;
+    if (text && text.length <= MAX_INLINE_VALUE) line += `: ${text}`;
+    if (text && text.length > MAX_INLINE_VALUE) line += `: ${offloadValue(text, offload)}`;
   }
   return line;
+};
+
+const offloadValue = (text: string, offload?: ValueOffload): string => {
+  const head = `${text.slice(0, MAX_INLINE_VALUE)}…`;
+  const reference = offload?.(text);
+  if (!reference) return `${head} (${text.length} chars, truncated)`;
+  return `${head} (${text.length} chars) [Full Text: ${reference}]`;
 };
 
 // Group consecutive same-role siblings.  [a,a,b,a,a,a] → [[a,a],[b],[a,a,a]]
@@ -238,15 +248,15 @@ const collapseGroup = (group: AriaNode[], depth: number): RenderEntry[] => {
 const collapseSiblingGroups = (nodes: AriaNode[], depth: number): RenderEntry[] => groupByConsecutiveRole(nodes).flatMap((group) => collapseGroup(group, depth));
 
 // Tree → indented YAML text.
-const renderTree = (nodes: AriaNode[], depth = 0): string =>
+const renderTree = (nodes: AriaNode[], depth = 0, offload?: ValueOffload): string =>
   collapseSiblingGroups(nodes, depth)
     .map((entry) => {
       if ('placeholder' in entry) return entry.placeholder;
       const { node } = entry;
       const indent = '  '.repeat(depth);
-      const head = `${indent}- ${formatNode(node)}`;
+      const head = `${indent}- ${formatNode(node, offload)}`;
       if (node.children.length === 0) return head;
-      return `${head}:\n${renderTree(node.children, depth + 1)}`;
+      return `${head}:\n${renderTree(node.children, depth + 1, offload)}`;
     })
     .join('\n');
 
@@ -381,6 +391,40 @@ const detectToggles = (prev: FlatEntry[], curr: FlatEntry[]): { toggled: string[
   return { toggled, togglePaths };
 };
 
+const detectValueChanges = (prev: FlatEntry[], curr: FlatEntry[]): { typed: string[]; typedPaths: Set<string> } => {
+  const typed: string[] = [];
+  const typedPaths = new Set<string>();
+  const currByPath = new Map(curr.map((e) => [e.path, e]));
+
+  for (const before of prev) {
+    const after = currByPath.get(before.path);
+    if (!after) continue;
+    if (before.entry.role !== after.entry.role) continue;
+    if (before.entry.name !== after.entry.name) continue;
+
+    const was = valueWord(before.entry.value);
+    const now = valueWord(after.entry.value);
+    if (was === now) continue;
+
+    typedPaths.add(before.path);
+    let label = String(after.entry.role);
+    const name = after.entry.name;
+    if (typeof name === 'string' && name.trim()) label += ` "${name.trim()}"`;
+    typed.push(`${label}: ${was} -> ${now}`);
+  }
+  return { typed, typedPaths };
+};
+
+const VALUE_EXCERPT = 60;
+
+const valueWord = (value: unknown): string => {
+  if (value === undefined || value === null) return 'empty';
+  const text = String(value).trim();
+  if (!text) return 'empty';
+  if (text.length <= VALUE_EXCERPT) return JSON.stringify(text);
+  return `${JSON.stringify(text.slice(0, VALUE_EXCERPT))}… (${text.length} chars)`;
+};
+
 const TOP_DIFF_ITEMS = 10;
 
 const formatDiffSection = (label: string, items: string[]): string[] => {
@@ -405,9 +449,13 @@ const formatDiffSection = (label: string, items: string[]): string[] => {
   return lines;
 };
 
-const formatDiff = (added: string[], removed: string[], toggled: string[]): string | null => {
-  if (added.length === 0 && removed.length === 0 && toggled.length === 0) return null;
+const formatDiff = (added: string[], removed: string[], toggled: string[], typed: string[] = []): string | null => {
+  if (added.length === 0 && removed.length === 0 && toggled.length === 0 && typed.length === 0) return null;
   const sections = ['ariaDiff:'];
+  if (typed.length > 0) {
+    sections.push('  typed:');
+    for (const line of typed) sections.push(`    - ${line}`);
+  }
   if (toggled.length > 0) {
     sections.push('  toggled:');
     for (const line of toggled) sections.push(`    - ${line}`);
@@ -473,13 +521,15 @@ const findDialogOrModal = (nodes: AriaNode[]): FocusAreaResult | null => {
 // Public API — pipelines composed visibly, top-to-bottom
 // ─────────────────────────────────────────────────────────────────
 
-export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false): string => {
+export type ValueOffload = (value: string) => string | undefined;
+
+export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false, offload?: ValueOffload): string => {
   if (!snapshot) return '';
   let tree = parseSnapshot(snapshot);
   tree = unwrapIgnored(tree);
   tree = nameIconButtons(tree);
   tree = dropEmpty(tree, { keepNamed });
-  return renderTree(tree);
+  return renderTree(tree, 0, offload);
 };
 
 export const diffAriaSnapshots = (previous: string | null, current: string | null): AriaDiff => {
@@ -493,15 +543,17 @@ export const diffAriaSnapshots = (previous: string | null, current: string | nul
   const prevAll = flat(previous);
   const currAll = flat(current);
   const { toggled, togglePaths } = detectToggles(prevAll, currAll);
-  const prev = prevAll.filter((e) => !togglePaths.has(e.path));
-  const curr = currAll.filter((e) => !togglePaths.has(e.path));
+  const { typed, typedPaths } = detectValueChanges(prevAll, currAll);
+  const skip = (entry: FlatEntry) => togglePaths.has(entry.path) || typedPaths.has(entry.path);
+  const prev = prevAll.filter((e) => !skip(e));
+  const curr = currAll.filter((e) => !skip(e));
   const prevTotals = countBy(prev.map((e) => e.summary));
   const currTotals = countBy(curr.map((e) => e.summary));
   const byCount = diffByCount(prevTotals, currTotals);
   const renames = detectRenames(prev, curr, prevTotals, currTotals);
   const added = [...byCount.added, ...renames.added];
   const removed = [...byCount.removed, ...renames.removed];
-  return { text: formatDiff(added, removed, toggled), count: added.length + removed.length + toggled.length };
+  return { text: formatDiff(added, removed, toggled, typed), count: added.length + removed.length + toggled.length + typed.length };
 };
 
 export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {

@@ -8,6 +8,7 @@ import type { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import { type StateManager, normalizeUrl } from '../state-manager.js';
+import { renderAssertion } from '../playwright-recorder.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
@@ -620,7 +621,7 @@ class Navigator implements Agent {
     return suggestion;
   }
 
-  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; inexpressible: boolean; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number }> {
+  async verifyState(message: string, actionResult: ActionResult): Promise<{ verified: boolean; inexpressible: boolean; results: AssertionResult[]; successfulCodes: string[]; assertionSteps: Array<{ name: string; args: any[] }>; totalAttempted: number }> {
     tag('info').log('AI Navigator verifying state at', actionResult.url);
     debugLog('Verification message:', message);
 
@@ -698,6 +699,7 @@ class Navigator implements Agent {
 
     let codeBlocks: string[] = [];
     const successfulCodes: string[] = [];
+    const results: AssertionResult[] = [];
     const assertionSteps: Array<{ name: string; args: any[] }> = [];
 
     const action = this.explorer.action();
@@ -739,6 +741,8 @@ class Navigator implements Agent {
           await action.exitIframe();
 
           const verified = await action.attempt(codeBlock, message);
+          const proof = action.assertionSteps.map(renderAssertion).filter(Boolean);
+          results.push({ code: codeBlock, passed: verified, proof });
 
           if (verified) {
             tag('success').log('Verification passed');
@@ -746,12 +750,6 @@ class Navigator implements Agent {
             assertionSteps.push(...action.assertionSteps);
           } else {
             failures++;
-          }
-
-          const target = Math.min(codeBlocks.length, this.verifyAttempts);
-          const majorityNeeded = Math.floor(target / 2) + 1;
-          if (successfulCodes.length >= majorityNeeded || failures > target - majorityNeeded) {
-            stop();
           }
         },
         {
@@ -776,13 +774,13 @@ class Navigator implements Agent {
     const inexpressible = !alreadyVerified && totalAttempted === 0;
     if (inexpressible) {
       tag('warning').log('No assertion could express this claim');
-      return { verified: false, inexpressible, successfulCodes, assertionSteps, totalAttempted };
+      return { verified: false, inexpressible, results, successfulCodes, assertionSteps, totalAttempted };
     }
 
     actionResult.addVerification(message, verified);
     this.stateManager.updateState(actionResult);
 
-    return { verified, inexpressible, successfulCodes, assertionSteps, totalAttempted };
+    return { verified, inexpressible, results, successfulCodes, assertionSteps, totalAttempted };
   }
 
   private checkAlreadyVerified(aiResponse: string, actionResult: ActionResult): boolean {
@@ -792,5 +790,7 @@ class Navigator implements Agent {
     return actionResult.getVerification(claim) === true;
   }
 }
+
+export type AssertionResult = { code: string; passed: boolean; proof: string[] };
 
 export { Navigator };

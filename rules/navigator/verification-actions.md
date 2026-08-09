@@ -105,25 +105,28 @@ Checks that page source does NOT contain expected text.
   I.dontSeeInSource('error-class');
 </example>
 
-### I.seeAttributesOnElements
+### Asserting the state of a control
 
-I.seeAttributesOnElements(<locator>, <attributes>)
-
-Checks the interactive state of a control: enabled, disabled, checked, selected, expanded, required, read-only.
-This is the ONLY way to assert state — presence assertions cannot express it.
-Assert the state you expect; to assert the opposite state, assert that value explicitly rather than negating.
+State means disabled, checked, readonly, required, selected, expanded. A presence assertion says
+nothing about it, so assert it with an attribute selector:
 
 <example>
-  I.seeAttributesOnElements('#submit', { disabled: null });
-  I.seeAttributesOnElements({"role":"button","text":"Save"}, { 'aria-disabled': 'false' });
-  I.seeAttributesOnElements({"role":"checkbox","text":"Accept"}, { checked: true });
-  I.seeAttributesOnElements({"role":"button","text":"Details"}, { 'aria-expanded': 'true' });
+  I.seeElement('button[aria-label="Submit"][disabled]');
+  I.dontSeeElement('button[aria-label="Submit"][disabled]');
+  I.seeElement('input[name="accept"][checked]');
+  I.seeElement('button[aria-label="Details"][aria-expanded="true"]');
 </example>
+
+Use I.seeElement for the state you expect and I.dontSeeElement for the state you expect to be
+absent — that pair expresses both directions.
+
+I.seeAttributesOnElements(<locator>, { disabled: true }) also exists, but only takes a state that
+must be PRESENT and does not resolve reliably against a role/text locator. Prefer the selector form above.
 
 <verification_rules>
 Be strict in assertions to avoid false positives.
 Prefer I.seeElement() with ARIA locators - most reliable.
-For a claim about a control's state, use I.seeAttributesOnElements() — presence of the element is not evidence of its state.
+For a claim about a control's state, assert it with an attribute selector — presence of the element is not evidence of its state.
 If no assertion above can express the claim, say so instead of proposing an assertion that checks something weaker.
 I.see() and I.dontSee() MUST include context parameter.
 For input field values, ALWAYS use I.seeInField() — never check value via CSS attribute selectors or I.seeInSource.

@@ -6,6 +6,7 @@ import { Navigator } from '../../../src/ai/navigator.ts';
 import { getEndpointFilePath, listInstances } from '../../../src/browser-server.ts';
 import { ConfigParser } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
+import { TestResult } from '../../../src/test-plan.ts';
 import { Prima } from '../src/prima.ts';
 
 let artifactsRoot: string;
@@ -122,9 +123,10 @@ describe('Prima.pw', () => {
     const { prima } = fakePrima();
     const envelope = await prima.pw("({ page }) => page.click('text=Login')");
     expect(envelope.changes).toContain('heading "Dashboard"');
-    expect(existsSync(envelope.artifacts!.aria)).toBe(true);
-    expect(existsSync(envelope.artifacts!.html)).toBe(true);
-    expect(envelope.artifacts!.network).toBeUndefined();
+    expect(envelope.status).toMatch(/^[0-9a-f]{15}$/);
+    expect(existsSync(path.join(artifactsRoot, envelope.status!, 'aria.yml'))).toBe(true);
+    expect(existsSync(path.join(artifactsRoot, envelope.status!, 'page.html'))).toBe(true);
+    expect(existsSync(path.join(artifactsRoot, envelope.status!, 'network.jsonl'))).toBe(false);
     expect(envelope.instance.name).toBe('default');
   });
 
@@ -142,7 +144,7 @@ describe('Prima.pw', () => {
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toContain("locator 'text=Login' not found");
     expect(envelope.page.url).toBe('https://app.example.com/login');
-    expect(envelope.artifacts).toBeTruthy();
+    expect(envelope.status).toBeTruthy();
   });
 
   test('unrecoverable browser still returns a failure envelope when capture fails too', async () => {
@@ -161,7 +163,7 @@ describe('Prima.pw', () => {
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toContain('Browser page is unavailable');
     expect(envelope.page.url).toContain('/login');
-    expect(envelope.artifacts).toBeTruthy();
+    expect(envelope.status).toBeTruthy();
   });
 
   test('missing explorer returns a failure envelope instead of rejecting', async () => {
@@ -191,7 +193,7 @@ describe('Prima failure never substitutes a target', () => {
     expect(envelope.used).toBeUndefined();
     expect(envelope.failure?.error).toContain("locator 'text=Login' not found");
     expect(envelope.failure?.compactAria).toContain('button');
-    expect(envelope.artifacts).toBeTruthy();
+    expect(envelope.status).toBeTruthy();
   });
 
   test('a failed pw carries no healed marker', async () => {
@@ -444,25 +446,31 @@ describe('Prima.do', () => {
       });
 
     await prima.do(['first step', 'second step']);
-    expect(calls).toBe(4);
+    expect(calls).toBe(6);
 
     calls = 0;
     await prima.do(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
-    expect(calls).toBe(6);
+    expect(calls).toBe(16);
+
+    calls = 0;
+    await prima.do(Array.from({ length: 20 }, (_, i) => `step ${i}`));
+    expect(calls).toBe(24);
   });
 
   test('a failed tool execution fails the command instead of reaching for another element', async () => {
     const { prima } = fakePrima();
-    let called = false;
+    let resolved = false;
     (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [toolExecution("I.click('Login')", false, 'element not found')] }));
-    (prima as any).bot.agentNavigator = () => {
-      called = true;
-      return { resolveState: async () => true };
-    };
+    (prima as any).bot.agentNavigator = () => ({
+      resolveState: async () => {
+        resolved = true;
+        return true;
+      },
+    });
 
     const envelope = await prima.do(['click the login link']);
 
-    expect(called).toBe(false);
+    expect(resolved).toBe(false);
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toContain('element not found');
   });
@@ -514,7 +522,79 @@ describe('Prima.do', () => {
     expect(prompts.length).toBe(1);
   });
 
-  test('context() hands back refs first and drops to markup only when asked again', async () => {
+  test('done() ends the sequence instead of burning the remaining iteration budget', async () => {
+    const { prima } = fakePrima();
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async (_conversation: unknown, tools: any) => {
+        calls++;
+        if (calls === 1) return { toolExecutions: [toolExecution("I.click('Invoices')")] };
+        await tools.done.execute({ summary: 'the invoice list is open', unmet: [] });
+        return { toolExecutions: [{ toolName: 'done', input: {}, output: { success: true, action: 'done' }, wasSuccessful: true }] };
+      });
+
+    const envelope = await prima.do(['open the invoices page', 'read the first invoice']);
+
+    expect(calls).toBe(2);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.answer).toBe('the invoice list is open');
+    expect(envelope.steps?.map((step) => step.label)).toEqual(["I.click('Invoices')"]);
+  });
+
+  test('instructions the model could not carry out fail the command', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async (_conversation: unknown, tools: any) => {
+        await tools.done.execute({ summary: 'the list is open', unmet: ['no PDF link exists on this page'] });
+        return { toolExecutions: [toolExecution("I.click('Invoices')"), { toolName: 'done', input: {}, output: { success: true, action: 'done' }, wasSuccessful: true }] };
+      });
+
+    const envelope = await prima.do(['open the invoices page', 'download the PDF']);
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('no PDF link exists on this page');
+  });
+
+  test('a check that never passed fails the command even after later actions succeed', async () => {
+    const { prima } = fakePrima();
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async (_conversation: unknown, tools: any) => {
+        calls++;
+        if (calls === 1) {
+          return {
+            toolExecutions: [{ toolName: 'verify', input: { assertion: 'unsaved indicator is visible' }, output: { success: false, action: 'verify', message: 'Verification failed' }, wasSuccessful: false }, toolExecution("I.click('Close')")],
+          };
+        }
+        await tools.done.execute({ summary: 'the editor is closed', unmet: [] });
+        return { toolExecutions: [{ toolName: 'done', input: {}, output: { success: true, action: 'done' }, wasSuccessful: true }] };
+      });
+
+    const envelope = await prima.do(['confirm the unsaved indicator', 'close the editor']);
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('unsaved indicator is visible');
+    expect(envelope.steps?.[0]).toMatchObject({ label: 'verify: unsaved indicator is visible', ok: false });
+  });
+
+  test('a check that passes on a retry does not fail the command', async () => {
+    const { prima } = fakePrima();
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async (_conversation: unknown, tools: any) => {
+        calls++;
+        if (calls === 1) return { toolExecutions: [toolExecution("I.click('Delete')"), { toolName: 'verify', input: { assertion: 'the row is gone' }, output: { success: false, action: 'verify', message: 'Verification failed' }, wasSuccessful: false }] };
+        if (calls === 2) return { toolExecutions: [{ toolName: 'verify', input: { assertion: 'the row is gone' }, output: { success: true, action: 'verify', code: "I.dontSee('Item')" }, wasSuccessful: true }] };
+        await tools.done.execute({ summary: 'the row is gone', unmet: [] });
+        return { toolExecutions: [{ toolName: 'done', input: {}, output: { success: true, action: 'done' }, wasSuccessful: true }] };
+      });
+
+    const envelope = await prima.do(['delete the row', 'confirm it is gone']);
+
+    expect(envelope.ok).toBe(true);
+  });
+
+  test('context() hands back the page tree first and drops to markup only when asked again', async () => {
     const { prima } = fakePrima();
     let captured: any;
     (prima as any).bot.getProvider = () =>
@@ -525,39 +605,48 @@ describe('Prima.do', () => {
 
     await prima.do(['open the invoices page']);
 
-    const first = await captured.execute({ reason: 'the ref no longer resolves' });
-    expect(first.context).toContain('ref=e7');
+    const first = await captured.execute({ reason: 'the control is not in my context' });
+    expect(first.context).toContain('button "Refreshed"');
+    expect(first.context).not.toContain('ref=');
 
     const second = await captured.execute({ reason: 'still cannot reach it' });
-    expect(second.context).not.toContain('ref=e7');
     expect(second.context).toContain('<form>');
   });
+});
 
-  test('click is a single-instruction alias over do', async () => {
+describe('Prima.check', () => {
+  test('every --expected outcome is reported with its own result', async () => {
     const { prima } = fakePrima();
-    const received: string[][] = [];
-    (prima as any).do = async (instructions: string[]) => {
-      received.push(instructions);
-      return { ok: true };
-    };
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the editor opens', TestResult.PASSED);
+        test.addNote('the draft is saved', TestResult.FAILED);
+        return { success: false };
+      },
+    });
 
-    await prima.click('the login link');
-    expect(received[0].length).toBe(1);
-    expect(received[0][0]).toContain('the login link');
+    const envelope = await prima.check('edit and save a skill', ['the editor opens', 'the draft is saved', 'the list refreshes']);
+
+    expect(envelope.expectations).toEqual([
+      { text: 'the editor opens', status: 'passed' },
+      { text: 'the draft is saved', status: 'failed' },
+      { text: 'the list refreshes', status: 'unverified' },
+    ]);
   });
 
-  test('fill is a single-instruction alias carrying field and value', async () => {
+  test('the scenario stands in as the only outcome when none was given', async () => {
     const { prima } = fakePrima();
-    const received: string[][] = [];
-    (prima as any).do = async (instructions: string[]) => {
-      received.push(instructions);
-      return { ok: true };
-    };
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('edit and save a skill', TestResult.PASSED);
+        return { success: true };
+      },
+    });
 
-    await prima.fill('the email field', 'user@example.com');
-    expect(received[0].length).toBe(1);
-    expect(received[0][0]).toContain('the email field');
-    expect(received[0][0]).toContain('user@example.com');
+    const envelope = await prima.check('edit and save a skill');
+
+    expect(envelope.ok).toBe(true);
+    expect(envelope.expectations).toEqual([{ text: 'edit and save a skill', status: 'passed' }]);
   });
 });
 
@@ -570,7 +659,7 @@ describe('Prima.ask, verify, research', () => {
     const envelope = await prima.ask('what do I see?');
     expect(envelope.answer).toContain('login');
     expect(envelope.changes).toBeUndefined();
-    expect(envelope.artifacts).toBeTruthy();
+    expect(envelope.status).toBeTruthy();
   });
 
   test('ask with noVision answers from researcher summary', async () => {
@@ -604,28 +693,41 @@ describe('Prima.ask, verify, research', () => {
     expect(envelope.answer).toContain('vision');
   });
 
-  test('verify returns verdict with assertion code', async () => {
+  test('verify reports each assertion with its own result and gives no verdict', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentNavigator = () => ({
-      verifyState: async () => ({ verified: true, successfulCodes: ["I.see('Dashboard')"], assertionSteps: [], totalAttempted: 1 }),
+      verifyState: async () => ({
+        verified: false,
+        results: [
+          { code: "I.see('Dashboard')", passed: true, proof: ['await expect(page).toContainText("Dashboard");'] },
+          { code: "I.seeElement('.chart')", passed: false, proof: [] },
+        ],
+        successfulCodes: ["I.see('Dashboard')"],
+        assertionSteps: [],
+        totalAttempted: 2,
+      }),
     });
 
     const envelope = await prima.verify('user sees the dashboard');
-    expect(envelope.verdict?.passed).toBe(true);
-    expect(envelope.verdict?.code).toBe("I.see('Dashboard')");
+
+    expect(envelope).not.toHaveProperty('verdict');
+    expect(envelope.assertions).toEqual([
+      { code: "I.see('Dashboard')", passed: true, proof: ['await expect(page).toContainText("Dashboard");'] },
+      { code: "I.seeElement('.chart')", passed: false, proof: [] },
+    ]);
     expect(envelope.ok).toBe(true);
   });
 
-  test('failed verification is reported as a failed verdict', async () => {
+  test('verify with nothing expressible reports no assertions rather than a failure', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentNavigator = () => ({
-      verifyState: async () => ({ verified: false, successfulCodes: [], assertionSteps: [], totalAttempted: 3 }),
+      verifyState: async () => ({ verified: false, inexpressible: true, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 }),
     });
 
-    const envelope = await prima.verify('user sees the dashboard');
-    expect(envelope.verdict?.passed).toBe(false);
-    expect(envelope.verdict?.evidence).toBeTruthy();
-    expect(envelope.ok).toBe(false);
+    const envelope = await prima.verify('the save button is disabled');
+
+    expect(envelope.assertions).toEqual([]);
+    expect(envelope.ok).toBe(true);
   });
 
   test('research returns UI map in envelope', async () => {

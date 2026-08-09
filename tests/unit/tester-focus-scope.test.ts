@@ -148,17 +148,28 @@ describe('Tester experience context', () => {
 });
 
 describe('Tester stalled execution', () => {
-  it('hands a verified scenario to final review without marking it failed', () => {
+  it('hands a stalled scenario to final review without deciding the verdict itself', () => {
     const tester = buildTester();
     const task = new Test('filter items', 'normal', 'filtered items appear', '/page');
     const state = buildState('- main:', '/page');
     (tester as any).stateManager.getCurrentState = () => state;
-    (tester as any).hasSuccessfulAssertion = true;
 
     expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
     expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
     expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(true);
     expect(task.hasFinished).toBe(false);
-    expect(task.getPrintableNotes()).toContain('No further browser progress after successful verification; requesting final review');
+    expect(task.result).toBe(null);
+    expect(task.getPrintableNotes()).toContain('No further browser progress on unchanged page; requesting final review');
+  });
+
+  it('hands repeated execution errors to final review without marking the test failed', () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', 'filtered items appear', '/page');
+
+    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(false);
+    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(false);
+    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(true);
+    expect(task.hasFinished).toBe(false);
+    expect(task.result).toBe(null);
   });
 });

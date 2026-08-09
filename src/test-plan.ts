@@ -27,6 +27,7 @@ export interface Note {
   endTime: number;
   screenshot?: string;
   log?: string;
+  observation?: boolean;
 }
 
 export class ActiveNote {
@@ -129,6 +130,14 @@ export class Task {
     const now = performance.now();
     const timestamp = `${now}_${this.timestampCounter++}`;
     this.notes[timestamp] = { message, status, startTime: now, endTime: now, screenshot, log };
+  }
+
+  addObservation(message: string): void {
+    const isDuplicate = Object.values(this.notes).some((note) => note.message === message);
+    if (isDuplicate) return;
+
+    const now = performance.now();
+    this.notes[`${now}_${this.timestampCounter++}`] = { message, status: TestResult.FAILED, startTime: now, endTime: now, observation: true };
   }
 
   addUrlNote(state: UrlNoteState, prevState?: { title?: string; h1?: string; h2?: string }): void {
