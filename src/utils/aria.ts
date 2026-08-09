@@ -582,37 +582,6 @@ export const collectInteractiveNodes = (snapshot: string | null): Array<Record<s
 // Standalone helpers (regex on raw strings — not part of the pipeline)
 // ─────────────────────────────────────────────────────────────────
 
-export interface FocusedElementInfo {
-  role: string;
-  name: string;
-  value?: string;
-  attributes?: string[];
-}
-
-export function extractFocusedElement(ariaSnapshot: string | null): FocusedElementInfo | null {
-  if (!ariaSnapshot) return null;
-
-  const focusedMatch = ariaSnapshot.match(/-\s*(\w+)\s+"([^"]*)"([^:\n]*)\[focused\](?::\s*(.*))?/);
-  if (!focusedMatch) return null;
-
-  const [, role, name, attributesStr, value] = focusedMatch;
-
-  const attributes: string[] = [];
-  if (attributesStr) {
-    const attrMatches = attributesStr.matchAll(/\[([^\]]+)\]/g);
-    for (const match of attrMatches) {
-      if (match[1] !== 'focused') {
-        attributes.push(match[1]);
-      }
-    }
-  }
-
-  const result: FocusedElementInfo = { role, name };
-  if (value) result.value = value.trim();
-  if (attributes.length > 0) result.attributes = attributes;
-  return result;
-}
-
 export function parseAriaLocator(ariaStr: string): { role: string; text: string } | null {
   const trimmed = ariaStr.trim();
   if (trimmed === '-' || trimmed === '' || trimmed === '"-"') return null;

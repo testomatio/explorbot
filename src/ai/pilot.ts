@@ -8,7 +8,7 @@ import type Explorer from '../explorer.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
 import { type Test, TestResult } from '../test-plan.ts';
-import { collectInteractiveNodes, detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
+import { collectInteractiveNodes, detectFocusArea } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 
@@ -703,7 +703,7 @@ export class Pilot implements Agent {
     lines.push(`url: ${state.url}`);
     lines.push(`title: ${state.title || 'unknown'}`);
 
-    const focused = extractFocusedElement(state.ariaSnapshot);
+    const focused = state.focusedElement;
     if (focused) {
       const valuePart = focused.value ? ` (value: "${focused.value}")` : '';
       lines.push(`focused: ${focused.role} "${focused.name}"${valuePart}`);
