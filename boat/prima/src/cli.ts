@@ -7,22 +7,17 @@ import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
 
 const helpContract = dedent`
-  Prima is a high-level AI extension to playwright-cli. It drives the browser that
-  playwright-cli already has open.
+  Prima is a high-level AI extension to playwright-cli, driving the browser it has open.
 
     playwright-cli open <url>    starts the session
     prima <command> ...          drives it
     playwright-cli close         ends it
 
-  check and do each carry a whole job in one call - a behaviour to verify, or a sequence
-  of steps to carry out. That is where they cost less than the same work driven through
-  playwright-cli one command at a time.
+  One call takes a whole job:
 
     prima check "a workflow can be created and appears in the list" --expected "the new workflow is listed"
     prima do "open the account menu" "choose the settings entry" "switch the theme to dark" "check it took effect"
     prima pw "({ page }) => page.click('[data-test=submit]')"
-
-  check and do take targets described in words. pw takes executable code.
 `;
 
 const checkHelp = dedent`
