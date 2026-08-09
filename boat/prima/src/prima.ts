@@ -140,11 +140,7 @@ export class Prima {
     const deps = { explorer: this.bot.getExplorer(), stateManager: this.bot.stateManager(), ai: provider };
     const ledger: LedgerEntry[] = instructions.map((text) => ({ text, status: 'open', proof: '', evidence: [] }));
     const descent = { markup: false };
-    const codeceptTools = createCodeceptJSTools(deps, task);
-    const baseTools = { ...codeceptTools, ...this.testerTools(deps), context: this.contextTool(descent), completed: this.completedTool(), blocked: this.blockedTool() };
-    // the accessibility tree carries a ref for every element, so clickRef is the only click it needs;
-    // click returns once the model has dropped to markup, where there are no refs to use
-    const { click, ...refTools } = baseTools;
+    const tools = { ...createCodeceptJSTools(deps, task), ...this.testerTools(deps), context: this.contextTool(descent), completed: this.completedTool(), blocked: this.blockedTool() };
     conversation.addUserText(await this.instructionPrompt(instructions, await this.capturedResult(previousState)));
 
     const used: string[] = [];
@@ -173,7 +169,6 @@ export class Prima {
         `);
       }
 
-      const tools = descent.markup ? baseTools : refTools;
       const invoked = await provider.invokeConversation(conversation, tools, { maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS, agentName: AI_AGENT_NAME }).catch((error: unknown) => {
         aiError = error;
         return null;

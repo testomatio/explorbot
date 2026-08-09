@@ -138,7 +138,7 @@ describe('Prima.do with aimock', () => {
 
     const tools = (mock.getRequests()[0] as any).body.tools.map((entry: any) => entry.function.name);
     expect(tools).toContain('clickRef');
-    expect(tools).not.toContain('click');
+    expect(tools).toContain('click');
     expect(tools).toContain('form');
   });
 

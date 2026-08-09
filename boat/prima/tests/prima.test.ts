@@ -722,33 +722,6 @@ describe('Prima.do', () => {
 
     expect(envelope.ok).toBe(true);
   });
-  test('clickRef replaces click while the tree is the context, and click returns on markup', async () => {
-    const { prima } = fakePrima();
-    (prima as any).bot.agentResearcher = () => ({});
-    (prima as any).bot.agentNavigator = () => ({});
-    const offered: string[][] = [];
-    let contextTool: any;
-    let calls = 0;
-    (prima as any).bot.getProvider = () =>
-      fakeProvider(async (_conversation: unknown, tools: any) => {
-        offered.push(Object.keys(tools));
-        contextTool = tools.context;
-        calls++;
-        if (calls === 1) {
-          await contextTool.execute({ reason: 'tree' });
-          await contextTool.execute({ reason: 'markup please' });
-          return { toolExecutions: [toolExecution("I.click('Invoices')")] };
-        }
-        return { toolExecutions: [completedExecution([1], 'done')] };
-      });
-
-    await prima.do(['open the invoices page']);
-
-    expect(offered[0]).toContain('clickRef');
-    expect(offered[0]).not.toContain('click');
-    expect(offered[1]).toContain('click');
-  });
-
   test('context() hands back the page tree first and drops to markup only when asked again', async () => {
     const { prima } = fakePrima();
     let captured: any;
