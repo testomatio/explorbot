@@ -486,9 +486,9 @@ describe('Prima.do', () => {
 
     await prima.do(['open the invoices page', 'download the PDF']);
 
-    const remaining = prompts.find((prompt) => prompt.startsWith('<remaining>'));
-    expect(remaining).toContain('2. download the PDF');
-    expect(remaining).not.toContain('open the invoices page');
+    const progress = prompts.find((prompt) => prompt.startsWith('<progress>'));
+    expect(progress).toContain('1. done — open the invoices page (list is open)');
+    expect(progress).toContain('2. open — download the PDF');
   });
 
   test('a model that narrates instead of reporting is asked once for the ledger', async () => {

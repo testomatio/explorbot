@@ -163,7 +163,13 @@ export class Prima {
       }
 
       if (iteration > 1) {
-        conversation.addUserText(`<remaining>\n${this.openInstructions(ledger)}\n</remaining>`);
+        conversation.addUserText(dedent`
+          <progress>
+          ${this.ledgerProgress(ledger)}
+          </progress>
+
+          Call completed() now for every open instruction the page already shows is satisfied, before you act again.
+        `);
       }
 
       const invoked = await provider.invokeConversation(conversation, tools, { maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS, agentName: AI_AGENT_NAME }).catch((error: unknown) => {
@@ -275,6 +281,16 @@ export class Prima {
       .map((entry, index) => ({ entry, number: index + 1 }))
       .filter(({ entry }) => entry.status === 'open')
       .map(({ entry, number }) => `${number}. ${entry.text}`)
+      .join('\n');
+  }
+
+  private ledgerProgress(ledger: LedgerEntry[]): string {
+    return ledger
+      .map((entry, index) => {
+        const head = `${index + 1}. ${entry.status} — ${entry.text}`;
+        if (entry.status === 'open') return head;
+        return `${head} (${entry.proof})`;
+      })
       .join('\n');
   }
 
@@ -621,8 +637,10 @@ export class Prima {
       <ledger>
       Instructions are numbered and those numbers never change. Report by number.
       Saying in your reply that something is done does not report it — only completed() does. Nothing you write is read as a report.
+      Report an instruction the moment the page shows it is satisfied, before moving on. Waiting until later is how work gets repeated.
       An instruction you have reported is finished. Never act on it again, and never report it twice.
-      You are shown what is still open after each turn. When nothing is open the run is over.
+      After each turn you are shown every instruction with its state. Act only on the ones still open — repeating an action that already
+      landed can undo it, since a control that opened something will close it again.
       Reaching for blocked() after a couple of honest attempts costs less than a third attempt that fails the same way.
       </ledger>
 
