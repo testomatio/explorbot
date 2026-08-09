@@ -293,7 +293,13 @@ export class Prima {
     const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
     const envelope = await this.reportEnvelope(command, result, previousState, { ok: outcome.success });
-    envelope.steps = notes.filter((note) => !note.observation).map((note) => ({ label: note.message, ok: note.status !== TestResult.FAILED, proof: note.log || '' }));
+    const recorded = notes.filter((note) => !note.observation);
+    const worthReporting = recorded.filter((note) => note.status === TestResult.FAILED || outcomes.includes(note.message));
+    envelope.steps = worthReporting.map((note) => ({ label: note.message, ok: note.status !== TestResult.FAILED, proof: note.log || '' }));
+
+    const routine = recorded.length - worthReporting.length;
+    if (routine) envelope.steps.push({ label: `${routine} more ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
+
     envelope.expectations = outcomes.map((text) => {
       const checked = notes.findLast((note) => note.message === text && !!note.status);
       if (checked?.status === TestResult.PASSED) return { text, status: 'passed' as const };

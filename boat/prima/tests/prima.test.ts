@@ -741,6 +741,28 @@ describe('Prima.check', () => {
     ]);
   });
 
+  test('routine steps are counted rather than listed, and failures are kept', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('opened the panel', TestResult.PASSED);
+        test.addNote('clicked the row', TestResult.PASSED);
+        test.addNote('Failed to open the editor (click)', TestResult.FAILED);
+        test.addNote('the editor opens', TestResult.PASSED);
+        return { success: false };
+      },
+    });
+
+    const envelope = await prima.check('edit a skill', ['the editor opens']);
+    const labels = envelope.steps?.map((step) => step.label) || [];
+
+    expect(labels).toContain('Failed to open the editor (click)');
+    expect(labels).toContain('the editor opens');
+    expect(labels).not.toContain('opened the panel');
+    expect(labels.at(-1)).toContain('2 more steps ran without failing');
+    expect(labels.at(-1)).toContain('prima status');
+  });
+
   test('the scenario stands in as the only outcome when none was given', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
