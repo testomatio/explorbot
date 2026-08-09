@@ -393,6 +393,8 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
         Execute raw CodeceptJS code block with multiple commands.
         USE THIS TOOL for typing text into fields: I.fillField, I.type
 
+        Do not put a click on a ref-bearing element in here — clickRef with its ref is cheaper and cannot mis-target.
+
         Follow <actions> from system prompt for available commands.
         Follow <locator_priority> from system prompt for locator selection.
 
