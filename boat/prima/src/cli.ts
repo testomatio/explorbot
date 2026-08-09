@@ -7,49 +7,21 @@ import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
 
 const helpContract = dedent`
-  Prima drives a browser that is already open. One command per process; every command
-  prints a plain-text envelope on stdout and exits 0 when ok, 1 when not.
+  Prima is a high-level AI extension to playwright-cli. It drives the browser that
+  playwright-cli already has open.
 
-  TIERS - start at the top and come down only when the tier above cannot hold the work
-    check <scenario>
-                   A whole behaviour, run as a test. It drives the page, verifies the
-                   outcome itself, and reports each expected outcome with its proof.
-                   One command for something you want a verdict on. Start here.
-                     prima check "a workflow can be created and appears in the list" \\
-                                 --expected "the new workflow is listed"
-    do <steps...>  Several described steps, carried out in one process. Pass the WHOLE
-                   remaining sequence - a run of eight steps costs a fraction of eight
-                   commands, and that is the whole point of this tier.
-                     prima do "open the account menu" "choose the settings entry" \\
-                              "switch the theme to dark" "check the change took effect"
-    pw <fn>        One Playwright function expression, from a locator you already
-                   verified. No AI. For when you know exactly what to run.
-                     prima pw "({ page }) => page.click('[data-test=submit]')"
-    Describe targets to check and do; give pw executable code only. Never mix the two.
-    Coming down a tier to run steps one at a time costs more than the tier above, in
-    both time and what you have to read - it is a fallback, not a default.
+    playwright-cli open <url>    start the session
+    prima <command> ...          drive it
+    playwright-cli close         end it
 
-    Also: ask, verify, research, go, status, browser. Run <command> --help for what
-    each of them reports.
+  Give check and do a whole job, never a single click - one call carries the sequence,
+  and that is what makes them cheaper than driving playwright-cli step by step.
 
-  ENVELOPE
-    ### Result ok/command/used · ### Page url/title/state · ### Changes what the
-    accessibility tree gained, lost, toggled or had typed · ### Steps per-instruction
-    outcome with its proof · ### Expected outcomes each --expected as PASSED, FAILED or
-    not verified · ### Answer|Research|Assertions · ### Failure error and compact ARIA ·
-    ### Instance · ### Artifacts. Start at the first ### line; logs can precede it.
-    used: is code that already executed. A failed action fails - nothing is retried along
-    a different route, so ok: true means your own action landed.
+    prima check "a workflow can be created and appears in the list" --expected "the new workflow is listed"
+    prima do "open the account menu" "choose the settings entry" "switch the theme to dark" "check it took effect"
+    prima pw "({ page }) => page.click('[data-test=submit]')"
 
-  SESSIONS
-    Prima attaches to the playwright-cli browser of this workspace and drives the tabs it
-    already has open; using the same session from both tools is the intended usage.
-      playwright-cli open <url>  the session prima attaches to
-      --pw-session <title>       which session, when several are open
-      prima browser start        a prima-owned browser instead, when none is open
-    Prima never launches a browser implicitly and never closes an attached one.
-    Run it as "npx explorbot prima ..." or through the published prima bin - the
-    browser-server connection needs the Node build.
+  Describe targets to check and do; give pw executable code only.
 `;
 
 const checkHelp = dedent`
