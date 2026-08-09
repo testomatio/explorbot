@@ -300,8 +300,9 @@ export class Prima {
 
       ${this.openInstructions(ledger)}
 
-      Account for each one from what you actually did. completed() for the ones the page ended up showing were
-      carried out, blocked() for the ones it could not do. Report every one — nothing else runs after this.
+      Judge each one against what you saw at the time it was due, not against the page as it stands now — later
+      instructions have moved it on, and something you confirmed earlier stays confirmed even if it is gone.
+      completed() for those, blocked() for the ones the page could not do. Report every one — nothing else runs after this.
     `);
 
     const invoked = await provider.invokeConversation(conversation, { completed: this.completedTool(), blocked: this.blockedTool() }, { maxToolRoundtrips: 2, toolChoice: 'required', agentName: AI_AGENT_NAME }).catch(() => null);
