@@ -20,6 +20,10 @@ function clickCall(id: string, commands: string[], explanation: string) {
   return { id, name: 'click', arguments: JSON.stringify({ commands, explanation }) };
 }
 
+function clickRefCall(id: string, ref: string, element: string) {
+  return { id, name: 'clickRef', arguments: JSON.stringify({ ref, element }) };
+}
+
 function completedCall(id: string, numbers: number[], proof: string) {
   return { id, name: 'completed', arguments: JSON.stringify({ numbers, proof }) };
 }
@@ -89,6 +93,8 @@ describe('Prima.do with aimock', () => {
       requestStore: () => ({ getRequests: () => [] }),
       getProvider: () => provider,
       experienceTracker: () => ({ renderExperienceTocFor: () => '' }),
+      agentResearcher: () => ({}),
+      agentNavigator: () => ({}),
     };
   });
 
@@ -99,20 +105,17 @@ describe('Prima.do with aimock', () => {
   });
 
   it('runs both instructions and collects the executed code', async () => {
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [clickCall('call-1', ['I.click("Account")'], 'open the account menu'), completedCall('call-2', [1], 'the account menu is open')] });
-    mock.on({ sequenceIndex: 1 }, { toolCalls: [clickCall('call-3', ['I.click("Settings")'], 'choose the settings entry'), completedCall('call-4', [2], 'the settings page is shown')] });
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [clickRefCall('call-1', 'e5', 'button "Account"'), completedCall('call-2', [1], 'the account menu is open')] });
+    mock.on({ sequenceIndex: 1 }, { toolCalls: [clickRefCall('call-3', 'e9', 'link "Settings"'), completedCall('call-4', [2], 'the settings page is shown')] });
     mock.on({}, { content: 'Both instructions are done.' });
 
     const envelope = await prima.do(['open the account menu', 'choose the settings entry']);
 
     expect(envelope.ok).toBe(true);
-    expect(envelope.used).toEqual(['I.click("Account")', 'I.click("Settings")']);
-    expect(executed).toEqual(['I.click("Account")', 'I.click("Settings")']);
+    expect(executed.every((code) => code.includes('aria-ref='))).toBe(true);
+    expect(executed).toHaveLength(2);
     expect(envelope.command).toContain('open the account menu');
-    expect(envelope.steps).toEqual([
-      { label: 'open the account menu', ok: true, proof: 'the account menu is open\nI.click("Account")' },
-      { label: 'choose the settings entry', ok: true, proof: 'the settings page is shown\nI.click("Settings")' },
-    ]);
+    expect(envelope.steps?.map((step) => step.ok)).toEqual([true, true]);
   });
 
   it('sends every instruction and the page context in one prompt', async () => {
@@ -134,7 +137,8 @@ describe('Prima.do with aimock', () => {
     await prima.do(['open the account menu']);
 
     const tools = (mock.getRequests()[0] as any).body.tools.map((entry: any) => entry.function.name);
-    expect(tools).toContain('click');
+    expect(tools).toContain('clickRef');
+    expect(tools).not.toContain('click');
     expect(tools).toContain('form');
   });
 

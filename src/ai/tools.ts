@@ -157,6 +157,41 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
       },
     }),
 
+    clickRef: tool({
+      description: dedent`
+        Click an element by the ref the page context gave it, e.g. [ref=e14].
+
+        Prefer this over click() whenever the element you want carries a ref. A ref names one exact element, so it
+        cannot match several by mistake and never needs disambiguating — it is the fastest way to click.
+        Only pass a ref that appears in the page context you were given. Never invent or guess one.
+        If it reports the ref is gone, the page has been rebuilt: get fresh context and use the new ref.
+      `,
+      inputSchema: z.object({
+        ref: z.string().describe('The ref exactly as it appears in the page context, e.g. "e14"'),
+        element: z.string().describe('Role and name of the element you are clicking, for the record'),
+      }),
+      execute: async ({ ref, element }) => {
+        const activeNote = task.startNote(`Click ${element}`);
+        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+        const action = explorer.action();
+        const named = await describeRef(explorer, ref);
+        const run = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
+
+        if (!(await action.attempt(run, `Click ${element}`))) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('clickRef', `Ref ${ref} could not be clicked: ${errorText(action.lastError)}`, {
+            suggestion: 'The ref may belong to an older version of the page. Get fresh context and use the ref it gives, or fall back to click() with a locator.',
+          });
+        }
+
+        // a ref belongs to this session only, so the run is reported as the locator a later test can replay
+        const code = named ? `I.click(${JSON.stringify(named)})` : run;
+        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, code);
+        await commitNote(activeNote, TestResult.PASSED, toolResult, action);
+        return successToolResult('clickRef', { ...toolResult, code }, action);
+      },
+    }),
+
     hover: tool({
       description: dedent`
         Move the mouse cursor to an element to reveal hover-only controls.
@@ -796,41 +831,6 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
       },
     }),
 
-    clickRef: tool({
-      description: dedent`
-        Click an element by the ref the page context gave it, e.g. [ref=e14].
-
-        Prefer this over click() whenever the element you want carries a ref. A ref names one exact element, so it
-        cannot match several by mistake and never needs disambiguating — it is the fastest way to click.
-        Only pass a ref that appears in the page context you were given. Never invent or guess one.
-        If it reports the ref is gone, the page has been rebuilt: get fresh context and use the new ref.
-      `,
-      inputSchema: z.object({
-        ref: z.string().describe('The ref exactly as it appears in the page context, e.g. "e14"'),
-        element: z.string().describe('Role and name of the element you are clicking, for the record'),
-      }),
-      execute: async ({ ref, element }) => {
-        const activeNote = task.startNote(`Click ${element}`);
-        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-        const action = explorer.action();
-        const named = await describeRef(explorer, ref);
-        const run = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
-
-        if (!(await action.attempt(run, `Click ${element}`))) {
-          activeNote.commit(TestResult.FAILED);
-          return failedToolResult('clickRef', `Ref ${ref} could not be clicked: ${errorText(action.lastError)}`, {
-            suggestion: 'The ref may belong to an older version of the page. Get fresh context and use the ref it gives, or fall back to click() with a locator.',
-          });
-        }
-
-        // a ref belongs to this session only, so the run is reported as the locator a later test can replay
-        const code = named ? `I.click(${JSON.stringify(named)})` : run;
-        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, code);
-        await commitNote(activeNote, TestResult.PASSED, toolResult, action);
-        return successToolResult('clickRef', { ...toolResult, code }, action);
-      },
-    }),
-
     visualClick: tool({
       description: dedent`
         Click an element by visual identification when locator-based click() fails.
@@ -1163,16 +1163,18 @@ export async function commitNote(activeNote: any, result: TestResult, toolResult
 }
 
 async function describeRef(explorer: any, ref: string): Promise<{ role: string; text: string } | null> {
-  return explorer
-    .withPage(async (page: any) => {
-      const handle = page.locator(`aria-ref=${ref}`);
-      const role = await handle.getAttribute('role');
-      const label = await handle.getAttribute('aria-label');
-      const text = (label || (await handle.innerText()) || '').trim().split('\n')[0];
-      if (!role || !text) return null;
-      return { role, text };
-    })
-    .catch(() => null);
+  return Promise.resolve(
+    explorer?.withPage?.((page: any) =>
+      page.locator(`aria-ref=${ref}`).evaluate((el: any) => {
+        const tag = el.tagName.toLowerCase();
+        const roles: Record<string, string> = { a: 'link', button: 'button', select: 'combobox', textarea: 'textbox' };
+        const role = el.getAttribute('role') || roles[tag] || tag;
+        const text = (el.getAttribute('aria-label') || el.innerText || el.value || '').trim().split('\n')[0];
+        if (!text) return null;
+        return { role, text };
+      })
+    )
+  ).catch(() => null);
 }
 
 async function hasFocusedElement(explorer: any): Promise<boolean> {
