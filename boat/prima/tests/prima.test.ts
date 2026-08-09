@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Navigator } from '../../../src/ai/navigator.ts';
@@ -567,6 +567,19 @@ describe('Prima.do', () => {
     expect(envelope.ok).toBe(true);
     expect(prompts.join('\n')).toContain('The run is over and these instructions were never reported');
     expect(envelope.steps?.every((step) => step.ok)).toBe(true);
+  });
+
+  test('each action leaves the page it produced beside the log', async () => {
+    const { prima } = fakePrima();
+    const clicked = { ...toolExecution("I.click('Invoices')"), output: { success: true, code: "I.click('Invoices')", pageDiff: { ariaChanges: 'added:\n  - heading "Dashboard"' } } };
+    (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [clicked, completedExecution([1], 'the list is open')] }));
+
+    const envelope = await prima.do(['open the invoices page']);
+    const dir = envelope.stepFiles!;
+
+    expect(existsSync(path.join(dir, '1-i_click__invoices__.aria.yaml'))).toBe(true);
+    expect(existsSync(path.join(dir, '1-i_click__invoices__.html'))).toBe(true);
+    expect(readFileSync(path.join(dir, '1-i_click__invoices__.diff.yaml'), 'utf-8')).toContain('heading "Dashboard"');
   });
 
   test('an instruction the model never reported is named as unaccounted for', async () => {

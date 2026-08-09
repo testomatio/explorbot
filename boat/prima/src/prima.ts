@@ -21,6 +21,7 @@ import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
+import { safeFilename } from '../../../src/utils/strings.ts';
 import { type EnvelopeData, type InstanceInfo, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
@@ -208,12 +209,14 @@ export class Prima {
         if (!execution.wasSuccessful) {
           failure = { code: output.code || '', message: output.message || 'action failed' };
           trace.push({ label: output.code || execution.toolName || 'action', ok: false, proof: output.message || '' });
+          await this.writeStepFiles(trace.length, output.code || execution.toolName || 'action', '');
           continue;
         }
 
         const codes = this.executedCodes(output.code);
         used.push(...codes);
         trace.push({ label: codes.join('; ') || execution.toolName || 'action', ok: true, proof: '' });
+        await this.writeStepFiles(trace.length, codes.join(' ') || execution.toolName || 'action', output.pageDiff?.ariaChanges || '');
         failure = null;
       }
 
@@ -232,6 +235,7 @@ export class Prima {
     if (failure && unfinished.length) {
       const envelope = await this.failureEnvelope(command, failure.message, previousState);
       envelope.steps = steps;
+      envelope.stepFiles = this.statusDir();
       return envelope;
     }
 
@@ -243,6 +247,7 @@ export class Prima {
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
     const envelope = await this.successEnvelope(command, used, result, previousState);
     envelope.steps = steps;
+    envelope.stepFiles = this.statusDir();
     // the step log already reports every action and what it changed
     envelope.used = undefined;
     envelope.changes = undefined;
@@ -1002,6 +1007,20 @@ export class Prima {
     await this.writeSnapshot(result);
     writeFileSync(path.join(this.statusDir(hash), 'status.json'), JSON.stringify({ page: this.pageBlock(result, null), changes: compactAriaSnapshot(result.ariaSnapshot, true) }), 'utf-8');
     return hash;
+  }
+
+  private async writeStepFiles(index: number, label: string, diff: string): Promise<void> {
+    const state = this.bot.stateManager().getCurrentState();
+    if (!state) return;
+
+    const dir = this.statusDir();
+    mkdirSync(dir, { recursive: true });
+    const stem = path.join(dir, `${index}-${safeFilename(label.slice(0, 60))}`);
+    const result = ActionResult.fromState(state);
+
+    writeFileSync(`${stem}.aria.yaml`, result.ariaSnapshot ?? '', 'utf-8');
+    writeFileSync(`${stem}.html`, await result.combinedHtml(), 'utf-8');
+    if (diff) writeFileSync(`${stem}.diff.yaml`, diff, 'utf-8');
   }
 
   private async writeSnapshot(result: ActionResult): Promise<undefined> {

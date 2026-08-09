@@ -23,6 +23,7 @@ export interface EnvelopeData {
   changes?: string | null;
   steps?: Array<{ label: string; ok: boolean; proof: string }>;
   expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' }>;
+  stepFiles?: string;
   value?: string;
   answer?: string;
   research?: string;
@@ -89,6 +90,7 @@ function renderSteps(data: EnvelopeData): string | null {
     lines.push(`${index + 1}. ${step.ok ? 'ok  ' : 'FAIL'} ${step.label}`);
     for (const line of (step.proof || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
+  if (data.stepFiles) lines.push('', `page after each step: ${data.stepFiles}`);
   return section('Steps', lines.join('\n'));
 }
 
