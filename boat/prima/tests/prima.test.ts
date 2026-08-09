@@ -748,7 +748,7 @@ describe('Prima.check', () => {
     ]);
   });
 
-  test('routine steps are counted rather than listed, and failures are kept', async () => {
+  test('steps report the failures and count the rest, leaving verdicts to the outcomes section', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
       test: async (test: any) => {
@@ -765,9 +765,9 @@ describe('Prima.check', () => {
     const labels = envelope.steps?.map((step) => step.label) || [];
 
     expect(labels).toContain('Failed to open the editor (click)');
-    expect(labels).toContain('the editor opens');
+    expect(labels).not.toContain('the editor opens');
     expect(labels).not.toContain('opened the panel');
-    expect(labels.at(-1)).toContain('2 more steps ran without failing');
+    expect(labels.at(-1)).toContain('2 further steps ran without failing');
     expect(labels.at(-1)).toContain('prima status');
   });
 

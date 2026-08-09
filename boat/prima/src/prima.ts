@@ -309,12 +309,12 @@ export class Prima {
     const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
     const envelope = await this.reportEnvelope(command, result, previousState, { ok: outcome.success });
-    const recorded = notes.filter((note) => !note.observation);
-    const worthReporting = recorded.filter((note) => note.status === TestResult.FAILED || outcomes.includes(note.message));
-    envelope.steps = worthReporting.map((note) => ({ label: note.message, ok: note.status !== TestResult.FAILED, proof: note.log || '' }));
+    const recorded = notes.filter((note) => !note.observation && !outcomes.includes(note.message));
+    const failed = recorded.filter((note) => note.status === TestResult.FAILED);
+    envelope.steps = failed.map((note) => ({ label: note.message, ok: false, proof: note.log || '' }));
 
-    const routine = recorded.length - worthReporting.length;
-    if (routine) envelope.steps.push({ label: `${routine} more ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
+    const routine = recorded.length - failed.length;
+    if (routine) envelope.steps.push({ label: `${routine} further ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
 
     envelope.expectations = await this.bot.agentPilot().settleExpectations(test);
 
