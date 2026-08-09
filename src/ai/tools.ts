@@ -33,6 +33,10 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
       description: dedent`
         Click an element by trying multiple CodeceptJS commands in order until one succeeds.
 
+        Use this only for elements the page context gives you no ref for. When the element shows a ref such as [ref=e14],
+        call clickRef with that ref instead — composing a locator for an element that already has a ref is wasted work,
+        and a locator can match several elements where a ref cannot.
+
         Follow <locator_priority> from system prompt for locator selection.
 
         I.click(locator) - click element matching locator
@@ -789,6 +793,38 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
             error: errorMessage,
           });
         }
+      },
+    }),
+
+    clickRef: tool({
+      description: dedent`
+        Click an element by the ref the page context gave it, e.g. [ref=e14].
+
+        Prefer this over click() whenever the element you want carries a ref. A ref names one exact element, so it
+        cannot match several by mistake and never needs disambiguating — it is the fastest way to click.
+        Only pass a ref that appears in the page context you were given. Never invent or guess one.
+        If it reports the ref is gone, the page has been rebuilt: get fresh context and use the new ref.
+      `,
+      inputSchema: z.object({
+        ref: z.string().describe('The ref exactly as it appears in the page context, e.g. "e14"'),
+        element: z.string().describe('Role and name of the element you are clicking, for the record'),
+      }),
+      execute: async ({ ref, element }) => {
+        const activeNote = task.startNote(`Click ${element}`);
+        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+        const action = explorer.action();
+        const code = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
+
+        if (!(await action.attempt(code, `Click ${element}`))) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('clickRef', `Ref ${ref} could not be clicked: ${errorText(action.lastError)}`, {
+            suggestion: 'The ref may belong to an older version of the page. Get fresh context and use the ref it gives, or fall back to click() with a locator.',
+          });
+        }
+
+        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, code);
+        await commitNote(activeNote, TestResult.PASSED, toolResult, action);
+        return successToolResult('clickRef', { ...toolResult, code }, action);
       },
     }),
 

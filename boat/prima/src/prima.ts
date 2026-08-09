@@ -54,10 +54,6 @@ function dropVolatileColumns(markdown: string): string {
     });
 }
 
-function stripRefs(tree: string): string {
-  return tree.replace(/\s*\[ref=[^\]]+\]/g, '');
-}
-
 function cap(text: string, max: number): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max)}\n[...truncated; ${text.length - max} chars omitted...]`;
@@ -686,14 +682,23 @@ export class Prima {
       </proof>
 
       <targets>
-      The page context lists every element by role and name. Target what you act on that way — a role with its name is stable while the page re-renders, so it keeps working after your own actions change the page.
-      Narrow with the container it sits in when a name appears more than once, rather than guessing at an id or a class.
-      When the element an instruction needs is missing from your newest context, call context() to look again and act on what it returns. Never invent a locator the context does not support.
+      The page context lists every element with a ref, like [ref=e14]. To click one, pass that ref to clickRef — a ref names one
+      exact element, so it cannot match several by mistake and costs nothing to resolve. This is the cheapest way to act.
+      Use click() with a role and name for anything clickRef cannot take, and narrow with the container it sits in when a name
+      appears more than once, rather than guessing at an id or a class.
+      Refs belong to the context you were given. Use the ones in your newest context, never one you invented or remembered from
+      an older page. When the element an instruction needs is missing from that context, call context() and act on what it returns.
       </targets>
 
       ${locatorRule}
 
       ${actionRule}
+
+      <targets_first>
+      Everything above about composing locators applies to click() and the other locator tools. It does not apply when the
+      element carries a ref: pass that ref to clickRef instead and compose nothing. Reach for a locator only for elements
+      that have no ref, or when a ref has stopped resolving.
+      </targets_first>
     `;
   }
 
@@ -784,7 +789,7 @@ export class Prima {
 
     return dedent`
       <page url="${result.url}" title="${result.title}">
-      ${stripRefs(compactAriaSnapshot(await this.refAriaSnapshot(result), true, (value) => this.offloadValue(value)))}
+      ${compactAriaSnapshot(await this.refAriaSnapshot(result), true, (value) => this.offloadValue(value))}
       </page>
 
       ${experience}

@@ -735,7 +735,7 @@ describe('Prima.do', () => {
 
     const first = await captured.execute({ reason: 'the control is not in my context' });
     expect(first.context).toContain('button "Refreshed"');
-    expect(first.context).not.toContain('ref=');
+    expect(first.context).toContain('ref=e7');
 
     const second = await captured.execute({ reason: 'still cannot reach it' });
     expect(second.context).toContain('<form>');
