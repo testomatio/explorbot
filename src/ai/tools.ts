@@ -540,14 +540,15 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
   const tools: Record<string, any> = {
     see: tool({
       description: dedent`
-        Check the page contents based on current page state and screenshot.
-        This tool will trigger visual research to check the page contents on request.
-        Use it to verify the actions were performed correctly and the page is in the expected state.
+        Answer a question about the page from a screenshot, for things its structure cannot express:
+        layout and position, what an image or canvas depicts, colour, and whether something is covered or cut off.
+        This runs a second model and is the slowest tool here, so reach for it only when the question is genuinely visual.
+        Do NOT use it to confirm an action landed — every action already reports what changed on the page.
         Input schema has exactly one field: request. Do not pass text, reason, assertion, or other fields.
 
         <example>
-        request: "Check current state of the Login form"
-        result: "Login form is visible with username and password fields, username is filled with 'testuser' and password is empty' 
+        request: "Is the save button covered by anything, and does the chart show any plotted data?"
+        result: "The save button is partly behind a cookie banner at the bottom. The chart area is empty apart from its axes."
         </example>
       `,
       inputSchema: z.object({
