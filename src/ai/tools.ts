@@ -813,15 +813,18 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
         const activeNote = task.startNote(`Click ${element}`);
         const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
         const action = explorer.action();
-        const code = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
+        const named = await describeRef(explorer, ref);
+        const run = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
 
-        if (!(await action.attempt(code, `Click ${element}`))) {
+        if (!(await action.attempt(run, `Click ${element}`))) {
           activeNote.commit(TestResult.FAILED);
           return failedToolResult('clickRef', `Ref ${ref} could not be clicked: ${errorText(action.lastError)}`, {
             suggestion: 'The ref may belong to an older version of the page. Get fresh context and use the ref it gives, or fall back to click() with a locator.',
           });
         }
 
+        // a ref belongs to this session only, so the run is reported as the locator a later test can replay
+        const code = named ? `I.click(${JSON.stringify(named)})` : run;
         const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, code);
         await commitNote(activeNote, TestResult.PASSED, toolResult, action);
         return successToolResult('clickRef', { ...toolResult, code }, action);
@@ -1157,6 +1160,19 @@ export async function commitNote(activeNote: any, result: TestResult, toolResult
     activeNote.screenshot = await action.saveScreenshot();
   }
   activeNote.commit(result);
+}
+
+async function describeRef(explorer: any, ref: string): Promise<{ role: string; text: string } | null> {
+  return explorer
+    .withPage(async (page: any) => {
+      const handle = page.locator(`aria-ref=${ref}`);
+      const role = await handle.getAttribute('role');
+      const label = await handle.getAttribute('aria-label');
+      const text = (label || (await handle.innerText()) || '').trim().split('\n')[0];
+      if (!role || !text) return null;
+      return { role, text };
+    })
+    .catch(() => null);
 }
 
 async function hasFocusedElement(explorer: any): Promise<boolean> {
