@@ -485,7 +485,8 @@ export class Tester extends TaskAgent implements Agent {
     `;
 
     if (task.getPrintableNotes()) {
-      outcomeStatus = dedent`
+      outcomeStatus += dedent`
+
         Your current log:
         <notes>
         ${task.notesToString()}

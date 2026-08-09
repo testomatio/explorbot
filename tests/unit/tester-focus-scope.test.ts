@@ -197,3 +197,17 @@ describe('Tester verdict', () => {
     expect(task.result).toBe(TestResult.FAILED);
   });
 });
+
+describe('Tester step instructions', () => {
+  it('keeps the rules once the log has entries, instead of replacing them with it', async () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', ['filtered items appear'], '/page');
+    task.addNote('clicked the filter button');
+
+    const instructions = await (tester as any).prepareInstructionsForNextStep(task);
+
+    expect(instructions).toContain('Do not run same tool calls with same parameters again');
+    expect(instructions).toContain('clicked the filter button');
+    expect(instructions).toContain('filtered items appear');
+  });
+});
