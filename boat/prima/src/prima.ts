@@ -316,12 +316,7 @@ export class Prima {
     const routine = recorded.length - worthReporting.length;
     if (routine) envelope.steps.push({ label: `${routine} more ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
 
-    envelope.expectations = outcomes.map((text) => {
-      const checked = notes.findLast((note) => note.message === text && !!note.status);
-      if (checked?.status === TestResult.PASSED) return { text, status: 'passed' as const };
-      if (checked?.status === TestResult.FAILED) return { text, status: 'failed' as const };
-      return { text, status: 'unverified' as const };
-    });
+    envelope.expectations = await this.bot.agentPilot().settleExpectations(test);
 
     const observations = notes.filter((note) => note.observation).map((note) => note.message);
     if (observations.length) envelope.answer = ['Page problems noticed while running, not step failures:', ...observations.map((line) => `- ${line}`)].join('\n');
