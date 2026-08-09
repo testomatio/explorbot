@@ -102,7 +102,7 @@ export class Researcher extends ResearcherBase implements Agent {
       const cached = getCachedResearch(stateHash);
       if (cached) {
         debugLog('Previous research result found');
-        return `!! UI MAP IS CACHED AND MAY NOT REPRESENT CURRENT STATE; REFRESH RESEARCH IF YOU NOTICE ISSUES !!\n\n${cached}`;
+        return cached;
       }
     }
 

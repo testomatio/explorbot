@@ -20,6 +20,10 @@ function clickCall(id: string, commands: string[], explanation: string) {
   return { id, name: 'click', arguments: JSON.stringify({ commands, explanation }) };
 }
 
+function completedCall(id: string, numbers: number[], proof: string) {
+  return { id, name: 'completed', arguments: JSON.stringify({ numbers, proof }) };
+}
+
 function extractPromptText(entry: any): string {
   if (!entry?.body?.messages) return '';
   return entry.body.messages
@@ -95,8 +99,8 @@ describe('Prima.do with aimock', () => {
   });
 
   it('runs both instructions and collects the executed code', async () => {
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [clickCall('call-1', ['I.click("Account")'], 'open the account menu')] });
-    mock.on({ sequenceIndex: 1 }, { toolCalls: [clickCall('call-2', ['I.click("Settings")'], 'choose the settings entry')] });
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [clickCall('call-1', ['I.click("Account")'], 'open the account menu'), completedCall('call-2', [1], 'the account menu is open')] });
+    mock.on({ sequenceIndex: 1 }, { toolCalls: [clickCall('call-3', ['I.click("Settings")'], 'choose the settings entry'), completedCall('call-4', [2], 'the settings page is shown')] });
     mock.on({}, { content: 'Both instructions are done.' });
 
     const envelope = await prima.do(['open the account menu', 'choose the settings entry']);
@@ -105,6 +109,10 @@ describe('Prima.do with aimock', () => {
     expect(envelope.used).toEqual(['I.click("Account")', 'I.click("Settings")']);
     expect(executed).toEqual(['I.click("Account")', 'I.click("Settings")']);
     expect(envelope.command).toContain('open the account menu');
+    expect(envelope.steps).toEqual([
+      { label: 'open the account menu', ok: true, proof: 'the account menu is open\nI.click("Account")' },
+      { label: 'choose the settings entry', ok: true, proof: 'the settings page is shown\nI.click("Settings")' },
+    ]);
   });
 
   it('sends every instruction and the page context in one prompt', async () => {

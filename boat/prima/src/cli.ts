@@ -10,53 +10,42 @@ const helpContract = dedent`
   Prima drives a browser that is already open. One command per process; every command
   prints a plain-text envelope on stdout and exits 0 when ok, 1 when not.
 
-  TIERS - choose by what you hold, not by how hard the step looks
-    pw <fn>        Precise. A Playwright function expression built from a locator you
-                   already verified. No AI on the happy path.
-                     prima pw "({ page }) => page.click('[data-test=submit]')"
+  TIERS - start at the top and come down only when the tier above cannot hold the work
     check <scenario>
-                   A whole scenario run as a test: it drives the page, verifies the outcome
-                   itself, and reports every step it took with the proof for each.
-                     prima check "the workflow editor opens and a workflow can be saved"
-    do <steps...>  Several described steps, run tester-style in one process. This is the
-                   tier that pays: one process attaches once and carries the whole
-                   sequence, so a run of six steps costs a fraction of six commands.
-                   Reach for it whenever the next few steps are already known.
+                   A whole behaviour, run as a test. It drives the page, verifies the
+                   outcome itself, and reports each expected outcome with its proof.
+                   One command for something you want a verdict on. Start here.
+                     prima check "a workflow can be created and appears in the list" \\
+                                 --expected "the new workflow is listed"
+    do <steps...>  Several described steps, carried out in one process. Pass the WHOLE
+                   remaining sequence - a run of eight steps costs a fraction of eight
+                   commands, and that is the whole point of this tier.
                      prima do "open the account menu" "choose the settings entry" \\
                               "switch the theme to dark" "check the change took effect"
-    Never pass a locator or a function expression to do - describe the target.
-    Never pass a description to pw - it takes executable code only.
-    do stops at the last step you gave it and never carries on past it. A step it could
-    not carry out is named under ### Failure and makes the command fail.
-
-  LOOP
-    prima go <url|path|words>  reach the page you want to work on
-    prima research             once per new page; returns verified locators
-    prima pw "..."             drive the page with those locators
-    prima verify "..."         assert the outcome (prima ask "..." to inspect instead)
-    Fall back to do whenever research left you no locator to hold.
+    pw <fn>        One Playwright function expression, from a locator you already
+                   verified. No AI. For when you know exactly what to run.
+                     prima pw "({ page }) => page.click('[data-test=submit]')"
+    Describe targets to check and do; give pw executable code only. Never mix the two.
+    Coming down a tier to run steps one at a time costs more than the tier above, in
+    both time and what you have to read - it is a fallback, not a default.
 
   CHECK
-    check runs a whole scenario the way a tester would: it plans, drives the page, and
-    verifies the outcome itself, then reports every step with the proof for each.
     Give it an outcome, not a click path - it decides how to get there.
-      prima check "a workflow can be created and appears in the list" --url http://app.test
-      prima check "signup rejects a duplicate email" --expected "an error names the email as taken" --expected "no second account is created"
-    --url  opens that page first, when the browser is not already on it.
     --expected  one outcome the run must reach; repeat it for several. Without it the
-                scenario text is the single expected outcome.
-    ### Expected outcomes echoes each one back as PASSED, FAILED or not verified -
-    "not verified" means the run never checked it, which is not the same as false.
-    ### Steps lists what ran; page problems seen on the way are reported separately
-    under ### Answer, because they are not step failures.
-    Prefer check over do when you want a verdict on a behaviour; prefer do when you
-    already know the steps and want them carried out.
+                scenario text is the single expected outcome. Each comes back under
+                ### Expected outcomes as PASSED, FAILED or not verified - "not verified"
+                means the run never checked it, which is not the same as false.
+    Page problems seen on the way are reported under ### Answer, not as step failures.
+
+  DO
+    Each instruction is numbered and accounted for: ### Steps reports every one as ok or
+    FAIL with what proved it. One that could not be carried out fails the command and
+    says why. Nothing runs past the last instruction you gave.
 
   VERIFY
-    verify runs the assertions it can express and reports each one with PASSED or
-    FAILED, plus the playwright form of the ones that held. It does not decide whether
-    your claim is true - read the lines and decide. Assertions that ran are evidence;
-    "none ran" means the claim could not be expressed, which is not the same as false.
+    Reports each assertion it could express as PASSED or FAILED with its playwright form,
+    and gives no overall verdict - read the lines and decide. "none ran" means the claim
+    could not be expressed, which is not the same as false.
 
   ENVELOPE
     ### Result     ok, command, used
@@ -102,7 +91,10 @@ const helpContract = dedent`
     you pass.
 `;
 
-function buildOptions(options: any): PrimaOptions {
+let rootOptions: () => any = () => ({});
+
+function buildOptions(subcommand: any): PrimaOptions {
+  const options = { ...rootOptions(), ...stripEmpty(subcommand) };
   return {
     verbose: options.verbose || options.debug,
     config: options.config,
@@ -119,6 +111,15 @@ function buildOptions(options: any): PrimaOptions {
     endpoint: options.endpoint,
     pwSession: options.pwSession,
   };
+}
+
+function stripEmpty(options: any): any {
+  const present: any = {};
+  for (const [key, value] of Object.entries(options || {})) {
+    if (value === undefined) continue;
+    present[key] = value;
+  }
+  return present;
 }
 
 function addCommonOptions(cmd: Command): Command {
@@ -173,7 +174,10 @@ async function runBrowser(options: any, run: (prima: Prima) => Promise<boolean>)
 export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
   cmd.description('Drive an already-open browser one command at a time and report back in a plain-text envelope');
+  cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
+  cmd.option('--url <url>', 'Page to open when the session has no page yet');
   cmd.addHelpText('after', `\n${helpContract}`);
+  rootOptions = () => cmd.opts();
 
   addCommonOptions(cmd.command('pw <fn>').description('Run a Playwright function expression against the open page')).action(async (fn, options) => {
     await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));

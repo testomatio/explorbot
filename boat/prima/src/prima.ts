@@ -35,6 +35,7 @@ const CONNECT_TIMEOUT = 3000;
 const requireLib = createRequire(import.meta.url);
 
 const VOLATILE_COLUMNS = ['CSS', 'XPath', 'Coordinates', 'eidx'];
+const UNACCOUNTED: Record<string, string> = { open: 'never reported — the run ended with this instruction still open' };
 
 function dropVolatileColumns(markdown: string): string {
   return mdq(markdown)
@@ -67,6 +68,7 @@ export class Prima {
   private bot: ExplorBot;
   private artifactsDir?: string;
   private hash?: string;
+  private sessionUrl?: string;
   private server: { close: () => Promise<void> } | null = null;
   private attached: string | null = null;
 
@@ -85,8 +87,14 @@ export class Prima {
   }
 
   async start(): Promise<void> {
+    let discovery: Discovery | undefined;
+    if (!this.options.endpoint) {
+      discovery = await this.discover();
+      this.adoptSessionUrl(discovery);
+    }
+
     const config = await this.loadConfig();
-    await this.resolveBrowser(config);
+    await this.resolveBrowser(config, discovery);
     await this.bot.start();
 
     if (!this.options.url) return;
@@ -134,23 +142,31 @@ export class Prima {
     const conversation = provider.startConversation(this.instructionSystemPrompt(), AI_AGENT_NAME);
     const task = new Task(instructions.join('; '), previousState?.url || '');
     const deps = { explorer: this.bot.getExplorer(), stateManager: this.bot.stateManager(), ai: provider };
-    const report: { called: boolean; summary: string; unmet: string[] } = { called: false, summary: '', unmet: [] };
-    const tools = { ...createCodeceptJSTools(deps, task), ...this.testerTools(deps), context: this.contextTool(), done: this.doneTool(report) };
+    const ledger: LedgerEntry[] = instructions.map((text) => ({ text, status: 'open', proof: '', evidence: [] }));
+    const tools = { ...createCodeceptJSTools(deps, task), ...this.testerTools(deps), context: this.contextTool(), completed: this.completedTool(), blocked: this.blockedTool() };
     conversation.addUserText(await this.instructionPrompt(instructions, await this.capturedResult(previousState)));
 
     const used: string[] = [];
     const checks = new Map<string, boolean>();
-    const steps: Array<{ label: string; ok: boolean; proof: string }> = [];
+    const evidence: string[] = [];
     let failure: { code: string; message: string } | null = null;
     let aiError: unknown = null;
     let narration = '';
+    let nudged = false;
     let contextHash = this.bot.stateManager().getCurrentState()?.hash;
+    let openList = this.openInstructions(ledger);
 
     for (let iteration = 1; iteration <= Math.min(instructions.length * ITERATIONS_PER_INSTRUCTION + 2, MAX_INSTRUCTION_ITERATIONS); iteration++) {
       const state = this.bot.stateManager().getCurrentState();
       if (iteration > 1 && state && state.hash !== contextHash) {
         contextHash = state.hash;
         conversation.addUserText(await this.pageContext(ActionResult.fromState(state)));
+      }
+
+      const remaining = this.openInstructions(ledger);
+      if (iteration > 1 && remaining !== openList) {
+        openList = remaining;
+        conversation.addUserText(`<remaining>\n${remaining}\n</remaining>`);
       }
 
       const invoked = await provider.invokeConversation(conversation, tools, { maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS, agentName: AI_AGENT_NAME }).catch((error: unknown) => {
@@ -162,48 +178,82 @@ export class Prima {
       const executions = invoked.toolExecutions || [];
       if (!executions.length) {
         narration = invoked.response?.text?.trim() || '';
-        break;
+        const unreported = this.openInstructions(ledger);
+        if (!unreported || nudged) break;
+        nudged = true;
+        conversation.addUserText(dedent`
+          These instructions are still unreported:
+          ${unreported}
+
+          Report each one with completed() or blocked(). Do not act again on anything you have already carried out.
+        `);
+        continue;
       }
 
       for (const execution of executions) {
         const output = execution.output || {};
 
-        if (output.action === 'done') continue;
+        if (output.action === 'completed') {
+          for (const number of execution.input?.numbers || []) {
+            const entry = ledger[number - 1];
+            if (entry?.status !== 'open') continue;
+            entry.status = 'done';
+            entry.proof = execution.input?.proof || '';
+            entry.evidence = [...evidence];
+          }
+          evidence.length = 0;
+          continue;
+        }
+
+        if (output.action === 'blocked') {
+          const entry = ledger[(execution.input?.instruction || 0) - 1];
+          if (entry?.status === 'open') {
+            entry.status = 'blocked';
+            entry.proof = execution.input?.reason || '';
+            entry.evidence = [...evidence];
+          }
+          evidence.length = 0;
+          continue;
+        }
 
         if (output.action === 'verify' && !output.inexpressible) {
           const claim = execution.input?.assertion || 'verification';
           let passed = execution.wasSuccessful;
           if (output.alreadyVerified) passed = output.verifications?.[claim] === true;
           checks.set(claim, passed);
-          steps.push({ label: `verify: ${claim}`, ok: passed, proof: output.code || output.message || '' });
+          evidence.push(`verify: ${claim} => ${passed ? 'PASSED' : 'FAILED'}`);
           continue;
         }
 
         if (!execution.wasSuccessful) {
           failure = { code: output.code || '', message: output.message || 'action failed' };
-          steps.push({ label: output.code || execution.toolName || 'action', ok: false, proof: output.message || '' });
+          evidence.push(`FAILED ${output.code || execution.toolName || 'action'}: ${output.message || ''}`);
           continue;
         }
 
         const codes = this.executedCodes(output.code);
         used.push(...codes);
-        steps.push({ label: codes.join('; ') || execution.toolName || 'action', ok: true, proof: output.pageDiff?.ariaChanges || '' });
+        evidence.push(...codes);
+        if (output.pageDiff?.ariaChanges) evidence.push(output.pageDiff.ariaChanges);
         failure = null;
       }
 
-      if (report.called) break;
+      if (ledger.every((entry) => entry.status !== 'open')) break;
     }
 
     if (aiError) return this.failureEnvelope(command, aiError, previousState);
 
-    if (failure) {
+    const steps = ledger.map((entry) => ({ label: entry.text, ok: entry.status === 'done', proof: [entry.proof || UNACCOUNTED[entry.status], ...entry.evidence].filter(Boolean).join('\n') }));
+    const unfinished = ledger.filter((entry) => entry.status !== 'done');
+
+    if (failure && unfinished.length) {
       const envelope = await this.failureEnvelope(command, failure.message, previousState);
       envelope.used = used;
       envelope.steps = steps;
       return envelope;
     }
 
-    if (!used.length && !report.called) {
+    if (!used.length && unfinished.length === ledger.length) {
       const reason = ['No action was performed for these instructions on the current page.', narration].filter(Boolean).join(' ');
       return this.failureEnvelope(command, reason, previousState);
     }
@@ -211,9 +261,8 @@ export class Prima {
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
     const envelope = await this.successEnvelope(command, used, result, previousState);
     envelope.steps = steps;
-    if (report.summary) envelope.answer = report.summary;
 
-    const unmet = [...report.unmet];
+    const unmet = unfinished.map((entry) => `${entry.status}: ${entry.text}${entry.proof ? ` — ${entry.proof}` : ''}`);
     for (const [claim, passed] of checks) {
       if (!passed) unmet.push(`unproven: ${claim}`);
     }
@@ -222,6 +271,14 @@ export class Prima {
       envelope.failure = { error: unmet.join('\n') };
     }
     return envelope;
+  }
+
+  private openInstructions(ledger: LedgerEntry[]): string {
+    return ledger
+      .map((entry, index) => ({ entry, number: index + 1 }))
+      .filter(({ entry }) => entry.status === 'open')
+      .map(({ entry, number }) => `${number}. ${entry.text}`)
+      .join('\n');
   }
 
   async check(scenario: string, expected: string[] = []): Promise<EnvelopeData> {
@@ -396,13 +453,22 @@ export class Prima {
   }
 
   private configBaseUrl(): string | undefined {
-    const url = this.options.baseUrl || this.options.url;
+    const url = this.options.baseUrl || this.options.url || this.sessionUrl;
     if (!url) return undefined;
     if (!URL.canParse(url)) return undefined;
     return url;
   }
 
-  private async resolveBrowser(config: ExplorbotConfig): Promise<void> {
+  private adoptSessionUrl(discovery: Discovery): void {
+    if (this.options.baseUrl || this.options.url) return;
+
+    const url = discovery.browser?.contexts()[0]?.pages()[0]?.url();
+    if (!url?.startsWith('http')) return;
+    this.sessionUrl = new URL(url).origin;
+    this.bot.getOptions().baseUrl = this.sessionUrl;
+  }
+
+  private async resolveBrowser(config: ExplorbotConfig, discovered?: Discovery): Promise<void> {
     if (this.options.endpoint) {
       const endpoint = this.options.endpoint;
       const browserName = config.playwright.browser || 'chromium';
@@ -415,7 +481,7 @@ export class Prima {
       `);
     }
 
-    const { match, candidates, browser } = await this.discover();
+    const { match, candidates, browser } = discovered || (await this.discover());
     if (match && (await this.attachToEndpoint(match, browser))) return;
 
     if (!match && candidates.length) {
@@ -542,12 +608,20 @@ export class Prima {
       </role>
 
       <approach>
-      1. Read the page context and perform the instructions in the order they are listed.
+      1. Read the page context and carry out the instructions in the order they are listed.
       2. Interact with the page only through the provided tools.
       3. Pick the smallest interaction that fulfills an instruction, then move to the next one.
       4. After the page changes, work from the updated context you are given, not from the earlier one.
-      5. Call done() once the last instruction is carried out, or once it is clear it cannot be on this page — list the ones you could not carry out there.
+      5. Account for every instruction: completed() as soon as one is satisfied, blocked() when the page cannot do what it asks.
       </approach>
+
+      <ledger>
+      Instructions are numbered and those numbers never change. Report by number.
+      Saying in your reply that something is done does not report it — only completed() does. Nothing you write is read as a report.
+      An instruction you have reported is finished. Never act on it again, and never report it twice.
+      You are shown what is still open after each turn. When nothing is open the run is over.
+      Reaching for blocked() after a couple of honest attempts costs less than a third attempt that fails the same way.
+      </ledger>
 
       <scope>
       Do only what the instructions ask. An action that looks helpful but was not asked for is out of scope — report it as something you noticed, never perform it.
@@ -563,7 +637,8 @@ export class Prima {
 
       <proof>
       An instruction is done only when a change on the page shows it. After each action read the reported change and decide which part of it proves the instruction.
-      When nothing observable followed, say the instruction is unproven and why. Do not restate the action as if it were the outcome.
+      That part is what completed() takes as its proof. Do not restate the action as if it were the outcome.
+      An instruction that only inspects the page is satisfied by what you can see, including seeing that something is absent — those need no action at all.
       </proof>
 
       <targets>
@@ -599,22 +674,31 @@ export class Prima {
     return tools;
   }
 
-  private doneTool(report: { called: boolean; summary: string; unmet: string[] }): any {
+  private completedTool(): any {
     return tool({
       description: dedent`
-        End the sequence. Call it once every instruction is either carried out or established as impossible on this page.
-        Nothing runs after this call, so do not call it while an instruction is still worth another attempt.
+        Report the instructions you have just satisfied, by their number. Report several together when one turn satisfied several.
+        A reported instruction is finished — you will not be asked for it again and must not act on it again.
       `,
       inputSchema: z.object({
-        summary: z.string().describe('One sentence on what the page shows now that proves the instructions were carried out'),
-        unmet: z.array(z.string()).describe('Instructions that could not be carried out, each with what blocked it. Empty when all of them were carried out.'),
+        numbers: z.array(z.number()).describe('Numbers of the instructions now satisfied, as they are numbered in the instruction list'),
+        proof: z.string().describe('What on the page shows they are satisfied'),
       }),
-      execute: async ({ summary, unmet }) => {
-        report.called = true;
-        report.summary = summary;
-        report.unmet = unmet || [];
-        return { success: true, action: 'done' };
-      },
+      execute: async () => ({ success: true, action: 'completed' }),
+    });
+  }
+
+  private blockedTool(): any {
+    return tool({
+      description: dedent`
+        Report one instruction that cannot be carried out on this page, by its number. Reach for this instead of trying the same thing again.
+        The rest of the sequence continues without it.
+      `,
+      inputSchema: z.object({
+        instruction: z.number().describe('Number of the instruction that cannot be carried out'),
+        reason: z.string().describe('What stopped it — what you looked for and what the page showed instead'),
+      }),
+      execute: async () => ({ success: true, action: 'blocked' }),
     });
   }
 
@@ -877,6 +961,13 @@ interface Discovery {
   match?: PwServerDescriptor;
   candidates: PwServerDescriptor[];
   browser?: Browser;
+}
+
+interface LedgerEntry {
+  text: string;
+  status: 'open' | 'done' | 'blocked';
+  proof: string;
+  evidence: string[];
 }
 
 export interface PrimaOptions {
