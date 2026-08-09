@@ -139,14 +139,14 @@ export class Prima {
     const conversation = provider.startConversation(this.instructionSystemPrompt(), AI_AGENT_NAME);
     const task = new Task(instructions.join('; '), previousState?.url || '');
     const deps = { explorer: this.bot.getExplorer(), stateManager: this.bot.stateManager(), ai: provider };
-    const ledger: LedgerEntry[] = instructions.map((text) => ({ text, status: 'open', proof: '', evidence: [] }));
+    const ledger: LedgerEntry[] = instructions.map((text) => ({ text, status: 'open', proof: '' }));
     const descent = { markup: false };
     const tools = { ...createCodeceptJSTools(deps, task), ...this.testerTools(deps), context: this.contextTool(descent), completed: this.completedTool(), blocked: this.blockedTool() };
     conversation.addUserText(await this.instructionPrompt(instructions, await this.capturedResult(previousState)));
 
     const used: string[] = [];
     const checks = new Map<string, boolean>();
-    const evidence: string[] = [];
+    const trace: Array<{ label: string; ok: boolean; proof: string }> = [];
     let failure: { code: string; message: string } | null = null;
     let aiError: unknown = null;
     let narration = '';
@@ -194,27 +194,26 @@ export class Prima {
       for (const execution of executions) {
         const output = execution.output || {};
 
-        if (this.applyLedgerReport(execution, ledger, evidence)) continue;
+        if (this.applyLedgerReport(execution, ledger, trace)) continue;
 
         if (output.action === 'verify' && !output.inexpressible) {
           const claim = execution.input?.assertion || 'verification';
           let passed = execution.wasSuccessful;
           if (output.alreadyVerified) passed = output.verifications?.[claim] === true;
           checks.set(claim, passed);
-          evidence.push(`verify: ${claim} => ${passed ? 'PASSED' : 'FAILED'}`);
+          trace.push({ label: `verify: ${claim}`, ok: passed, proof: output.code || '' });
           continue;
         }
 
         if (!execution.wasSuccessful) {
           failure = { code: output.code || '', message: output.message || 'action failed' };
-          evidence.push(`FAILED ${output.code || execution.toolName || 'action'}: ${output.message || ''}`);
+          trace.push({ label: output.code || execution.toolName || 'action', ok: false, proof: output.message || '' });
           continue;
         }
 
         const codes = this.executedCodes(output.code);
         used.push(...codes);
-        evidence.push(...codes);
-        if (output.pageDiff?.ariaChanges) evidence.push(output.pageDiff.ariaChanges);
+        trace.push({ label: codes.join('; ') || execution.toolName || 'action', ok: true, proof: '' });
         failure = null;
       }
 
@@ -224,15 +223,14 @@ export class Prima {
     if (aiError) return this.failureEnvelope(command, aiError, previousState);
 
     if (used.length && ledger.some((entry) => entry.status === 'open')) {
-      await this.settleLedger(conversation, provider, ledger, evidence);
+      await this.settleLedger(conversation, provider, ledger, trace);
     }
 
-    const steps = ledger.map((entry) => ({ label: entry.text, ok: entry.status === 'done', proof: [entry.proof || UNACCOUNTED[entry.status], ...entry.evidence].filter(Boolean).join('\n') }));
     const unfinished = ledger.filter((entry) => entry.status !== 'done');
+    const steps = [...trace, ...ledger.filter((entry) => entry.status === 'open').map((entry) => ({ label: `unreported: ${entry.text}`, ok: false, proof: UNACCOUNTED.open }))];
 
     if (failure && unfinished.length) {
       const envelope = await this.failureEnvelope(command, failure.message, previousState);
-      envelope.used = used;
       envelope.steps = steps;
       return envelope;
     }
@@ -245,6 +243,9 @@ export class Prima {
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
     const envelope = await this.successEnvelope(command, used, result, previousState);
     envelope.steps = steps;
+    // the step log already reports every action and what it changed
+    envelope.used = undefined;
+    envelope.changes = undefined;
 
     const unmet = unfinished.map((entry) => `${entry.status}: ${entry.text}${entry.proof ? ` — ${entry.proof}` : ''}`);
     for (const [claim, passed] of checks) {
@@ -265,18 +266,20 @@ export class Prima {
       .join('\n');
   }
 
-  private applyLedgerReport(execution: any, ledger: LedgerEntry[], evidence: string[]): boolean {
+  private applyLedgerReport(execution: any, ledger: LedgerEntry[], trace: Array<{ label: string; ok: boolean; proof: string }>): boolean {
     const action = execution.output?.action;
 
     if (action === 'completed') {
+      const closed: string[] = [];
       for (const number of execution.input?.numbers || []) {
         const entry = ledger[number - 1];
         if (entry?.status !== 'open') continue;
         entry.status = 'done';
         entry.proof = execution.input?.proof || '';
-        entry.evidence = [...evidence];
+        closed.push(entry.text);
       }
-      evidence.length = 0;
+      // one report carries one proof, however many instructions it closed
+      if (closed.length) trace.push({ label: `done: ${closed.join('; ')}`, ok: true, proof: execution.input?.proof || '' });
       return true;
     }
 
@@ -286,13 +289,12 @@ export class Prima {
     if (entry?.status === 'open') {
       entry.status = 'blocked';
       entry.proof = execution.input?.reason || '';
-      entry.evidence = [...evidence];
+      trace.push({ label: `blocked: ${entry.text}`, ok: false, proof: entry.proof });
     }
-    evidence.length = 0;
     return true;
   }
 
-  private async settleLedger(conversation: any, provider: any, ledger: LedgerEntry[], evidence: string[]): Promise<void> {
+  private async settleLedger(conversation: any, provider: any, ledger: LedgerEntry[], trace: Array<{ label: string; ok: boolean; proof: string }>): Promise<void> {
     conversation.addUserText(dedent`
       The run is over and these instructions were never reported:
 
@@ -306,7 +308,7 @@ export class Prima {
     const invoked = await provider.invokeConversation(conversation, { completed: this.completedTool(), blocked: this.blockedTool() }, { maxToolRoundtrips: 2, toolChoice: 'required', agentName: AI_AGENT_NAME }).catch(() => null);
 
     for (const execution of invoked?.toolExecutions || []) {
-      this.applyLedgerReport(execution, ledger, evidence);
+      this.applyLedgerReport(execution, ledger, trace);
     }
   }
 
@@ -1045,7 +1047,6 @@ interface LedgerEntry {
   text: string;
   status: 'open' | 'done' | 'blocked';
   proof: string;
-  evidence: string[];
 }
 
 export interface PrimaOptions {

@@ -115,7 +115,7 @@ describe('Prima.do with aimock', () => {
     expect(executed.every((code) => code.includes('aria-ref='))).toBe(true);
     expect(executed).toHaveLength(2);
     expect(envelope.command).toContain('open the account menu');
-    expect(envelope.steps?.map((step) => step.ok)).toEqual([true, true]);
+    expect(envelope.steps?.map((step) => step.label).filter((label) => label.startsWith('done:'))).toEqual(['done: open the account menu', 'done: choose the settings entry']);
   });
 
   it('sends every instruction and the page context in one prompt', async () => {

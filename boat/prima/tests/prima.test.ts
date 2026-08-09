@@ -439,7 +439,7 @@ describe('Prima.do', () => {
     expect(prompts.join('\n')).toContain('open the first invoice');
     expect(prompts.join('\n')).toContain('download its PDF');
     expect(prompts.join('\n')).toContain('button "Sign in"');
-    expect(envelope.used).toEqual(["I.click('Login')"]);
+    expect(envelope.steps?.[0]).toMatchObject({ label: "I.click('Login')", ok: true });
     expect(envelope.ok).toBe(true);
     expect(calls).toBe(1);
   });
@@ -458,9 +458,32 @@ describe('Prima.do', () => {
 
     expect(envelope.ok).toBe(true);
     expect(envelope.steps).toEqual([
-      { label: 'open the invoices page', ok: true, proof: "the invoice list is open\nI.click('Invoices')" },
-      { label: 'download the PDF', ok: true, proof: "the PDF opened in a new tab\nI.click('Download')" },
+      { label: "I.click('Invoices')", ok: true, proof: '' },
+      { label: 'done: open the invoices page', ok: true, proof: 'the invoice list is open' },
+      { label: "I.click('Download')", ok: true, proof: '' },
+      { label: 'done: download the PDF', ok: true, proof: 'the PDF opened in a new tab' },
     ]);
+  });
+
+  test('one report closing several instructions is logged once, not once per instruction', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [toolExecution("I.click('Overview')"), completedExecution([1, 2], 'the workflow list is shown')] }));
+
+    const envelope = await prima.do(['click the overview button', 'confirm the workflow list appears']);
+
+    expect(envelope.steps?.map((step) => step.label)).toEqual(["I.click('Overview')", 'done: click the overview button; confirm the workflow list appears']);
+    expect(envelope.steps?.filter((step) => step.proof === 'the workflow list is shown')).toHaveLength(1);
+  });
+
+  test('the page diff is reported once, under changes, not again under every step', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [toolExecution("I.click('Overview')"), completedExecution([1], 'the list is shown')] }));
+
+    const envelope = await prima.do(['click the overview button']);
+
+    expect(envelope.changes).toBeUndefined();
+    expect(envelope.used).toBeUndefined();
+    expect(envelope.steps?.some((step) => step.label === "I.click('Overview')")).toBe(true);
   });
 
   test('an instruction reported without any action behind it says so rather than being rejected', async () => {
@@ -470,7 +493,7 @@ describe('Prima.do', () => {
     const envelope = await prima.do(['dismiss the cookie banner if one appeared']);
 
     expect(envelope.ok).toBe(true);
-    expect(envelope.steps).toEqual([{ label: 'dismiss the cookie banner if one appeared', ok: true, proof: 'no cookie banner is present on this page' }]);
+    expect(envelope.steps).toEqual([{ label: 'done: dismiss the cookie banner if one appeared', ok: true, proof: 'no cookie banner is present on this page' }]);
   });
 
   test('the remaining instructions are re-stated as the ledger closes, and finished ones are not', async () => {
@@ -554,8 +577,8 @@ describe('Prima.do', () => {
 
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toContain('open: download the PDF');
-    expect(envelope.steps?.[1]).toMatchObject({ label: 'download the PDF', ok: false });
-    expect(envelope.steps?.[1].proof).toContain('never reported');
+    expect(envelope.steps?.at(-1)).toMatchObject({ label: 'unreported: download the PDF', ok: false });
+    expect(envelope.steps?.at(-1)?.proof).toContain('never reported');
   });
 
   test('a stray failed action does not fail a sequence whose instructions all closed', async () => {
@@ -705,7 +728,7 @@ describe('Prima.do', () => {
 
     expect(envelope.ok).toBe(false);
     expect(envelope.failure?.error).toContain('unproven: unsaved indicator is visible');
-    expect(envelope.steps?.[0].proof).toContain('verify: unsaved indicator is visible => FAILED');
+    expect(envelope.steps?.[0]).toMatchObject({ label: 'verify: unsaved indicator is visible', ok: false });
   });
 
   test('a check that passes on a retry does not fail the command', async () => {
