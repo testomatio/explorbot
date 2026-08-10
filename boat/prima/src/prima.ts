@@ -80,7 +80,6 @@ export class Prima {
       config: options.config,
       path: options.path,
       baseUrl: this.configBaseUrl(),
-      verbose: options.verbose,
       session: options.session,
       instance: options.instance,
       headless: true,
@@ -1109,7 +1108,6 @@ interface LedgerEntry {
 }
 
 export interface PrimaOptions {
-  verbose?: boolean;
   config?: string;
   path?: string;
   instance?: string;
