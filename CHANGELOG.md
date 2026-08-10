@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-08-11
+
+### Changes
+
+- Page snapshots no longer carry variant-prefixed classes such as `dark:`, `hover:` or `md:`. Those
+  classes describe how an element looks in some other state, not what it is, so the agents now read
+  a smaller and less noisy page.
+
 ## 2026-08-06
 
 ### Global Installation
