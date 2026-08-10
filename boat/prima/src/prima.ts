@@ -14,6 +14,8 @@ import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../..
 import { listSites } from '../../../src/global-config.ts';
 import { ConfigMissingError, ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
+import { Reporter } from '../../../src/reporter.ts';
+import { Stats } from '../../../src/stats.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Task, Test, TestResult } from '../../../src/test-plan.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
@@ -24,6 +26,7 @@ import { pluralize } from '../../../src/utils/logger.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
 import { type EnvelopeData, type InstanceInfo, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
+import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 
 const TESTER_ONLY_TOOLS = ['learnExperience', 'askUser'];
@@ -69,6 +72,7 @@ export class Prima {
   private sessionUrl?: string;
   private server: { close: () => Promise<void> } | null = null;
   private attached: string | null = null;
+  private session: SessionRun | null = null;
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -81,6 +85,7 @@ export class Prima {
       instance: options.instance,
       headless: true,
       optionalAi: true,
+      reporter: { enabled: false },
     });
   }
 
@@ -455,6 +460,45 @@ export class Prima {
     return lines.join('\n');
   }
 
+  record(envelope: EnvelopeData, durationMs: number): void {
+    if (!this.session) return;
+    recordCommand(sessionFile(this.session.key), this.session, envelope, durationMs);
+  }
+
+  async report(): Promise<string> {
+    const [site] = listSites();
+    if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
+    await this.loadConfig();
+
+    let file = latestSessionFile();
+    if (this.options.pwSession) file = sessionFile(this.options.pwSession);
+    if (!file || !existsSync(file)) return `No prima session was recorded under ${sessionsDir()}. Commands are recorded as they run.`;
+
+    const session = readSession(file);
+    if (!session.tests.length) return `No commands are recorded in ${file}`;
+
+    Stats.sessionName = path.basename(file, '.jsonl');
+    process.env.TESTOMATIO_TITLE = session.title;
+    const reporter = new Reporter({ html: true, markdown: true });
+
+    // the report pipes narrate themselves on console.log; prima prints the paths itself
+    const speak = console.log;
+    console.log = () => {};
+    try {
+      for (const test of session.tests) await reporter.reportTestData(test.status, test);
+      await reporter.finishRun();
+    } finally {
+      console.log = speak;
+    }
+
+    return [
+      `${session.tests.length} ${pluralize(session.tests.length, 'command')} from ${file}`,
+      `html:     ${outputPath('reports', `${Stats.sessionLabel()}.html`)}`,
+      `markdown: ${outputPath('reports', `${Stats.sessionLabel()}-tests.md`)}`,
+      `upload:   TESTOMATIO=<apiKey> npx @testomatio/reporter replay ${file}`,
+    ].join('\n');
+  }
+
   async browserStatus(): Promise<string> {
     await this.loadConfig();
     const info = await this.instanceInfo();
@@ -596,6 +640,7 @@ export class Prima {
 
     this.bot.attachBrowser(browser);
     this.attached = this.attachmentLabel(descriptor);
+    this.session = { key: descriptor.title || this.instanceName(), endpoint: descriptor.endpoint, title: `prima session "${descriptor.title || this.instanceName()}"` };
     return true;
   }
 
@@ -627,7 +672,10 @@ export class Prima {
   }
 
   private async connectOwnInstance(): Promise<boolean> {
-    return !!(await getAliveEndpoint(this.instanceName()));
+    const endpoint = await getAliveEndpoint(this.instanceName());
+    if (!endpoint) return false;
+    this.session = { key: this.instanceName(), endpoint, title: `prima instance "${this.instanceName()}"` };
+    return true;
   }
 
   private async launchOwnServer(opts: { browser?: string; show?: boolean }, instance: string): Promise<{ close: () => Promise<void> }> {

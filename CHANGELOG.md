@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-08-10
+
+### `prima report` collects a whole session into one report
+
+Every prima command is logged to `output/prima/sessions/` as it runs. `prima report` turns that
+log into an HTML and a Markdown report — each command with its steps, expected outcomes and the
+proof recorded for them. It needs no browser, so the report still comes out after the session is
+closed.
+
+```bash
+prima report                      # the session used most recently
+prima report --pw-session my-app  # a named playwright-cli session
+```
+
+The log is written in the format the Testomat.io reporter replays, so the same file can be sent
+to Testomat.io as a run:
+
+```bash
+TESTOMATIO=<apiKey> npx @testomatio/reporter replay <the path prima report prints>
+```
+
+### Changes
+
+- [Prima] Prima no longer generates a report of its own while it runs. A `check` used to end by
+  writing the session HTML and Markdown reports, which belong to an explorbot run rather than to
+  a single command. Reports are produced only when `prima report` asks for one.
+
 ## 2026-08-09
 
 ### `prima check` runs a whole scenario and reports what it proved

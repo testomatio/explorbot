@@ -228,6 +228,14 @@ describe('Prima.start', () => {
     await expect(prima.start()).rejects.toThrow(/playwright-cli open/);
     expect(started).toBe(false);
   });
+
+  test('leaves the explorbot reporter switched off', () => {
+    const prima = new Prima({ instance: 'default' });
+
+    expect((prima as any).bot.reporter().isEnabled()).toBe(false);
+    expect(process.env.TESTOMATIO_HTML_REPORT_SAVE).toBeUndefined();
+    expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBeUndefined();
+  });
 });
 
 describe('Prima attach ladder', () => {

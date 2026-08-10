@@ -20,7 +20,7 @@ import { createAgentTools } from './ai/tools.ts';
 import { ApiClient } from './api/api-client.ts';
 import { RequestStore } from './api/request-store.ts';
 import { loadSpec } from './api/spec-reader.ts';
-import type { ExplorbotConfig } from './config.js';
+import type { ExplorbotConfig, ReporterConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import { ExperienceTracker } from './experience-tracker.ts';
 import Explorer from './explorer.ts';
@@ -49,6 +49,7 @@ export interface ExplorBotOptions {
   session?: string | boolean;
   instance?: string;
   optionalAi?: boolean;
+  reporter?: ReporterConfig;
   attachedBrowser?: Browser;
   applicationSpec?: string;
 }
@@ -175,7 +176,7 @@ export class ExplorBot {
   }
 
   reporter(): Reporter {
-    return (this._reporter ||= new Reporter(this.config.reporter, this.stateManager()));
+    return (this._reporter ||= new Reporter(this.options.reporter || this.config.reporter, this.stateManager()));
   }
 
   requestStore(): RequestStore {

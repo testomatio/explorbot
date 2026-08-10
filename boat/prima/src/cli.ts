@@ -42,6 +42,11 @@ const verifyHelp = dedent`
   could not be expressed, which is not the same as false.
 `;
 
+const reportHelp = dedent`
+  Commands are logged as they run, so the report needs no browser and outlives the session.
+  The most recent session is reported unless --pw-session names another.
+`;
+
 const sessionHelp = dedent`
   --endpoint <ep>    attach to a browser server endpoint directly, skipping discovery
   --instance <name>  which prima-owned browser you talk to; parallel work needs one each
@@ -103,9 +108,10 @@ function primaFor(options: any): Prima {
   return new Prima(buildOptions(options));
 }
 
-async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>): Promise<void> {
+async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>, record = true): Promise<void> {
   setQuietMode(!options.verbose && !options.debug);
   const prima = primaFor(options);
+  const startedAt = Date.now();
 
   let envelope: EnvelopeData;
   try {
@@ -115,6 +121,7 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
     envelope = await prima.toolFailureEnvelope(command, error);
   }
 
+  if (record) prima.record(envelope, Date.now() - startedAt);
   console.log(renderEnvelope(envelope));
   await prima.stop().catch(() => {});
   process.exit(envelope.ok ? 0 : 1);
@@ -187,8 +194,20 @@ export function createPrimaCommands(name = 'prima'): Command {
   });
 
   addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
-    await runPrima(options, `status ${hash}`, (prima) => prima.status(hash));
+    await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), false);
   });
+
+  addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report'))
+    .addHelpText('after', `\n${reportHelp}`)
+    .action(async (options) => {
+      setQuietMode(!options.verbose && !options.debug);
+      console.log(
+        await primaFor(options)
+          .report()
+          .catch((error: unknown) => browserErrorMessage(error))
+      );
+      process.exit(0);
+    });
 
   const browser = cmd.command('browser').description('Manage the browsers prima drives');
 
