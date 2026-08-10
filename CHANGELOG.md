@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-11
+
+### `prima --verbose` prints the log of a command
+
+`-v` / `--verbose` is now taken before the command as well as after it, and prints everything the
+run does: config and browser attachment, every step as it executes, and the debug stream of the
+agents behind it.
+
+```bash
+prima -v do "open the account menu" "switch the theme to dark"
+prima --verbose check "a workflow can be created"
+```
+
+### Changes
+
+- `--verbose` now turns the debug log on for real, in prima and in explorbot alike. The flag set
+  the `DEBUG` variable after the logging library had already read it, so a verbose run printed a
+  fraction of what `DEBUG='explorbot:*'` printed in front of the same command.
+
 ## 2026-08-10
 
 ### `prima report` collects a whole session into one report

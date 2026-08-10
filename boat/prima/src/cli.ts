@@ -109,7 +109,7 @@ function primaFor(options: any): Prima {
 }
 
 async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>, record = true): Promise<void> {
-  setQuietMode(!options.verbose && !options.debug);
+  setQuietMode(!buildOptions(options).verbose);
   const prima = primaFor(options);
   const startedAt = Date.now();
 
@@ -142,6 +142,8 @@ async function runBrowser(options: any, run: (prima: Prima) => Promise<boolean>)
 export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
   cmd.description('Tests and drives a web app through described behaviour instead of locators: one command carries a whole scenario, verifies it, and reports the proof');
+  cmd.option('-v, --verbose', 'Print the logs of everything the command does');
+  cmd.option('--debug', 'Enable debug logging (same as --verbose)');
   cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
   cmd.option('--url <url>', 'Page to open when the session has no page yet');
   cmd.addHelpText('after', `\n${helpContract}`);
@@ -186,7 +188,7 @@ export function createPrimaCommands(name = 'prima'): Command {
   });
 
   addCommonOptions(cmd.command('config').description('Show the AI models prima runs on and the config file they come from')).action(async (options) => {
-    setQuietMode(!options.verbose && !options.debug);
+    setQuietMode(!buildOptions(options).verbose);
     const prima = primaFor(options);
     console.log(await prima.config().catch((error: unknown) => browserErrorMessage(error)));
     await prima.stop().catch(() => {});
@@ -200,7 +202,7 @@ export function createPrimaCommands(name = 'prima'): Command {
   addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report'))
     .addHelpText('after', `\n${reportHelp}`)
     .action(async (options) => {
-      setQuietMode(!options.verbose && !options.debug);
+      setQuietMode(!buildOptions(options).verbose);
       console.log(
         await primaFor(options)
           .report()

@@ -142,6 +142,8 @@ class DebugDestination implements LogDestination {
 
   setVerboseMode(enabled: boolean): void {
     this.verboseMode = enabled;
+    // the debug package reads DEBUG when it loads, so a namespace turned on later needs enabling by hand
+    if (enabled) debug.enable(process.env.DEBUG || 'explorbot:*');
   }
 
   write(namespace: string, ...args: any[]): void {
