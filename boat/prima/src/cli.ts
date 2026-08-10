@@ -178,10 +178,10 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
 
-  addCommonOptions(cmd.command('models').description('Show which AI model answers for each role')).action(async (options) => {
+  addCommonOptions(cmd.command('config').description('Show the AI models prima runs on and the config file they come from')).action(async (options) => {
     setQuietMode(!options.verbose && !options.debug);
     const prima = primaFor(options);
-    console.log(await prima.models().catch((error: unknown) => browserErrorMessage(error)));
+    console.log(await prima.config().catch((error: unknown) => browserErrorMessage(error)));
     await prima.stop().catch(() => {});
     process.exit(0);
   });

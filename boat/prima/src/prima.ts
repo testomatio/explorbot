@@ -432,7 +432,7 @@ export class Prima {
     return stopped;
   }
 
-  async models(): Promise<string> {
+  async config(): Promise<string> {
     const [site] = listSites();
     if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
     const config = await this.loadConfig();
@@ -448,9 +448,6 @@ export class Prima {
       ['agenticModel', ai.agenticModel],
       ['visionModel', ai.visionModel],
     ];
-    for (const [agent, agentConfig] of Object.entries(ai.agents || {})) {
-      if ((agentConfig as any)?.model) roles.push([agent, (agentConfig as any).model]);
-    }
 
     const lines = roles.filter(([, model]) => model).map(([role, model]) => `${role.padEnd(14)} ${named(model)}`);
     lines.push(`config         ${ConfigParser.getInstance().getConfigPath() || 'built-in defaults'}`);
