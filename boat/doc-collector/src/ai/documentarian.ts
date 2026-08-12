@@ -67,9 +67,7 @@ class Documentarian {
       const message = error instanceof Error ? error.message : String(error);
       tag('warning').log(`Interactive documentation failed: ${message}.`);
       if (meaningfulInteractions.length > 0) {
-        tag('info').log(
-          `Retrying static documentation while preserving ${meaningfulInteractions.length} observed interaction(s).`
-        );
+        tag('info').log(`Retrying static documentation while preserving ${meaningfulInteractions.length} observed interaction(s).`);
         return this.documentStatic(state, research)
           .then((documentation) =>
             this.normalizeDocumentation(
@@ -83,9 +81,7 @@ class Documentarian {
           )
           .catch((fallbackError) => {
             const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-            tag('warning').log(
-              `Static documentation fallback failed: ${fallbackMessage}. Preserving observed interactions without AI summary.`
-            );
+            tag('warning').log(`Static documentation fallback failed: ${fallbackMessage}. Preserving observed interactions without AI summary.`);
             return this.normalizeDocumentation(
               {
                 summary: `Observed ${meaningfulInteractions.length} interaction(s); AI-generated summary was unavailable.`,
