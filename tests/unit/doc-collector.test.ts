@@ -736,22 +736,20 @@ describe('doc-collector interactive candidate selection', () => {
 });
 
 describe('documentarian fallback', () => {
-  it('uses strict-compatible schema for interaction element metadata', async () => {
+  it('asks the model only for generated documentation fields', async () => {
     const provider = {
-      async generateObject(_messages: Array<{ role: string; content: string }>, schema: any) {
+      async generateObject(messages: Array<{ role: string; content: string }>, schema: any) {
         const jsonSchema = z.toJSONSchema(schema) as any;
-        const interaction = jsonSchema.properties.interactions.anyOf[0].items;
-        const element = interaction.properties.element.anyOf[0];
 
-        expect(interaction.required).toContain('element');
-        expect(element.required).toEqual(['role', 'name', 'section', 'container', 'locator']);
+        expect(jsonSchema.required).toEqual(['summary', 'can', 'might']);
+        expect(jsonSchema.properties.interactions).toBeUndefined();
+        expect(messages[1].content).not.toContain('interactions:');
 
         return {
           object: {
             summary: 'Static page',
             can: [],
             might: [],
-            interactions: null,
           },
         };
       },
@@ -904,7 +902,6 @@ describe('documentarian interactive mode', () => {
             summary: 'Suites page',
             can: [{ action: 'user can import tests', scope: 'page-level', evidence: 'dialog observed' }],
             might: [],
-            interactions: null,
           },
         };
       },
@@ -959,7 +956,6 @@ describe('documentarian interactive mode', () => {
             summary: 'Films page',
             can: [{ action: 'user can browse films', scope: 'list of items', evidence: 'film tiles visible' }],
             might: [],
-            interactions: null,
           },
         };
       },
@@ -1155,7 +1151,7 @@ describe('documentarian interactive mode', () => {
     expect(result.summary).toBe('Static fallback');
   });
 
-  it('preserves observed interactions when interactive documentation fails JSON validation', async () => {
+  it('combines static documentation with observed interactions when interactive documentation fails JSON validation', async () => {
     const provider = {
       async generateObject(messages: Array<{ role: string; content: string }>) {
         const prompt = messages[1].content;
@@ -1229,7 +1225,14 @@ describe('documentarian interactive mode', () => {
 `
     );
 
-    expect(result.summary).toBe('Observed 1 interaction(s); AI-generated summary was unavailable.');
+    expect(result.summary).toBe('Static fallback');
+    expect(result.can).toEqual([
+      {
+        action: 'user can view content',
+        scope: 'page-level',
+        evidence: 'fallback after invalid interactive JSON',
+      },
+    ]);
     expect(result.interactions).toHaveLength(1);
   });
 

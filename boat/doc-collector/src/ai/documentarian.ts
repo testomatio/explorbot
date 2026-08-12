@@ -67,17 +67,36 @@ class Documentarian {
       const message = error instanceof Error ? error.message : String(error);
       tag('warning').log(`Interactive documentation failed: ${message}.`);
       if (meaningfulInteractions.length > 0) {
-        tag('info').log(`Preserving ${meaningfulInteractions.length} observed interaction(s) without AI summary.`);
-        return this.normalizeDocumentation(
-          {
-            summary: `Observed ${meaningfulInteractions.length} interaction(s); AI-generated summary was unavailable.`,
-            can: [],
-            might: [],
-            interactions: meaningfulInteractions,
-          },
-          state,
-          research
+        tag('info').log(
+          `Retrying static documentation while preserving ${meaningfulInteractions.length} observed interaction(s).`
         );
+        return this.documentStatic(state, research)
+          .then((documentation) =>
+            this.normalizeDocumentation(
+              {
+                ...documentation,
+                interactions: meaningfulInteractions,
+              },
+              state,
+              research
+            )
+          )
+          .catch((fallbackError) => {
+            const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            tag('warning').log(
+              `Static documentation fallback failed: ${fallbackMessage}. Preserving observed interactions without AI summary.`
+            );
+            return this.normalizeDocumentation(
+              {
+                summary: `Observed ${meaningfulInteractions.length} interaction(s); AI-generated summary was unavailable.`,
+                can: [],
+                might: [],
+                interactions: meaningfulInteractions,
+              },
+              state,
+              research
+            );
+          });
       }
       return this.documentStatic(state, research);
     }
@@ -113,13 +132,13 @@ class Documentarian {
       },
     ];
 
-    const response = await this.provider.generateObject(messages, pageDocumentationSchema, undefined, {
+    const response = await this.provider.generateObject(messages, generatedPageDocumentationSchema, undefined, {
       agentName: 'documentarian',
     });
 
     return this.normalizeDocumentation(
       {
-        ...(response.object as PageDocumentation),
+        ...(response.object as GeneratedPageDocumentation),
         interactions,
       },
       state,
@@ -139,11 +158,11 @@ class Documentarian {
       },
     ];
 
-    const response = await this.provider.generateObject(messages, pageDocumentationSchema, undefined, {
+    const response = await this.provider.generateObject(messages, generatedPageDocumentationSchema, undefined, {
       agentName: 'documentarian',
     });
 
-    return this.normalizeDocumentation(response.object as PageDocumentation, state, research);
+    return this.normalizeDocumentation(response.object as GeneratedPageDocumentation, state, research);
   }
 
   private getSystemPrompt(): string {
@@ -259,7 +278,7 @@ class Documentarian {
     return message.includes('Failed to generate JSON') || message.includes('Failed to validate JSON') || message.includes('failed_generation') || message.includes('No object generated') || message.includes('response did not match schema');
   }
 
-  private normalizeDocumentation(documentation: PageDocumentation, _state: WebPageState, _research: string): PageDocumentation {
+  private normalizeDocumentation(documentation: GeneratedPageDocumentation & Partial<Pick<PageDocumentation, 'interactions'>>, _state: WebPageState, _research: string): PageDocumentation {
     const normalized = { ...documentation };
     if (!normalized.interactions) {
       normalized.interactions = undefined;
@@ -267,10 +286,10 @@ class Documentarian {
 
     const qualityNotes = this.evaluateDocumentationQuality(normalized);
 
-    return {
+    return pageDocumentationSchema.parse({
       ...normalized,
       qualityNotes,
-    };
+    });
   }
 
   private evaluateDocumentationQuality(documentation: PageDocumentation): string[] {
@@ -346,39 +365,54 @@ const stateTransitionSchema = z.object({
   action: z.string(),
   before: z.string(),
   after: z.string(),
-  targetUrl: z.string().nullable(),
-  discoveredUrls: z.array(z.string()).nullable(),
-  newCapabilities: z.array(z.string()).nullable(),
+  targetUrl: z.string().optional(),
+  discoveredUrls: z.array(z.string()).optional(),
+  newCapabilities: z.array(z.string()).optional(),
   element: z
     .object({
       role: z.string(),
       name: z.string(),
       section: z.string(),
-      container: z.string().nullable(),
-      locator: z.string().nullable(),
+      container: z.string().optional(),
+      locator: z.string().optional(),
     })
-    .nullable(),
+    .optional(),
   changes: z
     .object({
       urlChanged: z.boolean(),
       newElements: z.number(),
       removedElements: z.number(),
     })
-    .nullable(),
+    .optional(),
+  targetState: z
+    .object({
+      kind: z.enum(['page', 'dialog', 'modal', 'section']),
+      label: z.string(),
+      url: z.string(),
+    })
+    .optional(),
+  screenshot: z
+    .object({
+      title: z.string(),
+      relativePath: z.string(),
+    })
+    .optional(),
 });
 
-const pageDocumentationSchema = z.object({
+const generatedPageDocumentationSchema = z.object({
   summary: z.string(),
   can: z.array(capabilitySchema),
   might: z.array(capabilitySchema),
-  interactions: z.array(stateTransitionSchema).nullable(),
+});
+
+const pageDocumentationSchema = generatedPageDocumentationSchema.extend({
+  interactions: z.array(stateTransitionSchema).optional(),
+  qualityNotes: z.array(z.string()).optional(),
 });
 
 type StateTransition = DocStateTransition;
-type PageDocumentation = Omit<z.infer<typeof pageDocumentationSchema>, 'interactions'> & {
-  interactions?: StateTransition[];
-  qualityNotes?: string[];
-};
+type GeneratedPageDocumentation = z.infer<typeof generatedPageDocumentationSchema>;
+type PageDocumentation = z.infer<typeof pageDocumentationSchema>;
 
 export { Documentarian };
 export type { PageDocumentation, StateTransition };
