@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-12
+
+### Prima shows what it is doing while it does it
+
+A prima command used to sit silent until the envelope arrived. It now writes the current activity —
+the model it is asking, the browser step underway, the scenario it is testing — as a single line
+that each new activity overwrites. The line is erased before the envelope is printed, so the report is the only thing left
+on screen.
+
+It is drawn on stderr and only when that is a terminal: piped or captured output stays exactly as it
+was, byte for byte. With `DEBUG` set the log takes over and the line stays out of its way.
+
 ## 2026-08-11
 
 ### Prima prints its log when `DEBUG` is set

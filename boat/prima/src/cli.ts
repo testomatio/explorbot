@@ -3,6 +3,7 @@ import dedent from 'dedent';
 import { keepServerRunning } from '../../../src/browser-server.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
+import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
 
@@ -108,6 +109,7 @@ function primaFor(options: any): Prima {
 
 async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>, record = true): Promise<void> {
   setQuietMode(!isVerboseMode());
+  trackActivityLine();
   const prima = primaFor(options);
   const startedAt = Date.now();
 
@@ -120,6 +122,7 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
   }
 
   if (record) prima.record(envelope, Date.now() - startedAt);
+  clearActivityLine();
   console.log(renderEnvelope(envelope));
   await prima.stop().catch(() => {});
   process.exit(envelope.ok ? 0 : 1);
