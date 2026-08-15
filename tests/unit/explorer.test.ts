@@ -145,6 +145,11 @@ mock.module('codeceptjs', () => {
   };
 
   const container = {
+    // Bun applies this mock to `codeceptjs/lib/container` too, and it outlives this
+    // file: later test files importing Container get this object. Keep the statics
+    // codeceptjs itself reads at import time — aiTrace.js caches STANDARD_ACTING_HELPERS
+    // in a module-level const and throws on a for-of over undefined.
+    STANDARD_ACTING_HELPERS: ['Playwright', 'WebDriver', 'Puppeteer', 'Appium'],
     create: () => {},
     helpers: (name: string) => {
       if (name === 'Playwright') {
