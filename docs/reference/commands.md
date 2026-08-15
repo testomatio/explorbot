@@ -107,7 +107,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
 <!-- END env -->
 
-Explorbot resolves its configuration in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then the `EXPLORBOT_*` variables, and finally `~/.explorbot/config.*` from the global installation. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `openrouter`, `sambanova`.
+Explorbot resolves its configuration in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then the `EXPLORBOT_*` variables, and finally `~/.explorbot/config.*` from the global installation. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
 
 In this mode output goes to `~/.explorbot/sites/<host>/output/` (or `EXPLORBOT_OUTPUT`, or a temp directory with `EXPLORBOT_EPHEMERAL=1`), experience is kept beside it unless the run is ephemeral, and the Historian is off, so no generated test files appear. See [Agentic Usage](../workflow/agentic-usage.md) for the full picture.
 
@@ -846,6 +846,8 @@ npx explorbot init --global
 npx explorbot init --global --provider openrouter --api-key sk-...   # no wizard
 npx explorbot init --global --force                                  # reinstall
 ```
+
+The global config holds models and keys, never a site: every command names the site it runs against.
 
 | Option | Description |
 |--------|-------------|

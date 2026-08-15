@@ -15,6 +15,12 @@ npx explorbot explore https://app.example.com/login --max-tests 3
 
 `init --global` writes `~/.explorbot/config.js` with the recommended model ids of this Explorbot version and stores the key in `~/.explorbot/.env`. It needs no terminal — with `--provider` there is no wizard, so an agent can run it unattended.
 
+The global config holds models and keys, never a site. Most commands carry the site themselves — `explore`, `plan`, `research`, `navigate`, `context`, `shell`, `freesail`, `docs collect`. The ones that take no URL argument — `test`, `learn`, `knows`, `experience`, `compact` — read it from `EXPLORBOT_URL`, and stop with `No site to explore` when it is unset:
+
+```bash
+EXPLORBOT_URL=https://app.example.com npx explorbot learn "/login" 'Sign in as ${env.APP_USER}'
+```
+
 This is the form to prefer. Each site explored gets its own folder under `~/.explorbot/sites/<host>/` holding `knowledge/`, `experience/`, and `output/`, so what Explorbot learns about an app is still there on the next run — the agent that explored `/checkout` yesterday does not start from zero today. Later runs can name the site by host instead of repeating the URL:
 
 ```bash
