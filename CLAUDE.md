@@ -428,6 +428,21 @@ There are also CodeceptJS commands available:
 - I.see - ...
   ... etc (all codeceptjs commands)
 
+## Remote log destination (`src/remote.ts`)
+
+`--ws <url>` (or `EXPLORBOT_WS_URL`) streams a run to a host UI over one WebSocket. Explorbot dials **out**, so the same code covers a child process the host spawned and a CI bot connecting from elsewhere.
+
+One class in one file, and nothing in explorbot knows about it. `remote` (the singleton in `src/remote.ts`) plugs into the two extension points that already exist:
+
+- `addDestination()` on the logger — `Remote` **implements `LogDestination`**, so it registers *itself* alongside the console and the file. It gets the entry the logger already built, so the `LogType` reaches the UI as the frame's `level` and each kind is styled there instead of scraped out of flattened text. `html` is dropped, ANSI stripped, content capped.
+- `executionController.setInputCallback()` — every ask in the codebase already goes through the controller, so the host answers the Pilot's `askUser`, the Navigator's login prompt and `drill_ask` without any of them knowing where the answer came from. Installing it is also what stops a TTY-less child hanging on the readline fallback.
+
+Consequently `isInteractive()` (`src/ai/task-agent.ts`) is **`INK_RUNNING || executionController.hasInputCallback()`** — "somebody can answer", asked of the controller rather than of any particular front end.
+
+**There are no frame types.** A frame is `{type, ts, ...whatever}`; `send(type, data)` puts data on the wire and the UI renders what it recognises. Neither side validates the other's shape, so either can start sending more at any time. It queues while disconnected, reconnects with backoff, and `remote.close(exitCode)` flushes before exit (called from `showStatsAndExit`).
+
+`remote.registerOption(program)` adds the flag through a Commander `preAction` hook, so it covers every command including the mounted `api`/`docs` subcommands and the standalone `boat/*` bins.
+
 ## Command Line Usage
 
 Explorbot uses the `explorbot` CLI command (defined in `bin/explorbot-cli.ts`):
