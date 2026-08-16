@@ -614,27 +614,43 @@ Run it as `npx explorbot prima <command>` or through the standalone `prima` bin.
 
 | Command | Purpose |
 |---|---|
+| `prima check <scenario>` | Run a scenario end to end as a test, verify it, and report the steps it took |
+| `prima do <instructions...>` | Run high-level instructions tester-style, one argument per instruction |
 | `prima pw <fn>` | Run a Playwright function expression against the open page |
-| `prima do <steps...>` | Run several described steps tester-style, one argument per step |
-| `prima click <target>` | Click an element described in plain words |
-| `prima fill <field> <value>` | Fill a field described in plain words |
 | `prima ask <question>` | Answer a question about the current page |
 | `prima verify <assertion>` | Assert a statement about the current page (alias: `assert`) |
 | `prima research` | Map the current page and return verified locators |
 | `prima go <target>` | Navigate to a url, a path, or a page described in plain words |
+| `prima status <hash>` | Show the artifacts and page detail recorded for an earlier command |
+| `prima report` | Turn every command of a session into one html and markdown report |
+| `prima config` | Show the AI models prima runs on and the config file they come from |
 | `prima browser {start\|stop\|status\|list}` | Manage the browsers prima drives |
 
 ### Choosing a command
 
-Pick by what you hold, not by how hard the step looks.
+Start at the top and come down only when the tier above cannot hold the work.
 
+- **`check`** takes an outcome rather than a click path, works out how to reach it, verifies it itself, and reports every step with its proof.
+- **`do`** takes several described instructions and runs them tester-style in one process.
 - **`pw`** is precise: a function expression built from a locator you already verified. No AI on the happy path, so it also works when no model is configured.
-- **`click` and `fill`** take one action described in words and let AI resolve it against the current page.
-- **`do`** takes several described steps and runs them tester-style in one process.
 
-Never pass a locator or a function expression to `click`, `fill`, or `do` — describe the target. Never pass a description to `pw` — it takes executable code only.
+Never pass a locator or a function expression to `check` or `do` — describe the target. Never pass a description to `pw` — it takes executable code only.
 
-The loop that works: `go` to the page, `research` it once for verified locators, drive it with `pw`, then `verify` the outcome. Fall back to `click`, `fill`, or `do` whenever research left you no locator to hold.
+Pass `do` the whole remaining sequence rather than one instruction per call. Every command is a process of its own, so a sequence split across calls pays the startup and page-capture cost each time. `check` and `do` legitimately run for minutes.
+
+### `check`, `do`, and `verify` in detail
+
+`check` takes `--expected <outcome>`, repeatable for several; without it the scenario text is the single expected outcome. Each comes back under `### Expected outcomes` as `PASSED`, `FAILED` or `not verified` — "not verified" means the run never checked it, which is not the same as false. Page problems seen along the way appear under `### Answer` rather than as step failures.
+
+```bash
+prima check "signup rejects a duplicate email" \
+  --expected "an error names the email as taken" \
+  --expected "no second account is created"
+```
+
+`do` numbers every instruction and accounts for it: `### Steps` reports each as `ok` or `FAIL` with what proved it, and one that could not be carried out fails the command. Nothing runs past the last instruction given.
+
+`verify` lists every assertion it could express as `PASSED` or `FAILED` with its Playwright form, and gives no overall verdict — read the lines and decide. `none ran` means the claim could not be expressed at all, which is not the same as false.
 
 ### The envelope
 
@@ -657,20 +673,18 @@ ariaDiff:
     - button "Submit"
 
 ### Instance
-instance: default (1 tab) | other instances: none
-browser: attached (playwright-cli session "default", workspace /home/you/projects/shop)
+default (1 tab) | attached to playwright-cli session "default" | details: prima status 7f3a91
 
 ### Artifacts
 aria: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-22-285Z/aria.yml
 html: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-22-285Z/page.html
-network: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-22-285Z/network.jsonl
 ```
 
-`used:` is code that already executed. For `click`, `fill`, `do`, and `go` those are CodeceptJS steps you can copy into a test as they are; for `pw` it is the Playwright expression you passed, which a CodeceptJS test needs wrapped in `I.usePlaywrightTo(...)`. Log lines can precede the envelope, so start parsing at the first `###` line.
+`used:` is code that already executed. For `check`, `do`, and `go` those are CodeceptJS steps you can copy into a test as they are; for `pw` it is the Playwright expression you passed, which a CodeceptJS test needs wrapped in `I.usePlaywrightTo(...)`. Log lines can precede the envelope, so start parsing at the first `###` line.
 
-`ask`, `research`, and `verify` replace the `### Changes` block with `### Answer`, `### Research`, or `### Verdict`. A failure adds `### Failure` with the error and the compact ARIA of the page, so you can retarget from the envelope itself instead of opening the artifact files.
+`### Changes` renders on every action, saying `no change` when the page is identical — so a successful command proves what it did. `check` and `do` add `### Steps`, `check` adds `### Expected outcomes`, and `ask`, `research`, and `verify` add `### Answer`, `### Research`, or `### Assertions` beside the changes rather than instead of them. `pw` adds `### Value` when its expression returns one. `network:` appears under `### Artifacts` only when requests were captured, and everything else recorded for a command is behind `prima status <hash>`.
 
-When an action fails, AI retries it along a different route; `healed: true` means the outcome was reached another way and `used:` holds the code that worked. `--no-heal` skips that and fails fast.
+**A failed action is a failure.** Nothing is retried along a different route and no other element is substituted, so `ok: true` means the action you asked for is the one that landed. A failure adds `### Failure` with the error and the compact ARIA of the page, so you can retarget from the envelope itself instead of opening the artifact files.
 
 ### Browsers and sessions
 
@@ -694,10 +708,9 @@ Every command takes these:
 | `-i, --instance <name>` | Which prima-owned browser to talk to; parallel work needs one each |
 | `--session [file]` | Cookies and storage persisted across processes; ignored while attached, since the attached session keeps its own |
 | `--url <url>` | Page to open when the session has no page yet |
-| `--no-heal` | Fail immediately instead of letting AI retry a failed action |
 | `--ephemeral` | Keep no state between runs. Applies to config-free runs only — with a config file the output directory comes from the config |
 | `--framework <name>` | Parsed but not active yet; reported code is CodeceptJS whatever you pass |
-| `-v, --verbose`, `--debug`, `-c, --config <path>`, `-p, --path <path>` | As on every other Explorbot command |
+| `-c, --config <path>`, `-p, --path <path>` | As on every other Explorbot command |
 
 `--instance` and `--session` answer different questions: `--instance` picks *which browser process* prima drives, `--session` decides *whose cookies* it starts from.
 
@@ -705,12 +718,36 @@ A few commands add their own:
 
 | Command | Option | Description |
 |---|---|---|
+| `check` | `--expected <outcome>` | An outcome the run must reach; repeat the flag for several |
 | `ask` | `--no-vision` | Answer from page structure only, without a screenshot |
 | `research` | `--data` | Include data extraction in the map |
 | `research` | `--deep` | Expand hidden elements for a deeper map |
 | `research` | `--fresh` | Ignore the cached map and research the page again |
 | `browser start` | `-s, --show` / `--headless` | Launch the browser with or without a window |
 | `browser stop` | `--all` | Stop every running instance |
+
+Prima carries no logging flags of its own. `DEBUG` in front of a command prints everything the run does — config and browser attachment, every step as it executes, and the debug stream of the agents behind it:
+
+```bash
+DEBUG='explorbot:*' prima do "open the account menu" "switch the theme to dark"
+```
+
+Without it, a running command writes its current activity to stderr as a single line that each new activity overwrites, erased before the envelope is printed. Piped or captured output is unaffected.
+
+### Session reports
+
+Every command is logged to `output/prima/sessions/` as it runs, so `prima report` needs no browser and outlives the session:
+
+```bash
+prima report                      # the session used most recently
+prima report --pw-session my-app  # a named playwright-cli session
+```
+
+It writes one html and one markdown report — each command with its steps, expected outcomes and the proof recorded for them. The log is written in the format the Testomat.io reporter replays, so the same file can be sent as a run:
+
+```bash
+TESTOMATIO=<apiKey> npx @testomatio/reporter replay <the path prima report prints>
+```
 
 ### Without a config file
 
