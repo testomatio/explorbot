@@ -22,6 +22,7 @@ import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
 import { capabilityGroundingRule, dataProtectionRules } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
+import { withdrawVisionTools } from './tools.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
 const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
@@ -669,6 +670,7 @@ export class Pilot implements Agent {
     if (xpathCheck) planning.xpathCheck = xpathCheck;
     if (learnExperience) planning.learnExperience = learnExperience;
     if (askUser) planning.askUser = askUser;
+    withdrawVisionTools(planning);
     return planning;
   }
 

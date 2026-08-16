@@ -24,7 +24,7 @@ import type { Navigator } from './navigator.ts';
 import { Provider } from './provider.ts';
 import { actionRule, locatorRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
-import { createCodeceptJSTools } from './tools.ts';
+import { createCodeceptJSTools, withdrawVisionTools } from './tools.ts';
 
 const debugLog = createDebug('explorbot:rerunner');
 
@@ -361,6 +361,7 @@ export class Rerunner extends TaskAgent implements Agent {
           },
         }),
       };
+      withdrawVisionTools(tools);
 
       const conversation = this.provider.startConversation(this.getHealSystemPrompt(), 'rerunner');
       conversation.addUserText(this.getHealUserPrompt(failedCode, error));

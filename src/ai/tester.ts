@@ -24,7 +24,7 @@ import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { actionRule, capabilityGroundingRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
-import { createCodeceptJSTools, createIframeTools } from './tools.ts';
+import { createCodeceptJSTools, createIframeTools, withdrawVisionTools } from './tools.ts';
 
 const debugLog = createDebug('explorbot:tester');
 
@@ -245,6 +245,7 @@ export class Tester extends TaskAgent implements Agent {
           if (currentState.isInsideIframe) {
             Object.assign(tools, createIframeTools(this.toolDeps));
           }
+          withdrawVisionTools(tools);
 
           debugLog(`Test ${task.scenario} iteration ${iteration}`);
 
