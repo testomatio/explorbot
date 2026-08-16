@@ -129,6 +129,7 @@ export class ExplorBot {
     if (this.provider) return;
     this.config = await this.configParser.loadConfig(this.options);
     if (this.options.session === true) this.options.session = path.join(this.configParser.getOutputDir(), 'session.json');
+    if (typeof this.options.session === 'string') this.options.session = path.resolve(this.options.path || '.', this.options.session);
     if (this.options.optionalAi) return this.bootstrapOptionalProvider();
     this.provider = new AIProvider(this.config.ai);
     await this.provider.validateConnection();

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-16
+
+### Changes
+
+- Token counters include the attempts that were retried. Only the attempt that finally succeeded
+  was counted, so a run that retried its way through a flaky model reported a fraction of the
+  tokens it had actually spent.
+- Starting on a host other than the configured one now says so. Relative navigation still resolves
+  against the base URL, so the warning names the `web.url` to set to make the two agree.
+- `--session <file>` resolves against the working directory given by `-p, --path` rather than the
+  directory the command was started from, so a run pointed at another project keeps its session
+  file with that project.
+
 ## 2026-08-12
 
 ### Prima shows what it is doing while it does it
