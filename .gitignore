@@ -1,5 +1,5 @@
 # Dependencies
-node_modules/
+node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -8,6 +8,10 @@ bun.lockb
 
 # Regression harness run artifacts
 tests/regression/.runs/
+
+# Session state and browser sessions written by running the CLI in this repo
+session.json
+.playwright-cli/
 
 # Environment variables
 .env
@@ -148,3 +152,6 @@ Thumbs.db
 
 # Keep the temporarily vendored OpenRouter AI-SDK-7 provider (PR #511)
 !vendor/*.tgz
+
+# Reporter debug dump
+testomatio.debug.json

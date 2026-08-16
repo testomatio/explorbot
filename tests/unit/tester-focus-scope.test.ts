@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { Tester } from '../../src/ai/tester.ts';
 import { renderExperienceToc } from '../../src/experience-tracker.ts';
-import { Test } from '../../src/test-plan.ts';
+import { Test, TestResult } from '../../src/test-plan.ts';
 
 function buildTester(): Tester {
   const provider: any = {
@@ -148,17 +148,66 @@ describe('Tester experience context', () => {
 });
 
 describe('Tester stalled execution', () => {
-  it('hands a verified scenario to final review without marking it failed', () => {
+  it('hands a stalled scenario to final review without deciding the verdict itself', () => {
     const tester = buildTester();
     const task = new Test('filter items', 'normal', 'filtered items appear', '/page');
     const state = buildState('- main:', '/page');
     (tester as any).stateManager.getCurrentState = () => state;
-    (tester as any).hasSuccessfulAssertion = true;
 
     expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
     expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
     expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(true);
     expect(task.hasFinished).toBe(false);
-    expect(task.getPrintableNotes()).toContain('No further browser progress after successful verification; requesting final review');
+    expect(task.result).toBe(null);
+    expect(task.getPrintableNotes()).toContain('No further browser progress on unchanged page; requesting final review');
+  });
+
+  it('hands repeated execution errors to final review without marking the test failed', () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', 'filtered items appear', '/page');
+
+    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(false);
+    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(false);
+    expect((tester as any).shouldStopAfterStalledLoopError(task)).toBe(true);
+    expect(task.hasFinished).toBe(false);
+    expect(task.result).toBe(null);
+  });
+});
+
+describe('Tester verdict', () => {
+  it('passes a test whose expectations were all achieved, instead of leaving it without a result', () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', ['filtered items appear', 'the count updates'], '/page');
+    task.addNote('filtered items appear', TestResult.PASSED);
+    task.addNote('the count updates', TestResult.PASSED);
+
+    (tester as any).finishTest(task);
+
+    expect(task.result).toBe(TestResult.PASSED);
+    expect(task.isSuccessful).toBe(true);
+  });
+
+  it('fails a test that stopped without achieving every expectation', () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', ['filtered items appear', 'the count updates'], '/page');
+    task.addNote('filtered items appear', TestResult.PASSED);
+
+    (tester as any).finishTest(task);
+
+    expect(task.result).toBe(TestResult.FAILED);
+  });
+});
+
+describe('Tester step instructions', () => {
+  it('keeps the rules once the log has entries, instead of replacing them with it', async () => {
+    const tester = buildTester();
+    const task = new Test('filter items', 'normal', ['filtered items appear'], '/page');
+    task.addNote('clicked the filter button');
+
+    const instructions = await (tester as any).prepareInstructionsForNextStep(task);
+
+    expect(instructions).toContain('Do not run same tool calls with same parameters again');
+    expect(instructions).toContain('clicked the filter button');
+    expect(instructions).toContain('filtered items appear');
   });
 });

@@ -4,6 +4,10 @@ export const recommendedCodeceptCommands = ['I.click', 'I.type', 'I.fillField', 
 
 const locatorPriorityRule = dedent`
   <locator_priority>
+  When the page context shows the element a ref, such as [ref=e14], there is no locator to select: click it with clickRef
+  and that ref. A ref names one exact element, so it never matches the wrong one and never has to be narrowed. Everything
+  below is for elements the context gives no ref for.
+
   Use the following priority when selecting locators:
 
   1. ARIA locators (first choice) - target browser's accessibility tree, most reliable

@@ -24,7 +24,7 @@ export class ResearchCommand extends BaseCommand {
     const target = remaining.join(' ');
 
     if (target) {
-      await this.explorBot.agentNavigator().visit(target);
+      await this.explorBot.visit(target);
     }
 
     const state = this.explorBot.stateManager().getCurrentState();

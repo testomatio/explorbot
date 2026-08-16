@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { context, trace } from '@opentelemetry/api';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
-import { ActionResult } from './action-result.js';
+import { ActionResult, type FocusedElement } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
 import { ConfigParser, outputPath } from './config.js';
 import type { ExplorbotConfig } from './config.js';
@@ -34,6 +34,7 @@ class Action {
   public playwrightHelper: any;
   public playwrightGroupId: string | null = null;
   public assertionSteps: Array<{ name: string; args: any[] }> = [];
+  public lastValue: unknown;
   private recorder?: PlaywrightRecorder;
   private recovery: RecoveryRunner;
   private mainDocumentStatus: number | undefined = undefined;
@@ -135,10 +136,12 @@ class Action {
 
       let ariaSnapshot: string | null = null;
       let ariaSnapshotFile: string | undefined = undefined;
+      let focusedElement: FocusedElement | null = null;
 
       try {
         const page = this.playwrightHelper.page;
         ariaSnapshot = await page.locator('body').ariaSnapshot();
+        focusedElement = await page.evaluate(readFocusedElement);
       } catch (err) {
         debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
@@ -162,6 +165,7 @@ class Action {
         iframeSnapshots,
         ariaSnapshot,
         ariaSnapshotFile,
+        focusedElement,
         iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
       this.stateManager.updateState(result, codeBlock);
@@ -306,9 +310,10 @@ class Action {
         await playwrightSandbox(page, sanitizedCode);
         await sleep(this.config.action?.delay || 500);
       } else {
-        codeceptJSSandbox(this.actor, sanitizedCode);
+        const returned = codeceptJSSandbox(this.actor, sanitizedCode);
         await recorder.add(() => sleep(this.config.action?.delay || 500));
         await recorder.promise();
+        this.lastValue = await returned;
       }
 
       this.restorePageTimeout();
@@ -452,4 +457,24 @@ const attachStepLogger = (target: string[], assertionsTarget?: Array<{ name: str
 const detachStepLogger = (listener: StepListener) => {
   codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, listener);
   codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, listener);
+};
+
+const readFocusedElement = () => {
+  const el = document.activeElement as any;
+  if (!el || el === document.body) return null;
+
+  const tag = el.tagName.toLowerCase();
+  const textish = new Set(['text', 'search', 'email', 'password', 'url', 'tel', 'number']);
+  let role = el.getAttribute('role') || tag;
+  if (tag === 'textarea' || el.isContentEditable) role = 'textbox';
+  if (tag === 'input' && textish.has(el.type)) role = 'textbox';
+  if (tag === 'select') role = 'combobox';
+  if (tag === 'a') role = 'link';
+
+  const label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.labels?.[0]?.textContent || el.textContent || '';
+  const focused: { role: string; name: string; value?: string } = { role, name: label.trim().slice(0, 80) };
+
+  const value = el.value ?? el.textContent;
+  if (typeof value === 'string' && value) focused.value = value.slice(0, 200);
+  return focused;
 };

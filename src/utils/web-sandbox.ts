@@ -28,13 +28,12 @@ export function playwrightSandbox(page: any, code: string): Promise<any> {
   return run(page);
 }
 
-export function codeceptJSSandbox(actor: any, codeOrFn: string | ((...args: any[]) => void)): void {
+export function codeceptJSSandbox(actor: any, codeOrFn: string | ((...args: any[]) => void)): any {
   if (typeof codeOrFn === 'function') {
-    codeOrFn(actor, tryTo, retryTo, within, hopeThat, step, faker);
-    return;
+    return codeOrFn(actor, tryTo, retryTo, within, hopeThat, step, faker);
   }
   const run = createSandbox(CODECEPT_ARG_NAMES, codeOrFn);
-  run(actor, tryTo, retryTo, within, hopeThat, step, faker);
+  return run(actor, tryTo, retryTo, within, hopeThat, step, faker);
 }
 
 function createSandbox(argNames: string[], body: string): (...args: any[]) => any {

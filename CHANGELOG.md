@@ -1,13 +1,242 @@
 # Changelog
 
+## 2026-08-16
+
+### Changes
+
+- Token counters include the attempts that were retried. Only the attempt that finally succeeded
+  was counted, so a run that retried its way through a flaky model reported a fraction of the
+  tokens it had actually spent.
+- Starting on a host other than the configured one now says so. Relative navigation still resolves
+  against the base URL, so the warning names the `web.url` to set to make the two agree.
+- `--session <file>` resolves against the working directory given by `-p, --path` rather than the
+  directory the command was started from, so a run pointed at another project keeps its session
+  file with that project.
+
+## 2026-08-12
+
+### Prima shows what it is doing while it does it
+
+A prima command used to sit silent until the envelope arrived. It now writes the current activity —
+the model it is asking, the browser step underway, the scenario it is testing — as a single line
+that each new activity overwrites. The line is erased before the envelope is printed, so the report is the only thing left
+on screen.
+
+It is drawn on stderr and only when that is a terminal: piped or captured output stays exactly as it
+was, byte for byte. With `DEBUG` set the log takes over and the line stays out of its way.
+
+## 2026-08-11
+
+### Prima prints its log when `DEBUG` is set
+
+`DEBUG` in front of any prima command prints everything the run does: config and browser
+attachment, every step as it executes, and the debug stream of the agents behind it. Prima carries
+no logging flags of its own — `--verbose` and `--debug` are gone.
+
+```bash
+DEBUG='explorbot:*' prima do "open the account menu" "switch the theme to dark"
+DEBUG='explorbot:tester' prima check "a workflow can be created"
+```
+
+### Changes
+
+- Verbose mode turns the debug log on for real. It set the `DEBUG` variable after the logging
+  library had already read it, so `explorbot --verbose` printed a fraction of what
+  `DEBUG='explorbot:*'` printed in front of the same command.
+- Page snapshots no longer carry variant-prefixed classes such as `dark:`, `hover:` or `md:`. Those
+  classes describe how an element looks in some other state, not what it is, so the agents now read
+  a smaller and less noisy page.
+
+## 2026-08-10
+
+### `prima report` collects a whole session into one report
+
+Every prima command is logged to `output/prima/sessions/` as it runs. `prima report` turns that
+log into an HTML and a Markdown report — each command with its steps, expected outcomes and the
+proof recorded for them. It needs no browser, so the report still comes out after the session is
+closed.
+
+```bash
+prima report                      # the session used most recently
+prima report --pw-session my-app  # a named playwright-cli session
+```
+
+The log is written in the format the Testomat.io reporter replays, so the same file can be sent
+to Testomat.io as a run:
+
+```bash
+TESTOMATIO=<apiKey> npx @testomatio/reporter replay <the path prima report prints>
+```
+
+### Changes
+
+- [Prima] Prima no longer generates a report of its own while it runs. A `check` used to end by
+  writing the session HTML and Markdown reports, which belong to an explorbot run rather than to
+  a single command. Reports are produced only when `prima report` asks for one.
+
+## 2026-08-09
+
+### `prima check` runs a whole scenario and reports what it proved
+
+`prima check` takes a behaviour, not a click path, and runs it the way a tester would: it drives
+the page, verifies the outcome itself, and reports every step with the proof for each. Use it when
+you want a verdict; use `prima do` when you already know the steps.
+
+```bash
+prima check "a workflow can be created and appears in the list" --url http://app.test
+prima check "signup rejects a duplicate email" \
+  --expected "an error names the email as taken" \
+  --expected "no second account is created"
+```
+
+- **`--expected <outcome>`** — an outcome the run must reach; repeat the flag for several. Without
+  it the scenario text is the single expected outcome. Each one comes back under
+  `### Expected outcomes` as `PASSED`, `FAILED` or `not verified` — "not verified" means the run
+  never checked it, which is not the same as false.
+- **`--url <url>`** — open that page before starting, when the browser is not already on it.
+
+### `prima status <hash>` reopens an earlier command
+
+Every envelope prints a hash on its `### Instance` line. `prima status <hash>` returns the page
+detail and artifact paths recorded for that command, so envelopes stay short and the full ARIA
+tree, HTML and network log are one command away instead of inline.
+
+```bash
+prima status 66800d6d2c8c553
+```
+
+### Changes
+
+- [Prima] `do` now ends at the last step you gave it. It used to keep acting after the sequence
+  was finished, and could report success while a step it was asked to check never held. A step it
+  could not carry out is named under `### Failure` and fails the command.
+- [Prima] `do` carries the same tools a test run does, so a single call can act, look and assert
+  across a long sequence rather than being split into one command per step.
+- [Prima] `pw` returns the value of the expression under `### Value`. A `page.title()` or
+  `locator.count()` used to run and have its answer thrown away.
+- [Prima] `verify` lists every assertion it ran with its own `PASSED` or `FAILED`, plus the
+  Playwright form of the ones that held, and gives no overall verdict — read the lines and decide.
+- [Prima] Research output drops CSS selectors, XPaths and coordinates, which were the bulk of the
+  map and are not what you act on.
+- [Prima] Prima commands print the envelope and nothing else. The banner, config line, browser
+  startup and disconnect chatter are hidden unless `--verbose` or `--debug` is passed.
+- [Prima] `click` and `fill` are removed — describe the whole sequence to `do` instead, which
+  attaches once and carries all of it.
+- [Tester] A test that stops making progress is handed to final review instead of being marked
+  failed on the spot. A run that had already done its work and gone quiet was reported as a
+  failure; the verdict now comes from reviewing the result.
+- [Tester] Console and network errors seen during a run are reported as page problems rather than
+  as failed steps, so they no longer sink a test that otherwise passed.
+- [Tester] An expected outcome counts as settled only when it is recorded back word for word,
+  and the prompt now says so — outcomes phrased differently were silently left unaccounted for.
+- Page changes report values typed into fields, under a `typed:` section, alongside what was added,
+  removed and toggled. Filling a form previously showed as no change at all.
+- Long field values in page snapshots are cut to an excerpt with a pointer to the full text, which
+  keeps a page holding a large document readable.
+- Pages are considered ready as soon as the DOM goes quiet, instead of waiting on network idle.
+  Applications with a live websocket never reached network idle, so every snapshot paid the full
+  timeout.
+- Generated tests assert element visibility, hidden state and field values through real Playwright
+  locators instead of leaving a TODO comment.
+
+## 2026-08-07
+
+### Prima never substitutes your target
+
+A failed action now fails. Previously a `pw` call on a selector that did not exist could be
+"healed" into clicking a different element and still report `ok: true` — so `ok: true` did not
+mean your own action landed. Automatic retry along a different route is gone entirely, together
+with the `--no-heal` flag that used to switch it off, and the `healed:` line and
+`### Healing attempts` block in the envelope.
+
+### Configuration
+
+- **`ai.agents.prima.researchAfterVisits`** — how many visits to a page before `prima do` works
+  from that page's stored research map instead of its accessibility tree. Default: `3`.
+
+### Changes
+
+- [Prima] `### Changes` now appears on every action, showing what the accessibility tree gained,
+  lost or toggled — or saying `no change` outright. It previously went missing whenever the
+  command also produced an answer, a research map or a verdict, so a successful click proved
+  nothing.
+- [Prima] Attaching to a running `playwright-cli` session works again. Prima was matching on a
+  field that no release of `playwright-cli` writes, so it reported no browser while one was open
+  and told you to open the session you already had.
+- [Prima] Attached sessions are driven through the browser's own Playwright build, which is what
+  makes reading the page work across versions.
+- [Prima] New `context()` step for `do`: when the element an instruction needs is missing from the
+  context it holds, it returns the page again, and drops to raw markup if asked a second time on
+  the same page.
+- [Prima] `network.jsonl` is listed only when requests were actually recorded, instead of always
+  pointing at an empty file.
+- [Navigator] `verify` now separates "this claim is false" from "no assertion can express this
+  claim". A claim it cannot phrase is no longer reported as a failing check, and is no longer
+  remembered as one.
+- [Navigator] Verification can assert whether a control is enabled, disabled, checked, selected or
+  expanded. Only presence and text could be asserted before, so state claims always failed.
+- Navigation: a redirect that only adds query parameters — a session id, a workspace flag — counts
+  as arriving. Reaching such a page previously burned minutes of retries and could still end in a
+  failure while the page sat correctly loaded.
+- Page snapshots keep every attribute on an element. A control marked `[pressed]` or `[disabled]`
+  used to lose its ref, which hid exactly the controls worth acting on.
+- Playwright updated to 1.62.
+
 ## 2026-08-06
 
+### Global Installation
+
+Explorbot can now be configured once for the whole machine instead of per project. `npx explorbot init --global` stores AI models and keys in `~/.explorbot`, and every explorbot command then works from any directory — no project, no config file to copy around.
+
+```bash
+npx explorbot init --global
+npx explorbot explore https://app.example.com/login   # first visit registers the site
+npx explorbot explore app.example.com/dashboard       # later runs: reference it by host
+npx explorbot sites
+```
+
+Each explored site gets its own folder under `~/.explorbot/sites/<host>/` holding `knowledge/`, `experience/`, and `output/`, so what Explorbot learns about an app accumulates between runs. The folder name is the host and port of the site, lowercased, with characters invalid in directory names replaced by `_` — `localhost:3000` becomes `localhost_3000`.
+
+Config-free runs use the same folder, so a site keeps one memory however it was started; a global run adds full project behavior on top — generated test files are saved and the Historian is on.
+
+Precedence, highest first: `--config`, a project `explorbot.config.*`, the `EXPLORBOT_*` variables, the global config. Setting `EXPLORBOT_AI_PROVIDER` or `EXPLORBOT_AI_MODEL` therefore overrides a global installation for that one command, while a project config still wins over everything — nothing changes inside existing projects.
+
+The per-host directory config-free runs introduced in the previous release moved from `~/.explorbot/state/<host>/` to `~/.explorbot/sites/<host>/`, and its artifacts now sit under that folder's `output/`. Delete the old `state/` directory; nothing reads it anymore.
+
+### New CLI Options
+- **`init --global`** — Set up `~/.explorbot` instead of the current directory. Opens a wizard: pick a provider, paste the API key, optionally check it with one test AI call. Plain `init` in a terminal now asks Local or Global first; the Global option is disabled once a global config exists. Passing `--config-path` or `--path`, or running outside a terminal, means Local as before.
+  ```bash
+  npx explorbot init                      # asks Local or Global
+  npx explorbot init --global             # wizard
+  npx explorbot init --global --force     # reinstall over an existing global config
+  ```
+- **`init --provider <name>`** — Skip the wizard and write the global config for that provider, for agents and scripts. Providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
+  ```bash
+  npx explorbot init --global --provider openrouter
+  ```
+- **`init --api-key <key>`** — Store the provider's API key in `~/.explorbot/.env`. Without it the key is expected in the environment; an existing stored key is never overwritten.
+  ```bash
+  npx explorbot init --global --provider groq --api-key gsk_...
+  ```
+- **`sites`** — List the sites registered in the global installation: folder name, base URL, and last run.
+  ```bash
+  npx explorbot sites
+  ```
+
+### Configuration
+- **`ai.model`, `ai.visionModel`, `ai.agenticModel`, `ai.agents.<name>.model`** — Accept a `'provider/model-id'` string in addition to a model instance, so a config file needs no provider imports. `'openrouter'` on its own resolves to that provider's recommended model for the role. This is how the global config is written, since `~/.explorbot` has no `node_modules` to import provider packages from.
+
+### Changes
+- Every command and boat now answers a missing configuration the same way, with the three ways to set Explorbot up in order: `init --global`, `init`, or `EXPLORBOT_*` variables. Previously the message named only the project config file and the environment variables, and prima wrapped it as an internal tool error.
+- A site can be given by host once it is registered, and an absolute URL keeps its fragment, so hash-routed apps can be explored at `https://app.example.com/#/login`.
+- The API key typed into the global setup wizard is masked while typing.
 ### Configuration
 
 - **`action.timeout`** — Longest a single click, fill, or other page interaction may block before it is reported as failed. Default: `3000` (ms). Previously an interaction inherited `playwright.timeout`, so a click on a disabled or unreachable control could hold the test for the full 30 seconds Playwright allows by default. The limit covers the interaction only — `playwright.timeout` is restored for navigation, waits, and page capture as soon as the commands finish.
 
 ### Changes
 
+- Added Poolside as a supported AI provider — `poolside/laguna-xs-2.1` for the token-heavy `model` role, reached through the OpenAI-compatible endpoint at `https://inference.poolside.ai/v1` with `POOLSIDE_API_KEY`. It is also selectable config-free as `EXPLORBOT_AI_PROVIDER=poolside`. Poolside serves no `visionModel` or `agenticModel`: its models take text only, and its endpoint accepts a JSON schema without enforcing it, so pair it with another provider for those two roles.
 - When the vision model is unavailable, `see` and `visualClick` are now withdrawn from the tools offered to the AI instead of staying available and answering every call with an error. The AI moves to ARIA snapshots and `xpathCheck` immediately rather than spending test steps on visual tools that cannot work. The withdrawal is session-wide — Tester, Pilot, Captain, and Rerunner all stop offering them once the model has failed once.
 - [Tester] A failed click now says why it failed. Disabled controls, elements hidden behind an overlay, invisible elements, a wrong container, and a genuinely absent element are reported separately, each with the next step that fits. Previously a disabled button was described as covered by an overlay, and an element missing from a wrong container was described as missing from the page — so the AI kept re-clicking instead of fixing the real cause.
 - [Tester] ARIA locators must now be copied from the ARIA snapshot or UI map rather than guessed. When an element is absent from the snapshot, text or CSS is used instead of an invented role and name.
@@ -48,7 +277,7 @@ Prima also ships as a standalone `prima` bin. See [Commands](docs/reference/comm
 
 ### Configuration
 
-- **`~/.explorbot/config.js|mjs|ts`** — Global configuration, used when the working directory has no `explorbot.config.*`. Lookup order: `--config`, the project config, the global config, then `EXPLORBOT_*` variables.
+- **`~/.explorbot/config.js|mjs|ts`** — Global configuration, used when the working directory has no `explorbot.config.*`. Lookup order: `--config`, the project config, the `EXPLORBOT_*` variables, then the global config.
 - **`~/.explorbot/.env`** — Loaded after the working directory's `.env`, for keys that are not set yet. API keys can live there once instead of in every project.
 
 ### Environment Variables

@@ -1518,6 +1518,7 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
       attr.value = attr.value
         .split(/\s+/)
         .filter((className) => !/\d/.test(className))
+        .filter((className) => !className.includes(':'))
         .filter((className) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(className)))
         .join(' ');
 

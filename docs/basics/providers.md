@@ -269,6 +269,45 @@ export default {
 
 Mistral Small covers the token-heavy `model` and `visionModel` roles — it accepts image input, so it can read screenshots. Mistral Large, the larger multimodal flagship, handles the low-volume `agenticModel`. The `-latest` aliases track Mistral's newest release of each, so recommendations keep up as models ship.
 
+### Poolside
+
+Poolside serves an OpenAI-compatible endpoint, so it uses the OpenAI provider package with a custom `baseURL`:
+
+```bash
+npm i @ai-sdk/openai
+```
+
+Import it inside `explorbot.config.ts` and point the client at the poolside endpoint:
+
+```javascript
+import { createOpenAI } from '@ai-sdk/openai';
+
+const poolside = createOpenAI({
+  apiKey: process.env.POOLSIDE_API_KEY,
+  baseURL: 'https://inference.poolside.ai/v1',
+});
+```
+
+Set the recommended models in the exported config:
+
+<!-- START provider:poolside -->
+```javascript
+export default {
+  ai: {
+    model: poolside('poolside/laguna-xs-2.1'),
+  },
+};
+```
+
+> [!NOTE]
+> This provider currently doesn't serve `visionModel` and `agenticModel`, which is required for Explorbot to run at optimal cost and speed.
+> It is recommended to pair it with another AI provider.
+<!-- END provider:poolside -->
+
+Laguna XS is an agentic coding model — fast, cheap, and reliable at tool calling, which makes it a good fit for the token-heavy `model` role that reads page HTML and drives the browser.
+
+Keep `agenticModel` on another provider. Poolside's endpoint accepts `response_format: json_schema` but does not enforce it, so structured-output calls depend on the model volunteering valid JSON. Laguna XS usually does; Laguna S answers in prose instead, which makes it unusable for the Planner, Pilot, and Captain. Laguna S is also slow enough under page-sized prompts to hit Explorbot's request timeouts, so it is not a substitute for Laguna XS in the `model` role either.
+
 ## Multi-Provider Configuration
 
 Mix clients the same way you assign `model`, `visionModel`, and `agenticModel`. Each field can use a different provider instance — a fast provider does the token-heavy reading while a stronger one makes the decisions:

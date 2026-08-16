@@ -26,12 +26,19 @@ describe('readDescriptors', () => {
     expect(list[0].playwrightLib).toBe('/lib/pw');
   });
 
-  test('skips descriptors without an endpoint, a title or a workspace', () => {
+  test('skips descriptors without an endpoint or a title', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'pwb-'));
-    writeDescriptor(dir, 'a', { title: 'default' });
     writeDescriptor(dir, 'b', { workspaceDir: '/work/app' });
     writeDescriptor(dir, 'c', { title: 'default', workspaceDir: '/work/app', endpoint: undefined });
     expect(readDescriptors(dir)).toEqual([]);
+  });
+
+  test('keeps descriptors that carry no workspaceDir, as playwright-cli writes them', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'pwb-'));
+    writeDescriptor(dir, 'a', { title: 'default' });
+    const list = readDescriptors(dir);
+    expect(list.length).toBe(1);
+    expect(list[0].workspaceDir).toBe('');
   });
 
   test('returns nothing when the registry directory is missing', () => {
@@ -41,28 +48,25 @@ describe('readDescriptors', () => {
 
 describe('selectDescriptor', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'pwb-'));
-  writeDescriptor(dir, 'a', { title: 'default', workspaceDir: '/work/app' });
-  writeDescriptor(dir, 'b', { title: 'auth', workspaceDir: '/work/app' });
-  writeDescriptor(dir, 'c', { title: 'default', workspaceDir: '/work/other' });
+  writeDescriptor(dir, 'a', { title: 'default' });
+  writeDescriptor(dir, 'b', { title: 'auth' });
   const all = readDescriptors(dir);
 
-  test('explicit title wins within workspace', () => {
-    const { match } = selectDescriptor(all, { workspaceDir: '/work/app', title: 'auth' });
-    expect(match?.title).toBe('auth');
+  test('explicit title wins', () => {
+    expect(selectDescriptor(all, { title: 'auth' }).match?.title).toBe('auth');
   });
 
-  test('default title picked for workspace when present', () => {
-    const { match } = selectDescriptor(all, { workspaceDir: '/work/app' });
-    expect(match?.title).toBe('default');
+  test('default title picked when no title is asked for', () => {
+    expect(selectDescriptor(all).match?.title).toBe('default');
   });
 
-  test('single survivor for workspace picked without title', () => {
-    const { match } = selectDescriptor(all, { workspaceDir: '/work/other' });
-    expect(match?.workspaceDir).toBe('/work/other');
+  test('the single live session is picked without a title', () => {
+    const single = all.filter((descriptor) => descriptor.title === 'auth');
+    expect(selectDescriptor(single).match?.title).toBe('auth');
   });
 
-  test('no workspace match returns candidates empty', () => {
-    const { match, candidates } = selectDescriptor(all, { workspaceDir: '/elsewhere' });
+  test('no descriptors returns no match and no candidates', () => {
+    const { match, candidates } = selectDescriptor([]);
     expect(match).toBeUndefined();
     expect(candidates.length).toBe(0);
   });
@@ -70,19 +74,14 @@ describe('selectDescriptor', () => {
   test('ambiguity returns no match with candidates listed', () => {
     const noDefault = all.filter((d) => d.title !== 'default');
     const extra = [...noDefault, { ...noDefault[0], title: 'second' }];
-    const { match, candidates } = selectDescriptor(extra, { workspaceDir: '/work/app' });
+    const { match, candidates } = selectDescriptor(extra);
     expect(match).toBeUndefined();
     expect(candidates.length).toBe(2);
   });
 
-  test('unknown title in a populated workspace returns the workspace candidates', () => {
-    const { match, candidates } = selectDescriptor(all, { workspaceDir: '/work/app', title: 'missing' });
+  test('unknown title returns every candidate', () => {
+    const { match, candidates } = selectDescriptor(all, { title: 'missing' });
     expect(match).toBeUndefined();
     expect(candidates.map((candidate) => candidate.title).sort()).toEqual(['auth', 'default']);
-  });
-
-  test('workspace paths are compared resolved', () => {
-    const { match } = selectDescriptor(all, { workspaceDir: '/work/app/../app' });
-    expect(match?.title).toBe('default');
   });
 });

@@ -127,14 +127,27 @@ describe('Prima drives a real page', () => {
     expect(envelope.page.url).toContain('note=the+hinge+arrived+bent');
   });
 
-  test('pw writes the aria, html and network artifacts to disk', async () => {
+  test('an action reports a status hash instead of artifact paths, and status resolves it', async () => {
     const envelope = await prima.pw("({ page }) => page.click('text=Submit')");
 
-    expect(existsSync(envelope.artifacts!.aria)).toBe(true);
-    expect(existsSync(envelope.artifacts!.html)).toBe(true);
-    expect(existsSync(envelope.artifacts!.network)).toBe(true);
-    expect(await Bun.file(envelope.artifacts!.aria).text()).toContain('Thanks for the note');
-    expect(await Bun.file(envelope.artifacts!.html).text()).toContain('Thanks for the note');
+    expect(envelope.status).toMatch(/^[0-9a-f]{15}$/);
+    expect(envelope.artifacts).toBeUndefined();
+    expect(renderEnvelope(envelope)).toContain(`prima status ${envelope.status}`);
+
+    const status = await prima.status(envelope.status!);
+
+    expect(status.ok).toBe(true);
+    expect(existsSync(status.artifacts!.aria)).toBe(true);
+    expect(existsSync(status.artifacts!.html)).toBe(true);
+    expect(await Bun.file(status.artifacts!.aria).text()).toContain('Thanks for the note');
+    expect(await Bun.file(status.artifacts!.html).text()).toContain('Thanks for the note');
+  });
+
+  test('status on an unknown hash is a tool error, not a crash', async () => {
+    const envelope = await prima.status('000000000000000');
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('No command was recorded');
   });
 
   test('a non-function argument is a tool error and leaves the page alone', async () => {
@@ -149,12 +162,11 @@ describe('Prima drives a real page', () => {
     expect(await page.title()).toBe('Widget Depot Feedback');
   });
 
-  test('a failing pw without a usable AI model reports healing as unavailable', async () => {
+  test('a failing pw without a usable AI model fails with the page inlined', async () => {
     const envelope = await prima.pw("({ page }) => page.click('text=Ship the order')");
 
     expect(envelope.ok).toBe(false);
-    expect(envelope.healed).toBe(false);
-    expect(envelope.healNote).toContain('ai unavailable');
+    expect(envelope).not.toHaveProperty('healed');
     expect(envelope.failure?.compactAria).toContain('button "Submit"');
   });
 });
@@ -225,7 +237,7 @@ describe('Prima without a config file', () => {
     expect(run.stdout).not.toContain('No URL to explore');
     expect(run.stdout).toContain('playwright-cli open');
     expect(run.exitCode).toBe(1);
-    expect(existsSync(path.join(home, '.explorbot', 'state', 'app.example.com'))).toBe(true);
+    expect(existsSync(path.join(home, '.explorbot', 'sites', 'app.example.com'))).toBe(true);
   }, 60000);
 
   test('--url is the url the configuration is built around', () => {
@@ -234,7 +246,7 @@ describe('Prima without a config file', () => {
     expect(run.stdout).not.toContain('No URL to explore');
     expect(run.stdout).toContain('playwright-cli open');
     expect(run.exitCode).toBe(1);
-    expect(existsSync(path.join(home, '.explorbot', 'state', 'shop.example.com'))).toBe(true);
+    expect(existsSync(path.join(home, '.explorbot', 'sites', 'shop.example.com'))).toBe(true);
   }, 60000);
 });
 

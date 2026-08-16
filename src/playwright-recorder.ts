@@ -287,8 +287,31 @@ function formatSelectOption(options: any): string {
   return `[${values.map((v) => quote(v)).join(', ')}]`;
 }
 
+function assertionLocator(target: any): string | null {
+  if (typeof target === 'string') return `page.locator(${JSON.stringify(target)})`;
+  if (!target || typeof target !== 'object') return null;
+
+  const role = target.role || target.aria;
+  const name = target.text ?? target.name ?? target.label;
+  if (role && name) return `page.getByRole(${JSON.stringify(String(role))}, { name: ${JSON.stringify(String(name))} })`;
+  if (role) return `page.getByRole(${JSON.stringify(String(role))})`;
+  if (name) return `page.getByText(${JSON.stringify(String(name))})`;
+  if (target.css) return `page.locator(${JSON.stringify(String(target.css))})`;
+  if (target.xpath) return `page.locator(${JSON.stringify(`xpath=${target.xpath}`)})`;
+  return null;
+}
+
 export function renderAssertion(assertion: { name: string; args: any[] }): string {
   const args = assertion.args;
+  const target = assertionLocator(args[0]);
+
+  if (target) {
+    if (assertion.name === 'seeElement') return `await expect(${target}).toBeVisible();`;
+    if (assertion.name === 'dontSeeElement') return `await expect(${target}).toBeHidden();`;
+    if (assertion.name === 'seeInField' && args[1] !== undefined) return `await expect(${target}).toHaveValue(${JSON.stringify(String(args[1]))});`;
+    if (assertion.name === 'dontSeeInField' && args[1] !== undefined) return `await expect(${target}).not.toHaveValue(${JSON.stringify(String(args[1]))});`;
+  }
+
   if (assertion.name === 'see' && typeof args[0] === 'string') {
     return `await expect(page).toContainText(${JSON.stringify(args[0])});`;
   }

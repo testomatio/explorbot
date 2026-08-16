@@ -5,7 +5,7 @@ import { type WebPageState } from '../../../src/state-manager.ts';
 import { normalizeInlineText } from '../../../src/utils/strings.ts';
 import type { PageDocumentation, StateTransition } from './ai/documentarian.ts';
 import type { DocumentationScreenshot } from './screenshots.ts';
-import { type DocumentedPage, type SkippedPage, buildStateGraph, renderMermaidFromGraph, renderStateMapFromGraph } from './state-diagram.ts';
+import { type DocumentedPage, type SkippedPage, buildStateGraph, renderMermaidFromGraph, renderPageStateDiagram, renderStateMapFromGraph } from './state-diagram.ts';
 
 function renderPageDocumentation(state: WebPageState, documentation: PageDocumentation, screenshots: DocumentationScreenshot[] = []): string {
   const lines: string[] = [];
@@ -35,6 +35,13 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
   }
 
   const interactions = documentation.interactions;
+  const pageStateDiagram = renderPageStateDiagram(state.title || state.url || 'page', state.url || '', interactions || []);
+  if (pageStateDiagram) {
+    lines.push('## State Map');
+    lines.push('');
+    lines.push(`\`\`\`mermaid\n${pageStateDiagram}\n\`\`\``);
+    lines.push('');
+  }
   if (interactions && interactions.length > 0) {
     lines.push('## State Transitions');
     lines.push('');
@@ -122,9 +129,10 @@ function renderSpecIndex(outputDir: string, startPath: string, pages: Documented
   lines.push(`Max pages: ${maxPages}`);
   lines.push('');
   const graph = buildStateGraph(outputDir, pages);
+  const mermaid = renderMermaidFromGraph(graph, true);
   lines.push('## State Transitions');
   lines.push('');
-  lines.push(`\`\`\`mermaid\n${renderMermaidFromGraph(graph)}\n\`\`\``);
+  lines.push(`\`\`\`mermaid\n${mermaid}\n\`\`\``);
   lines.push('');
   const stateMap = renderStateMapFromGraph(graph);
   if (stateMap) {

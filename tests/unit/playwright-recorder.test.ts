@@ -182,8 +182,18 @@ describe('renderAssertion', () => {
     expect(renderAssertion(assertion('seeHttpHeader', 'X-Api', 'v1'))).toBe(`// TODO(playwright): seeHttpHeader("X-Api", "v1")`);
   });
 
-  it('falls back to TODO when seeElement arg is not a string', () => {
-    expect(renderAssertion(assertion('seeElement', { css: '.x' }))).toMatch(/^\/\/ TODO\(playwright\)/);
+  it('renders an ARIA locator as getByRole rather than a TODO', () => {
+    expect(renderAssertion(assertion('seeElement', { role: 'button', text: 'Add workflow' }))).toBe(`await expect(page.getByRole("button", { name: "Add workflow" })).toBeVisible();`);
+    expect(renderAssertion(assertion('dontSeeElement', { role: 'alert', text: 'Error' }))).toBe(`await expect(page.getByRole("alert", { name: "Error" })).toBeHidden();`);
+    expect(renderAssertion(assertion('seeInField', { role: 'textbox', text: 'Email' }, 'a@b.c'))).toBe(`await expect(page.getByRole("textbox", { name: "Email" })).toHaveValue("a@b.c");`);
+  });
+
+  it('renders a css-keyed object locator without a TODO', () => {
+    expect(renderAssertion(assertion('seeElement', { css: '.x' }))).toBe(`await expect(page.locator(".x")).toBeVisible();`);
+  });
+
+  it('still falls back to TODO when the target cannot be expressed', () => {
+    expect(renderAssertion(assertion('seeElement', { weird: 1 }))).toMatch(/^\/\/ TODO\(playwright\)/);
   });
 
   it('falls back to TODO when seeInField is missing the value', () => {

@@ -148,4 +148,109 @@ describe('aria', () => {
     expect(result).toContain('link "Keep 9"');
     expect(result).not.toContain('omitted');
   });
+
+  it.each([
+    ['- button "Plain" [ref=e10]', 'ref=e10'],
+    ['- button "Active" [active] [ref=e13]', 'active ref=e13'],
+    ['- button "Disabled" [disabled] [ref=e14]', 'disabled ref=e14'],
+    ['- button "Pressed" [pressed] [ref=e15]', 'pressed ref=e15'],
+    ['- button "Expanded" [expanded] [ref=e16]', 'expanded ref=e16'],
+    ['- checkbox "Checked" [checked] [ref=e17]', 'checked ref=e17'],
+    ['- button "Cursor" [ref=e18] [cursor=pointer]', 'cursor=pointer ref=e18'],
+  ])('keeps every bracket group of %p', (snapshot, expected) => {
+    expect(compactAriaSnapshot(snapshot, true)).toContain(`[${expected}]`);
+  });
+
+  it('reports a typed value as a typed change, not as add/remove churn', () => {
+    const diff = diffAriaSnapshots('- textbox "Title"', '- textbox "Title": Bench probe');
+
+    expect(diff.text).toBe(['ariaDiff:', '  typed:', '    - textbox "Title": empty -> "Bench probe"', '  added: []', '  removed: []'].join('\n'));
+    expect(diff.count).toBe(1);
+  });
+
+  it('reports a value being replaced', () => {
+    const diff = diffAriaSnapshots('- textbox "Title": Bench probe', '- textbox "Title": Bench probe renamed');
+
+    expect(diff.text).toContain('- textbox "Title": "Bench probe" -> "Bench probe renamed"');
+    expect(diff.count).toBe(1);
+  });
+
+  it('reports a value being cleared', () => {
+    const diff = diffAriaSnapshots('- textbox "Search": shoes', '- textbox "Search"');
+
+    expect(diff.text).toContain('- textbox "Search": "shoes" -> empty');
+  });
+
+  it('treats a whitespace-only value as empty', () => {
+    expect(diffAriaSnapshots('- textbox "Title"', '- textbox "Title":    ').text).toBeNull();
+  });
+
+  it('reports an unchanged value as no diff at all', () => {
+    expect(diffAriaSnapshots('- textbox "Title": same', '- textbox "Title": same').text).toBeNull();
+  });
+
+  it('reports a typed value alongside a toggle in the same diff', () => {
+    const before = ['- textbox "Title"', '- checkbox "Agree"'].join('\n');
+    const after = ['- textbox "Title": Bench probe', '- checkbox "Agree" [checked]'].join('\n');
+
+    const diff = diffAriaSnapshots(before, after);
+
+    expect(diff.text).toContain('typed:');
+    expect(diff.text).toContain('- textbox "Title": empty -> "Bench probe"');
+    expect(diff.text).toContain('toggled:');
+    expect(diff.text).toContain('- checkbox "Agree": unchecked -> checked');
+    expect(diff.count).toBe(2);
+  });
+
+  it('keeps a genuinely new field as added rather than typed', () => {
+    const diff = diffAriaSnapshots('- textbox "Title"', ['- textbox "Title"', '- textbox "Emoji": x'].join('\n'));
+
+    expect(diff.text).toContain('added:');
+    expect(diff.text).toContain('textbox "Emoji": x');
+    expect(diff.text).not.toContain('typed:');
+  });
+
+  it('excerpts a long typed value instead of printing it whole', () => {
+    const long = 'x'.repeat(5000);
+    const diff = diffAriaSnapshots(`- textbox "Editor": ${long}`, `- textbox "Editor": ${long}y`);
+
+    expect(diff.text).toContain('(5000 chars)');
+    expect(diff.text).toContain('(5001 chars)');
+    expect(diff.text!.length).toBeLessThan(400);
+  });
+
+  it('truncates a long value and references the file the caller stored it in', () => {
+    const long = 'x'.repeat(5000);
+    const stored: string[] = [];
+
+    const out = compactAriaSnapshot(`- textbox "Editor": ${long}`, true, (value) => {
+      stored.push(value);
+      return 'abc123/value-deadbeef.txt';
+    });
+
+    expect(out).toContain('(5000 chars) [Full Text: abc123/value-deadbeef.txt]');
+    expect(out.length).toBeLessThan(600);
+    expect(stored[0]).toBe(long);
+  });
+
+  it('truncates a long value with a char count when no store is given', () => {
+    const out = compactAriaSnapshot(`- textbox "Editor": ${'y'.repeat(5000)}`, true);
+
+    expect(out).toContain('(5000 chars, truncated)');
+    expect(out).not.toContain('[Full Text:');
+    expect(out.length).toBeLessThan(600);
+  });
+
+  it('leaves a short value inline', () => {
+    expect(compactAriaSnapshot('- textbox "Name": Bench probe', true)).toContain(': Bench probe');
+  });
+
+  it('keeps refs on stateful nodes nested in a tree', () => {
+    const snapshot = ['- navigation "Panel sections" [ref=e6]:', '  - button "Workspace" [ref=e10]', '  - button "Workflows" [active] [ref=e13]'].join('\n');
+
+    const result = compactAriaSnapshot(snapshot, true);
+
+    expect(result).toContain('ref=e10');
+    expect(result).toContain('ref=e13');
+  });
 });

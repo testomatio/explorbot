@@ -11,6 +11,7 @@ import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
+import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
 import { getCliName } from '../src/utils/cli-name.ts';
@@ -26,8 +27,9 @@ const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../p
 const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as string;
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
+remote.registerOption(program);
 
-if (!process.env.EXPLORBOT_NO_BANNER) {
+if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima')) {
   console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
 }
 
@@ -99,6 +101,10 @@ async function startTUI(explorBot: ExplorBot): Promise<void> {
 }
 
 async function showStatsAndExit(code: number): Promise<never> {
+  if (remote.isAttached()) {
+    await remote.close(code);
+    process.exit(code);
+  }
   if (Stats.hasActivity()) {
     await new Promise<void>((resolve) => {
       const { unmount } = render(
@@ -389,6 +395,14 @@ program
     }
   });
 
+program
+  .command('sites')
+  .description('List sites registered in the global installation')
+  .action(async () => {
+    const { SitesCommand } = await import('../src/commands/sites-command.js');
+    await new SitesCommand(new ExplorBot()).execute('');
+  });
+
 addCommonOptions(program.command('rerun <filename> [index]').description('Re-run generated tests with AI auto-healing')).action(async (filename, index, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
@@ -424,17 +438,28 @@ addCommonOptions(
 
 program
   .command('init')
-  .description('Initialize a new project with configuration')
-  .option('-c, --config-path <path>', 'Path for the config file', './explorbot.config.js')
+  .description('Initialize configuration for a project or for this machine')
+  .option('-c, --config-path <path>', 'Path for the config file')
   .option('-f, --force', 'Overwrite existing config file')
   .option('-p, --path <path>', 'Working directory for initialization')
+  .option('-g, --global', 'Configure explorbot in ~/.explorbot to run from anywhere')
+  .option('--provider <name>', `AI provider for the global config: ${Object.keys(PROVIDERS).join(', ')}`)
+  .option('--api-key <key>', 'API key stored in ~/.explorbot/.env')
   .action(async (options) => {
-    const { runInitCommand } = await import('../src/commands/init-command.js');
-    runInitCommand({
-      configPath: options.configPath,
-      force: options.force,
-      path: options.path,
-    });
+    try {
+      const { runInit } = await import('../src/commands/init-command.js');
+      await runInit({
+        configPath: options.configPath,
+        force: options.force,
+        path: options.path,
+        global: options.global,
+        provider: options.provider,
+        apiKey: options.apiKey,
+      });
+    } catch (error) {
+      console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
   });
 
 program
@@ -697,7 +722,7 @@ program
       const explorBot = new ExplorBot(mainOptions);
       await explorBot.start();
 
-      await explorBot.agentNavigator().visit(url);
+      await explorBot.visit(url);
 
       const { ContextCommand } = await import('../src/commands/context-command.js');
       const argParts: string[] = [];
@@ -719,7 +744,7 @@ addCommonOptions(program.command('shell <url> <command>').description('Execute a
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
     await explorBot.start();
-    await explorBot.agentNavigator().visit(url);
+    await explorBot.visit(url);
 
     const action = explorBot.getExplorer().action();
     await action.execute(command);

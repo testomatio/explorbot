@@ -1,36 +1,78 @@
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { tool } from 'ai';
 import dedent from 'dedent';
+import { z } from 'zod';
 import * as playwright from 'playwright';
 import type { Browser } from 'playwright';
 import { ActionResult } from '../../../src/action-result.ts';
-import type { Navigator } from '../../../src/ai/navigator.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
-import { createCodeceptJSTools } from '../../../src/ai/tools.ts';
+import { createAgentTools, createCodeceptJSTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
-import { ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
+import { listSites } from '../../../src/global-config.ts';
+import { ConfigMissingError, ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
+import { Reporter } from '../../../src/reporter.ts';
+import { Stats } from '../../../src/stats.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
-import { Task } from '../../../src/test-plan.ts';
+import { Task, Test, TestResult } from '../../../src/test-plan.ts';
+import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
+import { mdq } from '../../../src/utils/markdown-query.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
-import { type EnvelopeData, type HealAttempt, type InstanceInfo, writeArtifacts } from './envelope.ts';
-import { isFunctionExpression, toCodeceptWrapper } from './pw-parser.ts';
+import { safeFilename } from '../../../src/utils/strings.ts';
+import { type EnvelopeData, type InstanceInfo, writeArtifacts } from './envelope.ts';
+import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
+import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 
-const MAX_INSTRUCTION_ITERATIONS = 6;
+const TESTER_ONLY_TOOLS = ['learnExperience', 'askUser'];
+const ITERATIONS_PER_INSTRUCTION = 2;
+const MAX_INSTRUCTION_ITERATIONS = 24;
+const DEFAULT_RESEARCH_AFTER_VISITS = 3;
+const CONTEXT_HTML_CAP = 6000;
 const MAX_TOOL_ROUNDTRIPS = 5;
 const AI_AGENT_NAME = 'prima';
 const CONNECT_TIMEOUT = 3000;
 const requireLib = createRequire(import.meta.url);
 
+const VOLATILE_COLUMNS = ['CSS', 'XPath', 'Coordinates', 'eidx'];
+const UNACCOUNTED: Record<string, string> = { open: 'never reported — the run ended with this instruction still open' };
+
+function dropVolatileColumns(markdown: string): string {
+  return mdq(markdown)
+    .query('table')
+    .replaceEach((table) => {
+      const rows = table.toJson();
+      if (!rows.length) return table.text();
+
+      const columns = Object.keys(rows[0]).filter((name) => !VOLATILE_COLUMNS.includes(name));
+      if (!columns.length) return table.text();
+
+      const header = `| ${columns.join(' | ')} |`;
+      const divider = `|${columns.map(() => '------').join('|')}|`;
+      const body = rows.map((row) => `| ${columns.map((name) => row[name] || '-').join(' | ')} |`);
+      return [header, divider, ...body, ''].join('\n');
+    });
+}
+
+function cap(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n[...truncated; ${text.length - max} chars omitted...]`;
+}
+
 export class Prima {
   private options: PrimaOptions;
   private bot: ExplorBot;
   private artifactsDir?: string;
+  private hash?: string;
+  private sessionUrl?: string;
   private server: { close: () => Promise<void> } | null = null;
   private attached: string | null = null;
+  private session: SessionRun | null = null;
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -38,17 +80,23 @@ export class Prima {
       config: options.config,
       path: options.path,
       baseUrl: this.configBaseUrl(),
-      verbose: options.verbose,
       session: options.session,
       instance: options.instance,
       headless: true,
       optionalAi: true,
+      reporter: { enabled: false },
     });
   }
 
   async start(): Promise<void> {
+    let discovery: Discovery | undefined;
+    if (!this.options.endpoint) {
+      discovery = await this.discover();
+      this.adoptSessionUrl(discovery);
+    }
+
     const config = await this.loadConfig();
-    await this.resolveBrowser(config);
+    await this.resolveBrowser(config, discovery);
     await this.bot.start();
 
     if (!this.options.url) return;
@@ -65,46 +113,65 @@ export class Prima {
     const validation = isFunctionExpression(expression);
     if (!validation.valid) return this.toolFailureEnvelope(command, validation.error!);
 
-    const previousState = this.bot.stateManager().getCurrentState();
+    const previousState = await this.baselineState();
     let result: ActionResult | null = null;
+    let returnedValue: unknown;
     let executionError: unknown = null;
 
     try {
       const executed = await this.bot.getExplorer().action().execute(toCodeceptWrapper(expression), { verbatim: true });
       result = executed.actionResult;
+      returnedValue = executed.lastValue;
     } catch (error) {
       executionError = error;
     }
 
-    if (executionError) return this.heal(command, expression, executionError, previousState);
+    if (executionError) return this.failureEnvelope(command, executionError, previousState);
 
     result ||= await this.capturedResult(previousState);
-    return this.successEnvelope(command, [expression], result, previousState);
+    const envelope = await this.successEnvelope(command, [expression], result, previousState);
+    envelope.value = takePwValue(returnedValue);
+    return envelope;
   }
 
-  async do(instructions: string[]): Promise<EnvelopeData> {
-    const command = `do ${instructions.map((instruction) => `"${instruction}"`).join(' ')}`;
+  async do(instructions: string[], label?: string): Promise<EnvelopeData> {
+    const command = label || `do ${instructions.map((instruction) => `"${instruction}"`).join(' ')}`;
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
     const provider = this.bot.getProvider();
-    const previousState = this.bot.stateManager().getCurrentState();
+    const previousState = await this.baselineState();
     const conversation = provider.startConversation(this.instructionSystemPrompt(), AI_AGENT_NAME);
     const task = new Task(instructions.join('; '), previousState?.url || '');
-    const tools = createCodeceptJSTools({ explorer: this.bot.getExplorer(), stateManager: this.bot.stateManager(), ai: provider }, task);
-    conversation.addUserText(this.instructionPrompt(instructions, await this.capturedResult(previousState)));
+    const deps = { explorer: this.bot.getExplorer(), stateManager: this.bot.stateManager(), ai: provider };
+    const ledger: LedgerEntry[] = instructions.map((text) => ({ text, status: 'open', proof: '' }));
+    const descent = { markup: false };
+    const tools = { ...createCodeceptJSTools(deps, task), ...this.testerTools(deps), context: this.contextTool(descent), completed: this.completedTool(), blocked: this.blockedTool() };
+    conversation.addUserText(await this.instructionPrompt(instructions, await this.capturedResult(previousState)));
 
     const used: string[] = [];
+    const trace: Array<{ label: string; ok: boolean; proof: string }> = [];
     let failure: { code: string; message: string } | null = null;
     let aiError: unknown = null;
     let narration = '';
+    let nudged = false;
     let contextHash = this.bot.stateManager().getCurrentState()?.hash;
 
-    for (let iteration = 1; iteration <= Math.min(instructions.length + 2, MAX_INSTRUCTION_ITERATIONS); iteration++) {
+    for (let iteration = 1; iteration <= Math.min(instructions.length * ITERATIONS_PER_INSTRUCTION + 2, MAX_INSTRUCTION_ITERATIONS); iteration++) {
       const state = this.bot.stateManager().getCurrentState();
       if (iteration > 1 && state && state.hash !== contextHash) {
         contextHash = state.hash;
-        conversation.addUserText(this.pageContext(ActionResult.fromState(state)));
+        conversation.addUserText(await this.pageContext(ActionResult.fromState(state)));
+      }
+
+      if (iteration > 1) {
+        conversation.addUserText(dedent`
+          <progress>
+          ${this.ledgerProgress(ledger)}
+          </progress>
+
+          Call completed() now for every open instruction the page already shows is satisfied, before you act again.
+        `);
       }
 
       const invoked = await provider.invokeConversation(conversation, tools, { maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS, agentName: AI_AGENT_NAME }).catch((error: unknown) => {
@@ -116,42 +183,176 @@ export class Prima {
       const executions = invoked.toolExecutions || [];
       if (!executions.length) {
         narration = invoked.response?.text?.trim() || '';
-        break;
+        const unreported = this.openInstructions(ledger);
+        if (!unreported || nudged) break;
+        nudged = true;
+        conversation.addUserText(dedent`
+          These instructions are still unreported:
+          ${unreported}
+
+          Report each one with completed() or blocked(). Do not act again on anything you have already carried out.
+        `);
+        continue;
       }
 
       for (const execution of executions) {
-        if (!execution.wasSuccessful) {
-          failure = { code: execution.output?.code || '', message: execution.output?.message || 'action failed' };
+        const output = execution.output || {};
+
+        if (this.applyLedgerReport(execution, ledger, trace)) continue;
+
+        if (output.action === 'verify' && !output.inexpressible) {
+          const claim = execution.input?.assertion || 'verification';
+          let passed = execution.wasSuccessful;
+          if (output.alreadyVerified) passed = output.verifications?.[claim] === true;
+          trace.push({ label: `verify: ${claim}`, ok: passed, proof: output.code || '' });
           continue;
         }
-        used.push(...this.executedCodes(execution.output?.code));
+
+        if (!execution.wasSuccessful) {
+          failure = { code: output.code || '', message: output.message || 'action failed' };
+          trace.push({ label: output.code || execution.toolName || 'action', ok: false, proof: output.message || '' });
+          await this.writeStepFiles(trace.length, output.code || execution.toolName || 'action', '');
+          continue;
+        }
+
+        const codes = this.executedCodes(output.code);
+        used.push(...codes);
+        trace.push({ label: codes.join('; ') || execution.toolName || 'action', ok: true, proof: '' });
+        await this.writeStepFiles(trace.length, codes.join(' ') || execution.toolName || 'action', output.pageDiff?.ariaChanges || '');
         failure = null;
       }
+
+      if (ledger.every((entry) => entry.status !== 'open')) break;
     }
 
     if (aiError) return this.failureEnvelope(command, aiError, previousState);
 
-    if (failure) {
-      const envelope = await this.heal(command, failure.code || instructions.join('; '), failure.message, previousState);
-      envelope.used = [...used, ...(envelope.used || [])];
+    if (used.length && ledger.some((entry) => entry.status === 'open')) {
+      await this.settleLedger(conversation, provider, ledger, trace);
+    }
+
+    const unfinished = ledger.filter((entry) => entry.status !== 'done');
+    const steps = [...trace, ...ledger.filter((entry) => entry.status === 'open').map((entry) => ({ label: `unreported: ${entry.text}`, ok: false, proof: UNACCOUNTED.open }))];
+
+    if (failure && unfinished.length) {
+      const envelope = await this.failureEnvelope(command, failure.message, previousState);
+      envelope.steps = steps;
+      envelope.stepFiles = this.statusDir();
       return envelope;
     }
 
-    if (!used.length) {
+    if (!used.length && unfinished.length === ledger.length) {
       const reason = ['No action was performed for these instructions on the current page.', narration].filter(Boolean).join(' ');
       return this.failureEnvelope(command, reason, previousState);
     }
 
     const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
-    return this.successEnvelope(command, used, result, previousState);
+    const envelope = await this.successEnvelope(command, used, result, previousState);
+    envelope.steps = steps;
+    envelope.stepFiles = this.statusDir();
+    // the step log already reports every action and what it changed
+    envelope.used = undefined;
+    envelope.changes = undefined;
+
+    const unmet = unfinished.map((entry) => `${entry.status}: ${entry.text}${entry.proof ? ` — ${entry.proof}` : ''}`);
+    if (unmet.length) {
+      envelope.ok = false;
+      envelope.failure = { error: unmet.join('\n') };
+    }
+    return envelope;
   }
 
-  async click(target: string): Promise<EnvelopeData> {
-    return this.do([`click ${target}`]);
+  private openInstructions(ledger: LedgerEntry[]): string {
+    return ledger
+      .map((entry, index) => ({ entry, number: index + 1 }))
+      .filter(({ entry }) => entry.status === 'open')
+      .map(({ entry, number }) => `${number}. ${entry.text}`)
+      .join('\n');
   }
 
-  async fill(field: string, value: string): Promise<EnvelopeData> {
-    return this.do([`fill ${field} with value: ${value}`]);
+  private applyLedgerReport(execution: any, ledger: LedgerEntry[], trace: Array<{ label: string; ok: boolean; proof: string }>): boolean {
+    const action = execution.output?.action;
+
+    if (action === 'completed') {
+      const closed: string[] = [];
+      for (const number of execution.input?.numbers || []) {
+        const entry = ledger[number - 1];
+        if (entry?.status !== 'open') continue;
+        entry.status = 'done';
+        entry.proof = execution.input?.proof || '';
+        closed.push(entry.text);
+      }
+      // one report carries one proof, however many instructions it closed
+      if (closed.length) trace.push({ label: `done: ${closed.join('; ')}`, ok: true, proof: execution.input?.proof || '' });
+      return true;
+    }
+
+    if (action !== 'blocked') return false;
+
+    const entry = ledger[(execution.input?.instruction || 0) - 1];
+    if (entry?.status === 'open') {
+      entry.status = 'blocked';
+      entry.proof = execution.input?.reason || '';
+      trace.push({ label: `blocked: ${entry.text}`, ok: false, proof: entry.proof });
+    }
+    return true;
+  }
+
+  private async settleLedger(conversation: any, provider: any, ledger: LedgerEntry[], trace: Array<{ label: string; ok: boolean; proof: string }>): Promise<void> {
+    conversation.addUserText(dedent`
+      The run is over and these instructions were never reported:
+
+      ${this.openInstructions(ledger)}
+
+      Judge each one against what you saw at the time it was due, not against the page as it stands now — later
+      instructions have moved it on, and something you confirmed earlier stays confirmed even if it is gone.
+      completed() for those, blocked() for the ones the page could not do. Report every one — nothing else runs after this.
+    `);
+
+    const invoked = await provider.invokeConversation(conversation, { completed: this.completedTool(), blocked: this.blockedTool() }, { maxToolRoundtrips: 2, toolChoice: 'required', agentName: AI_AGENT_NAME }).catch(() => null);
+
+    for (const execution of invoked?.toolExecutions || []) {
+      this.applyLedgerReport(execution, ledger, trace);
+    }
+  }
+
+  private ledgerProgress(ledger: LedgerEntry[]): string {
+    return ledger
+      .map((entry, index) => {
+        const head = `${index + 1}. ${entry.status} — ${entry.text}`;
+        if (entry.status === 'open') return head;
+        return `${head} (${entry.proof})`;
+      })
+      .join('\n');
+  }
+
+  async check(scenario: string, expected: string[] = []): Promise<EnvelopeData> {
+    const command = `check ${scenario}`;
+    const guard = await this.aiGuard(command);
+    if (guard) return guard;
+
+    const previousState = await this.baselineState();
+    const outcomes = expected.length ? expected : [scenario];
+    const test = new Test(scenario, 'normal', outcomes, previousState?.url || this.options.url || '');
+    const tester = this.bot.agentTester();
+
+    const outcome = await tester.test(test);
+
+    const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
+    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+    const envelope = await this.reportEnvelope(command, result, previousState, { ok: outcome.success });
+    const recorded = notes.filter((note) => !note.observation && !outcomes.includes(note.message));
+    const failed = recorded.filter((note) => note.status === TestResult.FAILED);
+    envelope.steps = failed.map((note) => ({ label: note.message, ok: false, proof: note.log || '' }));
+
+    const routine = recorded.length - failed.length;
+    if (routine) envelope.steps.push({ label: `${routine} further ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
+
+    envelope.expectations = await this.bot.agentPilot().settleExpectations(test);
+
+    const observations = notes.filter((note) => note.observation).map((note) => note.message);
+    if (observations.length) envelope.answer = ['Page problems noticed while running, not step failures:', ...observations.map((line) => `- ${line}`)].join('\n');
+    return envelope;
   }
 
   async ask(question: string): Promise<EnvelopeData> {
@@ -172,9 +373,7 @@ export class Prima {
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
     const verification = await this.bot.agentNavigator().verifyState(assertion, result);
-    const codes = verification.successfulCodes || [];
-    const verdict = { passed: verification.verified, evidence: this.verdictEvidence(verification.verified, codes), code: codes.join('\n') };
-    return this.reportEnvelope(command, result, previousState, { ok: verification.verified, verdict });
+    return this.reportEnvelope(command, result, previousState, { assertions: verification.results || [] });
   }
 
   async research(opts: { data?: boolean; deep?: boolean; fresh?: boolean } = {}): Promise<EnvelopeData> {
@@ -186,7 +385,7 @@ export class Prima {
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
     const uiMap = await this.bot.agentResearcher().research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
-    return this.reportEnvelope(command, result, previousState, { research: uiMap });
+    return this.reportEnvelope(command, result, previousState, { research: dropVolatileColumns(uiMap) });
   }
 
   async go(target: string): Promise<EnvelopeData> {
@@ -208,7 +407,7 @@ export class Prima {
       navigationError = error;
     }
 
-    if (navigationError) return this.heal(command, code, navigationError, previousState);
+    if (navigationError) return this.failureEnvelope(command, navigationError, previousState);
 
     const used: string[] = [];
     if (isUrl) used.push(code);
@@ -235,6 +434,68 @@ export class Prima {
       if (await this.stopInstance(instance.name)) stopped = true;
     }
     return stopped;
+  }
+
+  async config(): Promise<string> {
+    const [site] = listSites();
+    if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
+    const config = await this.loadConfig();
+
+    const named = (model: unknown): string => {
+      if (typeof model === 'string') return model;
+      return (model as any)?.modelId || (model as any)?.model || 'unknown';
+    };
+
+    const ai = config.ai || ({} as any);
+    const roles: Array<[string, unknown]> = [
+      ['model', ai.model],
+      ['agenticModel', ai.agenticModel],
+      ['visionModel', ai.visionModel],
+    ];
+
+    const lines = roles.filter(([, model]) => model).map(([role, model]) => `${role.padEnd(14)} ${named(model)}`);
+    lines.push(`config         ${ConfigParser.getInstance().getConfigPath() || 'built-in defaults'}`);
+    if (ai.langfuse?.enabled) lines.push('telemetry      langfuse');
+    return lines.join('\n');
+  }
+
+  record(envelope: EnvelopeData, durationMs: number): void {
+    if (!this.session) return;
+    recordCommand(sessionFile(this.session.key), this.session, envelope, durationMs);
+  }
+
+  async report(): Promise<string> {
+    const [site] = listSites();
+    if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
+    await this.loadConfig();
+
+    let file = latestSessionFile();
+    if (this.options.pwSession) file = sessionFile(this.options.pwSession);
+    if (!file || !existsSync(file)) return `No prima session was recorded under ${sessionsDir()}. Commands are recorded as they run.`;
+
+    const session = readSession(file);
+    if (!session.tests.length) return `No commands are recorded in ${file}`;
+
+    Stats.sessionName = path.basename(file, '.jsonl');
+    process.env.TESTOMATIO_TITLE = session.title;
+    const reporter = new Reporter({ html: true, markdown: true });
+
+    // the report pipes narrate themselves on console.log; prima prints the paths itself
+    const speak = console.log;
+    console.log = () => {};
+    try {
+      for (const test of session.tests) await reporter.reportTestData(test.status, test);
+      await reporter.finishRun();
+    } finally {
+      console.log = speak;
+    }
+
+    return [
+      `${session.tests.length} ${pluralize(session.tests.length, 'command')} from ${file}`,
+      `html:     ${outputPath('reports', `${Stats.sessionLabel()}.html`)}`,
+      `markdown: ${outputPath('reports', `${Stats.sessionLabel()}-tests.md`)}`,
+      `upload:   TESTOMATIO=<apiKey> npx @testomatio/reporter replay ${file}`,
+    ].join('\n');
   }
 
   async browserStatus(): Promise<string> {
@@ -282,7 +543,8 @@ export class Prima {
   async toolFailureEnvelope(command: string, error: unknown): Promise<EnvelopeData> {
     const state = this.bot.getCurrentState();
     const instance = await this.instanceInfo().catch(() => ({ name: this.instanceName(), tabs: 0, others: [] }));
-    const failure: EnvelopeData['failure'] = { error: `tool: ${browserErrorMessage(error)}`, attempts: [] };
+    const failure: EnvelopeData['failure'] = { error: `tool: ${browserErrorMessage(error)}` };
+    if (error instanceof ConfigMissingError) failure.error = browserErrorMessage(error);
     if (state?.ariaSnapshot) failure.compactAria = compactAriaSnapshot(state.ariaSnapshot, true);
 
     return {
@@ -299,31 +561,41 @@ export class Prima {
   }
 
   private configBaseUrl(): string | undefined {
-    const url = this.options.baseUrl || this.options.url;
+    const url = this.options.baseUrl || this.options.url || this.sessionUrl;
     if (!url) return undefined;
     if (!URL.canParse(url)) return undefined;
     return url;
   }
 
-  private async resolveBrowser(config: ExplorbotConfig): Promise<void> {
+  private adoptSessionUrl(discovery: Discovery): void {
+    if (this.options.baseUrl || this.options.url) return;
+
+    const url = discovery.browser?.contexts()[0]?.pages()[0]?.url();
+    if (!url?.startsWith('http')) return;
+    this.sessionUrl = new URL(url).origin;
+    this.bot.getOptions().baseUrl = this.sessionUrl;
+  }
+
+  private async resolveBrowser(config: ExplorbotConfig, discovered?: Discovery): Promise<void> {
     if (this.options.endpoint) {
       const endpoint = this.options.endpoint;
       const browserName = config.playwright.browser || 'chromium';
-      if (await this.attachToEndpoint({ file: '', title: '', endpoint, workspaceDir: '', browserName, playwrightLib: '' })) return;
+      const known = readDescriptors().find((descriptor) => descriptor.endpoint === endpoint);
+      if (await this.attachToEndpoint({ file: '', title: '', endpoint, workspaceDir: '', browserName, playwrightLib: known?.playwrightLib || '' })) return;
       throw new Error(dedent`
         No browser answered at ${endpoint}.
-        Check the endpoint of the running session, or drop --endpoint to attach to the
-        playwright-cli browser of this workspace.
+        Check the endpoint of the running session, or drop --endpoint to let prima pick
+        the playwright-cli session itself.
       `);
     }
 
-    const { match, candidates, browser } = await this.discover();
+    const { match, candidates, browser } = discovered || (await this.discover());
     if (match && (await this.attachToEndpoint(match, browser))) return;
 
     if (!match && candidates.length) {
       const titles = candidates.map((candidate) => candidate.title).join(', ');
       throw new Error(dedent`
-        Several playwright-cli sessions are open for this workspace: ${titles}
+        Several playwright-cli sessions are open: ${titles}
         Pick one with --pw-session <title>.
       `);
     }
@@ -341,7 +613,7 @@ export class Prima {
 
   private async discover(descriptors = readDescriptors()): Promise<Discovery> {
     const title = this.options.pwSession ?? process.env.PLAYWRIGHT_CLI_SESSION;
-    const opts = { workspaceDir: this.workspaceDir(), title };
+    const opts = { title };
 
     const alive = new Map<PwServerDescriptor, Browser>();
     for (const candidate of selectDescriptor(descriptors, opts).candidates) {
@@ -367,13 +639,14 @@ export class Prima {
 
     this.bot.attachBrowser(browser);
     this.attached = this.attachmentLabel(descriptor);
+    this.session = { key: descriptor.title || this.instanceName(), endpoint: descriptor.endpoint, title: `prima session "${descriptor.title || this.instanceName()}"` };
     return true;
   }
 
   private async connectDescriptor(descriptor: PwServerDescriptor): Promise<Browser | null> {
-    const connected = await this.connectWith(playwright, descriptor);
+    const connected = await this.connectWith(this.descriptorLib(descriptor), descriptor);
     if (connected) return connected;
-    return this.connectWith(this.descriptorLib(descriptor), descriptor);
+    return this.connectWith(playwright, descriptor);
   }
 
   private async connectWith(lib: any, descriptor: PwServerDescriptor): Promise<Browser | null> {
@@ -393,15 +666,15 @@ export class Prima {
 
   private attachmentLabel(descriptor: PwServerDescriptor): string {
     if (!descriptor.title) return `endpoint ${descriptor.endpoint}`;
+    if (!descriptor.workspaceDir) return `playwright-cli session "${descriptor.title}"`;
     return `playwright-cli session "${descriptor.title}", workspace ${descriptor.workspaceDir}`;
   }
 
-  private workspaceDir(): string {
-    return path.resolve(this.options.path || process.cwd());
-  }
-
   private async connectOwnInstance(): Promise<boolean> {
-    return !!(await getAliveEndpoint(this.instanceName()));
+    const endpoint = await getAliveEndpoint(this.instanceName());
+    if (!endpoint) return false;
+    this.session = { key: this.instanceName(), endpoint, title: `prima instance "${this.instanceName()}"` };
+    return true;
   }
 
   private async launchOwnServer(opts: { browser?: string; show?: boolean }, instance: string): Promise<{ close: () => Promise<void> }> {
@@ -424,49 +697,6 @@ export class Prima {
     return URL.canParse(value);
   }
 
-  private async heal(command: string, expression: string, error: unknown, previousState: WebPageState | null): Promise<EnvelopeData> {
-    if (this.options.heal === false) return this.failureEnvelope(command, error, previousState);
-
-    const navigator = this.healNavigator();
-    if (!navigator) {
-      const envelope = await this.failureEnvelope(command, error, previousState);
-      envelope.healed = false;
-      envelope.healNote = this.aiUnavailableNote();
-      return envelope;
-    }
-
-    const message = dedent`
-      I tried to run this command on the page: ${expression}
-      But it failed with: ${browserErrorMessage(error)}
-      Reach the same outcome on the current page in a different way.
-    `;
-
-    const attempts: Array<{ code: string; error?: string }> = [];
-    const failedResult = await this.capturedResult(previousState);
-    const resolved = await navigator.resolveState(message, failedResult, { onAttempt: (attempt) => attempts.push(attempt) }).catch(() => false);
-
-    if (!resolved) {
-      const healAttempts = attempts.map((attempt) => ({ code: attempt.code, outcome: attempt.error || 'ok' }));
-      return this.failureEnvelope(command, error, previousState, healAttempts);
-    }
-
-    const used = attempts.filter((attempt) => !attempt.error).map((attempt) => attempt.code);
-    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
-    const envelope = await this.successEnvelope(command, used, result, previousState);
-    envelope.healed = true;
-    envelope.healNote = `recovered after ${attempts.length} ${pluralize(attempts.length, 'attempt')}`;
-    return envelope;
-  }
-
-  private healNavigator(): Navigator | null {
-    if (this.aiUnavailable()) return null;
-    try {
-      return this.bot.agentNavigator?.() ?? null;
-    } catch {
-      return null;
-    }
-  }
-
   private aiUnavailable(): string | null {
     try {
       if (this.bot.getProvider?.()) return null;
@@ -474,12 +704,6 @@ export class Prima {
       return browserErrorMessage(error);
     }
     return this.bot.aiFailureReason?.() || 'no AI model is configured';
-  }
-
-  private aiUnavailableNote(): string {
-    const reason = this.aiUnavailable();
-    if (!reason) return 'ai unavailable';
-    return `ai unavailable: ${reason}`;
   }
 
   private async aiGuard(command: string): Promise<EnvelopeData | null> {
@@ -496,39 +720,183 @@ export class Prima {
       </role>
 
       <approach>
-      1. Read the page context and perform the instructions in the order they are listed.
+      1. Read the page context and carry out the instructions in the order they are listed.
       2. Interact with the page only through the provided tools.
       3. Pick the smallest interaction that fulfills an instruction, then move to the next one.
       4. After the page changes, work from the updated context you are given, not from the earlier one.
-      5. Stop calling tools when every instruction is done, or when an instruction cannot be performed on this page — say what is missing instead.
+      5. Account for every instruction: completed() as soon as one is satisfied, blocked() when the page cannot do what it asks.
       </approach>
+
+      <ledger>
+      Instructions are numbered and those numbers never change. Report by number.
+      Saying in your reply that something is done does not report it — only completed() does. Nothing you write is read as a report.
+      Report an instruction the moment the page shows it is satisfied, before moving on. Waiting until later is how work gets repeated.
+      An instruction you have reported is finished. Never act on it again, and never report it twice.
+      After each turn you are shown every instruction with its state. Act only on the ones still open — repeating an action that already
+      landed can undo it, since a control that opened something will close it again.
+      Reaching for blocked() after a couple of honest attempts costs less than a third attempt that fails the same way.
+      </ledger>
+
+      <scope>
+      Do only what the instructions ask. An action that looks helpful but was not asked for is out of scope — report it as something you noticed, never perform it.
+      Continuing past the last instruction is a failure, even when the next step seems obvious.
+      An instruction worded as a condition — do X if Y appears — is satisfied the moment you can see Y is absent. Say so and move on. Never search for something the page does not show.
+      </scope>
+
+      <pace>
+      Work in as few turns as you can. When the next actions are already determined by what you can see, ask for them together in one turn rather than one at a time — each turn costs a full round trip.
+      Only stop to look again when what you find changes what you would do next.
+      A batch may not run past an instruction that inspects the page — settle that one first, because the actions after it destroy the state it would have read.
+      </pace>
+
+      <proof>
+      An instruction is done only when a change on the page shows it. After each action read the reported change and decide which part of it proves the instruction.
+      That part is what completed() takes as its proof. Do not restate the action as if it were the outcome.
+      An instruction that only inspects the page is satisfied by what you can see, including seeing that something is absent — those need no action at all.
+      </proof>
+
+      <targets>
+      The page context lists every element with a ref, like [ref=e14]. To click one, pass that ref to clickRef — a ref names one
+      exact element, so it cannot match several by mistake and costs nothing to resolve. This is the cheapest way to act.
+      Use click() with a role and name for anything clickRef cannot take, and narrow with the container it sits in when a name
+      appears more than once, rather than guessing at an id or a class.
+      Refs belong to the context you were given. Use the ones in your newest context, never one you invented or remembered from
+      an older page. When the element an instruction needs is missing from that context, call context() and act on what it returns.
+      </targets>
 
       ${locatorRule}
 
       ${actionRule}
+
+      <targets_first>
+      Everything above about composing locators applies to click() and the other locator tools. It does not apply when the
+      element carries a ref: pass that ref to clickRef instead and compose nothing. Reach for a locator only for elements
+      that have no ref, or when a ref has stopped resolving.
+      </targets_first>
     `;
   }
 
-  private instructionPrompt(instructions: string[], result: ActionResult): string {
+  private async instructionPrompt(instructions: string[], result: ActionResult): Promise<string> {
     const list = instructions.map((instruction, index) => `${index + 1}. ${instruction}`).join('\n');
     return dedent`
       <instructions>
       ${list}
       </instructions>
 
-      ${this.pageContext(result)}
+      ${await this.pageContext(result)}
     `;
   }
 
-  private pageContext(result: ActionResult): string {
+  private testerTools(deps: any): any {
+    const researcher = this.bot.agentResearcher?.();
+    const navigator = this.bot.agentNavigator?.();
+    if (!researcher || !navigator) return {};
+
+    const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
+    for (const name of TESTER_ONLY_TOOLS) delete tools[name];
+    return tools;
+  }
+
+  private completedTool(): any {
+    return tool({
+      description: dedent`
+        Report the instructions you have just satisfied, by their number. Report several together when one turn satisfied several.
+        A reported instruction is finished — you will not be asked for it again and must not act on it again.
+      `,
+      inputSchema: z.object({
+        numbers: z.array(z.number()).describe('Numbers of the instructions now satisfied, as they are numbered in the instruction list'),
+        proof: z.string().describe('What on the page shows they are satisfied'),
+      }),
+      execute: async () => ({ success: true, action: 'completed' }),
+    });
+  }
+
+  private blockedTool(): any {
+    return tool({
+      description: dedent`
+        Report one instruction that cannot be carried out on this page, by its number. Reach for this instead of trying the same thing again.
+        The rest of the sequence continues without it.
+      `,
+      inputSchema: z.object({
+        instruction: z.number().describe('Number of the instruction that cannot be carried out'),
+        reason: z.string().describe('What stopped it — what you looked for and what the page showed instead'),
+      }),
+      execute: async () => ({ success: true, action: 'blocked' }),
+    });
+  }
+
+  private contextTool(descent: { markup: boolean }): any {
+    let refreshed = false;
+    return tool({
+      description: dedent`
+        Look at the page again when the refs you hold no longer resolve, or when the element an instruction needs is not in the context you were given.
+        The first call returns the page as it is now, with fresh refs that replace every ref you were holding.
+        A later call on the same page drops to the raw markup, for elements the accessibility tree does not describe.
+        Do not call it to confirm an action worked — the change is already reported back to you.
+      `,
+      inputSchema: z.object({
+        reason: z.string().describe('Which element you cannot reach and what you already tried'),
+      }),
+      execute: async () => {
+        const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
+        if (!refreshed) {
+          refreshed = true;
+          return { success: true, context: await this.pageContext(result) };
+        }
+        descent.markup = true;
+        return { success: true, context: cap(await result.simplifiedHtml(), CONTEXT_HTML_CAP) };
+      },
+    });
+  }
+
+  private async pageContext(result: ActionResult): Promise<string> {
     const experience = this.bot.experienceTracker?.()?.renderExperienceTocFor?.(result) || '';
+    const map = this.researchMap(result);
+    if (map) {
+      return dedent`
+        <page_ui_map url="${result.url}" title="${result.title}">
+        ${map}
+        </page_ui_map>
+
+        ${experience}
+      `;
+    }
+
     return dedent`
       <page url="${result.url}" title="${result.title}">
-      ${compactAriaSnapshot(result.ariaSnapshot, true)}
+      ${compactAriaSnapshot(await this.refAriaSnapshot(result), true, (value) => this.offloadValue(value))}
       </page>
 
       ${experience}
     `;
+  }
+
+  private researchMap(result: ActionResult): string {
+    if (this.bot.stateManager().getVisitCount(result.url) < this.researchAfterVisits()) return '';
+    return getPreviousResearch(result.getStateHash());
+  }
+
+  private researchAfterVisits(): number {
+    const configured = this.bot.getConfig?.()?.ai?.agents?.prima?.researchAfterVisits;
+    if (typeof configured === 'number') return configured;
+    return DEFAULT_RESEARCH_AFTER_VISITS;
+  }
+
+  private offloadValue(value: string): string | undefined {
+    const dir = this.statusDir();
+    const name = `value-${createHash('sha1').update(value).digest('hex').slice(0, 8)}.txt`;
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, name), value, 'utf-8');
+    } catch {
+      return undefined;
+    }
+    return path.join(path.basename(dir), name);
+  }
+
+  private async refAriaSnapshot(result: ActionResult): Promise<string | null> {
+    const snapshot = await Promise.resolve(this.bot.getExplorer()?.withPage?.((page: any) => page.locator('body').ariaSnapshot({ mode: 'ai' }))).catch(() => null);
+    return snapshot || result.ariaSnapshot;
   }
 
   private executedCodes(code: unknown): string[] {
@@ -536,7 +904,7 @@ export class Prima {
     return code
       .split('\n')
       .map((line) => line.trim())
-      .filter((line) => line);
+      .filter((line) => line && !line.startsWith('//'));
   }
 
   private visionEnabled(): boolean {
@@ -584,12 +952,6 @@ export class Prima {
     return response?.text || '';
   }
 
-  private verdictEvidence(verified: boolean, codes: string[]): string {
-    if (!verified) return 'no assertion held on the current page';
-    if (!codes.length) return 'already verified on this page';
-    return `${codes[0]} passed`;
-  }
-
   private async successEnvelope(command: string, used: string[], result: ActionResult, previousState: WebPageState | null): Promise<EnvelopeData> {
     return {
       ok: true,
@@ -598,15 +960,14 @@ export class Prima {
       page: this.pageBlock(result, previousState),
       changes: await this.pageChanges(result, previousState, used[0]),
       instance: await this.instanceInfo(),
-      artifacts: await this.writeSnapshot(result),
+      status: await this.saveStatus(result),
     };
   }
 
-  private async failureEnvelope(command: string, error: unknown, previousState: WebPageState | null, attempts: HealAttempt[] = []): Promise<EnvelopeData> {
+  private async failureEnvelope(command: string, error: unknown, previousState: WebPageState | null): Promise<EnvelopeData> {
     const result = await this.capturedResult(previousState);
-    const failure: EnvelopeData['failure'] = { error: browserErrorMessage(error), attempts };
+    const failure: EnvelopeData['failure'] = { error: browserErrorMessage(error) };
     if (result.ariaSnapshot) failure.compactAria = compactAriaSnapshot(result.ariaSnapshot, true);
-    if (attempts.length) failure.reasoning = [...new Set(attempts.map((attempt) => attempt.outcome))].join('; ');
 
     return {
       ok: false,
@@ -614,7 +975,7 @@ export class Prima {
       page: this.pageBlock(result, previousState),
       failure,
       instance: await this.instanceInfo(),
-      artifacts: await this.writeSnapshot(result),
+      status: await this.saveStatus(result),
     };
   }
 
@@ -625,7 +986,7 @@ export class Prima {
       page: this.pageBlock(result, previousState),
       ...outcome,
       instance: await this.instanceInfo(),
-      artifacts: await this.writeSnapshot(result),
+      status: await this.saveStatus(result),
     };
   }
 
@@ -649,23 +1010,78 @@ export class Prima {
     };
   }
 
-  private async pageChanges(result: ActionResult, previousState: WebPageState | null, code: string): Promise<string | null> {
-    if (!previousState) return null;
-    const toolResult = await result.toToolResult(ActionResult.fromState(previousState), code);
-    return toolResult.pageDiff?.ariaChanges ?? null;
+  private async baselineState(): Promise<WebPageState | null> {
+    const existing = this.bot.stateManager?.()?.getCurrentState();
+    if (existing) return existing;
+
+    const result = await Promise.resolve(this.bot.getExplorer?.()?.capture?.()).catch(() => null);
+    if (!result) return null;
+    return this.bot.stateManager?.()?.updateState(result) ?? null;
   }
 
-  private async writeSnapshot(result: ActionResult): Promise<EnvelopeData['artifacts']> {
-    return writeArtifacts(this.nextArtifactDir(), {
+  private async pageChanges(result: ActionResult, previousState: WebPageState | null, code: string): Promise<string> {
+    if (!previousState) return 'no snapshot was captured before this command, so nothing could be compared';
+    const toolResult = await result.toToolResult(ActionResult.fromState(previousState), code);
+    return toolResult.pageDiff?.ariaChanges || 'no change';
+  }
+
+  async status(hash: string): Promise<EnvelopeData> {
+    const dir = this.statusDir(hash);
+    const statusFile = path.join(dir, 'status.json');
+    if (!existsSync(statusFile)) return this.toolFailureEnvelope(`status ${hash}`, `No command was recorded under ${hash}. Every envelope prints its own hash on the Instance line.`);
+
+    const saved = JSON.parse(readFileSync(statusFile, 'utf-8'));
+    return {
+      ok: true,
+      command: `status ${hash}`,
+      page: saved.page,
+      changes: saved.changes,
+      instance: await this.instanceInfo(),
+      artifacts: { aria: path.join(dir, 'aria.yml'), html: path.join(dir, 'page.html') },
+    };
+  }
+
+  private async saveStatus(result: ActionResult): Promise<string> {
+    const hash = this.statusHash();
+    await this.writeSnapshot(result);
+    writeFileSync(path.join(this.statusDir(hash), 'status.json'), JSON.stringify({ page: this.pageBlock(result, null), changes: compactAriaSnapshot(result.ariaSnapshot, true) }), 'utf-8');
+    return hash;
+  }
+
+  private async writeStepFiles(index: number, label: string, diff: string): Promise<void> {
+    const state = this.bot.stateManager().getCurrentState();
+    if (!state) return;
+
+    const dir = this.statusDir();
+    mkdirSync(dir, { recursive: true });
+    const stem = path.join(dir, `${index}-${safeFilename(label.slice(0, 60))}`);
+    const result = ActionResult.fromState(state);
+
+    writeFileSync(`${stem}.aria.yaml`, result.ariaSnapshot ?? '', 'utf-8');
+    writeFileSync(`${stem}.html`, await result.combinedHtml(), 'utf-8');
+    if (diff) writeFileSync(`${stem}.diff.yaml`, diff, 'utf-8');
+  }
+
+  private async writeSnapshot(result: ActionResult): Promise<undefined> {
+    writeArtifacts(this.statusDir(), {
       aria: result.ariaSnapshot,
       html: await result.combinedHtml(),
       requests: this.bot.requestStore().getRequests(),
     });
+    return undefined;
   }
 
-  private nextArtifactDir(): string {
+  private statusHash(): string {
+    this.hash ||= createHash('sha1')
+      .update(`${this.options.path || process.cwd()}-${Date.now()}`)
+      .digest('hex')
+      .slice(0, 15);
+    return this.hash;
+  }
+
+  private statusDir(hash = this.statusHash()): string {
     this.artifactsDir ||= outputPath('prima');
-    return path.join(this.artifactsDir, new Date().toISOString().replace(/[:.]/g, '-'));
+    return path.join(this.artifactsDir, hash);
   }
 
   private tabCount(): number {
@@ -685,13 +1101,17 @@ interface Discovery {
   browser?: Browser;
 }
 
+interface LedgerEntry {
+  text: string;
+  status: 'open' | 'done' | 'blocked';
+  proof: string;
+}
+
 export interface PrimaOptions {
-  verbose?: boolean;
   config?: string;
   path?: string;
   instance?: string;
   session?: string | boolean;
-  heal?: boolean;
   ephemeral?: boolean;
   framework?: 'codeceptjs' | 'playwright';
   noVision?: boolean;

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { resolveBackground } from './lib/background';
+import { cleanBrowserVideo } from './lib/browser-frames';
 import { composeVideo, extractCheckFrames, verifyOutput } from './lib/composite';
 import { type Layout, computeLayout, parseSize } from './lib/layout';
 import { type TestRun, parseLog } from './lib/log-parser';
@@ -89,9 +90,12 @@ async function renderCandidate(candidate: Candidate, opts: ResolvedOptions): Pro
   const background = await resolveBackground(opts.bgImage, layout.W, layout.H, tmpDir);
   if (background.credit) console.log(`  ${background.credit}`);
 
+  const browser = await cleanBrowserVideo(run.webmPath, tmpDir, candidate.segStart, candidate.lengthSec);
+  if (browser.droppedFrames) console.log(`  browser: dropped ${browser.droppedFrames} resized frames in ${browser.dropped.length} range(s), holding the previous frame`);
+
   console.log(`  compositing ${layout.W}x${layout.H} (${layout.mode})`);
   await composeVideo({
-    browserWebm: run.webmPath,
+    browserWebm: browser.path,
     terminalMp4: terminal.path,
     output,
     layout,
@@ -110,7 +114,7 @@ async function renderCandidate(candidate: Candidate, opts: ResolvedOptions): Pro
 
   const check = await verifyOutput(output, layout, candidate.outDur);
   const frames = await extractCheckFrames(output, candidate.outDur);
-  const warnings = [...terminal.warnings];
+  const warnings = [...terminal.warnings, ...browser.warnings];
   const maxGap = Math.max(0, ...candidate.gaps);
   if (candidate.relaxLevel > 0) warnings.push(`segment required relaxation level ${candidate.relaxLevel} (gaps above default limits)`);
   if (candidate.uniqueRatio < 0.85) warnings.push(`only ${Math.round(candidate.uniqueRatio * 100)}% of steps are unique — the browser may sit static while the terminal retries selectors (desync look)`);

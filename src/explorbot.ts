@@ -20,7 +20,7 @@ import { createAgentTools } from './ai/tools.ts';
 import { ApiClient } from './api/api-client.ts';
 import { RequestStore } from './api/request-store.ts';
 import { loadSpec } from './api/spec-reader.ts';
-import type { ExplorbotConfig } from './config.js';
+import type { ExplorbotConfig, ReporterConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import { ExperienceTracker } from './experience-tracker.ts';
 import Explorer from './explorer.ts';
@@ -49,6 +49,7 @@ export interface ExplorBotOptions {
   session?: string | boolean;
   instance?: string;
   optionalAi?: boolean;
+  reporter?: ReporterConfig;
   attachedBrowser?: Browser;
   applicationSpec?: string;
 }
@@ -128,6 +129,7 @@ export class ExplorBot {
     if (this.provider) return;
     this.config = await this.configParser.loadConfig(this.options);
     if (this.options.session === true) this.options.session = path.join(this.configParser.getOutputDir(), 'session.json');
+    if (typeof this.options.session === 'string') this.options.session = path.resolve(this.options.path || '.', this.options.session);
     if (this.options.optionalAi) return this.bootstrapOptionalProvider();
     this.provider = new AIProvider(this.config.ai);
     await this.provider.validateConnection();
@@ -143,12 +145,11 @@ export class ExplorBot {
   }
 
   async visitInitialState(): Promise<void> {
-    const url = this.options.from || '/';
-    await this.visit(url);
+    await this.visit(this.options.from || '/');
   }
 
   async visit(url: string): Promise<void> {
-    return this.agentNavigator().visit(url);
+    return this.agentNavigator().visit(this.configParser.resolveTargetPath(url));
   }
 
   async openTab(): Promise<void> {
@@ -176,7 +177,7 @@ export class ExplorBot {
   }
 
   reporter(): Reporter {
-    return (this._reporter ||= new Reporter(this.config.reporter, this.stateManager()));
+    return (this._reporter ||= new Reporter(this.options.reporter || this.config.reporter, this.stateManager()));
   }
 
   requestStore(): RequestStore {

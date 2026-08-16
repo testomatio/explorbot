@@ -1,7 +1,7 @@
 const PADDING_2X = 24;
 const FONT_WIDTH_RATIO = 0.66;
 const LINE_HEIGHT = 1.5;
-const FONT_FILL_DIVISOR = 23.4;
+const FONT_FILL_DIVISOR = 18;
 const MAX_SIDE_MARGIN = 0.05;
 
 export const SIZE_PRESETS: Record<string, { width: number; height: number }> = {
