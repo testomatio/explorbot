@@ -1,12 +1,38 @@
 # Agentic Usage
 
-Explorbot is a terminal command, so a coding agent — Claude Code, Cursor, Codex, or your own script — can drive it the same way it drives `git` or `npm`. This page covers the two things an agent needs: starting a run without a config file, and handing Explorbot a test plan it wrote itself.
+Explorbot is a terminal command, so a coding agent — Claude Code, Cursor, Codex, or your own script — can drive it the same way it drives `git` or `npm`. This page covers the two things an agent needs: getting Explorbot configured once, and handing it a test plan it wrote itself.
 
 The division of labour that works best: the agent decides *what* to test and writes it down as a plan; Explorbot figures out *how* to click through the app and reports what actually happened.
 
+## Start here: the global installation
+
+Configure models and keys once for the machine, and every later command works in any directory with no environment variables to remember:
+
+```bash
+npx explorbot init --global --provider openrouter --api-key sk-...
+npx explorbot explore https://app.example.com/login --max-tests 3
+```
+
+`init --global` writes `~/.explorbot/config.js` with the recommended model ids of this Explorbot version and stores the key in `~/.explorbot/.env`. It needs no terminal — with `--provider` there is no wizard, so an agent can run it unattended.
+
+The global config holds models and keys, never a site. Most commands carry the site themselves — `explore`, `plan`, `research`, `navigate`, `context`, `shell`, `freesail`, `docs collect`. The ones that take no URL argument — `test`, `learn`, `knows`, `experience`, `compact` — read it from `EXPLORBOT_URL`, and stop with `No site to explore` when it is unset:
+
+```bash
+EXPLORBOT_URL=https://app.example.com npx explorbot learn "/login" 'Sign in as ${env.APP_USER}'
+```
+
+This is the form to prefer. Each site explored gets its own folder under `~/.explorbot/sites/<host>/` holding `knowledge/`, `experience/`, and `output/`, so what Explorbot learns about an app is still there on the next run — the agent that explored `/checkout` yesterday does not start from zero today. Later runs can name the site by host instead of repeating the URL:
+
+```bash
+npx explorbot explore app.example.com/dashboard
+npx explorbot sites                                # what is registered, and when it last ran
+```
+
+The `EXPLORBOT_*` variables below still win over it: setting `EXPLORBOT_AI_PROVIDER` or `EXPLORBOT_AI_MODEL` builds the configuration from the environment and the global config is skipped. So an agent can install once and still override models or the URL per command.
+
 ## One-liner API
 
-Explorbot normally reads `explorbot.config.js`. When that file is absent and `EXPLORBOT_AI_PROVIDER` is set, Explorbot builds a config from `EXPLORBOT_*` environment variables instead. Name a provider and you get its recommended models:
+When nothing can be installed — a CI job, a container, someone else's machine — set `EXPLORBOT_AI_PROVIDER` and Explorbot builds a config from `EXPLORBOT_*` environment variables instead. Name a provider and you get its recommended models:
 
 ```bash
 EXPLORBOT_URL=https://app.example.com \
@@ -14,7 +40,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
   npx explorbot explore /login --max-tests 3
 ```
 
-No `init`, no config file, no project directory, no model IDs to look up. A config file always wins when present, so adding these variables never changes the behavior of an existing project.
+No `init`, no config file, no project directory, no model IDs to look up. These variables win over the global installation, so a run can always be pinned to its own models. A project `explorbot.config.js` still wins over them, so adding these variables never changes the behavior of an existing project.
 
 ### Variables
 
@@ -26,8 +52,8 @@ No `init`, no config file, no project directory, no model IDs to look up. A conf
 | `EXPLORBOT_URL` | yes | Base URL to test; the API boat reads it as the base endpoint |
 | `EXPLORBOT_VISION_MODEL` | no | Screenshot analysis; overrides the provider recommendation |
 | `EXPLORBOT_AGENTIC_MODEL` | no | Captain and Pilot decisions; overrides the provider recommendation |
-| `EXPLORBOT_OUTPUT` | no | Output root for states, plans, research, and reports. Defaults to the per-host state dir under ~/.explorbot/state |
-| `EXPLORBOT_EPHEMERAL` | no | Keep no state between runs — output goes to a fresh temp directory instead of the per-host state dir |
+| `EXPLORBOT_OUTPUT` | no | Output root for states, plans, research, and reports. Defaults to the site dir under ~/.explorbot/sites |
+| `EXPLORBOT_EPHEMERAL` | no | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | no | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | no | Path to a knowledge markdown file |
 | `EXPLORBOT_API_SPEC` | no | OpenAPI spec path for the API boat |
@@ -99,14 +125,12 @@ EXPLORBOT_KNOWLEDGE_FILE=./checkout-knowledge.md npx explorbot explore /checkout
 
 ### What this mode changes
 
-Config-free runs are built to leave no trace in the working directory:
+Config-free runs leave no trace in the working directory:
 
-- **Output goes to a per-host state directory** — `~/.explorbot/state/<host>/`, keyed by the host of the URL under test, so repeated runs against the same app collect their states, plans, research, and reports in one place. `EXPLORBOT_OUTPUT` points them somewhere else. Read the path Explorbot resolved from the `Configuration built from EXPLORBOT_* environment variables. Output: …` line.
+- **Output goes to the site folder** — `~/.explorbot/sites/<host>/`, the same folder the global installation uses, so states, plans, research, and reports for one app collect in one place however the run was configured. `EXPLORBOT_OUTPUT` points them somewhere else. Read the path Explorbot resolved from the `Configuration built from EXPLORBOT_* environment variables. Output: …` line.
 - **`EXPLORBOT_EPHEMERAL=1` keeps nothing between runs** — output goes to a fresh temp directory instead, for throwaway CI jobs and demos. The [prima boat](../reference/commands.md#prima-boat) exposes the same switch as `--ephemeral`.
-- **Experience is written into the per-host state directory.** What worked on a page is remembered and reused by later runs against the same host. `EXPLORBOT_EPHEMERAL=1` turns writing off, so an ephemeral run stays reproducible.
-- **The Historian is off.** No generated CodeceptJS or Playwright test files. Plans and reports are still written.
-
-For a long-lived agent, the per-host state directory is what carries knowledge across runs; a real config file gives the same memory in a location you choose and check in.
+- **Experience is written into the site folder.** What worked on a page is remembered and reused by later runs against the same host. `EXPLORBOT_EPHEMERAL=1` turns writing off, so an ephemeral run stays reproducible.
+- **The Historian is off.** No generated CodeceptJS or Playwright test files — that is the one thing the global installation gives that this mode does not. Plans and reports are still written.
 
 ### Reading results
 

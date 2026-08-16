@@ -17,6 +17,7 @@ export class Stats {
   static plans = 0;
   static mode?: ExplorbotMode;
   static focus?: string;
+  static visionDisabled = false;
   static models: Record<string, TokenUsage> = {};
 
   static recordTokens(_agent: string, model: string, usage: TokenUsage): void {

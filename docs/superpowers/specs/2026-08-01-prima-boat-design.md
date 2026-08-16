@@ -203,7 +203,7 @@ The ladder lives in core config loading (`buildEnvConfig` grows global-config an
 With no project config, working dirs move to a persistent per-host state dir:
 
 ```
-~/.explorbot/state/<host>/
+~/.explorbot/sites/<host>/
 ├── experience/
 ├── knowledge/
 └── output/prima/...

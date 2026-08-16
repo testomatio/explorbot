@@ -721,11 +721,11 @@ class Explorer {
     if (this.observedTestPages.has(page)) return;
 
     this.testPageErrorHandler ||= (err: Error) => {
-      this._activeTest?.addNote(`Console error: ${err.message}`, TestResult.FAILED);
+      this._activeTest?.addObservation(`Console error: ${err.message}`);
     };
     this.testConsoleHandler ||= (msg: any) => {
       if (msg.type() !== 'error') return;
-      this._activeTest?.addNote(`Console error: ${msg.text()}`, TestResult.FAILED);
+      this._activeTest?.addObservation(`Console error: ${msg.text()}`);
     };
     this.testDialogHandler ||= (dialog: any) => {
       const dialogType = dialog.type();

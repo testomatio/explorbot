@@ -17,6 +17,7 @@ interface InputReadlineProps {
   value?: string;
   placeholder?: string;
   showPrompt?: boolean;
+  mask?: boolean;
 }
 
 interface InputState {
@@ -26,7 +27,7 @@ interface InputState {
   selectedIndex: number;
 }
 
-const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler, exitOnEmptyInput = false, onSubmit, onChange, onCommandStart, onCommandComplete, isActive = true, visible = true, value: controlledValue, placeholder = '', showPrompt = true }) => {
+const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler, exitOnEmptyInput = false, onSubmit, onChange, onCommandStart, onCommandComplete, isActive = true, visible = true, value: controlledValue, placeholder = '', showPrompt = true, mask = false }) => {
   const isControlled = controlledValue !== undefined;
   const [inputState, setInputState] = useState<InputState>({
     value: controlledValue || '',
@@ -616,11 +617,14 @@ const InputReadline: React.FC<InputReadlineProps> = React.memo(({ commandHandler
     }
   }, [commandHandler, exitOnEmptyInput]);
 
-  const beforeCursor = displayValue.slice(0, cursorPosition);
-  const afterCursor = displayValue.slice(cursorPosition);
+  let renderedValue = displayValue;
+  if (mask) renderedValue = '•'.repeat(displayValue.length);
+
+  const beforeCursor = renderedValue.slice(0, cursorPosition);
+  const afterCursor = renderedValue.slice(cursorPosition);
   const beforeLines = beforeCursor.split('\n');
   const afterLines = afterCursor.split('\n');
-  const lines = displayValue.split('\n');
+  const lines = renderedValue.split('\n');
   const cursorLineIndex = beforeLines.length - 1;
   const cursorLineBefore = beforeLines[cursorLineIndex] || '';
   const cursorLineAfter = afterLines[0] || '';

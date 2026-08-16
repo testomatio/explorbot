@@ -1,4 +1,4 @@
-import { ActionResult } from './action-result.js';
+import { type FocusedElement, ActionResult } from './action-result.js';
 import type { ExperienceTracker } from './experience-tracker.js';
 import type { Knowledge, KnowledgeTracker } from './knowledge-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
@@ -46,6 +46,7 @@ export interface WebPageState {
   h4?: string;
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
+  focusedElement?: FocusedElement | null;
   links?: Link[];
   verifications?: Record<string, boolean>;
 }

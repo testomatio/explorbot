@@ -67,8 +67,7 @@ export async function dryRunTestFile(filePath: string): Promise<void> {
   }
 
   const config = ConfigParser.getInstance().getConfig();
-  const configPath = ConfigParser.getInstance().getConfigPath();
-  const projectRoot = configPath ? path.dirname(configPath) : process.cwd();
+  const projectRoot = ConfigParser.getInstance().getProjectRoot();
 
   const codeceptConfig = {
     helpers: {

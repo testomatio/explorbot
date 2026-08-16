@@ -18,7 +18,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
       });
       const { see, context, visualClick, learnExperience } = agentTools;
 
-      return {
+      const tools: Record<string, any> = {
         navigate: tool({
           description: 'Navigate to a URL or page description using AI-powered navigation.',
           inputSchema: z.object({
@@ -27,7 +27,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
           execute: async ({ destination }) => {
             try {
               debugLog('navigate', destination);
-              await ctx.explorBot.agentNavigator().visit(destination);
+              await ctx.explorBot.visit(destination);
               const stateManager = ctx.explorBot.stateManager();
               const state = stateManager.getCurrentState();
               return { success: true, url: state?.url, title: state?.title };
@@ -123,11 +123,14 @@ export function WithWebMode<T extends Constructor>(Base: T) {
         }),
 
         ...codeceptTools,
-        see,
         context,
-        visualClick,
         learnExperience,
       };
+
+      if (see) tools.see = see;
+      if (visualClick) tools.visualClick = visualClick;
+
+      return tools;
     }
 
     webModePrompt(): string {

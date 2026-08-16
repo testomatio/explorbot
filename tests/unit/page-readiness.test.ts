@@ -25,6 +25,16 @@ describe('page readiness', () => {
     expect(page.waitedSelectors).toEqual(['.spinner']);
   });
 
+  it('finishes as soon as the dom goes quiet, without waiting for network idle', async () => {
+    const page = new FakePage([], 5_000, 5);
+
+    const started = Date.now();
+    await waitForPageReadiness(page, { timeout: 5_000 });
+
+    expect(page.waitedForDomQuiet).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it('does not finish from spinner selectors that are not visible', async () => {
     const page = new FakePage([], 40);
     let ready = false;
@@ -51,10 +61,12 @@ class FakePage {
   loadStates: string[] = [];
   waitedSelectors: string[] = [];
   waitedForBodyContent = false;
+  waitedForDomQuiet = false;
 
   constructor(
     private visibleSelectors: string[] = [],
-    private networkIdleDelay = 0
+    private networkIdleDelay = 0,
+    private domQuietDelay = 10_000
   ) {}
 
   async waitForLoadState(state: string): Promise<void> {
@@ -76,7 +88,12 @@ class FakePage {
     };
   }
 
-  async waitForFunction(): Promise<void> {
+  async waitForFunction(_fn: unknown, arg?: unknown): Promise<void> {
+    if (typeof arg === 'number') {
+      await sleep(this.domQuietDelay);
+      this.waitedForDomQuiet = true;
+      return;
+    }
     this.waitedForBodyContent = true;
   }
 }

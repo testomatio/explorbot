@@ -49,7 +49,7 @@ export function createApiCommands(name = 'api'): Command {
   addCommonOptions(cmd.command('plan <endpoint>').description('Generate test plan for an API endpoint').option('--style <style>', 'Planning style: basename of a file in rules/chief/styles/').option('--fresh', 'Start planning from scratch')).action(async (endpoint, options) => {
     setPreserveConsoleLogs(true);
     try {
-      const bot = new ApiBot(buildOptions(options));
+      const bot = new ApiBot({ ...buildOptions(options), endpoint });
       await bot.start();
 
       await bot.plan(endpoint, { style: options.style, fresh: options.fresh });
@@ -122,7 +122,7 @@ export function createApiCommands(name = 'api'): Command {
   addCommonOptions(cmd.command('explore <endpoint>').description('Full cycle: plan all styles, execute tests, re-plan')).action(async (endpoint, options) => {
     setPreserveConsoleLogs(true);
     try {
-      const bot = new ApiBot(buildOptions(options));
+      const bot = new ApiBot({ ...buildOptions(options), endpoint });
       await bot.start();
 
       const styles = Object.keys(getStyles());

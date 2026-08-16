@@ -55,7 +55,7 @@ All changes live in core `ConfigParser` (`src/config.ts`); boats inherit them be
 3. `EXPLORBOT_*` env-built config (existing behavior, unchanged: temp output, experience off, Historian off).
 4. Nothing → error, now also suggesting `explorbot init --global`.
 
-Precedence keeps the documented rule: a config file always wins when present. The global config beats `EXPLORBOT_AI_MODEL` and friends; env vars matter only when no config file loads. `EXPLORBOT_URL` and command-line URLs still apply in global mode because the URL is per-invocation there. The prima spec's "first hit wins per setting" line is amended to this wholesale rule.
+Precedence is wholesale, never per setting. A project config wins over everything; the `EXPLORBOT_*` variables win over the global config, so a machine-wide installation never silently overrides what a command asked for. `EXPLORBOT_URL` and command-line URLs still apply in global mode because the URL is per-invocation there. The prima spec's "first hit wins per setting" line is amended to this wholesale rule.
 
 **Global mode.** Active when the loaded config path is the global one:
 

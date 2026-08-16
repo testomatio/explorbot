@@ -127,6 +127,7 @@ mock.module('codeceptjs', () => {
     title: async () => state.title,
     waitForLoadState: async () => {},
     bringToFront: async () => {},
+    setDefaultTimeout: () => {},
     evaluate: async (fn: (...a: any[]) => any, ...args: any[]) => (typeof fn === 'function' ? fn(...args) : 0),
     accessibility: {
       snapshot: async () => null,

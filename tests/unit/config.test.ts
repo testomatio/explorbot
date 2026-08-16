@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigParser, EXPLORBOT_ENV_VARS, materializeKnowledge, resolveModel, resolveOutputRoot } from '../../src/config.ts';
 
@@ -48,6 +48,7 @@ const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_VISI
 
 let savedEnv: Record<string, string | undefined> = {};
 let scratchDir: string;
+let homedirSpy: ReturnType<typeof spyOn>;
 
 describe('ConfigParser environment mode', () => {
   let parser: ConfigParser;
@@ -60,6 +61,7 @@ describe('ConfigParser environment mode', () => {
       delete process.env[key];
     }
     scratchDir = mkdtempSync(join(tmpdir(), 'env-config-test-'));
+    homedirSpy = spyOn(os, 'homedir').mockReturnValue(scratchDir);
     ConfigParser.resetForTesting();
 
     parser = ConfigParser.getInstance();
@@ -73,6 +75,7 @@ describe('ConfigParser environment mode', () => {
       else process.env[key] = savedEnv[key];
     }
     (parser as any).findConfigFile = originalFindConfigFile;
+    homedirSpy.mockRestore();
     rmSync(scratchDir, { recursive: true, force: true });
     ConfigParser.resetForTesting();
   });

@@ -24,7 +24,7 @@ export interface TaggedLogEntry {
 
 type LogEntry = TaggedLogEntry;
 
-interface LogDestination {
+export interface LogDestination {
   isEnabled(): boolean;
   write(entry: TaggedLogEntry): void;
 }
@@ -79,14 +79,20 @@ const debugFilter = new DebugFilter();
 class ConsoleDestination implements LogDestination {
   private verboseMode = false;
   private forceEnabled = false;
+  private quiet = false;
   private recentSteps = new RecentStepFilter();
 
   isEnabled(): boolean {
+    if (this.quiet) return false;
     return this.forceEnabled || !process.env.INK_RUNNING;
   }
 
   forceEnable(enabled: boolean): void {
     this.forceEnabled = enabled;
+  }
+
+  setQuiet(enabled: boolean): void {
+    this.quiet = enabled;
   }
 
   setVerboseMode(enabled: boolean): void {
@@ -136,6 +142,8 @@ class DebugDestination implements LogDestination {
 
   setVerboseMode(enabled: boolean): void {
     this.verboseMode = enabled;
+    // the debug package reads DEBUG when it loads, so a namespace turned on later needs enabling by hand
+    if (enabled) debug.enable(process.env.DEBUG || 'explorbot:*');
   }
 
   write(namespace: string, ...args: any[]): void {
@@ -332,6 +340,7 @@ class Logger {
   private span = new SpanDestination();
   public react = new ReactDestination();
   public captain = new CaptainDestination();
+  private extra: LogDestination[] = [];
   private truncateTags: string[] = ['page_html'];
 
   private constructor() {}
@@ -360,8 +369,17 @@ class Logger {
     this.console.forceEnable(enabled);
   }
 
+  setQuietMode(enabled: boolean): void {
+    this.console.setQuiet(enabled);
+  }
+
   isVerboseMode(): boolean {
     return this.debugDestination.isEnabled();
+  }
+
+  addDestination(destination: LogDestination): void {
+    if (this.extra.includes(destination)) return;
+    this.extra.push(destination);
   }
 
   registerLogPane(addLog: (entry: LogEntry) => void): void {
@@ -456,6 +474,9 @@ class Logger {
     if (this.file.isEnabled()) this.file.write(entry);
     if (this.span.isEnabled()) this.span.write(entry);
     if (this.captain.isEnabled()) this.captain.write(entry);
+    for (const destination of this.extra) {
+      if (destination.isEnabled()) destination.write(entry);
+    }
     if (process.env.INK_RUNNING) {
       this.react.write(entry);
     } else if (this.console.isEnabled()) {
@@ -537,10 +558,12 @@ export const startLogCapture = () => logger.captain.startCapture();
 export const stopLogCapture = () => logger.captain.stopCapture();
 export const setVerboseMode = (enabled: boolean) => logger.setVerboseMode(enabled);
 export const setPreserveConsoleLogs = (enabled: boolean) => logger.setPreserveConsoleLogs(enabled);
+export const setQuietMode = (enabled: boolean) => logger.setQuietMode(enabled);
 export const isVerboseMode = () => logger.isVerboseMode();
 export const setDebugMode = (enabled: boolean) => logger.setDebugMode(enabled);
 export const isDebugMode = () => logger.isDebugMode();
 
+export const addDestination = (destination: LogDestination) => logger.addDestination(destination);
 export const registerLogPane = (addLog: (entry: LogEntry) => void) => logger.registerLogPane(addLog);
 export const unregisterLogPane = (addLog: (entry: LogEntry) => void) => logger.unregisterLogPane(addLog);
 export const addTruncateTag = (tagName: string) => logger.addTruncateTag(tagName);

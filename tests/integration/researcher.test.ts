@@ -181,13 +181,12 @@ describe('Researcher with aimock', () => {
     expect(prompt).toContain('/tasks/board');
   });
 
-  it('returns cached research without AI call', async () => {
+  it('returns cached research verbatim and without an AI call', async () => {
     saveResearch(fakeState.hash!, '## Cached Research\n\nPreviously analyzed page.');
 
     const result = await researcher.research(fakeState, { fix: false });
 
-    expect(result).toContain('Cached Research');
-    expect(result).toContain('CACHED AND MAY NOT REPRESENT CURRENT STATE');
+    expect(result).toBe('## Cached Research\n\nPreviously analyzed page.');
     expect(mock.getRequests().length).toBe(0);
   });
 

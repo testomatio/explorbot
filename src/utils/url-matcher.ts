@@ -100,6 +100,9 @@ export function matchesNavigationUrl(expected: string, current: string): boolean
   if (!expectedPath.includes('#')) {
     currentPath = currentPath.split('#')[0];
   }
+  if (!expectedPath.includes('?')) {
+    currentPath = currentPath.split('?')[0];
+  }
   const normalize = (value: string) => value.replace(/^\/+|\/+$/g, '').toLowerCase();
   return normalize(expectedPath) === normalize(currentPath);
 }

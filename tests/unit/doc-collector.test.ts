@@ -259,11 +259,13 @@ describe('doc-collector renderer', () => {
     );
 
     expect(markdown).toContain('```mermaid');
-    expect(markdown).toContain('page0 -->|"Clicked button: Import tests"| state0');
-    expect(markdown).toContain('page0 -->|"Clicked link: Suite"| page1');
-    expect(markdown).not.toContain('page1 -->|"Clicked link: Back"| page0');
-    expect(markdown).toContain('page1 -.->|"Clicked link: Back"| page0');
-    expect(markdown).toContain('subgraph sg_page0');
+    expect(markdown).toContain('flowchart LR');
+    expect(markdown).toContain('page0 --> state0');
+    expect(markdown).toContain('page0 --> page1');
+    expect(markdown).not.toContain('page1 --> page0');
+    expect(markdown).toContain('page1 -.-> page0');
+    expect(markdown).not.toContain('subgraph ');
+    expect(markdown).not.toContain('-->|"');
     expect(markdown).toContain('state0{{"');
     expect(markdown).toContain('classDef dialog');
     expect(markdown).toContain('class state0 dialog');
@@ -310,6 +312,84 @@ describe('doc-collector renderer', () => {
     expect(mermaid).toContain('page1 -.->|"Open X"| page0');
   });
 
+  it('renders a back-edge for a transition that closes a cycle longer than two', () => {
+    const mermaid = renderMermaidBody('D:/project/output/docs', [
+      {
+        url: '/a',
+        title: 'A',
+        summary: 'A',
+        canCount: 1,
+        mightCount: 0,
+        interactionCount: 1,
+        canActions: [],
+        mightActions: [],
+        interactionActions: [],
+        qualityNotes: [],
+        interactions: [{ action: 'to B', before: 'A', after: 'B', targetState: { kind: 'page', label: 'B', url: '/b' } }],
+        filePath: 'D:/project/output/docs/pages/a.md',
+      },
+      {
+        url: '/b',
+        title: 'B',
+        summary: 'B',
+        canCount: 1,
+        mightCount: 0,
+        interactionCount: 1,
+        canActions: [],
+        mightActions: [],
+        interactionActions: [],
+        qualityNotes: [],
+        interactions: [{ action: 'to C', before: 'B', after: 'C', targetState: { kind: 'page', label: 'C', url: '/c' } }],
+        filePath: 'D:/project/output/docs/pages/b.md',
+      },
+      {
+        url: '/c',
+        title: 'C',
+        summary: 'C',
+        canCount: 1,
+        mightCount: 0,
+        interactionCount: 1,
+        canActions: [],
+        mightActions: [],
+        interactionActions: [],
+        qualityNotes: [],
+        interactions: [{ action: 'to A', before: 'C', after: 'A', targetState: { kind: 'page', label: 'A', url: '/a' } }],
+        filePath: 'D:/project/output/docs/pages/c.md',
+      },
+    ]);
+
+    expect(mermaid).toContain('page0 -->|"to B"| page1');
+    expect(mermaid).toContain('page1 -->|"to C"| page2');
+    expect(mermaid).toContain('page2 -.->|"to A"| page0');
+  });
+
+  it('escapes hash, angle brackets, quotes, ampersand, and pipe in mermaid labels', () => {
+    const mermaid = renderMermaidBody('D:/project/output/docs', [
+      {
+        url: '/x',
+        title: 'Issue #42: <draft> & "final" | v2',
+        summary: 'x',
+        canCount: 0,
+        mightCount: 0,
+        interactionCount: 0,
+        canActions: [],
+        mightActions: [],
+        interactionActions: [],
+        qualityNotes: [],
+        interactions: [],
+        filePath: 'D:/project/output/docs/pages/x.md',
+      },
+    ]);
+
+    expect(mermaid).toContain('&#35;');
+    expect(mermaid).toContain('&#60;');
+    expect(mermaid).toContain('&#62;');
+    expect(mermaid).toContain('&amp;');
+    expect(mermaid).toContain('&quot;');
+    expect(mermaid).toContain('&#124;');
+    expect(mermaid).not.toContain('#42');
+  });
+
   it('exposes a fence-free Mermaid artifact via renderMermaidBody', () => {
     const mermaid = renderMermaidBody('D:/project/output/docs', [
       {
@@ -345,6 +425,78 @@ describe('doc-collector renderer', () => {
     expect(mermaid.startsWith('flowchart TD')).toBe(true);
     expect(mermaid).not.toContain('```');
     expect(mermaid).toContain('page0 -->|"Open B"| page1');
+  });
+
+  it('renders a compact LR overview that keeps transient edges without action labels', () => {
+    const pages = Array.from({ length: 3 }, (_, index) => ({
+      url: `/page-${index}`,
+      title: `Page ${index}`,
+      summary: 'page',
+      canCount: 1,
+      mightCount: 0,
+      interactionCount: 1,
+      canActions: [],
+      mightActions: [],
+      interactionActions: [],
+      qualityNotes: [],
+      interactions: [
+        {
+          action: `Open dialog ${index}`,
+          before: `Page ${index}`,
+          after: `Dialog ${index}`,
+          targetState: { kind: 'dialog' as const, label: `Dialog ${index}`, url: `/page-${index}` },
+        },
+      ],
+      filePath: `D:/project/output/docs/pages/page_${index}.md`,
+    }));
+
+    const markdown = renderSpecIndex('D:/project/output/docs', '/page-0', pages, [], 20);
+
+    expect(markdown).toContain('```mermaid\nflowchart LR');
+    expect(markdown).not.toContain('flowchart TD');
+    expect(markdown).not.toContain('-->|"');
+    expect(markdown).not.toContain('-.->|"');
+    expect(markdown).not.toContain('subgraph ');
+    expect(markdown).toContain('page0["Page 0<br/>/page-0"]');
+    expect(markdown).toContain('state0{{"Dialog 0<br/>dialog"}}');
+    expect(markdown).toContain('page0 --> state0');
+    expect(markdown).toContain('classDef dialog');
+    expect(markdown).toContain('click page0 "pages/page_0.md" "Open Page 0"');
+  });
+
+  it('renders a focused per-page state map when interactions target a transient state', () => {
+    const markdown = renderPageDocumentation({ url: '/suites', title: 'Suites' }, {
+      summary: 'Suites page',
+      can: [],
+      might: [],
+      interactions: [
+        {
+          action: 'Clicked button: Import tests',
+          before: 'Suites',
+          after: 'Import tests',
+          targetState: { kind: 'dialog', label: 'Import tests', url: '/suites' },
+          screenshot: { title: 'Import tests', relativePath: '../screenshots/suites_import.png' },
+        },
+      ],
+    } as any);
+
+    expect(markdown).toContain('## State Map');
+    expect(markdown).toContain('flowchart LR');
+    expect(markdown).toContain('self["Suites<br/>/suites"]');
+    expect(markdown).toContain('target0{{"Import tests<br/>dialog"}}');
+    expect(markdown).toContain('self -->|"Clicked button: Import tests"| target0');
+    expect(markdown).toContain('click target0 "../screenshots/suites_import.png" "Import tests"');
+  });
+
+  it('omits the per-page state map when no interaction targets a state', () => {
+    const markdown = renderPageDocumentation({ url: '/x', title: 'X' }, {
+      summary: 'Static',
+      can: [],
+      might: [],
+      interactions: [{ action: 'Clicked button: Save', before: 'x', after: 'y', changes: { urlChanged: false, newElements: 2, removedElements: 0 } }],
+    } as any);
+
+    expect(markdown).not.toContain('## State Map');
   });
 
   it('normalizes might-actions without duplicating prefixes', () => {
@@ -584,22 +736,20 @@ describe('doc-collector interactive candidate selection', () => {
 });
 
 describe('documentarian fallback', () => {
-  it('uses strict-compatible schema for interaction element metadata', async () => {
+  it('asks the model only for generated documentation fields', async () => {
     const provider = {
-      async generateObject(_messages: Array<{ role: string; content: string }>, schema: any) {
+      async generateObject(messages: Array<{ role: string; content: string }>, schema: any) {
         const jsonSchema = z.toJSONSchema(schema) as any;
-        const interaction = jsonSchema.properties.interactions.anyOf[0].items;
-        const element = interaction.properties.element.anyOf[0];
 
-        expect(interaction.required).toContain('element');
-        expect(element.required).toEqual(['role', 'name', 'section', 'container', 'locator']);
+        expect(jsonSchema.required).toEqual(['summary', 'can', 'might']);
+        expect(jsonSchema.properties.interactions).toBeUndefined();
+        expect(messages[1].content).not.toContain('interactions:');
 
         return {
           object: {
             summary: 'Static page',
             can: [],
             might: [],
-            interactions: null,
           },
         };
       },
@@ -752,7 +902,6 @@ describe('documentarian interactive mode', () => {
             summary: 'Suites page',
             can: [{ action: 'user can import tests', scope: 'page-level', evidence: 'dialog observed' }],
             might: [],
-            interactions: null,
           },
         };
       },
@@ -807,7 +956,6 @@ describe('documentarian interactive mode', () => {
             summary: 'Films page',
             can: [{ action: 'user can browse films', scope: 'list of items', evidence: 'film tiles visible' }],
             might: [],
-            interactions: null,
           },
         };
       },
@@ -1003,7 +1151,7 @@ describe('documentarian interactive mode', () => {
     expect(result.summary).toBe('Static fallback');
   });
 
-  it('preserves observed interactions when interactive documentation fails JSON validation', async () => {
+  it('combines static documentation with observed interactions when interactive documentation fails JSON validation', async () => {
     const provider = {
       async generateObject(messages: Array<{ role: string; content: string }>) {
         const prompt = messages[1].content;
@@ -1077,7 +1225,14 @@ describe('documentarian interactive mode', () => {
 `
     );
 
-    expect(result.summary).toBe('Observed 1 interaction(s); AI-generated summary was unavailable.');
+    expect(result.summary).toBe('Static fallback');
+    expect(result.can).toEqual([
+      {
+        action: 'user can view content',
+        scope: 'page-level',
+        evidence: 'fallback after invalid interactive JSON',
+      },
+    ]);
     expect(result.interactions).toHaveLength(1);
   });
 

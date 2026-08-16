@@ -4,8 +4,31 @@ export async function waitForPageReadiness(page: any, options: PageReadinessOpti
   const timeout = options.timeout ?? 6000;
   await page.waitForLoadState?.('domcontentloaded', { timeout })?.catch(() => {});
 
-  await Promise.race([waitForNetworkIdle(page, timeout), waitForVisibleSpinnersHidden(page, options.spinnerSelectors || [], timeout), sleep(timeout)]).catch(() => {});
+  await Promise.race([waitForNetworkIdle(page, timeout), waitForDomQuiet(page, timeout), waitForVisibleSpinnersHidden(page, options.spinnerSelectors || [], timeout), sleep(timeout)]).catch(() => {});
   await waitForPageBodyContent(page, timeout);
+}
+
+const DOM_QUIET_MS = 350;
+
+function waitForDomQuiet(page: any, timeout: number): Promise<void> {
+  if (!page?.waitForFunction) return new Promise(() => {});
+
+  return page
+    .waitForFunction(
+      (quiet: number) => {
+        const store = window as any;
+        if (!store.__explorbotDomQuiet) {
+          store.__explorbotDomQuiet = { last: Date.now() };
+          new MutationObserver(() => {
+            store.__explorbotDomQuiet.last = Date.now();
+          }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+        }
+        return Date.now() - store.__explorbotDomQuiet.last >= quiet;
+      },
+      DOM_QUIET_MS,
+      { timeout, polling: 100 }
+    )
+    .catch(() => {});
 }
 
 function waitForNetworkIdle(page: any, timeout: number): Promise<void> {

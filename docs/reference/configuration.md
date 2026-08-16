@@ -383,6 +383,7 @@ Explorbot looks for a config file in this order:
 7. `src/config/explorbot.config.js`
 8. `src/config/explorbot.config.mjs`
 9. `src/config/explorbot.config.ts`
+10. `~/.explorbot/config.js` (or `.mjs`, `.ts`) — the global installation
 
 Or pass a custom path:
 
@@ -390,9 +391,44 @@ Or pass a custom path:
 npx explorbot explore /dashboard --config ./custom/path/config.js
 ```
 
+The `EXPLORBOT_*` variables sit between the two files: they are used when the working directory has no config of its own, and they win over the global installation, so a machine-wide setup never overrides what a single command asked for. Whatever wins is used as a whole — configs never merge with each other.
+
+Env files fill in rather than override: the `.env` of the working directory is read first, then `~/.explorbot/.env` supplies only the keys still unset, so a project key and a real environment variable both beat a global one.
+
+### Running from anywhere: the global installation
+
+`npx explorbot init --global` configures AI models and keys once in `~/.explorbot`, so explorbot commands work in any directory without a project. Every explored site gets its own folder that persists between runs:
+
+```
+~/.explorbot/
+├── config.js            # AI models and keys, no URL
+├── .env
+└── sites/
+    ├── app.example.com/
+    │   ├── site.json    # base URL, first and last run
+    │   ├── knowledge/
+    │   ├── experience/
+    │   └── output/      # states, plans, reports, tests
+    └── localhost_3000/
+```
+
+The folder name is the host and port of the site, lowercased, with characters invalid in directory names replaced by `_`.
+
+Global mode runs with full project semantics — experience is read and written, the Historian saves generated tests, reports land in the site's `output/` — so the tool keeps learning your app across runs.
+
+The site comes from the URL of the command, or from `EXPLORBOT_URL`:
+
+```bash
+npx explorbot explore https://app.example.com/login   # registers the site on first visit
+npx explorbot explore app.example.com/dashboard       # later runs: reference it by host
+npx explorbot sites                                   # list registered sites
+```
+
+A `dirs` section in the global config is ignored in favor of the layout above. A `web.url` is allowed and acts as the default site for commands that pass no URL of their own.
+
 ### Running without a config file
 
-When no config file is found — neither in the working directory nor at `~/.explorbot/config.*` — and `EXPLORBOT_AI_PROVIDER` is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables. Output goes to the per-host state directory `~/.explorbot/state/<host>/` (`EXPLORBOT_OUTPUT` overrides it, `EXPLORBOT_EPHEMERAL=1` sends it to a temp directory instead), experience is written there and reused by later runs against the same host unless the run is ephemeral, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
+When the working directory has no config file and `EXPLORBOT_AI_PROVIDER` (or `EXPLORBOT_AI_MODEL`) is set, Explorbot synthesizes a configuration from `EXPLORBOT_*` environment variables, in preference to a global installation. Output goes to the site folder `~/.explorbot/sites/<host>/` (`EXPLORBOT_OUTPUT` overrides it, `EXPLORBOT_EPHEMERAL=1` sends it to a temp directory instead), experience is written there and reused by later runs against the same host unless the run is ephemeral, and the Historian is off. This is meant for one-liner CI jobs, demos, and coding agents — see [Agentic Usage](../workflow/agentic-usage.md) for the variable list and the trade-offs.
 
 ## Full configuration reference
 
@@ -497,6 +533,7 @@ export default {
   action: {
     delay: 1000,                   // Delay between actions (ms)
     retries: 3,                    // Retry failed actions
+    timeout: 3000,                 // Max time a single click/fill may block (ms)
   },
 
   // Regex to detect dynamic URL segments (IDs, slugs) for plan deduplication

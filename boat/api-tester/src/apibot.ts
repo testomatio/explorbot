@@ -33,7 +33,7 @@ export class ApiBot {
   }
 
   async start(): Promise<void> {
-    this.config = await this.configParser.loadConfig({ config: this.options.config, path: this.options.path });
+    this.config = await this.configParser.loadConfig({ config: this.options.config, path: this.options.path, endpoint: this.options.endpoint });
     this.provider = new AIProvider(this.config.ai);
     await this.provider.validateConnection();
 
@@ -101,12 +101,13 @@ export class ApiBot {
     return (this.agents.curler ||= this.createAgent(({ ai, apiClient, requestState }) => new Curler(ai, apiClient, requestState, this.reporter)));
   }
 
-  async plan(endpoint: string, opts: { style?: string; fresh?: boolean } = {}): Promise<Plan> {
+  async plan(target: string, opts: { style?: string; fresh?: boolean } = {}): Promise<Plan> {
     if (opts.fresh) {
       this.currentPlan = undefined;
       this.agents.chief = undefined;
     }
 
+    const endpoint = this.configParser.resolveEndpointPath(target);
     const chief = this.agentChief();
     const specDefinition = this.getEndpointDefinition(endpoint);
     this.currentPlan = await chief.plan(endpoint, { style: opts.style, specDefinition });
@@ -198,6 +199,7 @@ interface ApibotOptions {
   verbose?: boolean;
   config?: string;
   path?: string;
+  endpoint?: string;
 }
 
 export type { ApibotOptions };

@@ -283,11 +283,17 @@ export class Reporter {
 
       debugLog(testData);
 
-      await this.client.addTestRun(status, testData);
+      await this.reportTestData(status, testData);
       debugLog(`Test reported: ${test.scenario} - ${status}`);
     } catch (error) {
       debugLog('Failed to report test:', error);
     }
+  }
+
+  async reportTestData(status: string | null, testData: Record<string, unknown>): Promise<void> {
+    await this.startRun();
+    if (!this.isRunStarted) return;
+    await this.client.addTestRun(status, testData);
   }
 
   async finishRun(): Promise<void> {
