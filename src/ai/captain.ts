@@ -21,6 +21,7 @@ import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { TaskAgent } from './task-agent.ts';
+import { withdrawVisionTools } from './tools.ts';
 
 const MAX_STEPS = 15;
 
@@ -436,6 +437,8 @@ export class Captain extends CaptainBase implements Agent {
           stop();
           return;
         }
+
+        withdrawVisionTools(tools);
 
         const currentState = stateManager.getCurrentState();
         if (!currentState && this.getMode() !== 'idle') {

@@ -20,6 +20,7 @@ import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCo
 const debugLog = createDebug('explorbot:action');
 const CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS = 3;
 const DEFAULT_ACTION_TIMEOUT = 3000;
+const DEFAULT_PAGE_TIMEOUT = 3000;
 
 class Action {
   private actor: CodeceptJS.I;
@@ -310,6 +311,8 @@ class Action {
         await recorder.promise();
       }
 
+      this.restorePageTimeout();
+
       if (executedSteps.length > 0) {
         codeString = executedSteps.join('\n');
       }
@@ -328,6 +331,7 @@ class Action {
       this.assertionSteps = [];
       throw err;
     } finally {
+      this.restorePageTimeout();
       detachMainDocumentResponse();
       if (groupId) await this.recorder!.endAction();
       detachStepLogger(stepListener);
@@ -375,6 +379,10 @@ class Action {
 
   getActionResult(): ActionResult | null {
     return this.actionResult;
+  }
+
+  private restorePageTimeout(): void {
+    this.playwrightHelper?.page?.setDefaultTimeout(this.config.playwright.timeout ?? DEFAULT_PAGE_TIMEOUT);
   }
 
   private async waitForPageReadiness(page: any): Promise<void> {
