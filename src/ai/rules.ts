@@ -12,9 +12,10 @@ const locatorPriorityRule = dedent`
 
   1. ARIA locators (first choice) - target browser's accessibility tree, most reliable
      Use JSON format: { "role": "button", "text": "Login" }
-     Best for: buttons, links, inputs, form controls, dropdowns, checkboxes, radio buttons
+     Copy role and text VERBATIM from the ARIA snapshot or UI map — never guess the pair.
+     If the element is absent from the snapshot, do not invent one; use text or CSS instead.
 
-  2. Text locators (second choice) - use only when text is unique on the page
+  2. Text locators (second choice) - exact visible text, use only when unique on the page
      Example: 'Login', 'Submit', 'Username'
      Skip if the same text appears multiple times on the page
 
@@ -30,10 +31,10 @@ const locatorPriorityRule = dedent`
 
 const contextSimplificationRule = dedent`
   <context_simplification>
-  When container is available from UI map sections:
-  - Text + container is simplest and PREFERRED: I.click('Save', '.modal')
-  - ARIA + container for disambiguation: I.click({"role":"button","text":"Save"}, '.modal')
-  - ALWAYS use context parameter unless locator is XPath or unique ID
+  - Add a container when the target may match several elements, or the UI map gives a verified
+    section container: I.click('Save', '.modal')
+  - Skip the container when the locator is already unique (XPath, unique ID, unique text)
+  - A wrong or stale container guarantees failure: always add one fallback command WITHOUT a container
   - No need for complex ARIA when container narrows scope sufficiently
   </context_simplification>
 `;
@@ -63,7 +64,7 @@ const locatorStrategyRule = dedent`
 
   <good_aria_locator_example>
   { "role": "button", "text": "Login" },
-  { "role": "input", "text": "Name" },
+  { "role": "textbox", "text": "Name" },
   { "role": "link", "text": "Forgot your password?" },
   { "role": "link", "text": "Sign Up" },
   { "role": "button", "text": "Sign In" },
@@ -109,7 +110,7 @@ const locatorStrategyRule = dedent`
   </xpath_rules>
 
   <good locator example>
-    'div[role=input][placeholder="Name"]'
+    'input[placeholder="Name"]'
     '[aria-label="Name"]'
     'form#user_form input[name="name"]'
     '#content-top #user_name'
@@ -249,7 +250,8 @@ export const unexpectedPopupRule = dedent`
 
 export const sectionContextRule = dedent`
   <section_context_rule>
-  Context parameter is DEFAULT for all interactions. ALWAYS use container from UI map sections unless locator is XPath or unique ID.
+  Use a container from UI map sections when the target may match several elements. A container that is
+  wrong or stale guarantees failure, so prefer a verified one and keep a containerless fallback.
 
   1. Identify which section contains the target element
   2. Get the Context Locator from that section in the UI map
@@ -267,9 +269,10 @@ export const sectionContextRule = dedent`
   For CSS locators - prepend section context:
   - I.click('.main button.submit')  // instead of I.click('button.submit')
 
-  Only omit context when:
+  Omit context when the locator already resolves to one element:
   - Locator is XPath (already includes path context)
   - Locator is a unique ID (#specific-element)
+  - Text or ARIA that appears only once on the page
   </section_context_rule>
 
   ${unexpectedPopupRule}

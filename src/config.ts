@@ -197,6 +197,7 @@ interface HtmlConfig {
 interface ActionConfig {
   delay?: number;
   retries?: number;
+  timeout?: number;
 }
 
 interface ReporterConfig {
