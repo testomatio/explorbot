@@ -680,9 +680,9 @@ aria: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-2
 html: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-22-285Z/page.html
 ```
 
-`used:` is code that already executed. For `check`, `do`, and `go` those are CodeceptJS steps you can copy into a test as they are; for `pw` it is the Playwright expression you passed, which a CodeceptJS test needs wrapped in `I.usePlaywrightTo(...)`. Log lines can precede the envelope, so start parsing at the first `###` line.
+`used:` is code that already executed: for `go` the CodeceptJS step it ran, for `pw` the Playwright expression you passed, which a CodeceptJS test needs wrapped in `I.usePlaywrightTo(...)`. Log lines can precede the envelope, so start parsing at the first `###` line.
 
-`### Changes` renders on every action, saying `no change` when the page is identical — so a successful command proves what it did. `check` and `do` add `### Steps`, `check` adds `### Expected outcomes`, and `ask`, `research`, and `verify` add `### Answer`, `### Research`, or `### Assertions` beside the changes rather than instead of them. `pw` adds `### Value` when its expression returns one. `network:` appears under `### Artifacts` only when requests were captured, and everything else recorded for a command is behind `prima status <hash>`.
+`### Changes` renders on every action envelope, saying `no change` when the tree is identical — so a successful command proves what it did instead of leaving you to check. `check` and `do` report per step rather than in aggregate: `### Steps` names each step with the code it ran and what proved it, and `page after each step:` points at the captures. `check` adds `### Expected outcomes`; `ask`, `research`, and `verify` add `### Answer`, `### Research`, or `### Assertions`; `pw` adds `### Value` when its expression returns one. `network:` appears under `### Artifacts` only when requests were captured, and everything else recorded for a command is behind `prima status <hash>`.
 
 **A failed action is a failure.** Nothing is retried along a different route and no other element is substituted, so `ok: true` means the action you asked for is the one that landed. A failure adds `### Failure` with the error and the compact ARIA of the page, so you can retarget from the envelope itself instead of opening the artifact files.
 
