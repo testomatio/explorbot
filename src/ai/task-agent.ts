@@ -1,5 +1,6 @@
 import type { ActionResult } from '../action-result.js';
 import type { ExplorbotConfig } from '../config.ts';
+import { executionController } from '../execution-controller.ts';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import type Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
@@ -12,7 +13,8 @@ import type { Provider } from './provider.js';
 import { Quartermaster } from './quartermaster.js';
 
 export function isInteractive(): boolean {
-  return process.env.INK_RUNNING === 'true';
+  if (process.env.INK_RUNNING === 'true') return true;
+  return executionController.hasInputCallback();
 }
 
 function createNullProxy<T extends object>(): T {

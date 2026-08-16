@@ -27,6 +27,14 @@ export class ExecutionController extends EventEmitter {
     this.inputCallback = callback;
   }
 
+  hasInputCallback(): boolean {
+    return !!this.inputCallback;
+  }
+
+  clearInputCallback(): void {
+    this.inputCallback = null;
+  }
+
   startExecution(): void {
     this.interrupted = false;
     this.abortController = new AbortController();

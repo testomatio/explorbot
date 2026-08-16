@@ -24,7 +24,7 @@ export interface TaggedLogEntry {
 
 type LogEntry = TaggedLogEntry;
 
-interface LogDestination {
+export interface LogDestination {
   isEnabled(): boolean;
   write(entry: TaggedLogEntry): void;
 }
@@ -340,6 +340,7 @@ class Logger {
   private span = new SpanDestination();
   public react = new ReactDestination();
   public captain = new CaptainDestination();
+  private extra: LogDestination[] = [];
   private truncateTags: string[] = ['page_html'];
 
   private constructor() {}
@@ -374,6 +375,11 @@ class Logger {
 
   isVerboseMode(): boolean {
     return this.debugDestination.isEnabled();
+  }
+
+  addDestination(destination: LogDestination): void {
+    if (this.extra.includes(destination)) return;
+    this.extra.push(destination);
   }
 
   registerLogPane(addLog: (entry: LogEntry) => void): void {
@@ -468,6 +474,9 @@ class Logger {
     if (this.file.isEnabled()) this.file.write(entry);
     if (this.span.isEnabled()) this.span.write(entry);
     if (this.captain.isEnabled()) this.captain.write(entry);
+    for (const destination of this.extra) {
+      if (destination.isEnabled()) destination.write(entry);
+    }
     if (process.env.INK_RUNNING) {
       this.react.write(entry);
     } else if (this.console.isEnabled()) {
@@ -554,6 +563,7 @@ export const isVerboseMode = () => logger.isVerboseMode();
 export const setDebugMode = (enabled: boolean) => logger.setDebugMode(enabled);
 export const isDebugMode = () => logger.isDebugMode();
 
+export const addDestination = (destination: LogDestination) => logger.addDestination(destination);
 export const registerLogPane = (addLog: (entry: LogEntry) => void) => logger.registerLogPane(addLog);
 export const unregisterLogPane = (addLog: (entry: LogEntry) => void) => logger.unregisterLogPane(addLog);
 export const addTruncateTag = (tagName: string) => logger.addTruncateTag(tagName);

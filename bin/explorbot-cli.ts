@@ -11,6 +11,7 @@ import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
+import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
 import { getCliName } from '../src/utils/cli-name.ts';
@@ -26,6 +27,7 @@ const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../p
 const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as string;
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
+remote.registerOption(program);
 
 if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima')) {
   console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
@@ -99,6 +101,10 @@ async function startTUI(explorBot: ExplorBot): Promise<void> {
 }
 
 async function showStatsAndExit(code: number): Promise<never> {
+  if (remote.isAttached()) {
+    await remote.close(code);
+    process.exit(code);
+  }
   if (Stats.hasActivity()) {
     await new Promise<void>((resolve) => {
       const { unmount } = render(
