@@ -1,3 +1,5 @@
+// must stay first: jsdom require()s parse5 from CJS, which fails unless parse5 is already evaluated
+import 'parse5';
 import { afterEach, describe, expect, it } from 'bun:test';
 import { JSDOM } from 'jsdom';
 import { WebElement, extractElementData } from '../../src/utils/web-element.ts';

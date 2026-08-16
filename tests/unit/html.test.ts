@@ -1,3 +1,5 @@
+// must stay first: jsdom require()s parse5 from CJS, which fails unless parse5 is already evaluated
+import 'parse5';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
