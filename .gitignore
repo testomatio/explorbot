@@ -9,6 +9,10 @@ bun.lockb
 # Regression harness run artifacts
 tests/regression/.runs/
 
+# Session state and browser sessions written by running the CLI in this repo
+session.json
+.playwright-cli/
+
 # Environment variables
 .env
 .env.local
@@ -148,3 +152,6 @@ Thumbs.db
 
 # Keep the temporarily vendored OpenRouter AI-SDK-7 provider (PR #511)
 !vendor/*.tgz
+
+# Reporter debug dump
+testomatio.debug.json
