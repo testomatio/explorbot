@@ -30,6 +30,9 @@ DEBUG='explorbot:tester' prima check "a workflow can be created"
 - Verbose mode turns the debug log on for real. It set the `DEBUG` variable after the logging
   library had already read it, so `explorbot --verbose` printed a fraction of what
   `DEBUG='explorbot:*'` printed in front of the same command.
+- Page snapshots no longer carry variant-prefixed classes such as `dark:`, `hover:` or `md:`. Those
+  classes describe how an element looks in some other state, not what it is, so the agents now read
+  a smaller and less noisy page.
 
 ## 2026-08-10
 
