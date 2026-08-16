@@ -113,7 +113,7 @@
     "ora-classic": "^5.4.2",
     "parse5": "^8.0.0",
     "pixelmatch": "^7.2.0",
-    "playwright": "^1.60",
+    "playwright": "^1.62",
     "pngjs": "^7.0.0",
     "react": "^19.1.1",
     "sambanova-ai-provider": "^1.2.2",

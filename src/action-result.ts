@@ -30,6 +30,7 @@ interface ActionResultData extends WebPageState {
   iframeSnapshots?: Array<{ src: string; html: string; id?: string }>;
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
+  focusedElement?: FocusedElement | null;
   iframeURL?: string;
   links?: Link[];
 }
@@ -74,6 +75,7 @@ export class ActionResult implements ActionResultData {
   private snapshotCache = new TTLCache<string>();
   readonly logFile: string | undefined = undefined;
   readonly ariaSnapshotFile: string | undefined = undefined;
+  readonly focusedElement: FocusedElement | null = null;
   private _ariaSnapshot: string | null | undefined = undefined;
   private _lastExtractedHtml: string | undefined = undefined;
   notes: string[] = [];
@@ -106,6 +108,9 @@ export class ActionResult implements ActionResultData {
     }
     if (data.ariaSnapshotFile !== undefined) {
       this.ariaSnapshotFile = data.ariaSnapshotFile;
+    }
+    if (data.focusedElement !== undefined) {
+      this.focusedElement = data.focusedElement;
     }
 
     // Store HTML in a private property if provided
@@ -642,4 +647,10 @@ export class Diff {
     this._ariaDiffResult = ariaDiff.text;
     this._ariaChangeCount = ariaDiff.count;
   }
+}
+
+export interface FocusedElement {
+  role: string;
+  name: string;
+  value?: string;
 }

@@ -326,6 +326,7 @@ export class Provider {
     try {
       const response = await withRetry(async () => {
         const result = await generateText({ messages, ...config });
+        this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
         if (!result.text) {
           debugLog(result);
           if (result.finishReason === 'length') {
@@ -341,8 +342,6 @@ export class Provider {
 
       clearActivity();
       responseLog(response.text);
-
-      this.recordUsage(options.agentName || 'unknown', modelName, response.usage);
 
       return response;
     } catch (error: any) {
@@ -378,6 +377,7 @@ export class Provider {
     try {
       const response = await withRetry(async () => {
         const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
+        this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
         const hasToolCall = (result.toolCalls?.length || 0) > 0;
         if (!result.text && !hasToolCall && result.finishReason === 'length') {
           throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
@@ -396,8 +396,6 @@ export class Provider {
       }
 
       responseLog(response.text);
-
-      this.recordUsage(options.agentName || 'unknown', modelName, response.usage);
 
       return response;
     } catch (error: any) {

@@ -6,7 +6,7 @@ import dedent from 'dedent';
 import matter from 'gray-matter';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from './global-config.js';
 import { getCliName } from './utils/cli-name.js';
-import { log } from './utils/logger.js';
+import { log, tag } from './utils/logger.js';
 
 export const PROVIDERS: Record<string, ProviderInfo> = {
   openai: { envKey: 'OPENAI_API_KEY', load: async () => (await import('@ai-sdk/openai')).createOpenAI() },
@@ -455,7 +455,15 @@ export class ConfigParser {
   }
 
   public resolveTargetPath(target?: string): string {
-    if (!this.site) return target || '/';
+    if (!this.site) {
+      const configured = this.config?.playwright?.url || this.config?.web?.url;
+      const targetOrigin = target ? URL.parse(target)?.origin : null;
+      const baseOrigin = configured ? URL.parse(configured)?.origin : null;
+      if (targetOrigin && baseOrigin && targetOrigin !== baseOrigin) {
+        tag('warning').log(`Exploring ${targetOrigin} but base URL is ${baseOrigin}. Relative navigation resolves against the base URL — set web.url to ${targetOrigin} to avoid it.`);
+      }
+      return target || '/';
+    }
     if (!target) return this.siteStartPath;
 
     const resolved = resolveSiteTarget(target, this.site.url);

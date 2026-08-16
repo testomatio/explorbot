@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import { type Task, TestResult } from '../test-plan.js';
-import { LARGE_ARIA_CHANGE_THRESHOLD, extractFocusedElement } from '../utils/aria.ts';
+import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
@@ -32,6 +32,10 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
     click: tool({
       description: dedent`
         Click an element by trying multiple CodeceptJS commands in order until one succeeds.
+
+        Use this only for elements the page context gives you no ref for. When the element shows a ref such as [ref=e14],
+        call clickRef with that ref instead — composing a locator for an element that already has a ref is wasted work,
+        and a locator can match several elements where a ref cannot.
 
         Follow <locator_priority> from system prompt for locator selection.
 
@@ -150,6 +154,41 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           },
           action.lastError
         );
+      },
+    }),
+
+    clickRef: tool({
+      description: dedent`
+        Click an element by the ref the page context gave it, e.g. [ref=e14].
+
+        Prefer this over click() whenever the element you want carries a ref. A ref names one exact element, so it
+        cannot match several by mistake and never needs disambiguating — it is the fastest way to click.
+        Only pass a ref that appears in the page context you were given. Never invent or guess one.
+        If it reports the ref is gone, the page has been rebuilt: get fresh context and use the new ref.
+      `,
+      inputSchema: z.object({
+        ref: z.string().describe('The ref exactly as it appears in the page context, e.g. "e14"'),
+        element: z.string().describe('Role and name of the element you are clicking, for the record'),
+      }),
+      execute: async ({ ref, element }) => {
+        const activeNote = task.startNote(`Click ${element}`);
+        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+        const action = explorer.action();
+        const named = await describeRef(explorer, ref);
+        const run = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
+
+        if (!(await action.attempt(run, `Click ${element}`))) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('clickRef', `Ref ${ref} could not be clicked: ${errorText(action.lastError)}`, {
+            suggestion: 'The ref may belong to an older version of the page. Get fresh context and use the ref it gives, or fall back to click() with a locator.',
+          });
+        }
+
+        // a ref belongs to this session only, so the run is reported as the locator a later test can replay
+        const code = named ? `I.click(${JSON.stringify(named)})` : run;
+        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, code);
+        await commitNote(activeNote, TestResult.PASSED, toolResult, action);
+        return successToolResult('clickRef', { ...toolResult, code }, action);
       },
     }),
 
@@ -299,15 +338,11 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           const focusFreeKeys = new Set(['Escape', 'Esc', 'Tab', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12']);
           const needsFocus = !focusFreeKeys.has(keyToUse) && !modifier;
 
-          if (needsFocus) {
-            const currentAriaState = stateManager.getCurrentState()?.ariaSnapshot;
-            const focused = extractFocusedElement(currentAriaState ?? null);
-            if (!focused) {
-              activeNote.commit(TestResult.FAILED);
-              return failedToolResult('pressKey', `No element is focused. Key '${keyToUse}' requires a focused element.`, {
-                suggestion: 'Click the target element first, then press the key.',
-              });
-            }
+          if (needsFocus && !(await hasFocusedElement(explorer))) {
+            activeNote.commit(TestResult.FAILED);
+            return failedToolResult('pressKey', `No element is focused. Key '${keyToUse}' requires a focused element.`, {
+              suggestion: 'Click the target element first, then press the key.',
+            });
           }
 
           const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
@@ -357,6 +392,8 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
       description: dedent`
         Execute raw CodeceptJS code block with multiple commands.
         USE THIS TOOL for typing text into fields: I.fillField, I.type
+
+        Do not put a click on a ref-bearing element in here — clickRef with its ref is cheaper and cannot mis-target.
 
         Follow <actions> from system prompt for available commands.
         Follow <locator_priority> from system prompt for locator selection.
@@ -544,14 +581,15 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
   const tools: Record<string, any> = {
     see: tool({
       description: dedent`
-        Check the page contents based on current page state and screenshot.
-        This tool will trigger visual research to check the page contents on request.
-        Use it to verify the actions were performed correctly and the page is in the expected state.
+        Answer a question about the page from a screenshot, for things its structure cannot express:
+        layout and position, what an image or canvas depicts, colour, and whether something is covered or cut off.
+        This runs a second model and is the slowest tool here, so reach for it only when the question is genuinely visual.
+        Do NOT use it to confirm an action landed — every action already reports what changed on the page.
         Input schema has exactly one field: request. Do not pass text, reason, assertion, or other fields.
 
         <example>
-        request: "Check current state of the Login form"
-        result: "Login form is visible with username and password fields, username is filled with 'testuser' and password is empty' 
+        request: "Is the save button covered by anything, and does the chart show any plotted data?"
+        result: "The save button is partly behind a cookie banner at the bottom. The chart area is empty apart from its axes."
         </example>
       `,
       inputSchema: z.object({
@@ -674,6 +712,13 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
               },
               { assertionSteps: result.assertionSteps }
             );
+          }
+
+          if (result.inexpressible) {
+            return failedToolResult('verify', `No assertion could express this claim: ${assertion}`, {
+              inexpressible: true,
+              suggestion: 'This is not evidence the page is wrong — the claim could not be turned into an assertion. Restate it in terms of what is visible or of a control state, or check it with see().',
+            });
           }
 
           return failedToolResult('verify', `Verification failed: ${assertion}`, {
@@ -1112,14 +1157,33 @@ function errorText(error: unknown): string {
   return 'Unknown error occurred';
 }
 
-async function commitNote(activeNote: any, result: TestResult, toolResult: any, action: any): Promise<void> {
+export async function commitNote(activeNote: any, result: TestResult, toolResult: any, action: any): Promise<void> {
   if (toolResult?.pageDiff?.ariaChanges || toolResult?.pageDiff?.urlChanged) {
     activeNote.screenshot = await action.saveScreenshot();
   }
   activeNote.commit(result);
 }
 
-function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
+async function describeRef(explorer: any, ref: string): Promise<{ role: string; text: string } | null> {
+  return Promise.resolve(
+    explorer?.withPage?.((page: any) =>
+      page.locator(`aria-ref=${ref}`).evaluate((el: any) => {
+        const tag = el.tagName.toLowerCase();
+        const roles: Record<string, string> = { a: 'link', button: 'button', select: 'combobox', textarea: 'textbox' };
+        const role = el.getAttribute('role') || roles[tag] || tag;
+        const text = (el.getAttribute('aria-label') || el.innerText || el.value || '').trim().split('\n')[0];
+        if (!text) return null;
+        return { role, text };
+      })
+    )
+  ).catch(() => null);
+}
+
+async function hasFocusedElement(explorer: any): Promise<boolean> {
+  return explorer.withPage((page: any) => page.evaluate(() => !!document.activeElement && document.activeElement !== document.body)).catch(() => true);
+}
+
+export function successToolResult(action: string, data?: Record<string, any>, source?: { playwrightGroupId?: string | null; assertionSteps?: any[] }) {
   const result: Record<string, any> = { success: true, action, ...data };
   if (source?.playwrightGroupId) {
     result.playwrightGroupId = source.playwrightGroupId;
@@ -1155,7 +1219,7 @@ function hasObservablePageChange(data?: Record<string, any>): boolean {
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 
-async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
+export async function failedToolResult(action: string, message: string, data?: Record<string, any>, error?: Error | null) {
   const result: Record<string, any> = { success: false, action, message, ...data };
   if (data?.pageDiff) {
     result.suggestion = data.suggestion ? `${data.suggestion} ${PAGE_DIFF_SUGGESTION}` : PAGE_DIFF_SUGGESTION;

@@ -22,12 +22,16 @@ describe('isFunctionExpression', () => {
 describe('toCodeceptWrapper', () => {
   test('calls the function from an async wrapper the native helper API accepts', () => {
     const code = toCodeceptWrapper("({ page }) => page.click('text=Login')");
-    expect(code).toBe("I.usePlaywrightTo('pw', async (playwright) => (({ page }) => page.click('text=Login'))(playwright))");
+    expect(code).toBe("return I.usePlaywrightTo('pw', async (playwright) => (({ page }) => page.click('text=Login'))(playwright))");
+  });
+
+  test('returns the expression result so the caller can read it', () => {
+    expect(toCodeceptWrapper('({ page }) => page.title()')).toStartWith('return ');
   });
 
   test('keeps an already async function callable', () => {
     const code = toCodeceptWrapper("async ({ page }) => { await page.click('text=Login') }");
     expect(code).toContain("async ({ page }) => { await page.click('text=Login') }");
-    expect(code).toStartWith("I.usePlaywrightTo('pw', async (playwright) =>");
+    expect(code).toStartWith("return I.usePlaywrightTo('pw', async (playwright) =>");
   });
 });

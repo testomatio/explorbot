@@ -11,7 +11,7 @@ import { Observability } from '../observability.ts';
 import type { StateTransition } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult, type TestResultType } from '../test-plan.ts';
-import { detectFocusArea, extractFocusedElement } from '../utils/aria.ts';
+import { compactAriaSnapshot, detectFocusArea } from '../utils/aria.ts';
 import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
@@ -62,7 +62,6 @@ export class Tester extends TaskAgent implements Agent {
   private seenUiMapUrls = new Set<string>();
   private lastAnalyzedStateHash: string | null = null;
   private stalledIterations = 0;
-  private hasSuccessfulAssertion = false;
   private readonly MAX_STALLED_ITERATIONS = 3;
 
   constructor(deps: AgentDeps, researcher: Researcher, navigator: Navigator, agentTools?: any) {
@@ -111,7 +110,6 @@ export class Tester extends TaskAgent implements Agent {
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
     this.stalledIterations = 0;
-    this.hasSuccessfulAssertion = false;
     this.stateManager.clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
@@ -119,7 +117,7 @@ export class Tester extends TaskAgent implements Agent {
     const requestStore = this.requestStore;
     requestStore.clear();
     const offFailedRequest = requestStore.onFailedRequest((r) => {
-      task.addNote(`Network error: ${r.method} ${r.path} → ${r.status}`, TestResult.FAILED);
+      task.addObservation(`Network error: ${r.method} ${r.path} → ${r.status}`);
     });
 
     const initialState = ActionResult.fromState(state);
@@ -314,16 +312,8 @@ export class Tester extends TaskAgent implements Agent {
           const allToolNames = result?.toolExecutions?.map((execution: any) => execution.toolName) || [];
           const successfulToolNames = result?.toolExecutions?.filter((execution: any) => execution.wasSuccessful)?.map((execution: any) => execution.toolName) || [];
           const actionPerformed = !!allToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
-          const successfulActionPerformed = !!successfulToolNames.find((toolName: string) => this.ACTION_TOOLS.includes(toolName));
           assertionPerformed = !!successfulToolNames.find((toolName: string) => this.ASSERTION_TOOLS.includes(toolName));
           const wasSuccessful = result?.toolExecutions?.every((execution: any) => execution.wasSuccessful);
-
-          if (successfulActionPerformed) {
-            this.hasSuccessfulAssertion = false;
-          }
-          if (assertionPerformed) {
-            this.hasSuccessfulAssertion = true;
-          }
 
           this.trackToolExecutions(result?.toolExecutions || []);
 
@@ -416,6 +406,7 @@ export class Tester extends TaskAgent implements Agent {
       if (extensions >= this.MAX_EXTENSIONS) break;
 
       extensions++;
+      this.stalledIterations = 0;
       tag('info').log(`Pilot extending test (${extensions}/${this.MAX_EXTENSIONS})`);
       conversation.cleanupTag('page_aria', '...trimmed...', 1);
       conversation.cleanupTag('page_html', '...trimmed...', 0);
@@ -474,13 +465,7 @@ export class Tester extends TaskAgent implements Agent {
     this.stalledIterations++;
     if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
 
-    if (this.hasSuccessfulAssertion) {
-      task.addNote('No further browser progress after successful verification; requesting final review');
-      return true;
-    }
-
-    task.addNote('No browser progress after repeated attempts on unchanged page', TestResult.FAILED);
-    task.finish(TestResult.FAILED);
+    task.addNote('No further browser progress on unchanged page; requesting final review');
     return true;
   }
 
@@ -500,7 +485,8 @@ export class Tester extends TaskAgent implements Agent {
     `;
 
     if (task.getPrintableNotes()) {
-      outcomeStatus = dedent`
+      outcomeStatus += dedent`
+
         Your current log:
         <notes>
         ${task.notesToString()}
@@ -529,7 +515,7 @@ export class Tester extends TaskAgent implements Agent {
 
     const focusArea = detectFocusArea(currentState.ariaSnapshot);
 
-    const focusedElement = extractFocusedElement(currentState.ariaSnapshot);
+    const focusedElement = currentState.focusedElement;
     if (focusedElement) {
       const isTextInput = ['textbox', 'combobox', 'searchbox'].includes(focusedElement.role);
       context += dedent`
@@ -611,7 +597,7 @@ export class Tester extends TaskAgent implements Agent {
         </page>
 
         <page_aria>
-        ${currentState.getInteractiveARIA()}
+        ${await this.interactiveAriaWithRefs(currentState)}
         </page_aria>
         ${uiMapSection}
 
@@ -648,25 +634,32 @@ export class Tester extends TaskAgent implements Agent {
       </page>
 
       <page_aria>
-      ${currentState.getInteractiveARIA()}
+      ${await this.interactiveAriaWithRefs(currentState)}
       </page_aria>
     `;
   }
 
+  private async interactiveAriaWithRefs(state: ActionResult): Promise<string> {
+    const withRefs = await Promise.resolve(this.explorer?.withPage?.((page: any) => page.locator('body').ariaSnapshot({ mode: 'ai' }))).catch(() => null);
+    if (!withRefs) return state.getInteractiveARIA();
+    return compactAriaSnapshot(withRefs, false);
+  }
+
   private finishTest(task: Test): void {
-    if (!task.hasFinished) {
-      task.finish(TestResult.FAILED);
+    if (!task.result) {
+      if (task.hasAchievedAll()) task.finish(TestResult.PASSED);
+      else task.finish(TestResult.FAILED);
     }
 
     if (task.isSuccessful) {
       tag('success').log(`Successful test: ${task.scenario}`);
-    } else if (task.isSkipped) {
-      tag('warning').log(`Skipped test: ${task.scenario}`);
-    } else if (task.hasFailed) {
-      tag('error').log(`Failed test: ${task.scenario}`);
-    } else {
-      tag('warning').log(`Test with no result: ${task.scenario}`);
+      return;
     }
+    if (task.isSkipped) {
+      tag('warning').log(`Skipped test: ${task.scenario}`);
+      return;
+    }
+    tag('error').log(`Failed test: ${task.scenario}`);
   }
 
   private async abortStartedTestOnErrorPage(task: Test, actionResult: ActionResult): Promise<{ success: boolean }> {
@@ -809,6 +802,9 @@ export class Tester extends TaskAgent implements Agent {
       <expected_results>
       ${task.expected.map((e) => `- ${e}`).join('\n')}
       </expected_results>
+
+      An expected result counts as settled only when you record it back word for word as it is written above.
+      A note in your own wording is a general note and leaves that result unsettled.
 
       Your goal is to perform actions on the web page and verify the expected outcomes.
       Try to achieve as many goals as possible.
@@ -1059,6 +1055,9 @@ export class Tester extends TaskAgent implements Agent {
           - You unsuccessfully tried multiple iterations and failed
           - If the expected result was expected to fail, use status="success" instead
 
+          When a note settles one of the expected results, that note must repeat the expected result word
+          for word. Paraphrasing it leaves the expected result unsettled and it is reported as unverified.
+
           Example:
           - record({ notes: ["clicked login button", "login form appeared", "fill credentials"], status: "success" })
         `,
@@ -1143,8 +1142,7 @@ export class Tester extends TaskAgent implements Agent {
     this.stalledIterations++;
     if (this.stalledIterations < this.MAX_STALLED_ITERATIONS) return false;
 
-    task.addNote('No browser progress after repeated execution errors', TestResult.FAILED);
-    task.finish(TestResult.FAILED);
+    task.addNote('No browser progress after repeated execution errors; requesting final review');
     return true;
   }
 

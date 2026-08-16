@@ -2,83 +2,71 @@ import { Command } from 'commander';
 import dedent from 'dedent';
 import { keepServerRunning } from '../../../src/browser-server.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
-import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
+import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
+import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
 
 const helpContract = dedent`
-  Prima drives a browser that is already open. One command per process; every command
-  prints a plain-text envelope on stdout and exits 0 when ok, 1 when not.
+  Prima is a high-level AI extension to playwright-cli, driving the browser it has open.
 
-  TIERS - choose by what you hold, not by how hard the step looks
-    pw <fn>        Precise. A Playwright function expression built from a locator you
-                   already verified. No AI on the happy path.
-                     prima pw "({ page }) => page.click('[data-test=submit]')"
-    click / fill   One action described in words; AI resolves it on the current page.
-                     prima click "the primary action button in the header"
-                     prima fill "the search box" "a search term"
-    do <steps...>  Several described steps, run tester-style in one process.
-                     prima do "open the account menu" "choose the settings entry"
-    Never pass a locator or a function expression to click/fill/do - describe the target.
-    Never pass a description to pw - it takes executable code only.
+    playwright-cli open <url>    starts the session
+    prima <command> ...          drives it
+    playwright-cli close         ends it
 
-  LOOP
-    prima go <url|path|words>  reach the page you want to work on
-    prima research             once per new page; returns verified locators
-    prima pw "..."             drive the page with those locators
-    prima verify "..."         assert the outcome (prima ask "..." to inspect instead)
-    Fall back to click/fill/do whenever research left you no locator to hold.
+  One call takes a whole job:
 
-  ENVELOPE
-    ### Result     ok, command, healed, used
-    ### Page       url, title, state hash, visit count
-    ### Changes    what the accessibility tree gained or lost
-    ### Answer | ### Research | ### Verdict   output of ask, research, verify
-    ### Failure    error, reasoning, healing attempts, compact ARIA of the page
-    ### Instance   the browser you are on and the other instances running
-    ### Artifacts  paths to the full aria.yml, page.html and network.jsonl
-    used: is code that already executed - CodeceptJS steps to copy as they are, except
-          for pw, whose Playwright expression a test needs inside I.usePlaywrightTo(...).
-    Log lines can precede the envelope; start parsing at the first ### line.
-
-  HEALING AND FAILURE
-    A failed action is retried by AI along a different route; healed: true means the
-    outcome was reached another way and used: holds the code that worked.
-    --no-heal skips that and fails fast.
-    Failures print compact ARIA inline, so retarget from the envelope itself and open
-    the artifact files only when the inline snapshot is not enough.
-
-  SESSIONS
-    By default prima attaches to the playwright-cli browser of this workspace and works
-    on the tabs it already has open; driving the same session from both tools is the
-    intended usage.
-    playwright-cli open <url>  the session prima attaches to
-    --pw-session <title>       which playwright-cli session, when several are open
-    --endpoint <ep>            attach to a browser server endpoint directly
-    prima browser start        a prima-owned browser instead, when no session is open
-    --instance <name>          which prima-owned browser you talk to; parallel work
-                               needs one each
-    --session [file]           cookies and storage persisted across processes; ignored
-                               while attached, the attached session keeps its own
-    Prima never launches a browser implicitly and never closes an attached one - it
-    disconnects. browser list shows both kinds; ### Instance names the one you are on.
-    Every browser is reached over a Playwright browser-server endpoint, which needs the
-    Node build - run prima as "npx explorbot prima ..." or through the published prima
-    bin; from source under Bun the connection does not open.
-    When no AI model is usable pw still works; for everything else drive
-    playwright-cli directly.
-    Parsed but not active yet: --framework, so reported code is CodeceptJS whatever
-    you pass.
+    prima check "a workflow can be created and appears in the list" --expected "the new workflow is listed"
+    prima do "open the account menu" "choose the settings entry" "switch the theme to dark" "check it took effect"
+    prima pw "({ page }) => page.click('[data-test=submit]')"
 `;
 
-function buildOptions(options: any): PrimaOptions {
+const checkHelp = dedent`
+  check takes an outcome rather than a click path, and works out how to reach it.
+  --expected  one outcome the run must reach, repeatable for several. Without it the
+              scenario text is the single expected outcome. Each comes back under
+              ### Expected outcomes as PASSED, FAILED or not verified - "not verified"
+              means the run never checked it, which is not the same as false.
+  Page problems seen on the way appear under ### Answer, not as step failures.
+`;
+
+const doHelp = dedent`
+  Each instruction is numbered and accounted for: ### Steps reports each as ok or FAIL
+  with what proved it. One that could not be carried out fails the command and says why.
+  Nothing runs past the last instruction given. A whole remaining sequence in one call is
+  what makes this tier cheap.
+`;
+
+const verifyHelp = dedent`
+  Reports each assertion it could express as PASSED or FAILED with its playwright form,
+  and gives no overall verdict - read the lines and decide. "none ran" means the claim
+  could not be expressed, which is not the same as false.
+`;
+
+const reportHelp = dedent`
+  Commands are logged as they run, so the report needs no browser and outlives the session.
+  The most recent session is reported unless --pw-session names another.
+`;
+
+const sessionHelp = dedent`
+  --endpoint <ep>    attach to a browser server endpoint directly, skipping discovery
+  --instance <name>  which prima-owned browser you talk to; parallel work needs one each
+  --session [file]   cookies and storage persisted across processes; ignored while
+                     attached, since the attached session keeps its own
+  --framework        parsed but not active yet; reported code is CodeceptJS either way
+  DEBUG='explorbot:*' in front of a command prints the log of everything it does.
+  When no AI model is usable pw still works; for everything else drive playwright-cli.
+`;
+
+let rootOptions: () => any = () => ({});
+
+function buildOptions(subcommand: any): PrimaOptions {
+  const options = { ...rootOptions(), ...stripEmpty(subcommand) };
   return {
-    verbose: options.verbose || options.debug,
     config: options.config,
     path: options.path,
     instance: options.instance,
     session: options.session,
-    heal: options.heal,
     ephemeral: options.ephemeral,
     framework: options.framework,
     noVision: options.vision === false,
@@ -91,30 +79,39 @@ function buildOptions(options: any): PrimaOptions {
   };
 }
 
+function stripEmpty(options: any): any {
+  const present: any = {};
+  for (const [key, value] of Object.entries(options || {})) {
+    if (value === undefined) continue;
+    present[key] = value;
+  }
+  return present;
+}
+
 function addCommonOptions(cmd: Command): Command {
   return cmd
-    .option('-v, --verbose', 'Enable verbose logging')
-    .option('--debug', 'Enable debug logging (same as --verbose)')
     .option('-c, --config <path>', 'Path to explorbot configuration file')
     .option('-p, --path <path>', 'Working directory path')
     .option('-i, --instance <name>', 'Browser instance to drive')
     .option('--session [file]', 'Persist cookies and storage to a session file')
-    .option('--no-heal', 'Fail immediately instead of letting AI retry a failed action')
     .option('--ephemeral', 'Keep no state between runs; applies to config-free runs, where output goes to a temp directory')
     .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')
     .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')
-    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
+    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to')
+    .addHelpText('after', `\n${sessionHelp}`);
 }
 
 function primaFor(options: any): Prima {
-  setPreserveConsoleLogs(true);
   if (options.ephemeral) process.env.EXPLORBOT_EPHEMERAL = '1';
   return new Prima(buildOptions(options));
 }
 
-async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>): Promise<void> {
+async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>, record = true): Promise<void> {
+  setQuietMode(!isVerboseMode());
+  trackActivityLine();
   const prima = primaFor(options);
+  const startedAt = Date.now();
 
   let envelope: EnvelopeData;
   try {
@@ -124,6 +121,8 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
     envelope = await prima.toolFailureEnvelope(command, error);
   }
 
+  if (record) prima.record(envelope, Date.now() - startedAt);
+  clearActivityLine();
   console.log(renderEnvelope(envelope));
   await prima.stop().catch(() => {});
   process.exit(envelope.ok ? 0 : 1);
@@ -143,32 +142,38 @@ async function runBrowser(options: any, run: (prima: Prima) => Promise<boolean>)
 
 export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
-  cmd.description('Drive an already-open browser one command at a time and report back in a plain-text envelope');
+  cmd.description('Tests and drives a web app through described behaviour instead of locators: one command carries a whole scenario, verifies it, and reports the proof');
+  cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
+  cmd.option('--url <url>', 'Page to open when the session has no page yet');
   cmd.addHelpText('after', `\n${helpContract}`);
+  rootOptions = () => cmd.opts();
 
   addCommonOptions(cmd.command('pw <fn>').description('Run a Playwright function expression against the open page')).action(async (fn, options) => {
     await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
   });
 
-  addCommonOptions(cmd.command('do <instructions...>').description('Run high-level instructions tester-style, one argument per instruction')).action(async (instructions, options) => {
-    await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
-  });
+  addCommonOptions(cmd.command('do <instructions...>').description('Run high-level instructions tester-style, one argument per instruction'))
+    .addHelpText('after', `\n${doHelp}`)
+    .action(async (instructions, options) => {
+      await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
+    });
 
-  addCommonOptions(cmd.command('click <target>').description('Click an element described in plain words')).action(async (target, options) => {
-    await runPrima(options, `click ${target}`, (prima) => prima.click(target));
-  });
-
-  addCommonOptions(cmd.command('fill <field> <value>').description('Fill a field described in plain words')).action(async (field, value, options) => {
-    await runPrima(options, `fill ${field} ${value}`, (prima) => prima.fill(field, value));
-  });
+  addCommonOptions(cmd.command('check <scenario>').description('Run a scenario end to end as a test, with its own verification, and report the steps it took'))
+    .option('--expected <outcome>', 'An outcome the run must reach; repeat the flag for several', (value: string, all: string[]) => [...all, value], [])
+    .addHelpText('after', `\n${checkHelp}`)
+    .action(async (scenario, options) => {
+      await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
+    });
 
   addCommonOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot')).action(async (question, options) => {
     await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
   });
 
-  addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page')).action(async (assertion, options) => {
-    await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
-  });
+  addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page'))
+    .addHelpText('after', `\n${verifyHelp}`)
+    .action(async (assertion, options) => {
+      await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
+    });
 
   addCommonOptions(
     cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again')
@@ -180,6 +185,30 @@ export function createPrimaCommands(name = 'prima'): Command {
     if (URL.canParse(target)) options.baseUrl = target;
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
+
+  addCommonOptions(cmd.command('config').description('Show the AI models prima runs on and the config file they come from')).action(async (options) => {
+    setQuietMode(!isVerboseMode());
+    const prima = primaFor(options);
+    console.log(await prima.config().catch((error: unknown) => browserErrorMessage(error)));
+    await prima.stop().catch(() => {});
+    process.exit(0);
+  });
+
+  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
+    await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), false);
+  });
+
+  addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report'))
+    .addHelpText('after', `\n${reportHelp}`)
+    .action(async (options) => {
+      setQuietMode(!isVerboseMode());
+      console.log(
+        await primaFor(options)
+          .report()
+          .catch((error: unknown) => browserErrorMessage(error))
+      );
+      process.exit(0);
+    });
 
   const browser = cmd.command('browser').description('Manage the browsers prima drives');
 
