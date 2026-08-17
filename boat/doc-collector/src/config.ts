@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
 import { ConfigParser } from '../../../src/config.ts';
 
@@ -90,10 +91,11 @@ class DocbotConfigParser {
 
   private async loadConfigModule(configPath: string): Promise<any> {
     const ext = configPath.split('.').pop();
+    const moduleUrl = pathToFileURL(resolve(configPath)).href;
 
     if (ext === 'ts') {
       try {
-        return await import(configPath);
+        return await import(moduleUrl);
       } catch {
         const require = (await import('node:module')).createRequire(import.meta.url);
         return require(configPath);
@@ -101,7 +103,7 @@ class DocbotConfigParser {
     }
 
     if (ext === 'js' || ext === 'mjs') {
-      return await import(configPath);
+      return await import(moduleUrl);
     }
 
     return JSON.parse(readFileSync(configPath, 'utf8'));

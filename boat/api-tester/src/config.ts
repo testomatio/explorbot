@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
 import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, envConfigRequested, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
@@ -213,10 +214,11 @@ export class ApibotConfigParser {
 
   private async loadConfigModule(configPath: string): Promise<any> {
     const ext = configPath.split('.').pop();
+    const moduleUrl = pathToFileURL(resolve(configPath)).href;
 
     if (ext === 'ts') {
       try {
-        return await import(configPath);
+        return await import(moduleUrl);
       } catch {
         const require = (await import('node:module')).createRequire(import.meta.url);
         return require(configPath);
@@ -224,7 +226,7 @@ export class ApibotConfigParser {
     }
 
     if (ext === 'js' || ext === 'mjs') {
-      return await import(configPath);
+      return await import(moduleUrl);
     }
 
     const content = readFileSync(configPath, 'utf8');

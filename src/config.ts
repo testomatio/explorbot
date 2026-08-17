@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path, { basename, dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
 import dedent from 'dedent';
 import matter from 'gray-matter';
@@ -619,17 +620,18 @@ export class ConfigParser {
 
   private async loadConfigModule(configPath: string): Promise<any> {
     const ext = configPath.split('.').pop();
+    const moduleUrl = pathToFileURL(resolve(configPath)).href;
 
     if (ext === 'ts') {
       try {
-        const module = await import(configPath);
+        const module = await import(moduleUrl);
         return module;
       } catch (error) {
         const require = (await import('node:module')).createRequire(import.meta.url);
         return require(configPath);
       }
     } else if (ext === 'js' || ext === 'mjs') {
-      const module = await import(configPath);
+      const module = await import(moduleUrl);
       return module;
     } else {
       const content = readFileSync(configPath, 'utf8');
