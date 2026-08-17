@@ -7,6 +7,7 @@ import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
+import { Stats } from '../stats.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
@@ -562,23 +563,36 @@ export class Pilot implements Agent {
     return text;
   }
 
-  async settleExpectations(task: Test): Promise<Array<{ text: string; status: 'passed' | 'failed' | 'unverified' }>> {
-    const undecided = task.expected.filter((text) => !task.getCheckedExpectations().includes(text));
+  async settleExpectations(task: Test, finalState?: ActionResult): Promise<Array<{ text: string; status: 'passed' | 'failed' | 'unverified' }>> {
+    let image: string | null = null;
+    if (finalState?.screenshot && this.provider.hasVision()) image = `data:image/png;base64,${finalState.screenshot.toString('base64')}`;
+
     const decided = (text: string): 'passed' | 'failed' => {
       if (task.hasAchievedAny() && !task.getRemainingExpectations().includes(text)) return 'passed';
       return 'failed';
     };
 
+    let undecided = task.expected.filter((text) => !task.getCheckedExpectations().includes(text));
+    if (image) undecided = task.expected;
     if (!undecided.length) return task.expected.map((text) => ({ text, status: decided(text) }));
 
     const schema = z.object({
       outcomes: z.array(
         z.object({
           expectation: z.string().describe('The expected outcome, repeated exactly as it was given'),
-          status: z.enum(['passed', 'failed', 'unverified']).describe('passed = the log shows it happened, failed = the log shows it did not, unverified = the run never established either way'),
+          status: z.enum(['passed', 'failed', 'unverified']).describe('passed = the run shows it happened, failed = the run shows it did not, unverified = the run never established either way'),
         })
       ),
     });
+
+    let pageEvidence = '';
+    if (image) {
+      pageEvidence = dedent`
+        A screenshot of the page as the run left it is attached. Read it beside the log: what it shows can
+        settle an outcome the log left open, and can contradict one the log claims. It shows the final page
+        only — an outcome the run established earlier stays established even when the page has moved past it.
+      `;
+    }
 
     const userContent = dedent`
       A test run has finished. Decide, for each expected outcome, what the run established about it.
@@ -591,18 +605,36 @@ export class Pilot implements Agent {
       ${task.notesToString() || 'No steps recorded.'}
       </run_log>
 
+      ${pageEvidence}
+
       The log is written in the tester's own words, so an outcome can be satisfied by a step that describes it
       differently. Judge by what the steps show happened, not by whether the wording matches.
-      Choose "unverified" only when the log neither shows the outcome happening nor shows it failing —
+      Choose "unverified" only when the evidence neither shows the outcome happening nor shows it failing —
       that is a statement about the run, not about the application.
     `;
 
-    const response = await this.provider
-      .generateObject([{ role: 'user' as const, content: userContent }], schema, this.provider.getAgenticModel('pilot'), {
-        agentName: 'pilot',
-        telemetry: { functionId: 'pilot.settleExpectations' },
-      })
-      .catch(() => null);
+    const settle = (content: any, model: any) =>
+      this.provider
+        .generateObject([{ role: 'user' as const, content }], schema, model, {
+          agentName: 'pilot',
+          telemetry: { functionId: 'pilot.settleExpectations' },
+        })
+        .catch(() => null);
+
+    let response = null;
+    if (image) {
+      const seen = [
+        { type: 'text', text: userContent },
+        { type: 'file', mediaType: 'image/png', data: image },
+      ];
+      response = await settle(seen, this.provider.getVisionModel());
+      if (!response) {
+        Stats.visionDisabled = true;
+        tag('warning').log('⚠️ Vision model could not judge the outcomes. Settling them from the run log instead.');
+      }
+    }
+
+    if (!response) response = await settle(userContent, this.provider.getAgenticModel('pilot'));
 
     const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome.status]));
     return task.expected.map((text) => {

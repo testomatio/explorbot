@@ -138,6 +138,17 @@ describe('Prima.pw', () => {
     expect(envelope.instance.name).toBe('default');
   });
 
+  test('status points at the artifacts instead of printing the page tree back', async () => {
+    const { prima } = fakePrima();
+    const first = await prima.pw("({ page }) => page.click('text=Login')");
+    const envelope = await prima.status(first.status!);
+
+    expect(envelope.changes).toBeUndefined();
+    expect(envelope.page.url).toBe('https://app.example.com/dashboard');
+    expect(envelope.artifacts?.aria).toContain('aria.yml');
+    expect(envelope.artifacts?.html).toContain('page.html');
+  });
+
   test('execution error returns failure envelope with captured page', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.getExplorer = () => ({
@@ -553,7 +564,8 @@ describe('Prima.do', () => {
 
     const envelope = await prima.do(['open the invoices page']);
 
-    expect(envelope.ok).toBe(false);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.steps?.at(-1)).toMatchObject({ label: 'open the invoices page', unconfirmed: true });
     expect(calls).toBe(4);
   });
 
@@ -590,16 +602,45 @@ describe('Prima.do', () => {
     expect(readFileSync(path.join(dir, '1-i_click__invoices__.diff.yaml'), 'utf-8')).toContain('heading "Dashboard"');
   });
 
-  test('an instruction the model never reported is named as unaccounted for', async () => {
+  test('an instruction the model never reported is marked unconfirmed, not failed', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [toolExecution("I.click('Invoices')"), completedExecution([1], 'list is open')] }));
 
     const envelope = await prima.do(['open the invoices page', 'download the PDF']);
 
+    expect(envelope.ok).toBe(true);
+    expect(envelope.failure).toBeUndefined();
+    expect(envelope.steps?.at(-1)).toMatchObject({ label: 'download the PDF', unconfirmed: true });
+    expect(envelope.steps?.at(-1)?.proof).toContain('without confirming');
+  });
+
+  test('an instruction the page could not carry out still fails the command', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => fakeProvider(async () => ({ toolExecutions: [toolExecution("I.click('Invoices')"), completedExecution([1], 'list is open'), blockedExecution(2, 'no download control on the invoice row')] }));
+
+    const envelope = await prima.do(['open the invoices page', 'download the PDF']);
+
     expect(envelope.ok).toBe(false);
-    expect(envelope.failure?.error).toContain('open: download the PDF');
-    expect(envelope.steps?.at(-1)).toMatchObject({ label: 'unreported: download the PDF', ok: false });
-    expect(envelope.steps?.at(-1)?.proof).toContain('never reported');
+    expect(envelope.failure?.error).toContain('blocked: download the PDF');
+    expect(envelope.failure?.error).toContain('no download control');
+  });
+
+  test('an AI error while settling the ledger is reported as its own step', async () => {
+    const { prima } = fakePrima();
+    let calls = 0;
+    (prima as any).bot.getProvider = () =>
+      fakeProvider(async () => {
+        calls++;
+        if (calls === 1) return { toolExecutions: [toolExecution("I.click('Invoices')")] };
+        if (calls < 4) return { toolExecutions: [], response: { text: 'I opened the invoices page.' } };
+        throw new Error('provider rejected the request');
+      });
+
+    const envelope = await prima.do(['open the invoices page']);
+    const labels = envelope.steps?.map((step) => step.label) || [];
+
+    expect(labels).toContain('settling which instructions were satisfied');
+    expect(envelope.steps?.find((step) => step.label.startsWith('settling'))?.proof).toContain('provider rejected');
   });
 
   test('a stray failed action does not fail a sequence whose instructions all closed', async () => {
@@ -849,6 +890,121 @@ describe('Prima.check', () => {
 
     expect(envelope.ok).toBe(true);
     expect(envelope.expectations).toEqual([{ text: 'edit and save a skill', status: 'passed' }]);
+  });
+
+  test('the tester starts on the page already open instead of reloading the start url', async () => {
+    const { prima } = fakePrima();
+    let passed: any;
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any, options: any) => {
+        passed = options;
+        test.addNote('the editor opens', TestResult.PASSED);
+        test.finish(TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the editor opens', status: 'passed' }] });
+
+    await prima.check('edit a skill', ['the editor opens']);
+
+    expect(passed).toMatchObject({ startOnCurrentPage: true });
+  });
+
+  test('the verdict follows the outcomes, and one the run never checked is not a failure', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the editor opens', TestResult.PASSED);
+        test.finish(TestResult.FAILED);
+        return { success: false };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({
+      settleExpectations: async () => [
+        { text: 'the editor opens', status: 'passed' },
+        { text: 'the list refreshes', status: 'unverified' },
+      ],
+    });
+
+    const envelope = await prima.check('edit a skill', ['the editor opens', 'the list refreshes']);
+
+    expect(envelope.ok).toBe(true);
+    expect(envelope.failure).toBeUndefined();
+  });
+
+  test('an outcome the run showed failing names itself in the failure', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the draft is saved', TestResult.FAILED);
+        test.finish(TestResult.FAILED);
+        return { success: false };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the draft is saved', status: 'failed' }] });
+
+    const envelope = await prima.check('save a skill', ['the draft is saved']);
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('not reached: the draft is saved');
+  });
+
+  test('a run that could not complete says so instead of reporting on the app', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('Browser page is unavailable');
+        return { success: false };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the editor opens', status: 'unverified' }] });
+
+    const envelope = await prima.check('edit a skill', ['the editor opens']);
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('did not complete');
+    expect(envelope.failure?.error).toContain('Browser page is unavailable');
+  });
+
+  test('the final page reaches the judge as a screenshot when vision is available', async () => {
+    const { prima } = fakePrima();
+    let judged: any;
+    (prima as any).bot.getProvider = () => ({ hasVision: () => true });
+    (prima as any).bot.getExplorer = () => ({ capture: async (opts: any) => fakeState({ screenshot: opts?.screenshot ? Buffer.from('png') : undefined }) });
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the editor opens', TestResult.PASSED);
+        test.finish(TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({
+      settleExpectations: async (_test: any, finalState: any) => {
+        judged = finalState;
+        return [{ text: 'the editor opens', status: 'passed' }];
+      },
+    });
+
+    const envelope = await prima.check('edit a skill', ['the editor opens']);
+
+    expect(judged?.screenshot).toBeTruthy();
+    expect(envelope.judgedBy).toContain('screenshot');
+  });
+
+  test('outcomes settled without a screenshot say the verdict was not confirmed visually', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the editor opens', TestResult.PASSED);
+        test.finish(TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({ settleExpectations: async () => [{ text: 'the editor opens', status: 'passed' }] });
+
+    const envelope = await prima.check('edit a skill', ['the editor opens']);
+
+    expect(envelope.judgedBy).toContain('run log alone');
   });
 });
 

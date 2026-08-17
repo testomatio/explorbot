@@ -21,8 +21,9 @@ export interface EnvelopeData {
   used?: string[];
   page: { url: string; previousUrl?: string; title: string; state: string; visits: number };
   changes?: string | null;
-  steps?: Array<{ label: string; ok: boolean; proof: string }>;
+  steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string }>;
   expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' }>;
+  judgedBy?: string;
   stepFiles?: string;
   value?: string;
   answer?: string;
@@ -87,7 +88,10 @@ function renderSteps(data: EnvelopeData): string | null {
 
   const lines: string[] = [];
   data.steps.forEach((step, index) => {
-    lines.push(`${index + 1}. ${step.ok ? 'ok  ' : 'FAIL'} ${step.label}`);
+    let mark = 'FAIL';
+    if (step.ok) mark = 'ok  ';
+    if (step.unconfirmed) mark = '??  ';
+    lines.push(`${index + 1}. ${mark} ${step.label}`);
     for (const line of (step.proof || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
   if (data.stepFiles) lines.push('', `page after each step: ${data.stepFiles}`);
@@ -97,6 +101,7 @@ function renderSteps(data: EnvelopeData): string | null {
 function renderExpectations(data: EnvelopeData): string | null {
   if (!data.expectations?.length) return null;
   const lines = data.expectations.map((expectation, index) => `${index + 1}. ${EXPECTATION_LABELS[expectation.status]} ${expectation.text}`);
+  if (data.judgedBy) lines.push('', `judged from ${data.judgedBy}`);
   return section('Expected outcomes', lines.join('\n'));
 }
 

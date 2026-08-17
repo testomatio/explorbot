@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-08-18
+
+### `prima check` no longer reloads the page it was asked about
+
+`check` used to navigate to the current URL before it started, which reloads the page even when the
+address is unchanged. Anything the page was holding — an open dialog, a selected tab, a filled but
+unsaved form — was gone before the first thing was checked. It now runs on the page already open.
+
+### A `check` verdict is confirmed by looking at the page
+
+Outcomes used to be settled from the run log alone, so a claim about layout, position or anything
+else the page structure cannot express was judged by something that had never seen it. Each outcome
+is now judged against the run log **and** a screenshot of the page as the run left it. The
+`### Expected outcomes` section ends with a `judged from` line naming which of the two the verdict
+actually had, so "the run log alone" — no vision model configured, or the vision model could not
+answer — is visible rather than silent.
+
+`ok:` now follows those outcomes: false only when one FAILED. An outcome the run never checked
+stays "not verified" and does not fail the command. A run that could not complete at all says so,
+instead of reporting it as a failure of the application.
+
+### Changes
+
+- `prima do` marks an instruction it could not confirm `??` in `### Steps` instead of reporting it
+  as an error. Previously an instruction whose action had landed, but which the model never got
+  round to reporting, failed the whole command — a red for missing paperwork. The actions that ran
+  are listed above the `??` row. Only a failed action and an instruction the page could not carry
+  out fail the command now.
+- `prima do` reports an AI error while it was working out which instructions were satisfied as its
+  own step, rather than blaming the instruction that went unreported because of it.
+- `prima verify` judges a claim from a screenshot when no assertion can express it, instead of
+  answering "none ran" and stopping there.
+- `prima status <hash>` returns the page details and the paths to the saved snapshot, and no longer
+  reprints the whole accessibility tree that those files already hold.
+- Vision that fails or is switched off mid-run is now stated in the envelope wherever it changes an
+  answer, instead of quietly falling back to page structure.
+- [Pilot] Settles expected outcomes against the final screenshot as well as the run log, and falls
+  back to the log alone when the vision model cannot produce a verdict.
+
 ## 2026-08-16
 
 ### Changes

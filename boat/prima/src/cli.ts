@@ -22,17 +22,23 @@ const helpContract = dedent`
 `;
 
 const checkHelp = dedent`
-  check takes an outcome rather than a click path, and works out how to reach it.
+  check takes an outcome rather than a click path, and works out how to reach it. It runs
+  on the page you are already on and never reloads it, so an open dialog survives the check.
   --expected  one outcome the run must reach, repeatable for several. Without it the
               scenario text is the single expected outcome. Each comes back under
               ### Expected outcomes as PASSED, FAILED or not verified - "not verified"
               means the run never checked it, which is not the same as false.
+  ok: follows those outcomes - false only when one FAILED, or when the run could not
+  complete, which is reported as such rather than as an app failure.
+  Outcomes are settled against the run log and a screenshot of the final page; the
+  "judged from" line says which of the two the verdict actually had.
   Page problems seen on the way appear under ### Answer, not as step failures.
 `;
 
 const doHelp = dedent`
-  Each instruction is numbered and accounted for: ### Steps reports each as ok or FAIL
-  with what proved it. One that could not be carried out fails the command and says why.
+  Each instruction is numbered and accounted for: ### Steps reports each as ok, FAIL or ??.
+  ?? means the action ran but the run ended without confirming that instruction - read the
+  steps above it. Only FAIL and an instruction the page could not carry out fail the command.
   Nothing runs past the last instruction given. A whole remaining sequence in one call is
   what makes this tier cheap.
 `;

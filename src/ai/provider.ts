@@ -120,6 +120,10 @@ export class Provider {
     return this.config.agenticModel || this.config.model;
   }
 
+  getVisionModel(): any {
+    return this.config.visionModel;
+  }
+
   getConfiguredModels(): Record<string, string> {
     const models: Record<string, string> = { model: this.getModelName(this.config.model) };
     if (this.config.agenticModel) models.agenticModel = this.getModelName(this.config.agenticModel);
