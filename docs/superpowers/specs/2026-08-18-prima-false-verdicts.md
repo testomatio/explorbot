@@ -51,33 +51,39 @@ it. Nothing else changes for the explore flow, where reload-to-start-url is inte
 the case for a check that starts in place. Once a check has navigated away, resetting back is
 the right behaviour anyway.
 
-### 2. Vision closes every `check`
+### 2. The screenshot is the proof, and a disagreement is a finding
 
 `settleExpectations` is called from exactly one place, `prima.ts`, so it is prima's final judge
-and can change without touching the explore flow. It now takes the final `ActionResult`; when it
-carries a screenshot and a vision model is configured, it judges every expected outcome against
-the run log **and** the image in one structured call on the vision model.
+and can change without touching the explore flow. It now takes the final `ActionResult` and, when
+that carries a screenshot and a vision model is configured, settles every outcome in one
+structured call on the vision model with the image attached.
 
-One judge seeing both, not two judges reconciled: the picture is evidence beside the log, not a
-competing verdict. The prompt states that the screenshot shows the final page only — an outcome
-the run established earlier stays established even when the page has moved past it.
+The screenshot is not one of two equal inputs. An outcome is satisfied when the page shows it to
+somebody looking at it; the log only says what the run did. The prompt says so.
 
-Without vision it falls back to log-only judgement and the envelope says so, under
-`### Expected outcomes` as a `judged from` line. Silent degradation is what made vision
-unfindable in the first place.
+**Where the two disagree, the judge does not choose.** It reports `conflict` and says what each
+side shows. A value present in the page structure but absent from the picture — element hidden,
+container collapsed, covered by an overlay, drawn off-screen — is a defect in the application, and
+it is exactly the case both other verdicts destroy: `passed` hides it behind an assertion that
+happens to match, `failed` mislabels a feature that half works. It is the most valuable thing a
+run can find, so it comes back as its own status with both sides quoted, and it fails the command.
 
-A vision model that cannot produce the structured verdict is the same degradation arriving
-late. The call falls back to the text model with the log alone, and flips `Stats.visionDisabled`
-— the signal the codebase already uses for "vision is not usable this session" — so the
-`judged from` line reports the log, not a confirmation that never happened. Without this, deriving
-`ok` from the outcomes (§3) would turn a crashed judge into a green verdict claiming a screenshot.
+The screenshot is the final page only. An outcome the run established earlier stays established
+even when the page has moved past it, and the prompt says that is not a conflict — otherwise every
+"record deleted, then navigated away" scenario reports one.
+
+There is no line describing which evidence the judge had; that is plumbing, not a fact about the
+app. When no screenshot backed the outcomes — no vision model configured, or the vision call could
+not produce a verdict, which falls back to the text model and flips `Stats.visionDisabled` — the
+envelope carries a `### Warning` saying the outcomes came from the run log alone. That appears only
+when something is wrong with the setup, not under every run.
 
 ### 3. `check`'s verdict is its outcomes
 
 `ok` no longer comes from `tester.test()`'s success flag, which could contradict the outcomes
-printed beside it. `ok: true` when no outcome failed; a failed outcome names itself in
-`### Failure`. `unverified` is not a failure — it is a statement about the run, matching what the
-help text already promised.
+printed beside it. `ok: true` when no outcome failed and none conflicted; each failure and each
+conflict names itself in `### Failure`. `unverified` is not a failure — it is a statement about
+the run, matching what the help text already promised.
 
 A run that could not complete is reported separately from an application failure: when the test
 never finished or was skipped, the envelope says the run established nothing and cites the last
@@ -111,8 +117,11 @@ which is its whole job.
 ## Decisions Log
 
 - `check` starts on the current page. A command that inspects transient UI must not destroy it.
-- Vision is not a fallback in `check`; it closes every run that has a vision model. One judge
-  reads the log and the screenshot together.
+- Vision is not a fallback in `check`; it closes every run that has a vision model. The
+  screenshot is the proof — what a user can see — and the run log only says what was done.
+- A disagreement between the page and the run is reported as `conflict`, never settled one way.
+  Something in the DOM that is not on the screen is a defect, and both `passed` and `failed`
+  would bury it. A conflict fails the command.
 - `settleExpectations` judges all outcomes, not only undecided ones, when it has a screenshot —
   otherwise a DOM assertion the run already made could never be contradicted by the page.
 - `unverified` is not a failure, in `check` outcomes and in `do` instructions alike. A statement
@@ -122,11 +131,11 @@ which is its whole job.
 - A run that could not complete is reported as such, never as an application failure.
 - `provider.getVisionModel()` is added for symmetry with `getModelForAgent`/`getAgenticModel`;
   `processImage` returns free text and cannot carry a per-outcome verdict.
-- A failed vision judgement falls back to the text model and flips `Stats.visionDisabled` rather
-  than changing `settleExpectations`' return type. The existing global is the signal for this,
-  and prima reads it through `visionEnabled()` when it writes the `judged from` line.
-- Degradation is always stated. No command silently answers from structure when it was expected
-  to look.
+- A failed vision judgement falls back to the text model and flips `Stats.visionDisabled` — the
+  existing global for "vision is not usable this session" — which prima reads through
+  `visionEnabled()`.
+- No line reports which evidence the judge had; that is plumbing. Only the degraded case is
+  stated, as a `### Warning`, because only that case is a fact the caller must act on.
 - The verdict vocabulary lives in `prima <command> --help`. A marker the caller can see in an
   envelope but cannot look up is not documented.
 
@@ -138,4 +147,4 @@ which is its whole job.
 - `do` gets no vision confirmation pass. Its `completed()` proof is the same kind of unverified
   paperwork, but a per-instruction vision call is a different cost profile.
 - The `prima` skill in `testomatio/skills` documents the old envelope vocabulary. It needs the
-  `??` row, the `judged from` line, and the unconfirmed-is-not-failed rule.
+  `??` row, the `CONFLICT` status, and the unconfirmed-is-not-failed rule.

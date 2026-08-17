@@ -51,11 +51,11 @@ describe('Pilot settling expected outcomes', () => {
     const task = new Test('open the editor', 'normal', ['the global editor opens with its markdown loaded'], '/skills');
     task.addNote('Clicked Change skill globally; editor panel appeared showing SKILL.md content', TestResult.PASSED);
 
-    mock.on({}, { content: JSON.stringify({ outcomes: [{ expectation: 'the global editor opens with its markdown loaded', status: 'passed' }] }) });
+    mock.on({}, { content: JSON.stringify({ outcomes: [{ expectation: 'the global editor opens with its markdown loaded', status: 'passed', evidence: 'the editor panel is showing SKILL.md' }] }) });
 
     const settled = await pilot.settleExpectations(task);
 
-    expect(settled).toEqual([{ text: 'the global editor opens with its markdown loaded', status: 'passed' }]);
+    expect(settled).toEqual([{ text: 'the global editor opens with its markdown loaded', status: 'passed', evidence: 'the editor panel is showing SKILL.md' }]);
     expect(extractPromptText(mock.getRequests()[0])).toContain('editor panel appeared showing SKILL.md content');
   });
 
@@ -73,10 +73,10 @@ describe('Pilot settling expected outcomes', () => {
     const task = new Test('open the editor', 'normal', ['the list refreshes'], '/skills');
     task.addNote('Clicked around the sidebar', TestResult.PASSED);
 
-    mock.on({}, { content: JSON.stringify({ outcomes: [{ expectation: 'the list refreshes', status: 'unverified' }] }) });
+    mock.on({}, { content: JSON.stringify({ outcomes: [{ expectation: 'the list refreshes', status: 'unverified', evidence: null }] }) });
 
     const settled = await pilot.settleExpectations(task);
 
-    expect(settled).toEqual([{ text: 'the list refreshes', status: 'unverified' }]);
+    expect(settled).toEqual([{ text: 'the list refreshes', status: 'unverified', evidence: null }]);
   });
 });

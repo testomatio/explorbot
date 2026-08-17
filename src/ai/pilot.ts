@@ -563,7 +563,7 @@ export class Pilot implements Agent {
     return text;
   }
 
-  async settleExpectations(task: Test, finalState?: ActionResult): Promise<Array<{ text: string; status: 'passed' | 'failed' | 'unverified' }>> {
+  async settleExpectations(task: Test, finalState?: ActionResult): Promise<SettledExpectation[]> {
     let image: string | null = null;
     if (finalState?.screenshot && this.provider.hasVision()) image = `data:image/png;base64,${finalState.screenshot.toString('base64')}`;
 
@@ -580,7 +580,8 @@ export class Pilot implements Agent {
       outcomes: z.array(
         z.object({
           expectation: z.string().describe('The expected outcome, repeated exactly as it was given'),
-          status: z.enum(['passed', 'failed', 'unverified']).describe('passed = the run shows it happened, failed = the run shows it did not, unverified = the run never established either way'),
+          status: z.enum(['passed', 'failed', 'unverified', 'conflict']).describe('passed = the evidence shows it happened, failed = the evidence shows it did not, unverified = the run never established either way, conflict = the page and the run disagree'),
+          evidence: z.string().nullable().describe('What settled it. For a conflict, what each side shows. Null when there is nothing to add'),
         })
       ),
     });
@@ -588,9 +589,15 @@ export class Pilot implements Agent {
     let pageEvidence = '';
     if (image) {
       pageEvidence = dedent`
-        A screenshot of the page as the run left it is attached. Read it beside the log: what it shows can
-        settle an outcome the log left open, and can contradict one the log claims. It shows the final page
-        only — an outcome the run established earlier stays established even when the page has moved past it.
+        A screenshot of the page as the run left it is attached. It is the proof: an outcome is satisfied when
+        the page shows it to somebody looking at it. The log only says what the run did.
+
+        Where the two disagree, do not choose between them. Report "conflict" and say what each side shows.
+        Something present in the page structure but absent from the picture is a finding about the application —
+        it is not a verdict to settle.
+
+        The screenshot is the final page only. An outcome the run established earlier stays established even when
+        the page has moved past it, and that is not a conflict.
       `;
     }
 
@@ -636,10 +643,12 @@ export class Pilot implements Agent {
 
     if (!response) response = await settle(userContent, this.provider.getAgenticModel('pilot'));
 
-    const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome.status]));
+    const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome]));
     return task.expected.map((text) => {
       if (!undecided.includes(text)) return { text, status: decided(text) };
-      return { text, status: (judged.get(text) as 'passed' | 'failed' | 'unverified') || 'unverified' };
+      const outcome = judged.get(text) as { status: SettledStatus; evidence?: string } | undefined;
+      if (!outcome) return { text, status: 'unverified' as SettledStatus };
+      return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
     });
   }
 
@@ -1147,4 +1156,12 @@ export class Pilot implements Agent {
       ${stepsText}
     `;
   }
+}
+
+export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'conflict';
+
+export interface SettledExpectation {
+  text: string;
+  status: SettledStatus;
+  evidence?: string;
 }

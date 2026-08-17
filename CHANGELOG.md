@@ -8,18 +8,34 @@
 address is unchanged. Anything the page was holding — an open dialog, a selected tab, a filled but
 unsaved form — was gone before the first thing was checked. It now runs on the page already open.
 
-### A `check` verdict is confirmed by looking at the page
+### A `check` verdict is settled against a screenshot, and a disagreement is reported
 
 Outcomes used to be settled from the run log alone, so a claim about layout, position or anything
-else the page structure cannot express was judged by something that had never seen it. Each outcome
-is now judged against the run log **and** a screenshot of the page as the run left it. The
-`### Expected outcomes` section ends with a `judged from` line naming which of the two the verdict
-actually had, so "the run log alone" — no vision model configured, or the vision model could not
-answer — is visible rather than silent.
+else the page structure cannot express was judged by something that had never seen the page. Each
+outcome is now settled against a screenshot of the page as the run left it. What a user can see is
+the proof; the run log only says what was done.
 
-`ok:` now follows those outcomes: false only when one FAILED. An outcome the run never checked
-stays "not verified" and does not fail the command. A run that could not complete at all says so,
-instead of reporting it as a failure of the application.
+When the two disagree, the outcome comes back as **CONFLICT** with both sides quoted, instead of
+being resolved one way:
+
+```
+### Expected outcomes
+1. PASSED       the Add connection dialog opens
+2. CONFLICT     the new connection is listed
+      the assertion I.see("staging-db") found the row in the page structure; the screenshot
+      shows the list still empty, so the row is in the DOM but not visible
+3. not verified the list scrolls
+```
+
+That case — a row present in the markup but invisible on screen, whether hidden, collapsed,
+covered or drawn off-screen — is a real defect that a PASSED would have buried behind a matching
+assertion and a FAILED would have mislabelled as a broken feature.
+
+`ok:` now follows those outcomes: false when one FAILED or CONFLICTed. An outcome the run never
+checked stays "not verified" and does not fail the command. A run that could not complete at all
+says so, instead of reporting it as a failure of the application. When no screenshot backed the
+outcomes — no `ai.visionModel` configured, or the vision model could not answer — the envelope
+carries a `### Warning` saying so.
 
 ### Changes
 
@@ -36,8 +52,9 @@ instead of reporting it as a failure of the application.
   reprints the whole accessibility tree that those files already hold.
 - Vision that fails or is switched off mid-run is now stated in the envelope wherever it changes an
   answer, instead of quietly falling back to page structure.
-- [Pilot] Settles expected outcomes against the final screenshot as well as the run log, and falls
-  back to the log alone when the vision model cannot produce a verdict.
+- [Pilot] Settles expected outcomes against the final screenshot, treating what the page shows as
+  the proof and reporting a disagreement with the run log rather than resolving it. Falls back to
+  the log alone when the vision model cannot produce a verdict.
 
 ## 2026-08-16
 

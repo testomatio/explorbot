@@ -26,12 +26,15 @@ const checkHelp = dedent`
   on the page you are already on and never reloads it, so an open dialog survives the check.
   --expected  one outcome the run must reach, repeatable for several. Without it the
               scenario text is the single expected outcome. Each comes back under
-              ### Expected outcomes as PASSED, FAILED or not verified - "not verified"
-              means the run never checked it, which is not the same as false.
-  ok: follows those outcomes - false only when one FAILED, or when the run could not
-  complete, which is reported as such rather than as an app failure.
-  Outcomes are settled against the run log and a screenshot of the final page; the
-  "judged from" line says which of the two the verdict actually had.
+              ### Expected outcomes as PASSED, FAILED, CONFLICT or not verified.
+              "not verified" means the run never checked it, which is not the same
+              as false.
+  Outcomes are settled against a screenshot of the final page: what a user can see is
+  the proof, and the run log only says what was done. CONFLICT means the two disagree -
+  the page structure claims something the picture does not show, or the reverse - and
+  it is reported with both sides rather than settled one way.
+  ok: follows those outcomes - false when one FAILED or CONFLICTed, or when the run
+  could not complete, which is reported as such rather than as an app failure.
   Page problems seen on the way appear under ### Answer, not as step failures.
 `;
 

@@ -988,10 +988,10 @@ describe('Prima.check', () => {
     const envelope = await prima.check('edit a skill', ['the editor opens']);
 
     expect(judged?.screenshot).toBeTruthy();
-    expect(envelope.judgedBy).toContain('screenshot');
+    expect(envelope.warning).toBeUndefined();
   });
 
-  test('outcomes settled without a screenshot say the verdict was not confirmed visually', async () => {
+  test('outcomes settled without a screenshot warn that nothing backed them', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.agentTester = () => ({
       test: async (test: any) => {
@@ -1004,7 +1004,30 @@ describe('Prima.check', () => {
 
     const envelope = await prima.check('edit a skill', ['the editor opens']);
 
-    expect(envelope.judgedBy).toContain('run log alone');
+    expect(envelope.warning).toContain('run log alone');
+    expect(envelope.ok).toBe(true);
+  });
+
+  test('a page that disagrees with the run is reported as a conflict, not settled either way', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.getProvider = () => ({ hasVision: () => true });
+    (prima as any).bot.getExplorer = () => ({ capture: async (opts: any) => fakeState({ screenshot: opts?.screenshot ? Buffer.from('png') : undefined }) });
+    (prima as any).bot.agentTester = () => ({
+      test: async (test: any) => {
+        test.addNote('the new row is listed', TestResult.PASSED);
+        test.finish(TestResult.PASSED);
+        return { success: true };
+      },
+    });
+    (prima as any).bot.agentPilot = () => ({
+      settleExpectations: async () => [{ text: 'the new row is listed', status: 'conflict', evidence: 'the assertion found the row in the page structure; the screenshot shows an empty list' }],
+    });
+
+    const envelope = await prima.check('add a row', ['the new row is listed']);
+
+    expect(envelope.ok).toBe(false);
+    expect(envelope.failure?.error).toContain('the page and the run disagree about: the new row is listed');
+    expect(envelope.expectations?.[0].evidence).toContain('screenshot shows an empty list');
   });
 });
 

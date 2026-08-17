@@ -5,6 +5,7 @@ const EXPECTATION_LABELS = {
   passed: 'PASSED      ',
   failed: 'FAILED      ',
   unverified: 'not verified',
+  conflict: 'CONFLICT    ',
 };
 
 export interface InstanceInfo {
@@ -22,8 +23,8 @@ export interface EnvelopeData {
   page: { url: string; previousUrl?: string; title: string; state: string; visits: number };
   changes?: string | null;
   steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string }>;
-  expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' }>;
-  judgedBy?: string;
+  expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' | 'conflict'; evidence?: string }>;
+  warning?: string;
   stepFiles?: string;
   value?: string;
   answer?: string;
@@ -36,7 +37,7 @@ export interface EnvelopeData {
 }
 
 export function renderEnvelope(data: EnvelopeData): string {
-  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderExpectations(data), renderOutcome(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
+  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderExpectations(data), renderWarning(data), renderOutcome(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
   return sections.filter((section) => section).join('\n\n');
 }
 
@@ -100,9 +101,19 @@ function renderSteps(data: EnvelopeData): string | null {
 
 function renderExpectations(data: EnvelopeData): string | null {
   if (!data.expectations?.length) return null;
-  const lines = data.expectations.map((expectation, index) => `${index + 1}. ${EXPECTATION_LABELS[expectation.status]} ${expectation.text}`);
-  if (data.judgedBy) lines.push('', `judged from ${data.judgedBy}`);
+
+  const lines: string[] = [];
+  data.expectations.forEach((expectation, index) => {
+    lines.push(`${index + 1}. ${EXPECTATION_LABELS[expectation.status]} ${expectation.text}`);
+    if (expectation.status !== 'conflict' && expectation.status !== 'failed') return;
+    for (const line of (expectation.evidence || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
+  });
   return section('Expected outcomes', lines.join('\n'));
+}
+
+function renderWarning(data: EnvelopeData): string | null {
+  if (!data.warning) return null;
+  return section('Warning', data.warning);
 }
 
 function renderOutcome(data: EnvelopeData): string | null {

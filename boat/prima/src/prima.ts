@@ -356,12 +356,16 @@ export class Prima {
 
     envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
 
-    envelope.judgedBy = 'the run log alone — no screenshot was read, so nothing here was confirmed visually';
-    if (result.screenshot && this.visionEnabled()) envelope.judgedBy = 'the run log and a screenshot of the page as the run left it';
+    if (!result.screenshot || !this.visionEnabled()) {
+      envelope.warning = 'These outcomes were settled from the run log alone — no screenshot backed them. Set ai.visionModel, or check anything visual with prima ask.';
+    }
 
     const unreached = envelope.expectations.filter((expectation) => expectation.status === 'failed');
-    envelope.ok = !unreached.length;
-    if (unreached.length) envelope.failure = { error: unreached.map((expectation) => `not reached: ${expectation.text}`).join('\n') };
+    const conflicts = envelope.expectations.filter((expectation) => expectation.status === 'conflict');
+    envelope.ok = !unreached.length && !conflicts.length;
+
+    const problems = [...unreached.map((expectation) => `not reached: ${expectation.text}`), ...conflicts.map((expectation) => `the page and the run disagree about: ${expectation.text}`)];
+    if (problems.length) envelope.failure = { error: problems.join('\n') };
 
     if (!test.hasFinished || test.isSkipped) {
       envelope.ok = false;
