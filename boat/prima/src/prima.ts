@@ -40,7 +40,7 @@ const CONNECT_TIMEOUT = 3000;
 const requireLib = createRequire(import.meta.url);
 
 const VOLATILE_COLUMNS = ['CSS', 'XPath', 'Coordinates', 'eidx'];
-const UNACCOUNTED: Record<string, string> = { open: 'never reported — the run ended with this instruction still open' };
+const UNACCOUNTED: Record<string, string> = { open: 'the run ended without confirming this one — the actions above are everything that ran' };
 
 function dropVolatileColumns(markdown: string): string {
   return mdq(markdown)
@@ -227,12 +227,12 @@ export class Prima {
 
     if (aiError) return this.failureEnvelope(command, aiError, previousState);
 
-    if (used.length && ledger.some((entry) => entry.status === 'open')) {
+    if (trace.length && ledger.some((entry) => entry.status === 'open')) {
       await this.settleLedger(conversation, provider, ledger, trace);
     }
 
     const unfinished = ledger.filter((entry) => entry.status !== 'done');
-    const steps = [...trace, ...ledger.filter((entry) => entry.status === 'open').map((entry) => ({ label: `unreported: ${entry.text}`, ok: false, proof: UNACCOUNTED.open }))];
+    const steps = [...trace, ...ledger.filter((entry) => entry.status === 'open').map((entry) => ({ label: entry.text, ok: false, unconfirmed: true, proof: UNACCOUNTED.open }))];
 
     if (failure && unfinished.length) {
       const envelope = await this.failureEnvelope(command, failure.message, previousState);
@@ -241,7 +241,7 @@ export class Prima {
       return envelope;
     }
 
-    if (!used.length && unfinished.length === ledger.length) {
+    if (!trace.length && unfinished.length === ledger.length) {
       const reason = ['No action was performed for these instructions on the current page.', narration].filter(Boolean).join(' ');
       return this.failureEnvelope(command, reason, previousState);
     }
@@ -254,10 +254,10 @@ export class Prima {
     envelope.used = undefined;
     envelope.changes = undefined;
 
-    const unmet = unfinished.map((entry) => `${entry.status}: ${entry.text}${entry.proof ? ` — ${entry.proof}` : ''}`);
-    if (unmet.length) {
+    const blocked = ledger.filter((entry) => entry.status === 'blocked');
+    if (blocked.length) {
       envelope.ok = false;
-      envelope.failure = { error: unmet.join('\n') };
+      envelope.failure = { error: blocked.map((entry) => `blocked: ${entry.text}${entry.proof ? ` — ${entry.proof}` : ''}`).join('\n') };
     }
     return envelope;
   }
@@ -309,7 +309,13 @@ export class Prima {
       completed() for those, blocked() for the ones the page could not do. Report every one — nothing else runs after this.
     `);
 
-    const invoked = await provider.invokeConversation(conversation, { completed: this.completedTool(), blocked: this.blockedTool() }, { maxToolRoundtrips: 2, toolChoice: 'required', agentName: AI_AGENT_NAME }).catch(() => null);
+    let settleError: unknown = null;
+    const invoked = await provider.invokeConversation(conversation, { completed: this.completedTool(), blocked: this.blockedTool() }, { maxToolRoundtrips: 2, toolChoice: 'required', agentName: AI_AGENT_NAME }).catch((error: unknown) => {
+      settleError = error;
+      return null;
+    });
+
+    if (settleError) trace.push({ label: 'settling which instructions were satisfied', ok: false, proof: browserErrorMessage(settleError) });
 
     for (const execution of invoked?.toolExecutions || []) {
       this.applyLedgerReport(execution, ledger, trace);
@@ -336,11 +342,11 @@ export class Prima {
     const test = new Test(scenario, 'normal', outcomes, previousState?.url || this.options.url || '');
     const tester = this.bot.agentTester();
 
-    const outcome = await tester.test(test);
+    await tester.test(test, { startOnCurrentPage: true });
 
     const notes = Object.values(test.notes || {}) as Array<{ message: string; status?: string; log?: string; observation?: boolean }>;
-    const result = await this.capturedResult(this.bot.stateManager().getCurrentState());
-    const envelope = await this.reportEnvelope(command, result, previousState, { ok: outcome.success });
+    const result = await this.capturedResult(this.bot.stateManager().getCurrentState(), { screenshot: this.visionEnabled() });
+    const envelope = await this.reportEnvelope(command, result, previousState, {});
     const recorded = notes.filter((note) => !note.observation && !outcomes.includes(note.message));
     const failed = recorded.filter((note) => note.status === TestResult.FAILED);
     envelope.steps = failed.map((note) => ({ label: note.message, ok: false, proof: note.log || '' }));
@@ -348,7 +354,19 @@ export class Prima {
     const routine = recorded.length - failed.length;
     if (routine) envelope.steps.push({ label: `${routine} further ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
 
-    envelope.expectations = await this.bot.agentPilot().settleExpectations(test);
+    envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
+
+    envelope.judgedBy = 'the run log alone — no screenshot was read, so nothing here was confirmed visually';
+    if (result.screenshot && this.visionEnabled()) envelope.judgedBy = 'the run log and a screenshot of the page as the run left it';
+
+    const unreached = envelope.expectations.filter((expectation) => expectation.status === 'failed');
+    envelope.ok = !unreached.length;
+    if (unreached.length) envelope.failure = { error: unreached.map((expectation) => `not reached: ${expectation.text}`).join('\n') };
+
+    if (!test.hasFinished || test.isSkipped) {
+      envelope.ok = false;
+      envelope.failure = { error: `the run did not complete, so it established nothing about the app: ${notes.at(-1)?.message || 'no steps were recorded'}` };
+    }
 
     const observations = notes.filter((note) => note.observation).map((note) => note.message);
     if (observations.length) envelope.answer = ['Page problems noticed while running, not step failures:', ...observations.map((line) => `- ${line}`)].join('\n');
@@ -373,7 +391,15 @@ export class Prima {
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
     const verification = await this.bot.agentNavigator().verifyState(assertion, result);
-    return this.reportEnvelope(command, result, previousState, { assertions: verification.results || [] });
+    const outcome: Partial<EnvelopeData> = { assertions: verification.results || [] };
+
+    if (verification.inexpressible) {
+      const question = `Judging only from the screenshot, is this true of the page: "${assertion}"? Answer true, false or undetermined, and say what settles it.`;
+      const seen = await this.visionAnswer(question, await this.capturedResult(previousState, { screenshot: this.visionEnabled() }));
+      if (seen) outcome.answer = `No assertion could express this claim, so it was judged from a screenshot instead.\n\n${seen}`;
+    }
+
+    return this.reportEnvelope(command, result, previousState, outcome);
   }
 
   async research(opts: { data?: boolean; deep?: boolean; fresh?: boolean } = {}): Promise<EnvelopeData> {
@@ -752,6 +778,7 @@ export class Prima {
       <proof>
       An instruction is done only when a change on the page shows it. After each action read the reported change and decide which part of it proves the instruction.
       That part is what completed() takes as its proof. Do not restate the action as if it were the outcome.
+      How much of the page moved is not evidence of whether it happened — a change confined to one region proves an instruction as well as one that redraws everything.
       An instruction that only inspects the page is satisfied by what you can see, including seeing that something is absent — those need no action at all.
       </proof>
 
@@ -909,6 +936,7 @@ export class Prima {
 
   private visionEnabled(): boolean {
     if (this.options.noVision) return false;
+    if (Stats.visionDisabled) return false;
     return this.bot.getProvider().hasVision?.() === true;
   }
 
@@ -1035,7 +1063,6 @@ export class Prima {
       ok: true,
       command: `status ${hash}`,
       page: saved.page,
-      changes: saved.changes,
       instance: await this.instanceInfo(),
       artifacts: { aria: path.join(dir, 'aria.yml'), html: path.join(dir, 'page.html') },
     };
@@ -1044,7 +1071,7 @@ export class Prima {
   private async saveStatus(result: ActionResult): Promise<string> {
     const hash = this.statusHash();
     await this.writeSnapshot(result);
-    writeFileSync(path.join(this.statusDir(hash), 'status.json'), JSON.stringify({ page: this.pageBlock(result, null), changes: compactAriaSnapshot(result.ariaSnapshot, true) }), 'utf-8');
+    writeFileSync(path.join(this.statusDir(hash), 'status.json'), JSON.stringify({ page: this.pageBlock(result, null) }), 'utf-8');
     return hash;
   }
 
