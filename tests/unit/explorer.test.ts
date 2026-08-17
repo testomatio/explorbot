@@ -146,6 +146,7 @@ mock.module('codeceptjs', () => {
   };
 
   const container = {
+    STANDARD_ACTING_HELPERS: ['Playwright', 'WebDriver', 'Puppeteer', 'Appium'],
     create: () => {},
     helpers: (name: string) => {
       if (name === 'Playwright') {
