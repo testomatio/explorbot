@@ -810,7 +810,10 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
             });
           }
 
-          return failedToolResult('interact', `Failed to execute: ${instruction}`, {
+          let reason = '';
+          if (navigator.lastFailureReason) reason = `: ${navigator.lastFailureReason}`;
+
+          return failedToolResult('interact', `Failed to execute: ${instruction}${reason}`, {
             ...toolResult,
             suggestion: 'The action could not be completed. Try a different instruction or use more specific element descriptions.',
           });
