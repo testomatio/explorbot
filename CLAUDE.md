@@ -556,6 +556,16 @@ Before each commit run `/changelog` skill to update CHANGELOG.md
 **Never use NodeJS**
 This application is only Bun
 
+## CI
+
+`.github/workflows/regression.yml` runs Explorbot end-to-end against real AI models. It costs real tokens and up to 150 minutes of runner time per run, so it is gated behind a deliberate human action: the `regression` label on a PR, or a manual dispatch.
+
+**Never start a regression run.** Do not add or re-add the `regression` label, do not `gh workflow run regression.yml`, do not re-run its jobs, and do not approve the `regression` environment gate. Only the user decides when it runs, and it runs once per decision — pushing more commits to a labelled PR does not re-trigger it.
+
+If a change needs regression coverage, say so and let the user apply the label.
+
+`.github/workflows/test.yml` (format, lint, unit, integration, build) is cheap and runs automatically on every push and PR — that is the feedback loop to rely on.
+
 ## Dependencies and Requirements
 
 - **Runtime**: Bun only (Node.js is NOT supported)
