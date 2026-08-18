@@ -22,12 +22,12 @@ beforeEach(() => {
   tmpPath = mkdtempSync(path.join(tmpdir(), 'explorbot-config-command-'));
   configPath = path.join(tmpPath, 'explorbot.config.js');
   writeFileSync(configPath, 'export default {};');
-  delete process.env.EXPLORBOT_AI_PROVIDER;
+  Reflect.deleteProperty(process.env, 'EXPLORBOT_AI_PROVIDER');
 });
 
 afterEach(() => {
   rmSync(tmpPath, { recursive: true, force: true });
-  delete process.env.EXPLORBOT_AI_PROVIDER;
+  Reflect.deleteProperty(process.env, 'EXPLORBOT_AI_PROVIDER');
 });
 
 describe('ConfigCommand.data', () => {
