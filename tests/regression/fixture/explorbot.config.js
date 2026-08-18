@@ -27,8 +27,8 @@ const config = {
 
   ai: {
     model: openrouter('openai/gpt-oss-20b:nitro'),
-    visionModel: openrouter('google/gemma-4-31b-it'),
-    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
+    visionModel: openrouter('openai/gpt-5.6-luna'),
+    agenticModel: openrouter('openai/gpt-5.6-luna'),
 
     config: {
       maxOutputTokens: 8000,
