@@ -3,6 +3,7 @@ import { AddRuleCommand } from './add-rule-command.js';
 import type { BaseCommand } from './base-command.js';
 import { CleanCommand } from './clean-command.js';
 import { CompactCommand } from './compact-command.js';
+import { ConfigCommand } from './config-command.js';
 import { ContextAriaCommand } from './context-aria-command.js';
 import { ContextCommand } from './context-command.js';
 import { ContextDataCommand } from './context-data-command.js';
@@ -70,6 +71,7 @@ const commandClasses: CommandClass[] = [
   RunsCommand,
   RerunCommand,
   StatusCommand,
+  ConfigCommand,
   DebugCommand,
   ExitCommand,
 ];

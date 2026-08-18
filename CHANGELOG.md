@@ -2,6 +2,52 @@
 
 ## 2026-08-18
 
+### The configuration a run uses is one command away
+
+`explorbot config` prints what a run resolves to, instead of leaving you to reconstruct it from the
+config file, the environment, and the global installation:
+
+```bash
+explorbot config                            # the current site
+explorbot config https://app.example.com    # a specific site
+```
+
+```
+Config
+  config      /home/me/.explorbot/config.js
+  url         https://app.example.com
+  browser     chromium, headless
+  output      /home/me/.explorbot/sites/app.example.com/output
+  knowledge   /home/me/.explorbot/sites/app.example.com/knowledge
+  experience  /home/me/.explorbot/sites/app.example.com/experience
+
+Models
+  model   openai/gpt-oss-20b
+  tester  anthropic/claude-sonnet-4.5
+
+Environment
+  EXPLORBOT_AI_PROVIDER  openrouter
+```
+
+Every model role is listed, per-agent overrides included, next to the file they came from — or
+`EXPLORBOT_* environment variables` when the run is configured from the environment. Langfuse and
+Testomat.io show up when they are on.
+
+The boats answer for their own configuration the same way: `explorbot api config`,
+`explorbot docs config`, `explorbot prima config`. Inside a session, `/config`.
+
+`--json` prints the same values as a machine-readable object, for a script that needs to know which
+model a run will use or where its output will land:
+
+```bash
+explorbot config --json
+```
+
+### Changes
+
+- The `EXPLORBOT_*` reference no longer follows the help of every command and boat. It is printed
+  once, by `explorbot --help`, and `explorbot config` shows the variables actually in effect.
+
 ### Langfuse tracing is switched from config, not from environment variables
 
 Whether a run is traced is now decided by `ai.langfuse.enabled` in `explorbot.config.js`. It stays on

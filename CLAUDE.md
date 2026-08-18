@@ -474,6 +474,14 @@ explorbot drill /components --max-components 10  # limit to 10 components
 explorbot drill /login --knowledge /login  # save to knowledge file
 ```
 
+### Show resolved configuration:
+
+```bash
+explorbot config              # models, config file, paths, EXPLORBOT_* in effect
+explorbot config https://app.example.com   # for a specific site
+explorbot api config          # same for the API boat, also docs/prima
+```
+
 ### Initialize project configuration:
 
 ```bash
