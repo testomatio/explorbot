@@ -31,6 +31,16 @@ That case — a row present in the markup but invisible on screen, whether hidde
 covered or drawn off-screen — is a real defect that a PASSED would have buried behind a matching
 assertion and a FAILED would have mislabelled as a broken feature.
 
+A conflict needs the picture to positively contradict the run — a list visibly empty, an error
+where a result was expected. Simply not finding something in the picture is reported as "not
+verified" instead, since a screenshot is not proof that a thing is missing.
+
+Alongside it, `### Page visibility` reports what is measured from the page rather than read off the
+picture: elements the page renders that nobody can see — covered by something else, drawn in the
+colour of their own background, or parked outside the page — and regions that scroll on their own,
+with how much of their content is out of view. Content inside one of those regions is absent from a
+screenshot because it needs scrolling, not because it is missing.
+
 `ok:` now follows those outcomes: false when one FAILED or CONFLICTed. An outcome the run never
 checked stays "not verified" and does not fail the command. A run that could not complete at all
 says so, instead of reporting it as a failure of the application. When no screenshot backed the

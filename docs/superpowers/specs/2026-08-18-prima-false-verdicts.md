@@ -62,15 +62,43 @@ The screenshot is not one of two equal inputs. An outcome is satisfied when the 
 somebody looking at it; the log only says what the run did. The prompt says so.
 
 **Where the two disagree, the judge does not choose.** It reports `conflict` and says what each
-side shows. A value present in the page structure but absent from the picture — element hidden,
-container collapsed, covered by an overlay, drawn off-screen — is a defect in the application, and
+side shows. An assertion that matched an element nobody can see is a defect in the application, and
 it is exactly the case both other verdicts destroy: `passed` hides it behind an assertion that
-happens to match, `failed` mislabels a feature that half works. It is the most valuable thing a
-run can find, so it comes back as its own status with both sides quoted, and it fails the command.
+happens to match, `failed` mislabels a feature that half works. It comes back as its own status
+with both sides quoted, and it fails the command.
+
+**Absence in the picture is not a contradiction.** Review of the first pass raised this: a
+screenshot is not proof that a thing is missing, only that the judge could not make it out. A
+conflict now requires the picture to show something *incompatible* — a list visibly empty, an error
+where a result was expected, the old value still displayed. "I cannot find it" is `unverified`,
+which does not fail the command.
 
 The screenshot is the final page only. An outcome the run established earlier stays established
 even when the page has moved past it, and the prompt says that is not a conflict — otherwise every
 "record deleted, then navigated away" scenario reports one.
+
+### 2a. What the picture cannot settle is measured, not guessed
+
+Captures are already `fullPage: true` (`action.ts:107`), so the judge sees the whole scrollable
+document rather than a viewport crop. Two things still escape it, and both are answerable exactly
+from layout instead of from pixels. `collectVisibilityReport` (`src/utils/visibility.ts`) runs one
+`page.evaluate` over the final page and returns them:
+
+- **Regions that scroll on their own.** `fullPage` expands to *document* height; an
+  `overflow: auto` container still clips its own content, so a row below an inner fold is genuinely
+  absent from the picture and perfectly healthy. Each such region is reported with how much of its
+  content is out of view, and the judge is told never to call a conflict on something inside one.
+- **Elements the page renders that nobody can perceive.** `checkVisibility()` says the element is
+  displayed, yet it is covered by another element (`elementFromPoint` names the cover), drawn in the
+  colour of its own backdrop, occupies no space, or is parked outside the document where no
+  scrolling reaches it. That is the positive contradiction a conflict needs, arrived at without
+  asking a model to eyeball anything. Screen-reader-only patterns are excluded so they do not read
+  as defects.
+
+Both lists go into the envelope under `### Page visibility` as well as to the judge, so the caller
+sees the same evidence the verdict rested on. Measured across 3975 captures in `example/`, page
+heights ran to a median of 1200px and a maximum of 2080px, so downscaling of tall full-page images
+is a marginal concern here and was not worth designing around.
 
 There is no line describing which evidence the judge had; that is plumbing, not a fact about the
 app. When no screenshot backed the outcomes — no vision model configured, or the vision call could
@@ -120,8 +148,16 @@ which is its whole job.
 - Vision is not a fallback in `check`; it closes every run that has a vision model. The
   screenshot is the proof — what a user can see — and the run log only says what was done.
 - A disagreement between the page and the run is reported as `conflict`, never settled one way.
-  Something in the DOM that is not on the screen is a defect, and both `passed` and `failed`
+  An assertion matching an element nobody can see is a defect, and both `passed` and `failed`
   would bury it. A conflict fails the command.
+- A conflict needs a positive contradiction in the picture. Not finding something is `unverified`;
+  absence of evidence is not evidence of absence, and treating it as one is how a false-verdict fix
+  becomes a false-verdict generator.
+- Whether a user can see an element is measured from layout, never inferred from a screenshot.
+  `checkVisibility`, `elementFromPoint` and the document scroll extents answer it exactly, and the
+  measurement is put in the envelope beside the verdict rather than kept for the model.
+- Content inside a region that scrolls on its own is not missing. Those regions are enumerated so
+  the judge can tell the two apart.
 - `settleExpectations` judges all outcomes, not only undecided ones, when it has a screenshot —
   otherwise a DOM assertion the run already made could never be contradicted by the page.
 - `unverified` is not a failure, in `check` outcomes and in `do` instructions alike. A statement
