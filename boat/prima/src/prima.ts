@@ -437,13 +437,13 @@ export class Prima {
     return stopped;
   }
 
-  async config(): Promise<string> {
+  async config(json?: boolean): Promise<string> {
     const [site] = listSites();
     if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
     const config = await this.loadConfig();
     const parser = ConfigParser.getInstance();
 
-    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot() });
+    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot(), json });
   }
 
   record(envelope: EnvelopeData, durationMs: number): void {

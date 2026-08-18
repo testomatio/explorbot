@@ -441,11 +441,12 @@ program
   .description('Show models, config file and paths used by this run')
   .option('-c, --config <path>', 'Path to configuration file')
   .option('-p, --path <path>', 'Working directory path')
+  .option('--json', 'Print the resolved config as JSON')
   .action(async (url, options) => {
     setQuietMode(!isVerboseMode());
     const { ConfigCommand } = await import('../src/commands/config-command.js');
     try {
-      console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url }));
+      console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url, json: options.json }));
     } catch (error) {
       console.error(error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);

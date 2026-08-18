@@ -36,6 +36,13 @@ Testomat.io show up when they are on.
 The boats answer for their own configuration the same way: `explorbot api config`,
 `explorbot docs config`, `explorbot prima config`. Inside a session, `/config`.
 
+`--json` prints the same values as a machine-readable object, for a script that needs to know which
+model a run will use or where its output will land:
+
+```bash
+explorbot config --json
+```
+
 ### Changes
 
 - The `EXPLORBOT_*` reference no longer follows the help of every command and boat. It is printed

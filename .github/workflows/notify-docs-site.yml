@@ -1,0 +1,23 @@
+# Notifies the testomat.ai site to rebuild when docs/ change, so
+# testomat.ai/docs/explorbot picks up the update immediately (the site also
+# refreshes daily on a schedule as a fallback).
+name: Notify docs site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger testomat.ai docs rebuild
+        run: |
+          curl -sS -f -X POST \
+            -H "Authorization: Bearer ${{ secrets.TESTOMAT_SITE_DISPATCH_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/testomatio/testomat-ai/dispatches \
+            -d '{"event_type":"explorbot-docs-update"}'

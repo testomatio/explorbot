@@ -85,17 +85,19 @@ export function createApiCommands(name = 'api'): Command {
     }
   });
 
-  addCommonOptions(cmd.command('config [endpoint]').description('Show models, config file and paths used by this run')).action(async (endpoint, options) => {
-    const parser = ApibotConfigParser.getInstance();
-    const [site] = listSites();
-    try {
-      const config = await parser.loadConfig({ config: options.config, path: options.path, endpoint: endpoint || site?.url });
-      console.log(ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot() }));
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : 'Unknown error');
-      process.exit(1);
-    }
-  });
+  addCommonOptions(cmd.command('config [endpoint]').description('Show models, config file and paths used by this run'))
+    .option('--json', 'Print the resolved config as JSON')
+    .action(async (endpoint, options) => {
+      const parser = ApibotConfigParser.getInstance();
+      const [site] = listSites();
+      try {
+        const config = await parser.loadConfig({ config: options.config, path: options.path, endpoint: endpoint || site?.url });
+        console.log(ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot(), json: options.json }));
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : 'Unknown error');
+        process.exit(1);
+      }
+    });
 
   addCommonOptions(cmd.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1-3, *')).action(async (planfile, index, options) => {
     setPreserveConsoleLogs(true);

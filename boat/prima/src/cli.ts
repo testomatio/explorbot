@@ -186,13 +186,15 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
 
-  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run')).action(async (options) => {
-    setQuietMode(!isVerboseMode());
-    const prima = primaFor(options);
-    console.log(await prima.config().catch((error: unknown) => browserErrorMessage(error)));
-    await prima.stop().catch(() => {});
-    process.exit(0);
-  });
+  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run'))
+    .option('--json', 'Print the resolved config as JSON')
+    .action(async (options) => {
+      setQuietMode(!isVerboseMode());
+      const prima = primaFor(options);
+      console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
+      await prima.stop().catch(() => {});
+      process.exit(0);
+    });
 
   addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
     await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), false);

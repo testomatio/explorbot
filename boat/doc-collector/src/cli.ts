@@ -66,15 +66,17 @@ export function createDocsCommands(name = 'docs'): Command {
     }
   });
 
-  addCommonOptions(cmd.command('config [url]').description('Show models, config file and paths used by this run')).action(async (url, options) => {
-    setQuietMode(!isVerboseMode());
-    try {
-      console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url }));
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : 'Unknown error');
-      process.exit(1);
-    }
-  });
+  addCommonOptions(cmd.command('config [url]').description('Show models, config file and paths used by this run'))
+    .option('--json', 'Print the resolved config as JSON')
+    .action(async (url, options) => {
+      setQuietMode(!isVerboseMode());
+      try {
+        console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url, json: options.json }));
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : 'Unknown error');
+        process.exit(1);
+      }
+    });
 
   cmd
     .command('init')
