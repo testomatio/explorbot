@@ -762,6 +762,23 @@ export function missingConfigMessage(configFile = 'explorbot.config.js'): string
   `;
 }
 
+export function modelName(model: unknown): string {
+  if (typeof model === 'string') return model;
+  return (model as any)?.modelId || (model as any)?.model || 'unknown';
+}
+
+export function configuredModels(ai?: AIConfig): Record<string, string> {
+  if (!ai?.model) return {};
+
+  const models: Record<string, string> = { model: modelName(ai.model) };
+  if (ai.agenticModel) models.agenticModel = modelName(ai.agenticModel);
+  if (ai.visionModel) models.visionModel = modelName(ai.visionModel);
+  for (const [agent, agentConfig] of Object.entries(ai.agents || {})) {
+    if (agentConfig?.model) models[agent] = modelName(agentConfig.model);
+  }
+  return models;
+}
+
 export async function resolveConfigModels(ai?: AIConfig): Promise<void> {
   if (!ai) return;
 

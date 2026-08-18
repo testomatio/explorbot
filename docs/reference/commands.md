@@ -51,6 +51,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Manage persistent browser | `npx explorbot browser {start\|stop\|status}` | — | Share browser across runs |
 | Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*`, or `~/.explorbot` with `--global` |
 | List registered sites | `npx explorbot sites` | — | Sites stored in the global installation |
+| Show resolved configuration | `npx explorbot config [url]` | `/config` | Models, config file, paths and `EXPLORBOT_*` in effect |
 | Clean generated files | `npx explorbot clean [target]` | `/clean [target]` | Same targets both ways |
 
 ## Common CLI Options
@@ -106,6 +107,8 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
 <!-- END env -->
+
+`npx explorbot config` prints the values a run actually uses — models per role, the config file behind them, the output, knowledge and experience directories, and every `EXPLORBOT_*` variable currently set. The boats answer for their own configuration the same way: `npx explorbot api config`, `npx explorbot docs config`, `npx explorbot prima config`.
 
 Explorbot resolves its configuration in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then the `EXPLORBOT_*` variables, and finally `~/.explorbot/config.*` from the global installation. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
 

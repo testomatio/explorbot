@@ -186,7 +186,7 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
 
-  addCommonOptions(cmd.command('config').description('Show the AI models prima runs on and the config file they come from')).action(async (options) => {
+  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run')).action(async (options) => {
     setQuietMode(!isVerboseMode());
     const prima = primaFor(options);
     console.log(await prima.config().catch((error: unknown) => browserErrorMessage(error)));

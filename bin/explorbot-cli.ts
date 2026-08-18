@@ -15,7 +15,7 @@ import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
 import { getCliName } from '../src/utils/cli-name.ts';
-import { log, setPreserveConsoleLogs } from '../src/utils/logger.js';
+import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode } from '../src/utils/logger.js';
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
@@ -435,6 +435,22 @@ addCommonOptions(
   const cmd = new FreesailCommand(explorBot);
   await cmd.execute(args);
 });
+
+program
+  .command('config [url]')
+  .description('Show models, config file and paths used by this run')
+  .option('-c, --config <path>', 'Path to configuration file')
+  .option('-p, --path <path>', 'Working directory path')
+  .action(async (url, options) => {
+    setQuietMode(!isVerboseMode());
+    const { ConfigCommand } = await import('../src/commands/config-command.js');
+    try {
+      console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url }));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
 
 program
   .command('init')
@@ -912,11 +928,6 @@ ${rows}
 `;
 };
 
-const addEnvHelp = (cmd: Command) => {
-  cmd.addHelpText('after', envHelp);
-  for (const sub of cmd.commands) addEnvHelp(sub);
-};
-
-addEnvHelp(program);
+program.addHelpText('after', envHelp);
 
 program.parse();

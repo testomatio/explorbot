@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
-import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
+import { ConfigCommand } from '../../../src/commands/config-command.ts';
+import { isVerboseMode, setPreserveConsoleLogs, setQuietMode } from '../../../src/utils/logger.ts';
 import { DocBot, type DocbotOptions } from './docbot.ts';
 
 function buildOptions(options: any): DocbotOptions {
@@ -61,6 +62,16 @@ export function createDocsCommands(name = 'docs'): Command {
       process.exit(0);
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+  addCommonOptions(cmd.command('config [url]').description('Show models, config file and paths used by this run')).action(async (url, options) => {
+    setQuietMode(!isVerboseMode());
+    try {
+      console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url }));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
     }
   });

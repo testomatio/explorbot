@@ -4,30 +4,31 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { tool } from 'ai';
 import dedent from 'dedent';
-import { z } from 'zod';
 import * as playwright from 'playwright';
 import type { Browser } from 'playwright';
+import { z } from 'zod';
 import { ActionResult } from '../../../src/action-result.ts';
+import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
-import { listSites } from '../../../src/global-config.ts';
+import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { ConfigMissingError, ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
+import { listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
-import { Stats } from '../../../src/stats.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
+import { Stats } from '../../../src/stats.ts';
 import { Task, Test, TestResult } from '../../../src/test-plan.ts';
-import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
-import { mdq } from '../../../src/utils/markdown-query.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
+import { mdq } from '../../../src/utils/markdown-query.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
 import { type EnvelopeData, type InstanceInfo, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
-import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
+import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
 
 const TESTER_ONLY_TOOLS = ['learnExperience', 'askUser'];
 const ITERATIONS_PER_INSTRUCTION = 2;
@@ -440,23 +441,9 @@ export class Prima {
     const [site] = listSites();
     if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
     const config = await this.loadConfig();
+    const parser = ConfigParser.getInstance();
 
-    const named = (model: unknown): string => {
-      if (typeof model === 'string') return model;
-      return (model as any)?.modelId || (model as any)?.model || 'unknown';
-    };
-
-    const ai = config.ai || ({} as any);
-    const roles: Array<[string, unknown]> = [
-      ['model', ai.model],
-      ['agenticModel', ai.agenticModel],
-      ['visionModel', ai.visionModel],
-    ];
-
-    const lines = roles.filter(([, model]) => model).map(([role, model]) => `${role.padEnd(14)} ${named(model)}`);
-    lines.push(`config         ${ConfigParser.getInstance().getConfigPath() || 'built-in defaults'}`);
-    if (ai.langfuse?.enabled) lines.push('telemetry      langfuse');
-    return lines.join('\n');
+    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot() });
   }
 
   record(envelope: EnvelopeData, durationMs: number): void {

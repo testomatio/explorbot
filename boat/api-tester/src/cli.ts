@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
+import { ConfigCommand } from '../../../src/commands/config-command.ts';
+import { listSites } from '../../../src/global-config.ts';
 import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
 import { getStyles } from './ai/chief/styles.ts';
 import { ApiBot, type ApibotOptions } from './apibot.ts';
+import { ApibotConfigParser } from './config.ts';
 
 function buildOptions(options: any): ApibotOptions {
   return {
@@ -78,6 +81,18 @@ export function createApiCommands(name = 'api'): Command {
       process.exit(0);
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  });
+
+  addCommonOptions(cmd.command('config [endpoint]').description('Show models, config file and paths used by this run')).action(async (endpoint, options) => {
+    const parser = ApibotConfigParser.getInstance();
+    const [site] = listSites();
+    try {
+      const config = await parser.loadConfig({ config: options.config, path: options.path, endpoint: endpoint || site?.url });
+      console.log(ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot() }));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
     }
   });
