@@ -514,6 +514,7 @@ export class ConfigParser {
         model: { modelId: 'test-model', provider: 'test' },
         config: {},
         vision: false,
+        langfuse: { enabled: false },
       },
       dirs: {
         knowledge: join(testBaseDir, 'knowledge'),
@@ -648,6 +649,18 @@ export class ConfigParser {
     if (options?.baseUrl) {
       config.playwright = config.playwright || { browser: 'chromium', url: '' };
       config.playwright.url = options.baseUrl;
+    }
+
+    if (config.ai) {
+      const langfuse = config.ai.langfuse;
+      const publicKey = langfuse?.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
+      const secretKey = langfuse?.secretKey || process.env.LANGFUSE_SECRET_KEY;
+      config.ai.langfuse = {
+        enabled: langfuse?.enabled ?? Boolean(publicKey && secretKey),
+        publicKey,
+        secretKey,
+        baseUrl: langfuse?.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST,
+      };
     }
 
     return config;
