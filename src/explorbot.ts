@@ -487,9 +487,11 @@ export class ExplorBot {
 
   setCurrentPlan(plan?: Plan): void {
     this.currentPlan = plan;
-    if (plan && !this.sessionPlans.includes(plan)) {
+    if (!plan) return;
+    if (!this.sessionPlans.includes(plan)) {
       this.sessionPlans.push(plan);
     }
+    plan.notifyChange();
   }
 
   getSessionTests(): Test[] {
