@@ -2,6 +2,23 @@
 
 ## 2026-08-18
 
+### A run streamed over `--ws` reports what it is testing, not only what it logs
+
+`--ws <url>` (or `EXPLORBOT_WS_URL`) carried the log and the questions a run asks. It now also
+announces the run's state as it changes, so a host UI can show what is happening without reading it
+back out of log lines:
+
+- the page under test — URL, path, title and heading, on every navigation
+- the test in flight — scenario, status, result, priority and the plan it belongs to, as it starts
+  and as it finishes
+- the plan — its title and every test in it, whenever it is generated, loaded, or advances
+- the screenshot just taken — its path on disk
+- the research for the current page — the markdown and the file it was written to
+- the end-of-session report — the analyst's markdown in full, and its file
+
+Each arrives the same way the log already does, as `{type, ts, ...}`, and a UI renders the kinds it
+recognises.
+
 ### Langfuse tracing is switched from config, not from environment variables
 
 Whether a run is traced is now decided by `ai.langfuse.enabled` in `explorbot.config.js`. It stays on

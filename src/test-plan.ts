@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import figures from 'figures';
 import { WebPageState } from './state-manager.ts';
+import { tag } from './utils/logger.ts';
 import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown, savePlansToMarkdown } from './utils/test-plan-markdown.ts';
 import { uniqSessionName } from './utils/unique-names.ts';
 
@@ -317,6 +318,7 @@ export class Test extends Task {
     this.startTime = performance.now();
     this.addNote(`Test started. Session name: ${this.sessionName}`);
     this.plan?.notifyChange();
+    this.reportStatus();
   }
 
   finish(result: TestResultType = TestResult.FAILED): void {
@@ -324,6 +326,7 @@ export class Test extends Task {
     this.result = result;
     this.endTime = performance.now();
     this.plan?.notifyChange();
+    this.reportStatus();
   }
 
   getDurationMs(): number | null {
@@ -334,6 +337,18 @@ export class Test extends Task {
   getRemainingExpectations(): string[] {
     const achieved = this.getCheckedExpectations();
     return this.expected.filter((e) => !achieved.includes(e));
+  }
+
+  private reportStatus(): void {
+    tag('data').log('test', {
+      scenario: this.scenario,
+      status: this.status,
+      result: this.result,
+      priority: this.priority,
+      sessionName: this.sessionName,
+      url: this.startUrl,
+      plan: this.plan?.title,
+    });
   }
 
   override getLog(): Array<{ type: 'step' | 'note' | 'artifact'; content: string; timestamp: number }> {
@@ -407,6 +422,11 @@ export class Plan {
     for (const listener of this.changeListeners) {
       listener(this.tests);
     }
+    tag('data').log('plan', {
+      title: this.title,
+      url: this.url,
+      tests: this.tests.map((test) => ({ scenario: test.scenario, status: test.status, result: test.result, priority: test.priority })),
+    });
   }
 
   getAllTests(): Test[] {
