@@ -11,7 +11,7 @@ import { Observability } from '../observability.ts';
 import { RecentStepFilter } from './log-filters.ts';
 import { parseMarkdownToTerminal } from './markdown-terminal.ts';
 
-export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'operation' | 'step' | 'multiline' | 'details' | 'html' | 'input';
+export type LogType = 'info' | 'success' | 'error' | 'warning' | 'debug' | 'substep' | 'operation' | 'step' | 'multiline' | 'details' | 'html' | 'input' | 'data';
 
 export interface TaggedLogEntry {
   type: LogType;
@@ -454,6 +454,14 @@ class Logger {
           originalArgs: contentArgs,
         };
         this.react.write(entry);
+      }
+      return;
+    }
+
+    if (type === 'data') {
+      const entry: TaggedLogEntry = { type, content: String(args[0]), timestamp: new Date(), originalArgs: args };
+      for (const destination of this.extra) {
+        if (destination.isEnabled()) destination.write(entry);
       }
       return;
     }

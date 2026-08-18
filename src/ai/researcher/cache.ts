@@ -4,6 +4,7 @@ import { Worker } from 'node:worker_threads';
 import { outputPath } from '../../config.ts';
 import { TTLCache } from '../../utils/cache.ts';
 import { computeHtmlFingerprint } from '../../utils/html-diff.ts';
+import { tag } from '../../utils/logger.ts';
 import { debugLog } from './mixin.ts';
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -14,6 +15,14 @@ const SIMILARITY_THRESHOLD = 90;
 const memoryCache = new TTLCache<string>(CACHE_TTL_MS);
 
 let fingerprintWorker: Worker | null = null;
+
+export function researchPath(hash: string): string {
+  return outputPath('research', `${hash}.md`);
+}
+
+export function reportResearch(hash: string, text: string): void {
+  tag('data').log('research', { path: researchPath(hash), hash, content: text });
+}
 
 function getStatesDir(): string {
   return outputPath('states');
@@ -35,7 +44,7 @@ export function getCachedResearch(hash: string): string {
   if (!hash) return '';
   const cached = memoryCache.get(hash);
   if (cached !== undefined) return cached;
-  const researchFile = outputPath('research', `${hash}.md`);
+  const researchFile = researchPath(hash);
   if (!existsSync(researchFile)) return '';
   const stats = statSync(researchFile);
   if (Date.now() - stats.mtimeMs > CACHE_TTL_MS) return '';
@@ -46,7 +55,7 @@ export function getCachedResearch(hash: string): string {
 
 export function getPreviousResearch(hash: string): string {
   if (!hash) return '';
-  const researchFile = outputPath('research', `${hash}.md`);
+  const researchFile = researchPath(hash);
   if (!existsSync(researchFile)) return '';
   return readFileSync(researchFile, 'utf8');
 }
@@ -57,6 +66,7 @@ export function saveResearch(hash: string, text: string, combinedHtml?: string):
   if (!existsSync(researchDir)) mkdirSync(researchDir, { recursive: true });
   writeFileSync(researchFile, text);
   memoryCache.set(hash, text);
+  reportResearch(hash, text);
   debugLog(`Research saved to ${researchFile}`);
 
   if (combinedHtml) {

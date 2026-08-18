@@ -57,6 +57,7 @@ class Action {
     try {
       await (this.actor as any).saveScreenshot(filename);
       if (currentState) currentState.screenshotFile = filename;
+      tag('data').log('screenshot', { path: outputPath('states', filename) });
       return filename;
     } catch (err) {
       debugLog('Screenshot failed:', err);
@@ -105,7 +106,10 @@ class Action {
         const screenshotPath = join(statesDir, filename);
         screenshotFile = await page
           ?.screenshot({ path: screenshotPath, fullPage: true })
-          .then(() => filename)
+          .then(() => {
+            tag('data').log('screenshot', { path: screenshotPath });
+            return filename;
+          })
           .catch((err: Error) => {
             debugLog('Screenshot failed, continuing without it:', err);
             return undefined;

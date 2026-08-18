@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ServerWebSocket } from 'bun';
+import Action from '../../src/action.ts';
+import { saveResearch } from '../../src/ai/researcher/cache.ts';
+import { SessionAnalyst } from '../../src/ai/session-analyst.ts';
 import { isInteractive } from '../../src/ai/task-agent.ts';
+import { ConfigParser } from '../../src/config.ts';
 import { executionController } from '../../src/execution-controller.ts';
 import { remote } from '../../src/remote.ts';
+import { StateManager } from '../../src/state-manager.ts';
+import { Plan, Test, TestResult } from '../../src/test-plan.ts';
 import { tag } from '../../src/utils/logger.ts';
 
 let server: ReturnType<typeof Bun.serve> | null = null;
@@ -49,6 +55,7 @@ beforeEach(() => {
 afterEach(async () => {
   await remote.close(0);
   executionController.reset();
+  ConfigParser.cleanupAllTestDirectories();
   server?.stop(true);
   server = null;
 });
@@ -123,6 +130,46 @@ describe('remote', () => {
     expect(await answer).toBeNull();
     expect(remote.isAttached()).toBe(false);
     expect(await waitFor(frameOf('result'))).toMatchObject({ ok: false, exitCode: 1 });
+  });
+
+  test('run state logged as data reaches the UI as its own frame, never as a log line', async () => {
+    ConfigParser.resetForTesting();
+    ConfigParser.setupTestConfig();
+    remote.attach(url(), 'explore');
+    await waitFor(frameOf('hello'));
+
+    const stateManager = new StateManager(undefined as any, undefined as any);
+    stateManager.updateStateFromBasic('https://shop.test/checkout', 'Checkout');
+    await new Action({ saveScreenshot: async () => {} } as any, stateManager).saveScreenshot();
+
+    const plan = new Plan('/checkout');
+    const scenario = new Test('Buy a hat', 'high', 'the order is placed', '/checkout');
+    plan.addTest(scenario);
+    scenario.start();
+    scenario.finish(TestResult.PASSED);
+
+    saveResearch('checkout_hash', '# Checkout');
+    new SessionAnalyst({} as any).writeReport('# Session Analysis');
+
+    await waitFor(frameOf('report'));
+
+    expect(frameOf('state')()).toMatchObject({ url: 'https://shop.test/checkout', path: '/checkout', title: 'Checkout' });
+    expect(frameOf('screenshot')().path).toEndWith('.png');
+
+    const tests = received.filter((f) => f.type === 'test');
+    expect(tests.map((f) => f.status)).toEqual(['in_progress', 'done']);
+    expect(tests[1]).toMatchObject({ scenario: 'Buy a hat', result: 'passed', priority: 'high', url: '/checkout', plan: '/checkout' });
+
+    expect(received.filter((f) => f.type === 'plan').at(-1)).toMatchObject({
+      title: '/checkout',
+      url: '/checkout',
+      tests: [{ scenario: 'Buy a hat', status: 'done', result: 'passed' }],
+    });
+
+    expect(frameOf('research')()).toMatchObject({ hash: 'checkout_hash', content: '# Checkout' });
+    expect(frameOf('research')().path).toEndWith('research/checkout_hash.md');
+    expect(frameOf('report')()).toMatchObject({ content: '# Session Analysis' });
+    expect(received.filter((f) => f.type === 'log' && f.level === 'data')).toEqual([]);
   });
 
   test('a run that can be asked is interactive, whoever installed the callback', () => {

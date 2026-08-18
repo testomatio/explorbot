@@ -4,7 +4,7 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { generateObject, generateText, isStepCount, registerTelemetry } from 'ai';
 import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
-import type { AIConfig } from '../config.js';
+import { type AIConfig, configuredModels, modelName as getModelName } from '../config.js';
 import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { Stats } from '../stats.ts';
@@ -88,10 +88,6 @@ export class Provider {
     this.initLangfuse();
   }
 
-  private getModelName(model: any): string {
-    return model?.modelId || model?.model || 'unknown';
-  }
-
   async validateConnection(): Promise<void> {
     try {
       await generateText({
@@ -125,13 +121,7 @@ export class Provider {
   }
 
   getConfiguredModels(): Record<string, string> {
-    const models: Record<string, string> = { model: this.getModelName(this.config.model) };
-    if (this.config.agenticModel) models.agenticModel = this.getModelName(this.config.agenticModel);
-    if (this.config.visionModel) models.visionModel = this.getModelName(this.config.visionModel);
-    for (const [agent, agentConfig] of Object.entries(this.config.agents || {})) {
-      if (agentConfig?.model) models[agent] = this.getModelName(agentConfig.model);
-    }
-    return models;
+    return configuredModels(this.config);
   }
 
   getSystemPromptForAgent(agentName: string, currentUrl?: string): string | undefined {
@@ -316,7 +306,7 @@ export class Provider {
   }
 
   async chat(messages: ModelMessage[], model: any, options: any = {}): Promise<any> {
-    const modelName = this.getModelName(model);
+    const modelName = getModelName(model);
     setActivity(`🤖 Asking ${modelName}`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
@@ -360,7 +350,7 @@ export class Provider {
   }
 
   async generateWithTools(messages: ModelMessage[], model: any, tools: any, options: any = {}): Promise<any> {
-    const modelName = this.getModelName(model);
+    const modelName = getModelName(model);
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
@@ -418,7 +408,7 @@ export class Provider {
 
   async generateObject(messages: ModelMessage[], schema: any, model?: any, options: any = {}): Promise<any> {
     const modelToUse = model || this.config.model;
-    const modelName = this.getModelName(modelToUse);
+    const modelName = getModelName(modelToUse);
     setActivity(`🤖 Asking ${modelName} for structured output`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
@@ -620,7 +610,7 @@ export class Provider {
       clearActivity();
       responseLog(response.text);
 
-      this.recordUsage('vision', this.getModelName(this.config.visionModel), response.usage);
+      this.recordUsage('vision', getModelName(this.config.visionModel), response.usage);
 
       return response;
     } catch (error: any) {
