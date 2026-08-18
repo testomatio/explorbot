@@ -223,11 +223,7 @@ export class Provider {
   }
 
   private initLangfuse() {
-    const langfuseConfig = this.config.langfuse;
-    const publicKey = langfuseConfig?.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
-    const secretKey = langfuseConfig?.secretKey || process.env.LANGFUSE_SECRET_KEY;
-    const baseUrl = langfuseConfig?.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST;
-    const enabled = langfuseConfig?.enabled ?? Boolean(publicKey && secretKey);
+    const { enabled, publicKey, secretKey, baseUrl } = this.config.langfuse || {};
 
     if (!enabled || !publicKey || !secretKey) {
       return;

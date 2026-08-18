@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-18
+
+### Langfuse tracing is switched from config, not from environment variables
+
+Whether a run is traced is now decided by `ai.langfuse.enabled` in `explorbot.config.js`. It stays on
+by default whenever `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are available, so nothing changes
+for an existing setup, and setting it to `false` turns tracing off even with the keys exported.
+
+```js
+ai: {
+  model: openrouter('openai/gpt-oss-20b:nitro'),
+  langfuse: { enabled: false },
+},
+```
+
+Keys and host are resolved once when the configuration is loaded. Code that builds an AI provider
+without a loaded configuration — a test, for instance — no longer opens a telemetry connection just
+because the keys happen to be in the environment.
+
 ## 2026-08-16
 
 ### Changes
