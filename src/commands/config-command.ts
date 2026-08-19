@@ -47,13 +47,21 @@ export class ConfigCommand extends BaseCommand {
       if (value) env[variable.name] = value;
     }
 
+    const models: Record<string, string> = {};
+    const providers: Record<string, string> = {};
+    for (const [role, model] of Object.entries(configuredModels(config.ai))) {
+      models[role] = model.name;
+      if (model.provider) providers[role] = model.provider;
+    }
+
     return {
       config: configPath,
       url: config.playwright?.url || config.web?.url || config.api?.baseEndpoint || '',
       browser: config.playwright?.browser || '',
       headless: !config.playwright?.show,
       dirs,
-      models: configuredModels(config.ai),
+      models,
+      providers,
       integrations: {
         langfuse: !!config.ai?.langfuse?.enabled,
         testomatio: Reporter.resolveEnabled(config.reporter),
@@ -85,7 +93,11 @@ export class ConfigCommand extends BaseCommand {
     for (const [name, dir] of Object.entries(data.dirs)) general.push([name, dir]);
     section('Config', general);
 
-    const models: [string, string][] = Object.entries(data.models);
+    const providerWidth = Math.max(0, ...Object.values(data.providers).map((provider) => provider.length));
+    const models: [string, string][] = Object.entries(data.models).map(([role, model]) => {
+      if (!providerWidth) return [role, model];
+      return [role, `${chalk.dim((data.providers[role] || '').padEnd(providerWidth))}  ${model}`];
+    });
     if (!models.length) models.push(['model', chalk.red(`not configured — run ${getCliName()} init`)]);
     section('Models', models);
 
@@ -119,6 +131,7 @@ export interface ConfigData {
   headless: boolean;
   dirs: Record<string, string>;
   models: Record<string, string>;
+  providers: Record<string, string>;
   integrations: { langfuse: boolean; testomatio: boolean };
   env: Record<string, string>;
 }

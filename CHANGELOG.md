@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-08-19
+
+### `explorbot config` names the provider behind every model
+
+Model ids alone do not say where a model is served from — `openai/gpt-oss-120b` may run through
+OpenRouter, and a config can mix providers across roles. Each model is now printed next to the
+provider it comes from:
+
+```
+Models
+  model         groq        gpt-oss-120b
+  agenticModel  anthropic   claude-sonnet-4.5
+  visionModel   openrouter  google/gemma-4-31b-it
+  tester        openai      gpt-5
+```
+
+`--json` carries the same information as a `providers` object keyed by role, alongside `models`.
+
 ## 2026-08-18
 
 ### A run streamed over `--ws` reports what it is testing, not only what it logs

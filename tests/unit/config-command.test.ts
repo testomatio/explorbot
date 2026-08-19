@@ -10,9 +10,9 @@ let configPath = '';
 const config = {
   playwright: { browser: 'firefox', url: 'http://localhost:3000', show: true },
   ai: {
-    model: { modelId: 'openai/gpt-oss-20b' },
-    visionModel: { modelId: 'google/gemma-4-31b-it' },
-    agents: { tester: { model: { modelId: 'anthropic/claude-sonnet-4.5' } } },
+    model: { modelId: 'openai/gpt-oss-20b', provider: 'openrouter' },
+    visionModel: { modelId: 'google/gemma-4-31b-it', provider: 'openrouter' },
+    agents: { tester: { model: { modelId: 'anthropic/claude-sonnet-4.5', provider: 'anthropic.messages' } } },
     langfuse: { enabled: true },
   },
   dirs: { output: 'out', knowledge: 'kb', experience: 'exp' },
@@ -39,6 +39,22 @@ describe('ConfigCommand.data', () => {
       visionModel: 'google/gemma-4-31b-it',
       tester: 'anthropic/claude-sonnet-4.5',
     });
+  });
+
+  it('reports the provider each model comes from', () => {
+    const data = ConfigCommand.data(config, { configPath, root: tmpPath });
+
+    expect(data.providers).toEqual({
+      model: 'openrouter',
+      visionModel: 'openrouter',
+      tester: 'anthropic',
+    });
+  });
+
+  it('leaves providers out when models do not name one', () => {
+    const data = ConfigCommand.data({ ai: { model: { modelId: 'gpt-oss-20b' } } } as any, { root: tmpPath });
+
+    expect(data.providers).toEqual({});
   });
 
   it('resolves configured directories against the project root', () => {
@@ -82,6 +98,7 @@ describe('ConfigCommand.render', () => {
     expect(rendered).toContain(configPath);
     expect(rendered).toContain('firefox, visible');
     expect(rendered).toContain('anthropic/claude-sonnet-4.5');
+    expect(rendered).toContain('openrouter');
     expect(rendered).toContain('langfuse');
   });
 

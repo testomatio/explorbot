@@ -780,14 +780,23 @@ export function modelName(model: unknown): string {
   return (model as any)?.modelId || (model as any)?.model || 'unknown';
 }
 
-export function configuredModels(ai?: AIConfig): Record<string, string> {
+export function modelProvider(model: unknown): string {
+  const provider = (model as any)?.provider;
+  if (typeof provider === 'string') return provider.split('.')[0];
+  if (typeof model === 'string') return model.split('/')[0];
+  return '';
+}
+
+export function configuredModels(ai?: AIConfig): Record<string, ConfiguredModel> {
   if (!ai?.model) return {};
 
-  const models: Record<string, string> = { model: modelName(ai.model) };
-  if (ai.agenticModel) models.agenticModel = modelName(ai.agenticModel);
-  if (ai.visionModel) models.visionModel = modelName(ai.visionModel);
+  const describe = (model: unknown): ConfiguredModel => ({ name: modelName(model), provider: modelProvider(model) });
+
+  const models: Record<string, ConfiguredModel> = { model: describe(ai.model) };
+  if (ai.agenticModel) models.agenticModel = describe(ai.agenticModel);
+  if (ai.visionModel) models.visionModel = describe(ai.visionModel);
   for (const [agent, agentConfig] of Object.entries(ai.agents || {})) {
-    if (agentConfig?.model) models[agent] = modelName(agentConfig.model);
+    if (agentConfig?.model) models[agent] = describe(agentConfig.model);
   }
   return models;
 }
@@ -868,6 +877,11 @@ export async function createModel(provider: string, modelId: string): Promise<an
 
 type ModelRole = 'model' | 'visionModel' | 'agenticModel';
 
+interface ConfiguredModel {
+  name: string;
+  provider: string;
+}
+
 interface ProviderInfo {
   envKey: string;
   load: () => Promise<(modelId: string) => any>;
@@ -879,4 +893,4 @@ interface EnvVar {
   required?: boolean;
 }
 
-export type { ModelRole, EnvVar, ProviderInfo };
+export type { ModelRole, EnvVar, ProviderInfo, ConfiguredModel };
