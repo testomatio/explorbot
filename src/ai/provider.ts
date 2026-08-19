@@ -116,6 +116,10 @@ export class Provider {
     return this.config.agenticModel || this.config.model;
   }
 
+  getVisionModel(): any {
+    return this.config.visionModel;
+  }
+
   getConfiguredModels(): Record<string, string> {
     const models: Record<string, string> = {};
     for (const [role, model] of Object.entries(configuredModels(this.config))) models[role] = model.name;

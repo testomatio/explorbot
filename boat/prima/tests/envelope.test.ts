@@ -139,9 +139,9 @@ describe('renderEnvelope', () => {
     });
 
     expect(out).toContain('### Expected outcomes');
-    expect(out).toContain('1. PASSED       the editor opens');
-    expect(out).toContain('2. FAILED       the draft is saved');
-    expect(out).toContain('3. not verified the list refreshes');
+    expect(out).toContain('1. PASSED        the editor opens');
+    expect(out).toContain('2. FAILED        the draft is saved');
+    expect(out).toContain('3. not verified  the list refreshes');
   });
 
   test('attached instance renders attached browser line', () => {

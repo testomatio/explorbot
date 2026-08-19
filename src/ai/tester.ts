@@ -96,7 +96,7 @@ export class Tester extends TaskAgent implements Agent {
     return this.currentConversation;
   }
 
-  async test(task: Test): Promise<{ success: boolean }> {
+  async test(task: Test, opts: TestOptions = {}): Promise<{ success: boolean }> {
     Stats.tests++;
     const state = this.stateManager.getCurrentState();
     if (!state) throw new Error('No state found');
@@ -151,11 +151,11 @@ export class Tester extends TaskAgent implements Agent {
           expected: task.expected,
         },
       },
-      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest })
+      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest }, opts)
     );
   }
 
-  private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: TestSessionHandlers): Promise<{ success: boolean }> {
+  private async runTestSession(task: Test, initialState: ActionResult, conversation: Conversation, handlers: TestSessionHandlers, opts: TestOptions): Promise<{ success: boolean }> {
     const { offFailedRequest } = handlers;
 
     if (this.pilot) {
@@ -187,15 +187,19 @@ export class Tester extends TaskAgent implements Agent {
       return { success: task.isSuccessful };
     }
 
-    debugLog(`Navigating to ${task.startUrl}`);
-    try {
-      await this.explorer.visit(task.startUrl!);
-    } catch (error) {
-      const result = await this.handleLoopError(task, error);
-      if (result === 'stop') {
-        offFailedRequest?.();
-        await this.cleanupStartedTest(task);
-        return { success: task.isSuccessful };
+    if (opts.startOnCurrentPage) debugLog(`Starting on the page already open at ${task.startUrl}`);
+
+    if (!opts.startOnCurrentPage) {
+      debugLog(`Navigating to ${task.startUrl}`);
+      try {
+        await this.explorer.visit(task.startUrl!);
+      } catch (error) {
+        const result = await this.handleLoopError(task, error);
+        if (result === 'stop') {
+          offFailedRequest?.();
+          await this.cleanupStartedTest(task);
+          return { success: task.isSuccessful };
+        }
       }
     }
 
@@ -1159,4 +1163,8 @@ export class Tester extends TaskAgent implements Agent {
 
 interface TestSessionHandlers {
   offFailedRequest?: () => void;
+}
+
+export interface TestOptions {
+  startOnCurrentPage?: boolean;
 }

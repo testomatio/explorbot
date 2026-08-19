@@ -7,6 +7,7 @@ import { ConfigParser } from '../config.ts';
 import type Explorer from '../explorer.ts';
 import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
+import { Stats } from '../stats.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
@@ -562,23 +563,45 @@ export class Pilot implements Agent {
     return text;
   }
 
-  async settleExpectations(task: Test): Promise<Array<{ text: string; status: 'passed' | 'failed' | 'unverified' }>> {
-    const undecided = task.expected.filter((text) => !task.getCheckedExpectations().includes(text));
+  async settleExpectations(task: Test, finalState?: ActionResult): Promise<SettledExpectation[]> {
+    let image: string | null = null;
+    if (finalState?.screenshot && this.provider.hasVision()) image = `data:image/png;base64,${finalState.screenshot.toString('base64')}`;
+
     const decided = (text: string): 'passed' | 'failed' => {
       if (task.hasAchievedAny() && !task.getRemainingExpectations().includes(text)) return 'passed';
       return 'failed';
     };
 
+    let undecided = task.expected.filter((text) => !task.getCheckedExpectations().includes(text));
+    if (image) undecided = task.expected;
     if (!undecided.length) return task.expected.map((text) => ({ text, status: decided(text) }));
 
     const schema = z.object({
       outcomes: z.array(
         z.object({
           expectation: z.string().describe('The expected outcome, repeated exactly as it was given'),
-          status: z.enum(['passed', 'failed', 'unverified']).describe('passed = the log shows it happened, failed = the log shows it did not, unverified = the run never established either way'),
+          status: z.enum(['passed', 'failed', 'unverified', 'contradiction']).describe('passed = the evidence shows it happened, failed = the evidence shows it did not, unverified = the run never established either way, contradiction = the picture and the run disagree'),
+          evidence: z.string().nullable().describe('What settled it. For a contradiction, what each side shows. Null when there is nothing to add'),
         })
       ),
     });
+
+    let pageEvidence = '';
+    if (image) {
+      pageEvidence = dedent`
+        A screenshot of the whole page as the run left it is attached. It is the proof: an outcome is satisfied
+        when the page shows it to somebody looking at it. The log only says what the run did.
+
+        Not finding something in the picture is not by itself a disagreement. Report "contradiction" only when
+        the picture shows something incompatible with what the run claims — a list visibly empty, an error where
+        a result was expected, the old value still displayed, a control visibly disabled. When you simply cannot
+        make it out, say "unverified" and name what you could not find.
+
+        The picture covers the full page, but not the inside of a region that scrolls on its own, and not the
+        state of the page before the run ended. An outcome established earlier stays established even when the
+        page has moved past it, and that is not a contradiction.
+      `;
+    }
 
     const userContent = dedent`
       A test run has finished. Decide, for each expected outcome, what the run established about it.
@@ -591,23 +614,43 @@ export class Pilot implements Agent {
       ${task.notesToString() || 'No steps recorded.'}
       </run_log>
 
+      ${pageEvidence}
+
       The log is written in the tester's own words, so an outcome can be satisfied by a step that describes it
       differently. Judge by what the steps show happened, not by whether the wording matches.
-      Choose "unverified" only when the log neither shows the outcome happening nor shows it failing —
+      Choose "unverified" only when the evidence neither shows the outcome happening nor shows it failing —
       that is a statement about the run, not about the application.
     `;
 
-    const response = await this.provider
-      .generateObject([{ role: 'user' as const, content: userContent }], schema, this.provider.getAgenticModel('pilot'), {
-        agentName: 'pilot',
-        telemetry: { functionId: 'pilot.settleExpectations' },
-      })
-      .catch(() => null);
+    const settle = (content: any, model: any) =>
+      this.provider
+        .generateObject([{ role: 'user' as const, content }], schema, model, {
+          agentName: 'pilot',
+          telemetry: { functionId: 'pilot.settleExpectations' },
+        })
+        .catch(() => null);
 
-    const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome.status]));
+    let response = null;
+    if (image) {
+      const seen = [
+        { type: 'text', text: userContent },
+        { type: 'file', mediaType: 'image/png', data: image },
+      ];
+      response = await settle(seen, this.provider.getVisionModel());
+      if (!response) {
+        Stats.visionDisabled = true;
+        tag('warning').log('⚠️ Vision model could not judge the outcomes. Settling them from the run log instead.');
+      }
+    }
+
+    if (!response) response = await settle(userContent, this.provider.getAgenticModel('pilot'));
+
+    const judged = new Map((response?.object?.outcomes || []).map((outcome: any) => [outcome.expectation, outcome]));
     return task.expected.map((text) => {
       if (!undecided.includes(text)) return { text, status: decided(text) };
-      return { text, status: (judged.get(text) as 'passed' | 'failed' | 'unverified') || 'unverified' };
+      const outcome = judged.get(text) as { status: SettledStatus; evidence?: string } | undefined;
+      if (!outcome) return { text, status: 'unverified' as SettledStatus };
+      return { text, status: outcome.status || 'unverified', evidence: outcome.evidence };
     });
   }
 
@@ -1115,4 +1158,12 @@ export class Pilot implements Agent {
       ${stepsText}
     `;
   }
+}
+
+export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'contradiction';
+
+export interface SettledExpectation {
+  text: string;
+  status: SettledStatus;
+  evidence?: string;
 }
