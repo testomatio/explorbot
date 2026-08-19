@@ -33,9 +33,6 @@ const checkHelp = dedent`
   the proof, and the run log only says what was done. CONFLICT means the two disagree -
   and it is reported with both sides rather than settled one way. Not finding something
   in the picture is not enough on its own; that is "not verified".
-  ### Page visibility reports what the picture cannot settle: regions that scroll on
-  their own and hide part of their content, and elements the page renders that nobody
-  can actually see - covered, transparent, or parked outside the page.
   ok: follows those outcomes - false when one FAILED or CONFLICTed, or when the run
   could not complete, which is reported as such rather than as an app failure.
   Page problems seen on the way appear under ### Answer, not as step failures.

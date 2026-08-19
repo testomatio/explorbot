@@ -21,7 +21,6 @@ import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
 import { Task, Test, TestResult } from '../../../src/test-plan.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
-import { collectVisibilityReport } from '../../../src/utils/visibility.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
@@ -356,10 +355,7 @@ export class Prima {
     const routine = recorded.length - failed.length;
     if (routine) envelope.steps.push({ label: `${routine} further ${pluralize(routine, 'step')} ran without failing — prima status ${envelope.status} for the full log`, ok: true, proof: '' });
 
-    const visibility = await Promise.resolve(this.bot.getExplorer()?.withPage?.(collectVisibilityReport)).catch(() => null);
-    if (visibility) envelope.visibility = visibility;
-
-    envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result, visibility);
+    envelope.expectations = await this.bot.agentPilot().settleExpectations(test, result);
 
     if (!result.screenshot || !this.visionEnabled()) {
       envelope.warning = 'These outcomes were settled from the run log alone — no screenshot backed them. Set ai.visionModel, or check anything visual with prima ask.';

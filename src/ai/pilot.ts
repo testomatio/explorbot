@@ -10,7 +10,6 @@ import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes, detectFocusArea } from '../utils/aria.ts';
-import type { VisibilityReport } from '../utils/visibility.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 
@@ -564,7 +563,7 @@ export class Pilot implements Agent {
     return text;
   }
 
-  async settleExpectations(task: Test, finalState?: ActionResult, visibility?: VisibilityReport | null): Promise<SettledExpectation[]> {
+  async settleExpectations(task: Test, finalState?: ActionResult): Promise<SettledExpectation[]> {
     let image: string | null = null;
     if (finalState?.screenshot && this.provider.hasVision()) image = `data:image/png;base64,${finalState.screenshot.toString('base64')}`;
 
@@ -604,30 +603,6 @@ export class Pilot implements Agent {
       `;
     }
 
-    let domEvidence = '';
-    if (visibility?.regions.length) {
-      const regions = visibility.regions.map((region) => `- ${region.label} hides ${region.hiddenPercent}% of its content behind its own ${region.axis} scrollbar`);
-      domEvidence += dedent`
-        <regions_the_picture_cannot_show>
-        ${regions.join('\n')}
-        Content inside these is absent from the screenshot because it needs scrolling, not because it is missing.
-        Never report a conflict for something that would sit inside one of them.
-        </regions_the_picture_cannot_show>
-      `;
-    }
-
-    if (visibility?.unseen.length) {
-      const unseen = visibility.unseen.map((element) => `- ${element.label} — ${element.reason}`);
-      domEvidence += dedent`
-
-        <present_but_not_perceivable>
-        ${unseen.join('\n')}
-        The page's own layout says each of these is rendered, yet nobody looking at the page can see it. Where one
-        of them carries something an outcome depends on, that is a conflict, and this is what each side shows.
-        </present_but_not_perceivable>
-      `;
-    }
-
     const userContent = dedent`
       A test run has finished. Decide, for each expected outcome, what the run established about it.
 
@@ -640,8 +615,6 @@ export class Pilot implements Agent {
       </run_log>
 
       ${pageEvidence}
-
-      ${domEvidence}
 
       The log is written in the tester's own words, so an outcome can be satisfied by a step that describes it
       differently. Judge by what the steps show happened, not by whether the wording matches.

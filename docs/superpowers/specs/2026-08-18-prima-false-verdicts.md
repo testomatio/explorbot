@@ -77,35 +77,6 @@ The screenshot is the final page only. An outcome the run established earlier st
 even when the page has moved past it, and the prompt says that is not a conflict — otherwise every
 "record deleted, then navigated away" scenario reports one.
 
-### 2a. What the picture cannot settle is measured, not guessed
-
-Captures are already `fullPage: true` (`action.ts:107`), so the judge sees the whole scrollable
-document rather than a viewport crop. Two things still escape it, and both are answerable exactly
-from layout instead of from pixels. `collectVisibilityReport` (`src/utils/visibility.ts`) runs one
-`page.evaluate` over the final page and returns them:
-
-- **Regions that scroll on their own.** `fullPage` expands to *document* height; an
-  `overflow: auto` container still clips its own content, so a row below an inner fold is genuinely
-  absent from the picture and perfectly healthy. Each such region is reported with how much of its
-  content is out of view, and the judge is told never to call a conflict on something inside one.
-- **Elements the page renders that nobody can perceive.** `checkVisibility()` says the element is
-  displayed, yet it is covered by another element (`elementFromPoint` names the cover), drawn in the
-  colour of its own backdrop, occupies no space, or is parked outside the document where no
-  scrolling reaches it. That is the positive contradiction a conflict needs, arrived at without
-  asking a model to eyeball anything. Screen-reader-only patterns are excluded so they do not read
-  as defects.
-
-Both lists go into the envelope under `### Page visibility` as well as to the judge, so the caller
-sees the same evidence the verdict rested on. Measured across 3975 captures in `example/`, page
-heights ran to a median of 1200px and a maximum of 2080px, so downscaling of tall full-page images
-is a marginal concern here and was not worth designing around.
-
-There is no line describing which evidence the judge had; that is plumbing, not a fact about the
-app. When no screenshot backed the outcomes — no vision model configured, or the vision call could
-not produce a verdict, which falls back to the text model and flips `Stats.visionDisabled` — the
-envelope carries a `### Warning` saying the outcomes came from the run log alone. That appears only
-when something is wrong with the setup, not under every run.
-
 ### 3. `check`'s verdict is its outcomes
 
 `ok` no longer comes from `tester.test()`'s success flag, which could contradict the outcomes
@@ -153,11 +124,10 @@ which is its whole job.
 - A conflict needs a positive contradiction in the picture. Not finding something is `unverified`;
   absence of evidence is not evidence of absence, and treating it as one is how a false-verdict fix
   becomes a false-verdict generator.
-- Whether a user can see an element is measured from layout, never inferred from a screenshot.
-  `checkVisibility`, `elementFromPoint` and the document scroll extents answer it exactly, and the
-  measurement is put in the envelope beside the verdict rather than kept for the model.
-- Content inside a region that scrolls on its own is not missing. Those regions are enumerated so
-  the judge can tell the two apart.
+- Nothing probes the page to explain *why* something is invisible. A first attempt walked the DOM
+  comparing colours, sniffing screen-reader patterns and hit-testing every element; it was a pile of
+  heuristics guessing at an answer the contradiction already states. "The run says it is there and
+  the picture does not show it" is the finding, and the caller is better placed to say why.
 - `settleExpectations` judges all outcomes, not only undecided ones, when it has a screenshot —
   otherwise a DOM assertion the run already made could never be contradicted by the page.
 - `unverified` is not a failure, in `check` outcomes and in `do` instructions alike. A statement

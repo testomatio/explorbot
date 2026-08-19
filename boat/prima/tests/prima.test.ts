@@ -1008,36 +1008,6 @@ describe('Prima.check', () => {
     expect(envelope.ok).toBe(true);
   });
 
-  test('what a screenshot cannot show is collected from the page and reported', async () => {
-    const { prima } = fakePrima();
-    let handed: any;
-    const probe = { regions: [{ label: 'list "Inventory"', hiddenPercent: 60, axis: 'vertical' }], unseen: [{ label: 'button "Confirm"', reason: 'covered by dialog "Notification"' }], moreRegions: 0, moreUnseen: 0 };
-    (prima as any).bot.getProvider = () => ({ hasVision: () => true });
-    (prima as any).bot.getExplorer = () => ({
-      capture: async (opts: any) => fakeState({ screenshot: opts?.screenshot ? Buffer.from('png') : undefined }),
-      withPage: async () => probe,
-    });
-    (prima as any).bot.agentTester = () => ({
-      test: async (test: any) => {
-        test.addNote('the editor opens', TestResult.PASSED);
-        test.finish(TestResult.PASSED);
-        return { success: true };
-      },
-    });
-    (prima as any).bot.agentPilot = () => ({
-      settleExpectations: async (_test: any, _final: any, visibility: any) => {
-        handed = visibility;
-        return [{ text: 'the editor opens', status: 'passed' }];
-      },
-    });
-
-    const envelope = await prima.check('edit a skill', ['the editor opens']);
-
-    expect(handed).toEqual(probe);
-    expect(envelope.visibility?.regions[0].hiddenPercent).toBe(60);
-    expect(envelope.visibility?.unseen[0].reason).toContain('covered by');
-  });
-
   test('a page that disagrees with the run is reported as a conflict, not settled either way', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.getProvider = () => ({ hasVision: () => true });

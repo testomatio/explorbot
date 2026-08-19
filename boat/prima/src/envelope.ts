@@ -25,7 +25,6 @@ export interface EnvelopeData {
   steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string }>;
   expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' | 'conflict'; evidence?: string }>;
   warning?: string;
-  visibility?: { regions: Array<{ label: string; hiddenPercent: number; axis: string }>; unseen: Array<{ label: string; reason: string }>; moreRegions: number; moreUnseen: number };
   stepFiles?: string;
   value?: string;
   answer?: string;
@@ -38,7 +37,7 @@ export interface EnvelopeData {
 }
 
 export function renderEnvelope(data: EnvelopeData): string {
-  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderExpectations(data), renderVisibility(data), renderWarning(data), renderOutcome(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
+  const sections = [renderResult(data), renderPage(data), renderValue(data), renderChanges(data), renderSteps(data), renderExpectations(data), renderWarning(data), renderOutcome(data), ...renderFailure(data), renderInstance(data), renderArtifacts(data)];
   return sections.filter((section) => section).join('\n\n');
 }
 
@@ -110,28 +109,6 @@ function renderExpectations(data: EnvelopeData): string | null {
     for (const line of (expectation.evidence || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
   return section('Expected outcomes', lines.join('\n'));
-}
-
-function renderVisibility(data: EnvelopeData): string | null {
-  const visibility = data.visibility;
-  if (!visibility) return null;
-  if (!visibility.regions.length && !visibility.unseen.length) return null;
-
-  const lines: string[] = [];
-  if (visibility.unseen.length) {
-    lines.push('the page renders these, but nobody looking at it can see them:');
-    for (const element of visibility.unseen) lines.push(`  ${element.label} — ${element.reason}`);
-    if (visibility.moreUnseen) lines.push(`  and ${visibility.moreUnseen} more, not listed`);
-  }
-
-  if (visibility.regions.length) {
-    if (lines.length) lines.push('');
-    lines.push('these regions scroll on their own, so a screenshot of the page cannot show all of them:');
-    for (const region of visibility.regions) lines.push(`  ${region.label} — ${region.hiddenPercent}% of its content is out of view`);
-    if (visibility.moreRegions) lines.push(`  and ${visibility.moreRegions} more, not listed`);
-  }
-
-  return section('Page visibility', lines.join('\n'));
 }
 
 function renderWarning(data: EnvelopeData): string | null {
