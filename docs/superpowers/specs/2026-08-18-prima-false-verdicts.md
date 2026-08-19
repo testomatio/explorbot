@@ -61,27 +61,28 @@ structured call on the vision model with the image attached.
 The screenshot is not one of two equal inputs. An outcome is satisfied when the page shows it to
 somebody looking at it; the log only says what the run did. The prompt says so.
 
-**Where the two disagree, the judge does not choose.** It reports `conflict` and says what each
+**Where the two disagree, the judge does not choose.** It reports `contradiction` and says what each
 side shows. An assertion that matched an element nobody can see is a defect in the application, and
 it is exactly the case both other verdicts destroy: `passed` hides it behind an assertion that
 happens to match, `failed` mislabels a feature that half works. It comes back as its own status
-with both sides quoted, and it fails the command.
+with both sides quoted, it fails the command, and `### Artifacts` names the html, aria and screenshot
+on disk so the caller can settle it on the page itself rather than on the judge's word.
 
 **Absence in the picture is not a contradiction.** Review of the first pass raised this: a
 screenshot is not proof that a thing is missing, only that the judge could not make it out. A
-conflict now requires the picture to show something *incompatible* — a list visibly empty, an error
+contradiction now requires the picture to show something *incompatible* — a list visibly empty, an error
 where a result was expected, the old value still displayed. "I cannot find it" is `unverified`,
 which does not fail the command.
 
 The screenshot is the final page only. An outcome the run established earlier stays established
-even when the page has moved past it, and the prompt says that is not a conflict — otherwise every
+even when the page has moved past it, and the prompt says that is not a contradiction — otherwise every
 "record deleted, then navigated away" scenario reports one.
 
 ### 3. `check`'s verdict is its outcomes
 
 `ok` no longer comes from `tester.test()`'s success flag, which could contradict the outcomes
-printed beside it. `ok: true` when no outcome failed and none conflicted; each failure and each
-conflict names itself in `### Failure`. `unverified` is not a failure — it is a statement about
+printed beside it. `ok: true` when no outcome failed and none was contradicted; each failure and
+each contradiction names itself in `### Failure`. `unverified` is not a failure — it is a statement about
 the run, matching what the help text already promised.
 
 A run that could not complete is reported separately from an application failure: when the test
@@ -118,10 +119,12 @@ which is its whole job.
 - `check` starts on the current page. A command that inspects transient UI must not destroy it.
 - Vision is not a fallback in `check`; it closes every run that has a vision model. The
   screenshot is the proof — what a user can see — and the run log only says what was done.
-- A disagreement between the page and the run is reported as `conflict`, never settled one way.
-  An assertion matching an element nobody can see is a defect, and both `passed` and `failed`
-  would bury it. A conflict fails the command.
-- A conflict needs a positive contradiction in the picture. Not finding something is `unverified`;
+- A disagreement between the picture and the run is reported as `contradiction`, never settled one
+  way. An assertion matching an element nobody can see is a defect, and both `passed` and `failed`
+  would bury it. A contradiction fails the command, and hands the caller the page files to judge on.
+  The word is `contradiction` rather than `conflict` because it names what happened, and rather than
+  `ambiguity` because that is what `unverified` already means.
+- A contradiction needs the picture to show something incompatible. Not finding something is `unverified`;
   absence of evidence is not evidence of absence, and treating it as one is how a false-verdict fix
   becomes a false-verdict generator.
 - Nothing probes the page to explain *why* something is invisible. A first attempt walked the DOM
@@ -153,4 +156,4 @@ which is its whole job.
 - `do` gets no vision confirmation pass. Its `completed()` proof is the same kind of unverified
   paperwork, but a per-instruction vision call is a different cost profile.
 - The `prima` skill in `testomatio/skills` documents the old envelope vocabulary. It needs the
-  `??` row, the `CONFLICT` status, and the unconfirmed-is-not-failed rule.
+  `??` row, the `CONTRADICTION` status, and the unconfirmed-is-not-failed rule.

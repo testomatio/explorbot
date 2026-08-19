@@ -15,27 +15,30 @@ else the page structure cannot express was judged by something that had never se
 outcome is now settled against a screenshot of the page as the run left it. What a user can see is
 the proof; the run log only says what was done.
 
-When the two disagree, the outcome comes back as **CONFLICT** with both sides quoted, instead of
-being resolved one way:
+When the two disagree, the outcome comes back as **CONTRADICTION** with both sides quoted, instead
+of being resolved one way:
 
 ```
 ### Expected outcomes
 1. PASSED       the Add connection dialog opens
-2. CONFLICT     the new connection is listed
+2. CONTRADICTION the new connection is listed
       the assertion I.see("staging-db") found the row in the page structure; the screenshot
       shows the list still empty, so the row is in the DOM but not visible
-3. not verified the list scrolls
+3. not verified  the list scrolls
 ```
+
+`### Artifacts` then names the html, aria and screenshot of that page on disk, so the disagreement
+can be settled by opening them rather than by trusting the verdict.
 
 That case — a row present in the markup but invisible on screen, whether hidden, collapsed,
 covered or drawn off-screen — is a real defect that a PASSED would have buried behind a matching
 assertion and a FAILED would have mislabelled as a broken feature.
 
-A conflict needs the picture to positively contradict the run — a list visibly empty, an error
+A contradiction needs the picture to positively contradict the run — a list visibly empty, an error
 where a result was expected. Simply not finding something in the picture is reported as "not
 verified" instead, since a screenshot is not proof that a thing is missing.
 
-`ok:` now follows those outcomes: false when one FAILED or CONFLICTed. An outcome the run never
+`ok:` now follows those outcomes: false when one FAILED or CONTRADICTED. An outcome the run never
 checked stays "not verified" and does not fail the command. A run that could not complete at all
 says so, instead of reporting it as a failure of the application. When no screenshot backed the
 outcomes — no `ai.visionModel` configured, or the vision model could not answer — the envelope

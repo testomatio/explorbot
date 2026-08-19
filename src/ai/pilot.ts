@@ -580,8 +580,8 @@ export class Pilot implements Agent {
       outcomes: z.array(
         z.object({
           expectation: z.string().describe('The expected outcome, repeated exactly as it was given'),
-          status: z.enum(['passed', 'failed', 'unverified', 'conflict']).describe('passed = the evidence shows it happened, failed = the evidence shows it did not, unverified = the run never established either way, conflict = the page and the run disagree'),
-          evidence: z.string().nullable().describe('What settled it. For a conflict, what each side shows. Null when there is nothing to add'),
+          status: z.enum(['passed', 'failed', 'unverified', 'contradiction']).describe('passed = the evidence shows it happened, failed = the evidence shows it did not, unverified = the run never established either way, contradiction = the picture and the run disagree'),
+          evidence: z.string().nullable().describe('What settled it. For a contradiction, what each side shows. Null when there is nothing to add'),
         })
       ),
     });
@@ -592,14 +592,14 @@ export class Pilot implements Agent {
         A screenshot of the whole page as the run left it is attached. It is the proof: an outcome is satisfied
         when the page shows it to somebody looking at it. The log only says what the run did.
 
-        Not finding something in the picture is not by itself a contradiction. Report "conflict" only when the
-        picture shows something incompatible with what the run claims — a list visibly empty, an error where a
-        result was expected, the old value still displayed, a control visibly disabled. When you simply cannot
+        Not finding something in the picture is not by itself a disagreement. Report "contradiction" only when
+        the picture shows something incompatible with what the run claims — a list visibly empty, an error where
+        a result was expected, the old value still displayed, a control visibly disabled. When you simply cannot
         make it out, say "unverified" and name what you could not find.
 
         The picture covers the full page, but not the inside of a region that scrolls on its own, and not the
         state of the page before the run ended. An outcome established earlier stays established even when the
-        page has moved past it, and that is not a conflict.
+        page has moved past it, and that is not a contradiction.
       `;
     }
 
@@ -1160,7 +1160,7 @@ export class Pilot implements Agent {
   }
 }
 
-export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'conflict';
+export type SettledStatus = 'passed' | 'failed' | 'unverified' | 'contradiction';
 
 export interface SettledExpectation {
   text: string;

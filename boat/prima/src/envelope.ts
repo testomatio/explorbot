@@ -2,10 +2,10 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const EXPECTATION_LABELS = {
-  passed: 'PASSED      ',
-  failed: 'FAILED      ',
-  unverified: 'not verified',
-  conflict: 'CONFLICT    ',
+  passed: 'PASSED       ',
+  failed: 'FAILED       ',
+  unverified: 'not verified ',
+  contradiction: 'CONTRADICTION',
 };
 
 export interface InstanceInfo {
@@ -23,7 +23,7 @@ export interface EnvelopeData {
   page: { url: string; previousUrl?: string; title: string; state: string; visits: number };
   changes?: string | null;
   steps?: Array<{ label: string; ok: boolean; unconfirmed?: boolean; proof: string }>;
-  expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' | 'conflict'; evidence?: string }>;
+  expectations?: Array<{ text: string; status: 'passed' | 'failed' | 'unverified' | 'contradiction'; evidence?: string }>;
   warning?: string;
   stepFiles?: string;
   value?: string;
@@ -33,7 +33,7 @@ export interface EnvelopeData {
   failure?: { error: string; compactAria?: string };
   instance: InstanceInfo;
   status?: string;
-  artifacts?: { aria: string; html: string; network?: string };
+  artifacts?: { aria: string; html: string; screenshot?: string; network?: string };
 }
 
 export function renderEnvelope(data: EnvelopeData): string {
@@ -41,14 +41,19 @@ export function renderEnvelope(data: EnvelopeData): string {
   return sections.filter((section) => section).join('\n\n');
 }
 
-export function writeArtifacts(dir: string, snapshot: { aria: string | null; html: string | null; requests: unknown[] }): { aria: string; html: string; network?: string } {
+export function writeArtifacts(dir: string, snapshot: { aria: string | null; html: string | null; screenshot?: Buffer; requests: unknown[] }): { aria: string; html: string; screenshot?: string; network?: string } {
   mkdirSync(dir, { recursive: true });
-  const paths: { aria: string; html: string; network?: string } = {
+  const paths: { aria: string; html: string; screenshot?: string; network?: string } = {
     aria: path.resolve(dir, 'aria.yml'),
     html: path.resolve(dir, 'page.html'),
   };
   writeFileSync(paths.aria, snapshot.aria ?? '', 'utf-8');
   writeFileSync(paths.html, snapshot.html ?? '', 'utf-8');
+
+  if (snapshot.screenshot) {
+    paths.screenshot = path.resolve(dir, 'page.png');
+    writeFileSync(paths.screenshot, snapshot.screenshot);
+  }
 
   if (!snapshot.requests.length) return paths;
 
@@ -105,7 +110,7 @@ function renderExpectations(data: EnvelopeData): string | null {
   const lines: string[] = [];
   data.expectations.forEach((expectation, index) => {
     lines.push(`${index + 1}. ${EXPECTATION_LABELS[expectation.status]} ${expectation.text}`);
-    if (expectation.status !== 'conflict' && expectation.status !== 'failed') return;
+    if (expectation.status !== 'contradiction' && expectation.status !== 'failed') return;
     for (const line of (expectation.evidence || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
   return section('Expected outcomes', lines.join('\n'));
@@ -170,8 +175,9 @@ function tabsLabel(tabs: number): string {
 
 export function renderArtifacts(data: EnvelopeData): string | null {
   if (!data.artifacts) return null;
-  const lines = [`aria: ${data.artifacts.aria}`, `html: ${data.artifacts.html}`];
-  if (data.artifacts.network) lines.push(`network: ${data.artifacts.network}`);
+  const lines = [`aria:       ${data.artifacts.aria}`, `html:       ${data.artifacts.html}`];
+  if (data.artifacts.screenshot) lines.push(`screenshot: ${data.artifacts.screenshot}`);
+  if (data.artifacts.network) lines.push(`network:    ${data.artifacts.network}`);
   return section('Artifacts', lines.join('\n'));
 }
 

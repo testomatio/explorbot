@@ -40,14 +40,14 @@ describe('Pilot settling outcomes against the final page', () => {
     expect(contents[0].some((part: any) => part.type === 'file')).toBe(true);
   });
 
-  it('passes a conflict between the page and the run straight through with its evidence', async () => {
+  it('passes a contradiction between the picture and the run straight through with its evidence', async () => {
     const pilot = buildPilot({
       hasVision: () => true,
       getVisionModel: () => 'vision-model',
       getAgenticModel: () => 'text-model',
       generateObject: async () => ({
         object: {
-          outcomes: [{ expectation: 'the new row is listed', status: 'conflict', evidence: 'the assertion found the row in the page structure; the screenshot shows an empty list' }],
+          outcomes: [{ expectation: 'the new row is listed', status: 'contradiction', evidence: 'the assertion found the row in the page structure; the screenshot shows an empty list' }],
         },
       }),
     });
@@ -57,7 +57,7 @@ describe('Pilot settling outcomes against the final page', () => {
 
     const settled = await pilot.settleExpectations(task, finalPage());
 
-    expect(settled[0].status).toBe('conflict');
+    expect(settled[0].status).toBe('contradiction');
     expect(settled[0].evidence).toContain('screenshot shows an empty list');
   });
 

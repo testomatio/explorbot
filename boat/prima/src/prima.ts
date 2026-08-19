@@ -74,6 +74,7 @@ export class Prima {
   private server: { close: () => Promise<void> } | null = null;
   private attached: string | null = null;
   private session: SessionRun | null = null;
+  private artifacts?: EnvelopeData['artifacts'];
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -362,11 +363,12 @@ export class Prima {
     }
 
     const unreached = envelope.expectations.filter((expectation) => expectation.status === 'failed');
-    const conflicts = envelope.expectations.filter((expectation) => expectation.status === 'conflict');
-    envelope.ok = !unreached.length && !conflicts.length;
+    const contradicted = envelope.expectations.filter((expectation) => expectation.status === 'contradiction');
+    envelope.ok = !unreached.length && !contradicted.length;
 
-    const problems = [...unreached.map((expectation) => `not reached: ${expectation.text}`), ...conflicts.map((expectation) => `the page and the run disagree about: ${expectation.text}`)];
+    const problems = [...unreached.map((expectation) => `not reached: ${expectation.text}`), ...contradicted.map((expectation) => `the picture and the run disagree about: ${expectation.text}`)];
     if (problems.length) envelope.failure = { error: problems.join('\n') };
+    if (contradicted.length) envelope.artifacts = this.artifacts;
 
     if (!test.hasFinished || test.isSkipped) {
       envelope.ok = false;
@@ -1080,13 +1082,13 @@ export class Prima {
     if (diff) writeFileSync(`${stem}.diff.yaml`, diff, 'utf-8');
   }
 
-  private async writeSnapshot(result: ActionResult): Promise<undefined> {
-    writeArtifacts(this.statusDir(), {
+  private async writeSnapshot(result: ActionResult): Promise<void> {
+    this.artifacts = writeArtifacts(this.statusDir(), {
       aria: result.ariaSnapshot,
       html: await result.combinedHtml(),
+      screenshot: result.screenshot,
       requests: this.bot.requestStore().getRequests(),
     });
-    return undefined;
   }
 
   private statusHash(): string {

@@ -1008,7 +1008,7 @@ describe('Prima.check', () => {
     expect(envelope.ok).toBe(true);
   });
 
-  test('a page that disagrees with the run is reported as a conflict, not settled either way', async () => {
+  test('an outcome the picture contradicts is reported as such, with the files to look at', async () => {
     const { prima } = fakePrima();
     (prima as any).bot.getProvider = () => ({ hasVision: () => true });
     (prima as any).bot.getExplorer = () => ({ capture: async (opts: any) => fakeState({ screenshot: opts?.screenshot ? Buffer.from('png') : undefined }) });
@@ -1020,14 +1020,17 @@ describe('Prima.check', () => {
       },
     });
     (prima as any).bot.agentPilot = () => ({
-      settleExpectations: async () => [{ text: 'the new row is listed', status: 'conflict', evidence: 'the assertion found the row in the page structure; the screenshot shows an empty list' }],
+      settleExpectations: async () => [{ text: 'the new row is listed', status: 'contradiction', evidence: 'the assertion found the row in the page structure; the screenshot shows an empty list' }],
     });
 
     const envelope = await prima.check('add a row', ['the new row is listed']);
 
     expect(envelope.ok).toBe(false);
-    expect(envelope.failure?.error).toContain('the page and the run disagree about: the new row is listed');
+    expect(envelope.failure?.error).toContain('the picture and the run disagree about: the new row is listed');
     expect(envelope.expectations?.[0].evidence).toContain('screenshot shows an empty list');
+    expect(envelope.artifacts?.html).toContain('page.html');
+    expect(envelope.artifacts?.aria).toContain('aria.yml');
+    expect(envelope.artifacts?.screenshot).toContain('page.png');
   });
 });
 
