@@ -9,11 +9,14 @@ import Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
 import { type StateManager, normalizeUrl } from '../state-manager.js';
 import { renderAssertion } from '../playwright-recorder.ts';
+import { isFatalBrowserError } from '../utils/browser-errors.ts';
+import { getCliName } from '../utils/cli-name.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
 import { HooksRunner } from '../utils/hooks-runner.ts';
 import { createDebug, pluralize, tag } from '../utils/logger.js';
 import { loop, pause } from '../utils/loop.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
+import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
@@ -33,6 +36,7 @@ class Navigator implements Agent {
   private hooksRunner: HooksRunner;
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
+  lastFailureReason: string | null = null;
 
   private systemPrompt = dedent`
   <role>
@@ -105,8 +109,12 @@ class Navigator implements Agent {
   private getComparableCurrentUrl(stateManager: any, expectedUrl: string): string {
     const currentState = stateManager.getCurrentState();
     if (!currentState) return '';
-    const current = /^https?:\/\//i.test(expectedUrl) ? currentState.fullUrl || currentState.url || '' : currentState.url || '';
-    return current;
+    return this.comparableUrl(currentState, expectedUrl);
+  }
+
+  private comparableUrl(state: { url?: string; fullUrl?: string }, expectedUrl: string): string {
+    if (/^https?:\/\//i.test(expectedUrl)) return state.fullUrl || state.url || '';
+    return state.url || '';
   }
 
   private isSameExpectedOrigin(expectedUrl: string, stateManager: any): boolean {
@@ -162,7 +170,7 @@ class Navigator implements Agent {
 
         const resolved = await this.resolveState(originalMessage, actionResult, { action, expectedUrl: url });
         if (!resolved) {
-          throw new Error(`Navigation to ${url} failed: redirected to ${actualPath} and could not resolve`);
+          throw this.navigationError(url, `redirected to ${actualPath} and could not resolve`);
         }
       } else if (action.lastError) {
         const actionResult = action.actionResult || ActionResult.fromState(action.stateManager.getCurrentState()!);
@@ -174,7 +182,7 @@ class Navigator implements Agent {
 
         const resolved = await this.resolveState(originalMessage, actionResult, { action, expectedUrl: url });
         if (!resolved) {
-          throw new Error(`Navigation to ${url} failed: ${action.lastError?.message}`);
+          throw this.navigationError(url, action.lastError?.message || 'Navigation failed');
         }
       }
       await this.explorer.capture({ screenshot: true });
@@ -190,9 +198,25 @@ class Navigator implements Agent {
     }
   }
 
+  private navigationError(url: string, fallback: string): Error {
+    if (this.lastFailureReason) return new Error(`Navigation to ${url} failed: ${this.lastFailureReason}`);
+    return new Error(`Navigation to ${url} failed: ${fallback}`);
+  }
+
+  private failureReason(stopReason: string | null, knowledge: string, url: string): string | null {
+    const reasons: string[] = [];
+    if (stopReason) reasons.push(stopReason);
+    if (!knowledge) {
+      const path = extractStatePath(url).split('?')[0].split('#')[0];
+      reasons.push(`no knowledge is set for ${path} — teach it what this page needs (credentials, hints) with: ${getCliName()} learn "${path}" "<facts>"`);
+    }
+    return reasons.join('; ') || null;
+  }
+
   async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string; onAttempt?: (attempt: { code: string; error?: string }) => void }): Promise<boolean> {
     if (!this.provider) throw new Error('AI-assisted recovery is unavailable: no AI model is configured.');
 
+    this.lastFailureReason = null;
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
 
@@ -200,8 +224,153 @@ class Navigator implements Agent {
     const expectedUrl = opts?.expectedUrl;
 
     const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
-    let experience = '';
 
+    const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
+    conversation.addUserText(await this.buildResolutionPrompt(message, actionResult));
+
+    let stopReason: string | null = null;
+    const tools = {
+      stop: tool({
+        description: dedent`
+          Stop the navigation because no locator or strategy change can reach the goal.
+          Use this when reaching the goal requires something only the user can supply or that the
+          page cannot grant from the current state — for example: an authentication failure you
+          cannot guess past, a captcha or human-verification step, a permission the test cannot
+          satisfy, a piece of data not present in the available knowledge / hint context, or a
+          blocking error or dialog you cannot dismiss.
+          Do NOT use this for locator or strategy problems — for those, emit new code blocks instead.
+        `,
+        inputSchema: z.object({
+          reason: z.string().describe('Short user-facing explanation. Quote what you observed (alert text, dialog title, status message, validation note) and name what is missing or required.'),
+        }),
+        execute: async ({ reason }) => {
+          stopReason = reason;
+          return { success: true, message: 'Recorded. Navigator will stop and surface the reason.' };
+        },
+      }),
+    };
+
+    let codeBlocks: string[] = [];
+    let htmlContextAdded = false;
+    let codeBlockIndex = 0;
+    let totalAttempts = 0;
+    let lastFailure: string | null = null;
+    const progressBlocks: string[] = [];
+    const batchFailures: BatchFailure[] = [];
+
+    let resolved = false;
+    await loop(
+      async ({ stop }) => {
+        if (codeBlocks.length === 0) {
+          const result = await this.provider.invokeConversation(conversation, tools);
+          if (!result) return;
+          if (stopReason) {
+            resolved = false;
+            stop();
+            return;
+          }
+          const aiResponse = result?.response?.text;
+          debugLog('AI:', aiResponse?.split('\n')[0]);
+          debugLog('Received AI response:', aiResponse?.length ?? 0, 'characters');
+          codeBlocks = extractCodeBlocks(aiResponse ?? '');
+          codeBlockIndex = 0;
+        }
+
+        if (codeBlocks.length === 0) {
+          stop();
+          return;
+        }
+
+        const codeBlock = codeBlocks[codeBlockIndex];
+        if (!codeBlock) {
+          if (batchFailures.length === 0 && htmlContextAdded) {
+            stop();
+            return;
+          }
+          tag('operation').log('Feeding failures back to AI for a new batch...');
+          conversation.addUserText(await this.buildRetryFeedback(batchFailures, !htmlContextAdded, actionResult));
+          htmlContextAdded = true;
+          codeBlocks = [];
+          batchFailures.length = 0;
+          return;
+        }
+        codeBlockIndex++;
+        totalAttempts++;
+
+        const prevActionResult = action.actionResult ?? actionResult;
+        const prevHash = prevActionResult.getStateHash();
+
+        const attempt = await this.executeAttempt(action, codeBlock, message);
+        opts?.onAttempt?.({ code: codeBlock, error: attempt.error });
+        if (attempt.error) {
+          batchFailures.push({ code: codeBlock, error: attempt.error });
+          lastFailure = attempt.error;
+        }
+
+        if (expectedUrl) {
+          const check = await this.verifyNavigation(action, expectedUrl);
+          const freshHash = check.freshState.getStateHash();
+          resolved = check.urlMatches && freshHash !== actionResult.getStateHash();
+
+          if (!resolved && attempt.ok) {
+            lastFailure = `URL did not change (still ${check.freshState.url})`;
+            batchFailures.push({
+              code: codeBlock,
+              error: lastFailure,
+              ariaChanges: await this.ariaDiff(check.freshState, prevActionResult),
+              urlAfter: check.freshState.url,
+            });
+            tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${check.freshState.url}`);
+          }
+          if (freshHash !== prevHash && (attempt.ok || check.urlMatches)) {
+            progressBlocks.push(codeBlock);
+          }
+        } else {
+          resolved = attempt.ok;
+          if (attempt.ok) progressBlocks.push(codeBlock);
+        }
+
+        if (!resolved) return;
+
+        tag('success').log('Navigation resolved successfully');
+        this.saveFlow(message, expectedUrl, actionResult, progressBlocks);
+        stop();
+      },
+      {
+        maxAttempts: this.MAX_ATTEMPTS * 2,
+        observability: {
+          agent: 'navigator',
+        },
+        catch: async ({ error }) => {
+          if (isFatalBrowserError(error)) throw error;
+          debugLog(error);
+          resolved = false;
+        },
+      }
+    );
+
+    if (!resolved && expectedUrl) resolved = await this.rescueDelayedRedirect(action, expectedUrl);
+
+    if (!resolved && stopReason) {
+      tag('error').log(`Navigator stopped: ${stopReason}`);
+    } else if (!resolved && totalAttempts > 0) {
+      tag('error').log(`Navigation failed after ${totalAttempts} attempts`);
+    }
+
+    if (!resolved && isInteractive()) resolved = await this.askUserToResolve(action, message, expectedUrl, stopReason);
+
+    if (!resolved) {
+      let cause = 'the AI proposed no working solution for this page';
+      if (lastFailure) cause = `${totalAttempts} ${pluralize(totalAttempts, 'attempt')} failed, last: ${lastFailure}`;
+      if (stopReason) cause = stopReason;
+      this.lastFailureReason = this.failureReason(cause, knowledge, actionResult.url || '');
+    }
+
+    return resolved;
+  }
+
+  private async buildResolutionPrompt(message: string, actionResult: ActionResult): Promise<string> {
+    let experience = '';
     if (!actionResult.isInsideIframe) {
       const successful = this.experienceTracker.getSuccessfulExperience(actionResult);
       if (successful.length > 0) {
@@ -210,7 +379,7 @@ class Navigator implements Agent {
       }
     }
 
-    const prompt = dedent`
+    return dedent`
       <message>
         ${message}
       </message>
@@ -241,245 +410,137 @@ class Navigator implements Agent {
 
       ${experience}
 
-      ${knowledge}
+      ${this.knowledgeTracker.renderRelevantContext(actionResult)}
     `;
+  }
 
-    const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
-    conversation.addUserText(prompt);
+  private async buildRetryFeedback(failures: BatchFailure[], includeHtml: boolean, actionResult: ActionResult): Promise<string> {
+    let contextMsg = 'Previous solutions did not work. Analyze the failures and try DIFFERENT strategies (not syntactic variants of the same locator).\n\n';
 
-    let stopReason: string | null = null;
-    const tools = {
-      stop: tool({
-        description: dedent`
-          Stop the navigation because no locator or strategy change can reach the goal.
-          Use this when reaching the goal requires something only the user can supply or that the
-          page cannot grant from the current state — for example: an authentication failure you
-          cannot guess past, a captcha or human-verification step, a permission the test cannot
-          satisfy, a piece of data not present in the available knowledge / hint context, or a
-          blocking error or dialog you cannot dismiss.
-          Do NOT use this for locator or strategy problems — for those, emit new code blocks instead.
-        `,
-        inputSchema: z.object({
-          reason: z.string().describe('Short user-facing explanation. Quote what you observed (alert text, dialog title, status message, validation note) and name what is missing or required.'),
-        }),
-        execute: async ({ reason }) => {
-          stopReason = reason;
-          return { success: true, message: 'Recorded. Navigator will stop and surface the reason.' };
-        },
-      }),
-    };
+    if (failures.length > 0) {
+      const lines = failures
+        .map((f) => {
+          const head = `- \`${f.code.split('\n')[0]}\` → ${f.error}`;
+          if (!f.ariaChanges) return head;
+          const trimmed = f.ariaChanges.split('\n').slice(0, 12).join('\n    ');
+          return `${head}\n  • ARIA changes after the action:\n    ${trimmed}`;
+        })
+        .join('\n');
+      contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
+    }
 
-    let codeBlocks: string[] = [];
-    let htmlContextAdded = false;
-    let codeBlockIndex = 0;
-    let totalAttempts = 0;
-    const progressBlocks: string[] = [];
-    const batchFailures: Array<{ code: string; error: string; ariaChanges?: string | null; urlAfter?: string }> = [];
+    if (includeHtml) {
+      contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;
+    }
 
-    let resolved = false;
-    await loop(
-      async ({ stop }) => {
-        if (codeBlocks.length === 0) {
-          const result = await this.provider.invokeConversation(conversation, tools);
-          if (!result) return;
-          if (stopReason) {
-            tag('error').log(`Navigator stopped: ${stopReason}`);
-            resolved = false;
-            stop();
-            return;
-          }
-          const aiResponse = result?.response?.text;
-          debugLog('AI:', aiResponse?.split('\n')[0]);
-          debugLog('Received AI response:', aiResponse?.length ?? 0, 'characters');
-          codeBlocks = extractCodeBlocks(aiResponse ?? '');
-          codeBlockIndex = 0;
-        }
+    if (!failures.some((f) => f.ariaChanges)) {
+      return `${contextMsg}Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.`;
+    }
 
-        if (codeBlocks.length === 0) {
-          stop();
-          return;
-        }
+    return (
+      contextMsg +
+      dedent`
+      Some steps in the previous batch did not throw, but the URL did not change to the expected target and the page changed in other ways — the ARIA diff for each such step is listed in <previous_failures> above.
 
-        const codeBlock = codeBlocks[codeBlockIndex];
-        if (!codeBlock) {
-          if (batchFailures.length === 0 && htmlContextAdded) {
-            stop();
-            return;
-          }
-          tag('operation').log('Feeding failures back to AI for a new batch...');
-          let contextMsg = 'Previous solutions did not work. Analyze the failures and try DIFFERENT strategies (not syntactic variants of the same locator).\n\n';
-          if (batchFailures.length > 0) {
-            const lines = batchFailures
-              .map((f) => {
-                const head = `- \`${f.code.split('\n')[0]}\` → ${f.error}`;
-                if (!f.ariaChanges) return head;
-                const trimmed = f.ariaChanges.split('\n').slice(0, 12).join('\n    ');
-                return `${head}\n  • ARIA changes after the action:\n    ${trimmed}`;
-              })
-              .join('\n');
-            contextMsg += `<previous_failures>\n${lines}\n</previous_failures>\n\n`;
-          }
-          if (!htmlContextAdded) {
-            htmlContextAdded = true;
-            contextMsg += `Full HTML context:\n\n<page_html>\n${await actionResult.combinedHtml()}\n</page_html>\n\n`;
-          }
-          const pageReacted = batchFailures.some((f) => f.ariaChanges);
-          if (pageReacted) {
-            contextMsg += dedent`
-              Some steps in the previous batch did not throw, but the URL did not change to the expected target and the page changed in other ways — the ARIA diff for each such step is listed in <previous_failures> above.
+      Read those diffs and judge what each step actually triggered. Different action types produce different reactions; the diff is your only evidence of what happened. A diff might show, for example: a new alert / alertdialog / status / validation message appearing near a field or at page level; a modal, dialog, or wizard step opening; a banner, toast, or notification region appearing; a section expanding or collapsing; a tab or accordion switching content. A diff might also be empty or unrelated to the step — that is also a signal.
 
-              Read those diffs and judge what each step actually triggered. Different action types produce different reactions; the diff is your only evidence of what happened. A diff might show, for example: a new alert / alertdialog / status / validation message appearing near a field or at page level; a modal, dialog, or wizard step opening; a banner, toast, or notification region appearing; a section expanding or collapsing; a tab or accordion switching content. A diff might also be empty or unrelated to the step — that is also a signal.
+      Choose exactly ONE path based on what the diffs actually show — do not assume the previous step submitted any particular kind of data:
 
-              Choose exactly ONE path based on what the diffs actually show — do not assume the previous step submitted any particular kind of data:
+      A. The diff indicates the application requires something only the user can supply — for example: an authentication failure you cannot guess past, a captcha, a permission the test cannot satisfy, or knowledge that is not present in the provided context. Call the stop() tool and quote what you saw in the diff and what is needed.
 
-              A. The diff indicates the application requires something only the user can supply — for example: an authentication failure you cannot guess past, a captcha, a permission the test cannot satisfy, or knowledge that is not present in the provided context. Call the stop() tool and quote what you saw in the diff and what is needed.
+      B. The diff indicates the next step is something you can perform from the existing knowledge / hint context — for example: re-emit a step with a value that exists in the knowledge but was used incorrectly; dismiss an unexpected modal; accept a confirmation; take a follow-up step the page now requires. Emit code blocks for that next step. Do NOT change the locator of a step that already produced a reaction.
 
-              B. The diff indicates the next step is something you can perform from the existing knowledge / hint context — for example: re-emit a step with a value that exists in the knowledge but was used incorrectly; dismiss an unexpected modal; accept a confirmation; take a follow-up step the page now requires. Emit code blocks for that next step. Do NOT change the locator of a step that already produced a reaction.
-
-              C. The diff is empty or unrelated to your step — the action likely missed its target. Propose a different locator strategy.
-            `;
-          } else {
-            contextMsg += 'Propose new solutions. If errors mention "intercepts pointer events" or timeouts on visible elements, an overlay is blocking — dismiss it first (Escape, click outside, Close button) before retrying the original action.';
-          }
-          conversation.addUserText(contextMsg);
-          codeBlocks = [];
-          batchFailures.length = 0;
-          return;
-        }
-        codeBlockIndex++;
-        totalAttempts++;
-
-        await action.exitIframe();
-
-        const prevActionResult = action.actionResult ?? actionResult;
-        const prevHash = prevActionResult.getStateHash();
-
-        debugLog(`Attempting resolution: ${codeBlock}`);
-        const attemptOk = await action.attempt(codeBlock, message);
-
-        const page = action.playwrightHelper?.page;
-        if (page) {
-          try {
-            await page.waitForLoadState('load', { timeout: 5000 });
-          } catch {
-            // Navigation did not reach 'load' state within timeout; continue and verify URL
-          }
-        }
-
-        if (attemptOk) opts?.onAttempt?.({ code: codeBlock });
-
-        if (!attemptOk) {
-          const raw = action.lastError?.message || 'attempt failed';
-          const firstMeaningful = raw.split('\n').find((l) => l.trim() && !l.trim().startsWith('at ')) || raw;
-          const shortErr = firstMeaningful.replace(/\s+/g, ' ').trim().slice(0, 220);
-          batchFailures.push({ code: codeBlock, error: shortErr });
-          opts?.onAttempt?.({ code: codeBlock, error: shortErr });
-        }
-
-        if (expectedUrl) {
-          if (page) {
-            try {
-              await page.waitForURL((url: URL) => matchesNavigationUrl(expectedUrl, `${url.pathname}${url.search}${url.hash}`), { timeout: 5000 });
-            } catch {
-              // URL did not transition to expectedUrl within timeout
-            }
-          }
-          const freshState = await this.explorer.capture();
-          const currentUrl = /^https?:\/\//i.test(expectedUrl) ? freshState.fullUrl || freshState.url || '' : freshState.url || '';
-          const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && matchesNavigationUrl(expectedUrl, currentUrl);
-          const stateChanged = freshState.getStateHash() !== actionResult.getStateHash();
-          resolved = urlMatches && stateChanged;
-
-          if (!resolved && attemptOk) {
-            let ariaChanges: string | null = null;
-            if (freshState.getStateHash() !== prevHash) {
-              try {
-                const diff = await freshState.diff(prevActionResult);
-                ariaChanges = diff.ariaChanged;
-              } catch (err) {
-                debugLog('Failed to compute pageDiff for failed URL verification:', err);
-              }
-            }
-            batchFailures.push({
-              code: codeBlock,
-              error: `URL did not change (still ${freshState.url})`,
-              ariaChanges,
-              urlAfter: freshState.url,
-            });
-            tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${freshState.url}`);
-          }
-          if (freshState.getStateHash() !== prevHash && (attemptOk || urlMatches)) {
-            progressBlocks.push(codeBlock);
-          }
-        } else {
-          resolved = attemptOk;
-          if (attemptOk) progressBlocks.push(codeBlock);
-        }
-
-        if (resolved) {
-          tag('success').log('Navigation resolved successfully');
-          let scenario = message.split('\n')[0];
-          if (expectedUrl) {
-            const fromPath = extractStatePath(actionResult.url || '');
-            const toPath = extractStatePath(expectedUrl);
-            scenario = `reach ${toPath} from ${fromPath}`;
-          }
-          const recipe = progressBlocks
-            .join('\n')
-            .split('\n')
-            .filter((line) => !/^\s*I\.amOnPage\s*\(/.test(line))
-            .join('\n')
-            .trim();
-          if (recipe) {
-            const body = `## FLOW: ${scenario}\n\n* ${scenario}\n\n\`\`\`js\n${recipe}\n\`\`\`\n\n---\n`;
-            this.experienceTracker.writeFlow(actionResult, body);
-          }
-          stop();
-          return;
-        }
-      },
-      {
-        maxAttempts: this.MAX_ATTEMPTS * 2,
-        observability: {
-          agent: 'navigator',
-        },
-        catch: async (error) => {
-          debugLog(error);
-          resolved = false;
-        },
-      }
+      C. The diff is empty or unrelated to your step — the action likely missed its target. Propose a different locator strategy.
+    `
     );
+  }
 
-    if (!resolved && expectedUrl) {
-      await (action.getActor() as any).wait(1);
-      if (this.isOnExpectedPage(expectedUrl, action.stateManager)) {
-        resolved = true;
-        tag('success').log('Navigation resolved after delayed redirect');
+  private async executeAttempt(action: Action, codeBlock: string, message: string): Promise<{ ok: boolean; error?: string }> {
+    await action.exitIframe();
+
+    debugLog(`Attempting resolution: ${codeBlock}`);
+    const ok = await action.attempt(codeBlock, message);
+
+    const page = action.playwrightHelper?.page;
+    if (page) {
+      try {
+        await page.waitForLoadState('load', { timeout: 5000 });
+      } catch {
+        // Navigation did not reach 'load' state within timeout; continue and verify URL
       }
     }
 
-    if (!resolved && stopReason) {
-      tag('error').log(`Navigator stopped: ${stopReason}`);
-    } else if (!resolved && totalAttempts > 0) {
-      tag('error').log(`Navigation failed after ${totalAttempts} attempts`);
-    }
+    if (ok) return { ok };
 
-    if (!resolved && isInteractive()) {
-      const stopLine = stopReason ? `Navigator stopped: ${stopReason}\n` : '';
-      const userInput = await pause(`${stopLine}Navigator failed to resolve. Current: ${action.stateManager.getCurrentState()?.url}\n` + `Target: ${expectedUrl ?? '(none)'}\nEnter CodeceptJS commands (or press Enter to skip):`);
+    const raw = action.lastError?.message || 'attempt failed';
+    const firstMeaningful = raw.split('\n').find((l) => l.trim() && !l.trim().startsWith('at ')) || raw;
+    return { ok, error: normalizeInlineText(firstMeaningful).slice(0, 220) || 'attempt failed' };
+  }
 
-      if (userInput?.trim()) {
-        resolved = await action.attempt(userInput, message);
-        if (resolved && expectedUrl) {
-          await (action.getActor() as any).wait(1);
-          if (!this.isOnExpectedPage(expectedUrl, action.stateManager)) {
-            resolved = false;
-          }
-        }
+  private async verifyNavigation(action: Action, expectedUrl: string): Promise<{ freshState: ActionResult; urlMatches: boolean }> {
+    const page = action.playwrightHelper?.page;
+    if (page) {
+      try {
+        await page.waitForURL((url: URL) => matchesNavigationUrl(expectedUrl, `${url.pathname}${url.search}${url.hash}`), { timeout: 5000 });
+      } catch {
+        // URL did not transition to expectedUrl within timeout
       }
     }
 
-    return resolved;
+    const freshState = await this.explorer.capture();
+    const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && matchesNavigationUrl(expectedUrl, this.comparableUrl(freshState, expectedUrl));
+
+    return { freshState, urlMatches };
+  }
+
+  private async ariaDiff(freshState: ActionResult, previous: ActionResult): Promise<string | null> {
+    if (freshState.getStateHash() === previous.getStateHash()) return null;
+    try {
+      const diff = await freshState.diff(previous);
+      return diff.ariaChanged;
+    } catch (err) {
+      debugLog('Failed to compute pageDiff for failed URL verification:', err);
+      return null;
+    }
+  }
+
+  private saveFlow(message: string, expectedUrl: string | undefined, actionResult: ActionResult, progressBlocks: string[]): void {
+    let scenario = message.split('\n')[0];
+    if (expectedUrl) {
+      scenario = `reach ${extractStatePath(expectedUrl)} from ${extractStatePath(actionResult.url || '')}`;
+    }
+
+    const recipe = progressBlocks
+      .join('\n')
+      .split('\n')
+      .filter((line) => !/^\s*I\.amOnPage\s*\(/.test(line))
+      .join('\n')
+      .trim();
+    if (!recipe) return;
+
+    this.experienceTracker.writeFlow(actionResult, `## FLOW: ${scenario}\n\n* ${scenario}\n\n\`\`\`js\n${recipe}\n\`\`\`\n\n---\n`);
+  }
+
+  private async rescueDelayedRedirect(action: Action, expectedUrl: string): Promise<boolean> {
+    await (action.getActor() as any).wait(1);
+    if (!this.isOnExpectedPage(expectedUrl, action.stateManager)) return false;
+    tag('success').log('Navigation resolved after delayed redirect');
+    return true;
+  }
+
+  private async askUserToResolve(action: Action, message: string, expectedUrl: string | undefined, stopReason: string | null): Promise<boolean> {
+    let stopLine = '';
+    if (stopReason) stopLine = `Navigator stopped: ${stopReason}\n`;
+
+    const userInput = await pause(`${stopLine}Navigator failed to resolve. Current: ${action.stateManager.getCurrentState()?.url}\nTarget: ${expectedUrl ?? '(none)'}\nEnter CodeceptJS commands (or press Enter to skip):`);
+    if (!userInput?.trim()) return false;
+
+    const resolved = await action.attempt(userInput, message);
+    if (!resolved) return false;
+    if (!expectedUrl) return true;
+
+    await (action.getActor() as any).wait(1);
+    return this.isOnExpectedPage(expectedUrl, action.stateManager);
   }
 
   private buildExperienceTools(): { learnExperience: unknown } | undefined {
@@ -790,6 +851,8 @@ class Navigator implements Agent {
     return actionResult.getVerification(claim) === true;
   }
 }
+
+type BatchFailure = { code: string; error: string; ariaChanges?: string | null; urlAfter?: string };
 
 export type AssertionResult = { code: string; passed: boolean; proof: string[] };
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-18
+
+### Changes
+
+- Navigation that fails now says why. It used to report only where the browser ended up
+  ("redirected to /users/sign_in and could not resolve"); it now names the blocker the AI reported,
+  or the step that kept failing, and points at `explorbot learn "<path>"` when nothing is known
+  about the page — the usual case being a login page whose credentials were never provided.
+- A failed `interact` step carries that same reason instead of a bare "Failed to execute", so it
+  reaches the test log instead of stopping at the navigator.
+- A browser that crashes and cannot be restored now stops navigation at once. It used to spend every
+  remaining attempt, and a model call with each one, against a page that was already gone.
 ## 2026-08-19
 
 ### `explorbot config` names the provider behind every model
