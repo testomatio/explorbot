@@ -117,7 +117,9 @@ export class Provider {
   }
 
   getConfiguredModels(): Record<string, string> {
-    return configuredModels(this.config);
+    const models: Record<string, string> = {};
+    for (const [role, model] of Object.entries(configuredModels(this.config))) models[role] = model.name;
+    return models;
   }
 
   getSystemPromptForAgent(agentName: string, currentUrl?: string): string | undefined {
