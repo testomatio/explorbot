@@ -5,7 +5,7 @@ import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import { Stats } from '../stats.ts';
 import { type Task, TestResult } from '../test-plan.js';
-import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
+import { LARGE_ARIA_CHANGE_THRESHOLD, interactiveAriaWithRefs } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
@@ -34,7 +34,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
       description: dedent`
         Click an element by trying multiple CodeceptJS commands in order until one succeeds.
 
-        Use this only for elements the page context gives you no ref for. When the element shows a ref such as [ref=e14],
+        Use this only for elements the page context gives you no ref for. When the element is followed by [ref=...],
         call clickRef with that ref instead — composing a locator for an element that already has a ref is wasted work,
         and a locator can match several elements where a ref cannot.
 
@@ -153,15 +153,16 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
 
     clickRef: tool({
       description: dedent`
-        Click an element by the ref the page context gave it, e.g. [ref=e14].
+        Click an element by the ref the page context gave it, printed after the element as [ref=...].
 
         Prefer this over click() whenever the element you want carries a ref. A ref names one exact element, so it
         cannot match several by mistake and never needs disambiguating — it is the fastest way to click.
-        Only pass a ref that appears in the page context you were given. Never invent or guess one.
+        A ref is an opaque id whose form varies with the page and with the frame the element lives in.
+        Copy it character for character from the page context you were given. Never invent, guess, shorten or rebuild one.
         If it reports the ref is gone, the page has been rebuilt: get fresh context and use the new ref.
       `,
       inputSchema: z.object({
-        ref: z.string().describe('The ref exactly as it appears in the page context, e.g. "e14"'),
+        ref: z.string().describe('The ref copied character for character from the page context, as it appears inside [ref=...]'),
         element: z.string().describe('Role and name of the element you are clicking, for the record'),
       }),
       execute: async ({ ref, element }) => {
@@ -646,19 +647,24 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
             return failedToolResult('context', 'No current page state available.');
           }
 
-          const actionResult = ActionResult.fromState(currentState);
+          const actionResult = await explorer.capture();
+          if (actionResult.error) {
+            return failedToolResult('context', `Page state could not be captured: ${actionResult.error}`);
+          }
+
           const html = await actionResult.simplifiedHtml();
-          const aria = actionResult.getInteractiveARIA();
+          const aria = await interactiveAriaWithRefs(explorer, actionResult);
 
           return successToolResult('context', {
-            url: currentState.url,
-            title: currentState.title,
+            url: actionResult.url,
+            title: actionResult.title,
             suggestion: 'If not enough context received, call see() to visually identify elements in page contents',
             aria: cap(aria, ARIA_OUTPUT_CAP),
             html: cap(html, HTML_OUTPUT_CAP),
             reminder: 'Context provided. Do not call context() again until you perform actions or suspect page changed.',
           });
         } catch (error) {
+          throwIfFatalBrowserError(error);
           const errorMessage = errorText(error);
           return failedToolResult('context', `Context tool failed: ${errorMessage}`);
         }
@@ -1000,7 +1006,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
           return failedToolResult('xpathCheck', 'No current page state available.');
         }
 
-        const html = ActionResult.fromState(currentState).html;
+        const html = (await explorer.capture()).html;
         if (!html) {
           return failedToolResult('xpathCheck', 'No HTML available for current page state.');
         }

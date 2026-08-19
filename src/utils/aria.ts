@@ -532,6 +532,12 @@ export const compactAriaSnapshot = (snapshot: string | null, keepNamed = false, 
   return renderTree(tree, 0, offload);
 };
 
+export const interactiveAriaWithRefs = async (explorer: { withPage?: (fn: (page: any) => Promise<string>) => Promise<string> } | undefined, state: { getInteractiveARIA: () => string }): Promise<string> => {
+  const withRefs = await Promise.resolve(explorer?.withPage?.((page: any) => page.locator('body').ariaSnapshot({ mode: 'ai' }))).catch(() => null);
+  if (!withRefs) return state.getInteractiveARIA();
+  return compactAriaSnapshot(withRefs, false);
+};
+
 export const diffAriaSnapshots = (previous: string | null, current: string | null): AriaDiff => {
   const flat = (snap: string | null): FlatEntry[] => {
     let tree = parseSnapshot(snap);

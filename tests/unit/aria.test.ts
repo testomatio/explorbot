@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { compactAriaSnapshot, diffAriaSnapshots } from '../../src/utils/aria.ts';
+import { compactAriaSnapshot, diffAriaSnapshots, interactiveAriaWithRefs } from '../../src/utils/aria.ts';
 
 describe('aria', () => {
   it('returns null diff for identical snapshots', () => {
@@ -243,6 +243,21 @@ describe('aria', () => {
 
   it('leaves a short value inline', () => {
     expect(compactAriaSnapshot('- textbox "Name": Bench probe', true)).toContain(': Bench probe');
+  });
+
+  it('takes refs from the live snapshot when the page is reachable', async () => {
+    const explorer = { withPage: async (fn: (page: any) => Promise<string>) => fn({ locator: () => ({ ariaSnapshot: async () => '- button "Save" [ref=e7]' }) }) };
+
+    const result = await interactiveAriaWithRefs(explorer, { getInteractiveARIA: () => '- button "Save"' });
+
+    expect(result).toContain('ref=e7');
+  });
+
+  it('falls back to the stored snapshot when the live one is unavailable', async () => {
+    const explorer = { withPage: async () => Promise.reject(new Error('page closed')) };
+
+    expect(await interactiveAriaWithRefs(explorer, { getInteractiveARIA: () => '- button "Save"' })).toBe('- button "Save"');
+    expect(await interactiveAriaWithRefs(undefined, { getInteractiveARIA: () => '- button "Save"' })).toBe('- button "Save"');
   });
 
   it('keeps refs on stateful nodes nested in a tree', () => {

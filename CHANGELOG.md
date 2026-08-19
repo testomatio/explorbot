@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-20
+
+### Changes
+
+- The `context()` tool now reads the page again instead of re-printing the snapshot the AI was
+  already given. It used to answer from the last stored state, so an AI that asked for fresh
+  context after the page moved on got the stale one back.
+- The refreshed context carries element refs, the same ones the page context carries when a test
+  starts. Refs previously disappeared the moment the AI refreshed its context, so it kept clicking
+  refs that no longer existed and the click failed.
+- `xpathCheck` matches XPath against the page as it is now, so its match list and its
+  "element is visible" answer describe the same page.
+- The clickRef tool no longer suggests refs have a fixed short form — a ref is an opaque id that
+  varies with the page and with the frame the element sits in, and must be copied exactly.
+
 ## 2026-08-18
 
 ### Changes
