@@ -1,8 +1,8 @@
-import { type FocusedElement, ActionResult } from './action-result.js';
+import { ActionResult, type FocusedElement } from './action-result.js';
 import type { ExperienceTracker } from './experience-tracker.js';
 import type { Knowledge, KnowledgeTracker } from './knowledge-tracker.js';
 import { detectFocusArea } from './utils/aria.js';
-import { createDebug } from './utils/logger.js';
+import { createDebug, tag } from './utils/logger.js';
 import { slugify } from './utils/strings.js';
 import { extractStatePath } from './utils/url-matcher.js';
 
@@ -117,6 +117,9 @@ export class StateManager {
    * Emit state change event to all listeners
    */
   private emitStateChange(event: StateTransition): void {
+    const state = event.toState;
+    tag('data').log('state', { url: state.fullUrl || state.url, path: state.url, title: state.title, h1: state.h1 });
+
     this.stateChangeListeners.forEach((listener) => {
       try {
         listener(event);

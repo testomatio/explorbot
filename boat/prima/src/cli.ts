@@ -22,17 +22,27 @@ const helpContract = dedent`
 `;
 
 const checkHelp = dedent`
-  check takes an outcome rather than a click path, and works out how to reach it.
+  check takes an outcome rather than a click path, and works out how to reach it. It runs
+  on the page you are already on and never reloads it, so an open dialog survives the check.
   --expected  one outcome the run must reach, repeatable for several. Without it the
               scenario text is the single expected outcome. Each comes back under
-              ### Expected outcomes as PASSED, FAILED or not verified - "not verified"
-              means the run never checked it, which is not the same as false.
+              ### Expected outcomes as PASSED, FAILED, CONTRADICTION or not verified.
+              "not verified" means the run never checked it, which is not the same
+              as false.
+  Outcomes are settled against a screenshot of the whole page: what a user can see is
+  the proof, and the run log only says what was done. CONTRADICTION means the two
+  disagree - reported with both sides rather than settled one way, and ### Artifacts
+  then names the html, aria and screenshot on disk so you can judge it yourself. Not
+  finding something in the picture is not enough on its own; that is "not verified".
+  ok: follows those outcomes - false when one FAILED or CONTRADICTED, or when the run
+  could not complete, which is reported as such rather than as an app failure.
   Page problems seen on the way appear under ### Answer, not as step failures.
 `;
 
 const doHelp = dedent`
-  Each instruction is numbered and accounted for: ### Steps reports each as ok or FAIL
-  with what proved it. One that could not be carried out fails the command and says why.
+  Each instruction is numbered and accounted for: ### Steps reports each as ok, FAIL or ??.
+  ?? means the action ran but the run ended without confirming that instruction - read the
+  steps above it. Only FAIL and an instruction the page could not carry out fail the command.
   Nothing runs past the last instruction given. A whole remaining sequence in one call is
   what makes this tier cheap.
 `;
@@ -186,13 +196,15 @@ export function createPrimaCommands(name = 'prima'): Command {
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
 
-  addCommonOptions(cmd.command('config').description('Show the AI models prima runs on and the config file they come from')).action(async (options) => {
-    setQuietMode(!isVerboseMode());
-    const prima = primaFor(options);
-    console.log(await prima.config().catch((error: unknown) => browserErrorMessage(error)));
-    await prima.stop().catch(() => {});
-    process.exit(0);
-  });
+  addCommonOptions(cmd.command('config').description('Show models, config file and paths used by this run'))
+    .option('--json', 'Print the resolved config as JSON')
+    .action(async (options) => {
+      setQuietMode(!isVerboseMode());
+      const prima = primaFor(options);
+      console.log(await prima.config(options.json).catch((error: unknown) => browserErrorMessage(error)));
+      await prima.stop().catch(() => {});
+      process.exit(0);
+    });
 
   addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
     await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), false);

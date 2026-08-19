@@ -4,6 +4,7 @@ import dedent from 'dedent';
 import { outputPath } from '../config.ts';
 import { Stats } from '../stats.ts';
 import type { Test } from '../test-plan.ts';
+import { tag } from '../utils/logger.ts';
 import type { Agent } from './agent.ts';
 import type { Provider } from './provider.ts';
 
@@ -117,6 +118,7 @@ export class SessionAnalyst implements Agent {
     const dir = path.dirname(filePath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(filePath, markdown);
+    tag('data').log('report', { path: filePath, content: markdown });
     return filePath;
   }
 

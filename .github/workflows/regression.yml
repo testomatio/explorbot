@@ -1,5 +1,10 @@
 # Self-regression: runs Explorbot end-to-end with real AI against a local fixture app.
 #
+# Cost: every run burns real LLM tokens and up to 150 minutes of runner time, so it is
+# never automatic. It fires once per deliberate human action — adding the `regression`
+# label to a PR, or dispatching it manually. Pushing more commits to a labelled PR does
+# NOT re-run it; remove and re-add the label to ask for another run.
+#
 # Security: this workflow uses the `regression` GitHub environment, which holds the
 # OPENROUTER_API_KEY secret behind a required reviewer. On `pull_request` (including
 # forks) the job pauses at the environment gate BEFORE any secret is exposed. The job
@@ -10,6 +15,7 @@ name: Regression
 
 on:
   pull_request:
+    types: [labeled]
     branches: [main, develop]
   workflow_dispatch:
     inputs:
@@ -41,6 +47,7 @@ permissions:
 
 jobs:
   regression:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'regression'
     runs-on: ubuntu-latest
     environment: regression
     timeout-minutes: 150

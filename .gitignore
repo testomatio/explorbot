@@ -9,6 +9,9 @@ bun.lockb
 # Regression harness run artifacts
 tests/regression/.runs/
 
+# Improvement plans written for other agents to pick up
+/plans/
+
 # Session state and browser sessions written by running the CLI in this repo
 session.json
 .playwright-cli/

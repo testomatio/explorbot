@@ -12,6 +12,162 @@
   reaches the test log instead of stopping at the navigator.
 - A browser that crashes and cannot be restored now stops navigation at once. It used to spend every
   remaining attempt, and a model call with each one, against a page that was already gone.
+## 2026-08-19
+
+### `explorbot config` names the provider behind every model
+
+Model ids alone do not say where a model is served from — `openai/gpt-oss-120b` may run through
+OpenRouter, and a config can mix providers across roles. Each model is now printed next to the
+provider it comes from:
+
+```
+Models
+  model         groq        gpt-oss-120b
+  agenticModel  anthropic   claude-sonnet-4.5
+  visionModel   openrouter  google/gemma-4-31b-it
+  tester        openai      gpt-5
+```
+
+`--json` carries the same information as a `providers` object keyed by role, alongside `models`.
+
+## 2026-08-18
+
+### `prima check` no longer reloads the page it was asked about
+
+`check` used to navigate to the current URL before it started, which reloads the page even when the
+address is unchanged. Anything the page was holding — an open dialog, a selected tab, a filled but
+unsaved form — was gone before the first thing was checked. It now runs on the page already open.
+
+### A `check` verdict is settled against a screenshot, and a disagreement is reported
+
+Outcomes used to be settled from the run log alone, so a claim about layout, position or anything
+else the page structure cannot express was judged by something that had never seen the page. Each
+outcome is now settled against a screenshot of the page as the run left it. What a user can see is
+the proof; the run log only says what was done.
+
+When the two disagree, the outcome comes back as **CONTRADICTION** with both sides quoted, instead
+of being resolved one way:
+
+```
+### Expected outcomes
+1. PASSED       the Add connection dialog opens
+2. CONTRADICTION the new connection is listed
+      the assertion I.see("staging-db") found the row in the page structure; the screenshot
+      shows the list still empty, so the row is in the DOM but not visible
+3. not verified  the list scrolls
+```
+
+`### Artifacts` then names the html, aria and screenshot of that page on disk, so the disagreement
+can be settled by opening them rather than by trusting the verdict.
+
+That case — a row present in the markup but invisible on screen, whether hidden, collapsed,
+covered or drawn off-screen — is a real defect that a PASSED would have buried behind a matching
+assertion and a FAILED would have mislabelled as a broken feature.
+
+A contradiction needs the picture to positively contradict the run — a list visibly empty, an error
+where a result was expected. Simply not finding something in the picture is reported as "not
+verified" instead, since a screenshot is not proof that a thing is missing.
+
+`ok:` now follows those outcomes: false when one FAILED or CONTRADICTED. An outcome the run never
+checked stays "not verified" and does not fail the command. A run that could not complete at all
+says so, instead of reporting it as a failure of the application. When no screenshot backed the
+outcomes — no `ai.visionModel` configured, or the vision model could not answer — the envelope
+carries a `### Warning` saying so.
+
+### Changes
+
+- `prima do` marks an instruction it could not confirm `??` in `### Steps` instead of reporting it
+  as an error. Previously an instruction whose action had landed, but which the model never got
+  round to reporting, failed the whole command — a red for missing paperwork. The actions that ran
+  are listed above the `??` row. Only a failed action and an instruction the page could not carry
+  out fail the command now.
+- `prima do` reports an AI error while it was working out which instructions were satisfied as its
+  own step, rather than blaming the instruction that went unreported because of it.
+- `prima verify` judges a claim from a screenshot when no assertion can express it, instead of
+  answering "none ran" and stopping there.
+- `prima status <hash>` returns the page details and the paths to the saved snapshot, and no longer
+  reprints the whole accessibility tree that those files already hold.
+- Vision that fails or is switched off mid-run is now stated in the envelope wherever it changes an
+  answer, instead of quietly falling back to page structure.
+- [Pilot] Settles expected outcomes against the final screenshot, treating what the page shows as
+  the proof and reporting a disagreement with the run log rather than resolving it. Falls back to
+  the log alone when the vision model cannot produce a verdict.
+- The `EXPLORBOT_*` reference no longer follows the help of every command and boat. It is printed
+  once, by `explorbot --help`, and `explorbot config` shows the variables actually in effect.
+
+### A run streamed over `--ws` reports what it is testing, not only what it logs
+
+`--ws <url>` (or `EXPLORBOT_WS_URL`) carried the log and the questions a run asks. It now also
+announces the run's state as it changes, so a host UI can show what is happening without reading it
+back out of log lines:
+
+- the page under test — URL, path, title and heading, on every navigation
+- the test in flight — scenario, status, result, priority and the plan it belongs to, as it starts
+  and as it finishes
+- the plan — its title and every test in it, whenever it is generated, loaded, or advances
+- the screenshot just taken — its path on disk
+- the research for the current page — the markdown and the file it was written to
+- the end-of-session report — the analyst's markdown in full, and its file
+
+Each arrives the same way the log already does, as `{type, ts, ...}`, and a UI renders the kinds it
+recognises.
+### The configuration a run uses is one command away
+
+`explorbot config` prints what a run resolves to, instead of leaving you to reconstruct it from the
+config file, the environment, and the global installation:
+
+```bash
+explorbot config                            # the current site
+explorbot config https://app.example.com    # a specific site
+```
+
+```
+Config
+  config      /home/me/.explorbot/config.js
+  url         https://app.example.com
+  browser     chromium, headless
+  output      /home/me/.explorbot/sites/app.example.com/output
+  knowledge   /home/me/.explorbot/sites/app.example.com/knowledge
+  experience  /home/me/.explorbot/sites/app.example.com/experience
+
+Models
+  model   openai/gpt-oss-20b
+  tester  anthropic/claude-sonnet-4.5
+
+Environment
+  EXPLORBOT_AI_PROVIDER  openrouter
+```
+
+Every model role is listed, per-agent overrides included, next to the file they came from — or
+`EXPLORBOT_* environment variables` when the run is configured from the environment. Langfuse and
+Testomat.io show up when they are on.
+
+The boats answer for their own configuration the same way: `explorbot api config`,
+`explorbot docs config`, `explorbot prima config`. Inside a session, `/config`.
+
+`--json` prints the same values as a machine-readable object, for a script that needs to know which
+model a run will use or where its output will land:
+
+```bash
+explorbot config --json
+```
+
+### Langfuse tracing is switched from config, not from environment variables
+
+Whether a run is traced is now decided by `ai.langfuse.enabled` in `explorbot.config.js`. It stays on
+by default whenever `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are available, so nothing changes
+for an existing setup, and setting it to `false` turns tracing off even with the keys exported.
+
+```js
+ai: {
+  model: openrouter('openai/gpt-oss-20b:nitro'),
+  langfuse: { enabled: false },
+},
+```
+
+Keys and host are resolved once when the configuration is loaded. Code that builds an AI provider
+without a loaded configuration — a test, for instance — no longer opens a telemetry connection just
+because the keys happen to be in the environment.
 
 ## 2026-08-16
 

@@ -4,7 +4,7 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { generateObject, generateText, isStepCount, registerTelemetry } from 'ai';
 import type { ModelMessage } from 'ai';
 import { clearActivity, setActivity } from '../activity.ts';
-import type { AIConfig } from '../config.js';
+import { type AIConfig, configuredModels, modelName as getModelName } from '../config.js';
 import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { Stats } from '../stats.ts';
@@ -88,10 +88,6 @@ export class Provider {
     this.initLangfuse();
   }
 
-  private getModelName(model: any): string {
-    return model?.modelId || model?.model || 'unknown';
-  }
-
   async validateConnection(): Promise<void> {
     try {
       await generateText({
@@ -120,13 +116,13 @@ export class Provider {
     return this.config.agenticModel || this.config.model;
   }
 
+  getVisionModel(): any {
+    return this.config.visionModel;
+  }
+
   getConfiguredModels(): Record<string, string> {
-    const models: Record<string, string> = { model: this.getModelName(this.config.model) };
-    if (this.config.agenticModel) models.agenticModel = this.getModelName(this.config.agenticModel);
-    if (this.config.visionModel) models.visionModel = this.getModelName(this.config.visionModel);
-    for (const [agent, agentConfig] of Object.entries(this.config.agents || {})) {
-      if (agentConfig?.model) models[agent] = this.getModelName(agentConfig.model);
-    }
+    const models: Record<string, string> = {};
+    for (const [role, model] of Object.entries(configuredModels(this.config))) models[role] = model.name;
     return models;
   }
 
@@ -223,11 +219,7 @@ export class Provider {
   }
 
   private initLangfuse() {
-    const langfuseConfig = this.config.langfuse;
-    const publicKey = langfuseConfig?.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
-    const secretKey = langfuseConfig?.secretKey || process.env.LANGFUSE_SECRET_KEY;
-    const baseUrl = langfuseConfig?.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST;
-    const enabled = langfuseConfig?.enabled ?? Boolean(publicKey && secretKey);
+    const { enabled, publicKey, secretKey, baseUrl } = this.config.langfuse || {};
 
     if (!enabled || !publicKey || !secretKey) {
       return;
@@ -316,7 +308,7 @@ export class Provider {
   }
 
   async chat(messages: ModelMessage[], model: any, options: any = {}): Promise<any> {
-    const modelName = this.getModelName(model);
+    const modelName = getModelName(model);
     setActivity(`🤖 Asking ${modelName}`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
@@ -360,7 +352,7 @@ export class Provider {
   }
 
   async generateWithTools(messages: ModelMessage[], model: any, tools: any, options: any = {}): Promise<any> {
-    const modelName = this.getModelName(model);
+    const modelName = getModelName(model);
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
@@ -418,7 +410,7 @@ export class Provider {
 
   async generateObject(messages: ModelMessage[], schema: any, model?: any, options: any = {}): Promise<any> {
     const modelToUse = model || this.config.model;
-    const modelName = this.getModelName(modelToUse);
+    const modelName = getModelName(modelToUse);
     setActivity(`🤖 Asking ${modelName} for structured output`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
@@ -620,7 +612,7 @@ export class Provider {
       clearActivity();
       responseLog(response.text);
 
-      this.recordUsage('vision', this.getModelName(this.config.visionModel), response.usage);
+      this.recordUsage('vision', getModelName(this.config.visionModel), response.usage);
 
       return response;
     } catch (error: any) {

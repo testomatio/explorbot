@@ -16,8 +16,9 @@ const FLUSH_TIMEOUT_MS = 3000;
  * process and a CI bot are the same case.
  *
  * It **is** a LogDestination — that is the whole integration on the logger's
- * side — and it answers asks by installing itself as the execution
- * controller's input callback. Nothing else in explorbot knows it exists.
+ * side, messages and `data` alike — and it answers asks by installing itself
+ * as the execution controller's input callback. Nothing else in explorbot
+ * knows it exists.
  */
 export class Remote implements LogDestination {
   private url: string | null = null;
@@ -110,6 +111,11 @@ export class Remote implements LogDestination {
    */
   write(entry: TaggedLogEntry): void {
     if (entry.type === 'html') return;
+    if (entry.type === 'data') {
+      const [kind, payload] = entry.originalArgs || [];
+      this.send(String(kind), payload);
+      return;
+    }
     let content = stripAnsi(entry.content ?? '');
     if (content.length > CONTENT_CAP) content = `${content.slice(0, CONTENT_CAP)}… (${content.length} chars)`;
     this.send('log', {
