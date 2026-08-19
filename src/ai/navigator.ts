@@ -372,11 +372,7 @@ class Navigator implements Agent {
   private async buildResolutionPrompt(message: string, actionResult: ActionResult): Promise<string> {
     let experience = '';
     if (!actionResult.isInsideIframe) {
-      const successful = this.experienceTracker.getSuccessfulExperience(actionResult);
-      if (successful.length > 0) {
-        tag('operation').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${actionResult.url}`);
-        experience = `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${successful.join('\n\n')}\n</experience>`;
-      }
+      experience = this.experienceTracker.renderExperienceFor(actionResult);
     }
 
     return dedent`

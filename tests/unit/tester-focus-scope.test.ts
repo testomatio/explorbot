@@ -22,6 +22,7 @@ function buildTester(): Tester {
       otherTabs: [],
       getExperienceTracker: () => ({
         getExperienceTableOfContents: () => [],
+        renderExperienceFor: () => '',
         renderExperienceTocFor: () => '',
       }),
     },
@@ -56,6 +57,7 @@ function buildTesterWithExperience(): Tester {
       otherTabs: [],
       getExperienceTracker: () => ({
         getExperienceTableOfContents: () => experienceToc,
+        renderExperienceFor: () => '',
         renderExperienceTocFor: () => renderExperienceToc(experienceToc),
       }),
     },

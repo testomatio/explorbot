@@ -79,7 +79,8 @@ export abstract class TaskAgent {
   }
 
   protected getExperience(actionResult: ActionResult): string {
-    return this.getExperienceTracker().renderExperienceTocFor(actionResult);
+    const tracker = this.getExperienceTracker();
+    return tracker.renderExperienceFor(actionResult) || tracker.renderExperienceTocFor(actionResult);
   }
 
   protected getHistorian(): Historian {

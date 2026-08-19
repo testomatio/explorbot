@@ -58,6 +58,7 @@ function createHarness(
   navigator.knowledgeTracker = { renderRelevantContext: () => options.knowledge ?? '' };
   navigator.experienceTracker = {
     getSuccessfulExperience: () => [],
+    renderExperienceFor: () => '',
     writeFlow: (_actionResult: any, body: string) => flows.push(body),
   };
   navigator.provider = {

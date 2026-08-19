@@ -304,6 +304,14 @@ export class ExperienceTracker {
     return this.buildToc(sorted);
   }
 
+  renderExperienceFor(state: ActionResult): string {
+    const successful = this.getSuccessfulExperience(state);
+    if (!successful.length) return '';
+
+    tag('operation').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${state.url}`);
+    return `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${successful.join('\n\n')}\n</experience>`;
+  }
+
   renderExperienceTocFor(state: ActionResult): string {
     const toc = this.getExperienceTableOfContents(state);
     if (toc.length === 0) return '';
