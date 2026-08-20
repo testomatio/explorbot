@@ -24,7 +24,7 @@ import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
 import { isInteractive } from './task-agent.js';
-import { createLearnExperienceTool } from './tools.ts';
+import { createAskUserTool, createLearnExperienceTool } from './tools.ts';
 
 const debugLog = createDebug('explorbot:navigator');
 
@@ -54,11 +54,15 @@ class Navigator implements Agent {
     NEVER navigate away from the base URL domain. Stay on the same origin at all times.
     NEVER attempt to rewrite, replace, mock, or spoof the URL via JavaScript, history API, location assignment, or any client-side trick.
     NEVER use executeScript, executeAsyncScript, or any JS evaluation to change the URL, bypass redirects, or fake the page state.
-    If the target URL redirects to an authentication/login page, DO NOT try to force the original URL. Instead:
-      1. Look for credentials in the provided knowledge/hint context and perform a real login through the form.
-      2. If no credentials are available, ask the user for credentials or ask the user to log in manually.
-    A redirect to /login, /sign_in, /auth, or similar is a signal that authentication is required — treat it as such, never as an obstacle to bypass.
+    A redirect to an authentication route means a real login is required — never force the original URL past it.
   </constraints>
+
+  <credentials>
+    Do not guess credentials on login forms and for authorization.
+    Use only provided credentials, if missing: ask them via askUser or stop immediately.
+    When scenario explicitly requires creating a new user or account, fresh values are allowed.
+    Page placeholders and labels are not credentials.
+  </credentials>
   `;
   private freeSailSystemPrompt = dedent`
   <role>
@@ -229,15 +233,15 @@ class Navigator implements Agent {
     conversation.addUserText(await this.buildResolutionPrompt(message, actionResult));
 
     let stopReason: string | null = null;
-    const tools = {
+    const tools: Record<string, unknown> = {
       stop: tool({
         description: dedent`
           Stop the navigation because no locator or strategy change can reach the goal.
           Use this when reaching the goal requires something only the user can supply or that the
-          page cannot grant from the current state — for example: an authentication failure you
-          cannot guess past, a captcha or human-verification step, a permission the test cannot
-          satisfy, a piece of data not present in the available knowledge / hint context, or a
-          blocking error or dialog you cannot dismiss.
+          page cannot grant from the current state — for example: credentials or data missing from
+          the available knowledge / hint context, a captcha or human-verification step, a permission
+          the test cannot satisfy, or a blocking error or dialog you cannot dismiss.
+          Ask the user first when you can; stop once nobody can supply what is missing.
           Do NOT use this for locator or strategy problems — for those, emit new code blocks instead.
         `,
         inputSchema: z.object({
@@ -249,6 +253,7 @@ class Navigator implements Agent {
         },
       }),
     };
+    if (isInteractive()) tools.askUser = createAskUserTool(this.stateManager);
 
     let codeBlocks: string[] = [];
     let htmlContextAdded = false;
@@ -274,6 +279,7 @@ class Navigator implements Agent {
           debugLog('Received AI response:', aiResponse?.length ?? 0, 'characters');
           codeBlocks = extractCodeBlocks(aiResponse ?? '');
           codeBlockIndex = 0;
+          if (codeBlocks.length === 0 && result.toolExecutions?.length) return;
         }
 
         if (codeBlocks.length === 0) {
@@ -446,7 +452,7 @@ class Navigator implements Agent {
 
       Choose exactly ONE path based on what the diffs actually show — do not assume the previous step submitted any particular kind of data:
 
-      A. The diff indicates the application requires something only the user can supply — for example: an authentication failure you cannot guess past, a captcha, a permission the test cannot satisfy, or knowledge that is not present in the provided context. Call the stop() tool and quote what you saw in the diff and what is needed.
+      A. The diff indicates the application requires something only the user can supply — for example: a rejected authentication, a captcha, a permission the test cannot satisfy, or knowledge that is not present in the provided context. Ask the user for it, and call the stop() tool when nobody can supply it — quote what you saw in the diff and what is needed.
 
       B. The diff indicates the next step is something you can perform from the existing knowledge / hint context — for example: re-emit a step with a value that exists in the knowledge but was used incorrectly; dismiss an unexpected modal; accept a confirmation; take a follow-up step the page now requires. Emit code blocks for that next step. Do NOT change the locator of a step that already produced a reaction.
 

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
 import { Navigator } from '../../src/ai/navigator.ts';
+import { executionController } from '../../src/execution-controller.ts';
 
 const BASE_URL = 'http://localhost:3000';
 
@@ -21,6 +22,7 @@ function createHarness(
     ariaChanged?: string;
     stopAt?: number;
     stopReason?: string;
+    askAt?: number;
     attempt?: (code: string, page: { url: string; hash: string }) => boolean;
     onWait?: (page: { url: string; hash: string }) => void;
   } = {}
@@ -29,6 +31,7 @@ function createHarness(
   const sent: string[] = [];
   const attempts: string[] = [];
   const flows: string[] = [];
+  const answers: any[] = [];
   let responseIndex = 0;
 
   const state = () => ({
@@ -65,16 +68,45 @@ function createHarness(
     invokeConversation: async (_conversation: any, tools: any) => {
       const index = responseIndex++;
       if (options.stopAt === index) await tools.stop.execute({ reason: options.stopReason ?? 'blocked' });
+      if (options.askAt === index) {
+        answers.push(await tools.askUser.execute({ question: 'Which credentials should I sign in with?' }));
+        return { response: { text: options.responses?.[index] ?? '' }, toolExecutions: [{ toolName: 'askUser' }] };
+      }
       return { response: { text: options.responses?.[index] ?? '' } };
     },
   };
   navigator.explorer = { action: () => action, capture: async () => state() };
   navigator.stateManager = action.stateManager;
 
-  return { navigator, page, sent, attempts, flows };
+  return { navigator, page, sent, attempts, flows, answers };
 }
 
 describe('Navigator resolveState', () => {
+  afterEach(() => {
+    executionController.clearInputCallback();
+  });
+
+  it('carries on with what the user answered instead of a guessed value', async () => {
+    executionController.setInputCallback(async () => 'sign in as owner@example.org / hunter2');
+
+    const harness = createHarness({
+      askAt: 0,
+      responses: ['', "```js\nI.fillField('#email', 'owner@example.org')\nI.fillField('#password', 'hunter2')\nI.click('Sign In')\n```"],
+      attempt: (code, page) => {
+        if (!code.startsWith('I.')) return false;
+        page.url = '/defects';
+        page.hash = 'defects';
+        return true;
+      },
+    });
+
+    const resolved = await harness.navigator.resolveState('reach /defects', fakeActionResult(), { expectedUrl: '/defects' });
+
+    expect(resolved).toBe(true);
+    expect(harness.answers[0].userSuggestion).toContain('owner@example.org');
+    expect(harness.attempts.join('\n')).toContain("I.fillField('#password', 'hunter2')");
+  });
+
   it('resolves when a proposed step reaches the expected URL', async () => {
     const harness = createHarness({
       responses: ["```js\nI.amOnPage('/login')\nI.click('#login-btn')\n```"],

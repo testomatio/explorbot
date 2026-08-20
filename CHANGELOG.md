@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-08-21
+
+### The Navigator asks for credentials instead of inventing them
+
+A page that redirected to a login form used to be treated as a form to fill: the model made up an
+email and a password, submitted them, and spent the rest of its attempts on a form that was never
+going to let it in. Credentials now have exactly two sources — the knowledge of the page, or the
+user. When neither has them, the Navigator asks:
+
+```
+Which credentials should I sign in with?
+
+Your suggestion ("skip" to continue):
+```
+
+and carries on with the answer. Where nobody can answer, it stops and names what is missing, so the
+reason reaches the log next to the `explorbot learn "<path>"` hint for recording the credentials
+once and for all.
+
+Invented values are ruled out for anything that identifies an account — logins, passwords, codes,
+tokens. A scenario that explicitly creates something, such as registering a new user, still makes
+up the values it needs.
+
+### An answer can be kept as knowledge for the page
+
+When an answer is a lasting fact about the page — how to authorize, what its data means — the
+question and the answer are appended to the knowledge file of that page, and later runs read it
+instead of asking again:
+
+```
+Knowledge saved to knowledge/login.md
+```
+
+Answers that only serve the test running now are not saved. Knowledge is filed under the path of
+the page with any query string dropped, so it still matches on the next visit when the redirect
+carries a different message in the URL.
+
+### Changes
+
+- The question the Pilot asks is offered only where somebody can answer it. A run with no one at
+  the keyboard no longer spends a step on a tool whose only possible reply was "user input not
+  available".
+
 ## 2026-08-18
 
 ### Changes

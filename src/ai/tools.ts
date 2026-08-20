@@ -3,12 +3,14 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
+import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
+import { extractStatePath } from '../utils/url-matcher.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { Navigator } from './navigator.ts';
@@ -413,7 +415,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
         I.selectOption({"role":"combobox","text":"Category"}, 'Technology')
 
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
-        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot        
+        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot
       `,
       inputSchema: z.object({
         codeBlock: z.string().describe('Valid CodeceptJS code starting with I. Can contain multiple commands separated by newlines.'),
@@ -569,6 +571,54 @@ export function createLearnExperienceTool({ getExperienceTracker, getState }: { 
   });
 }
 
+export function createAskUserTool(stateManager: StateManager) {
+  return tool({
+    description: dedent`
+      Ask the user for help when automated recovery is stuck or the next step is unclear.
+
+      Use when:
+      - The same locator or element keeps failing
+      - An element that should exist cannot be found
+      - Form interaction isn't working as expected
+      - A value only the user owns is needed, such as credentials
+      - You need a human decision on how to proceed
+    `,
+    inputSchema: z.object({
+      question: z.string().describe('What you need help with - be specific about what failed'),
+      context: z.string().optional().describe('Relevant context like locators tried, errors received'),
+      persistent: z.boolean().optional().describe('True if the answer is a lasting fact about this page (saved as knowledge for later runs). False if it only applies to this test.'),
+    }),
+    execute: async ({ question, context, persistent }) => {
+      let prompt = `${question}\n\nYour suggestion ("skip" to continue):`;
+      if (context) prompt = `${question}\n\nContext: ${context}\n\nYour suggestion ("skip" to continue):`;
+
+      const userInput = await pause(prompt);
+
+      if (!userInput || userInput.toLowerCase() === 'skip') {
+        return { success: false, message: 'User skipped' };
+      }
+
+      const result: Record<string, unknown> = {
+        success: true,
+        userSuggestion: userInput,
+        instruction: 'Use this answer as the next concrete step.',
+      };
+
+      const state = stateManager.getCurrentState();
+      if (persistent && state) {
+        const path = extractStatePath(state.url || state.fullUrl || '/')
+          .split('?')[0]
+          .split('#')[0];
+        const { filePath } = stateManager.getKnowledgeTracker().addKnowledge(path, `${question}\n\n${userInput}`);
+        tag('success').log(`Knowledge saved to ${filePath}`);
+        result.knowledgeFile = filePath;
+      }
+
+      return result;
+    },
+  });
+}
+
 export function createAgentTools({ explorer, stateManager, ai, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
   const tools: Record<string, any> = {
     see: tool({
@@ -624,12 +674,12 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
     context: tool({
       description: dedent`
         Get current page HTML and ARIA snapshot.
-        
+
         DO NOT call this if:
         - You just performed an action (pageDiff already provided in response)
         - You already have recent <page_html>/<page_aria> in context
         - You're about to perform an action (you'll get pageDiff after)
-        
+
         Call ONLY when:
         - Context is stale (many conversation turns since last state update)
         - You suspect page changed externally (timers, auto-refresh)
@@ -729,18 +779,18 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
       description: dedent`
         Research the current page to understand its structure, UI elements, and navigation.
         This tool provides UI map report including forms, buttons, menus, and other interactive elements.
-        
+
         DO NOT call this if:
         - You already have <page_ui_map> or <initial_page_ui_map> in context
         - You just navigated to a page (research is provided automatically)
         - You're on the same page you already researched
         - pageDiff was small (minor changes don't need full research)
-        
+
         Call ONLY when:
         - Page structure is unclear and no UI map was provided
         - You need to discover hidden/collapsed elements not in current context
         - Page has dramatically changed after previous action
-        
+
         Avoid calling this tool twice in a row.
       `,
       inputSchema: z.object({
@@ -761,7 +811,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
             aria: cap(ActionResult.fromState(currentState).getInteractiveARIA(), ARIA_OUTPUT_CAP),
             message: `Successfully researched page: ${currentState.url}.`,
             suggestion: dedent`
-              You received comprehensive UI map report. Use it to understand the page structure and navigate to the elements. 
+              You received comprehensive UI map report. Use it to understand the page structure and navigate to the elements.
               Do not ask for research() if you have <page_ui_map> for current page.
               Follow <section_context_rule> when selecting locators for all tools.
 
@@ -1065,46 +1115,8 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
     });
   }
 
-  if (supervisor) {
-    tools.askUser = tool({
-      description: dedent`
-        Ask the user for help when automated recovery is stuck or the next step is unclear.
-        Only available in interactive mode (TUI).
-
-        Use when:
-        - The Tester keeps failing the same locator/element
-        - An element that should exist cannot be found
-        - Form interaction isn't working as expected
-        - You need a human decision on how to proceed
-      `,
-      inputSchema: z.object({
-        question: z.string().describe('What you need help with - be specific about what failed'),
-        context: z.string().optional().describe('Relevant context like locators tried, errors received'),
-      }),
-      execute: async ({ question, context }) => {
-        if (!isInteractive()) {
-          return {
-            success: false,
-            message: 'User input not available in non-interactive mode',
-            suggestion: 'Continue with automated recovery',
-          };
-        }
-
-        const prompt = context ? `${question}\n\nContext: ${context}\n\nYour suggestion ("skip" to continue):` : `${question}\n\nYour suggestion ("skip" to continue):`;
-
-        const userInput = await pause(prompt);
-
-        if (!userInput || userInput.toLowerCase() === 'skip') {
-          return { success: false, message: 'User skipped' };
-        }
-
-        return {
-          success: true,
-          userSuggestion: userInput,
-          instruction: 'Relay this suggestion to the Tester as the next concrete step.',
-        };
-      },
-    });
+  if (supervisor && isInteractive()) {
+    tools.askUser = createAskUserTool(stateManager);
   }
 
   withdrawVisionTools(tools);
