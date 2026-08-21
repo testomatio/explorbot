@@ -17,6 +17,7 @@ export interface HtmlDiffResult {
   removed: string[];
   similarity: number;
   summary: string;
+  messages: string[];
 }
 
 interface HtmlNode {
@@ -28,6 +29,11 @@ interface HtmlNode {
 }
 
 const IGNORED_PATHS = new Set(['html[1]', 'html[1]/head[1]', 'html[1]/body[1]']);
+
+const LIVE_REGION_ROLES = new Set(['alert', 'alertdialog', 'status', 'log']);
+const TEXT_LINE_PREFIX = 'TEXT:';
+const MESSAGE_MAX_LENGTH = 200;
+const MESSAGE_LIMIT = 8;
 
 type DocumentNode = parse5TreeAdapter.Document;
 type ElementNode = parse5TreeAdapter.Element;
@@ -203,7 +209,9 @@ export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlC
   const similarity = calculateSimilarity(originalLines, modifiedLines);
   const { added, removed } = findDifferences(originalLines, modifiedLines);
 
-  const parts = await buildDiffParts(originalDocument, modifiedDocument);
+  const originalMap = collectElementMap(originalDocument);
+  const modifiedMap = collectElementMap(modifiedDocument);
+  const parts = await buildDiffParts(originalMap, modifiedMap);
 
   const structuralAdditions = parts.flatMap((p) => p.added.filter((a) => a.startsWith('ELEMENT:')));
   const allAdded = [...added, ...structuralAdditions];
@@ -216,7 +224,52 @@ export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlC
     removed,
     similarity,
     summary,
+    messages: collectMessages(originalMap, modifiedMap, allAdded),
   };
+}
+
+/**
+ * Text the user was shown by the change: live region content first, then any other text that appeared.
+ */
+function collectMessages(originalMap: NodeMap, modifiedMap: NodeMap, added: string[]): string[] {
+  const appearedText = added.filter((line) => line.startsWith(TEXT_LINE_PREFIX)).map((line) => line.slice(TEXT_LINE_PREFIX.length));
+  const messages: string[] = [];
+
+  for (const candidate of [...collectLiveRegionTexts(originalMap, modifiedMap), ...appearedText]) {
+    const text = candidate.replace(/\s+/g, ' ').trim().slice(0, MESSAGE_MAX_LENGTH);
+    if (!text) continue;
+    if (messages.some((message) => message.includes(text))) continue;
+    messages.push(text);
+    if (messages.length === MESSAGE_LIMIT) break;
+  }
+
+  return messages;
+}
+
+function collectLiveRegionTexts(originalMap: NodeMap, modifiedMap: NodeMap): string[] {
+  const texts: string[] = [];
+
+  for (const [path, element] of modifiedMap) {
+    if (!isLiveRegion(element)) continue;
+    const text = getTextContent(element).trim();
+    if (!text) continue;
+    const previous = originalMap.get(path);
+    if (previous && getTextContent(previous).trim() === text) continue;
+    texts.push(text);
+  }
+
+  return texts;
+}
+
+function isLiveRegion(element: ElementNode): boolean {
+  if (element.tagName?.toLowerCase() === 'output') return true;
+
+  const attrs = element.attrs ?? [];
+  const role = attrs.find((attr) => attr.name === 'role')?.value.toLowerCase();
+  if (role && LIVE_REGION_ROLES.has(role)) return true;
+
+  const live = attrs.find((attr) => attr.name === 'aria-live')?.value.toLowerCase();
+  return live === 'polite' || live === 'assertive';
 }
 
 /**
@@ -448,10 +501,7 @@ function findStableContainer(topLevelPath: string, originalMap: NodeMap, modifie
   return { path: 'html[1]/body[1]', selector: 'body' };
 }
 
-async function buildDiffParts(originalDocument: DocumentNode, modifiedDocument: DocumentNode): Promise<HtmlDiffPart[]> {
-  const originalMap = collectElementMap(originalDocument);
-  const modifiedMap = collectElementMap(modifiedDocument);
-
+async function buildDiffParts(originalMap: NodeMap, modifiedMap: NodeMap): Promise<HtmlDiffPart[]> {
   const addedPaths: string[] = [];
   const changedPaths: string[] = [];
 
@@ -774,7 +824,7 @@ function flattenHtml(node: HtmlNode): string[] {
   function process(n: HtmlNode): void {
     if (n.type === 'text' && n.content) {
       if (n.content.length >= 5) {
-        lines.push(`TEXT:${n.content}`);
+        lines.push(`${TEXT_LINE_PREFIX}${n.content}`);
       }
       return;
     }
@@ -795,7 +845,7 @@ function flattenHtml(node: HtmlNode): string[] {
       }
 
       if (n.content && n.content.length >= 5) {
-        lines.push(`TEXT:${n.content}`);
+        lines.push(`${TEXT_LINE_PREFIX}${n.content}`);
       }
 
       if (n.children) {
