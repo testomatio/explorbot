@@ -36,6 +36,31 @@ describe('createAgentTools experience', () => {
     });
   });
 
+  it('hands the interact tool the experience its supervisor selected instead of the whole page history', async () => {
+    const state = new ActionResult({ url: '/page', title: 'Page', html: '<html></html>', ariaSnapshot: '' });
+    const stateManager = { getCurrentState: () => state, getExperienceTracker: () => ({}) } as any;
+    let receivedExperience: string | undefined;
+    const navigator = {
+      resolveState: async (_instruction: string, _actionResult: ActionResult, opts?: { experience?: string }) => {
+        receivedExperience = opts?.experience;
+        return true;
+      },
+    } as any;
+
+    const tools = createAgentTools({
+      explorer: {} as any,
+      stateManager,
+      ai: {} as any,
+      researcher: {} as any,
+      navigator,
+      appliedExperience: () => '<experience>selected recipe</experience>',
+    });
+
+    await tools.interact.execute({ instruction: 'open the menu' });
+
+    expect(receivedExperience).toBe('<experience>selected recipe</experience>');
+  });
+
   it('omits learnExperience when withExperience is false', () => {
     const tools = createAgentTools({ explorer: {} as any, stateManager: {} as any, ai: {} as any, researcher: {} as any, navigator: {} as any, withExperience: false });
     expect(tools.learnExperience).toBeUndefined();

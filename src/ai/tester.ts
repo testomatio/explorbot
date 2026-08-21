@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { ActionResult } from '../action-result.ts';
 import { clearActivity, setActivity } from '../activity.ts';
 import type { RequestStore } from '../api/request-store.ts';
+import { renderExperienceRecipes } from '../experience-tracker.ts';
 import type { TestRun } from '../explorer.ts';
 import { Observability } from '../observability.ts';
 import type { StateTransition } from '../state-manager.ts';
@@ -46,6 +47,7 @@ export class Tester extends TaskAgent implements Agent {
   private requestStore: RequestStore;
   private testRun: TestRun | null = null;
   private currentConversation: Conversation | null = null;
+  private currentTask: Test | null = null;
   private pilot: Pilot | null = null;
   private captain: Captain | null = null;
 
@@ -64,12 +66,11 @@ export class Tester extends TaskAgent implements Agent {
   private stalledIterations = 0;
   private readonly MAX_STALLED_ITERATIONS = 3;
 
-  constructor(deps: AgentDeps, researcher: Researcher, navigator: Navigator, agentTools?: any) {
+  constructor(deps: AgentDeps, researcher: Researcher, navigator: Navigator) {
     super(deps);
     this.requestStore = deps.requestStore;
     this.researcher = researcher;
     this.navigator = navigator;
-    this.agentTools = agentTools;
   }
 
   protected getNavigator(): Navigator {
@@ -97,6 +98,20 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   async test(task: Test, opts: TestOptions = {}): Promise<{ success: boolean }> {
+    this.currentTask = task;
+    try {
+      return await this.runTest(task, opts);
+    } finally {
+      this.currentTask = null;
+    }
+  }
+
+  appliedExperience(): string {
+    if (!this.currentTask?.appliedExperience.length) return '';
+    return renderExperienceRecipes(this.currentTask.appliedExperience);
+  }
+
+  private async runTest(task: Test, opts: TestOptions = {}): Promise<{ success: boolean }> {
     Stats.tests++;
     const state = this.stateManager.getCurrentState();
     if (!state) throw new Error('No state found');

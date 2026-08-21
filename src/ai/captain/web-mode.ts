@@ -16,7 +16,7 @@ export function WithWebMode<T extends Constructor>(Base: T) {
         researcher: ctx.explorBot.agentResearcher(),
         navigator: ctx.explorBot.agentNavigator(),
       });
-      const { see, context, visualClick, learnExperience } = agentTools;
+      const { see, context, visualClick } = agentTools;
 
       const tools: Record<string, any> = {
         navigate: tool({
@@ -124,7 +124,6 @@ export function WithWebMode<T extends Constructor>(Base: T) {
 
         ...codeceptTools,
         context,
-        learnExperience,
       };
 
       if (see) tools.see = see;

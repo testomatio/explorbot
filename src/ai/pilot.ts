@@ -465,9 +465,12 @@ export class Pilot implements Agent {
         the elements needed for the scenario. The page summary does not list every element.
         Prefer interacting with the current page over navigating away.
 
-        If you load a recipe via learnExperience, do NOT rewrite its code in your plan — the
-        raw recipe is forwarded to Tester automatically. Reference it by step ("apply recipe
-        steps 1–3, then…") and call out anywhere your scenario diverges from it.
+        Tester sees only the titles listed in <experience>, never the recipes themselves — you
+        decide which ones it gets. Open every entry that could cover a step of this scenario with
+        learnExperience before planning, and say so in the plan when none apply.
+        Do NOT rewrite a loaded recipe's code — the raw recipe is forwarded to Tester
+        automatically. Reference it by step ("apply recipe steps 1–3, then…") and call out
+        anywhere your scenario diverges from it.
 
         Be concise and specific. Tester will follow your plan.
       `,
@@ -513,9 +516,11 @@ export class Pilot implements Agent {
         ${this.formatExpectations(task)}
 
         First: evaluate whether this navigation makes sense for the scenario goal. If the page is unrelated, instruct Tester to back() or reset(). Then plan next steps.
+
+        Tester holds no recipe for this page until you load one — open any <experience> entry covering a step you are about to instruct.
       `,
       'pilot.reviewNewPage',
-      { task }
+      { tools: true, maxToolRoundtrips: 2, task }
     );
   }
 
@@ -549,6 +554,8 @@ export class Pilot implements Agent {
         </recent_actions>
 
         What should Tester do next?
+
+        Before proposing new locators for a step that keeps failing, check <experience> for a recorded recipe covering it and load it.
       `,
       'pilot.analyze',
       { tools: hasFailures, maxToolRoundtrips: hasFailures ? 2 : 0, task }
@@ -667,6 +674,7 @@ export class Pilot implements Agent {
     if (opts.tools) {
       const tocBlock = this.getExperienceToc();
       if (tocBlock) {
+        this.conversation!.cleanupTag('experience', '...cleaned experience index...');
         finalUserText = `${tocBlock}\n\n${userText}`;
       }
     }
@@ -684,6 +692,7 @@ export class Pilot implements Agent {
     const text = result?.response?.text || '';
     const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => e.output.content);
     if (learned.length === 0) return text;
+    opts.task.applyExperience(learned);
     return dedent`
       ${text}
 

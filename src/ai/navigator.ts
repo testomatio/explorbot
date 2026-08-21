@@ -213,7 +213,7 @@ class Navigator implements Agent {
     return reasons.join('; ') || null;
   }
 
-  async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string; onAttempt?: (attempt: { code: string; error?: string }) => void }): Promise<boolean> {
+  async resolveState(message: string, actionResult: ActionResult, opts?: { action?: Action; expectedUrl?: string; experience?: string; onAttempt?: (attempt: { code: string; error?: string }) => void }): Promise<boolean> {
     if (!this.provider) throw new Error('AI-assisted recovery is unavailable: no AI model is configured.');
 
     this.lastFailureReason = null;
@@ -226,7 +226,7 @@ class Navigator implements Agent {
     const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
 
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
-    conversation.addUserText(await this.buildResolutionPrompt(message, actionResult));
+    conversation.addUserText(await this.buildResolutionPrompt(message, actionResult, opts?.experience));
 
     let stopReason: string | null = null;
     const tools = {
@@ -369,9 +369,9 @@ class Navigator implements Agent {
     return resolved;
   }
 
-  private async buildResolutionPrompt(message: string, actionResult: ActionResult): Promise<string> {
-    let experience = '';
-    if (!actionResult.isInsideIframe) {
+  private async buildResolutionPrompt(message: string, actionResult: ActionResult, injectedExperience?: string): Promise<string> {
+    let experience = injectedExperience || '';
+    if (!experience && !actionResult.isInsideIframe) {
       experience = this.experienceTracker.renderExperienceFor(actionResult);
     }
 

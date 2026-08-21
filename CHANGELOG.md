@@ -1,16 +1,21 @@
 # Changelog
 
-## 2026-08-20
+## 2026-08-22
 
 ### Changes
 
-- [Tester] Solutions recorded on earlier tests are now handed over in full. Until now only their
-  titles were listed, with an invitation to open one on demand — an offer the model almost never
-  took, so nothing a test worked out ever reached the next one and the same controls were solved
-  again from scratch all run long, each time paying the same failure rate.
-- [Captain] and [Driller] get the same full recipes, on the same page-matching rules.
-- Experience Tracker: pages whose recorded entries hold no reusable recipe still show the list of
-  titles, so nothing that used to be offered has been taken away.
+- [Pilot] now chooses which recorded solutions a test is given. It reads the list of titles for the
+  page it is on, opens the ones that match the scenario, and only those reach the Tester — when it
+  plans a test, when the test lands on a new page, and when a step keeps failing.
+- [Tester] is no longer handed every solution recorded for a page. A single page can hold recipes
+  for a dozen unrelated features, and pasting all of them in put work that has nothing to do with
+  the current scenario in front of the model. It still sees the list of titles and can open one
+  itself.
+- [Navigator] uses the solution it was handed rather than loading every one recorded for the page.
+  Where nobody hands it one — recovering a failed page visit, free sailing — it still loads them
+  itself, since there is no one there to choose.
+- [Driller] and [Captain] can now open a recorded solution by title in every mode, the way the
+  other agents do.
 
 ## 2026-08-18
 

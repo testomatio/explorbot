@@ -309,7 +309,7 @@ export class ExperienceTracker {
     if (!successful.length) return '';
 
     tag('operation').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${state.url}`);
-    return `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${successful.join('\n\n')}\n</experience>`;
+    return renderExperienceRecipes(successful);
   }
 
   renderExperienceTocFor(state: ActionResult): string {
@@ -443,6 +443,11 @@ function indexToLetters(index: number): string {
     n -= 1;
   }
   return result;
+}
+
+export function renderExperienceRecipes(recipes: string[]): string {
+  if (recipes.length === 0) return '';
+  return `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${recipes.join('\n\n')}\n</experience>`;
 }
 
 export function renderExperienceToc(toc: ExperienceTocEntry[]): string {
