@@ -465,9 +465,9 @@ export class Pilot implements Agent {
         the elements needed for the scenario. The page summary does not list every element.
         Prefer interacting with the current page over navigating away.
 
-        Tester sees only the titles listed in <experience>, never the recipes themselves — you
-        decide which ones it gets. Open every entry that could cover a step of this scenario with
-        learnExperience before planning, and say so in the plan when none apply.
+        Tester never sees <experience> — a recorded recipe reaches it only when you open one.
+        Open every entry that could cover a step of this scenario with learnExperience before
+        planning, and say so in the plan when none apply.
         Do NOT rewrite a loaded recipe's code — the raw recipe is forwarded to Tester
         automatically. Reference it by step ("apply recipe steps 1–3, then…") and call out
         anywhere your scenario diverges from it.

@@ -134,18 +134,16 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
 });
 
 describe('Tester experience context', () => {
-  it('adds only the experience table of contents to the scenario prompt', () => {
+  it('keeps recorded experience out of the scenario prompt, so only what the Pilot forwards reaches it', () => {
     const tester = buildTesterWithExperience();
     const task = new Test('create item', 'normal', 'item exists', '/page');
     const state = buildState('- main:', '/page');
 
     const scenarioBlock = (tester as any).buildScenarioBlock(task, state);
 
-    expect(scenarioBlock).toContain('<experience>');
-    expect(scenarioBlock).toContain('A.1 ## FLOW: create item');
-    expect(scenarioBlock).toContain('Call learnExperience({ fileTag, sectionIndex })');
-    expect(scenarioBlock).not.toContain('I.click');
-    expect(scenarioBlock).not.toContain('```');
+    expect(scenarioBlock).not.toContain('<experience>');
+    expect(scenarioBlock).not.toContain('FLOW: create item');
+    expect(scenarioBlock).not.toContain('learnExperience');
   });
 });
 
