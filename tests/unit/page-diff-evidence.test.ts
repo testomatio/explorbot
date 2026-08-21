@@ -75,6 +75,20 @@ describe('pageDiff evidence', () => {
     expect(pageDiff?.consoleErrors).toBeUndefined();
   });
 
+  test('survives the state rebuild every tool does before reading the diff', async () => {
+    const previous = new ActionResult({ id: 1, url: '/runs', html: page('<button>Save</button>') });
+    const current = new ActionResult({
+      id: 2,
+      url: '/runs',
+      html: page('<button>Save</button>'),
+      networkRequests: [{ method: 'POST', path: '/api/runs', status: 400 }],
+    });
+
+    const { pageDiff } = await ActionResult.fromState(current).toToolResult(previous, 'Save');
+
+    expect(pageDiff?.requests).toEqual([{ method: 'POST', path: '/api/runs', status: 400 }]);
+  });
+
   test('reports requests of a first-ever capture with no previous state', async () => {
     const current = new ActionResult({
       id: 1,
