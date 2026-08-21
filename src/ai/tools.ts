@@ -8,6 +8,7 @@ import { type Task, TestResult } from '../test-plan.js';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
+import { compactErrorMessage } from '../utils/strings.ts';
 import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
@@ -98,7 +99,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           const success = await action.attempt(command, explanation);
 
           const attempt: { command: string; success: boolean; error?: string } = { command, success };
-          if (action.lastError) attempt.error = action.lastError.toString();
+          if (action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
           if (success) {
@@ -124,7 +125,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
 
           for (const retryCmd of retryCommands) {
             if (!(await action.attempt(retryCmd, explanation))) {
-              attempts.push({ command: retryCmd, success: false, error: action.lastError?.toString() });
+              attempts.push({ command: retryCmd, success: false, error: errorText(action.lastError) });
               continue;
             }
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, retryCmd);
@@ -237,7 +238,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
         for (const command of commands) {
           const success = await action.attempt(command, explanation);
           const attempt: { command: string; success: boolean; error?: string } = { command, success };
-          if (action.lastError) attempt.error = action.lastError.toString();
+          if (action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
           if (!success) continue;
@@ -320,7 +321,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
               );
             }
 
-            const errorMsg = `pressKey fallback to type() failed: ${action.lastError?.toString()}`;
+            const errorMsg = `pressKey fallback to type() failed: ${errorText(action.lastError)}`;
             await commitNote(activeNote, TestResult.FAILED, toolResult, action);
             return failedToolResult('pressKey', errorMsg, {
               ...toolResult,
@@ -366,7 +367,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
             );
           }
 
-          const errorMsg = `pressKey() failed: ${action.lastError?.toString()}`;
+          const errorMsg = `pressKey() failed: ${errorText(action.lastError)}`;
           await commitNote(activeNote, TestResult.FAILED, toolResult, action);
           return failedToolResult('pressKey', errorMsg, {
             ...toolResult,
@@ -448,7 +449,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, formLocator);
 
           if (action.lastError) {
-            const message = action.lastError ? String(action.lastError) : 'Unknown error';
+            const message = errorText(action.lastError);
             await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
             let formSuggestion = 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and form() tools.';
@@ -952,7 +953,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
         }
 
         const failData: Record<string, any> = { suggestion: 'Try reset() to return to the starting page.' };
-        if (action.lastError) failData.error = action.lastError.toString();
+        if (action.lastError) failData.error = errorText(action.lastError);
         return failedToolResult('back', `Failed to navigate back to ${targetUrl}`, failData);
       },
     }),
@@ -1154,7 +1155,7 @@ function transformContainsCommand(command: string): string {
 }
 
 function errorText(error: unknown): string {
-  if (error instanceof Error) return error.toString();
+  if (error instanceof Error) return compactErrorMessage(error);
   return 'Unknown error occurred';
 }
 
