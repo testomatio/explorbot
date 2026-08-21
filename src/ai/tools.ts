@@ -1015,7 +1015,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
         if (result.totalFound === 0) {
           return failedToolResult('xpathCheck', `No elements matched XPath: ${xpath}`, {
-            suggestion: 'Try a broader expression. Examples: //*[contains(@class, "btn")], //button, //*[contains(text(), "keyword")]',
+            suggestion: 'Do not guess another expression. Narrow down from what you know about the target: its role, its visible text, its nearest labelled ancestor. Add one constraint at a time.',
           });
         }
 
@@ -1276,6 +1276,10 @@ export function clickFailureSuggestion(attempts: Array<{ error?: string }>): str
 
   if (errors.some((e) => e.includes('is not visible'))) {
     return 'Element is in the DOM but not visible. Reveal it first — scroll to it, expand its section, or open the panel holding it.';
+  }
+
+  if (errors.some((e) => e.includes('SyntaxError'))) {
+    return 'The command string never parsed as JavaScript — quotes or brackets do not match. No element was looked up, so this tells you nothing about the page. Re-emit the same intent as valid CodeceptJS.';
   }
 
   const notFound = errors.filter((e) => e.includes('was not found'));

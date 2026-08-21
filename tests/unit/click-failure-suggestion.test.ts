@@ -15,6 +15,7 @@ const COVERED = ['TimeoutError: locator.click: Timeout 3000ms exceeded.', 'Call 
 
 const NOT_VISIBLE = ['TimeoutError: locator.click: Timeout 3000ms exceeded.', 'Call log:', '  - waiting for element to be visible', '    - element is not visible'].join('\n');
 
+const MALFORMED = 'SyntaxError: missing ) after argument list';
 const CONTAINER_MISS = 'Error: Clickable element "New test" was not found inside element .dropdown-content';
 const LOCATOR_MISS = 'Error: Clickable element "Close panel" was not found by text|CSS|XPath';
 
@@ -50,6 +51,14 @@ describe('clickFailureSuggestion', () => {
     const suggestion = clickFailureSuggestion([{ error: DISABLED }, { error: LOCATOR_MISS }]);
 
     expect(suggestion).toContain('DISABLED');
+  });
+
+  it('reports an unparsable command instead of sending the model hunting for an element', () => {
+    const suggestion = clickFailureSuggestion([{ error: MALFORMED }]);
+
+    expect(suggestion).toContain('never parsed');
+    expect(suggestion).not.toContain('xpathCheck');
+    expect(suggestion).not.toContain('visualClick');
   });
 
   it('falls back to a generic hint when no attempt carried an error', () => {
