@@ -248,9 +248,8 @@ export class ExplorBot {
       this.agents.tester = this.createAgent((deps) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const tester = new Tester(deps, researcher, navigator);
-        tester.agentTools = createAgentTools({ ...deps, researcher, navigator, withExperience: false, appliedExperience: () => tester.appliedExperience() });
-        return tester;
+        const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
+        return new Tester(deps, researcher, navigator, tools);
       });
 
       const qm = this.agentQuartermaster();

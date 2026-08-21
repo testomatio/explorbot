@@ -36,7 +36,26 @@ describe('createAgentTools experience', () => {
     });
   });
 
-  it('hands the interact tool the experience its supervisor selected instead of the whole page history', async () => {
+  it('hands the interact tool the recipes selected for the running test, not every recipe on the page', async () => {
+    const state = new ActionResult({ url: '/page', title: 'Page', html: '<html></html>', ariaSnapshot: '' });
+    const stateManager = { getCurrentState: () => state, getExperienceTracker: () => ({}) } as any;
+    let receivedExperience: string | undefined;
+    const navigator = {
+      resolveState: async (_instruction: string, _actionResult: ActionResult, opts?: { experience?: string }) => {
+        receivedExperience = opts?.experience;
+        return true;
+      },
+    } as any;
+    const explorer = { activeTest: { appliedExperience: ['## FLOW: open the menu'] } } as any;
+
+    const tools = createAgentTools({ explorer, stateManager, ai: {} as any, researcher: {} as any, navigator });
+
+    await tools.interact.execute({ instruction: 'open the menu' });
+
+    expect(receivedExperience).toContain('## FLOW: open the menu');
+  });
+
+  it('hands the interact tool nothing when no test is running', async () => {
     const state = new ActionResult({ url: '/page', title: 'Page', html: '<html></html>', ariaSnapshot: '' });
     const stateManager = { getCurrentState: () => state, getExperienceTracker: () => ({}) } as any;
     let receivedExperience: string | undefined;
@@ -47,18 +66,11 @@ describe('createAgentTools experience', () => {
       },
     } as any;
 
-    const tools = createAgentTools({
-      explorer: {} as any,
-      stateManager,
-      ai: {} as any,
-      researcher: {} as any,
-      navigator,
-      appliedExperience: () => '<experience>selected recipe</experience>',
-    });
+    const tools = createAgentTools({ explorer: { activeTest: null } as any, stateManager, ai: {} as any, researcher: {} as any, navigator });
 
     await tools.interact.execute({ instruction: 'open the menu' });
 
-    expect(receivedExperience).toBe('<experience>selected recipe</experience>');
+    expect(receivedExperience).toBe('');
   });
 
   it('omits learnExperience when withExperience is false', () => {

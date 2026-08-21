@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
-import type { ExperienceTracker } from '../experience-tracker.ts';
+import { type ExperienceTracker, renderExperienceRecipes } from '../experience-tracker.ts';
 import { Stats } from '../stats.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
@@ -24,7 +24,6 @@ interface AgentToolDeps extends ToolDeps {
   navigator: Navigator;
   supervisor?: boolean;
   withExperience?: boolean;
-  appliedExperience?: () => string;
 }
 
 export const ASSERTION_TOOLS = ['verify'] as const;
@@ -570,7 +569,7 @@ export function createLearnExperienceTool({ getExperienceTracker, getState }: { 
   });
 }
 
-export function createAgentTools({ explorer, stateManager, ai, researcher, navigator, supervisor, withExperience, appliedExperience }: AgentToolDeps): any {
+export function createAgentTools({ explorer, stateManager, ai, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
   const tools: Record<string, any> = {
     see: tool({
       description: dedent`
@@ -800,7 +799,8 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
           const previousState = ActionResult.fromState(currentState);
           const actionResult = ActionResult.fromState(currentState);
-          const success = await navigator.resolveState(instruction, actionResult, { experience: appliedExperience?.() });
+          const experience = renderExperienceRecipes(explorer.activeTest?.appliedExperience ?? []);
+          const success = await navigator.resolveState(instruction, actionResult, { experience });
 
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, instruction);
 
