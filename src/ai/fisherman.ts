@@ -208,7 +208,8 @@ export class Fisherman implements Agent {
       RULES:
       - Always call getEndpointSpec before your first request to an unfamiliar endpoint
       - Chain requests logically — create parent resources before children
-      - If a request fails, try once more with adjusted data before reporting failure
+      - Use the response category and error text to decide what failed: validation requires corrected data, authorization requires valid access, not_found requires a valid path or parent, and conflict requires resolving the conflicting state
+      - Retry temporary or server failures once. Retry other failures only when the specification or error text gives a concrete correction
       - Use realistic but unique data for each item (vary names, titles)
 
       ${dataProtectionRules}

@@ -139,10 +139,10 @@ export class Researcher extends ResearcherBase implements Agent {
       const combinedHtml = await this.actionResult!.combinedHtml();
 
       if (!deep && !force) {
-        const similar = await findSimilarResearch(combinedHtml);
+        const similar = await findSimilarResearch(combinedHtml, state.url);
         if (similar) {
           tag('operation').log('Similar research found, reusing cached result');
-          if (stateHash) saveResearch(stateHash, similar, combinedHtml);
+          if (stateHash) saveResearch(stateHash, similar, combinedHtml, state.url);
           tag('multiline').log(formatResearchSummary(similar));
           tag('success').log('Research complete (reused)');
           await this.hooksRunner.runAfterHook('researcher', state.url);
@@ -286,7 +286,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       let researchFile: string | null = null;
       if (stateHash) {
-        researchFile = saveResearch(stateHash, result.text, combinedHtml);
+        researchFile = saveResearch(stateHash, result.text, combinedHtml, state.url);
       }
 
       const summaryText = mdq(result.text).query('section2(/^summary/)').query('paragraph[0]').text().trim();

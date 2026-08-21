@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { ConfigParser } from '../../src/config';
 import { normalizeUrl } from '../../src/state-manager';
-import { extractStatePath, generalizeSegment, generalizeUrl, hasDynamicUrlSegment, isDynamicSegment, matchesNavigationUrl, matchesUrl } from '../../src/utils/url-matcher';
+import { extractStatePath, generalizeSegment, generalizeUrl, hasDynamicUrlSegment, isDynamicSegment, isSamePageFamily, matchesNavigationUrl, matchesUrl } from '../../src/utils/url-matcher';
 
 describe('url-matcher', () => {
   beforeEach(() => {
@@ -215,6 +215,31 @@ describe('url-matcher', () => {
     it('treats repeated leading slashes as a relative path, not a protocol-relative URL', () => {
       expect(normalizeUrl('///series/page/57/')).toBe('series/page/57');
       expect(normalizeUrl('/series/page/57/')).toBe('series/page/57');
+    });
+  });
+
+  describe('isSamePageFamily', () => {
+    it('matches URLs differing only in a dynamic id segment', () => {
+      expect(isSamePageFamily('/plans/7a6c9c45', '/plans/aababeac')).toBe(true);
+      expect(isSamePageFamily('/suite/c05b7ef5', '/suite/95ef0c94-mobile')).toBe(true);
+    });
+
+    it('rejects URLs from different pages', () => {
+      expect(isSamePageFamily('/plans/7a6c9c45', '/plans')).toBe(false);
+      expect(isSamePageFamily('/plans/new/manual', '/plans/a57eab1a')).toBe(false);
+    });
+
+    it('rejects URLs differing in a static segment', () => {
+      expect(isSamePageFamily('/projects/alpha/plans', '/projects/beta/plans')).toBe(false);
+    });
+
+    it('matches identical URLs and ignores query and hash', () => {
+      expect(isSamePageFamily('/plans', '/plans/')).toBe(true);
+      expect(isSamePageFamily('/plans/123?tab=tests', '/plans/123#details')).toBe(true);
+    });
+
+    it('does not match a static route with a dynamic detail route', () => {
+      expect(isSamePageFamily('/plans/new', '/plans/a57eab1a')).toBe(false);
     });
   });
 });

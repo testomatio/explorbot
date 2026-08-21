@@ -433,7 +433,7 @@ export class ConfigParser {
   public getOutputDir(): string {
     const config = this.getConfig();
     if (!this.configPath) throw new Error('Config path not found');
-    return path.join(this.getProjectRoot(), config.dirs?.output || 'output');
+    return this.resolveProjectDir(config.dirs?.output || 'output');
   }
 
   public getProjectRoot(): string {
@@ -444,6 +444,7 @@ export class ConfigParser {
   }
 
   public resolveProjectDir(relativeDir: string): string {
+    if (path.isAbsolute(relativeDir)) return relativeDir;
     if (!this.configPath) return relativeDir;
     return path.join(this.getProjectRoot(), relativeDir);
   }

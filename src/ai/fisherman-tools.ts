@@ -29,6 +29,28 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
 
         const captured = requestStore.findCapturedRequest(method, path);
         if (captured) {
+          if (captured.status >= 400) {
+            const rejectedCapture = {
+              status: captured.status,
+              requestBody: captured.requestBody || 'no body',
+            };
+            if (opts.spec) {
+              try {
+                const definition = extractEndpointDefinition(opts.spec, path, opts.baseEndpoint);
+                return { source: 'spec', method, path, definition, rejectedCapture };
+              } catch {
+                return { source: 'captured', method, path, usable: false, rejectedRequestBody: captured.requestBody || 'no body', status: captured.status };
+              }
+            }
+            return {
+              source: 'captured',
+              method: captured.method,
+              path: captured.path,
+              status: captured.status,
+              usable: false,
+              rejectedRequestBody: captured.requestBody || 'no body',
+            };
+          }
           return {
             source: 'captured',
             method: captured.method,
@@ -87,6 +109,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
             success: false,
             status: reqResult.status,
             statusText: reqResult.statusText,
+            category: responseCategory(reqResult.status),
             errorPreview: reqResult.rawResponseBody.substring(0, 300),
           };
         }
@@ -149,6 +172,16 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   return { tools, getResult, isFinished };
 }
 
+function responseCategory(status: number): ResponseCategory {
+  if (status === 400 || status === 422) return 'validation';
+  if (status === 401 || status === 403) return 'authorization';
+  if (status === 404) return 'not_found';
+  if (status === 409) return 'conflict';
+  if (status === 408 || status === 425 || status === 429) return 'temporary';
+  if (status >= 500) return 'server';
+  return 'client';
+}
+
 function extractKeyFields(body: any, result: Record<string, any> = {}, depth = 0): Record<string, any> {
   if (!body || typeof body !== 'object' || depth > 5) return result;
 
@@ -179,3 +212,5 @@ export interface FishermanResult {
   created: Array<{ type: string; id?: string | number; title?: string }>;
   failed: Array<{ type: string; reason: string }>;
 }
+
+type ResponseCategory = 'validation' | 'authorization' | 'not_found' | 'conflict' | 'temporary' | 'server' | 'client';
