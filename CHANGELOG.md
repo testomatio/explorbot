@@ -10,6 +10,14 @@
   ever touching the browser. The check now always answers, even when it cannot look at the page.
 - [Pilot] When test data could not be prepared, the answer now says so plainly — it was not created,
   it cannot be created automatically, and the test should carry on with what the page already shows.
+- A click whose command never parsed as JavaScript is now reported as a broken command, not as a
+  missing element. Mismatched quotes or brackets used to be answered with advice to hunt the DOM
+  with `xpathCheck()`, `see()` or `visualClick()`, so the AI searched for an element that was never
+  looked up and re-emitted the same broken command. It is now told the string was invalid, that
+  nothing was learned about the page, and to re-emit the same intent as valid CodeceptJS.
+- `xpathCheck` that matches nothing no longer suggests broadening to a generic expression. It now
+  asks for narrowing down from what is known about the target — its role, its visible text, its
+  nearest labelled ancestor — one constraint at a time, instead of inviting another blind guess.
 
 ## 2026-08-18
 
