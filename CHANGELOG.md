@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-08-21
+
+### Actions report what the app said and did, not just how the page moved
+
+A click that fired a request the server rejected used to look like a success. The page diff described
+DOM and accessibility-tree movement only, so a toast reading "Operation against a key holding the wrong
+kind of value" was either buried in raw markup or dropped altogether, and the rejected request surfaced
+much later as a session-wide count. Every action now also carries:
+
+- **messages** — text the app put on the page in response: toasts, alerts, banners and inline errors,
+  including ones built without any accessibility markup
+- **requests** — the calls the action made to the application, each with its status
+- **consoleErrors** — what the page logged while the action ran
+
+When a request comes back 400 or 500 the result leads with that, and points at the message the user was
+shown, rather than leaving the model to read the click as successful and repeat it.
+
+The Pilot's review reads the same evidence attached to the action that caused it, narrowed to what
+indicates failure: rejected requests, the first two messages, one console error. It used to get a bare
+`POST /api/… → 400` with no page context, which reads as a missing value, and would send the tester back
+to fill in a form that was already filled.
+
+### Changes
+
+- Console messages from the browser were dropped before they were ever recorded, so console errors always
+  showed as none and a page that logged its own failure reported nothing.
+
 ## 2026-08-18
 
 ### Changes
