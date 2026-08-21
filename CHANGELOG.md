@@ -4,6 +4,12 @@
 
 ### Changes
 
+- [Pilot] A test no longer burns its whole budget asking for the same test data over and over. When
+  the page check that decides whether the test can go on without that data failed, nothing came back
+  at all, so the request looked unanswered and was repeated until the test ran out of steps without
+  ever touching the browser. The check now always answers, even when it cannot look at the page.
+- [Pilot] When test data could not be prepared, the answer now says so plainly — it was not created,
+  it cannot be created automatically, and the test should carry on with what the page already shows.
 - A click whose command never parsed as JavaScript is now reported as a broken command, not as a
   missing element. Mismatched quotes or brackets used to be answered with advice to hunt the DOM
   with `xpathCheck()`, `see()` or `visualClick()`, so the AI searched for an element that was never
