@@ -124,7 +124,6 @@ Full page HTML bodies are expensive and noisy — only agents whose verb require
 | Tier | Agents | What they get |
 |---|---|---|
 | Standing full HTML | Researcher, Navigator, Driller | `<page_html>` / `combinedHtml()` in every context injection |
-| On-demand simplified HTML | Pilot | `simplifiedHtml()` attached only on explicit `ATTACH_HTML` request |
 | No HTML | Planner, Captain, Historian, Analyst, ExperienceCompactor, Quartermaster | ARIA snapshots, UI maps, research summaries; node snippets ≤100 chars allowed |
 
 Do not add HTML access to a new agent. If an agent seems to need raw HTML, the real fix is a better derivative (UI map, focused snippet, research note) produced by Researcher — not widening this table.
