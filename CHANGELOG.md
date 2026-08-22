@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-22
+
+### Changes
+
+- Documentation: CLAUDE.md now defines the boundary contracts between agents and data modules,
+  the persisted file formats and the rules for extending them, a feature routing test, and
+  guidance on when to use regex versus AI judgment.
 ## 2026-08-21
 
 ### Changes
