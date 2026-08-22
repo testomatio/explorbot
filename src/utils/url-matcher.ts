@@ -29,8 +29,8 @@ export function hasDynamicUrlSegment(url: string): boolean {
 }
 
 export function isSamePageFamily(urlA: string, urlB: string): boolean {
-  const partsA = extractStatePath(urlA).split('?')[0].split('#')[0].toLowerCase().split('/').filter(Boolean);
-  const partsB = extractStatePath(urlB).split('?')[0].split('#')[0].toLowerCase().split('/').filter(Boolean);
+  const partsA = new URL(urlA, 'http://localhost').pathname.toLowerCase().split('/').filter(Boolean);
+  const partsB = new URL(urlB, 'http://localhost').pathname.toLowerCase().split('/').filter(Boolean);
   if (partsA.length !== partsB.length) return false;
 
   let diffCount = 0;

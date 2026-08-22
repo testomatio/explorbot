@@ -97,6 +97,7 @@ export class Researcher extends ResearcherBase implements Agent {
     let retriesLeft = opts._retriesLeft ?? maxRetries;
     this.actionResult = ActionResult.fromState(state);
     const stateHash = state.hash || this.actionResult.getStateHash();
+    const researchState = { ...state, hash: stateHash };
 
     if (!force && stateHash) {
       const cached = getCachedResearch(stateHash);
@@ -142,7 +143,7 @@ export class Researcher extends ResearcherBase implements Agent {
         const similar = await findSimilarResearch(combinedHtml, state.url);
         if (similar) {
           tag('operation').log('Similar research found, reusing cached result');
-          if (stateHash) saveResearch(stateHash, similar, combinedHtml, state.url);
+          if (stateHash) saveResearch(researchState, similar, combinedHtml);
           tag('multiline').log(formatResearchSummary(similar));
           tag('success').log('Research complete (reused)');
           await this.hooksRunner.runAfterHook('researcher', state.url);
@@ -286,7 +287,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       let researchFile: string | null = null;
       if (stateHash) {
-        researchFile = saveResearch(stateHash, result.text, combinedHtml, state.url);
+        researchFile = saveResearch(researchState, result.text, combinedHtml);
       }
 
       const summaryText = mdq(result.text).query('section2(/^summary/)').query('paragraph[0]').text().trim();

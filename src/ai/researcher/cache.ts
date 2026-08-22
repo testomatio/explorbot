@@ -60,7 +60,8 @@ export function getPreviousResearch(hash: string): string {
   return readFileSync(researchFile, 'utf8');
 }
 
-export function saveResearch(hash: string, text: string, combinedHtml?: string, url?: string): string {
+export function saveResearch(state: ResearchState, text: string, combinedHtml?: string): string {
+  const { hash, url } = state;
   const researchDir = outputPath('research');
   const researchFile = join(researchDir, `${hash}.md`);
   if (!existsSync(researchDir)) mkdirSync(researchDir, { recursive: true });
@@ -130,3 +131,4 @@ export async function findSimilarStateHash(combinedHtml: string, url?: string): 
 
 type FingerprintRecord = { entries: string[]; url?: string };
 type FingerprintMatch = { hash: string; similarity: number; url?: string };
+type ResearchState = { hash: string; url?: string };

@@ -22,7 +22,7 @@ describe('research cache url provenance', () => {
   });
 
   it('keeps research unchanged and stores the url with its fingerprint', () => {
-    saveResearch('provenance-hash', '## Plans List', html, '/projects/p/plans');
+    saveResearch({ hash: 'provenance-hash', url: '/projects/p/plans' }, '## Plans List', html);
 
     const onDisk = readFileSync(outputPath('research', 'provenance-hash.md'), 'utf8');
     const fingerprint = JSON.parse(readFileSync(outputPath('states', 'provenance-hash.fingerprint'), 'utf8'));
@@ -44,7 +44,7 @@ describe('research cache url provenance', () => {
 
   it('findSimilarResearch rejects a fingerprint match recorded for a different page family', async () => {
     const detailHtml = '<html><body><section>Unique plan detail content</section><button>Delete plan</button></body></html>';
-    saveResearch('plan-detail-hash', '## Plan Detail Research', detailHtml, '/projects/p/plans/7a6c9c45');
+    saveResearch({ hash: 'plan-detail-hash', url: '/projects/p/plans/7a6c9c45' }, '## Plan Detail Research', detailHtml);
     const { findSimilarResearch } = await import('../../src/ai/researcher/cache.ts');
 
     const sameFamily = await findSimilarResearch(detailHtml, '/projects/p/plans/aababeac');
@@ -56,8 +56,8 @@ describe('research cache url provenance', () => {
 
   it('selects the best match from the requested page family', async () => {
     const matchingHtml = '<html><body><section>Unique matching content</section><button>Open item</button></body></html>';
-    saveResearch('a-wrong-page-hash', '## Wrong Page', matchingHtml, '/projects/p/runs/7a6c9c45');
-    saveResearch('z-compatible-page-hash', '## Compatible Page', matchingHtml, '/projects/p/plans/7a6c9c45');
+    saveResearch({ hash: 'a-wrong-page-hash', url: '/projects/p/runs/7a6c9c45' }, '## Wrong Page', matchingHtml);
+    saveResearch({ hash: 'z-compatible-page-hash', url: '/projects/p/plans/7a6c9c45' }, '## Compatible Page', matchingHtml);
     const { findSimilarResearch, findSimilarStateHash } = await import('../../src/ai/researcher/cache.ts');
 
     expect(await findSimilarResearch(matchingHtml, '/projects/p/plans/aababeac')).toBe('## Compatible Page');
@@ -66,7 +66,7 @@ describe('research cache url provenance', () => {
 
   it('continues to read legacy line-based fingerprints', async () => {
     const legacyHtml = '<html><body><button>Legacy fingerprint</button></body></html>';
-    saveResearch('legacy-hash', '## Legacy Research');
+    saveResearch({ hash: 'legacy-hash' }, '## Legacy Research');
     writeFileSync(outputPath('states', 'legacy-hash.fingerprint'), computeHtmlFingerprint(legacyHtml).join('\n'));
     const { findSimilarResearch } = await import('../../src/ai/researcher/cache.ts');
 
