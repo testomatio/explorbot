@@ -466,8 +466,9 @@ export class Pilot implements Agent {
         Prefer interacting with the current page over navigating away.
 
         Tester never sees <experience> — a recorded recipe reaches it only when you open one.
-        Judge from the titles which ones are worth reading for this scenario, open those with
-        learnExperience before planning, and say so in the plan when none of the titles fit.
+        The entries listed are what was recorded on the page you are on now; recipes for the
+        pages this test moves to are listed when it gets there. Open the ones whose titles fit a
+        step taken from here, and say so in the plan when none of them fit.
         Do NOT rewrite a loaded recipe's code — the raw recipe is forwarded to Tester
         automatically. Reference it by step ("apply recipe steps 1–3, then…") and call out
         anywhere your scenario diverges from it.
