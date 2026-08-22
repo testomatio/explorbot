@@ -21,6 +21,13 @@
   itself, since there is no one there to choose.
 - [Driller] and [Captain] can now open a recorded solution by title in every mode, the way the
   other agents do.
+- Documentation: CLAUDE.md now defines the boundary contracts between agents and data modules,
+  the persisted file formats vs session artifacts, the rules for extending envelopes, per-agent
+  HTML access tiers, a feature routing test, guidance on when to use regex versus AI judgment,
+  and the git worktree workflow.
+- New Bunosh tasks for feature worktrees: `worktree:create <feature>` opens a new branch off main
+  in a sibling directory, `worktree:fetch <branch>` opens an existing branch there, both symlinking
+  the main checkout's `node_modules`; `worktree:delete [branch]` removes a worktree when merged.
 
 ## 2026-08-21
 
