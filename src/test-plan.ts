@@ -236,6 +236,7 @@ export class Test extends Task {
   startTime?: number;
   endTime?: number;
   resetCount = 0;
+  appliedExperience: string[] = [];
 
   constructor(scenario: string, priority: 'critical' | 'important' | 'high' | 'normal' | 'low', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);
@@ -255,6 +256,13 @@ export class Test extends Task {
       return this.plan.tests.flatMap((t) => t.getVisitedUrls({ localOnly: true }));
     }
     return [...new Set([this.startUrl, ...this.states.map((s) => s.url)].filter((value): value is string => Boolean(value) && value.trim() !== ''))];
+  }
+
+  applyExperience(recipes: string[]): void {
+    for (const recipe of recipes) {
+      if (this.appliedExperience.includes(recipe)) continue;
+      this.appliedExperience.push(recipe);
+    }
   }
 
   addArtifact(artifact?: string): void {
