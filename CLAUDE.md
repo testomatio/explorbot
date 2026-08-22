@@ -123,7 +123,7 @@ Full page HTML bodies are expensive and noisy — only agents whose verb require
 
 | Tier | Agents | What they get |
 |---|---|---|
-| Standing full HTML | Researcher, Navigator, Driller, Tester | `<page_html>` / `combinedHtml()` in every context injection |
+| Standing full HTML | Researcher, Navigator, Driller | `<page_html>` / `combinedHtml()` in every context injection |
 | On-demand simplified HTML | Pilot | `simplifiedHtml()` attached only on explicit `ATTACH_HTML` request |
 | No HTML | Planner, Captain, Historian, Analyst, ExperienceCompactor, Quartermaster | ARIA snapshots, UI maps, research summaries; node snippets ≤100 chars allowed |
 
