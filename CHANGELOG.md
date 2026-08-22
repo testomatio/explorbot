@@ -7,6 +7,8 @@
 - [Pilot] now chooses which recorded solutions a test is given. It reads the list of titles for the
   page it is on, opens the ones that match the scenario, and only those reach the Tester — when it
   plans a test, when the test lands on a new page, and when a step keeps failing.
+- [Pilot] drops the list of titles from the previous page even when the new page has nothing
+  recorded for it, so it never picks a solution belonging to a page the test has already left.
 - [Tester] no longer reads recorded solutions at all — neither the recipes nor the list of their
   titles. A single page can hold recipes for a dozen unrelated features, and handing all of them
   over put work with nothing to do with the current scenario in front of the model. Everything it

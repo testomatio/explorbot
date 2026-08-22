@@ -673,11 +673,9 @@ export class Pilot implements Agent {
 
     let finalUserText = userText;
     if (opts.tools) {
+      this.conversation!.cleanupTag('experience', '...cleaned experience index...');
       const tocBlock = this.getExperienceToc();
-      if (tocBlock) {
-        this.conversation!.cleanupTag('experience', '...cleaned experience index...');
-        finalUserText = `${tocBlock}\n\n${userText}`;
-      }
+      if (tocBlock) finalUserText = `${tocBlock}\n\n${userText}`;
     }
     this.conversation!.addUserText(finalUserText);
 
