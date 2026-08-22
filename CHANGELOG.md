@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-23
+
+### Changes
+
+- Prima now ships as its own npm package, so `npx prima-cli` runs it without installing explorbot
+  first. It is the same tool as the `prima` command that comes with explorbot, built from the same
+  source and released alongside it — only the package name and the binary differ.
+- Terminal colour no longer depends on another package happening to provide it. `chalk` is used
+  throughout the log output but had never been declared as a dependency, so a published install
+  resolved it only by accident and could have lost colour, or failed to start, at any time.
+
 ## 2026-08-22
 
 ### Changes

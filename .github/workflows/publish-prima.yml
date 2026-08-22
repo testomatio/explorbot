@@ -1,0 +1,82 @@
+name: Publish prima-cli to npm
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout the released commit
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.release.tag_name }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        registry-url: https://registry.npmjs.org
+
+    - name: Upgrade npm for tokenless (OIDC) publishing
+      run: npm install -g npm@latest
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: latest
+
+    - name: Install dependencies
+      run: bun install
+
+    - name: Run unit tests
+      run: bun test tests/unit/
+
+    - name: Run prima tests
+      run: bun test boat/prima/tests/
+
+    - name: Set version from release
+      id: release
+      env:
+        TAG: ${{ github.event.release.tag_name }}
+        PRERELEASE: ${{ github.event.release.prerelease }}
+      run: |
+        VERSION="${TAG#prima-}"
+        VERSION="${VERSION#v}"
+        echo "Publishing prima-cli $VERSION from release $TAG"
+        npm version "$VERSION" --no-git-tag-version
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        if [[ "$PRERELEASE" == "true" || "$VERSION" == *beta* || "$VERSION" == *pre* || "$VERSION" == *alpha* || "$VERSION" == *rc* ]]; then
+          echo "tag=beta" >> "$GITHUB_OUTPUT"
+        else
+          echo "tag=latest" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Build for npm
+      run: bun run build:npm
+
+    - name: Stage prima-cli package
+      run: bun run build:prima
+
+    - name: Verify prima-cli tarball on Node.js
+      run: |
+        npm pack ./dist-prima --pack-destination /tmp
+        mkdir -p /tmp/prima-smoke && cd /tmp/prima-smoke
+        npm init -y > /dev/null
+        npm install --ignore-scripts --no-audit --no-fund /tmp/prima-cli-*.tgz
+        ./node_modules/.bin/prima-cli --help
+        HOME=$(mktemp -d) EXPLORBOT_AI_PROVIDER=openrouter OPENROUTER_API_KEY=dummy EXPLORBOT_URL=https://example.com ./node_modules/.bin/prima-cli config --ephemeral
+
+    - name: Publish prima-cli to npm
+      run: |
+        if npm view "prima-cli@${{ steps.release.outputs.version }}" version > /dev/null 2>&1; then
+          echo "prima-cli@${{ steps.release.outputs.version }} is already published, skipping"
+          exit 0
+        fi
+        npm publish ./dist-prima --access public --tag ${{ steps.release.outputs.tag }}

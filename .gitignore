@@ -27,6 +27,7 @@ session.json
 
 # Build outputs
 dist/
+dist-prima/
 build/
 out/
 .types-build/

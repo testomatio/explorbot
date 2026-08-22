@@ -1,16 +1,20 @@
 {
-  "name": "prima",
-  "version": "1.0.0",
+  "name": "prima-cli",
+  "version": "0.0.0",
   "description": "High-level browser driver CLI for orchestrating agents",
+  "license": "Elastic-2.0",
   "type": "module",
-  "bin": { "prima": "./bin/prima-cli.ts" },
-  "scripts": {
-    "format": "biome format --write .",
-    "lint:fix": "biome lint --write .",
-    "check:fix": "biome check --write ."
+  "bin": {
+    "prima-cli": "./dist/boat/prima/bin/prima-cli.js"
   },
-  "dependencies": {
-    "commander": "^14.0.1",
-    "dedent": "^1.6.0"
+  "files": ["dist/"],
+  "keywords": ["cli", "playwright", "browser", "ai", "agent", "testing"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/testomatio/explorbot",
+    "directory": "boat/prima"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }
