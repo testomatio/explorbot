@@ -75,7 +75,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
     title: 'Dashboard',
     hash: 'dashboard_h1_dashboard',
     getStateHash: () => 'dashboard_h1_dashboard',
-    toToolResult: async () => ({ pageDiff: { urlChanged: true, ariaChanges: 'added:\n  - heading "Dashboard"' } }),
+    toToolResult: async () => ({ pageDiff: { urlChanged: true, messages: ['Signed in as admin'] } }),
   });
   (prima as any).bot = {
     getExplorer: () => ({
@@ -130,7 +130,8 @@ describe('Prima.pw', () => {
   test('reports page changes from the action pipeline diff and writes artifacts', async () => {
     const { prima } = fakePrima();
     const envelope = await prima.pw("({ page }) => page.click('text=Login')");
-    expect(envelope.changes).toContain('heading "Dashboard"');
+    expect(envelope.changes).toContain('left https://app.example.com/login for https://app.example.com/dashboard');
+    expect(envelope.changes).toContain('Signed in as admin');
     expect(envelope.status).toMatch(/^[0-9a-f]{15}$/);
     expect(existsSync(path.join(artifactsRoot, envelope.status!, 'aria.yml'))).toBe(true);
     expect(existsSync(path.join(artifactsRoot, envelope.status!, 'page.html'))).toBe(true);

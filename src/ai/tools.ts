@@ -1117,6 +1117,8 @@ const PAGE_DIFF_SUGGESTION =
 
 const FAILED_REQUEST_SUGGESTION = 'The server rejected a request made by this action (see requests). The UI accepted the interaction but the operation did not complete — read messages and consoleErrors for the reason and report it instead of repeating the action.';
 
+const NAVIGATED_SUGGESTION = 'The action left the page. Elements are never compared across pages, so this diff carries the move itself and what the app announced in transit — an empty element diff does not mean nothing happened.';
+
 const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
 const ANALYSIS_OUTPUT_CAP = 2000;
@@ -1202,6 +1204,8 @@ export function successToolResult(action: string, data?: Record<string, any>, so
     const hasHtmlParts = Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
     if (hasFailedRequest(data.pageDiff)) {
       suggestion = `${FAILED_REQUEST_SUGGESTION} ${suggestion}`;
+    } else if (urlChanged) {
+      suggestion = `${NAVIGATED_SUGGESTION} ${suggestion}`;
     } else if (isMajorPageChange(data.pageDiff)) {
       suggestion = `MAJOR PAGE CHANGE. Page entered a different mode. Check htmlParts and iframes in pageDiff before next action. ${suggestion}`;
     } else if (!urlChanged && !ariaChanges && !hasHtmlParts) {

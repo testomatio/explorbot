@@ -1043,7 +1043,12 @@ export class Prima {
   private async pageChanges(result: ActionResult, previousState: WebPageState | null, code: string): Promise<string> {
     if (!previousState) return 'no snapshot was captured before this command, so nothing could be compared';
     const toolResult = await result.toToolResult(ActionResult.fromState(previousState), code);
-    return toolResult.pageDiff?.ariaChanges || 'no change';
+    const pageDiff = toolResult.pageDiff;
+    if (!pageDiff?.urlChanged) return pageDiff?.ariaChanges || 'no change';
+
+    const lines = [`left ${previousState.url} for ${result.url}`];
+    for (const message of pageDiff.messages ?? []) lines.push(`- ${message}`);
+    return lines.join('\n');
   }
 
   async status(hash: string): Promise<EnvelopeData> {

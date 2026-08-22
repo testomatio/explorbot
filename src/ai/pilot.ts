@@ -1050,6 +1050,8 @@ export class Pilot implements Agent {
         const ariaDiff = t.output?.pageDiff?.ariaChanges;
         if (ariaDiff) line += `\n   ${ariaDiff}`;
 
+        if (t.output?.pageDiff?.urlChanged) line += `\n   moved: ${t.output.pageDiff.previousUrl} → ${t.output.pageDiff.currentUrl}`;
+
         const failedRequests = (t.output?.pageDiff?.requests ?? []).filter((r: any) => r.status >= 400);
         if (failedRequests.length > 0) {
           line += `\n   requests: ${failedRequests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;

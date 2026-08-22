@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { successToolResult } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { htmlDiff } from '../../src/utils/html-diff.ts';
+import { htmlDiff, liveRegionMessages } from '../../src/utils/html-diff.ts';
 
 const page = (body: string) => `<html><body><div class="app">${body}</div></body></html>`;
 
@@ -29,6 +29,13 @@ describe('html diff messages', () => {
     const after = page('<div aria-live="polite">Saved</div><output>3 results</output>');
 
     expect((await htmlDiff(before, after)).messages).toEqual(['Saved', '3 results']);
+  });
+
+  test('reports live region text across a navigation and leaves the new page content out', async () => {
+    const before = page('<h1>Sign in</h1><button>Sign in</button>');
+    const after = page('<div role="alert">Welcome back, admin</div><h1>Dashboard</h1><p>Nothing scheduled for today</p>');
+
+    expect(liveRegionMessages(before, after)).toEqual(['Welcome back, admin']);
   });
 
   test('reports nothing when the page did not change', async () => {
@@ -62,6 +69,30 @@ describe('pageDiff evidence', () => {
     expect(pageDiff?.messages).toContain('Save failed');
     expect(pageDiff?.requests).toEqual([{ method: 'POST', path: '/api/runs', status: 400 }]);
     expect(pageDiff?.consoleErrors).toEqual(['POST /api/runs returned a 400']);
+  });
+
+  test('keeps the content of a page it navigated to out of the messages', async () => {
+    const previous = new ActionResult({ id: 1, url: '/runs', html: page('<h1>Runs</h1><a href="/projects">Projects</a>') });
+    const current = new ActionResult({
+      id: 2,
+      url: '/projects',
+      html: page('<div role="alert">Project archived</div><h1>Projects list</h1><p>Choose a project to continue</p>'),
+    });
+
+    const { pageDiff } = await current.toToolResult(previous, 'Projects');
+
+    expect(pageDiff?.urlChanged).toBe(true);
+    expect(pageDiff?.messages).toEqual(['Project archived']);
+  });
+
+  test('does not compare elements across two pages', async () => {
+    const previous = new ActionResult({ id: 1, url: '/runs', html: page('<h1>Runs</h1>'), ariaSnapshot: '- button "New run"\n- link "Projects"' });
+    const current = new ActionResult({ id: 2, url: '/projects', html: page('<h1>Projects list</h1>'), ariaSnapshot: '- button "Create project"\n- searchbox "Filter projects"' });
+
+    const { pageDiff } = await current.toToolResult(previous, 'Projects');
+
+    expect(pageDiff?.ariaChanges).toBeUndefined();
+    expect(pageDiff?.htmlParts).toBeUndefined();
   });
 
   test('omits evidence the action did not produce', async () => {
@@ -114,9 +145,15 @@ describe('tool suggestion for rejected requests', () => {
 
   test('keeps the plain page diff suggestion when every request succeeded', () => {
     const result = successToolResult('click', {
-      pageDiff: { urlChanged: true, currentUrl: '/runs', requests: [{ method: 'GET', path: '/api/runs', status: 200 }] },
+      pageDiff: { urlChanged: false, currentUrl: '/runs', ariaChanges: 'ariaDiff:\n  added:\n    - alert "Run started"', requests: [{ method: 'GET', path: '/api/runs', status: 200 }] },
     });
 
     expect(result.suggestion).toStartWith('Analyze page diff.');
+  });
+
+  test('says why an action that left the page carries no element diff', () => {
+    const result = successToolResult('click', { pageDiff: { urlChanged: true, previousUrl: '/runs', currentUrl: '/projects' } });
+
+    expect(result.suggestion).toStartWith('The action left the page.');
   });
 });

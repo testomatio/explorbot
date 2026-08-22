@@ -245,7 +245,13 @@ class Action {
 
     const call: NetworkCall = { method: request.method(), path: url.pathname, status };
     if (this.networkRequests.some((r) => r.method === call.method && r.path === call.path && r.status === call.status)) return;
-    if (status < 400 && this.networkRequests.length >= MAX_NETWORK_CALLS) return;
+
+    if (this.networkRequests.length >= MAX_NETWORK_CALLS) {
+      if (status < 400) return;
+      const succeeded = this.networkRequests.findIndex((r) => r.status < 400);
+      if (succeeded === -1) return;
+      this.networkRequests.splice(succeeded, 1);
+    }
 
     this.networkRequests.push(call);
   }

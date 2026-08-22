@@ -36,6 +36,12 @@ describe('Pilot recent_actions evidence', () => {
     expect(line).toContain('console: Ember Data Request POST /api/runs returned a 400');
   });
 
+  it('names the page the action moved to, which is not described by an element diff', () => {
+    const line = format({ urlChanged: true, previousUrl: '/runs', currentUrl: '/projects' });
+
+    expect(line).toContain('moved: /runs → /projects');
+  });
+
   it('drops requests that succeeded', () => {
     const line = format({
       urlChanged: false,

@@ -4,7 +4,7 @@ import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
 import { LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
 import { TTLCache } from './utils/cache.ts';
-import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
+import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff, liveRegionMessages } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
 import { slugify } from './utils/strings.ts';
@@ -535,8 +535,8 @@ export class ActionResult implements ActionResultData {
 
     const diff = await this.diff(previousState);
 
-    if (diff.htmlDiff && diff.htmlDiff.messages.length > 0) {
-      pageDiff.messages = diff.htmlDiff.messages;
+    if (diff.messages.length > 0) {
+      pageDiff.messages = diff.messages;
     }
 
     if (diff.ariaChanged) {
@@ -614,6 +614,7 @@ function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
 
 export class Diff {
   private _htmlDiffResult: HtmlDiffResult | null = null;
+  private _messages: string[] = [];
   private _ariaDiffResult: string | null = null;
   private _ariaChangeCount = 0;
   private _isSameUrl: boolean;
@@ -666,12 +667,20 @@ export class Diff {
     return this._htmlDiffResult;
   }
 
+  get messages(): string[] {
+    return this._messages;
+  }
+
   async calculate(): Promise<void> {
     if (!this.previous) return;
 
-    if (this._isSameUrl) {
-      this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
+    if (!this._isSameUrl) {
+      this._messages = liveRegionMessages(this.previous.html, this.current.html);
+      return;
     }
+
+    this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
+    this._messages = this._htmlDiffResult.messages;
 
     const ariaDiff = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);
     this._ariaDiffResult = ariaDiff.text;

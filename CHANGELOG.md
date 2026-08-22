@@ -10,12 +10,21 @@ kind of value" was either buried in raw markup or dropped altogether, and the re
 much later as a session-wide count. Every action now also carries:
 
 - **messages** — text the app put on the page in response: toasts, alerts, banners and inline errors,
-  including ones built without any accessibility markup
-- **requests** — the calls the action made to the application, each with its status
+  including ones built without any accessibility markup. An action that navigated reports only what its
+  live regions announced, so the content of the page that opened is not read back as a reply
+- **requests** — the calls the action made to the application, each with its status, capped per action
+  with rejected calls kept ahead of successful ones
 - **consoleErrors** — what the page logged while the action ran
 
 When a request comes back 400 or 500 the result leads with that, and points at the message the user was
 shown, rather than leaving the model to read the click as successful and repeat it.
+
+Elements are no longer compared across two pages. An action that navigated used to report one ARIA diff
+whose halves belonged to different pages — the elements of the page left behind listed as removed next to
+the elements of the page arrived at, with the chrome common to both cancelled out and nothing saying which
+side was which, so elements that no longer exist read as available. Such an action now reports the move
+itself, the message the app announced in transit, and its requests; the page arrived at is described in
+full by the context that follows it.
 
 The Pilot's review reads the same evidence attached to the action that caused it, narrowed to what
 indicates failure: rejected requests, the first two messages, one console error. It used to get a bare

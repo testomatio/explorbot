@@ -229,13 +229,28 @@ export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlC
 }
 
 /**
- * Text the user was shown by the change: live region content first, then any other text that appeared.
+ * Text the app announced while the page stayed the same: live region content first, then any other text that appeared.
  */
 function collectMessages(originalMap: NodeMap, modifiedMap: NodeMap, added: string[]): string[] {
   const appearedText = added.filter((line) => line.startsWith(TEXT_LINE_PREFIX)).map((line) => line.slice(TEXT_LINE_PREFIX.length));
+
+  return limitMessages([...collectLiveRegionTexts(originalMap, modifiedMap), ...appearedText]);
+}
+
+/**
+ * Text the app announced across a navigation. Only live regions: everything else on a new page is its content, not a message.
+ */
+export function liveRegionMessages(originalHtml: string, modifiedHtml: string): string[] {
+  const originalMap = collectElementMap(parseDocument(originalHtml));
+  const modifiedMap = collectElementMap(parseDocument(modifiedHtml));
+
+  return limitMessages(collectLiveRegionTexts(originalMap, modifiedMap));
+}
+
+function limitMessages(candidates: string[]): string[] {
   const messages: string[] = [];
 
-  for (const candidate of [...collectLiveRegionTexts(originalMap, modifiedMap), ...appearedText]) {
+  for (const candidate of candidates) {
     const text = candidate.replace(/\s+/g, ' ').trim().slice(0, MESSAGE_MAX_LENGTH);
     if (!text) continue;
     if (messages.some((message) => message.includes(text))) continue;
