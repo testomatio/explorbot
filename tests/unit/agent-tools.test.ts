@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { ActionResult } from '../../src/action-result.ts';
 import { createAgentTools, isMajorPageChange, withdrawVisionTools } from '../../src/ai/tools.ts';
 import { Stats } from '../../src/stats.ts';
+import { Test } from '../../src/test-plan.ts';
 
 describe('createAgentTools experience', () => {
   it('adds learnExperience by default and reads from the shared experience tracker', async () => {
@@ -46,13 +47,39 @@ describe('createAgentTools experience', () => {
         return true;
       },
     } as any;
-    const explorer = { activeTest: { appliedExperience: ['## FLOW: open the menu'] } } as any;
+    const test = new Test('open the menu', 'normal', 'menu opens', '/page');
+    test.applyExperience([{ url: '/page', content: '## FLOW: open the menu' }]);
+    const explorer = { activeTest: test } as any;
 
     const tools = createAgentTools({ explorer, stateManager, ai: {} as any, researcher: {} as any, navigator });
 
     await tools.interact.execute({ instruction: 'open the menu' });
 
     expect(receivedExperience).toContain('## FLOW: open the menu');
+  });
+
+  it('withholds recipes the test picked up on another page', async () => {
+    const state = new ActionResult({ url: '/page', title: 'Page', html: '<html></html>', ariaSnapshot: '' });
+    const stateManager = { getCurrentState: () => state, getExperienceTracker: () => ({}) } as any;
+    let receivedExperience: string | undefined;
+    const navigator = {
+      resolveState: async (_instruction: string, _actionResult: ActionResult, opts?: { experience?: string }) => {
+        receivedExperience = opts?.experience;
+        return true;
+      },
+    } as any;
+    const test = new Test('open the menu', 'normal', 'menu opens', '/page');
+    test.applyExperience([
+      { url: '/other', content: '## FLOW: submit the other form' },
+      { url: '/page', content: '## FLOW: open the menu' },
+    ]);
+
+    const tools = createAgentTools({ explorer: { activeTest: test } as any, stateManager, ai: {} as any, researcher: {} as any, navigator });
+
+    await tools.interact.execute({ instruction: 'open the menu' });
+
+    expect(receivedExperience).toContain('## FLOW: open the menu');
+    expect(receivedExperience).not.toContain('submit the other form');
   });
 
   it('hands the interact tool nothing when no test is running', async () => {

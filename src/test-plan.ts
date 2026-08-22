@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import figures from 'figures';
+import type { ActionResult } from './action-result.ts';
 import { WebPageState } from './state-manager.ts';
 import { tag } from './utils/logger.ts';
 import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown, savePlansToMarkdown } from './utils/test-plan-markdown.ts';
@@ -236,7 +237,7 @@ export class Test extends Task {
   startTime?: number;
   endTime?: number;
   resetCount = 0;
-  appliedExperience: string[] = [];
+  appliedExperience: AppliedExperience[] = [];
 
   constructor(scenario: string, priority: 'critical' | 'important' | 'high' | 'normal' | 'low', expectedOutcome: string | string[], startUrl: string, plannedSteps: string[] = []) {
     super(scenario, startUrl);
@@ -258,11 +259,15 @@ export class Test extends Task {
     return [...new Set([this.startUrl, ...this.states.map((s) => s.url)].filter((value): value is string => Boolean(value) && value.trim() !== ''))];
   }
 
-  applyExperience(recipes: string[]): void {
+  applyExperience(recipes: AppliedExperience[]): void {
     for (const recipe of recipes) {
-      if (this.appliedExperience.includes(recipe)) continue;
+      if (this.appliedExperience.some((applied) => applied.content === recipe.content)) continue;
       this.appliedExperience.push(recipe);
     }
+  }
+
+  getAppliedExperience(state: ActionResult): string[] {
+    return this.appliedExperience.filter((recipe) => state.isRelevantExperienceRecord({ url: recipe.url })).map((recipe) => recipe.content);
   }
 
   addArtifact(artifact?: string): void {
@@ -537,4 +542,9 @@ interface UrlNoteState {
   h1?: string;
   h2?: string;
   screenshotFile?: string;
+}
+
+interface AppliedExperience {
+  url: string;
+  content: string;
 }

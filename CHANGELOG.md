@@ -9,6 +9,9 @@
   plans a test, when the test lands on a new page, and when a step keeps failing.
 - [Pilot] drops the list of titles from the previous page even when the new page has nothing
   recorded for it, so it never picks a solution belonging to a page the test has already left.
+- A recorded solution the Pilot opened earlier is now offered back to a step only on the page it
+  was recorded for. A test that picked one up on an earlier page used to carry it to every page it
+  visited afterwards, presented as if it belonged there.
 - [Tester] no longer reads recorded solutions at all — neither the recipes nor the list of their
   titles. A single page can hold recipes for a dozen unrelated features, and handing all of them
   over put work with nothing to do with the current scenario in front of the model. Everything it

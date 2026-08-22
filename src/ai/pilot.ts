@@ -689,7 +689,7 @@ export class Pilot implements Agent {
       telemetry: { functionId },
     });
     const text = result?.response?.text || '';
-    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => e.output.content);
+    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => ({ url: e.output.url, content: e.output.content }));
     if (learned.length === 0) return text;
     opts.task.applyExperience(learned);
     return dedent`
@@ -699,7 +699,7 @@ export class Pilot implements Agent {
       Recipes from prior successful runs that Pilot judged relevant. Locators worked then; the page may have changed since.
       Treat code blocks below as a starting hypothesis. If a locator misses, fall back to ARIA/UI-map.
 
-      ${learned.join('\n\n')}
+      ${learned.map((recipe) => recipe.content).join('\n\n')}
       </applied_experience>
     `;
   }

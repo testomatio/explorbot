@@ -798,7 +798,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
           const previousState = ActionResult.fromState(currentState);
           const actionResult = ActionResult.fromState(currentState);
-          const experience = renderExperienceRecipes(explorer.activeTest?.appliedExperience ?? []);
+          const experience = renderExperienceRecipes(explorer.activeTest?.getAppliedExperience(actionResult) ?? []);
           const success = await navigator.resolveState(instruction, actionResult, { experience });
 
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, instruction);
