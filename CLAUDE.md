@@ -117,6 +117,18 @@ Negative contract (all agents):
 - Must not instantiate CodeceptJS/Playwright — all browser interaction through Explorer/Action
 - Must not read config/env — dependencies arrive via `createAgent`
 
+### HTML access
+
+Full page HTML bodies are expensive and noisy — only agents whose verb requires reading raw structure get them:
+
+| Tier | Agents | What they get |
+|---|---|---|
+| Standing full HTML | Researcher, Navigator, Driller, Tester | `<page_html>` / `combinedHtml()` in every context injection |
+| On-demand simplified HTML | Pilot | `simplifiedHtml()` attached only on explicit `ATTACH_HTML` request |
+| No HTML | Planner, Captain, Historian, Analyst, ExperienceCompactor, Quartermaster | ARIA snapshots, UI maps, research summaries; node snippets ≤100 chars allowed |
+
+Do not add HTML access to a new agent. If an agent seems to need raw HTML, the real fix is a better derivative (UI map, focused snippet, research note) produced by Researcher — not widening this table.
+
 Glue tiers: **Tools** = schema + result parsing only, delegating every real operation to an agent or data module in one call. **Explorer/Action** = the only thing that moves the browser. **TUI/remote** = render pipes, never compute business meaning.
 
 ## Data Envelope Formats
@@ -128,9 +140,20 @@ All persisted formats share one rule: **envelope keys (YAML frontmatter, HTML co
 | Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `wait`, `waitForElement`, `noExperienceReading/Writing` | Free prose facts |
 | Experience | `experience/<stateHash>.md`, ExperienceTracker | sparse frontmatter | `## FLOW:` / `## ACTION:` h2 blocks; bullets + ```js``` + `Solution:` line; h3 forbidden under blocks |
 | Test plan | `output/plans/*.md`, test-plan-markdown.ts | `<!-- test ... -->` comment: `priority`, `style`; scenario heading, `url:` line, bullets as steps | Notes/results appended by runner |
-| Research cache | `output/research/<hash>.md`, researcher/cache.ts | none (hash-keyed, TTL'd) | free markdown; `.fingerprint` sidecar |
-| Session report | `output/reports/<mode>-<name>.md`, session-analyst.ts | none | fixed h2 sections: Coverage / What works / Defects / UX issues / Execution Issues |
-| Generated tests | `output/tests/*.js`, historian | none | runnable CodeceptJS only — rerun consumes it |
+
+These are **data formats**: written and read back inside the runtime loop (knowledge/experience steer every run; plans are consumed by the runner and rerun).
+
+**Artifacts** are session outputs for humans and external tools — stored when a session ends, never read back by agents mid-run:
+
+| Artifact | Location & owner | Format |
+|---|---|---|
+| Session report | `output/reports/<mode>-<name>.md`, session-analyst.ts | fixed h2 sections: Coverage / What works / Defects / UX issues / Execution Issues |
+| Generated tests | `output/tests/*.js`, historian | runnable CodeceptJS only — rerun consumes it as a new run's input, not as internal state |
+| Screenshots / screencast | `output/…`, action.ts / historian | PNG / video files |
+
+Artifacts follow looser rules than data formats: no envelope checklist applies. The only invariants are their owners (one writer each) and that generated tests stay runnable CodeceptJS.
+
+The research cache (`output/research/<hash>.md`, researcher/cache.ts — hash-keyed, TTL'd, free markdown with `.fingerprint` sidecar) is neither: it is run-state ephemera, not an interface — treat it as internal-only.
 
 Adding a new item to an envelope — all four must hold:
 
@@ -140,8 +163,6 @@ Adding a new item to an envelope — all four must hold:
 4. Single writer module.
 
 Never add: executable content in envelopes; site-specific locators anywhere (violates core principle); new magic message prefixes in notes (`Pilot:`, noise prefixes are a closed set owned by `test-plan-markdown.ts`); new block types inside experience FLOW/ACTION bodies (a new h2 block type following the imperative-title pattern is fine); non-CodeceptJS constructs in generated tests.
-
-The research cache is run-state ephemera, not an interface — treat it as internal-only.
 
 ## Feature Routing Test
 
@@ -665,6 +686,16 @@ After big changes run linter: `bun run lint:fix`
 Before each commit run `/changelog` skill to update CHANGELOG.md
 **Never use NodeJS**
 This application is only Bun
+
+### Git Worktrees
+
+Feature branches live in sibling worktrees at `../explorbot-<branch>`, each sharing the main checkout's `node_modules` through a symlink:
+
+```bash
+bunosh worktree:create <feature>  # new branch off main in ../explorbot-<feature>
+bunosh worktree:fetch <branch>    # existing branch fetched into ../explorbot-<branch>
+bunosh worktree:delete [branch]   # remove a worktree by branch name or path, prompts when no name given
+```
 
 ## CI
 
