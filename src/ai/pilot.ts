@@ -466,8 +466,8 @@ export class Pilot implements Agent {
         Prefer interacting with the current page over navigating away.
 
         Tester never sees <experience> — a recorded recipe reaches it only when you open one.
-        Open every entry that could cover a step of this scenario with learnExperience before
-        planning, and say so in the plan when none apply.
+        Judge from the titles which ones are worth reading for this scenario, open those with
+        learnExperience before planning, and say so in the plan when none of the titles fit.
         Do NOT rewrite a loaded recipe's code — the raw recipe is forwarded to Tester
         automatically. Reference it by step ("apply recipe steps 1–3, then…") and call out
         anywhere your scenario diverges from it.
@@ -517,7 +517,7 @@ export class Pilot implements Agent {
 
         First: evaluate whether this navigation makes sense for the scenario goal. If the page is unrelated, instruct Tester to back() or reset(). Then plan next steps.
 
-        Tester holds no recipe for this page until you load one — open any <experience> entry covering a step you are about to instruct.
+        Tester holds no recipe for this page until you load one — open the <experience> entries whose titles fit a step you are about to instruct.
       `,
       'pilot.reviewNewPage',
       { tools: true, maxToolRoundtrips: 2, task }
