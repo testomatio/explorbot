@@ -4,11 +4,25 @@
 
 ### Changes
 
+- AI models that emit channel markers in tool names (e.g. `click<|channel|>commentary`, common with
+  gpt-oss and gemma) no longer waste a turn: the provider now repairs the name to the real tool and
+  executes it, instead of rejecting the call and telling the AI to retry. In a 24h CI sample this
+  rejection burned 93 tool calls across 34 test traces.
+- [Fisherman] A captured request rejected by the API is no longer presented as a valid request
+  example. OpenAPI definitions take precedence when available, and failed responses now identify
+  whether validation, authorization, routing, conflict, temporary, or server handling is needed.
+- [Researcher/Planner] Similar HTML is reused only after URL-aware matching: new fingerprints
+  store their source URL, candidates from other page families are filtered before the best match is
+  selected, and Planner applies the same check before reusing a state hash. Legacy fingerprints
+  without URL metadata remain readable for backward compatibility.
+- Configuration: absolute configured directories are now respected as-is instead of being joined
+  onto the project root, which produced doubled, unusable paths on Windows.
 - A browser command that fails now reports a short error instead of Playwright's full retry log.
   Click, hover, key press, form and back/reset failures used to carry every wait and retry line,
   the same reason repeated once per attempt, and terminal color codes — around 850 characters for
   one disabled button. What is left is the element the locator resolved to and the reason it could
   not be acted on, so the AI reads the blocker instead of scrolling past bookkeeping.
+
 ## 2026-08-20
 
 ### Changes

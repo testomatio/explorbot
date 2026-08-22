@@ -128,7 +128,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         updated = `${cached.trimEnd()}\n\n# Extended Research\n\n${sectionMarkdown}\n`;
       }
 
-      saveResearch(pageStateHash, updated);
+      saveResearch({ hash: pageStateHash }, updated);
       tag('substep').log(`Overlay research appended: ${focusArea.name}`);
       return sectionMarkdown;
     }

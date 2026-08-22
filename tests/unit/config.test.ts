@@ -225,6 +225,16 @@ describe('ConfigParser environment mode', () => {
     expect(parser.getOutputDir()).toBe(scratchDir);
   });
 
+  it('keeps absolute project directories unchanged', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://example.com';
+    process.env.EXPLORBOT_OUTPUT = scratchDir;
+
+    await parser.loadConfig();
+
+    expect(parser.resolveProjectDir(scratchDir)).toBe(scratchDir);
+  });
+
   it('resolves optional vision and agentic models', async () => {
     process.env.EXPLORBOT_AI_MODEL = 'groq/openai/gpt-oss-20b';
     process.env.EXPLORBOT_VISION_MODEL = 'groq/meta-llama/llama-4-scout-17b-16e-instruct';
