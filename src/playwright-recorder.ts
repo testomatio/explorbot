@@ -9,7 +9,7 @@ const RECORDABLE: Record<string, Set<string>> = {
   Page: new Set(['goBack', 'goForward', 'reload', 'keyboardPress', 'keyboardType', 'keyboardDown', 'keyboardUp', 'keyboardInsertText', 'mouseClick', 'mouseDblclick', 'mouseMove', 'mouseDown', 'mouseUp', 'mouseWheel']),
 };
 
-const PLAYWRIGHT_INCOMPATIBLE = "Playwright output is not compatible with this Playwright version (playwright-core/lib/utils does not expose asLocator). Use output.framework: 'codeceptjs' instead, or pin Playwright to a version shipping lib/utils/isomorphic/locatorGenerators.js.";
+const PLAYWRIGHT_INCOMPATIBLE = "Playwright output requires playwright-core 1.62 or newer (lib/coreBundle does not expose iso.asLocator). Use output.framework: 'codeceptjs' instead.";
 
 let cachedAsLocator: ((lang: string, selector: string) => string) | null = null;
 let asLocatorLoadAttempted = false;
@@ -20,16 +20,11 @@ function getAsLocator(): (lang: string, selector: string) => string {
   if (asLocatorLoadAttempted) throw new Error(PLAYWRIGHT_INCOMPATIBLE);
 
   asLocatorLoadAttempted = true;
-  try {
-    const mod = nodeRequire('playwright-core/lib/utils');
-    if (typeof (mod as any)?.asLocator === 'function') {
-      cachedAsLocator = (mod as any).asLocator;
-      return cachedAsLocator!;
-    }
-  } catch {
-    // Module not exported or not found
-  }
-  throw new Error(PLAYWRIGHT_INCOMPATIBLE);
+  const asLocator = nodeRequire('playwright-core/lib/coreBundle')?.iso?.asLocator;
+  if (typeof asLocator !== 'function') throw new Error(PLAYWRIGHT_INCOMPATIBLE);
+
+  cachedAsLocator = asLocator;
+  return cachedAsLocator;
 }
 
 export interface TraceCall {

@@ -8,6 +8,7 @@ import { type Task, TestResult } from '../test-plan.js';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
+import { compactErrorMessage } from '../utils/strings.ts';
 import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
@@ -33,10 +34,6 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
     click: tool({
       description: dedent`
         Click an element by trying multiple CodeceptJS commands in order until one succeeds.
-
-        Use this only for elements the page context gives you no ref for. When the element shows a ref such as [ref=e14],
-        call clickRef with that ref instead — composing a locator for an element that already has a ref is wasted work,
-        and a locator can match several elements where a ref cannot.
 
         Follow <locator_priority> from system prompt for locator selection.
 
@@ -98,7 +95,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           const success = await action.attempt(command, explanation);
 
           const attempt: { command: string; success: boolean; error?: string } = { command, success };
-          if (action.lastError) attempt.error = action.lastError.toString();
+          if (action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
           if (success) {
@@ -124,7 +121,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
 
           for (const retryCmd of retryCommands) {
             if (!(await action.attempt(retryCmd, explanation))) {
-              attempts.push({ command: retryCmd, success: false, error: action.lastError?.toString() });
+              attempts.push({ command: retryCmd, success: false, error: errorText(action.lastError) });
               continue;
             }
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, retryCmd);
@@ -148,41 +145,6 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           },
           action.lastError
         );
-      },
-    }),
-
-    clickRef: tool({
-      description: dedent`
-        Click an element by the ref the page context gave it, e.g. [ref=e14].
-
-        Prefer this over click() whenever the element you want carries a ref. A ref names one exact element, so it
-        cannot match several by mistake and never needs disambiguating — it is the fastest way to click.
-        Only pass a ref that appears in the page context you were given. Never invent or guess one.
-        If it reports the ref is gone, the page has been rebuilt: get fresh context and use the new ref.
-      `,
-      inputSchema: z.object({
-        ref: z.string().describe('The ref exactly as it appears in the page context, e.g. "e14"'),
-        element: z.string().describe('Role and name of the element you are clicking, for the record'),
-      }),
-      execute: async ({ ref, element }) => {
-        const activeNote = task.startNote(`Click ${element}`);
-        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
-        const action = explorer.action();
-        const named = await describeRef(explorer, ref);
-        const run = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
-
-        if (!(await action.attempt(run, `Click ${element}`))) {
-          activeNote.commit(TestResult.FAILED);
-          return failedToolResult('clickRef', `Ref ${ref} could not be clicked: ${errorText(action.lastError)}`, {
-            suggestion: 'The ref may belong to an older version of the page. Get fresh context and use the ref it gives, or fall back to click() with a locator.',
-          });
-        }
-
-        // a ref belongs to this session only, so the run is reported as the locator a later test can replay
-        const code = named ? `I.click(${JSON.stringify(named)})` : run;
-        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, code);
-        await commitNote(activeNote, TestResult.PASSED, toolResult, action);
-        return successToolResult('clickRef', { ...toolResult, code }, action);
       },
     }),
 
@@ -237,7 +199,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
         for (const command of commands) {
           const success = await action.attempt(command, explanation);
           const attempt: { command: string; success: boolean; error?: string } = { command, success };
-          if (action.lastError) attempt.error = action.lastError.toString();
+          if (action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
           if (!success) continue;
@@ -320,7 +282,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
               );
             }
 
-            const errorMsg = `pressKey fallback to type() failed: ${action.lastError?.toString()}`;
+            const errorMsg = `pressKey fallback to type() failed: ${errorText(action.lastError)}`;
             await commitNote(activeNote, TestResult.FAILED, toolResult, action);
             return failedToolResult('pressKey', errorMsg, {
               ...toolResult,
@@ -366,7 +328,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
             );
           }
 
-          const errorMsg = `pressKey() failed: ${action.lastError?.toString()}`;
+          const errorMsg = `pressKey() failed: ${errorText(action.lastError)}`;
           await commitNote(activeNote, TestResult.FAILED, toolResult, action);
           return failedToolResult('pressKey', errorMsg, {
             ...toolResult,
@@ -386,8 +348,6 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
       description: dedent`
         Execute raw CodeceptJS code block with multiple commands.
         USE THIS TOOL for typing text into fields: I.fillField, I.type
-
-        Do not put a click on a ref-bearing element in here — clickRef with its ref is cheaper and cannot mis-target.
 
         Follow <actions> from system prompt for available commands.
         Follow <locator_priority> from system prompt for locator selection.
@@ -448,7 +408,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, formLocator);
 
           if (action.lastError) {
-            const message = action.lastError ? String(action.lastError) : 'Unknown error';
+            const message = errorText(action.lastError);
             await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
             let formSuggestion = 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and form() tools.';
@@ -497,6 +457,45 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           const errorMessage = errorText(error);
           return failedToolResult('form', `Form tool failed: ${errorMessage}`);
         }
+      },
+    }),
+  };
+}
+
+export function createRefTools({ explorer, stateManager }: ToolDeps, task: Task) {
+  return {
+    clickRef: tool({
+      description: dedent`
+        Click an element by the ref the page context gave it, e.g. [ref=e14].
+
+        Prefer this over click() whenever the element you want carries a ref. A ref names one exact element, so it
+        cannot match several by mistake and never needs disambiguating — it is the fastest way to click.
+        Only pass a ref that appears in the page context you were given. Never invent or guess one.
+        If it reports the ref is gone, the page has been rebuilt: get fresh context and use the new ref.
+      `,
+      inputSchema: z.object({
+        ref: z.string().describe('The ref exactly as it appears in the page context, e.g. "e14"'),
+        element: z.string().describe('Role and name of the element you are clicking, for the record'),
+      }),
+      execute: async ({ ref, element }) => {
+        const activeNote = task.startNote(`Click ${element}`);
+        const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
+        const action = explorer.action();
+        const named = await describeRef(explorer, ref);
+        const run = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
+
+        if (!(await action.attempt(run, `Click ${element}`))) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('clickRef', `Ref ${ref} could not be clicked: ${errorText(action.lastError)}`, {
+            suggestion: 'The ref may belong to an older version of the page. Get fresh context and use the ref it gives, or fall back to click() with a locator.',
+          });
+        }
+
+        // a ref belongs to this session only, so the run is reported as the locator a later test can replay
+        const code = named ? `I.click(${JSON.stringify(named)})` : run;
+        const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, code);
+        await commitNote(activeNote, TestResult.PASSED, toolResult, action);
+        return successToolResult('clickRef', { ...toolResult, code }, action);
       },
     }),
   };
@@ -952,7 +951,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
         }
 
         const failData: Record<string, any> = { suggestion: 'Try reset() to return to the starting page.' };
-        if (action.lastError) failData.error = action.lastError.toString();
+        if (action.lastError) failData.error = errorText(action.lastError);
         return failedToolResult('back', `Failed to navigate back to ${targetUrl}`, failData);
       },
     }),
@@ -1015,7 +1014,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
         if (result.totalFound === 0) {
           return failedToolResult('xpathCheck', `No elements matched XPath: ${xpath}`, {
-            suggestion: 'Try a broader expression. Examples: //*[contains(@class, "btn")], //button, //*[contains(text(), "keyword")]',
+            suggestion: 'Do not guess another expression. Narrow down from what you know about the target: its role, its visible text, its nearest labelled ancestor. Add one constraint at a time.',
           });
         }
 
@@ -1154,7 +1153,7 @@ function transformContainsCommand(command: string): string {
 }
 
 function errorText(error: unknown): string {
-  if (error instanceof Error) return error.toString();
+  if (error instanceof Error) return compactErrorMessage(error);
   return 'Unknown error occurred';
 }
 
@@ -1276,6 +1275,10 @@ export function clickFailureSuggestion(attempts: Array<{ error?: string }>): str
 
   if (errors.some((e) => e.includes('is not visible'))) {
     return 'Element is in the DOM but not visible. Reveal it first — scroll to it, expand its section, or open the panel holding it.';
+  }
+
+  if (errors.some((e) => e.includes('SyntaxError'))) {
+    return 'The command string never parsed as JavaScript — quotes or brackets do not match. No element was looked up, so this tells you nothing about the page. Re-emit the same intent as valid CodeceptJS.';
   }
 
   const notFound = errors.filter((e) => e.includes('was not found'));

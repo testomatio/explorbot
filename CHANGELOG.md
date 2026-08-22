@@ -17,6 +17,30 @@
   without URL metadata remain readable for backward compatibility.
 - Configuration: absolute configured directories are now respected as-is instead of being joined
   onto the project root, which produced doubled, unusable paths on Windows.
+- A browser command that fails now reports a short error instead of Playwright's full retry log.
+  Click, hover, key press, form and back/reset failures used to carry every wait and retry line,
+  the same reason repeated once per attempt, and terminal color codes — around 850 characters for
+  one disabled button. What is left is the element the locator resolved to and the reason it could
+  not be acted on, so the AI reads the blocker instead of scrolling past bookkeeping.
+
+## 2026-08-20
+
+### Changes
+
+- [Pilot] A test no longer burns its whole budget asking for the same test data over and over. When
+  the page check that decides whether the test can go on without that data failed, nothing came back
+  at all, so the request looked unanswered and was repeated until the test ran out of steps without
+  ever touching the browser. The check now always answers, even when it cannot look at the page.
+- [Pilot] When test data could not be prepared, the answer now says so plainly — it was not created,
+  it cannot be created automatically, and the test should carry on with what the page already shows.
+- A click whose command never parsed as JavaScript is now reported as a broken command, not as a
+  missing element. Mismatched quotes or brackets used to be answered with advice to hunt the DOM
+  with `xpathCheck()`, `see()` or `visualClick()`, so the AI searched for an element that was never
+  looked up and re-emitted the same broken command. It is now told the string was invalid, that
+  nothing was learned about the page, and to re-emit the same intent as valid CodeceptJS.
+- `xpathCheck` that matches nothing no longer suggests broadening to a generic expression. It now
+  asks for narrowing down from what is known about the target — its role, its visible text, its
+  nearest labelled ancestor — one constraint at a time, instead of inviting another blind guess.
 
 ## 2026-08-18
 
