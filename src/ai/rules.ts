@@ -76,7 +76,7 @@ const locatorStrategyRule = dedent`
 
   NEVER include \`eidx\` attribute in any locator (ARIA, CSS, XPath). It is an internal annotation.
 
-  If <aria> section is not present or element is not found there, fall back to CSS/XPath locators from <html> section.
+  If the element is not found in the ARIA snapshot, fall back to CSS/XPath locators from page HTML.
 
   Stick to semantic attributes like role, aria-*, id, class, name, data-id, etc.
   Avoid IDs that follow framework auto-generation patterns (these change on every page load):

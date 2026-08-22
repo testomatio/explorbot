@@ -871,15 +871,6 @@ export class Pilot implements Agent {
   private async fetchRequestedContext(text: string, currentState: ActionResult): Promise<string> {
     const parts: string[] = [];
 
-    if (text.includes('ATTACH_HTML')) {
-      const html = await currentState.simplifiedHtml();
-      parts.push(dedent`
-        <page_html>
-        ${html}
-        </page_html>
-      `);
-    }
-
     if (text.includes('ATTACH_ARIA')) {
       parts.push(dedent`
         <page_aria>
@@ -1117,10 +1108,10 @@ export class Pilot implements Agent {
       role, icon classes with "or" in one XPath. If empty, broaden (drop role filter). Pass discovered
       XPath into NEXT instruction.
 
-      To request more context, mention ATTACH_HTML, ATTACH_ARIA, or ATTACH_UI_MAP — only when recent actions show failures.
+      To request more context, mention ATTACH_ARIA, ATTACH_SUMMARY, or ATTACH_UI_MAP — only when recent actions show failures.
 
-      Tester tools: click, pressKey, form, see, verify, context, research, xpathCheck, visualClick,
-      back, getVisitedStates, reset, stop, finish, record.
+      Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
+      visualClick, back, getVisitedStates, reset, stop, finish, record.
       Use tool names exactly as listed. Do not invent combined names, aliases, or names with channel markers such as "commentary".
 
       ${capabilityGroundingRule}
