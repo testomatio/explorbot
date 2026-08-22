@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-21
+
+### Changes
+
+- A browser command that fails now reports a short error instead of Playwright's full retry log.
+  Click, hover, key press, form and back/reset failures used to carry every wait and retry line,
+  the same reason repeated once per attempt, and terminal color codes — around 850 characters for
+  one disabled button. What is left is the element the locator resolved to and the reason it could
+  not be acted on, so the AI reads the blocker instead of scrolling past bookkeeping.
 ## 2026-08-20
 
 ### Changes
