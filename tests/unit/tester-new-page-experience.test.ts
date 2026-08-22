@@ -16,7 +16,6 @@ function buildTester(experienceToc: string) {
         },
       }),
     },
-    interactiveAriaWithRefs: async () => 'aria',
   }) as any;
 
   return { tester, requestedFor };
@@ -29,6 +28,7 @@ const newPage = {
   ariaSnapshot: '',
   isInsideIframe: false,
   focusedElement: null,
+  getInteractiveARIA: () => 'aria',
 };
 
 describe('Tester context on a new page', () => {

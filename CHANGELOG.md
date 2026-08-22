@@ -51,6 +51,24 @@ experience with it, and the Pilot reviewing that page can open the recipes liste
 - The question the Pilot asks is offered only where somebody can answer it. A run with no one at
   the keyboard no longer spends a step on a tool whose only possible reply was "user input not
   available".
+## 2026-08-20
+
+### Changes
+
+- [Pilot] A test no longer burns its whole budget asking for the same test data over and over. When
+  the page check that decides whether the test can go on without that data failed, nothing came back
+  at all, so the request looked unanswered and was repeated until the test ran out of steps without
+  ever touching the browser. The check now always answers, even when it cannot look at the page.
+- [Pilot] When test data could not be prepared, the answer now says so plainly — it was not created,
+  it cannot be created automatically, and the test should carry on with what the page already shows.
+- A click whose command never parsed as JavaScript is now reported as a broken command, not as a
+  missing element. Mismatched quotes or brackets used to be answered with advice to hunt the DOM
+  with `xpathCheck()`, `see()` or `visualClick()`, so the AI searched for an element that was never
+  looked up and re-emitted the same broken command. It is now told the string was invalid, that
+  nothing was learned about the page, and to re-emit the same intent as valid CodeceptJS.
+- `xpathCheck` that matches nothing no longer suggests broadening to a generic expression. It now
+  asks for narrowing down from what is known about the target — its role, its visible text, its
+  nearest labelled ancestor — one constraint at a time, instead of inviting another blind guess.
 
 ## 2026-08-18
 

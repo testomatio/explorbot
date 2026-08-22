@@ -1,8 +1,8 @@
 {
   "openrouter": {
     "model": "openai/gpt-oss-20b:nitro",
-    "visionModel": "google/gemma-4-31b-it:nitro",
-    "agenticModel": "google/gemma-4-31b-it:nitro"
+    "visionModel": "openai/gpt-5.6-luna",
+    "agenticModel": "openai/gpt-5.6-luna"
   },
   "poolside": {
     "model": "poolside/laguna-xs-2.1"
@@ -13,8 +13,8 @@
     "agenticModel": "qwen/qwen3.6-27b"
   },
   "openai": {
-    "model": "gpt-5.4-nano",
-    "visionModel": "gpt-5.4-nano",
+    "model": "gpt-5-nano",
+    "visionModel": "gpt-5.6-luna",
     "agenticModel": "gpt-5.6-luna"
   },
   "anthropic": {
