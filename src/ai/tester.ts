@@ -426,6 +426,7 @@ export class Tester extends TaskAgent implements Agent {
     await this.hooksRunner.runAfterHook('tester', finalUrl);
 
     await this.getHistorian().saveSession(task, initialState, conversation);
+    await this.captain?.reviewAnswers(task);
     if (task.plan) {
       this.getHistorian().savePlanToFile(task.plan);
     }
@@ -611,6 +612,10 @@ export class Tester extends TaskAgent implements Agent {
         Do not interact with elements that are not listed in <page_aria> and <page_html>
         Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
       `;
+
+      const experience = this.getExperience(currentState);
+      if (experience) context += `\n\n${experience}`;
+
       return context;
     }
 

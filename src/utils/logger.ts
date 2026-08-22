@@ -307,15 +307,20 @@ class ReactDestination implements LogDestination {
   }
 }
 
+const ANSWER_LOG_LIMIT = 200;
+
 class CaptainDestination implements LogDestination {
   private entries: TaggedLogEntry[] = [];
   private capturing = false;
+
+  constructor(private limit = Number.POSITIVE_INFINITY) {}
 
   isEnabled(): boolean {
     return this.capturing;
   }
 
   startCapture(): void {
+    if (this.capturing) return;
     this.entries = [];
     this.capturing = true;
   }
@@ -328,6 +333,7 @@ class CaptainDestination implements LogDestination {
   }
 
   write(entry: TaggedLogEntry): void {
+    if (this.entries.length >= this.limit) return;
     this.entries.push(entry);
   }
 }
@@ -340,6 +346,7 @@ class Logger {
   private span = new SpanDestination();
   public react = new ReactDestination();
   public captain = new CaptainDestination();
+  public answers = new CaptainDestination(ANSWER_LOG_LIMIT);
   private extra: LogDestination[] = [];
   private truncateTags: string[] = ['page_html'];
 
@@ -482,6 +489,7 @@ class Logger {
     if (this.file.isEnabled()) this.file.write(entry);
     if (this.span.isEnabled()) this.span.write(entry);
     if (this.captain.isEnabled()) this.captain.write(entry);
+    if (this.answers.isEnabled()) this.answers.write(entry);
     for (const destination of this.extra) {
       if (destination.isEnabled()) destination.write(entry);
     }
@@ -564,6 +572,8 @@ export const getMethodsOfObject = (obj: any): string[] => {
 
 export const startLogCapture = () => logger.captain.startCapture();
 export const stopLogCapture = () => logger.captain.stopCapture();
+export const startAnswerCapture = () => logger.answers.startCapture();
+export const stopAnswerCapture = () => logger.answers.stopCapture();
 export const setVerboseMode = (enabled: boolean) => logger.setVerboseMode(enabled);
 export const setPreserveConsoleLogs = (enabled: boolean) => logger.setPreserveConsoleLogs(enabled);
 export const setQuietMode = (enabled: boolean) => logger.setQuietMode(enabled);

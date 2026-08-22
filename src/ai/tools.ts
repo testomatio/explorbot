@@ -10,7 +10,6 @@ import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { pause } from '../utils/loop.js';
-import { extractStatePath } from '../utils/url-matcher.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { Navigator } from './navigator.ts';
@@ -586,9 +585,8 @@ export function createAskUserTool(stateManager: StateManager) {
     inputSchema: z.object({
       question: z.string().describe('What you need help with - be specific about what failed'),
       context: z.string().optional().describe('Relevant context like locators tried, errors received'),
-      persistent: z.boolean().optional().describe('True if the answer is a lasting fact about this page (saved as knowledge for later runs). False if it only applies to this test.'),
     }),
-    execute: async ({ question, context, persistent }) => {
+    execute: async ({ question, context }) => {
       let prompt = `${question}\n\nYour suggestion ("skip" to continue):`;
       if (context) prompt = `${question}\n\nContext: ${context}\n\nYour suggestion ("skip" to continue):`;
 
@@ -598,23 +596,14 @@ export function createAskUserTool(stateManager: StateManager) {
         return { success: false, message: 'User skipped' };
       }
 
-      const result: Record<string, unknown> = {
+      const state = stateManager.getCurrentState();
+      if (state) stateManager.getExperienceTracker().rememberAnswer(ActionResult.fromState(state), question, userInput);
+
+      return {
         success: true,
         userSuggestion: userInput,
         instruction: 'Use this answer as the next concrete step.',
       };
-
-      const state = stateManager.getCurrentState();
-      if (persistent && state) {
-        const path = extractStatePath(state.url || state.fullUrl || '/')
-          .split('?')[0]
-          .split('#')[0];
-        const { filePath } = stateManager.getKnowledgeTracker().addKnowledge(path, `${question}\n\n${userInput}`);
-        tag('success').log(`Knowledge saved to ${filePath}`);
-        result.knowledgeFile = filePath;
-      }
-
-      return result;
     },
   });
 }

@@ -23,19 +23,28 @@ Invented values are ruled out for anything that identifies an account — logins
 tokens. A scenario that explicitly creates something, such as registering a new user, still makes
 up the values it needs.
 
-### An answer can be kept as knowledge for the page
+### What the user answers becomes experience for the page
 
-When an answer is a lasting fact about the page — how to authorize, what its data means — the
-question and the answer are appended to the knowledge file of that page, and later runs read it
-instead of asking again:
+An answer no longer stops at the run that needed it. From the moment a question is answered the log
+is recorded, and once the work is done the Captain reads that log to judge one thing: was the answer
+worth more than this run? After a test it judges the finished test, and outside a test the command
+that was running — a research, a navigation. When the answer proved itself, the question and the
+answer are kept verbatim in the experience of the page they were asked on, under a how-to heading:
 
 ```
-Knowledge saved to knowledge/login.md
+Added FLOW to: 8f3c21a9.md
 ```
 
-Answers that only serve the test running now are not saved. Knowledge is filed under the path of
-the page with any query string dropped, so it still matches on the next visit when the redirect
-carries a different message in the URL.
+Nothing is written when the log does not show the answer being used, when what followed it failed,
+when the answer only applied to that one run, or when the page already carries the same fact. The
+user is never asked to confirm, and no knowledge file is touched.
+
+### Experience arrives with the page, not with the scenario
+
+Experience files are keyed by page state, but a test only ever saw the experience of the page it
+started on. Landing on a login form, a detail page or a dialog mid-test brought its ARIA and its UI
+map and nothing of what earlier runs had learned there. The page a test lands on now brings its own
+experience with it, and the Pilot reviewing that page can open the recipes listed for it.
 
 ### Changes
 

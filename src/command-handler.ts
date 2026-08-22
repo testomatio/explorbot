@@ -115,6 +115,11 @@ export class CommandHandler implements InputManager {
   }
 
   async executeCommand(input: string): Promise<void> {
+    await this.dispatch(input);
+    await this.explorBot.agentCaptain().reviewAnswers();
+  }
+
+  private async dispatch(input: string): Promise<void> {
     const trimmedInput = input.trim();
     const lowered = trimmedInput.toLowerCase();
 

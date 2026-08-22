@@ -51,7 +51,7 @@ function createHarness(
       action.lastError = ok ? null : new Error('element not visible\n    at Object.<anonymous>');
       return ok;
     },
-    stateManager: { getCurrentState: state },
+    stateManager: { getCurrentState: state, getExperienceTracker: () => ({ rememberAnswer: () => {} }) },
     getActor: () => ({ wait: async () => options.onWait?.(page) }),
   };
 

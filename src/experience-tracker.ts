@@ -5,7 +5,7 @@ import type { ActionResult } from './action-result.js';
 import { ConfigParser } from './config.js';
 import { KnowledgeTracker } from './knowledge-tracker.js';
 import type { WebPageState } from './state-manager.js';
-import { createDebug, pluralize, tag } from './utils/logger.js';
+import { createDebug, pluralize, startAnswerCapture, tag } from './utils/logger.js';
 import { loadMarkdownFiles } from './utils/markdown-files.js';
 import { mdq } from './utils/markdown-query.js';
 import { redactSecrets } from './utils/secrets.js';
@@ -38,6 +38,7 @@ export class ExperienceTracker {
   private experienceDir: string;
   private disabled: boolean;
   private knowledgeTracker: KnowledgeTracker;
+  private answers: UserAnswer[] = [];
 
   constructor(knowledgeTracker: KnowledgeTracker, options: { disabled?: boolean } = {}) {
     const configParser = ConfigParser.getInstance();
@@ -177,6 +178,15 @@ export class ExperienceTracker {
     this.writeExperienceFile(stateHash, updatedContent, data);
 
     tag('operation').log(`Added ACTION to: ${stateHash}.md`);
+  }
+
+  rememberAnswer(state: ActionResult, question: string, answer: string): void {
+    this.answers.push({ state, question, answer });
+    startAnswerCapture();
+  }
+
+  takeAnswers(): UserAnswer[] {
+    return this.answers.splice(0, this.answers.length);
   }
 
   writeFlow(state: ActionResult, body: string, relatedUrls?: string[]): void {
@@ -506,6 +516,12 @@ export interface ExperienceFile {
   data: { url?: string; title?: string; [key: string]: any };
   content: string;
   mtime: Date;
+}
+
+export interface UserAnswer {
+  state: ActionResult;
+  question: string;
+  answer: string;
 }
 
 export interface ActionInput {

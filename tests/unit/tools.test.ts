@@ -89,37 +89,38 @@ describe('createAskUserTool', () => {
   });
 
   function fakeStateManager() {
-    const learned: Array<{ url: string; description: string }> = [];
+    const remembered: Array<{ url: string; question: string; answer: string }> = [];
     return {
-      learned,
-      getCurrentState: () => ({ url: '/login?info=You+must+be+logged+in', fullUrl: 'http://localhost:3000/login?info=You+must+be+logged+in' }),
+      remembered,
+      getCurrentState: () => ({ url: '/login', html: '<html></html>' }),
       getKnowledgeTracker: () => ({
-        addKnowledge: (url: string, description: string) => {
-          learned.push({ url, description });
-          return { filename: 'login.md', filePath: 'knowledge/login.md', isNewFile: true };
+        addKnowledge: () => {
+          throw new Error('askUser must not write knowledge');
         },
+      }),
+      getExperienceTracker: () => ({
+        rememberAnswer: (state: any, question: string, answer: string) => remembered.push({ url: state.url, question, answer }),
       }),
     } as any;
   }
 
-  it('writes a persistent answer to the knowledge of the current page', async () => {
+  it('remembers the answer for the page it was asked on, without writing knowledge', async () => {
     executionController.setInputCallback(async () => 'sign in as owner@example.org');
     const stateManager = fakeStateManager();
 
-    const result: any = await createAskUserTool(stateManager).execute({ question: 'How do I authorize?', persistent: true }, {} as any);
+    const result: any = await createAskUserTool(stateManager).execute({ question: 'How do I authorize?' }, {} as any);
 
-    expect(result.knowledgeFile).toBe('knowledge/login.md');
-    expect(stateManager.learned).toEqual([{ url: '/login', description: 'How do I authorize?\n\nsign in as owner@example.org' }]);
+    expect(result.userSuggestion).toBe('sign in as owner@example.org');
+    expect(stateManager.remembered).toEqual([{ url: '/login', question: 'How do I authorize?', answer: 'sign in as owner@example.org' }]);
   });
 
-  it('keeps a one-off answer out of knowledge', async () => {
-    executionController.setInputCallback(async () => 'pick the second row');
+  it('remembers nothing when the user skips', async () => {
+    executionController.setInputCallback(async () => 'skip');
     const stateManager = fakeStateManager();
 
     const result: any = await createAskUserTool(stateManager).execute({ question: 'Which row should I open?' }, {} as any);
 
-    expect(result.userSuggestion).toBe('pick the second row');
-    expect(result.knowledgeFile).toBeUndefined();
-    expect(stateManager.learned).toEqual([]);
+    expect(result.success).toBe(false);
+    expect(stateManager.remembered).toEqual([]);
   });
 });
