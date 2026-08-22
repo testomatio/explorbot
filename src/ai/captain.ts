@@ -8,7 +8,7 @@ import type { WebPageState } from '../state-manager.ts';
 import { Task, Test } from '../test-plan.ts';
 import { formatHeadings } from '../utils/context-formatter.ts';
 import { HooksRunner } from '../utils/hooks-runner.ts';
-import { startLogCapture, stopLogCapture, tag } from '../utils/logger.js';
+import { startLogCapture, stopAnswerCapture, stopLogCapture, tag } from '../utils/logger.js';
 import { loop } from '../utils/loop.js';
 import { truncateJson } from '../utils/strings.ts';
 import type { Agent } from './agent.js';
@@ -514,6 +514,76 @@ export class Captain extends CaptainBase implements Agent {
     }
 
     return null;
+  }
+
+  async reviewAnswers(task?: Task): Promise<void> {
+    const experienceTracker = this.getExperienceTracker();
+    const answers = experienceTracker.takeAnswers();
+    if (!answers.length) return;
+
+    const logs = stopAnswerCapture();
+
+    for (const { state, question, answer } of answers) {
+      const howTo = await this.howToFromAnswer(state, question, answer, logs, task);
+      if (!howTo) continue;
+      experienceTracker.writeFlow(state, `## FLOW: ${howTo}\n\n* ${question}\n* ${answer}\n\n---\n`);
+    }
+  }
+
+  private async howToFromAnswer(state: ActionResult, question: string, answer: string, logs: string[], task?: Task): Promise<string> {
+    const existingExperience = this.getExperienceTracker()
+      .getRelevantExperience(state)
+      .map((experience) => experience.content)
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 2000);
+
+    const prompt = dedent`
+      A run asked the user for help and got an answer. Decide from the log whether the answer was
+      worth more than this run: it moved the run forward, and the same situation can recur on a
+      later visit to this page.
+
+      <question_asked>
+      ${question}
+      </question_asked>
+
+      <user_answer>
+      ${answer}
+      </user_answer>
+
+      <page>
+      ${state.url || ''}
+      </page>
+
+      ${task ? `<task>\n${task.description}\nResult: ${task.getRunResult() || 'unknown'}\n${task.notesToString()}\n</task>` : ''}
+
+      <log_after_the_answer>
+      ${logs.join('\n')}
+      </log_after_the_answer>
+
+      ${existingExperience ? `<existing_experience_for_this_page>\n${existingExperience}\n</existing_experience_for_this_page>` : ''}
+
+      If it was, return ONE line: an imperative how-to naming what the answer makes possible on this
+      page. Lowercase first letter, no trailing punctuation, no code, no explanation. The answer
+      itself is kept verbatim — do not repeat it.
+
+      Return an EMPTY response if any of:
+      - The log does not show the answer being used.
+      - What followed the answer failed or was abandoned.
+      - The answer only applied to this run and says nothing about the page.
+      - The existing experience already covers it.
+    `;
+
+    const response = await this.getProvider().chat(
+      [
+        { role: 'system', content: 'Judge whether an answer the user gave during a run is worth keeping as experience for the page. Return one how-to line when it is, nothing when it is not.' },
+        { role: 'user', content: prompt },
+      ],
+      this.getProvider().getModelForAgent('captain'),
+      { agentName: 'captain', telemetryFunctionId: 'captain.reviewAnswers' }
+    );
+
+    return (response?.text || '').trim().split('\n')[0].trim();
   }
 }
 

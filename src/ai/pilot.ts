@@ -515,7 +515,7 @@ export class Pilot implements Agent {
         First: evaluate whether this navigation makes sense for the scenario goal. If the page is unrelated, instruct Tester to back() or reset(). Then plan next steps.
       `,
       'pilot.reviewNewPage',
-      { task }
+      { tools: true, maxToolRoundtrips: 2, task }
     );
   }
 

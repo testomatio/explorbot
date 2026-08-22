@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026-08-21
+
+### The Navigator asks for credentials instead of inventing them
+
+A page that redirected to a login form used to be treated as a form to fill: the model made up an
+email and a password, submitted them, and spent the rest of its attempts on a form that was never
+going to let it in. Credentials now have exactly two sources — the knowledge of the page, or the
+user. When neither has them, the Navigator asks:
+
+```
+Which credentials should I sign in with?
+
+Your suggestion ("skip" to continue):
+```
+
+and carries on with the answer. Where nobody can answer, it stops and names what is missing, so the
+reason reaches the log next to the `explorbot learn "<path>"` hint for recording the credentials
+once and for all.
+
+Invented values are ruled out for anything that identifies an account — logins, passwords, codes,
+tokens. A scenario that explicitly creates something, such as registering a new user, still makes
+up the values it needs.
+
+### What the user answers becomes experience for the page
+
+An answer no longer stops at the run that needed it. From the moment a question is answered the log
+is recorded, and once the work is done the Captain reads that log to judge one thing: was the answer
+worth more than this run? After a test it judges the finished test, and outside a test the command
+that was running — a research, a navigation. When the answer proved itself, the question and the
+answer are kept verbatim in the experience of the page they were asked on, under a how-to heading:
+
+```
+Added FLOW to: 8f3c21a9.md
+```
+
+Nothing is written when the log does not show the answer being used, when what followed it failed,
+when the answer only applied to that one run, or when the page already carries the same fact. The
+user is never asked to confirm, and no knowledge file is touched.
+
+### Experience arrives with the page, not with the scenario
+
+Experience files are keyed by page state, but a test only ever saw the experience of the page it
+started on. Landing on a login form, a detail page or a dialog mid-test brought its ARIA and its UI
+map and nothing of what earlier runs had learned there. The page a test lands on now brings its own
+experience with it, and the Pilot reviewing that page can open the recipes listed for it.
+
+### Changes
+
+- The question the Pilot asks is offered only where somebody can answer it. A run with no one at
+  the keyboard no longer spends a step on a tool whose only possible reply was "user input not
+  available".
 ## 2026-08-20
 
 ### Changes
