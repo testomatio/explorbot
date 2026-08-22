@@ -17,7 +17,7 @@ import { htmlCombinedSnapshot, htmlTextSnapshot, minifyHtml } from './src/utils/
 import { analyzeDemoCandidates, createDemoVideo } from './.claude/skills/demo-video/demo-video.ts';
 import { EXPLORBOT_ENV_VARS } from './src/config.ts';
 
-const { exec, shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
+const { shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
 
 const CLI = resolve('bin/explorbot-cli.ts');
 const REG_ROOT = resolve('tests/regression');
@@ -32,17 +32,79 @@ const records = [];
 const { say, ask, yell } = global.bunosh;
 
 /**
- * 🎉 Hello world command
+ * Create a worktree with a new branch for a feature
+ * @param {string} [name] - Feature branch name
  */
 export async function worktreeCreate(name = '') {
   const worktreeName = name || (await ask('What is feature name?'));
 
   const newDir = `../explorbot-${worktreeName}`;
 
-  await exec`git worktree add ../explorbot-${worktreeName}`;
-  await exec`ln -sf node_modules ${newDir}/node_modules`;
+  const added = await shell`git worktree add -b ${worktreeName} ${newDir} main`;
+  if (added.hasFailed) return;
 
-  say(`Created worktree for feature ${worktreeName} in ${newDir}`);
+  await shell`ln -s ${process.cwd()}/node_modules .`.cwd(newDir);
+
+  say(`Created worktree for feature ${worktreeName}`);
+  say(`cd ${newDir}`)
+}
+
+/**
+ * Open an existing branch as a worktree
+ * @param {string} [branch] - Name of the existing branch to open
+ */
+export async function worktreeFetch(branch = '') {
+  const branchName = branch || (await ask('Which branch to open as worktree?'));
+
+  const newDir = `../explorbot-${branchName}`;
+
+  await shell`git fetch origin ${branchName}`;
+
+  const added = await shell`git worktree add ${newDir} ${branchName}`;
+  if (added.hasFailed) return;
+
+  await shell`ln -s ${process.cwd()}/node_modules .`.cwd(newDir);
+
+  say(`Opened branch ${branchName} as worktree`);
+
+  say(`cd ${newDir}`)
+}
+
+/**
+ * Remove a worktree when its feature is merged
+ * @param {string} [worktree] - Name or path fragment of the worktree to remove
+ */
+export async function worktreeDelete(worktree = '') {
+  const worktrees = await shell`git worktree list --porcelain`;
+  const entries = parseWorktrees(worktrees.output).filter((entry) => entry.path !== process.cwd());
+
+  if (entries.length === 0) {
+    say('No worktrees found');
+    return;
+  }
+
+  const name = worktree || (await ask('Select worktree to delete', entries.map((entry) => entry.branch || entry.path)));
+
+  const found = entries.find((entry) => entry.branch?.includes(name) || entry.path.includes(name));
+  if (!found) {
+    yell(`Worktree ${name} not found`);
+    return;
+  }
+
+  await shell`git worktree remove ${found.path} --force`;
+
+  say(`Deleted worktree ${found.branch || found.path} in ${found.path}`);
+}
+
+function parseWorktrees(output) {
+  const entries = [];
+
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) entries.push({ path: line.slice('worktree '.length) });
+    if (line.startsWith('branch ')) entries[entries.length - 1].branch = line.slice('branch refs/heads/'.length);
+  }
+
+  return entries;
 }
 
 const ENV_DOCS = [
@@ -185,12 +247,12 @@ export async function htmlAiText(fileName) {
   }
   console.log(combinedHtml);
   const result = await ai(`Transform into markdown. Identify headers, footers, asides, special application parts and main contant.
-    Content should be in markdown format. If it is content: tables must be tables, lists must be lists. 
+    Content should be in markdown format. If it is content: tables must be tables, lists must be lists.
     Navigation elements should be represented as standalone blocks after the content.
     Do not summarize content, just transform it into markdown.
     It is important to list all the content text
     If it is link it must be linked
-    You can summarize footers/navigation/aside elements. 
+    You can summarize footers/navigation/aside elements.
     But main conteint should be kept as text and formatted as markdown based on its current markup.
 
     Break down into sections:

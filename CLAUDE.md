@@ -90,6 +90,127 @@ Follow separation of concerns principle when implementing new features:
 - All reusable command logic MUST live in a command class in `src/commands/` — the CLI handler should only do minimal setup (create ExplorBot, call command.execute(), stop) with zero business logic
 - avoid using `And` in a function name, if you use it probably you need 2 functions
 
+## Boundaries: Agents vs Data
+
+Two tiers. **Data parts** are deterministic memory — they answer "what is true" from what was stored, using structural matching (URL, glob, hash) only. **Agents** exercise judgment — they turn context into decisions via AI.
+
+### Data contracts
+
+| Module | Does | Must never do |
+|---|---|---|
+| **StateManager** | Where am I / where have I been: states, transitions, hashes, loop detection, events | Call AI; interpret semantics ("this is a login page"); execute actions |
+| **KnowledgeTracker** | Load/filter human facts by URL pattern; expose hints verbatim | Judge relevance semantically; act on hints; be written mid-run outside learn/drill flow |
+| **ExperienceTracker** | Store/retrieve lessons per state hash; dedup blocks | Rank by meaning; compact itself (ExperienceCompactor's job); change behavior directly |
+| **Config** | Resolve immutable settings once at startup | Change mid-run; hold site-specific values; be read by agents directly (injected instead) |
+
+Shared invariant: matching in the data tier is **structural, never semantic**. If matching requires understanding content, that judgment belongs to an agent whose result gets *stored* back into a tracker.
+
+### Agent contracts
+
+One verb each; a responsibility that can't be phrased as the verb doesn't belong there:
+
+- Researcher **describes**, Navigator **moves**, Planner **proposes**, Pilot **guides**, Tester **executes**, Driller **drills**, Historian **records sessions**, Analyst **reports**, ExperienceCompactor **compacts**, Quartermaster **audits a11y**, Captain **commands**
+
+Negative contract (all agents):
+
+- May persist artifacts to disk, but must not **expose filesystem operations as AI tools** — `readFile`/`writeFile`/`bash` tools belong to Captain alone
+- Must not instantiate CodeceptJS/Playwright — all browser interaction through Explorer/Action
+- Must not read config/env — dependencies arrive via `createAgent`
+
+### HTML access
+
+Full page HTML bodies are expensive and noisy — only agents whose verb requires reading raw structure get them:
+
+| Tier | Agents | What they get |
+|---|---|---|
+| Standing full HTML | Researcher, Navigator, Driller, Tester | `<page_html>` / `combinedHtml()` in every context injection |
+| On-demand simplified HTML | Pilot | `simplifiedHtml()` attached only on explicit `ATTACH_HTML` request |
+| No HTML | Planner, Captain, Historian, Analyst, ExperienceCompactor, Quartermaster | ARIA snapshots, UI maps, research summaries; node snippets ≤100 chars allowed |
+
+Do not add HTML access to a new agent. If an agent seems to need raw HTML, the real fix is a better derivative (UI map, focused snippet, research note) produced by Researcher — not widening this table.
+
+Glue tiers: **Tools** = schema + result parsing only, delegating every real operation to an agent or data module in one call. **Explorer/Action** = the only thing that moves the browser. **TUI/remote** = render pipes, never compute business meaning.
+
+## Data Envelope Formats
+
+All persisted formats share one rule: **envelope keys (YAML frontmatter, HTML comments) are closed vocabularies read deterministically by code before any AI runs; body structure is owned by exactly one writer module and parsed via `mdq()`.**
+
+| Format | Location & owner | Envelope | Body grammar |
+|---|---|---|---|
+| Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `wait`, `waitForElement`, `noExperienceReading/Writing` | Free prose facts |
+| Experience | `experience/<stateHash>.md`, ExperienceTracker | sparse frontmatter | `## FLOW:` / `## ACTION:` h2 blocks; bullets + ```js``` + `Solution:` line; h3 forbidden under blocks |
+| Test plan | `output/plans/*.md`, test-plan-markdown.ts | `<!-- test ... -->` comment: `priority`, `style`; scenario heading, `url:` line, bullets as steps | Notes/results appended by runner |
+
+These are **data formats**: written and read back inside the runtime loop (knowledge/experience steer every run; plans are consumed by the runner and rerun).
+
+**Artifacts** are session outputs for humans and external tools — stored when a session ends, never read back by agents mid-run:
+
+| Artifact | Location & owner | Format |
+|---|---|---|
+| Session report | `output/reports/<mode>-<name>.md`, session-analyst.ts | fixed h2 sections: Coverage / What works / Defects / UX issues / Execution Issues |
+| Generated tests | `output/tests/*.js`, historian | runnable CodeceptJS only — rerun consumes it as a new run's input, not as internal state |
+| Screenshots / screencast | `output/…`, action.ts / historian | PNG / video files |
+
+Artifacts follow looser rules than data formats: no envelope checklist applies. The only invariants are their owners (one writer each) and that generated tests stay runnable CodeceptJS.
+
+The research cache (`output/research/<hash>.md`, researcher/cache.ts — hash-keyed, TTL'd, free markdown with `.fingerprint` sidecar) is neither: it is run-state ephemera, not an interface — treat it as internal-only.
+
+Adding a new item to an envelope — all four must hold:
+
+1. Read by code deterministically. If only the model reads it, it's prompt context, not an envelope item.
+2. Scoped to URL/state. Global values belong in config or knowledge body.
+3. Optional with a default — old files on disk must survive.
+4. Single writer module.
+
+Never add: executable content in envelopes; site-specific locators anywhere (violates core principle); new magic message prefixes in notes (`Pilot:`, noise prefixes are a closed set owned by `test-plan-markdown.ts`); new block types inside experience FLOW/ACTION bodies (a new h2 block type following the imperative-title pattern is fine); non-CodeceptJS constructs in generated tests.
+
+## Feature Routing Test
+
+When a feature request arrives, ask in order:
+
+1. New fact to remember? → data layer / envelope extension (checklist above).
+2. New judgment? → existing agent if the verb fits; otherwise new agent via `createAgent`.
+3. New verb for the model? → tool schema delegating in one call.
+4. New transport/UI? → adapter at existing seam (`LogDestination`, input callback).
+5. Site-specific anything? → never code; redirect to `knowledge/`.
+6. None of the above → reject.
+
+## Regex vs AI Judgment
+
+Regex answers questions about **form** — how something is *written*. AI answers questions about **meaning** — what something is *for*.
+
+| | Regex / structural | AI judgment |
+|---|---|---|
+| Input has a spec or closed vocabulary | yes (URLs, globs, YAML keys, `<!-- test -->`, ARIA role names) | no — open-ended: element labels, page prose, LLM-generated text |
+| Identical input must yield identical output | required: hashing, dedup, loop detection, cache keys | acceptable variance |
+| Failure mode | loud (no match → visible miss) | silent & confident (wrong but plausible) |
+| Wrong-answer cost | corrupts stored data → must be deterministic | recoverable via next action → AI tolerable |
+| Role in pipeline | filter/gate reducing volume | decider among filtered candidates |
+
+Decision procedure (ask in order):
+
+1. Closed grammar? → regex/table. No exceptions.
+2. Repeats must be reproducible (state hash, dedup, loop detection)? → deterministic, always.
+3. Wrong answer verifiable downstream (act and observe)? → AI allowed: generate-then-verify.
+4. Reducing volume before an AI call? → deterministic prefilter; narrows but never decides.
+5. Anything else (intent, similarity, "what is this page for")? → AI. Web surface forms vary infinitely while meanings stay stable, so only semantics generalize.
+
+Litmus tests:
+
+- **Spec sentence:** can you state the rule without examples? "Match the path segment after the host" → regex. "Looks like a primary action button" → needs examples → AI.
+- **Two sites:** would the same rule survive on different markup? If it only works because one site writes forms a certain way, it's memorized accident, not grammar → AI.
+
+Escalation ladder — deterministic first, AI as cache-miss, persistence converts judgment back into structure:
+
+```
+regex/table lookup
+  └─ miss or ambiguous → AI judgment
+       └─ resolved → persist to experience/knowledge
+            └─ next run hits the deterministic path again
+```
+
+Guardrail: composes with "Prompts & Rules — General, Not Example-Driven". A regex is legitimate only when it encodes a convention existing independently of any single failure (ARIA attributes, URL anatomy, envelope formats). A regex written because "the model once did X with input Y" is a memorized bug — reject it like a hardcoded locator.
+
 ## Architecture Overview
 
 ```
@@ -565,6 +686,16 @@ After big changes run linter: `bun run lint:fix`
 Before each commit run `/changelog` skill to update CHANGELOG.md
 **Never use NodeJS**
 This application is only Bun
+
+### Git Worktrees
+
+Feature branches live in sibling worktrees at `../explorbot-<branch>`, each sharing the main checkout's `node_modules` through a symlink:
+
+```bash
+bunosh worktree:create <feature>  # new branch off main in ../explorbot-<feature>
+bunosh worktree:fetch <branch>    # existing branch fetched into ../explorbot-<branch>
+bunosh worktree:delete [branch]   # remove a worktree by branch name or path, prompts when no name given
+```
 
 ## CI
 
