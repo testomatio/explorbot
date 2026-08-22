@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { createCodeceptJSTools, createIframeTools, createLearnExperienceTool } from '../../src/ai/tools.ts';
+import { createCodeceptJSTools, createIframeTools, createLearnExperienceTool, createRefTools } from '../../src/ai/tools.ts';
 
 function fakeDeps(): any {
   return {
@@ -48,6 +48,16 @@ describe('createCodeceptJSTools click validation', () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain('Invalid commands');
+  });
+});
+
+describe('createRefTools', () => {
+  it('keeps ref tools out of the shared CodeceptJS tools', () => {
+    expect(Object.keys(createCodeceptJSTools(fakeDeps(), fakeTask()))).not.toContain('clickRef');
+  });
+
+  it('returns the clickRef tool for callers that supply refs', () => {
+    expect(Object.keys(createRefTools(fakeDeps(), fakeTask()))).toEqual(['clickRef']);
   });
 });
 

@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { ActionResult } from '../../../src/action-result.ts';
 import { getPreviousResearch } from '../../../src/ai/researcher/cache.ts';
 import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
-import { createAgentTools, createCodeceptJSTools } from '../../../src/ai/tools.ts';
+import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { ConfigMissingError, ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
@@ -148,7 +148,7 @@ export class Prima {
     const deps = { explorer: this.bot.getExplorer(), stateManager: this.bot.stateManager(), ai: provider };
     const ledger: LedgerEntry[] = instructions.map((text) => ({ text, status: 'open', proof: '' }));
     const descent = { markup: false };
-    const tools = { ...createCodeceptJSTools(deps, task), ...this.testerTools(deps), context: this.contextTool(descent), completed: this.completedTool(), blocked: this.blockedTool() };
+    const tools = { ...createCodeceptJSTools(deps, task), ...createRefTools(deps, task), ...this.testerTools(deps), context: this.contextTool(descent), completed: this.completedTool(), blocked: this.blockedTool() };
     conversation.addUserText(await this.instructionPrompt(instructions, await this.capturedResult(previousState)));
 
     const used: string[] = [];

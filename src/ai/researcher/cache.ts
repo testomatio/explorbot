@@ -60,7 +60,8 @@ export function getPreviousResearch(hash: string): string {
   return readFileSync(researchFile, 'utf8');
 }
 
-export function saveResearch(hash: string, text: string, combinedHtml?: string): string {
+export function saveResearch(state: ResearchState, text: string, combinedHtml?: string): string {
+  const { hash, url } = state;
   const researchDir = outputPath('research');
   const researchFile = join(researchDir, `${hash}.md`);
   if (!existsSync(researchDir)) mkdirSync(researchDir, { recursive: true });
@@ -74,14 +75,16 @@ export function saveResearch(hash: string, text: string, combinedHtml?: string):
     if (!existsSync(statesDir)) mkdirSync(statesDir, { recursive: true });
     const fingerprint = computeHtmlFingerprint(combinedHtml);
     const fingerprintFile = join(statesDir, `${hash}.fingerprint`);
-    writeFileSync(fingerprintFile, fingerprint.join('\n'));
+    const record: FingerprintRecord = { entries: fingerprint };
+    if (url) record.url = url;
+    writeFileSync(fingerprintFile, JSON.stringify(record));
     debugLog(`Fingerprint saved to ${fingerprintFile}`);
   }
 
   return researchFile;
 }
 
-function findSimilarMatch(combinedHtml: string): Promise<{ hash: string; similarity: number } | null> {
+function findSimilarMatch(combinedHtml: string, url?: string): Promise<FingerprintMatch | null> {
   const statesDir = getStatesDir();
   if (!existsSync(statesDir)) return Promise.resolve(null);
 
@@ -93,7 +96,7 @@ function findSimilarMatch(combinedHtml: string): Promise<{ hash: string; similar
       resolve(null);
     }, FINGERPRINT_WORKER_TIMEOUT_MS);
 
-    worker.on('message', (data: { matchHash: string | null; similarity: number }) => {
+    worker.on('message', (data: { matchHash: string | null; similarity: number; url?: string }) => {
       clearTimeout(timeout);
       const { matchHash, similarity } = data;
       if (!matchHash) {
@@ -102,7 +105,7 @@ function findSimilarMatch(combinedHtml: string): Promise<{ hash: string; similar
       }
 
       debugLog(`Similar fingerprint found: ${matchHash} (${similarity}% similar)`);
-      resolve({ hash: matchHash, similarity });
+      resolve({ hash: matchHash, similarity, url: data.url });
     });
 
     worker.postMessage({
@@ -110,17 +113,22 @@ function findSimilarMatch(combinedHtml: string): Promise<{ hash: string; similar
       statesDir,
       maxAgeMs: FINGERPRINT_MAX_AGE_MS,
       threshold: SIMILARITY_THRESHOLD,
+      url,
     });
   });
 }
 
-export async function findSimilarResearch(combinedHtml: string): Promise<string | null> {
-  const match = await findSimilarMatch(combinedHtml);
+export async function findSimilarResearch(combinedHtml: string, url?: string): Promise<string | null> {
+  const match = await findSimilarMatch(combinedHtml, url);
   if (!match) return null;
   return getCachedResearch(match.hash) || null;
 }
 
-export async function findSimilarStateHash(combinedHtml: string): Promise<string | null> {
-  const match = await findSimilarMatch(combinedHtml);
+export async function findSimilarStateHash(combinedHtml: string, url?: string): Promise<string | null> {
+  const match = await findSimilarMatch(combinedHtml, url);
   return match?.hash || null;
 }
+
+type FingerprintRecord = { entries: string[]; url?: string };
+type FingerprintMatch = { hash: string; similarity: number; url?: string };
+type ResearchState = { hash: string; url?: string };

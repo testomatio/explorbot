@@ -720,6 +720,7 @@ export class Pilot implements Agent {
   }
 
   private buildPreconditionTool(task: Test) {
+    const unavailable = 'Data was not created and cannot be created automatically. Do not call precondition again for this test — continue with what the page already shows.';
     return {
       precondition: tool({
         description: 'Create fresh disposable data that the test will act on (edit, delete, filter). Describe WHAT to create, not what exists. Do NOT request users. Examples: "1 post", "1 comment", "1 label named Bug".',
@@ -734,7 +735,7 @@ export class Pilot implements Agent {
           if (!this.fisherman || !this.fisherman.isAvailable()) {
             const skipReason = await this.checkDataAvailability(task, description, 'Fisherman not available');
             if (skipReason) return { noted: true, prepared: false, skipped: true, reason: skipReason };
-            return { noted: true, prepared: false, reason: 'Fisherman not available' };
+            return { noted: true, prepared: false, reason: unavailable };
           }
 
           const result = await this.fisherman.prepareData(description, task.startUrl, task.sessionName);
@@ -743,7 +744,7 @@ export class Pilot implements Agent {
             if (result.summary) tag('warning').log(`Precondition failed: ${result.summary}`);
             const skipReason = await this.checkDataAvailability(task, description, result.summary);
             if (skipReason) return { noted: true, prepared: false, skipped: true, reason: skipReason };
-            return { noted: true, prepared: false, reason: result.summary };
+            return { noted: true, prepared: false, reason: `${result.summary || 'Data preparation failed'}. ${unavailable}` };
           }
 
           const items = result.created.map((c) => {
@@ -780,7 +781,7 @@ export class Pilot implements Agent {
       Reply with YES or NO on the first line, then a one-sentence reason on the second line.
     `;
 
-    const answer = await this.researcher.answerQuestionAboutScreenshot(screenshotState, question);
+    const answer = await this.researcher.answerQuestionAboutScreenshot(screenshotState, question).catch(() => null);
     if (!answer) return null;
 
     const firstLine = answer.split('\n')[0]?.trim().toUpperCase() ?? '';

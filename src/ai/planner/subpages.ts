@@ -4,7 +4,7 @@ import { normalizeUrl } from '../../state-manager.ts';
 import type { StateManager } from '../../state-manager.ts';
 import type { Plan } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
-import { isDynamicSegment } from '../../utils/url-matcher.ts';
+import { isSamePageFamily } from '../../utils/url-matcher.ts';
 import type { Provider } from '../provider.ts';
 import type { Constructor } from '../researcher/mixin.ts';
 
@@ -39,18 +39,7 @@ function buildKey(url: string, feature?: string): string {
 }
 
 export function isTemplateMatch(urlA: string, urlB: string): boolean {
-  const partsA = normalizeUrl(urlA).split('/');
-  const partsB = normalizeUrl(urlB).split('/');
-  if (partsA.length !== partsB.length) return false;
-
-  let diffCount = 0;
-  for (let i = 0; i < partsA.length; i++) {
-    if (partsA[i] === partsB[i]) continue;
-    diffCount++;
-    if (diffCount > 1) return false;
-    if (!isDynamicSegment(partsA[i]) && !isDynamicSegment(partsB[i])) return false;
-  }
-  return diffCount === 1;
+  return isSamePageFamily(urlA, urlB);
 }
 
 export function getPlannedByStateHash(hash: string): PlanRecord | null {

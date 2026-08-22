@@ -148,7 +148,7 @@ describe('remote', () => {
     scenario.start();
     scenario.finish(TestResult.PASSED);
 
-    saveResearch('checkout_hash', '# Checkout');
+    saveResearch({ hash: 'checkout_hash' }, '# Checkout');
     new SessionAnalyst({} as any).writeReport('# Session Analysis');
 
     await waitFor(frameOf('report'));

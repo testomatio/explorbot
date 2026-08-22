@@ -28,6 +28,21 @@ export function hasDynamicUrlSegment(url: string): boolean {
   return url.split('/').some((seg) => seg.length > 0 && isDynamicSegment(seg));
 }
 
+export function isSamePageFamily(urlA: string, urlB: string): boolean {
+  const partsA = new URL(urlA, 'http://localhost').pathname.toLowerCase().split('/').filter(Boolean);
+  const partsB = new URL(urlB, 'http://localhost').pathname.toLowerCase().split('/').filter(Boolean);
+  if (partsA.length !== partsB.length) return false;
+
+  let diffCount = 0;
+  for (let i = 0; i < partsA.length; i++) {
+    if (partsA[i] === partsB[i]) continue;
+    diffCount++;
+    if (diffCount > 1) return false;
+    if (!isDynamicSegment(partsA[i]) || !isDynamicSegment(partsB[i])) return false;
+  }
+  return true;
+}
+
 export function generalizeSegment(segment: string): string {
   if (/^\d+$/.test(segment)) return '\\d+';
   if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(segment)) return '[a-f0-9-]+';

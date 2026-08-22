@@ -115,6 +115,7 @@
     "parse5": "^8.0.0",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.62",
+    "playwright-core": "^1.62",
     "pngjs": "^7.0.0",
     "react": "^19.1.1",
     "sambanova-ai-provider": "^1.2.2",
