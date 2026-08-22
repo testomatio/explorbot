@@ -11,10 +11,11 @@ import { Observability } from '../observability.ts';
 import type { StateTransition } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult, type TestResultType } from '../test-plan.ts';
-import { compactAriaSnapshot, detectFocusArea } from '../utils/aria.ts';
+import { detectFocusArea } from '../utils/aria.ts';
 import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
+import { compactErrorMessage } from '../utils/strings.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Captain } from './captain.ts';
 import type { Conversation } from './conversation.ts';
@@ -600,7 +601,7 @@ export class Tester extends TaskAgent implements Agent {
         </page>
 
         <page_aria>
-        ${await this.interactiveAriaWithRefs(currentState)}
+        ${currentState.getInteractiveARIA()}
         </page_aria>
         ${uiMapSection}
 
@@ -637,15 +638,9 @@ export class Tester extends TaskAgent implements Agent {
       </page>
 
       <page_aria>
-      ${await this.interactiveAriaWithRefs(currentState)}
+      ${currentState.getInteractiveARIA()}
       </page_aria>
     `;
-  }
-
-  private async interactiveAriaWithRefs(state: ActionResult): Promise<string> {
-    const withRefs = await Promise.resolve(this.explorer?.withPage?.((page: any) => page.locator('body').ariaSnapshot({ mode: 'ai' }))).catch(() => null);
-    if (!withRefs) return state.getInteractiveARIA();
-    return compactAriaSnapshot(withRefs, false);
   }
 
   private finishTest(task: Test): void {
@@ -942,7 +937,7 @@ export class Tester extends TaskAgent implements Agent {
           };
 
           if (resetAction.lastError) {
-            result.error = resetAction.lastError.toString();
+            result.error = compactErrorMessage(resetAction.lastError);
           }
 
           return result;

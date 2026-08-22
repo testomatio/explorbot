@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { ModelMessage } from 'ai';
+import { tool } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
+import { z } from 'zod';
 import { AiError, Provider } from '../../src/ai/provider.js';
 import { ConfigParser } from '../../src/config.js';
 import type { AIConfig } from '../../src/config.js';
@@ -110,6 +112,64 @@ describe('Provider', () => {
       });
 
       expect(response.text).toBe('Response');
+    });
+
+    it('should repair tool names with channel markers instead of rejecting them', async () => {
+      const messages = [{ role: 'user', content: 'Use a tool' }];
+      let executed = '';
+      const tools = {
+        click: tool({
+          description: 'Click an element',
+          inputSchema: z.object({ commands: z.array(z.string()) }),
+          execute: async (input: any) => {
+            executed = input.commands?.[0] || 'clicked';
+            return { success: true };
+          },
+        }),
+      };
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'channel-marker-model',
+        doGenerate: async () => ({
+          text: undefined,
+          toolCalls: [{ toolCallId: 'call-1', toolName: 'click<|channel|>commentary', args: { commands: ['I.click("#btn")'] } }],
+          finishReason: 'tool-calls' as const,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'click<|channel|>commentary', input: JSON.stringify({ commands: ['I.click("#btn")'] }) }],
+        }),
+      });
+
+      const response = await provider.generateWithTools(messages, model, tools);
+
+      expect(executed).toBe('I.click("#btn")');
+      expect(response.toolCalls?.[0]?.toolName).toBe('click');
+    });
+
+    it('should not repair tool names that match no tool', async () => {
+      const messages = [{ role: 'user', content: 'Use a tool' }];
+      const tools = {
+        click: tool({
+          description: 'Click an element',
+          inputSchema: z.object({ commands: z.array(z.string()) }),
+          execute: async () => ({ success: true }),
+        }),
+      };
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'channel-marker-model',
+        doGenerate: async () => ({
+          text: undefined,
+          toolCalls: [{ toolCallId: 'call-1', toolName: 'nonexistent<|channel|>commentary', args: {} }],
+          finishReason: 'tool-calls' as const,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'nonexistent<|channel|>commentary', input: '{}' }],
+        }),
+      });
+
+      const response = await provider.generateWithTools(messages, model, tools);
+
+      expect(response.toolCalls?.[0]?.invalid).toBe(true);
+      expect(response.toolResults?.length ?? 0).toBe(0);
     });
   });
 

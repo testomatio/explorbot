@@ -19,6 +19,48 @@
 - [Driller] and [Captain] can now open a recorded solution by title in every mode, the way the
   other agents do.
 
+## 2026-08-21
+
+### Changes
+
+- AI models that emit channel markers in tool names (e.g. `click<|channel|>commentary`, common with
+  gpt-oss and gemma) no longer waste a turn: the provider now repairs the name to the real tool and
+  executes it, instead of rejecting the call and telling the AI to retry. In a 24h CI sample this
+  rejection burned 93 tool calls across 34 test traces.
+- [Fisherman] A captured request rejected by the API is no longer presented as a valid request
+  example. OpenAPI definitions take precedence when available, and failed responses now identify
+  whether validation, authorization, routing, conflict, temporary, or server handling is needed.
+- [Researcher/Planner] Similar HTML is reused only after URL-aware matching: new fingerprints
+  store their source URL, candidates from other page families are filtered before the best match is
+  selected, and Planner applies the same check before reusing a state hash. Legacy fingerprints
+  without URL metadata remain readable for backward compatibility.
+- Configuration: absolute configured directories are now respected as-is instead of being joined
+  onto the project root, which produced doubled, unusable paths on Windows.
+- A browser command that fails now reports a short error instead of Playwright's full retry log.
+  Click, hover, key press, form and back/reset failures used to carry every wait and retry line,
+  the same reason repeated once per attempt, and terminal color codes — around 850 characters for
+  one disabled button. What is left is the element the locator resolved to and the reason it could
+  not be acted on, so the AI reads the blocker instead of scrolling past bookkeeping.
+
+## 2026-08-20
+
+### Changes
+
+- [Pilot] A test no longer burns its whole budget asking for the same test data over and over. When
+  the page check that decides whether the test can go on without that data failed, nothing came back
+  at all, so the request looked unanswered and was repeated until the test ran out of steps without
+  ever touching the browser. The check now always answers, even when it cannot look at the page.
+- [Pilot] When test data could not be prepared, the answer now says so plainly — it was not created,
+  it cannot be created automatically, and the test should carry on with what the page already shows.
+- A click whose command never parsed as JavaScript is now reported as a broken command, not as a
+  missing element. Mismatched quotes or brackets used to be answered with advice to hunt the DOM
+  with `xpathCheck()`, `see()` or `visualClick()`, so the AI searched for an element that was never
+  looked up and re-emitted the same broken command. It is now told the string was invalid, that
+  nothing was learned about the page, and to re-emit the same intent as valid CodeceptJS.
+- `xpathCheck` that matches nothing no longer suggests broadening to a generic expression. It now
+  asks for narrowing down from what is known about the target — its role, its visible text, its
+  nearest labelled ancestor — one constraint at a time, instead of inviting another blind guess.
+
 ## 2026-08-18
 
 ### Changes

@@ -365,7 +365,7 @@ export class Provider {
     const extraStop = options.stopWhen;
     const stopConditions: any[] = [isStepCount(maxRoundtrips)];
     if (extraStop) stopConditions.push(extraStop);
-    const config = this.buildGenerateConfig({ tools, maxOutputTokens: 16384, toolChoice: 'auto' }, { stopWhen: stopConditions, model }, options);
+    const config = this.buildGenerateConfig({ tools, maxOutputTokens: 16384, toolChoice: 'auto', experimental_repairToolCall: repairToolCall }, { stopWhen: stopConditions, model }, options);
     try {
       const response = await withRetry(async () => {
         const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
@@ -627,4 +627,20 @@ export class Provider {
   }
 }
 
+function repairToolCall(options: ToolCallRepairOptions): any | null {
+  if (options.toolCall.toolName.includes('<|channel|>')) return repairChannelMarker(options);
+  return null;
+}
+
+function repairChannelMarker({ toolCall, tools }: ToolCallRepairOptions): any | null {
+  const markerIndex = toolCall.toolName.indexOf('<|channel|>');
+  if (markerIndex <= 0) return null;
+  const toolName = toolCall.toolName.slice(0, markerIndex);
+  if (!tools[toolName]) return null;
+  tag('warning').log(`Repaired tool name '${toolCall.toolName}' → '${toolName}'`);
+  return { ...toolCall, toolName };
+}
+
 export { AiError, Provider as AIProvider };
+
+type ToolCallRepairOptions = { toolCall: any; tools: any };

@@ -182,7 +182,7 @@ describe('Researcher with aimock', () => {
   });
 
   it('returns cached research verbatim and without an AI call', async () => {
-    saveResearch(fakeState.hash!, '## Cached Research\n\nPreviously analyzed page.');
+    saveResearch({ hash: fakeState.hash!, url: fakeState.url }, '## Cached Research\n\nPreviously analyzed page.');
 
     const result = await researcher.research(fakeState, { fix: false });
 
@@ -191,7 +191,7 @@ describe('Researcher with aimock', () => {
   });
 
   it('force flag bypasses cache', async () => {
-    saveResearch(fakeState.hash!, '## Cached Research\n\nOld cached content.');
+    saveResearch({ hash: fakeState.hash!, url: fakeState.url }, '## Cached Research\n\nOld cached content.');
 
     const result = await researcher.research(fakeState, { fix: false, force: true });
 

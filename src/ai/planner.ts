@@ -149,7 +149,7 @@ export class Planner extends PlannerBase implements Agent {
 
       const actionResult = ActionResult.fromState(state);
       const combinedHtml = await actionResult.combinedHtml();
-      const similarHash = await findSimilarStateHash(combinedHtml);
+      const similarHash = await findSimilarStateHash(combinedHtml, state.url);
       if (similarHash) {
         const planned = getPlannedByStateHash(similarHash);
         if (planned) {

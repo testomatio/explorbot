@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import stripAnsi from 'strip-ansi';
 
 export function truncateJson(input: any): string {
   if (!input) return '';
@@ -40,3 +41,38 @@ export function safeFilename(name: string, ext = '', maxBytes = 240): string {
   }
   return truncated + suffix + ext;
 }
+
+export function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 3)}...`;
+}
+
+const MAX_COMPACT_ERROR = 400;
+
+export function compactErrorMessage(error: unknown): string {
+  let text = stripAnsi(String(error));
+  for (const strip of STRIP_STRATEGIES) {
+    text = strip(text);
+  }
+  return truncate(text, MAX_COMPACT_ERROR);
+}
+
+function stripCallLog(text: string): string {
+  const CALL_LOG = 'Call log:';
+  const NOISE = ['attempting', 'retrying', 'waiting'];
+
+  const [headline, ...log] = text.split(CALL_LOG);
+  if (!log.length) return text;
+
+  const lines = new Set<string>();
+  for (const line of log.join(CALL_LOG).split('\n')) {
+    const cleaned = normalizeInlineText(line);
+    if (!cleaned) continue;
+    if (NOISE.some((noise) => cleaned.includes(noise))) continue;
+    lines.add(cleaned);
+  }
+
+  return [headline.trim(), ...lines].join(' ');
+}
+
+const STRIP_STRATEGIES = [stripCallLog];
