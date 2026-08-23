@@ -59,15 +59,31 @@ prima-cli browser stop
 
 ## AI model
 
-Prima needs a model. It reads the same `explorbot.config.js` as [explorbot](https://www.npmjs.com/package/explorbot), and the same `EXPLORBOT_*` environment variables — so no config file is needed if you point it at a provider through the environment:
+Prima needs a model, and takes it from the environment. There is no `init` to run and nothing is written for you.
 
 ```bash
-export EXPLORBOT_AI_PROVIDER=openrouter
-export OPENROUTER_API_KEY=...
-prima-cli --ephemeral check "the settings page saves a changed theme"
+export PRIMA_CLI_AI_MODEL=openrouter/openai/gpt-oss-120b
+export OPENROUTER_API_KEY=your-key
 ```
 
-`--ephemeral` keeps no state between runs and writes output to a temp directory. `prima-cli config` prints the models, config file and paths a given directory and environment resolve to. Providers: openai, anthropic, google, groq, mistral, openrouter, sambanova.
+The provider comes from the model name, so that is the whole setup. Fish uses `set -gx` instead of `export`. Since prima is usually run by a coding agent, the better home is the agent's own config — in `~/.claude/settings.json`, an `env` block reaches every command the agent runs:
+
+```json
+{
+  "env": {
+    "PRIMA_CLI_AI_MODEL": "openrouter/openai/gpt-oss-120b",
+    "OPENROUTER_API_KEY": "your-key"
+  }
+}
+```
+
+Screenshot analysis needs its own model — one is never guessed from the main model. Set `PRIMA_CLI_VISION_MODEL`, or pass `--vision-model` for a single run, as `--model` does for the main one. Without it prima still runs, but settles `check` outcomes from the run log rather than from the page as seen.
+
+Every `PRIMA_CLI_*` variable mirrors the `EXPLORBOT_*` one of the same name and wins over it, so prima can be pointed at a different provider, model or URL without disturbing an explorbot setup on the same machine. `PRIMA_CLI_AI_MODEL`, `PRIMA_CLI_URL`, `PRIMA_CLI_VISION_MODEL` and the rest all work this way.
+
+Where [explorbot](https://www.npmjs.com/package/explorbot) is already configured, prima reads its config too — a project's `explorbot.config.js` first, then `~/.explorbot/config.js`. Variables win over both. `prima config` prints what a directory resolves to, and `--ephemeral` keeps no state between runs, writing output to a temp directory.
+
+Providers: openai, anthropic, google, groq, mistral, openrouter, sambanova.
 
 Without a model `pw` still works, since it runs Playwright directly.
 
