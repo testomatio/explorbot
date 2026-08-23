@@ -26,6 +26,23 @@ function writeGlobalConfig(body = GLOBAL_CONFIG): string {
   return configPath;
 }
 
+async function waitForFrame(wizard: ReturnType<typeof render>, text: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (wizard.lastFrame()?.includes(text)) return;
+    await Bun.sleep(10);
+  }
+}
+
+async function typeUntilFrame(wizard: ReturnType<typeof render>, input: string, text: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    wizard.stdin.write(input);
+    for (let tick = 0; tick < 10; tick++) {
+      if (wizard.lastFrame()?.includes(text)) return;
+      await Bun.sleep(10);
+    }
+  }
+}
+
 function siteDir(folder: string): string {
   return join(home, '.explorbot', 'sites', folder);
 }
@@ -359,9 +376,8 @@ describe('explorbot init', () => {
     const wizard = render(React.createElement(InitWizard, { mode: 'global', globalConfigExists: false, onLocal: noop, onComplete: noop, onCancel: noop }));
 
     wizard.stdin.write('\r');
-    await Bun.sleep(20);
-    wizard.stdin.write('sk-secret-value');
-    await Bun.sleep(20);
+    await waitForFrame(wizard, 'Enter the API key');
+    await typeUntilFrame(wizard, 'sk-secret-value', '•');
 
     expect(wizard.lastFrame()).toContain('Enter the API key');
     expect(wizard.lastFrame()).not.toContain('sk-secret-value');
