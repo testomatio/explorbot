@@ -51,8 +51,8 @@ Set the recommended models in the exported config:
 export default {
   ai: {
     model: openrouter('openai/gpt-oss-20b:nitro'),
-    visionModel: openrouter('google/gemma-4-31b-it:nitro'),
-    agenticModel: openrouter('google/gemma-4-31b-it:nitro'),
+    visionModel: openrouter('openai/gpt-5.6-luna'),
+    agenticModel: openrouter('openai/gpt-5.6-luna'),
   },
 };
 ```
@@ -118,8 +118,8 @@ Set the recommended models in the exported config:
 ```javascript
 export default {
   ai: {
-    model: openai('gpt-5.4-nano'),
-    visionModel: openai('gpt-5.4-nano'),
+    model: openai('gpt-5-nano'),
+    visionModel: openai('gpt-5.6-luna'),
     agenticModel: openai('gpt-5.6-luna'),
   },
 };
