@@ -21,7 +21,7 @@ import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { TaskAgent } from './task-agent.ts';
-import { withdrawVisionTools } from './tools.ts';
+import { createLearnExperienceTool, withdrawVisionTools } from './tools.ts';
 
 const MAX_STEPS = 15;
 
@@ -241,6 +241,14 @@ export class Captain extends CaptainBase implements Agent {
 
   private coreTools(task: Task, onDone: (summary: string) => void) {
     return {
+      learnExperience: createLearnExperienceTool({
+        getExperienceTracker: () => this.getExperienceTracker(),
+        getState: () => {
+          const state = this.explorBot.stateManager().getCurrentState();
+          if (!state) return null;
+          return ActionResult.fromState(state);
+        },
+      }),
       done: tool({
         description: 'Call when the user request is fulfilled.',
         inputSchema: z.object({

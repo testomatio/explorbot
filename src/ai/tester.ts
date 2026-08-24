@@ -42,6 +42,7 @@ const SAMPLE_FILES: Record<string, string> = {
 
 export class Tester extends TaskAgent implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'hover', 'pressKey', 'form'];
+  protected readonly DELEGATED_ACTION_TOOLS = ['interact'];
   protected readonly SPECIAL_CONTEXT_ACTION_TOOLS = ['exitIframe'];
   emoji = '🧪';
   private requestStore: RequestStore;
@@ -276,8 +277,6 @@ export class Tester extends TaskAgent implements Agent {
           }
 
           conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 1);
-          conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
-          conversation.cleanupTag('experience', '...cleaned experience...', 1);
           conversation.cleanupTag('applied_experience', '...cleaned past experience...', 1);
           conversation.cleanupTag('page_ui_map', '...cleaned UI map...', 1);
           conversation.cleanupTag('page_ui_map_overlay', '...cleaned UI overlay...', 1);
@@ -415,8 +414,6 @@ export class Tester extends TaskAgent implements Agent {
       this.stalledIterations = 0;
       tag('info').log(`Pilot extending test (${extensions}/${this.MAX_EXTENSIONS})`);
       conversation.cleanupTag('page_aria', '...trimmed...', 1);
-      conversation.cleanupTag('page_html', '...trimmed...', 0);
-      conversation.cleanupTag('experience', '...trimmed...', 0);
       conversation.cleanupTag('page_ui_map', '...trimmed...', 0);
       conversation.cleanupTag('page_ui_map_overlay', '...trimmed...', 0);
       conversation.compactToolResults(1);
@@ -456,7 +453,7 @@ export class Tester extends TaskAgent implements Agent {
 
     const currentState = this.getCurrentState();
     const stateChanged = previousState.url !== currentState.url || previousState.hash !== currentState.hash;
-    const actionTools = [...this.ACTION_TOOLS, ...this.SPECIAL_CONTEXT_ACTION_TOOLS];
+    const actionTools = [...this.ACTION_TOOLS, ...this.DELEGATED_ACTION_TOOLS, ...this.SPECIAL_CONTEXT_ACTION_TOOLS];
     const hasSuccessfulAction = toolExecutions.some((execution) => execution.wasSuccessful && actionTools.includes(execution.toolName));
     const hasSuccessfulAssertion = toolExecutions.some((execution) => execution.wasSuccessful && this.ASSERTION_TOOLS.includes(execution.toolName));
 
@@ -483,6 +480,7 @@ export class Tester extends TaskAgent implements Agent {
   
       <rules>
       Use tools ${this.ACTION_TOOLS.join(', ')} to interact with the page.
+      Fall back to interact() when those fail, when the step needs a sequence of actions, or when your context is not enough to locate the element.
       Use tool names exactly as listed in this prompt. Do not invent combined tool names, aliases, or names with channel markers such as "commentary".
       Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
       Do not do unsuccesful clicks again.
@@ -608,8 +606,8 @@ export class Tester extends TaskAgent implements Agent {
         ${uiMapSection}
 
         Use <page_ui_map> to understand the page structure and its main elements.
-        However, <page_ui_map> is not always up to date, use <page_aria> and <page_html> to understand the ACTUAL state of the page
-        Do not interact with elements that are not listed in <page_aria> and <page_html>
+        However, <page_ui_map> is not always up to date, use <page_aria> to understand the ACTUAL state of the page
+        Do not interact with elements that are not listed in <page_aria> or in HTML returned by tools
         Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
       `;
       return context;
@@ -714,7 +712,7 @@ export class Tester extends TaskAgent implements Agent {
 
     <rules>
     - Refer to UI Map from <page_ui_map> to understand the page structure and its main elements
-    - Use only elements that exist in the provided ARIA tree or HTML, <page_aria> and <page_html>
+    - Use only elements that exist in <page_aria> or in HTML returned by tools
     - Use tool input schemas exactly as documented. Do not invent parameter names or add fields not listed by the tool schema.
     - Use click() for buttons, links, and clickable elements ONLY - do NOT include I.fillField() or I.type() commands in click() tool
     - click() commands array is for FALLBACK LOCATORS of the SAME element, NOT for clicking different elements in sequence. If you need to click two different elements, make two separate click() calls.
@@ -737,7 +735,8 @@ export class Tester extends TaskAgent implements Agent {
     - Check for error messages to understand if there are issues
     - Verify if data was correctly saved and changes are reflected on the page
     - By default, you receive accessibility tree data which shows interactive elements and page structure
-    - Understand current context by following <page_html>, <page_aria>, and <page_ui_map>
+    - Full page HTML is never injected automatically. When ARIA is not enough, delegate to the tools that read it: verify() to assert, interact() to act
+    - Understand current context by following <page_aria> and <page_ui_map>
     - Before submitting form, check all inputs were filled in correctly using see() tool
     - When you interact with form with inputs, ensure that you click corresponding button to save its data
     - Follow <locator_priority> rules when selecting locators for all tools
@@ -789,7 +788,6 @@ export class Tester extends TaskAgent implements Agent {
 
   private buildScenarioBlock(task: Test, actionResult: ActionResult): string {
     const knowledge = this.getKnowledge(actionResult);
-    const experience = this.getExperience(actionResult);
 
     return dedent`
       <task>
@@ -819,8 +817,6 @@ export class Tester extends TaskAgent implements Agent {
       ${this.buildAvailableFiles()}
 
       ${knowledge}
-
-      ${experience}
     `;
   }
 

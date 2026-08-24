@@ -249,7 +249,7 @@ export class ExplorBot {
       this.agents.tester = this.createAgent((deps) => {
         const researcher = this.agentResearcher();
         const navigator = this.agentNavigator();
-        const tools = createAgentTools({ ...deps, researcher, navigator });
+        const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
         return new Tester(deps, researcher, navigator, tools);
       });
 

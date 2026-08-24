@@ -79,17 +79,21 @@ describe('ActionResult Diff', () => {
     const previous = new ActionResult({
       url: '/page1',
       html: '<html><body><h1>Page 1</h1></body></html>',
+      ariaSnapshot: '- button "Click me"',
     });
 
     const current = new ActionResult({
       url: '/page2',
       html: '<html><body><h1>Page 2</h1></body></html>',
+      ariaSnapshot: '- button "Other button"',
     });
 
     const diff = await Diff.create(current, previous);
 
     expect(diff.htmlDiff).toBeNull();
     expect(diff.htmlParts).toEqual([]);
+    expect(diff.ariaChanged).toBeNull();
+    expect(diff.ariaChangeCount).toBe(0);
   });
 
   test('should calculate aria diff', async () => {

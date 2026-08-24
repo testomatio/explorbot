@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { context, trace } from '@opentelemetry/api';
 import { container, recorder } from 'codeceptjs';
 import * as codeceptjs from 'codeceptjs';
-import { ActionResult, type FocusedElement } from './action-result.js';
+import { ActionResult, type FocusedElement, type NetworkCall } from './action-result.js';
 import { clearActivity, setActivity } from './activity.ts';
 import { ConfigParser, outputPath } from './config.js';
 import type { ExplorbotConfig } from './config.js';
@@ -21,6 +21,8 @@ const debugLog = createDebug('explorbot:action');
 const CAPTURE_NAVIGATION_TRANSITION_ATTEMPTS = 3;
 const DEFAULT_ACTION_TIMEOUT = 3000;
 const DEFAULT_PAGE_TIMEOUT = 3000;
+const MAX_NETWORK_CALLS = 10;
+const IMPORTANT_LOG_LEVELS = new Set(['info', 'error', 'warning', 'warn']);
 
 class Action {
   private actor: CodeceptJS.I;
@@ -38,6 +40,8 @@ class Action {
   private recorder?: PlaywrightRecorder;
   private recovery: RecoveryRunner;
   private mainDocumentStatus: number | undefined = undefined;
+  private networkRequests: NetworkCall[] = [];
+  private baseOrigin: string;
 
   constructor(actor: CodeceptJS.I, stateManager: StateManager, recorder?: PlaywrightRecorder, recovery?: RecoveryRunner) {
     this.actor = actor;
@@ -46,6 +50,7 @@ class Action {
     this.playwrightHelper = container.helpers('Playwright');
     this.recorder = recorder;
     this.recovery = recovery || ((fn) => fn());
+    this.baseOrigin = URL.parse(this.config.playwright?.url || '')?.origin || '';
   }
 
   async saveScreenshot(): Promise<string | undefined> {
@@ -127,9 +132,7 @@ class Action {
       const logPath = join(statesDir, logFile);
       const formattedLogs = browserLogs.map((log: any) => {
         const logTimestamp = new Date().toISOString();
-        const level = (log.type || log.level || 'LOG').toUpperCase();
-        const message = log.text || log.message || String(log);
-        return `[${logTimestamp}] ${level}: ${message}`;
+        return `[${logTimestamp}] ${log.type.toUpperCase()}: ${log.text}`;
       });
       fs.writeFileSync(logPath, `${formattedLogs.join('\n')}\n`, 'utf8');
 
@@ -157,12 +160,16 @@ class Action {
         ariaSnapshotFile = ariaFileName;
       }
 
+      const networkRequests = this.networkRequests;
+      this.networkRequests = [];
+
       const result = new ActionResult({
         html,
         title,
         httpStatus: await this.captureMainDocumentStatus(),
         url,
         browserLogs,
+        networkRequests,
         htmlFile,
         logFile,
         screenshotFile,
@@ -202,24 +209,51 @@ class Action {
     }
   }
 
-  private captureMainDocumentResponse(): () => void {
+  private captureResponses(): () => void {
     const page = this.playwrightHelper.page;
     if (!page?.on || !page?.off) return () => {};
 
     this.mainDocumentStatus = undefined;
+    this.networkRequests = [];
 
     const handler = (response: any) => {
       const request = response.request();
-      if (request.resourceType() !== 'document') return;
-      if (response.frame() !== page.mainFrame()) return;
       const status = response.status();
       if (typeof status !== 'number') return;
       if (status <= 0) return;
-      this.mainDocumentStatus = status;
+
+      if (request.resourceType() === 'document') {
+        if (response.frame() !== page.mainFrame()) return;
+        this.mainDocumentStatus = status;
+        return;
+      }
+
+      this.recordNetworkCall(request, status);
     };
 
     page.on('response', handler);
     return () => page.off('response', handler);
+  }
+
+  private recordNetworkCall(request: any, status: number): void {
+    const resourceType = request.resourceType();
+    if (resourceType !== 'xhr' && resourceType !== 'fetch') return;
+
+    const url = URL.parse(request.url());
+    if (!url) return;
+    if (url.origin !== this.baseOrigin) return;
+
+    const call: NetworkCall = { method: request.method(), path: url.pathname, status };
+    if (this.networkRequests.some((r) => r.method === call.method && r.path === call.path && r.status === call.status)) return;
+
+    if (this.networkRequests.length >= MAX_NETWORK_CALLS) {
+      if (status < 400) return;
+      const succeeded = this.networkRequests.findIndex((r) => r.status < 400);
+      if (succeeded === -1) return;
+      this.networkRequests.splice(succeeded, 1);
+    }
+
+    this.networkRequests.push(call);
   }
 
   /**
@@ -267,13 +301,7 @@ class Action {
     try {
       const logs = await (this.actor as any).grabBrowserLogs();
 
-      // Filter for important logs (info, error, warning)
-      const importantLogs = logs.filter((log: any) => {
-        const level = log.type || log.level;
-        return ['info', 'error', 'warning', 'warn'].includes(level);
-      });
-
-      return importantLogs;
+      return logs.map(toBrowserLog).filter((log: any) => IMPORTANT_LOG_LEVELS.has(log.type));
     } catch (error) {
       debugLog('Failed to capture browser logs:', error);
       return [];
@@ -292,7 +320,7 @@ class Action {
     const stepListener = attachStepLogger(executedSteps, assertionSteps);
     const groupId = this.recorder ? await this.recorder.beginAction(codeString) : null;
     this.playwrightGroupId = groupId;
-    const detachMainDocumentResponse = this.captureMainDocumentResponse();
+    const detachResponses = this.captureResponses();
     const activeSpan = Observability.getSpan();
     const tracer = trace.getTracer('ai');
     const stepSpan = activeSpan ? tracer.startSpan('codeceptjs.step', undefined, trace.setSpan(context.active(), activeSpan)) : null;
@@ -341,7 +369,7 @@ class Action {
       throw err;
     } finally {
       this.restorePageTimeout();
-      detachMainDocumentResponse();
+      detachResponses();
       if (groupId) await this.recorder!.endAction();
       detachStepLogger(stepListener);
       if (stepSpan) {
@@ -427,6 +455,12 @@ async function captureHtml(page: any, frame: any, actor: any): Promise<string> {
   if (page?.content) return page.content();
   if (actor?.grabSource) return actor.grabSource();
   throw new Error('Playwright page is unavailable for HTML capture');
+}
+
+function toBrowserLog(log: any): { type: string; text: string } {
+  const type = typeof log.type === 'function' ? log.type() : log.type || log.level || 'log';
+  const text = typeof log.text === 'function' ? log.text() : log.text || log.message || String(log);
+  return { type, text: text.replace(/\s+/g, ' ').trim() };
 }
 
 async function captureTitle(page: any, actor: any): Promise<string> {

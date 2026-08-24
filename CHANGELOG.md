@@ -32,6 +32,20 @@
 
 ### Changes
 
+- [Tester] The prompt no longer promises page HTML that was never sent. The Tester was told to work
+  from a `<page_html>` section in four places, but nothing ever put one there — it only ever received
+  the accessibility tree and the UI map. It is now told what it actually has: the accessibility tree,
+  the page diffs that come back with each action, and HTML it asks for by calling a tool.
+- [Tester] When the accessibility tree is not enough, the Tester now knows to hand the step over
+  rather than guess. `interact()` is described as what it is — one step delegated to the Navigator,
+  which reads the whole page — and the Tester is reminded of it every turn, for the three cases it
+  helps with: the direct action tools failed, the step needs a sequence of actions, or the element is
+  missing from what the Tester can see.
+- [Tester] A test no longer stops early after a delegated step succeeded. A successful `interact()`
+  that left the page looking unchanged used to count as no progress at all, and three of them ended
+  the test.
+- [Pilot] The Pilot no longer pushes a full page of HTML into the Tester mid-test. It can still
+  attach the accessibility tree, a page summary, or the UI map when recent actions failed.
 - [Chief] Now reads endpoint knowledge when planning API tests, so auth rules and business
   constraints written with `explorbot api know` reach the plan.
 - [Curler] Now reads endpoint knowledge when running an API test, so auth headers and payload rules
@@ -47,6 +61,23 @@
 
 ### Changes
 
+- [Pilot] now chooses which recorded solutions a test is given. It reads the list of titles for the
+  page it is on, opens the ones that match the scenario, and only those reach the Tester — when it
+  plans a test, when the test lands on a new page, and when a step keeps failing.
+- [Pilot] drops the list of titles from the previous page even when the new page has nothing
+  recorded for it, so it never picks a solution belonging to a page the test has already left.
+- A recorded solution the Pilot opened earlier is now offered back to a step only on the page it
+  was recorded for. A test that picked one up on an earlier page used to carry it to every page it
+  visited afterwards, presented as if it belonged there.
+- [Tester] no longer reads recorded solutions at all — neither the recipes nor the list of their
+  titles. A single page can hold recipes for a dozen unrelated features, and handing all of them
+  over put work with nothing to do with the current scenario in front of the model. Everything it
+  learns from earlier runs now arrives through the Pilot.
+- [Navigator] uses the solution it was handed rather than loading every one recorded for the page.
+  Where nobody hands it one — recovering a failed page visit, free sailing — it still loads them
+  itself, since there is no one there to choose.
+- [Driller] and [Captain] can now open a recorded solution by title in every mode, the way the
+  other agents do.
 - Documentation: CLAUDE.md now defines the boundary contracts between agents and data modules,
   the persisted file formats vs session artifacts, the rules for extending envelopes, per-agent
   HTML access tiers, a feature routing test, guidance on when to use regex versus AI judgment,
@@ -54,10 +85,42 @@
 - New Bunosh tasks for feature worktrees: `worktree:create <feature>` opens a new branch off main
   in a sibling directory, `worktree:fetch <branch>` opens an existing branch there, both symlinking
   the main checkout's `node_modules`; `worktree:delete [branch]` removes a worktree when merged.
+
 ## 2026-08-21
+
+### Actions report what the app said and did, not just how the page moved
+
+A click that fired a request the server rejected used to look like a success. The page diff described
+DOM and accessibility-tree movement only, so a toast reading "Operation against a key holding the wrong
+kind of value" was either buried in raw markup or dropped altogether, and the rejected request surfaced
+much later as a session-wide count. Every action now also carries:
+
+- **messages** — text the app put on the page in response: toasts, alerts, banners and inline errors,
+  including ones built without any accessibility markup. An action that navigated reports only what its
+  live regions announced, so the content of the page that opened is not read back as a reply
+- **requests** — the calls the action made to the application, each with its status, capped per action
+  with rejected calls kept ahead of successful ones
+- **consoleErrors** — what the page logged while the action ran
+
+When a request comes back 400 or 500 the result leads with that, and points at the message the user was
+shown, rather than leaving the model to read the click as successful and repeat it.
+
+Elements are no longer compared across two pages. An action that navigated used to report one ARIA diff
+whose halves belonged to different pages — the elements of the page left behind listed as removed next to
+the elements of the page arrived at, with the chrome common to both cancelled out and nothing saying which
+side was which, so elements that no longer exist read as available. Such an action now reports the move
+itself, the message the app announced in transit, and its requests; the page arrived at is described in
+full by the context that follows it.
+
+The Pilot's review reads the same evidence attached to the action that caused it, narrowed to what
+indicates failure: rejected requests, the first two messages, one console error. It used to get a bare
+`POST /api/… → 400` with no page context, which reads as a missing value, and would send the tester back
+to fill in a form that was already filled.
 
 ### Changes
 
+- Console messages from the browser were dropped before they were ever recorded, so console errors always
+  showed as none and a page that logged its own failure reported nothing.
 - AI models that emit channel markers in tool names (e.g. `click<|channel|>commentary`, common with
   gpt-oss and gemma) no longer waste a turn: the provider now repairs the name to the real tool and
   executes it, instead of rejecting the call and telling the AI to retry. In a 24h CI sample this
