@@ -6,7 +6,7 @@ import { render } from 'ink-testing-library';
 import React from 'react';
 import InitWizard from '../../src/components/InitWizard.tsx';
 import { ApibotConfigParser } from '../../boat/api-tester/src/config.ts';
-import { runInit } from '../../src/commands/init-command.ts';
+import { runInit, runInitCommand } from '../../src/commands/init-command.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { listSites, registerSite, resolveSiteTarget, siteFolderName } from '../../src/global-config.ts';
 
@@ -409,5 +409,28 @@ describe('explorbot init', () => {
       process.chdir(originalCwd);
       Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
     }
+  });
+
+  it('scaffolds a local config with the recommended models of this release', () => {
+    runInitCommand({ path: workDir });
+
+    const body = readFileSync(join(workDir, 'explorbot.config.js'), 'utf8');
+    const recommended = ConfigParser.recommendedModels().openrouter;
+
+    expect(body).toContain("import { createOpenRouter } from '@openrouter/ai-sdk-provider';");
+    expect(body).toContain(`model: openrouter('${recommended.model}')`);
+    expect(body).toContain(`visionModel: openrouter('${recommended.visionModel}')`);
+    expect(body).toContain(`agenticModel: openrouter('${recommended.agenticModel}')`);
+  });
+});
+
+describe('missing provider package', () => {
+  it('names the package and how to install it', async () => {
+    writeFileSync(join(workDir, 'explorbot.config.js'), "import { createFoo } from '@absent-scope/absent-provider/client';\nexport default { ai: { model: createFoo() } };\n", 'utf8');
+
+    const load = ConfigParser.getInstance().loadConfig({ path: workDir });
+
+    await expect(load).rejects.toThrow(/@absent-scope\/absent-provider\/client/);
+    await expect(load).rejects.toThrow(/npm i @absent-scope\/absent-provider$/m);
   });
 });

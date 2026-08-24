@@ -106,8 +106,12 @@ If your CI runs Playwright, it runs Explorbot. No GPUs, no special runners.
 
 ```bash
 npm i explorbot --save
+npm i @openrouter/ai-sdk-provider
 npx playwright install
 ```
+
+The second line installs the AI provider package the generated config imports. To use a different
+provider, install that one instead — see [Providers](docs/basics/providers.md).
 
 **2. Initialize config**
 
