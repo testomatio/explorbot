@@ -415,8 +415,6 @@ export class ConfigParser {
         process.chdir(originalCwd);
       }
       if (error instanceof ConfigMissingError) throw error;
-      const missingPackage = missingPackageMessage(error);
-      if (missingPackage) throw new Error(missingPackage);
       throw new Error(`Failed to load configuration: ${error}`);
     }
   }
@@ -775,28 +773,6 @@ export function missingConfigMessage(configFile = 'explorbot.config.js'): string
         EXPLORBOT_AI_PROVIDER=openrouter EXPLORBOT_URL=https://your-app.example.com ${cli} ...
 
     Providers: ${Object.keys(PROVIDERS).join(', ')}
-  `;
-}
-
-function missingPackageMessage(error: any): string | null {
-  if (error?.code !== 'ERR_MODULE_NOT_FOUND') return null;
-
-  const specifier = error.specifier || `${error.message}`.split("'")[1];
-  if (!specifier || specifier.startsWith('.') || specifier.startsWith('/')) return null;
-
-  let segments = 1;
-  if (specifier.startsWith('@')) segments = 2;
-  const pkg = specifier.split('/').slice(0, segments).join('/');
-
-  return dedent`
-    Configuration imports "${specifier}", which is not installed.
-
-    Install it:
-      npm i ${pkg}
-
-    Or drop the import and write the model as "provider/model-id" for a provider Explorbot ships: ${Object.keys(PROVIDERS).join(', ')}
-
-    Providers: https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
   `;
 }
 

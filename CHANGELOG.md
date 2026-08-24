@@ -13,9 +13,6 @@
   in a comment.
 - The model ids in the generated config are taken from the recommendations shipped with the
   release, so a fresh config no longer starts out with stale ones.
-- A config that imports a package you have not installed now says which package is missing, gives
-  the `npm i` line for it, and points at the providers documentation, instead of printing the raw
-  module resolution error.
 
 ## 2026-08-23
 

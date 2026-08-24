@@ -422,14 +422,3 @@ describe('explorbot init', () => {
     expect(config.ai.visionModel.modelId).toBe(ConfigParser.recommendedModels().openrouter.visionModel);
   });
 });
-
-describe('missing provider package', () => {
-  it('names the package and how to install it', async () => {
-    writeFileSync(join(workDir, 'explorbot.config.js'), "import { createFoo } from '@absent-scope/absent-provider/client';\nexport default { ai: { model: createFoo() } };\n", 'utf8');
-
-    const load = ConfigParser.getInstance().loadConfig({ path: workDir });
-
-    await expect(load).rejects.toThrow(/@absent-scope\/absent-provider\/client/);
-    await expect(load).rejects.toThrow(/npm i @absent-scope\/absent-provider$/m);
-  });
-});
