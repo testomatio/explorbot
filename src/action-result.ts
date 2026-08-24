@@ -4,7 +4,7 @@ import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
 import { LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
 import { TTLCache } from './utils/cache.ts';
-import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff } from './utils/html-diff.ts';
+import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff, liveRegionMessages } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
 import { slugify } from './utils/strings.ts';
@@ -27,6 +27,7 @@ interface ActionResultData extends WebPageState {
   h3?: string | undefined;
   h4?: string | undefined;
   browserLogs?: any[];
+  networkRequests?: NetworkCall[];
   iframeSnapshots?: Array<{ src: string; html: string; id?: string }>;
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
@@ -41,6 +42,9 @@ export interface PageDiff {
   currentUrl: string;
   ariaChanges?: string | null;
   ariaChangeCount?: number;
+  messages?: string[];
+  requests?: NetworkCall[];
+  consoleErrors?: string[];
   htmlParts?: HtmlDiffPart[];
   iframes?: string;
 }
@@ -66,6 +70,7 @@ export class ActionResult implements ActionResultData {
   public url = '';
   public fullUrl: string | undefined = undefined;
   public browserLogs: any[] = [];
+  public networkRequests: NetworkCall[] = [];
   public iframeSnapshots: Array<{ src: string; html: string; id?: string }> = [];
   public iframeURL: string | undefined = undefined;
   readonly screenshotFile: string | undefined = undefined;
@@ -91,6 +96,7 @@ export class ActionResult implements ActionResultData {
     this.httpStatus = data.httpStatus;
     this.error = data.error ?? null;
     this.browserLogs = data.browserLogs ?? [];
+    this.networkRequests = data.networkRequests ?? [];
     this.iframeSnapshots = data.iframeSnapshots ?? [];
     this.iframeURL = data.iframeURL;
     this.notes = data.notes ?? [];
@@ -508,23 +514,30 @@ export class ActionResult implements ActionResultData {
       return result;
     }
 
-    const urlChanged = previousState ? !this.isSameUrl({ url: previousState.url }) : true;
+    const pageDiff: PageDiff = {
+      urlChanged: previousState ? !this.isSameUrl({ url: previousState.url }) : true,
+      currentUrl: this.url,
+    };
+    result.pageDiff = pageDiff;
 
-    if (!previousState) {
-      result.pageDiff = {
-        urlChanged: true,
-        currentUrl: this.url,
-      };
-      return result;
+    if (this.networkRequests.length > 0) {
+      pageDiff.requests = this.networkRequests;
     }
+
+    const consoleErrors = this.consoleErrors();
+    if (consoleErrors.length > 0) {
+      pageDiff.consoleErrors = consoleErrors;
+    }
+
+    if (!previousState) return result;
+
+    pageDiff.previousUrl = previousState.url;
 
     const diff = await this.diff(previousState);
 
-    const pageDiff: PageDiff = {
-      urlChanged,
-      previousUrl: previousState.url,
-      currentUrl: this.url,
-    };
+    if (diff.messages.length > 0) {
+      pageDiff.messages = diff.messages;
+    }
 
     if (diff.ariaChanged) {
       pageDiff.ariaChanges = diff.ariaChanged;
@@ -552,10 +565,27 @@ export class ActionResult implements ActionResultData {
       }
     }
 
-    result.pageDiff = pageDiff;
     return result;
   }
+
+  private consoleErrors(): string[] {
+    const errors: string[] = [];
+
+    for (const log of this.browserLogs) {
+      if ((log.type || log.level) !== 'error') continue;
+      const text = String(log.text || log.message || log).trim();
+      if (!text) continue;
+      if (errors.includes(text)) continue;
+      errors.push(text.slice(0, CONSOLE_ERROR_MAX_LENGTH));
+      if (errors.length === CONSOLE_ERROR_LIMIT) break;
+    }
+
+    return errors;
+  }
 }
+
+const CONSOLE_ERROR_MAX_LENGTH = 300;
+const CONSOLE_ERROR_LIMIT = 3;
 
 const HTML_PARTS_TOTAL_BUDGET = 8000;
 const HTML_PARTS_COUNT_LIMIT = 8;
@@ -584,6 +614,7 @@ function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
 
 export class Diff {
   private _htmlDiffResult: HtmlDiffResult | null = null;
+  private _messages: string[] = [];
   private _ariaDiffResult: string | null = null;
   private _ariaChangeCount = 0;
   private _isSameUrl: boolean;
@@ -636,17 +667,31 @@ export class Diff {
     return this._htmlDiffResult;
   }
 
+  get messages(): string[] {
+    return this._messages;
+  }
+
   async calculate(): Promise<void> {
     if (!this.previous) return;
 
-    if (this._isSameUrl) {
-      this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
+    if (!this._isSameUrl) {
+      this._messages = liveRegionMessages(this.previous.html, this.current.html);
+      return;
     }
+
+    this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
+    this._messages = this._htmlDiffResult.messages;
 
     const ariaDiff = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);
     this._ariaDiffResult = ariaDiff.text;
     this._ariaChangeCount = ariaDiff.count;
   }
+}
+
+export interface NetworkCall {
+  method: string;
+  path: string;
+  status: number;
 }
 
 export interface FocusedElement {

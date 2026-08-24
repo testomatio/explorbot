@@ -27,6 +27,8 @@ import { withdrawVisionTools } from './tools.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
 const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
+const PILOT_MESSAGE_LIMIT = 2;
+const PILOT_MESSAGE_MAX_LENGTH = 160;
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -465,9 +467,13 @@ export class Pilot implements Agent {
         the elements needed for the scenario. The page summary does not list every element.
         Prefer interacting with the current page over navigating away.
 
-        If you load a recipe via learnExperience, do NOT rewrite its code in your plan — the
-        raw recipe is forwarded to Tester automatically. Reference it by step ("apply recipe
-        steps 1–3, then…") and call out anywhere your scenario diverges from it.
+        Tester never sees <experience> — a recorded recipe reaches it only when you open one.
+        The entries listed are what was recorded on the page you are on now; recipes for the
+        pages this test moves to are listed when it gets there. Open the ones whose titles fit a
+        step taken from here, and say so in the plan when none of them fit.
+        Do NOT rewrite a loaded recipe's code — the raw recipe is forwarded to Tester
+        automatically. Reference it by step ("apply recipe steps 1–3, then…") and call out
+        anywhere your scenario diverges from it.
 
         Be concise and specific. Tester will follow your plan.
       `,
@@ -513,9 +519,11 @@ export class Pilot implements Agent {
         ${this.formatExpectations(task)}
 
         First: evaluate whether this navigation makes sense for the scenario goal. If the page is unrelated, instruct Tester to back() or reset(). Then plan next steps.
+
+        Tester holds no recipe for this page until you load one — open the <experience> entries whose titles fit a step you are about to instruct.
       `,
       'pilot.reviewNewPage',
-      { task }
+      { tools: true, maxToolRoundtrips: 2, task }
     );
   }
 
@@ -549,6 +557,8 @@ export class Pilot implements Agent {
         </recent_actions>
 
         What should Tester do next?
+
+        Before proposing new locators for a step that keeps failing, check <experience> for a recorded recipe covering it and load it.
       `,
       'pilot.analyze',
       { tools: hasFailures, maxToolRoundtrips: hasFailures ? 2 : 0, task }
@@ -665,10 +675,9 @@ export class Pilot implements Agent {
 
     let finalUserText = userText;
     if (opts.tools) {
+      this.conversation!.cleanupTag('experience', '...cleaned experience index...');
       const tocBlock = this.getExperienceToc();
-      if (tocBlock) {
-        finalUserText = `${tocBlock}\n\n${userText}`;
-      }
+      if (tocBlock) finalUserText = `${tocBlock}\n\n${userText}`;
     }
     this.conversation!.addUserText(finalUserText);
 
@@ -682,8 +691,9 @@ export class Pilot implements Agent {
       telemetry: { functionId },
     });
     const text = result?.response?.text || '';
-    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => e.output.content);
+    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => ({ url: e.output.url, content: e.output.content }));
     if (learned.length === 0) return text;
+    opts.task.applyExperience(learned);
     return dedent`
       ${text}
 
@@ -691,7 +701,7 @@ export class Pilot implements Agent {
       Recipes from prior successful runs that Pilot judged relevant. Locators worked then; the page may have changed since.
       Treat code blocks below as a starting hypothesis. If a locator misses, fall back to ARIA/UI-map.
 
-      ${learned.join('\n\n')}
+      ${learned.map((recipe) => recipe.content).join('\n\n')}
       </applied_experience>
     `;
   }
@@ -871,15 +881,6 @@ export class Pilot implements Agent {
   private async fetchRequestedContext(text: string, currentState: ActionResult): Promise<string> {
     const parts: string[] = [];
 
-    if (text.includes('ATTACH_HTML')) {
-      const html = await currentState.simplifiedHtml();
-      parts.push(dedent`
-        <page_html>
-        ${html}
-        </page_html>
-      `);
-    }
-
     if (text.includes('ATTACH_ARIA')) {
       parts.push(dedent`
         <page_aria>
@@ -1049,6 +1050,21 @@ export class Pilot implements Agent {
         const ariaDiff = t.output?.pageDiff?.ariaChanges;
         if (ariaDiff) line += `\n   ${ariaDiff}`;
 
+        if (t.output?.pageDiff?.urlChanged) line += `\n   moved: ${t.output.pageDiff.previousUrl} → ${t.output.pageDiff.currentUrl}`;
+
+        const failedRequests = (t.output?.pageDiff?.requests ?? []).filter((r: any) => r.status >= 400);
+        if (failedRequests.length > 0) {
+          line += `\n   requests: ${failedRequests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
+        }
+
+        const messages = (t.output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
+        if (messages.length > 0) {
+          line += `\n   messages: ${messages.map((m: string) => m.slice(0, PILOT_MESSAGE_MAX_LENGTH)).join(' | ')}`;
+        }
+
+        const consoleError = t.output?.pageDiff?.consoleErrors?.[0];
+        if (consoleError) line += `\n   console: ${consoleError.slice(0, PILOT_MESSAGE_MAX_LENGTH)}`;
+
         return line;
       })
       .join('\n\n');
@@ -1117,10 +1133,10 @@ export class Pilot implements Agent {
       role, icon classes with "or" in one XPath. If empty, broaden (drop role filter). Pass discovered
       XPath into NEXT instruction.
 
-      To request more context, mention ATTACH_HTML, ATTACH_ARIA, or ATTACH_UI_MAP — only when recent actions show failures.
+      To request more context, mention ATTACH_ARIA, ATTACH_SUMMARY, or ATTACH_UI_MAP — only when recent actions show failures.
 
-      Tester tools: click, pressKey, form, see, verify, context, research, xpathCheck, visualClick,
-      back, getVisitedStates, reset, stop, finish, record.
+      Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
+      visualClick, back, getVisitedStates, reset, stop, finish, record.
       Use tool names exactly as listed. Do not invent combined names, aliases, or names with channel markers such as "commentary".
 
       ${capabilityGroundingRule}

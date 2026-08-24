@@ -393,7 +393,7 @@ Pilot supervises test execution. It maintains a separate conversation from Teste
 
 **Why separate conversations:**
 
-- Tester conversation is heavy — full HTML/ARIA context every iteration
+- Tester conversation is heavy — ARIA context every iteration
 - Pilot conversation is light — only tool execution summaries
 - Pilot can use expensive models (Claude, GPT-4) without token cost explosion
 - Separation allows Pilot to see patterns without drowning in page details
@@ -401,7 +401,7 @@ Pilot supervises test execution. It maintains a separate conversation from Teste
 **What Pilot does:**
 
 - Detects stuck patterns (loops, repeated failures, no ariaDiff changes)
-- Decides what context Tester needs next (requests ATTACH_HTML, ATTACH_ARIA, ATTACH_UI_MAP)
+- Decides what context Tester needs next (requests ATTACH_ARIA, ATTACH_SUMMARY, ATTACH_UI_MAP)
 - Asks user for help when automated recovery fails (interactive mode)
 - Suggests alternative approaches, reset, or stop
 
@@ -409,7 +409,7 @@ Pilot supervises test execution. It maintains a separate conversation from Teste
 
 - Tester calls Pilot every N iterations
 - Pilot receives: current URL, goal, recent tool executions (success/fail + ariaDiff)
-- Pilot returns: guidance text + attached context (HTML/ARIA/UI map if requested)
+- Pilot returns: guidance text + attached context (ARIA/summary/UI map if requested)
 
 ## Tester Loop & Tools
 
