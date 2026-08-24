@@ -1118,7 +1118,12 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
   return tools;
 }
 
-const PAGE_DIFF_SUGGESTION = 'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff.';
+const PAGE_DIFF_SUGGESTION =
+  'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff. messages holds text the app showed in response, requests the calls it made and consoleErrors what it logged.';
+
+const FAILED_REQUEST_SUGGESTION = 'The server rejected a request made by this action (see requests). The UI accepted the interaction but the operation did not complete — read messages and consoleErrors for the reason and report it instead of repeating the action.';
+
+const NAVIGATED_SUGGESTION = 'The action left the page. Elements are never compared across pages, so this diff carries the move itself and what the app announced in transit — an empty element diff does not mean nothing happened.';
 
 const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
@@ -1203,7 +1208,11 @@ export function successToolResult(action: string, data?: Record<string, any>, so
     const ariaChanges = data.pageDiff.ariaChanges || '';
     const urlChanged = data.pageDiff.urlChanged === true;
     const hasHtmlParts = Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
-    if (isMajorPageChange(data.pageDiff)) {
+    if (hasFailedRequest(data.pageDiff)) {
+      suggestion = `${FAILED_REQUEST_SUGGESTION} ${suggestion}`;
+    } else if (urlChanged) {
+      suggestion = `${NAVIGATED_SUGGESTION} ${suggestion}`;
+    } else if (isMajorPageChange(data.pageDiff)) {
       suggestion = `MAJOR PAGE CHANGE. Page entered a different mode. Check htmlParts and iframes in pageDiff before next action. ${suggestion}`;
     } else if (!urlChanged && !ariaChanges && !hasHtmlParts) {
       suggestion = 'Action ran without error but produced no observable change (URL, ARIA and HTML all unchanged). The locator likely matched a non-interactive ancestor or an element outside the intended control. Re-locate via xpathCheck() or verify with see() before treating this as success.';
@@ -1219,10 +1228,15 @@ export function isMajorPageChange(pageDiff: PageDiff): boolean {
   return pageDiff.urlChanged !== true && (pageDiff.ariaChangeCount ?? 0) >= LARGE_ARIA_CHANGE_THRESHOLD;
 }
 
+export function hasFailedRequest(pageDiff: PageDiff): boolean {
+  return (pageDiff.requests ?? []).some((request) => request.status >= 400);
+}
+
 function hasObservablePageChange(data?: Record<string, any>): boolean {
   if (!data?.pageDiff) return false;
   if (data.pageDiff.urlChanged === true) return true;
   if (data.pageDiff.ariaChanges) return true;
+  if (data.pageDiff.messages?.length) return true;
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 

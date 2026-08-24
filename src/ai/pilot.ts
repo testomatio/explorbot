@@ -27,6 +27,8 @@ import { withdrawVisionTools } from './tools.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
 const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
+const PILOT_MESSAGE_LIMIT = 2;
+const PILOT_MESSAGE_MAX_LENGTH = 160;
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -1047,6 +1049,21 @@ export class Pilot implements Agent {
 
         const ariaDiff = t.output?.pageDiff?.ariaChanges;
         if (ariaDiff) line += `\n   ${ariaDiff}`;
+
+        if (t.output?.pageDiff?.urlChanged) line += `\n   moved: ${t.output.pageDiff.previousUrl} → ${t.output.pageDiff.currentUrl}`;
+
+        const failedRequests = (t.output?.pageDiff?.requests ?? []).filter((r: any) => r.status >= 400);
+        if (failedRequests.length > 0) {
+          line += `\n   requests: ${failedRequests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
+        }
+
+        const messages = (t.output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
+        if (messages.length > 0) {
+          line += `\n   messages: ${messages.map((m: string) => m.slice(0, PILOT_MESSAGE_MAX_LENGTH)).join(' | ')}`;
+        }
+
+        const consoleError = t.output?.pageDiff?.consoleErrors?.[0];
+        if (consoleError) line += `\n   console: ${consoleError.slice(0, PILOT_MESSAGE_MAX_LENGTH)}`;
 
         return line;
       })
