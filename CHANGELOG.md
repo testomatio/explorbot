@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-08-24
+
+### Changes
+
+- `explorbot init` now writes a config that runs as-is. It used to import
+  `@openrouter/ai-sdk-provider`, a package it never installed, so the very next command failed with
+  "Cannot find package" — under npm the import resolved only because explorbot's own copy got
+  hoisted into the project, and under pnpm, bun, or a bare `npx explorbot init` it never did.
+  Models are now written as `'provider/model-id'`, resolved from the provider packages explorbot
+  already ships. Bringing your own provider package still works — the generated config shows how
+  in a comment.
+- The model ids in the generated config are taken from the recommendations shipped with the
+  release, so a fresh config no longer starts out with stale ones.
+- A config that imports a package you have not installed now says which package is missing, gives
+  the `npm i` line for it, and points at the providers documentation, instead of printing the raw
+  module resolution error.
+
 ## 2026-08-23
 
 ### Changes

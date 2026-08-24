@@ -32,30 +32,26 @@ OPENROUTER_API_KEY=sk-...
 Then open `explorbot.config.js` and set your app's base URL — the host only, no path:
 
 ```javascript
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
-
 export default {
   web: {
     url: 'http://localhost:3000',
   },
   ai: {
-    model: openrouter('openai/gpt-oss-20b:nitro'),
-    visionModel: openrouter('google/gemma-4-31b-it'),
-    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
+    model: 'openrouter/openai/gpt-oss-20b:nitro',
+    visionModel: 'openrouter/openai/gpt-5.6-luna',
+    agenticModel: 'openrouter/openai/gpt-5.6-luna',
   },
 };
 ```
+
+Models written as `'provider/model-id'` use the provider packages Explorbot ships, so there is nothing extra to install. To bring your own provider package, import it and call it instead — see [Providers](./providers.md).
 
 Explorbot uses three models. Pick each one for speed and cost:
 
 | Model | Config key | Used by | Pick |
 |-------|-----------|---------|------|
 | `model` | `ai.model` | Tester, Navigator, Researcher — they read HTML and ARIA on every step | a fast, cheap model (e.g. `openai/gpt-oss-20b:nitro`) |
-| `visionModel` | `ai.visionModel` | screenshot analysis | a vision model (e.g. `google/gemma-4-31b-it`) |
+| `visionModel` | `ai.visionModel` | screenshot analysis | a vision model (e.g. `openai/gpt-5.6-luna`) |
 | `agenticModel` | `ai.agenticModel` | Captain and Pilot — they read short action logs and make the big decisions | a smarter model (e.g. MiniMax 2.5, Grok Fast) |
 
 Captain and Pilot barely use tokens, so a smarter `agenticModel` improves results for almost no extra cost. OpenRouter is the simplest start — one key, many models. To use OpenAI, Anthropic, Groq, or others, see [Providers](./providers.md). For every config option, see [Configuration](../reference/configuration.md).
