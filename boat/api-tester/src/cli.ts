@@ -3,7 +3,6 @@ import path from 'node:path';
 import { Command } from 'commander';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { listSites } from '../../../src/global-config.ts';
-import { addKnowledgeOption } from '../../../src/utils/knowledge-option.ts';
 import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
 import { getStyles } from './ai/chief/styles.ts';
 import { ApiBot, type ApibotOptions } from './apibot.ts';
@@ -14,12 +13,11 @@ function buildOptions(options: any): ApibotOptions {
     verbose: options.verbose || options.debug,
     config: options.config,
     path: options.path,
-    knowledge: options.knowledge,
   };
 }
 
 function addCommonOptions(cmd: Command): Command {
-  return addKnowledgeOption(cmd).option('-v, --verbose', 'Enable verbose logging').option('--debug', 'Enable debug logging').option('-c, --config <path>', 'Path to configuration file').option('-p, --path <path>', 'Working directory path');
+  return cmd.option('-v, --verbose', 'Enable verbose logging').option('--debug', 'Enable debug logging').option('-c, --config <path>', 'Path to configuration file').option('-p, --path <path>', 'Working directory path');
 }
 
 function selectTests(tests: any[], index?: string): any[] {

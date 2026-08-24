@@ -68,17 +68,16 @@ Every CLI command that drives a browser accepts these options (`start`, `explore
 | `--headless` | Run browser in headless mode |
 | `--incognito` | Run without recording experiences |
 | `--session [file]` | Save/restore browser session (cookies, localStorage) from file |
-| `--knowledge <text>` | Knowledge for this run only, never written to disk. Repeatable |
-
-`npx explorbot api` commands accept `-v`, `--debug`, `-c`, `-p` and `--knowledge`; `npx prima` accepts `-c`, `-p` and `--knowledge` alongside its own session flags.
 
 ### `--knowledge`
 
-Passes facts to the run without creating a file in `knowledge/`. Plain text applies everywhere; add frontmatter to scope it to a page or an API endpoint. See [Knowledge](../workflow/knowledge.md#per-session-knowledge).
+Passes facts to the run without creating a file in `knowledge/`. Plain text applies everywhere; add frontmatter to scope it to a page or an API endpoint. Repeat the flag for several facts. See [Knowledge](../workflow/knowledge.md#per-session-knowledge).
 
 ```bash
 npx explorbot explore /pay --knowledge 'Test card 4111 1111 1111 1111, any future expiry'
 ```
+
+Like `--ws`, it is a program-level option rather than a per-command one: it works on every command — including `api`, `docs` and `prima` — and can go anywhere on the line. It is listed under `npx explorbot --help` rather than in each command's own help.
 
 ### `--session`
 

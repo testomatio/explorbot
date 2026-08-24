@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Command } from 'commander';
 import dedent from 'dedent';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
@@ -20,6 +21,15 @@ export interface Knowledge {
   url: string;
   content: string;
   [key: string]: any;
+}
+
+let knowledgeFromOption: string[] = [];
+
+export function registerKnowledgeOption(program: Command): void {
+  program.option('--knowledge <text>', 'Knowledge for this run only, not saved to disk. Markdown text; add url: or endpoint: frontmatter to scope it, otherwise it applies everywhere. Repeatable', (value: string, previous: string[] = []) => [...previous, value]);
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    knowledgeFromOption = actionCommand.optsWithGlobals().knowledge || [];
+  });
 }
 
 export class KnowledgeTracker {
@@ -51,7 +61,7 @@ export class KnowledgeTracker {
       tag('info').log(`Loaded application spec with ${this.applicationSpec.pageCount} documented pages`);
     }
 
-    this.sessionKnowledge = this.parseSessionKnowledge(options.knowledge);
+    this.sessionKnowledge = this.parseSessionKnowledge(options.knowledge ?? knowledgeFromOption);
   }
 
   private loadKnowledgeFiles(): void {

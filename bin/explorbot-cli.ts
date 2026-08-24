@@ -11,11 +11,11 @@ import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
+import { registerKnowledgeOption } from '../src/knowledge-tracker.js';
 import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
 import { getCliName } from '../src/utils/cli-name.ts';
-import { addKnowledgeOption } from '../src/utils/knowledge-option.ts';
 import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode } from '../src/utils/logger.js';
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
@@ -29,6 +29,7 @@ const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as stri
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
 remote.registerOption(program);
+registerKnowledgeOption(program);
 
 if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima')) {
   console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
@@ -44,7 +45,6 @@ interface CLIOptions {
   incognito?: boolean;
   session?: string | boolean;
   spec?: string;
-  knowledge?: string[];
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
@@ -58,12 +58,11 @@ function buildExplorBotOptions(from: string | undefined, options: CLIOptions): E
     incognito: options.incognito,
     session: options.session,
     applicationSpec: options.spec,
-    knowledge: options.knowledge,
   } as ExplorBotOptions;
 }
 
 function addCommonOptions(cmd: Command): Command {
-  return addKnowledgeOption(cmd)
+  return cmd
     .option('-v, --verbose', 'Enable verbose logging')
     .option('--debug', 'Enable debug logging (same as --verbose)')
     .option('-c, --config <path>', 'Path to configuration file')

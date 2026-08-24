@@ -49,7 +49,7 @@ export class ApiBot {
     this.configParser.ensureDirectory(outputDir);
     this.requestState = new RequestStore(outputDir);
     this.reporter = new Reporter(this.config.reporter);
-    this.knowledgeTracker = new KnowledgeTracker({ knowledgeDir: this.configParser.getKnowledgeDir(), knowledge: this.options.knowledge });
+    this.knowledgeTracker = new KnowledgeTracker({ knowledgeDir: this.configParser.getKnowledgeDir() });
 
     validateSpecs(this.config.api.spec);
     this.apiSpec = await loadSpec(this.config.api.spec!, outputDir);
@@ -204,7 +204,6 @@ interface ApibotOptions {
   config?: string;
   path?: string;
   endpoint?: string;
-  knowledge?: string[];
 }
 
 export type { ApibotOptions };

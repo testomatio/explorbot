@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
+import { registerKnowledgeOption } from '../../../src/knowledge-tracker.ts';
 import { createPrimaCommands } from '../src/cli.ts';
 
 const program = createPrimaCommands('prima');
+registerKnowledgeOption(program);
 program.parse();

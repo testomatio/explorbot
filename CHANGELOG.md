@@ -8,8 +8,9 @@
   Nothing is written to disk, so credentials and one-off test data stay out of the repository. Plain
   text applies everywhere; frontmatter scopes it to a page (`url:`) or an API endpoint (`endpoint:`),
   with the same patterns knowledge files use. `${env.VAR}` interpolation and page automation fields
-  such as `wait` work as they do in files. Repeat the flag for several facts. Available on every
-  browser-driving command, and on `explorbot api`, `explorbot docs` and `prima`.
+  such as `wait` work as they do in files. Repeat the flag for several facts. Like `--ws`, it is a
+  program-level option: it works on every command of `explorbot`, `explorbot api`, `explorbot docs`
+  and `prima`, and can go anywhere on the line.
   ```bash
   explorbot explore /pay --knowledge 'My credit card is 4111 1111 1111 1111'
   explorbot explore / --knowledge '---

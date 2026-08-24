@@ -77,7 +77,7 @@ Log in as admin@example.com / secret123' \
 
 Everything a knowledge file supports works here: `${env.VAR}` interpolation, and page automation fields such as `wait` and `waitForElement`.
 
-The flag is available on `explorbot`, `explorbot api`, `explorbot docs` and `prima`. Scope API knowledge with `endpoint:` instead of `url:`:
+The flag works on every command of `explorbot`, `explorbot api`, `explorbot docs` and `prima`, and can go anywhere on the line. Scope API knowledge with `endpoint:` instead of `url:`:
 
 ```bash
 npx explorbot api explore /orders --knowledge '---

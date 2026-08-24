@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { Command } from 'commander';
 import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.js';
 import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
 import { ConfigParser } from '../../src/config';
-import { KnowledgeTracker } from '../../src/knowledge-tracker';
+import { KnowledgeTracker, registerKnowledgeOption } from '../../src/knowledge-tracker';
 import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
 
 const knowledgeDir = '/tmp/explorbot-test-knowledge';
@@ -297,6 +298,21 @@ describe('KnowledgeTracker', () => {
 
       expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/any' }))).toContain('Token is abc123');
       Reflect.deleteProperty(process.env, 'EXPLORBOT_TEST_TOKEN');
+    });
+
+    it('reaches the tracker from a --knowledge flag anywhere on the command line', () => {
+      const program = new Command();
+      registerKnowledgeOption(program);
+      const rendered: string[] = [];
+      program.command('explore <path>').action(() => {
+        rendered.push(new KnowledgeTracker().renderRelevantKnowledge(new ActionResult({ url: '/pay' })));
+      });
+
+      program.parse(['explore', '/', '--knowledge', matter.stringify('Use the sandbox card', { url: '/pay' })], { from: 'user' });
+      program.parse(['explore', '/'], { from: 'user' });
+
+      expect(rendered[0]).toContain('Use the sandbox card');
+      expect(rendered[1]).toBe('');
     });
 
     it('never writes session knowledge to the knowledge directory', () => {
