@@ -32,6 +32,17 @@
 
 ### Changes
 
+- Prima reads `PRIMA_CLI_*` environment variables. Each one mirrors the `EXPLORBOT_*` variable of the
+  same name and wins over it, so prima can be pointed at a different model, vision model or URL
+  without disturbing an explorbot setup on the same machine.
+- **`--model <model>`**, **`--vision-model <model>`** — The models prima runs on, each as
+  `provider/model-id`, overriding `PRIMA_CLI_AI_MODEL` and `PRIMA_CLI_VISION_MODEL` for one run. A
+  vision model is never guessed from the main one, so naming only a main model leaves screenshot
+  analysis off.
+  ```bash
+  prima-cli check "the theme switch sticks" --model openrouter/openai/gpt-oss-120b
+  prima-cli check "the theme switch sticks" --vision-model openrouter/google/gemma-4-31b-it
+  ```
 - [Tester] The prompt no longer promises page HTML that was never sent. The Tester was told to work
   from a `<page_html>` section in four places, but nothing ever put one there — it only ever received
   the accessibility tree and the UI map. It is now told what it actually has: the accessibility tree,

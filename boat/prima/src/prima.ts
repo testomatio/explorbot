@@ -13,7 +13,7 @@ import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
-import { ConfigMissingError, ConfigParser, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
@@ -89,6 +89,14 @@ export class Prima {
       knowledge: options.knowledge,
       reporter: { enabled: false },
     });
+  }
+
+  static applyEnv(): void {
+    for (const { name } of EXPLORBOT_ENV_VARS) {
+      const value = process.env[name.replace('EXPLORBOT_', 'PRIMA_CLI_')];
+      if (!value) continue;
+      process.env[name] = value;
+    }
   }
 
   async start(): Promise<void> {

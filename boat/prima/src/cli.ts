@@ -108,6 +108,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('-p, --path <path>', 'Working directory path')
     .option('-i, --instance <name>', 'Browser instance to drive')
     .option('--session [file]', 'Persist cookies and storage to a session file')
+    .option('--model <model>', 'Main model, as provider/model-id')
+    .option('--vision-model <model>', 'Model for screenshot analysis, as provider/model-id')
     .option('--ephemeral', 'Keep no state between runs; applies to config-free runs, where output goes to a temp directory')
     .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')
@@ -117,7 +119,10 @@ function addCommonOptions(cmd: Command): Command {
 }
 
 function primaFor(options: any): Prima {
+  Prima.applyEnv();
   if (options.ephemeral) process.env.EXPLORBOT_EPHEMERAL = '1';
+  if (options.model) process.env.EXPLORBOT_AI_MODEL = options.model;
+  if (options.visionModel) process.env.EXPLORBOT_VISION_MODEL = options.visionModel;
   return new Prima(buildOptions(options));
 }
 
