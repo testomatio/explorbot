@@ -277,7 +277,6 @@ export class Tester extends TaskAgent implements Agent {
 
           conversation.cleanupTag('page_aria', '...cleaned aria snapshot...', 1);
           conversation.cleanupTag('page_html', '...cleaned HTML snapshot...', 1);
-          conversation.cleanupTag('experience', '...cleaned experience...', 1);
           conversation.cleanupTag('applied_experience', '...cleaned past experience...', 1);
           conversation.cleanupTag('page_ui_map', '...cleaned UI map...', 1);
           conversation.cleanupTag('page_ui_map_overlay', '...cleaned UI overlay...', 1);
@@ -416,7 +415,6 @@ export class Tester extends TaskAgent implements Agent {
       tag('info').log(`Pilot extending test (${extensions}/${this.MAX_EXTENSIONS})`);
       conversation.cleanupTag('page_aria', '...trimmed...', 1);
       conversation.cleanupTag('page_html', '...trimmed...', 0);
-      conversation.cleanupTag('experience', '...trimmed...', 0);
       conversation.cleanupTag('page_ui_map', '...trimmed...', 0);
       conversation.cleanupTag('page_ui_map_overlay', '...trimmed...', 0);
       conversation.compactToolResults(1);
@@ -789,7 +787,6 @@ export class Tester extends TaskAgent implements Agent {
 
   private buildScenarioBlock(task: Test, actionResult: ActionResult): string {
     const knowledge = this.getKnowledge(actionResult);
-    const experience = this.getExperience(actionResult);
 
     return dedent`
       <task>
@@ -819,8 +816,6 @@ export class Tester extends TaskAgent implements Agent {
       ${this.buildAvailableFiles()}
 
       ${knowledge}
-
-      ${experience}
     `;
   }
 

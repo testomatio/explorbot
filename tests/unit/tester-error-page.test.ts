@@ -59,6 +59,7 @@ describe('Tester error page handling', () => {
         otherTabs: [],
         getExperienceTracker: () => ({
           getExperienceTableOfContents: () => [],
+          renderExperienceFor: () => '',
           renderExperienceTocFor: () => '',
         }),
       },
@@ -120,6 +121,7 @@ describe('Tester error page handling', () => {
         otherTabs: [],
         getExperienceTracker: () => ({
           getExperienceTableOfContents: () => [],
+          renderExperienceFor: () => '',
           renderExperienceTocFor: () => '',
         }),
       },
