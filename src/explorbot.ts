@@ -52,6 +52,7 @@ export interface ExplorBotOptions {
   reporter?: ReporterConfig;
   attachedBrowser?: Browser;
   applicationSpec?: string;
+  knowledge?: string[];
 }
 
 export type UserResolveFunction = (error?: Error, showWelcome?: boolean) => Promise<string | null>;
@@ -165,7 +166,7 @@ export class ExplorBot {
   }
 
   knowledgeTracker(): KnowledgeTracker {
-    return (this._knowledgeTracker ||= new KnowledgeTracker(this.options.applicationSpec));
+    return (this._knowledgeTracker ||= new KnowledgeTracker({ applicationSpec: this.options.applicationSpec, knowledge: this.options.knowledge }));
   }
 
   experienceTracker(): ExperienceTracker {

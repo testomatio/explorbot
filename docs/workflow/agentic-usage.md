@@ -123,6 +123,12 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 EXPLORBOT_KNOWLEDGE_FILE=./checkout-knowledge.md npx explorbot explore /checkout
 ```
 
+Both variables belong to config-free mode. The `--knowledge` flag does the same thing as an argument and works with or without a project config, so prefer it when one command needs one fact:
+
+```bash
+npx explorbot explore /checkout --knowledge 'Use the sandbox card 4111 1111 1111 1111'
+```
+
 ### What this mode changes
 
 Config-free runs leave no trace in the working directory:
@@ -222,7 +228,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 
 `docs collect` takes its base URL from the absolute path argument, so `EXPLORBOT_URL` is optional there.
 
-Knowledge written by `EXPLORBOT_KNOWLEDGE` carries `endpoint: '*'` frontmatter alongside `url: '*'`, matching the convention `api init` and `api know` use. The API boat does not read knowledge at runtime yet; the frontmatter is there for when it does, and the web side ignores it.
+Knowledge written by `EXPLORBOT_KNOWLEDGE` carries `endpoint: '*'` frontmatter alongside `url: '*'`, matching the convention `api init` and `api know` use, so one variable reaches both boats.
 
 ## See Also
 

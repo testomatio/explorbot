@@ -34,6 +34,7 @@ class DocBot {
       headless: options.headless,
       incognito: options.incognito,
       session: options.session,
+      knowledge: options.knowledge,
     });
     this.configParser = DocbotConfigParser.getInstance();
   }

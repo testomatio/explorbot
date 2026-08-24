@@ -33,7 +33,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Generate test plan | `npx explorbot plan <path>` | `/plan [--focus <feature>]` | Writes plan markdown |
 | List saved plans | `npx explorbot plans [plan]` | `/plans [plan]` | Show plans and their tests |
 | Navigate to a URL | `npx explorbot navigate <url>` | `/navigate <target>` | Reachability probe + session capture |
-| Drill page components | `npx explorbot drill <url>` | `/drill [--knowledge <path>] [--max-components <n>]` | Learn interactions |
+| Drill page components | `npx explorbot drill <url>` | `/drill [--save-knowledge <path>] [--max-components <n>]` | Learn interactions |
 | Execute plan tests | `npx explorbot test <planfile> [index]` | `/test [scenario\|number\|*]` | Run scenarios |
 | Re-run generated tests | `npx explorbot rerun <file> [index]` | `/rerun <file> [index]` | With AI auto-healing |
 | List generated tests | `npx explorbot runs [file]` | `/runs [file]` | Index + dry-run |
@@ -68,6 +68,17 @@ Every CLI command that drives a browser accepts these options (`start`, `explore
 | `--headless` | Run browser in headless mode |
 | `--incognito` | Run without recording experiences |
 | `--session [file]` | Save/restore browser session (cookies, localStorage) from file |
+| `--knowledge <text>` | Knowledge for this run only, never written to disk. Repeatable |
+
+`npx explorbot api` commands accept `-v`, `--debug`, `-c`, `-p` and `--knowledge`; `npx prima` accepts `-c`, `-p` and `--knowledge` alongside its own session flags.
+
+### `--knowledge`
+
+Passes facts to the run without creating a file in `knowledge/`. Plain text applies everywhere; add frontmatter to scope it to a page or an API endpoint. See [Knowledge](../workflow/knowledge.md#per-session-knowledge).
+
+```bash
+npx explorbot explore /pay --knowledge 'Test card 4111 1111 1111 1111, any future expiry'
+```
 
 ### `--session`
 
@@ -439,18 +450,18 @@ Drill all components on a page to learn interactions.
 # CLI
 npx explorbot drill /components
 npx explorbot drill /components --max-components 10
-npx explorbot drill /login --knowledge /login
+npx explorbot drill /login --save-knowledge /login
 ```
 
 ```
 # TUI
 /drill
-/drill --knowledge /login --max-components 10
+/drill --save-knowledge /login --max-components 10
 ```
 
 | Option | Description |
 |---|---|
-| `--knowledge <path>` | Save learned interactions to a knowledge file at this URL path |
+| `--save-knowledge <path>` | Save learned interactions to a knowledge file at this URL path |
 | `--max-components <count>` | Maximum number of components to drill |
 
 ## Test Rerun

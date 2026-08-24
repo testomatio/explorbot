@@ -45,7 +45,48 @@ While exploring, use the `/learn` command.
 
 ### API Testing
 
-[API testing](../api-testing/basics.md) shares the same `knowledge/` directory. `npx explorbot api know <endpoint> "<description>"` adds endpoint-scoped notes, stored with an `endpoint:` frontmatter field instead of `url:`.
+[API testing](../api-testing/basics.md) shares the same `knowledge/` directory. `npx explorbot api know <endpoint> "<description>"` adds endpoint-scoped notes, stored with an `endpoint:` frontmatter field instead of `url:`. Chief reads them when planning an endpoint and Curler reads them when running its tests, so auth headers and payload rules reach both.
+
+## Per-Session Knowledge
+
+`--knowledge` passes facts to a single run. Nothing is written to `knowledge/`, so credentials and one-off test data stay out of the repository.
+
+```bash
+npx explorbot explore /pay --knowledge 'My credit card is 4111 1111 1111 1111'
+```
+
+Plain text applies to every page. Add frontmatter to scope it, with the same URL patterns knowledge files use:
+
+```bash
+npx explorbot explore / --knowledge '---
+url: /pay
+---
+Use the sandbox card 4111 1111 1111 1111 with any future expiry'
+```
+
+Repeat the flag for several facts:
+
+```bash
+npx explorbot explore / \
+  --knowledge '---
+url: /login
+---
+Log in as admin@example.com / secret123' \
+  --knowledge 'Dismiss the cookie banner before anything else'
+```
+
+Everything a knowledge file supports works here: `${env.VAR}` interpolation, and page automation fields such as `wait` and `waitForElement`.
+
+The flag is available on `explorbot`, `explorbot api`, `explorbot docs` and `prima`. Scope API knowledge with `endpoint:` instead of `url:`:
+
+```bash
+npx explorbot api explore /orders --knowledge '---
+endpoint: /orders/*
+---
+Send X-Api-Key: ${env.API_KEY} on every request'
+```
+
+For config-free runs driven entirely from the environment, `EXPLORBOT_KNOWLEDGE` does the same job — see [Agentic usage](./agentic-usage.md).
 
 ## URL Patterns
 

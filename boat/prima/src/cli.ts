@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import dedent from 'dedent';
 import { keepServerRunning } from '../../../src/browser-server.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
+import { addKnowledgeOption } from '../../../src/utils/knowledge-option.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
@@ -63,6 +64,8 @@ const sessionHelp = dedent`
   --instance <name>  which prima-owned browser you talk to; parallel work needs one each
   --session [file]   cookies and storage persisted across processes; ignored while
                      attached, since the attached session keeps its own
+  --knowledge <text> facts for this run only, never written to disk; url: frontmatter
+                     scopes them to a page, otherwise they apply everywhere
   --framework        parsed but not active yet; reported code is CodeceptJS either way
   DEBUG='explorbot:*' in front of a command prints the log of everything it does.
   When no AI model is usable pw still works; for everything else drive playwright-cli.
@@ -86,6 +89,7 @@ function buildOptions(subcommand: any): PrimaOptions {
     headless: options.headless,
     endpoint: options.endpoint,
     pwSession: options.pwSession,
+    knowledge: options.knowledge,
   };
 }
 
@@ -99,7 +103,7 @@ function stripEmpty(options: any): any {
 }
 
 function addCommonOptions(cmd: Command): Command {
-  return cmd
+  return addKnowledgeOption(cmd)
     .option('-c, --config <path>', 'Path to explorbot configuration file')
     .option('-p, --path <path>', 'Working directory path')
     .option('-i, --instance <name>', 'Browser instance to drive')

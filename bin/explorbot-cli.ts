@@ -15,6 +15,7 @@ import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
 import { getCliName } from '../src/utils/cli-name.ts';
+import { addKnowledgeOption } from '../src/utils/knowledge-option.ts';
 import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode } from '../src/utils/logger.js';
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
@@ -43,6 +44,7 @@ interface CLIOptions {
   incognito?: boolean;
   session?: string | boolean;
   spec?: string;
+  knowledge?: string[];
 }
 
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
@@ -56,11 +58,12 @@ function buildExplorBotOptions(from: string | undefined, options: CLIOptions): E
     incognito: options.incognito,
     session: options.session,
     applicationSpec: options.spec,
+    knowledge: options.knowledge,
   } as ExplorBotOptions;
 }
 
 function addCommonOptions(cmd: Command): Command {
-  return cmd
+  return addKnowledgeOption(cmd)
     .option('-v, --verbose', 'Enable verbose logging')
     .option('--debug', 'Enable debug logging (same as --verbose)')
     .option('-c, --config <path>', 'Path to configuration file')
@@ -690,7 +693,7 @@ addCommonOptions(program.command('navigate <url>').description('Navigate to a UR
 });
 
 addCommonOptions(
-  program.command('drill <url>').alias('driller').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
+  program.command('drill <url>').alias('driller').description('Drill all components on a page to learn interactions').option('--save-knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
 ).action(async (url, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
@@ -699,7 +702,7 @@ addCommonOptions(
     await explorBot.visit(url);
 
     const plan = await explorBot.agentDriller().drill({
-      knowledgePath: options.knowledge,
+      knowledgePath: options.saveKnowledge,
       maxComponents: Number.parseInt(options.maxComponents || '30', 10),
       interactive: false,
     });

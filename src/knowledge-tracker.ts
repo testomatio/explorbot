@@ -11,6 +11,7 @@ import { loadMarkdownFiles } from './utils/markdown-files.js';
 import { mdq } from './utils/markdown-query.js';
 import { isSecretName, registerSecret } from './utils/secrets.js';
 import { slugify } from './utils/strings.js';
+import { extractStatePath, matchesUrl } from './utils/url-matcher.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
 
@@ -24,23 +25,33 @@ export interface Knowledge {
 export class KnowledgeTracker {
   private knowledgeDir: string;
   private knowledgeFiles: Knowledge[] = [];
+  private sessionKnowledge: Knowledge[] = [];
   private isLoaded = false;
   private applicationSpec?: ApplicationSpec;
 
-  constructor(applicationSpecPath?: string) {
-    const configParser = ConfigParser.getInstance();
-    const config = configParser.getConfig();
-    this.knowledgeDir = configParser.resolveProjectDir(config.dirs?.knowledge || 'knowledge');
+  constructor(options: KnowledgeTrackerOptions = {}) {
+    let knowledgeDir = options.knowledgeDir;
+    let specPath = options.applicationSpec;
+
+    if (!knowledgeDir) {
+      const configParser = ConfigParser.getInstance();
+      const config = configParser.getConfig();
+      knowledgeDir = configParser.resolveProjectDir(config.dirs?.knowledge || 'knowledge');
+      specPath ||= config.dirs?.spec;
+    }
+
+    this.knowledgeDir = knowledgeDir;
 
     if (!existsSync(this.knowledgeDir)) {
       mkdirSync(this.knowledgeDir, { recursive: true });
     }
 
-    const specPath = applicationSpecPath || config.dirs?.spec;
     if (specPath) {
       this.applicationSpec = new ApplicationSpec(specPath);
       tag('info').log(`Loaded application spec with ${this.applicationSpec.pageCount} documented pages`);
     }
+
+    this.sessionKnowledge = this.parseSessionKnowledge(options.knowledge);
   }
 
   private loadKnowledgeFiles(): void {
@@ -63,28 +74,24 @@ export class KnowledgeTracker {
   getRelevantKnowledge(state: ActionResult): Knowledge[] {
     this.loadKnowledgeFiles();
 
-    return this.knowledgeFiles.filter((knowledge) => {
+    return this.allKnowledge().filter((knowledge) => {
       return state.isMatchedBy(knowledge);
     });
   }
 
+  getEndpointKnowledge(endpoint: string): Knowledge[] {
+    this.loadKnowledgeFiles();
+    const path = extractStatePath(endpoint);
+
+    return this.allKnowledge().filter((knowledge) => knowledge.endpoint && matchesUrl(knowledge.endpoint, path));
+  }
+
   renderRelevantKnowledge(state: ActionResult): string {
-    const knowledgeFiles = this.getRelevantKnowledge(state);
-    if (knowledgeFiles.length === 0) return '';
+    return this.renderKnowledge(this.getRelevantKnowledge(state), 'page');
+  }
 
-    const knowledgeContent = knowledgeFiles
-      .map((k) => k.content)
-      .filter((k) => !!k)
-      .join('\n\n');
-
-    tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
-    return dedent`
-      <knowledge>
-      Here is relevant knowledge for this page:
-
-      ${knowledgeContent}
-      </knowledge>
-    `;
+  renderEndpointKnowledge(endpoint: string): string {
+    return this.renderKnowledge(this.getEndpointKnowledge(endpoint), 'endpoint');
   }
 
   renderRelevantContext(state: ActionResult): string {
@@ -242,4 +249,51 @@ export class KnowledgeTracker {
 
     return result;
   }
+
+  private allKnowledge(): Knowledge[] {
+    return [...this.knowledgeFiles, ...this.sessionKnowledge];
+  }
+
+  private renderKnowledge(knowledgeFiles: Knowledge[], scope: string): string {
+    if (knowledgeFiles.length === 0) return '';
+
+    const knowledgeContent = knowledgeFiles
+      .map((k) => k.content)
+      .filter((k) => !!k)
+      .join('\n\n');
+
+    tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
+    return dedent`
+      <knowledge>
+      Here is relevant knowledge for this ${scope}:
+
+      ${knowledgeContent}
+      </knowledge>
+    `;
+  }
+
+  private parseSessionKnowledge(entries?: string[]): Knowledge[] {
+    if (!entries?.length) return [];
+
+    return entries.map((entry, index) => {
+      const parsed = matter(entry);
+      const knowledge: Knowledge = {
+        filePath: `--knowledge #${index + 1}`,
+        url: parsed.data.url || parsed.data.path || '*',
+        content: this.interpolateVars(parsed.content.trim()),
+        ...parsed.data,
+      };
+
+      if (!parsed.data.url && !parsed.data.path && !parsed.data.endpoint) knowledge.endpoint = '*';
+      debugLog(`Session knowledge for ${knowledge.url}`);
+
+      return knowledge;
+    });
+  }
+}
+
+export interface KnowledgeTrackerOptions {
+  applicationSpec?: string;
+  knowledge?: string[];
+  knowledgeDir?: string;
 }

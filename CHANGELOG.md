@@ -2,8 +2,40 @@
 
 ## 2026-08-23
 
+### New CLI Options
+
+- **`--knowledge`** — Facts for one run, passed on the command line instead of stored in `knowledge/`.
+  Nothing is written to disk, so credentials and one-off test data stay out of the repository. Plain
+  text applies everywhere; frontmatter scopes it to a page (`url:`) or an API endpoint (`endpoint:`),
+  with the same patterns knowledge files use. `${env.VAR}` interpolation and page automation fields
+  such as `wait` work as they do in files. Repeat the flag for several facts. Available on every
+  browser-driving command, and on `explorbot api`, `explorbot docs` and `prima`.
+  ```bash
+  explorbot explore /pay --knowledge 'My credit card is 4111 1111 1111 1111'
+  explorbot explore / --knowledge '---
+  url: /login
+  ---
+  Log in as admin@example.com / secret123'
+  explorbot api explore /orders --knowledge 'Send X-Api-Key on every request'
+  prima check "checkout completes" --knowledge 'Use the sandbox card 4111 1111 1111 1111'
+  ```
+- **`--save-knowledge`** (renamed) — `explorbot drill --knowledge <path>` is now
+  `explorbot drill --save-knowledge <path>`, and `/drill --knowledge` is now `/drill --save-knowledge`.
+  It still saves the interactions drilling learned to a knowledge file at that URL path; the rename
+  frees `--knowledge` for the session facts above.
+  ```bash
+  explorbot drill /login --save-knowledge /login
+  ```
+  ```
+  /drill --save-knowledge /login --max-components 10
+  ```
+
 ### Changes
 
+- [Chief] Now reads endpoint knowledge when planning API tests, so auth rules and business
+  constraints written with `explorbot api know` reach the plan.
+- [Curler] Now reads endpoint knowledge when running an API test, so auth headers and payload rules
+  reach the requests themselves rather than only the plan.
 - Prima now ships as its own npm package, so `npx prima-cli` runs it without installing explorbot
   first. It is the same tool as the `prima` command that comes with explorbot, built from the same
   source and released alongside it — only the package name and the binary differ.

@@ -86,6 +86,7 @@ export class Prima {
       instance: options.instance,
       headless: true,
       optionalAi: true,
+      knowledge: options.knowledge,
       reporter: { enabled: false },
     });
   }
@@ -1141,4 +1142,5 @@ export interface PrimaOptions {
   headless?: boolean;
   endpoint?: string;
   pwSession?: string;
+  knowledge?: string[];
 }

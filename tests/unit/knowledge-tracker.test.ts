@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.js';
@@ -76,7 +76,7 @@ describe('KnowledgeTracker', () => {
         }),
         'utf8'
       );
-      const tracker = new KnowledgeTracker(applicationSpecDir);
+      const tracker = new KnowledgeTracker({ applicationSpec: applicationSpecDir });
       const state = new ActionResult({ url: '/login', html: '<html></html>' });
 
       const rendered = tracker.renderRelevantContext(state);
@@ -248,6 +248,63 @@ describe('KnowledgeTracker', () => {
       const matched = tracker.getMatchingKnowledge('/login');
       expect(matched.length).toBeGreaterThan(0);
       expect(matched[0].content).toContain('Use admin credentials');
+    });
+  });
+
+  describe('session knowledge', () => {
+    it('applies knowledge without frontmatter to every page and endpoint', () => {
+      const tracker = new KnowledgeTracker({ knowledge: ['My credit card is 4111 1111 1111 1111'] });
+
+      expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/pay' }))).toContain('4111 1111 1111 1111');
+      expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/anywhere-else' }))).toContain('4111 1111 1111 1111');
+      expect(tracker.renderEndpointKnowledge('/payments')).toContain('4111 1111 1111 1111');
+    });
+
+    it('scopes knowledge with url frontmatter to matching pages only', () => {
+      const tracker = new KnowledgeTracker({ knowledge: [matter.stringify('Card expires 12/30', { url: '/pay' })] });
+
+      expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/pay' }))).toContain('Card expires 12/30');
+      expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/dashboard' }))).toBe('');
+      expect(tracker.renderEndpointKnowledge('/pay')).toBe('');
+    });
+
+    it('scopes knowledge with endpoint frontmatter to matching endpoints', () => {
+      const tracker = new KnowledgeTracker({ knowledge: [matter.stringify('Send X-Token header', { endpoint: '/users/*' })] });
+
+      expect(tracker.renderEndpointKnowledge('/users/42')).toContain('Send X-Token header');
+      expect(tracker.renderEndpointKnowledge('/orders')).toBe('');
+    });
+
+    it('keeps several entries independent', () => {
+      const tracker = new KnowledgeTracker({
+        knowledge: [matter.stringify('Login as admin', { url: '/login' }), matter.stringify('Use the sandbox card', { url: '/pay' })],
+      });
+
+      const rendered = tracker.renderRelevantKnowledge(new ActionResult({ url: '/pay' }));
+      expect(rendered).toContain('Use the sandbox card');
+      expect(rendered).not.toContain('Login as admin');
+    });
+
+    it('exposes frontmatter hints through state parameters', () => {
+      const tracker = new KnowledgeTracker({ knowledge: [matter.stringify('Slow page', { url: '/reports', wait: 3000 })] });
+
+      expect(tracker.getStateParameters(new ActionResult({ url: '/reports' }), ['wait'])).toEqual({ wait: 3000 });
+    });
+
+    it('interpolates environment variables', () => {
+      process.env.EXPLORBOT_TEST_TOKEN = 'abc123';
+      const tracker = new KnowledgeTracker({ knowledge: ['Token is ${env.EXPLORBOT_TEST_TOKEN}'] });
+
+      expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/any' }))).toContain('Token is abc123');
+      Reflect.deleteProperty(process.env, 'EXPLORBOT_TEST_TOKEN');
+    });
+
+    it('never writes session knowledge to the knowledge directory', () => {
+      const tracker = new KnowledgeTracker({ knowledge: ['Temporary fact'] });
+      tracker.renderRelevantKnowledge(new ActionResult({ url: '/any' }));
+
+      expect(tracker.listAllKnowledge()).toHaveLength(0);
+      expect(readdirSync(knowledgeDir)).toHaveLength(0);
     });
   });
 });

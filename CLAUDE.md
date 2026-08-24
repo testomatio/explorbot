@@ -99,7 +99,7 @@ Two tiers. **Data parts** are deterministic memory — they answer "what is true
 | Module | Does | Must never do |
 |---|---|---|
 | **StateManager** | Where am I / where have I been: states, transitions, hashes, loop detection, events | Call AI; interpret semantics ("this is a login page"); execute actions |
-| **KnowledgeTracker** | Load/filter human facts by URL pattern; expose hints verbatim | Judge relevance semantically; act on hints; be written mid-run outside learn/drill flow |
+| **KnowledgeTracker** | Load/filter human facts by URL or endpoint pattern, from `knowledge/` and from `--knowledge` session entries; expose hints verbatim | Judge relevance semantically; act on hints; be written mid-run outside learn/drill flow |
 | **ExperienceTracker** | Store/retrieve lessons per state hash; dedup blocks | Rank by meaning; compact itself (ExperienceCompactor's job); change behavior directly |
 | **Config** | Resolve immutable settings once at startup | Change mid-run; hold site-specific values; be read by agents directly (injected instead) |
 
@@ -136,7 +136,7 @@ All persisted formats share one rule: **envelope keys (YAML frontmatter, HTML co
 
 | Format | Location & owner | Envelope | Body grammar |
 |---|---|---|---|
-| Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `wait`, `waitForElement`, `noExperienceReading/Writing` | Free prose facts |
+| Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `endpoint`, `wait`, `waitForElement`, `noExperienceReading/Writing` | Free prose facts |
 | Experience | `experience/<stateHash>.md`, ExperienceTracker | sparse frontmatter | `## FLOW:` / `## ACTION:` h2 blocks; bullets + ```js``` + `Solution:` line; h3 forbidden under blocks |
 | Test plan | `output/plans/*.md`, test-plan-markdown.ts | `<!-- test ... -->` comment: `priority`, `style`; scenario heading, `url:` line, bullets as steps | Notes/results appended by runner |
 
@@ -539,7 +539,7 @@ There are application commands available in TUI
 * /research [uri] - performs research on a current page or navigate to [uri] if uri is provided
 * /plan <feature> - plan testing feature starting from current page
 * /navigate <uri_or_state> - move to other page. Use AI to complete navigation
-* /drill [--knowledge <path>] [--max-components <n>] - drill all components on page to learn interactions
+* /drill [--save-knowledge <path>] [--max-components <n>] - drill all components on page to learn interactions
 
 There are also CodeceptJS commands available:
 
@@ -593,7 +593,7 @@ explorbot plan /login authentication  # plan with focus on authentication
 ```bash
 explorbot drill <url>                    # drill all components on page
 explorbot drill /components --max-components 10  # limit to 10 components
-explorbot drill /login --knowledge /login  # save to knowledge file
+explorbot drill /login --save-knowledge /login  # save to knowledge file
 ```
 
 ### Show resolved configuration:

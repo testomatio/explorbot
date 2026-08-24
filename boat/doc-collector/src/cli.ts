@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
+import { addKnowledgeOption } from '../../../src/utils/knowledge-option.ts';
 import { isVerboseMode, setPreserveConsoleLogs, setQuietMode } from '../../../src/utils/logger.ts';
 import { DocBot, type DocbotOptions } from './docbot.ts';
 
@@ -15,11 +16,12 @@ function buildOptions(options: any): DocbotOptions {
     incognito: options.incognito,
     session: options.session,
     docsConfig: options.docsConfig,
+    knowledge: options.knowledge,
   };
 }
 
 function addCommonOptions(cmd: Command): Command {
-  return cmd
+  return addKnowledgeOption(cmd)
     .option('-v, --verbose', 'Enable verbose logging')
     .option('--debug', 'Enable debug logging')
     .option('-c, --config <path>', 'Path to explorbot configuration file')
