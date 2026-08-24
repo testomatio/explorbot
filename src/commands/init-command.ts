@@ -9,7 +9,8 @@ import { log, tag } from '../utils/logger.js';
 import { relativeToCwd } from '../utils/next-steps.ts';
 
 function defaultConfigTemplate(): string {
-  return `// 'provider/model-id' uses a bundled provider. Or import a Vercel AI SDK one.
+  return `// 'provider/model-id' uses a bundled provider.
+// It is also possible to import provider as a module from Vercel AI SDK.  
 // https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
 
 const config = {
