@@ -44,7 +44,26 @@ export default {
 };
 ```
 
-Models written as `'provider/model-id'` use the provider packages Explorbot ships, so there is nothing extra to install. To bring your own provider package, import it and call it instead — see [Providers](./providers.md).
+That shorthand — `'provider/model-id'` — uses a provider package Explorbot ships, so nothing extra is installed. Bundled: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
+
+For anything else — a provider not in that list, a custom `baseURL`, extra client options — install the Vercel AI SDK package (`npm i @ai-sdk/openai`) and build the client yourself:
+
+```javascript
+import { createOpenAI } from '@ai-sdk/openai';
+
+const poolside = createOpenAI({
+  apiKey: process.env.POOLSIDE_API_KEY,
+  baseURL: 'https://inference.poolside.ai/v1',
+});
+
+export default {
+  ai: {
+    model: poolside('poolside/laguna-xs-2.1'),
+  },
+};
+```
+
+Both styles mix freely across the three keys. See [Providers](./providers.md).
 
 Explorbot uses three models. Pick each one for speed and cost:
 
