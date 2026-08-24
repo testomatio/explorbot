@@ -4,6 +4,20 @@
 
 ### Changes
 
+- [Tester] The prompt no longer promises page HTML that was never sent. The Tester was told to work
+  from a `<page_html>` section in four places, but nothing ever put one there — it only ever received
+  the accessibility tree and the UI map. It is now told what it actually has: the accessibility tree,
+  the page diffs that come back with each action, and HTML it asks for by calling a tool.
+- [Tester] When the accessibility tree is not enough, the Tester now knows to hand the step over
+  rather than guess. `interact()` is described as what it is — one step delegated to the Navigator,
+  which reads the whole page — and the Tester is reminded of it every turn, for the three cases it
+  helps with: the direct action tools failed, the step needs a sequence of actions, or the element is
+  missing from what the Tester can see.
+- [Tester] A test no longer stops early after a delegated step succeeded. A successful `interact()`
+  that left the page looking unchanged used to count as no progress at all, and three of them ended
+  the test.
+- [Pilot] The Pilot no longer pushes a full page of HTML into the Tester mid-test. It can still
+  attach the accessibility tree, a page summary, or the UI map when recent actions failed.
 - Prima now ships as its own npm package, so `npx prima-cli` runs it without installing explorbot
   first. It is the same tool as the `prima` command that comes with explorbot, built from the same
   source and released alongside it — only the package name and the binary differ.

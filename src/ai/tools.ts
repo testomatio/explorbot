@@ -626,7 +626,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
         
         DO NOT call this if:
         - You just performed an action (pageDiff already provided in response)
-        - You already have recent <page_html>/<page_aria> in context
+        - You already have a recent <page_aria> snapshot in context
         - You're about to perform an action (you'll get pageDiff after)
         
         Call ONLY when:
@@ -781,12 +781,18 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
     interact: tool({
       description: dedent`
-        Execute an action on the current page using AI-powered interaction.
-        Use this to perform actions like clicking buttons, selecting options, filling forms, etc.
-        The AI will generate and try multiple CodeceptJS code strategies to accomplish the instruction.
+        Delegate one step to the Navigator, which reads the full page HTML and tries multiple CodeceptJS strategies.
+        Slower than the direct action tools — use it as a fallback, not as the default.
+
+        Use when:
+        - direct action tools failed and you have no better locator to try
+        - the step needs a sequence of actions to complete
+        - the element is not in the context you have
+
+        Describe the outcome to reach, not the locator to use.
       `,
       inputSchema: z.object({
-        instruction: z.string().describe('What action to perform on the page, e.g. "select new suite option", "click the Submit button"'),
+        instruction: z.string().describe('The step to perform on the page, described by its intent'),
       }),
       execute: async ({ instruction }) => {
         try {
@@ -1376,7 +1382,7 @@ function getNotFoundSuggestion(errorMessage: string): string | null {
     Element was not found. The locator does not exist on this page.
     1. Use see() to visually analyze what elements are actually on the page
     2. Use context() to get fresh HTML and ARIA snapshot
-    3. Use ONLY locators from <page_aria> or <page_html>
+    3. Use ONLY locators from <page_aria> or from HTML returned by context()
     4. Prefer ARIA locators: { "role": "button", "text": "visible text" }
   `;
 }
