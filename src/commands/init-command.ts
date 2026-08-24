@@ -9,8 +9,7 @@ import { log, tag } from '../utils/logger.js';
 import { relativeToCwd } from '../utils/next-steps.ts';
 
 function defaultConfigTemplate(): string {
-  return `// Models are written as 'provider/model-id' — Explorbot bundles these providers, nothing to install.
-// To use another one, install its Vercel AI SDK package and import it here.
+  return `// 'provider/model-id' uses a bundled provider. Or import a Vercel AI SDK one.
 // https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
 
 const config = {
