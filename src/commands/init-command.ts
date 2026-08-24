@@ -9,12 +9,8 @@ import { log, tag } from '../utils/logger.js';
 import { relativeToCwd } from '../utils/next-steps.ts';
 
 function defaultConfigTemplate(): string {
-  return `// Models are written as 'provider/model-id' so they resolve without installing a provider package.
-// Vercel AI SDK is used to connect to AI providers.
-// Bring your own provider by installing its package and importing it here:
-//   npm i @ai-sdk/openai
-//   import { createOpenAI } from '@ai-sdk/openai';
-//   const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return `// Models are written as 'provider/model-id' — Explorbot bundles these providers, nothing to install.
+// To use another one, install its Vercel AI SDK package and import it here.
 // https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
 
 const config = {
