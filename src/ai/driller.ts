@@ -30,7 +30,7 @@ import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import { drillLocatorRule } from './rules.ts';
 import { TaskAgent, isInteractive } from './task-agent.ts';
-import { createCodeceptJSTools } from './tools.ts';
+import { createCodeceptJSTools, createLearnExperienceTool } from './tools.ts';
 
 const debugLog = createDebug('explorbot:driller');
 
@@ -306,7 +306,11 @@ export class Driller extends TaskAgent implements Agent {
 
     let finished = false;
     const actionTools = this.createVerifiedActionTools(createCodeceptJSTools(this.toolDeps, test), component);
-    const tools = { ...actionTools, ...this.createDrillFlowTools(originalState, test, interactive) };
+    const learnExperience = createLearnExperienceTool({
+      getExperienceTracker: () => this.getExperienceTracker(),
+      getState: () => ActionResult.fromState(this.stateManager.getCurrentState() || originalState),
+    });
+    const tools = { ...actionTools, learnExperience, ...this.createDrillFlowTools(originalState, test, interactive) };
 
     await loop(
       async ({ stop, iteration }) => {

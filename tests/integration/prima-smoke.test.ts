@@ -110,7 +110,7 @@ describe('Prima drives a real page', () => {
     expect(envelope.used).toEqual(["({ page }) => page.click('text=Submit')"]);
     expect(envelope.page.title).toBe('Widget Depot Thanks');
     expect(envelope.page.previousUrl).not.toBe(envelope.page.url);
-    expect(envelope.changes).toContain('Submit');
+    expect(envelope.changes).toContain('/thanks');
 
     const rendered = renderEnvelope(envelope);
     expect(rendered).toContain('### Changes');

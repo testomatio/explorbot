@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
-import type { ExperienceTracker } from '../experience-tracker.ts';
+import { type ExperienceTracker, renderExperienceRecipes } from '../experience-tracker.ts';
 import { Stats } from '../stats.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
@@ -626,7 +626,7 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
         
         DO NOT call this if:
         - You just performed an action (pageDiff already provided in response)
-        - You already have recent <page_html>/<page_aria> in context
+        - You already have a recent <page_aria> snapshot in context
         - You're about to perform an action (you'll get pageDiff after)
         
         Call ONLY when:
@@ -781,12 +781,18 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
     interact: tool({
       description: dedent`
-        Execute an action on the current page using AI-powered interaction.
-        Use this to perform actions like clicking buttons, selecting options, filling forms, etc.
-        The AI will generate and try multiple CodeceptJS code strategies to accomplish the instruction.
+        Delegate one step to the Navigator, which reads the full page HTML and tries multiple CodeceptJS strategies.
+        Slower than the direct action tools — use it as a fallback, not as the default.
+
+        Use when:
+        - direct action tools failed and you have no better locator to try
+        - the step needs a sequence of actions to complete
+        - the element is not in the context you have
+
+        Describe the outcome to reach, not the locator to use.
       `,
       inputSchema: z.object({
-        instruction: z.string().describe('What action to perform on the page, e.g. "select new suite option", "click the Submit button"'),
+        instruction: z.string().describe('The step to perform on the page, described by its intent'),
       }),
       execute: async ({ instruction }) => {
         try {
@@ -798,7 +804,8 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
           const previousState = ActionResult.fromState(currentState);
           const actionResult = ActionResult.fromState(currentState);
-          const success = await navigator.resolveState(instruction, actionResult);
+          const experience = renderExperienceRecipes(explorer.activeTest?.getAppliedExperience(actionResult) ?? []);
+          const success = await navigator.resolveState(instruction, actionResult, { experience });
 
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, instruction);
 
@@ -1111,7 +1118,12 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
   return tools;
 }
 
-const PAGE_DIFF_SUGGESTION = 'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff.';
+const PAGE_DIFF_SUGGESTION =
+  'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff. messages holds text the app showed in response, requests the calls it made and consoleErrors what it logged.';
+
+const FAILED_REQUEST_SUGGESTION = 'The server rejected a request made by this action (see requests). The UI accepted the interaction but the operation did not complete — read messages and consoleErrors for the reason and report it instead of repeating the action.';
+
+const NAVIGATED_SUGGESTION = 'The action left the page. Elements are never compared across pages, so this diff carries the move itself and what the app announced in transit — an empty element diff does not mean nothing happened.';
 
 const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
@@ -1196,7 +1208,11 @@ export function successToolResult(action: string, data?: Record<string, any>, so
     const ariaChanges = data.pageDiff.ariaChanges || '';
     const urlChanged = data.pageDiff.urlChanged === true;
     const hasHtmlParts = Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
-    if (isMajorPageChange(data.pageDiff)) {
+    if (hasFailedRequest(data.pageDiff)) {
+      suggestion = `${FAILED_REQUEST_SUGGESTION} ${suggestion}`;
+    } else if (urlChanged) {
+      suggestion = `${NAVIGATED_SUGGESTION} ${suggestion}`;
+    } else if (isMajorPageChange(data.pageDiff)) {
       suggestion = `MAJOR PAGE CHANGE. Page entered a different mode. Check htmlParts and iframes in pageDiff before next action. ${suggestion}`;
     } else if (!urlChanged && !ariaChanges && !hasHtmlParts) {
       suggestion = 'Action ran without error but produced no observable change (URL, ARIA and HTML all unchanged). The locator likely matched a non-interactive ancestor or an element outside the intended control. Re-locate via xpathCheck() or verify with see() before treating this as success.';
@@ -1212,10 +1228,15 @@ export function isMajorPageChange(pageDiff: PageDiff): boolean {
   return pageDiff.urlChanged !== true && (pageDiff.ariaChangeCount ?? 0) >= LARGE_ARIA_CHANGE_THRESHOLD;
 }
 
+export function hasFailedRequest(pageDiff: PageDiff): boolean {
+  return (pageDiff.requests ?? []).some((request) => request.status >= 400);
+}
+
 function hasObservablePageChange(data?: Record<string, any>): boolean {
   if (!data?.pageDiff) return false;
   if (data.pageDiff.urlChanged === true) return true;
   if (data.pageDiff.ariaChanges) return true;
+  if (data.pageDiff.messages?.length) return true;
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 
@@ -1375,7 +1396,7 @@ function getNotFoundSuggestion(errorMessage: string): string | null {
     Element was not found. The locator does not exist on this page.
     1. Use see() to visually analyze what elements are actually on the page
     2. Use context() to get fresh HTML and ARIA snapshot
-    3. Use ONLY locators from <page_aria> or <page_html>
+    3. Use ONLY locators from <page_aria> or from HTML returned by context()
     4. Prefer ARIA locators: { "role": "button", "text": "visible text" }
   `;
 }
