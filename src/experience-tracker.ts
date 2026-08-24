@@ -304,6 +304,14 @@ export class ExperienceTracker {
     return this.buildToc(sorted);
   }
 
+  renderExperienceFor(state: ActionResult): string {
+    const successful = this.getSuccessfulExperience(state);
+    if (!successful.length) return '';
+
+    tag('operation').log(`Found ${successful.length} experience ${pluralize(successful.length, 'file')} for: ${state.url}`);
+    return renderExperienceRecipes(successful);
+  }
+
   renderExperienceTocFor(state: ActionResult): string {
     const toc = this.getExperienceTableOfContents(state);
     if (toc.length === 0) return '';
@@ -435,6 +443,11 @@ function indexToLetters(index: number): string {
     n -= 1;
   }
   return result;
+}
+
+export function renderExperienceRecipes(recipes: string[]): string {
+  if (recipes.length === 0) return '';
+  return `<experience>\nPast successful recipes recorded from prior runs for this page. Prefer these solutions first if they match the goal.\n\n${recipes.join('\n\n')}\n</experience>`;
 }
 
 export function renderExperienceToc(toc: ExperienceTocEntry[]): string {

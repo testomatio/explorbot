@@ -465,9 +465,13 @@ export class Pilot implements Agent {
         the elements needed for the scenario. The page summary does not list every element.
         Prefer interacting with the current page over navigating away.
 
-        If you load a recipe via learnExperience, do NOT rewrite its code in your plan — the
-        raw recipe is forwarded to Tester automatically. Reference it by step ("apply recipe
-        steps 1–3, then…") and call out anywhere your scenario diverges from it.
+        Tester never sees <experience> — a recorded recipe reaches it only when you open one.
+        The entries listed are what was recorded on the page you are on now; recipes for the
+        pages this test moves to are listed when it gets there. Open the ones whose titles fit a
+        step taken from here, and say so in the plan when none of them fit.
+        Do NOT rewrite a loaded recipe's code — the raw recipe is forwarded to Tester
+        automatically. Reference it by step ("apply recipe steps 1–3, then…") and call out
+        anywhere your scenario diverges from it.
 
         Be concise and specific. Tester will follow your plan.
       `,
@@ -513,9 +517,11 @@ export class Pilot implements Agent {
         ${this.formatExpectations(task)}
 
         First: evaluate whether this navigation makes sense for the scenario goal. If the page is unrelated, instruct Tester to back() or reset(). Then plan next steps.
+
+        Tester holds no recipe for this page until you load one — open the <experience> entries whose titles fit a step you are about to instruct.
       `,
       'pilot.reviewNewPage',
-      { task }
+      { tools: true, maxToolRoundtrips: 2, task }
     );
   }
 
@@ -549,6 +555,8 @@ export class Pilot implements Agent {
         </recent_actions>
 
         What should Tester do next?
+
+        Before proposing new locators for a step that keeps failing, check <experience> for a recorded recipe covering it and load it.
       `,
       'pilot.analyze',
       { tools: hasFailures, maxToolRoundtrips: hasFailures ? 2 : 0, task }
@@ -665,10 +673,9 @@ export class Pilot implements Agent {
 
     let finalUserText = userText;
     if (opts.tools) {
+      this.conversation!.cleanupTag('experience', '...cleaned experience index...');
       const tocBlock = this.getExperienceToc();
-      if (tocBlock) {
-        finalUserText = `${tocBlock}\n\n${userText}`;
-      }
+      if (tocBlock) finalUserText = `${tocBlock}\n\n${userText}`;
     }
     this.conversation!.addUserText(finalUserText);
 
@@ -682,8 +689,9 @@ export class Pilot implements Agent {
       telemetry: { functionId },
     });
     const text = result?.response?.text || '';
-    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => e.output.content);
+    const learned = (result?.toolExecutions || []).filter((e: any) => e.toolName === 'learnExperience' && e.output?.content).map((e: any) => ({ url: e.output.url, content: e.output.content }));
     if (learned.length === 0) return text;
+    opts.task.applyExperience(learned);
     return dedent`
       ${text}
 
@@ -691,7 +699,7 @@ export class Pilot implements Agent {
       Recipes from prior successful runs that Pilot judged relevant. Locators worked then; the page may have changed since.
       Treat code blocks below as a starting hypothesis. If a locator misses, fall back to ARIA/UI-map.
 
-      ${learned.join('\n\n')}
+      ${learned.map((recipe) => recipe.content).join('\n\n')}
       </applied_experience>
     `;
   }

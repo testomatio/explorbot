@@ -209,6 +209,23 @@ describe('url-matcher', () => {
     it('requires an explicitly requested query', () => {
       expect(matchesNavigationUrl('/search?q=shoes', '/search?q=hats')).toBe(false);
     });
+
+    it('accepts a record the application redirected to from its collection', () => {
+      expect(matchesNavigationUrl('/#/orders', '/#/orders/01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe(true);
+      expect(matchesNavigationUrl('/users', '/users/42')).toBe(true);
+    });
+
+    it('rejects a named child that is not a record', () => {
+      expect(matchesNavigationUrl('/users', '/users/settings')).toBe(false);
+    });
+
+    it('rejects a record of a different collection', () => {
+      expect(matchesNavigationUrl('/#/orders', '/#/invoices/01ARZ3NDEKTSV4RRFFQ69G5FAV')).toBe(false);
+    });
+
+    it('requires the exact record when one was named', () => {
+      expect(matchesNavigationUrl('/#/orders/01ARZ3NDEKTSV4RRFFQ69G5FAV', '/#/orders/01BX5ZZKBKACTAV9WEVGEMMVRZ')).toBe(false);
+    });
   });
 
   describe('normalizeUrl', () => {

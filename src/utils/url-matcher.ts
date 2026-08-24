@@ -118,6 +118,16 @@ export function matchesNavigationUrl(expected: string, current: string): boolean
   if (!expectedPath.includes('?')) {
     currentPath = currentPath.split('?')[0];
   }
-  const normalize = (value: string) => value.replace(/^\/+|\/+$/g, '').toLowerCase();
-  return normalize(expectedPath) === normalize(currentPath);
+  const normalize = (value: string) => value.replace(/^\/+|\/+$/g, '');
+  const expectedNormalized = normalize(expectedPath);
+  const currentNormalized = normalize(currentPath);
+  const expectedKey = expectedNormalized.toLowerCase();
+  const currentKey = currentNormalized.toLowerCase();
+  if (expectedKey === currentKey) return true;
+  if (!currentKey.startsWith(`${expectedKey}/`)) return false;
+  const recordSegments = currentNormalized
+    .slice(expectedKey.length + 1)
+    .split('/')
+    .filter(Boolean);
+  return recordSegments.length > 0 && recordSegments.every(isDynamicSegment);
 }

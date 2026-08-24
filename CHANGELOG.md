@@ -18,6 +18,41 @@
   the test.
 - [Pilot] The Pilot no longer pushes a full page of HTML into the Tester mid-test. It can still
   attach the accessibility tree, a page summary, or the UI map when recent actions failed.
+- Prima now ships as its own npm package, so `npx prima-cli` runs it without installing explorbot
+  first. It is the same tool as the `prima` command that comes with explorbot, built from the same
+  source and released alongside it — only the package name and the binary differ.
+- Terminal colour no longer depends on another package happening to provide it. `chalk` is used
+  throughout the log output but had never been declared as a dependency, so a published install
+  resolved it only by accident and could have lost colour, or failed to start, at any time.
+
+## 2026-08-22
+
+### Changes
+
+- [Pilot] now chooses which recorded solutions a test is given. It reads the list of titles for the
+  page it is on, opens the ones that match the scenario, and only those reach the Tester — when it
+  plans a test, when the test lands on a new page, and when a step keeps failing.
+- [Pilot] drops the list of titles from the previous page even when the new page has nothing
+  recorded for it, so it never picks a solution belonging to a page the test has already left.
+- A recorded solution the Pilot opened earlier is now offered back to a step only on the page it
+  was recorded for. A test that picked one up on an earlier page used to carry it to every page it
+  visited afterwards, presented as if it belonged there.
+- [Tester] no longer reads recorded solutions at all — neither the recipes nor the list of their
+  titles. A single page can hold recipes for a dozen unrelated features, and handing all of them
+  over put work with nothing to do with the current scenario in front of the model. Everything it
+  learns from earlier runs now arrives through the Pilot.
+- [Navigator] uses the solution it was handed rather than loading every one recorded for the page.
+  Where nobody hands it one — recovering a failed page visit, free sailing — it still loads them
+  itself, since there is no one there to choose.
+- [Driller] and [Captain] can now open a recorded solution by title in every mode, the way the
+  other agents do.
+- Documentation: CLAUDE.md now defines the boundary contracts between agents and data modules,
+  the persisted file formats vs session artifacts, the rules for extending envelopes, per-agent
+  HTML access tiers, a feature routing test, guidance on when to use regex versus AI judgment,
+  and the git worktree workflow.
+- New Bunosh tasks for feature worktrees: `worktree:create <feature>` opens a new branch off main
+  in a sibling directory, `worktree:fetch <branch>` opens an existing branch there, both symlinking
+  the main checkout's `node_modules`; `worktree:delete [branch]` removes a worktree when merged.
 
 ## 2026-08-21
 

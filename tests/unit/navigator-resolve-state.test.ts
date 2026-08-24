@@ -58,6 +58,7 @@ function createHarness(
   navigator.knowledgeTracker = { renderRelevantContext: () => options.knowledge ?? '' };
   navigator.experienceTracker = {
     getSuccessfulExperience: () => [],
+    renderExperienceFor: () => '',
     writeFlow: (_actionResult: any, body: string) => flows.push(body),
   };
   navigator.provider = {
@@ -91,6 +92,25 @@ describe('Navigator resolveState', () => {
     expect(harness.flows[0]).toContain('## FLOW: reach /defects from /login');
     expect(harness.flows[0]).toContain("I.click('#login-btn')");
     expect(harness.flows[0]).not.toContain('amOnPage');
+  });
+
+  it('uses the experience handed to it instead of loading every recipe for the page', async () => {
+    const harness = createHarness({ responses: ["```js\nI.click('Save')\n```"] });
+    harness.navigator.experienceTracker.renderExperienceFor = () => '<experience>every recipe on this page</experience>';
+
+    await harness.navigator.resolveState('click Save', fakeActionResult(), { experience: '<experience>the one recipe that fits</experience>' });
+
+    expect(harness.sent[0]).toContain('the one recipe that fits');
+    expect(harness.sent[0]).not.toContain('every recipe on this page');
+  });
+
+  it('loads the recipes for the page when nobody hands it any', async () => {
+    const harness = createHarness({ responses: ["```js\nI.click('Save')\n```"] });
+    harness.navigator.experienceTracker.renderExperienceFor = () => '<experience>every recipe on this page</experience>';
+
+    await harness.navigator.resolveState('click Save', fakeActionResult());
+
+    expect(harness.sent[0]).toContain('every recipe on this page');
   });
 
   it('resolves on a successful step when no URL is expected', async () => {
