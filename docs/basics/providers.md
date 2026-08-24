@@ -16,7 +16,17 @@ export default {
 };
 ```
 
-This is what `explorbot init` generates. Bundled providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`. Anything else — a provider not in that list, a custom `baseURL`, extra client options — needs the import form documented below.
+This is what `explorbot init` generates. Bundled providers:
+
+- `openai`
+- `anthropic`
+- `google`
+- `groq`
+- `mistral`
+- `openrouter`
+- `sambanova`
+
+Each section below documents the explicit style instead: install the provider package and build the client. It works for the bundled providers too, and it is the only way to reach one that isn't bundled, a custom `baseURL`, or extra client options.
 
 ## Requirements
 

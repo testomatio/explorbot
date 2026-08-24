@@ -44,9 +44,17 @@ export default {
 };
 ```
 
-That shorthand — `'provider/model-id'` — uses a provider package Explorbot ships, so nothing extra is installed. Bundled: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
+That shorthand — `'provider/model-id'` — uses a provider package Explorbot ships, so nothing extra is installed. Bundled providers:
 
-For anything else — a provider not in that list, a custom `baseURL`, extra client options — install the Vercel AI SDK package (`npm i @ai-sdk/openai`) and build the client yourself:
+- `openai`
+- `anthropic`
+- `google`
+- `groq`
+- `mistral`
+- `openrouter`
+- `sambanova`
+
+The other style is explicit: install a Vercel AI SDK package (`npm i @ai-sdk/openai`) and build the client yourself. It works for the providers above too, and it is the only way to reach one that isn't bundled, a custom `baseURL`, or extra client options:
 
 ```javascript
 import { createOpenAI } from '@ai-sdk/openai';
