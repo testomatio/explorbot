@@ -2,31 +2,9 @@
 
 Explorbot connects to AI providers through the [Vercel AI SDK](https://sdk.vercel.ai/). Use any supported provider, and mix providers across different models.
 
+Every provider below is set up the classical way: install its package, import it, build the client. Explorbot bundles some of these packages — for those you can skip the install and name the model as `'provider/model-id'` instead. See [Getting Started](./getting-started.md#2-configure) for that list and the two styles side by side.
+
 > The `export default` config block inside each `<!-- START/END provider -->` marker is generated from [`models.json`](../../models.json). After editing that file, run `bunosh docs:sync`. Everything else — including the import blocks — is hand-written.
-
-## Bundled Providers
-
-Writing a model as `'provider/model-id'` uses the provider package Explorbot already ships, so nothing extra is installed:
-
-```javascript
-export default {
-  ai: {
-    model: 'openrouter/openai/gpt-oss-20b:nitro',
-  },
-};
-```
-
-This is what `explorbot init` generates. Bundled providers:
-
-- `openai`
-- `anthropic`
-- `google`
-- `groq`
-- `mistral`
-- `openrouter`
-- `sambanova`
-
-Each section below documents the explicit style instead: install the provider package and build the client. It works for the bundled providers too, and it is the only way to reach one that isn't bundled, a custom `baseURL`, or extra client options.
 
 ## Requirements
 
