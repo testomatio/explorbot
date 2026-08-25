@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-08-25
+
+### Configuration
+
+- **`ai.maxParallelRequests`** — How many requests to the AI model may be in flight at the same time,
+  across all agents. Additional requests wait in line instead of firing together and tripping provider
+  rate limits. Default: `4`.
+- **`ai.retryAttempts`** — Renamed from `ai.maxAttempts`, and now pairs with `ai.retryDelay` ("how
+  many times × with what pause"). If a private config still says `ai.maxAttempts`, JavaScript configs
+  will not warn — rename it manually.
+- **`ai.retryDelay`** — Declared since early on but never read; the provider now actually honors it as
+  the base pause between retries. Default: `10ms`.
+
+### Changes
+
+- [All agents] Screenshot analysis works again. Images were sent to the vision model wrapped as a data
+  URL where the AI SDK expects raw base64, so every visual call failed upstream ("Invalid image_url") —
+  in the last overnight run that was 423 failures across 37 of 61 tests, with the `see` tool never
+  succeeding once. Screenshots are now sent in the format providers accept.
+- [All agents] When the vision model fails, it is now switched off once for the whole session instead
+  of only for one tool — previously the researcher kept calling the broken vision path all night.
+- [Provider] Model calls are capped by `ai.maxParallelRequests`. In the last overnight run unlimited
+  parallelism produced bursts of up to 264 rate-limit errors per minute with tests idling through
+  retries; queued pacing replaces that storm.
+- [Provider] Models that narrate their reasoning mid-run (the gpt-oss channel format) get a sanctioned
+  no-op `commentary` tool instead of a rejected call — that rejection failed the whole generation 132
+  times in the last run. Channel-named tool calls are also repaired instead of dropped.
+- [Pilot] A check that ran successfully is no longer presented to the verdict as "PASS" evidence —
+  what it proves about the goal is what counts, so a check establishing the opposite of the goal reads
+  as failure evidence. Reading page state — a snapshot or a UI-map research — no longer counts as proof
+  the scenario completed. This removes false-green finishes.
+- [Tester] A new test now recovers from an error page left by the previous test before building its AI
+  context. When the next test has a different start URL, Tester navigates there first; genuine errors on
+  the new test's own start page are still reported normally.
+- [Analyst] The end-of-session report is now written even when the exploration loop crashes — the
+  session no longer ends silently without one.
+
 ## 2026-08-24
 
 ### Changes

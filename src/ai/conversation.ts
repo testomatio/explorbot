@@ -17,6 +17,8 @@ export function toolExecutionLabel(input: Record<string, any> | undefined): stri
   return input?.explanation || input?.assertion || input?.reason || input?.request || '';
 }
 
+export const NARRATION_TOOL = 'commentary';
+
 const AUTO_COMPACT_ARIA_CHANGES_CUTOFF = 500;
 const AUTO_COMPACT_TARGETED_HTML_CUTOFF = 500;
 
@@ -227,6 +229,7 @@ export class Conversation {
       if (!Array.isArray(message.content)) continue;
       for (const part of message.content) {
         if (part.type !== 'tool-result') continue;
+        if (part.toolName === NARRATION_TOOL) continue;
         executions.push(toToolExecution(part.toolName, toolCalls.get(part.toolCallId) || {}, part.output));
       }
     }

@@ -1,8 +1,10 @@
 import { OpenTelemetry } from '@ai-sdk/otel';
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import { generateObject, generateText, isStepCount, registerTelemetry } from 'ai';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { generateObject, generateText, isStepCount, registerTelemetry, tool } from 'ai';
 import type { ModelMessage } from 'ai';
+import { z } from 'zod';
 import { clearActivity, setActivity } from '../activity.ts';
 import { type AIConfig, configuredModels, modelName as getModelName } from '../config.js';
 import { executionController } from '../execution-controller.ts';
@@ -11,7 +13,7 @@ import { Stats } from '../stats.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
-import { Conversation, toToolExecution } from './conversation.js';
+import { Conversation, NARRATION_TOOL, toToolExecution } from './conversation.js';
 
 const debugLog = createDebug('explorbot:provider');
 const promptLog = createDebug('explorbot:provider:out');
@@ -19,6 +21,20 @@ const responseLog = createDebug('explorbot:provider:in');
 
 class AiError extends Error {}
 export class ContextLengthError extends Error {}
+
+const DEFAULT_PARALLEL_REQUESTS = 4;
+
+const modelSlotContext = new AsyncLocalStorage<boolean>();
+
+const HARMONY_CHANNELS = ['commentary', 'analysis', 'final'];
+
+function createHarmonyChannelFallbackTool() {
+  return tool({
+    description: 'Internal compatibility fallback for model channel output. Do not call directly.',
+    inputSchema: z.record(z.string(), z.any()),
+    execute: async () => ({ message: 'Noted. Continue with your next action.' }),
+  });
+}
 
 let telemetryRegistered = false;
 
@@ -79,6 +95,8 @@ export class Provider {
   };
 
   lastConversation: Conversation | null = null;
+  private activeModelCalls = 0;
+  private modelCallWaiters: (() => void)[] = [];
 
   constructor(config: AIConfig) {
     if (!config?.model) {
@@ -154,8 +172,26 @@ export class Provider {
   private getRetryOptions(options: any = {}): RetryOptions {
     return {
       ...this.defaultRetryOptions,
-      maxAttempts: options.maxRetries || this.defaultRetryOptions.maxAttempts,
+      maxAttempts: options.maxRetries || this.config.retryAttempts || this.defaultRetryOptions.maxAttempts,
+      baseDelay: this.config.retryDelay || this.defaultRetryOptions.baseDelay,
     };
+  }
+
+  private async withModelRequestSlot<T>(fn: () => Promise<T>): Promise<T> {
+    if (modelSlotContext.getStore()) return fn();
+    const limit = Math.max(1, this.config.maxParallelRequests ?? DEFAULT_PARALLEL_REQUESTS);
+    if (this.activeModelCalls >= limit || this.modelCallWaiters.length > 0) {
+      await new Promise<void>((resolve) => this.modelCallWaiters.push(resolve));
+    } else {
+      this.activeModelCalls++;
+    }
+    try {
+      return await modelSlotContext.run(true, fn);
+    } finally {
+      const next = this.modelCallWaiters.shift();
+      if (next) next();
+      else this.activeModelCalls--;
+    }
   }
 
   private mergeProviderOptions(config: Record<string, any>, agentName?: string): Record<string, any> {
@@ -302,7 +338,7 @@ export class Provider {
     const toolResults = response.toolResults || [];
 
     const resultsById = new Map(toolResults.map((r: any) => [r.toolCallId, r]));
-    const toolExecutions = toolCalls.map((call: any) => toToolExecution(call.toolName || '', call.input, resultsById.get(call.toolCallId)?.output));
+    const toolExecutions = toolCalls.filter((call: any) => call.toolName !== NARRATION_TOOL).map((call: any) => toToolExecution(call.toolName || '', call.input, resultsById.get(call.toolCallId)?.output));
 
     return { conversation, response, toolExecutions };
   }
@@ -316,21 +352,23 @@ export class Provider {
 
     promptLog(messages[messages.length - 1].content);
     try {
-      const response = await withRetry(async () => {
-        const result = await generateText({ messages, ...config });
-        this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
-        if (!result.text) {
-          debugLog(result);
-          if (result.finishReason === 'length') {
-            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
+      const response = await this.withModelRequestSlot(() =>
+        withRetry(async () => {
+          const result = await generateText({ messages, ...config });
+          this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
+          if (!result.text) {
+            debugLog(result);
+            if (result.finishReason === 'length') {
+              throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
+            }
+            throw new Error('No response text from AI');
           }
-          throw new Error('No response text from AI');
-        }
-        if (result.finishReason === 'length') {
-          debugLog('finishReason=length, response may be truncated');
-        }
-        return result;
-      }, this.getRetryOptions(options));
+          if (result.finishReason === 'length') {
+            debugLog('finishReason=length, response may be truncated');
+          }
+          return result;
+        }, this.getRetryOptions(options))
+      );
 
       clearActivity();
       responseLog(response.text);
@@ -356,7 +394,8 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
-    const toolNames = Object.keys(tools || {});
+    const toolsWithCommentary = tools?.commentary ? tools : { ...tools, commentary: createHarmonyChannelFallbackTool() };
+    const toolNames = Object.keys(toolsWithCommentary || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
     promptLog('Available tools:', toolNames);
     promptLog(messages[messages.length - 1].content);
@@ -365,17 +404,19 @@ export class Provider {
     const extraStop = options.stopWhen;
     const stopConditions: any[] = [isStepCount(maxRoundtrips)];
     if (extraStop) stopConditions.push(extraStop);
-    const config = this.buildGenerateConfig({ tools, maxOutputTokens: 16384, toolChoice: 'auto', experimental_repairToolCall: repairToolCall }, { stopWhen: stopConditions, model }, options);
+    const config = this.buildGenerateConfig({ tools: toolsWithCommentary, maxOutputTokens: 16384, toolChoice: 'auto', experimental_repairToolCall: repairToolCall }, { stopWhen: stopConditions, model }, options);
     try {
-      const response = await withRetry(async () => {
-        const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
-        this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
-        const hasToolCall = (result.toolCalls?.length || 0) > 0;
-        if (!result.text && !hasToolCall && result.finishReason === 'length') {
-          throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
-        }
-        return result;
-      }, this.getRetryOptions(options));
+      const response = await this.withModelRequestSlot(() =>
+        withRetry(async () => {
+          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
+          this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
+          const hasToolCall = (result.toolCalls?.length || 0) > 0;
+          if (!result.text && !hasToolCall && result.finishReason === 'length') {
+            throw new ContextLengthError('AI response empty: output truncated at maxTokens. Increase maxOutputTokens in config or use a model with higher output capacity.');
+          }
+          return result;
+        }, this.getRetryOptions(options))
+      );
 
       clearActivity();
 
@@ -418,9 +459,11 @@ export class Provider {
 
     try {
       promptLog(messages[messages.length - 1].content);
-      const response = await withRetry(async () => {
-        return (await this.raceWithIdleTimeout((signal) => generateObject({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
-      }, this.getRetryOptions(options));
+      const response = await this.withModelRequestSlot(() =>
+        withRetry(async () => {
+          return (await this.raceWithIdleTimeout((signal) => generateObject({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
+        }, this.getRetryOptions(options))
+      );
 
       clearActivity();
       responseLog(response.object);
@@ -572,8 +615,6 @@ export class Provider {
 
     setActivity(`🤖 Processing image with ${this.config.visionModel}`, 'ai');
 
-    const imageData = `data:image/png;base64,${image.toString()}`;
-
     const messages: ModelMessage[] = [
       {
         role: 'user',
@@ -585,7 +626,7 @@ export class Provider {
           {
             type: 'file',
             mediaType: 'image/png',
-            data: imageData,
+            data: image,
           },
         ],
       },
@@ -602,12 +643,14 @@ export class Provider {
 
     try {
       promptLog(`Processing image with prompt: ${prompt}`);
-      const response = await withRetry(async () => {
-        return await generateText({
-          messages,
-          ...config,
-        });
-      }, this.getRetryOptions());
+      const response = await this.withModelRequestSlot(() =>
+        withRetry(async () => {
+          return await generateText({
+            messages,
+            ...config,
+          });
+        }, this.getRetryOptions())
+      );
 
       clearActivity();
       responseLog(response.text);
@@ -623,13 +666,13 @@ export class Provider {
   }
 
   hasVision(): boolean {
-    return this.config.visionModel !== undefined;
+    return this.config.visionModel !== undefined && !Stats.visionDisabled;
   }
 }
 
 function repairToolCall(options: ToolCallRepairOptions): any | null {
   if (options.toolCall.toolName.includes('<|channel|>')) return repairChannelMarker(options);
-  return null;
+  return repairHarmonyChannel(options);
 }
 
 function repairChannelMarker({ toolCall, tools }: ToolCallRepairOptions): any | null {
@@ -639,6 +682,17 @@ function repairChannelMarker({ toolCall, tools }: ToolCallRepairOptions): any | 
   if (!tools[toolName]) return null;
   tag('warning').log(`Repaired tool name '${toolCall.toolName}' → '${toolName}'`);
   return { ...toolCall, toolName };
+}
+
+function repairHarmonyChannel({ toolCall, tools }: ToolCallRepairOptions): any | null {
+  if (!HARMONY_CHANNELS.includes(toolCall.toolName)) return null;
+  if (!tools.commentary) return null;
+  let input = toolCall.input;
+  if (typeof input !== 'string' || !input.trim().startsWith('{')) {
+    input = JSON.stringify({ content: typeof input === 'string' ? input : JSON.stringify(input ?? null) });
+  }
+  tag('warning').log(`Repaired tool name '${toolCall.toolName}' → 'commentary'`);
+  return { ...toolCall, toolName: NARRATION_TOOL, input };
 }
 
 export { AiError, Provider as AIProvider };
