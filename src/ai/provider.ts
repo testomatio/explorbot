@@ -28,9 +28,9 @@ const modelSlotContext = new AsyncLocalStorage<boolean>();
 
 const HARMONY_CHANNELS = ['commentary', 'analysis', 'final'];
 
-function createCommentaryTool() {
+function createHarmonyChannelFallbackTool() {
   return tool({
-    description: 'Narrate your reasoning between actions: hypotheses, plans, observations about the page. Returns nothing actionable. Never call it twice in a row — follow it with an action tool.',
+    description: 'Internal compatibility fallback for model channel output. Do not call directly.',
     inputSchema: z.record(z.string(), z.any()),
     execute: async () => ({ message: 'Noted. Continue with your next action.' }),
   });
@@ -177,7 +177,7 @@ export class Provider {
     };
   }
 
-  private async withModelSlot<T>(fn: () => Promise<T>): Promise<T> {
+  private async withModelRequestSlot<T>(fn: () => Promise<T>): Promise<T> {
     if (modelSlotContext.getStore()) return fn();
     const limit = Math.max(1, this.config.maxParallelRequests ?? DEFAULT_PARALLEL_REQUESTS);
     if (this.activeModelCalls >= limit || this.modelCallWaiters.length > 0) {
@@ -352,7 +352,7 @@ export class Provider {
 
     promptLog(messages[messages.length - 1].content);
     try {
-      const response = await this.withModelSlot(() =>
+      const response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
           const result = await generateText({ messages, ...config });
           this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
@@ -394,7 +394,7 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
-    const toolsWithCommentary = tools?.commentary ? tools : { ...tools, commentary: createCommentaryTool() };
+    const toolsWithCommentary = tools?.commentary ? tools : { ...tools, commentary: createHarmonyChannelFallbackTool() };
     const toolNames = Object.keys(toolsWithCommentary || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
     promptLog('Available tools:', toolNames);
@@ -406,7 +406,7 @@ export class Provider {
     if (extraStop) stopConditions.push(extraStop);
     const config = this.buildGenerateConfig({ tools: toolsWithCommentary, maxOutputTokens: 16384, toolChoice: 'auto', experimental_repairToolCall: repairToolCall }, { stopWhen: stopConditions, model }, options);
     try {
-      const response = await this.withModelSlot(() =>
+      const response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
           const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
           this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
@@ -459,7 +459,7 @@ export class Provider {
 
     try {
       promptLog(messages[messages.length - 1].content);
-      const response = await this.withModelSlot(() =>
+      const response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
           return (await this.raceWithIdleTimeout((signal) => generateObject({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
         }, this.getRetryOptions(options))
@@ -643,7 +643,7 @@ export class Provider {
 
     try {
       promptLog(`Processing image with prompt: ${prompt}`);
-      const response = await this.withModelSlot(() =>
+      const response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
           return await generateText({
             messages,
