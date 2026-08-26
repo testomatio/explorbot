@@ -4,6 +4,14 @@
 
 ### Changes
 
+- [Tester] Unmarked modals are now detected at capture time. Apps whose dialogs carry no
+  `role="dialog"`/`aria-modal` markup were invisible to focus-area detection, so the Tester never
+  learned it was inside a modal and interacted with the page behind it. Each state capture now
+  probes the live DOM for overlays the way the Driller does, and the state carries a modal
+  descriptor (`overlay`) that the Tester, Pilot and Researcher read instead of re-deriving it.
+  Class-name matches are only trusted when the element is truly floating (`fixed`/`absolute`/z-index),
+  so a sticky header named "overlay" does not become a false focus scope, and the expensive
+  full-page geometry scan is not run on every action — it stays in the Driller, where it belongs.
 - [Tester] The Tester now remembers every action it took, not only the last one of each turn. When it
   did several things in one turn — click, click, then check — everything but the final action was
   dropped from its memory straight afterwards, so it re-clicked buttons it had already clicked and

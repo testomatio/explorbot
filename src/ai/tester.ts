@@ -11,7 +11,6 @@ import { Observability } from '../observability.ts';
 import { type StateTransition, normalizeUrl } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult, type TestResultType } from '../test-plan.ts';
-import { detectFocusArea } from '../utils/aria.ts';
 import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
@@ -531,7 +530,7 @@ export class Tester extends TaskAgent implements Agent {
 
     let context = '';
 
-    const focusArea = detectFocusArea(currentState.ariaSnapshot);
+    const focusArea = currentState.overlay;
 
     const focusedElement = currentState.focusedElement;
     if (focusedElement) {
