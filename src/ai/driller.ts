@@ -683,6 +683,7 @@ export class Driller extends TaskAgent implements Agent {
             interactiveContentSelector: HTML_SELECTORS.interactiveContent,
             limits: HTML_EXTRACTION_LIMITS,
             overlaySelectors: HTML_SELECTORS.semanticOverlays,
+            overlaySemanticSelector: HTML_SELECTORS.overlaySemanticSelector,
             visibilityLimits: HTML_VISIBILITY_LIMITS,
           },
         }

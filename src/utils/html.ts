@@ -98,7 +98,9 @@ export const HTML_SELECTORS = {
   interactiveControl: 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"]',
   labelLike: 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"], [class*="title"], [class*="label"], [class*="header"], [class*="name"]',
   semanticContextContainer: 'section, article, form, fieldset, li, tr, td, th, [role="group"], [role="tabpanel"], [role="region"], [class*="card"], [class*="panel"], [class*="item"], [class*="usage"], [class*="group"]',
-  semanticOverlays: ['[role="dialog"]', '[role="listbox"]', '[role="menu"]', '[role="tooltip"]:not([style*="display: none"]):not([style*="visibility: hidden"])'],
+  semanticOverlays: ['[role="dialog"]', '[role="listbox"]', '[role="menu"]', '[role="tooltip"]:not([style*="display: none"]):not([style*="visibility: hidden"])', '[class*="modal"]', '[class*="dialog"]', '[class*="overlay"]', '[class*="popup"]', '[class*="drawer"]', '[class*="lightbox"]'],
+  modalOverlays: ['[role="dialog"]', '[role="alertdialog"]', '[aria-modal="true"]', '[class*="modal"]', '[class*="dialog"]', '[class*="overlay"]', '[class*="popup"]', '[class*="drawer"]', '[class*="lightbox"]'],
+  overlaySemanticSelector: '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="listbox"], [role="menu"], [role="tooltip"]',
 } as const;
 
 export const HTML_VISIBILITY_LIMITS = {
@@ -163,7 +165,9 @@ export type VisibleOverlayExtractionConfig = {
   interactiveContentSelector: string;
   limits: typeof HTML_EXTRACTION_LIMITS;
   overlaySelectors: readonly string[];
+  overlaySemanticSelector: string;
   visibilityLimits: typeof HTML_VISIBILITY_LIMITS;
+  geometryFallback?: boolean;
 };
 export type ComponentScopeExtractionConfig = {
   eidxAttr: string;
@@ -479,20 +483,28 @@ export function extractVisibleOverlayHtml(config: VisibleOverlayExtractionConfig
     return interactiveCount > 0 || text.length > 0;
   }
 
-  const overlays: string[] = [];
+  function isFloatingOverlay(element: Element): boolean {
+    const style = window.getComputedStyle(element as HTMLElement);
+    return style.position === 'fixed' || style.position === 'absolute' || Number.parseInt(style.zIndex || '0', 10) > 0;
+  }
+
   const seen = new Set<Element>();
+  const collected: Element[] = [];
   for (const selector of config.overlaySelectors) {
     for (const element of Array.from(document.querySelectorAll(selector))) {
       if (seen.has(element)) continue;
       seen.add(element);
       if (!isVisible(element)) continue;
+      if (!element.matches(config.overlaySemanticSelector) && !isFloatingOverlay(element)) continue;
       const { interactiveCount, text } = getUsefulContent(element);
       if (interactiveCount === 0 && text.length === 0) continue;
-      overlays.push((element as HTMLElement).outerHTML.slice(0, config.limits.overlayHtmlLength));
+      collected.push(element);
     }
   }
 
-  if (overlays.length === 0) {
+  const overlays = collected.filter((element) => !collected.some((other) => other !== element && element.contains(other))).map((element) => (element as HTMLElement).outerHTML.slice(0, config.limits.overlayHtmlLength));
+
+  if (overlays.length === 0 && config.geometryFallback !== false) {
     const floatingCandidates = Array.from(document.body.querySelectorAll('*'))
       .filter((element) => !seen.has(element) && isVisible(element) && isLikelyFloatingOverlay(element))
       .sort((left, right) => {

@@ -9,7 +9,7 @@ import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult } from '../test-plan.ts';
-import { collectInteractiveNodes, detectFocusArea } from '../utils/aria.ts';
+import { collectInteractiveNodes } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 
@@ -824,7 +824,7 @@ export class Pilot implements Agent {
     lines.push(`h3: ${state.h3 || ''}`);
     lines.push(`h4: ${state.h4 || ''}`);
 
-    const focusArea = detectFocusArea(state.ariaSnapshot);
+    const focusArea = state.overlay;
     if (focusArea.detected) {
       lines.push(`modal: ${focusArea.name || focusArea.type}`);
     } else {

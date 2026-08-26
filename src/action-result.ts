@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
-import { LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
+import { type FocusAreaResult, LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, detectFocusArea, diffAriaSnapshots } from './utils/aria.ts';
 import { TTLCache } from './utils/cache.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff, liveRegionMessages } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
@@ -34,6 +34,7 @@ interface ActionResultData extends WebPageState {
   focusedElement?: FocusedElement | null;
   iframeURL?: string;
   links?: Link[];
+  overlayHtml?: string;
 }
 
 export interface PageDiff {
@@ -86,6 +87,7 @@ export class ActionResult implements ActionResultData {
   notes: string[] = [];
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
+  public overlay: FocusAreaResult = { detected: false, type: null, name: null };
 
   constructor(data: ActionResultData) {
     this.id = data.id;
@@ -129,6 +131,14 @@ export class ActionResult implements ActionResultData {
     }
     if (data.ariaSnapshot !== undefined) {
       this._ariaSnapshot = data.ariaSnapshot;
+    }
+
+    if (data.overlayHtml) {
+      const headings = extractHeadings(data.overlayHtml);
+      const name = [headings.h1, headings.h2, headings.h3, headings.h4].filter(Boolean).join(' ');
+      this.overlay = { detected: true, type: 'modal', name: name || null };
+    } else {
+      this.overlay = data.overlay ?? detectFocusArea(data.ariaSnapshot ?? null);
     }
 
     if (!this.fullUrl && this.url) {
