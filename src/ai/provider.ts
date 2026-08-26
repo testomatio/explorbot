@@ -342,7 +342,7 @@ export class Provider {
   async invokeConversation(conversation: Conversation, tools?: any, options: any = {}): Promise<{ conversation: Conversation; response: any; toolExecutions?: any[] } | null> {
     const response = tools ? await this.generateWithTools(conversation.messages, conversation.model, tools, options) : await this.chat(conversation.messages, conversation.model, options);
 
-    const responseMessages = response.response?.messages || [];
+    const responseMessages = response.responseMessages || [];
     if (responseMessages.length > 0) {
       conversation.messages.push(...responseMessages);
       tag('debug').log('Added', responseMessages.length, 'messages from response');
