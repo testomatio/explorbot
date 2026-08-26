@@ -8,15 +8,10 @@ import { getCliName } from '../utils/cli-name.ts';
 import { log, tag } from '../utils/logger.js';
 import { relativeToCwd } from '../utils/next-steps.ts';
 
-const DEFAULT_CONFIG_TEMPLATE = `import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-// import { '<your provider here>' } from '<your provider package here>';
-
-// Vercel AI SDK is used to connect to AI providers.
-// Bring your own provider or use OpenRouter (one API key, many providers).
-// https://github.com/testomatio/explorbot/blob/main/docs/providers.md
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+function defaultConfigTemplate(): string {
+  return `// 'provider/model-id' uses a bundled provider.
+// It is also possible to import provider as a module from Vercel AI SDK.  
+// https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
 
 const config = {
   web: {
@@ -25,12 +20,7 @@ const config = {
   },
 
   ai: {
-    // fast model with tool calling capabilities
-    model: openrouter('openai/gpt-oss-20b:nitro'),
-    // vision model for screenshot analysis
-    visionModel: openrouter('meta-llama/llama-4-scout-17b-16e-instruct'),
-    // agentic model for decision making
-    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
+${modelLines('openrouter')}
   },
 
   reporter: {
@@ -45,6 +35,7 @@ const config = {
 
 export default config;
 `;
+}
 
 const DEFAULT_ENV_TEMPLATE = dedent`
 # AI provider API keys
@@ -141,7 +132,7 @@ export function runInitCommand(options: InitCommandOptions): void {
       process.exit(1);
     }
 
-    writeFileSync(outPath, DEFAULT_CONFIG_TEMPLATE, 'utf8');
+    writeFileSync(outPath, defaultConfigTemplate(), 'utf8');
     log(`Created config file: ${relativeToCwd(outPath)}`);
 
     const envPath = resolve(process.cwd(), '.env');
@@ -222,8 +213,7 @@ async function renderInitWizard(mode: 'choose' | 'global'): Promise<'local' | 'g
   });
 }
 
-function globalConfigTemplate(provider: string): string {
-  const { envKey } = PROVIDERS[provider];
+function modelLines(provider: string): string {
   const recommended = ConfigParser.recommendedModels()[provider] || {};
   const roles: Array<[ModelRoleName, string]> = [
     ['model', 'fast model with tool calling capabilities'],
@@ -231,7 +221,11 @@ function globalConfigTemplate(provider: string): string {
     ['agenticModel', 'agentic model for decision making'],
   ];
 
-  const models = roles.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`).join('\n');
+  return roles.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`).join('\n');
+}
+
+function globalConfigTemplate(provider: string): string {
+  const { envKey } = PROVIDERS[provider];
 
   return `// Global Explorbot configuration — used by every directory without its own explorbot.config.js.
 // Models are written as 'provider/model-id' so they resolve without a local node_modules.
@@ -240,7 +234,7 @@ function globalConfigTemplate(provider: string): string {
 // https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
 const config = {
   ai: {
-${models}
+${modelLines(provider)}
   },
 
   reporter: {

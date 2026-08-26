@@ -11,7 +11,7 @@ export class ExitCommand extends BaseCommand {
 
   async execute(_args: string): Promise<void> {
     await this.explorBot.printSessionAnalysis();
-    await this.explorBot.getExplorer().stop();
+    await this.explorBot.stop();
 
     if (Stats.hasActivity()) {
       await new Promise<void>((resolve) => {
