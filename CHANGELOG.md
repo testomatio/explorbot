@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-26
+
+### Changes
+
+- [Tester] The Tester now remembers every action it took, not only the last one of each turn. When it
+  did several things in one turn — click, click, then check — everything but the final action was
+  dropped from its memory straight afterwards, so it re-clicked buttons it had already clicked and
+  re-checked things it had already confirmed.
+- [Pilot] The Pilot now sees the full list of actions and checks when it decides whether a test
+  passed. Because most of the Tester's steps were being lost, it often had two lines of activity to
+  judge from and failed tests that had in fact succeeded, or kept sending the Tester back to prove
+  something it had already proven.
+- [Historian] Generated test files now contain every recorded step instead of one step per turn.
+
 ## 2026-08-23
 
 ### Changes
