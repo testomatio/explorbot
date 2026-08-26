@@ -37,6 +37,15 @@ function createHarmonyChannelFallbackTool() {
 }
 
 let telemetryRegistered = false;
+let beforeExitFlushHooked = false;
+let activeOtelSdk: NodeSDK | null = null;
+
+export async function flushTelemetry(): Promise<void> {
+  const sdk = activeOtelSdk;
+  activeOtelSdk = null;
+  if (!sdk) return;
+  await sdk.shutdown().catch((error) => debugLog(`Telemetry flush failed: ${error instanceof Error ? error.message : error}`));
+}
 
 const CONTEXT_LENGTH_PATTERNS = ['reduce the length', 'context length', 'maximum context', 'token limit', 'too many tokens', 'max_tokens', 'context_length_exceeded', 'output truncated at maxtokens'];
 
@@ -115,6 +124,10 @@ export class Provider {
     } catch (error: any) {
       throw new AiError(`AI connection failed: ${error.message}`);
     }
+  }
+
+  async stop(): Promise<void> {
+    await flushTelemetry();
   }
 
   getModelForAgent(agentName?: string): any {
@@ -270,7 +283,12 @@ export class Provider {
       spanProcessors: [processor],
       instrumentations: [],
     });
+    activeOtelSdk = this.otelSdk;
     void this.otelSdk.start();
+    if (!beforeExitFlushHooked) {
+      process.on('beforeExit', () => void flushTelemetry());
+      beforeExitFlushHooked = true;
+    }
     if (!telemetryRegistered) {
       registerTelemetry(new OpenTelemetry());
       telemetryRegistered = true;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-26
+
+### Changes
+
+- [Provider] Langfuse traces now survive the end of a run. The telemetry batch was never flushed
+  on exit, so every session looked abruptly cut off in Langfuse — final actions and the
+  session-analysis traces never arrived, and a clean shutdown was indistinguishable from a crash.
+  All exit paths (CLI commands and their error branches, TUI `/exit`, Ctrl+C, SIGTERM) now flush
+  pending traces before the process exits.
+
 ## 2026-08-25
 
 ### Configuration
