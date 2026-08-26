@@ -3,13 +3,14 @@ import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
 import { ActionResult } from '../../src/action-result.ts';
 import { HTML_EXTRACTION_LIMITS, HTML_SELECTORS, HTML_VISIBILITY_LIMITS, type VisibleOverlayExtractionConfig, extractVisibleOverlayHtml } from '../../src/utils/html.ts';
+import { OVERLAY_SELECTORS, Overlay } from '../../src/utils/overlay.ts';
 
 function overlayConfig(overrides: Partial<VisibleOverlayExtractionConfig> = {}): VisibleOverlayExtractionConfig {
   return {
     interactiveContentSelector: HTML_SELECTORS.interactiveContent,
     limits: HTML_EXTRACTION_LIMITS,
-    overlaySelectors: HTML_SELECTORS.modalOverlays,
-    overlaySemanticSelector: HTML_SELECTORS.overlaySemanticSelector,
+    overlaySelectors: OVERLAY_SELECTORS.modalOverlays,
+    overlaySemanticSelector: OVERLAY_SELECTORS.overlaySemanticSelector,
     visibilityLimits: HTML_VISIBILITY_LIMITS,
     ...overrides,
   };
@@ -140,8 +141,22 @@ describe('ActionResult overlay', () => {
   });
 
   it('prefers the stored descriptor of a restored state', () => {
-    const stored = { detected: true, type: 'dialog' as const, name: 'Saved filter' };
-    const result = new ActionResult({ url: '/', overlay: stored });
-    expect(result.overlay).toBe(stored);
+    const result = new ActionResult({ url: '/', overlay: new Overlay({ type: 'dialog', name: 'Saved filter' }) });
+    expect(result.overlay.type).toBe('dialog');
+    expect(result.overlay.name).toBe('Saved filter');
+  });
+});
+
+describe('Overlay', () => {
+  it('resolves captured html first, stored descriptor second, aria last', () => {
+    const aria = '- dialog "From aria"';
+    expect(Overlay.resolve({ overlayHtml: '<h3>From html</h3>', overlay: { type: 'modal', name: 'Stored' }, ariaSnapshot: aria }).name).toBe('From html');
+    expect(Overlay.resolve({ overlay: { type: 'modal', name: 'Stored' }, ariaSnapshot: aria }).name).toBe('Stored');
+    expect(Overlay.resolve({ ariaSnapshot: aria }).name).toBe('From aria');
+  });
+
+  it('rehydrates from a plain persisted descriptor', () => {
+    expect(new Overlay({ type: 'modal', name: 'Copy report' }).detected).toBe(true);
+    expect(new Overlay().detected).toBe(false);
   });
 });

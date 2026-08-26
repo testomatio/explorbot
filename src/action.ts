@@ -11,8 +11,9 @@ import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
-import { HTML_EXTRACTION_LIMITS, HTML_SELECTORS, HTML_VISIBILITY_LIMITS, captureHtmlForSnapshot, getVisibleOverlayHtmlExtractorSource, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
+import { captureHtmlForSnapshot, getVisibleOverlayHtmlExtractorSource, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
+import { Overlay } from './utils/overlay.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import { safeFilename } from './utils/strings.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
@@ -150,25 +151,7 @@ class Action {
         const page = this.playwrightHelper.page;
         ariaSnapshot = await page.locator('body').ariaSnapshot();
         focusedElement = await page.evaluate(readFocusedElement);
-        if (!frame) {
-          overlayHtml = await page.evaluate(
-            ({ extractorSource, config }) => {
-              const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
-              return extract(config);
-            },
-            {
-              extractorSource: getVisibleOverlayHtmlExtractorSource(),
-              config: {
-                interactiveContentSelector: HTML_SELECTORS.interactiveContent,
-                limits: HTML_EXTRACTION_LIMITS,
-                overlaySelectors: HTML_SELECTORS.modalOverlays,
-                overlaySemanticSelector: HTML_SELECTORS.overlaySemanticSelector,
-                visibilityLimits: HTML_VISIBILITY_LIMITS,
-                geometryFallback: false,
-              },
-            }
-          );
-        }
+        if (!frame) overlayHtml = await this.captureOverlayHtml();
       } catch (err) {
         debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
@@ -209,6 +192,16 @@ class Action {
       const url = this.playwrightHelper.page?.url?.() || '';
       return new ActionResult({ url, error: msg });
     }
+  }
+
+  private async captureOverlayHtml(): Promise<string> {
+    return this.playwrightHelper.page.evaluate(
+      ({ extractorSource, config }: { extractorSource: string; config: any }) => {
+        const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
+        return extract(config);
+      },
+      { extractorSource: getVisibleOverlayHtmlExtractorSource(), config: Overlay.captureConfig() }
+    );
   }
 
   private async captureMainDocumentStatus(): Promise<number | undefined> {

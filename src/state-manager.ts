@@ -1,8 +1,8 @@
 import { ActionResult, type FocusedElement } from './action-result.js';
 import type { ExperienceTracker } from './experience-tracker.js';
 import type { Knowledge, KnowledgeTracker } from './knowledge-tracker.js';
-import { type FocusAreaResult, detectFocusArea } from './utils/aria.js';
 import { createDebug, tag } from './utils/logger.js';
+import { Overlay } from './utils/overlay.js';
 import { slugify } from './utils/strings.js';
 import { extractStatePath } from './utils/url-matcher.js';
 
@@ -49,7 +49,7 @@ export interface WebPageState {
   focusedElement?: FocusedElement | null;
   links?: Link[];
   verifications?: Record<string, boolean>;
-  overlay?: FocusAreaResult;
+  overlay?: Overlay;
 }
 
 export interface StateTransition {
@@ -207,8 +207,8 @@ export class StateManager {
   }
 
   private hasDialogAppeared(previousState: WebPageState | null, newState: WebPageState): boolean {
-    const prevFocus = previousState?.overlay ?? detectFocusArea(previousState?.ariaSnapshot ?? null);
-    const newFocus = newState.overlay ?? detectFocusArea(newState.ariaSnapshot ?? null);
+    const prevFocus = previousState?.overlay ?? Overlay.fromAria(previousState?.ariaSnapshot ?? null);
+    const newFocus = newState.overlay ?? Overlay.fromAria(newState.ariaSnapshot ?? null);
     return !prevFocus.detected && newFocus.detected;
   }
 

@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import { join } from 'node:path';
 import { ConfigParser, type HtmlConfig, outputPath } from './config.ts';
 import type { Link, WebPageState } from './state-manager.ts';
-import { type FocusAreaResult, LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, detectFocusArea, diffAriaSnapshots } from './utils/aria.ts';
+import { LARGE_ARIA_CHANGE_THRESHOLD, compactAriaSnapshot, diffAriaSnapshots } from './utils/aria.ts';
 import { TTLCache } from './utils/cache.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff, liveRegionMessages } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
+import { Overlay } from './utils/overlay.ts';
 import { slugify } from './utils/strings.ts';
 import { extractStatePath, matchesUrl } from './utils/url-matcher.ts';
 
@@ -87,7 +88,7 @@ export class ActionResult implements ActionResultData {
   notes: string[] = [];
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
-  public overlay: FocusAreaResult = { detected: false, type: null, name: null };
+  public overlay: Overlay = new Overlay();
 
   constructor(data: ActionResultData) {
     this.id = data.id;
@@ -133,13 +134,7 @@ export class ActionResult implements ActionResultData {
       this._ariaSnapshot = data.ariaSnapshot;
     }
 
-    if (data.overlayHtml) {
-      const headings = extractHeadings(data.overlayHtml);
-      const name = [headings.h1, headings.h2, headings.h3, headings.h4].filter(Boolean).join(' ');
-      this.overlay = { detected: true, type: 'modal', name: name || null };
-    } else {
-      this.overlay = data.overlay ?? detectFocusArea(data.ariaSnapshot ?? null);
-    }
+    this.overlay = Overlay.resolve(data);
 
     if (!this.fullUrl && this.url) {
       this.fullUrl = this.url;

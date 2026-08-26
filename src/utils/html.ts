@@ -98,9 +98,6 @@ export const HTML_SELECTORS = {
   interactiveControl: 'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="switch"], [role="tab"], [role="menuitem"]',
   labelLike: 'h1, h2, h3, h4, h5, h6, legend, caption, label, [role="heading"], [class*="title"], [class*="label"], [class*="header"], [class*="name"]',
   semanticContextContainer: 'section, article, form, fieldset, li, tr, td, th, [role="group"], [role="tabpanel"], [role="region"], [class*="card"], [class*="panel"], [class*="item"], [class*="usage"], [class*="group"]',
-  semanticOverlays: ['[role="dialog"]', '[role="listbox"]', '[role="menu"]', '[role="tooltip"]:not([style*="display: none"]):not([style*="visibility: hidden"])', '[class*="modal"]', '[class*="dialog"]', '[class*="overlay"]', '[class*="popup"]', '[class*="drawer"]', '[class*="lightbox"]'],
-  modalOverlays: ['[role="dialog"]', '[role="alertdialog"]', '[aria-modal="true"]', '[class*="modal"]', '[class*="dialog"]', '[class*="overlay"]', '[class*="popup"]', '[class*="drawer"]', '[class*="lightbox"]'],
-  overlaySemanticSelector: '[role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="listbox"], [role="menu"], [role="tooltip"]',
 } as const;
 
 export const HTML_VISIBILITY_LIMITS = {

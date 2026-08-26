@@ -22,6 +22,7 @@ import {
 } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
+import { OVERLAY_SELECTORS } from '../utils/overlay.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import { eidxInContainer } from '../utils/web-eidx.ts';
 import { WebElement } from '../utils/web-element.ts';
@@ -682,8 +683,8 @@ export class Driller extends TaskAgent implements Agent {
           config: {
             interactiveContentSelector: HTML_SELECTORS.interactiveContent,
             limits: HTML_EXTRACTION_LIMITS,
-            overlaySelectors: HTML_SELECTORS.semanticOverlays,
-            overlaySemanticSelector: HTML_SELECTORS.overlaySemanticSelector,
+            overlaySelectors: OVERLAY_SELECTORS.semanticOverlays,
+            overlaySemanticSelector: OVERLAY_SELECTORS.overlaySemanticSelector,
             visibilityLimits: HTML_VISIBILITY_LIMITS,
           },
         }
