@@ -12,6 +12,20 @@
   Class-name matches are only trusted when the element is truly floating (`fixed`/`absolute`/z-index),
   so a sticky header named "overlay" does not become a false focus scope, and the expensive
   full-page geometry scan is not run on every action — it stays in the Driller, where it belongs.
+- [Tester] The Tester now remembers every action it took, not only the last one of each turn. When it
+  did several things in one turn — click, click, then check — everything but the final action was
+  dropped from its memory straight afterwards, so it re-clicked buttons it had already clicked and
+  re-checked things it had already confirmed.
+- [Pilot] The Pilot now sees the full list of actions and checks when it decides whether a test
+  passed. Because most of the Tester's steps were being lost, it often had two lines of activity to
+  judge from and failed tests that had in fact succeeded, or kept sending the Tester back to prove
+  something it had already proven.
+- [Historian] Generated test files now contain every recorded step instead of one step per turn.
+- [Provider] Langfuse traces now survive the end of a run. The telemetry batch was never flushed
+  on exit, so every session looked abruptly cut off in Langfuse — final actions and the
+  session-analysis traces never arrived, and a clean shutdown was indistinguishable from a crash.
+  All exit paths (CLI commands and their error branches, TUI `/exit`, Ctrl+C, SIGTERM) now flush
+  pending traces before the process exits.
 
 ## 2026-08-25
 

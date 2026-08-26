@@ -9,6 +9,7 @@ import { render } from 'ink';
 import React from 'react';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
+import { flushTelemetry } from '../src/ai/provider.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { remote } from '../src/remote.js';
@@ -103,9 +104,7 @@ async function startTUI(explorBot: ExplorBot): Promise<void> {
 async function showStatsAndExit(code: number): Promise<never> {
   if (remote.isAttached()) {
     await remote.close(code);
-    process.exit(code);
-  }
-  if (Stats.hasActivity()) {
+  } else if (Stats.hasActivity()) {
     await new Promise<void>((resolve) => {
       const { unmount } = render(
         React.createElement(StatusPane, {
@@ -121,6 +120,7 @@ async function showStatsAndExit(code: number): Promise<never> {
       );
     });
   }
+  await flushTelemetry();
   process.exit(code);
 }
 

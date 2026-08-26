@@ -37,6 +37,15 @@ function createHarmonyChannelFallbackTool() {
 }
 
 let telemetryRegistered = false;
+let beforeExitFlushHooked = false;
+let activeOtelSdk: NodeSDK | null = null;
+
+export async function flushTelemetry(): Promise<void> {
+  const sdk = activeOtelSdk;
+  activeOtelSdk = null;
+  if (!sdk) return;
+  await sdk.shutdown().catch((error) => debugLog(`Telemetry flush failed: ${error instanceof Error ? error.message : error}`));
+}
 
 const CONTEXT_LENGTH_PATTERNS = ['reduce the length', 'context length', 'maximum context', 'token limit', 'too many tokens', 'max_tokens', 'context_length_exceeded', 'output truncated at maxtokens'];
 
@@ -115,6 +124,10 @@ export class Provider {
     } catch (error: any) {
       throw new AiError(`AI connection failed: ${error.message}`);
     }
+  }
+
+  async stop(): Promise<void> {
+    await flushTelemetry();
   }
 
   getModelForAgent(agentName?: string): any {
@@ -270,7 +283,12 @@ export class Provider {
       spanProcessors: [processor],
       instrumentations: [],
     });
+    activeOtelSdk = this.otelSdk;
     void this.otelSdk.start();
+    if (!beforeExitFlushHooked) {
+      process.on('beforeExit', () => void flushTelemetry());
+      beforeExitFlushHooked = true;
+    }
     if (!telemetryRegistered) {
       registerTelemetry(new OpenTelemetry());
       telemetryRegistered = true;
@@ -324,7 +342,7 @@ export class Provider {
   async invokeConversation(conversation: Conversation, tools?: any, options: any = {}): Promise<{ conversation: Conversation; response: any; toolExecutions?: any[] } | null> {
     const response = tools ? await this.generateWithTools(conversation.messages, conversation.model, tools, options) : await this.chat(conversation.messages, conversation.model, options);
 
-    const responseMessages = response.response?.messages || [];
+    const responseMessages = response.responseMessages || [];
     if (responseMessages.length > 0) {
       conversation.messages.push(...responseMessages);
       tag('debug').log('Added', responseMessages.length, 'messages from response');
