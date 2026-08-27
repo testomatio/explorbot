@@ -554,8 +554,9 @@ export class ActionResult implements ActionResultData {
           processedParts.push({ ...part, subtree: minified });
         }
       }
-      if (processedParts.length > 0) {
-        pageDiff.htmlParts = collapseHtmlParts(processedParts);
+      const collapsed = collapseHtmlParts(processedParts);
+      if (collapsed.length > 0) {
+        pageDiff.htmlParts = collapsed;
       }
     }
 
@@ -596,10 +597,12 @@ function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
   const fullPageReRender = total > HTML_PARTS_TOTAL_BUDGET || parts.length > HTML_PARTS_COUNT_LIMIT;
 
   if (fullPageReRender) {
-    return parts.map((part) => ({
-      ...part,
-      subtree: `<html><head></head><body>...collapsed (${part.subtree.length} chars, ${part.added.length} added, ${part.removed.length} removed)...</body></html>`,
-    }));
+    return parts
+      .filter((part) => part.added.length > 0 || part.removed.length > 0)
+      .map((part) => ({
+        ...part,
+        subtree: `<html><head></head><body>...collapsed (${part.subtree.length} chars, ${part.added.length} added, ${part.removed.length} removed)...</body></html>`,
+      }));
   }
 
   return parts.map((part) => {

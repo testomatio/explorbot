@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-08-28
+
+### Changes
+
+- Page Diff: A click that changed nothing is reported as one again. When a page re-renders a long
+  list without changing anything on it — every row rewritten, but nothing added, removed, selected
+  or checked — the diff listed one empty entry per row. That was enough to suppress the warning
+  that an action produced no observable change, so an agent read "success" and carried on from a
+  step that never happened. Rows carrying no added or removed element are now left out, and a diff
+  left with nothing in it says so.
+
 ## 2026-08-23
 
 ### Changes
