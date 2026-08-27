@@ -60,6 +60,7 @@ interface AIConfig {
   streaming: boolean;
   retryAttempts: number;
   retryDelay: number;
+  maxParallelRequests: number;
 }
 
 interface HtmlConfig {
@@ -189,6 +190,7 @@ const config: ExplorbotConfig = {
     streaming: true,
     retryAttempts: 3,
     retryDelay: 1000,
+    maxParallelRequests: 4,
 
     // Optional: Agent-specific model configuration
     // Each agent can override the default model

@@ -76,6 +76,28 @@ function createHarness(
 }
 
 describe('Navigator resolveState', () => {
+  it('resolves immediately when already at the target URL, without spending AI calls', async () => {
+    const harness = createHarness({ responses: ["```js\nI.click('noop')\n```"] });
+
+    const resolved = await harness.navigator.resolveState('reach /login', fakeActionResult('/login'), { expectedUrl: '/login' });
+
+    expect(resolved).toBe(true);
+    expect(harness.attempts).toHaveLength(0);
+    expect(harness.sent).toHaveLength(0);
+    expect(harness.flows).toHaveLength(0);
+  });
+
+  it('names the reached and the expected URL when verification fails', async () => {
+    const harness = createHarness({
+      responses: ["```js\nI.click('wrong')\n```", ''],
+      attempt: () => true,
+    });
+
+    await harness.navigator.resolveState('reach /defects', fakeActionResult('/login'), { expectedUrl: '/defects' });
+
+    expect(harness.sent.some((text) => text.includes('Reached /login, expected /defects'))).toBe(true);
+  });
+
   it('resolves when a proposed step reaches the expected URL', async () => {
     const harness = createHarness({
       responses: ["```js\nI.amOnPage('/login')\nI.click('#login-btn')\n```"],
@@ -156,7 +178,7 @@ describe('Navigator resolveState', () => {
 
     const resolved = await harness.navigator.resolveState('reach /defects', fakeActionResult('/login', 'start'), { expectedUrl: '/defects' });
 
-    expect(harness.sent[1]).toContain('URL did not change (still /defects)');
+    expect(harness.sent[1]).toContain('Reached /defects but the page state did not change');
     expect(resolved).toBe(true);
   });
 
@@ -194,7 +216,7 @@ describe('Navigator resolveState', () => {
     expect(resolved).toBe(false);
     const retry = harness.sent[1];
     expect(retry).toContain('<previous_failures>');
-    expect(retry).toContain('URL did not change (still /login)');
+    expect(retry).toContain('Reached /login, expected /defects');
     expect(retry).toContain('Invalid email or password');
     expect(retry).toContain('Full HTML context');
     expect(retry).toContain('Choose exactly ONE path');
