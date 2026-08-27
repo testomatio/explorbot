@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-08-27
+
+### Changes
+
+- [CLI] Overnight runs no longer die silently. An uncaught exception now logs the full stack,
+  flushes telemetry and exits with code 1; an unhandled promise rejection — which kills the whole
+  process in Bun — is logged loudly and the run continues. Nightly runs were dying mid-test after
+  ~3.5 hours with no error anywhere; next occurrence will leave a named cause in the log instead
+  of a bare cut-off.
+
 ## 2026-08-26
 
 ### Changes
