@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-08-28
+
+### Changes
+
+- [Researcher] Opening a large overlay no longer breaks the model's context window. When a click or
+  a modal revealed a long list — a folder tree, a picker with hundreds of rows — the whole revealed
+  markup was sent for analysis, which on a big page ran to well over a hundred thousand tokens and
+  the request was simply rejected. The revealed markup is now capped, so the overlay gets described
+  and its elements reach the UI map.
+- [Tester] Research that fails no longer fails the test with it. A page or overlay that could not be
+  analyzed is now reported as a warning and the scenario carries on with the accessibility tree it
+  already has, instead of ending the test on an error that had nothing to do with the scenario.
+
 ## 2026-08-23
 
 ### Changes

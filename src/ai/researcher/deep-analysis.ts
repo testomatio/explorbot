@@ -9,6 +9,7 @@ import { detectFocusArea, diffAriaSnapshots } from '../../utils/aria.ts';
 import { extractCodeBlocks } from '../../utils/code-extractor.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
+import { truncate } from '../../utils/strings.ts';
 import type { Provider } from '../provider.js';
 import { getCachedResearch, getPreviousResearch, saveResearch } from './cache.ts';
 import { type Constructor, debugLog } from './mixin.ts';
@@ -16,6 +17,7 @@ import { type ResearchElement, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
 
 const DEFAULT_MAX_EXPANDABLE_CLICKS = 10;
+const MAX_HTML_DIFF_CHARS = 20_000;
 
 export function WithDeepAnalysis<T extends Constructor>(Base: T) {
   return class extends Base {
@@ -486,6 +488,8 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         `;
       }
 
+      const htmlChanges = truncate(diff.htmlParts.map((p) => `[Container: ${p.container}]\n${p.subtree}`).join('\n\n'), MAX_HTML_DIFF_CHARS);
+
       const prompt = dedent`
         ${intro}
         Analyze the changes and produce a UI map section.
@@ -494,7 +498,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         ${diff.ariaChanged || 'none'}
 
         HTML changes:
-        ${diff.htmlParts.map((p) => `[Container: ${p.container}]\n${p.subtree}`).join('\n\n') || 'none'}
+        ${htmlChanges || 'none'}
         ${alreadyHint}
 
         Respond with a SINGLE section in this format:

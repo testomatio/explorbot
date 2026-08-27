@@ -207,4 +207,20 @@ describe('Researcher with aimock', () => {
     expect(cached).toContain('## Navigation');
     expect(cached).toContain('Create Task');
   });
+
+  it('caps the HTML diff of an expansion so a large overlay stays within context', async () => {
+    const treeRow = '<li class="tree-node"><button class="expand-btn"></button><span>Folder</span></li>';
+    const diff: any = {
+      ariaChanged: '- button "Select folder"',
+      htmlParts: Array.from({ length: 400 }, (_, i) => ({ container: `body > div:nth-child(${i + 1})`, subtree: treeRow.repeat(20) })),
+    };
+
+    await (researcher as any)._analyzeExpandedAction('', 'Select folder', diff, []);
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    const htmlChanges = prompt.slice(prompt.indexOf('HTML changes:'));
+    expect(htmlChanges.length).toBeLessThan(25_000);
+    expect(prompt).toContain('button "Select folder"');
+    expect(prompt).toContain('[Container: body > div:nth-child(1)]');
+  });
 });

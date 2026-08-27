@@ -66,6 +66,12 @@ export class Tester extends TaskAgent implements Agent {
   private stalledIterations = 0;
   private readonly MAX_STALLED_ITERATIONS = 3;
 
+  private skipResearch = (err: Error): string => {
+    if (err.name === 'AbortError') throw err;
+    tag('warning').log(`Research skipped: ${err.message}`);
+    return '';
+  };
+
   constructor(deps: AgentDeps, researcher: Researcher, navigator: Navigator, agentTools?: any) {
     super(deps);
     this.requestStore = deps.requestStore;
@@ -568,12 +574,7 @@ export class Tester extends TaskAgent implements Agent {
       const alreadySeenUiMap = this.seenUiMapUrls.has(currentUrl);
       let research = '';
       if (!alreadySeenUiMap) {
-        try {
-          research = await this.researcher.research(currentState);
-        } catch (err) {
-          if (!(err instanceof ErrorPageError)) throw err;
-          tag('warning').log(`Research skipped: ${err.message}`);
-        }
+        research = await this.researcher.research(currentState).catch(this.skipResearch);
       }
       this.pageStateHash = currentStateHash;
       this.pageActionResult = currentState;
@@ -614,7 +615,7 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (focusArea.detected && focusArea.name && this.pageStateHash && this.pageActionResult) {
-      const overlaySection = await this.researcher.researchOverlay(currentState, this.pageActionResult, this.pageStateHash);
+      const overlaySection = await this.researcher.researchOverlay(currentState, this.pageActionResult, this.pageStateHash).catch(this.skipResearch);
       if (overlaySection) {
         context += dedent`
 
