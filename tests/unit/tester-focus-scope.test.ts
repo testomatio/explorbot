@@ -169,7 +169,7 @@ describe('Tester research failures', () => {
     };
     const state = buildState('- main:', '/page');
 
-    expect((tester as any).reinjectContextIfNeeded(2, state)).rejects.toThrow('aborted');
+    await expect((tester as any).reinjectContextIfNeeded(2, state)).rejects.toThrow('aborted');
   });
 });
 
