@@ -12,7 +12,7 @@ describe('Pilot evidence', () => {
     const conversation = { getToolExecutions: () => [] };
 
     expect((pilot as any).hasSuccessfulCheckEvidence(state, conversation)).toBe(true);
-    expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('PASS state verification');
+    expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('state verification (passed)');
   });
 
   it('treats successful check tools as assertion evidence', () => {
@@ -30,7 +30,43 @@ describe('Pilot evidence', () => {
     };
 
     expect((pilot as any).hasSuccessfulCheckEvidence(state, conversation)).toBe(true);
-    expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('PASS verify');
+    expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('CHECK verify (executed successfully)');
+  });
+
+  it('does not treat context reads as completion evidence', () => {
+    const pilot = buildPilot();
+    const task = { hasAchievedAny: () => false };
+    const state = {};
+    const conversation = {
+      getToolExecutions: () => [
+        {
+          toolName: 'context',
+          wasSuccessful: true,
+          input: { reason: 'stale context' },
+          output: { message: 'Snapshot refreshed' },
+        },
+      ],
+    };
+
+    expect((pilot as any).hasCompletionEvidence(task, state, conversation)).toBe(false);
+  });
+
+  it('does not treat research reads as completion evidence', () => {
+    const pilot = buildPilot();
+    const task = { hasAchievedAny: () => false };
+    const state = {};
+    const conversation = {
+      getToolExecutions: () => [
+        {
+          toolName: 'research',
+          wasSuccessful: true,
+          input: { reason: 'need UI map' },
+          output: { analysis: 'The page shows a list of suites.' },
+        },
+      ],
+    };
+
+    expect((pilot as any).hasCompletionEvidence(task, state, conversation)).toBe(false);
   });
 
   it('treats achieved task notes as completion evidence', () => {

@@ -7,8 +7,8 @@ import type { ExplorbotConfig } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
 import type { KnowledgeTracker } from '../knowledge-tracker.js';
-import { type StateManager, normalizeUrl } from '../state-manager.js';
 import { renderAssertion } from '../playwright-recorder.ts';
+import { type StateManager, normalizeUrl } from '../state-manager.js';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import { extractCodeBlocks } from '../utils/code-extractor.js';
@@ -223,6 +223,11 @@ class Navigator implements Agent {
     const action = opts?.action ?? this.explorer.action();
     const expectedUrl = opts?.expectedUrl;
 
+    if (expectedUrl && this.targetUrlReached(action, expectedUrl, actionResult)) {
+      tag('success').log(`Already at ${expectedUrl} — navigation resolved`);
+      return true;
+    }
+
     const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
 
     const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
@@ -313,14 +318,19 @@ class Navigator implements Agent {
           resolved = check.urlMatches && freshHash !== actionResult.getStateHash();
 
           if (!resolved && attempt.ok) {
-            lastFailure = `URL did not change (still ${check.freshState.url})`;
+            if (check.urlMatches) {
+              lastFailure = `Reached ${check.freshState.url} but the page state did not change`;
+              tag('warning').log(`Page state did not change at ${check.freshState.url}`);
+            } else {
+              lastFailure = `Reached ${check.freshState.url}, expected ${expectedUrl}`;
+              tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${check.freshState.url}`);
+            }
             batchFailures.push({
               code: codeBlock,
               error: lastFailure,
               ariaChanges: await this.ariaDiff(check.freshState, prevActionResult),
               urlAfter: check.freshState.url,
             });
-            tag('warning').log(`URL verification failed: expected ${expectedUrl}, got ${check.freshState.url}`);
           }
           if (freshHash !== prevHash && (attempt.ok || check.urlMatches)) {
             progressBlocks.push(codeBlock);
@@ -484,9 +494,13 @@ class Navigator implements Agent {
     }
 
     const freshState = await this.explorer.capture();
-    const urlMatches = this.isSameExpectedOrigin(expectedUrl, action.stateManager) && matchesNavigationUrl(expectedUrl, this.comparableUrl(freshState, expectedUrl));
+    const urlMatches = this.targetUrlReached(action, expectedUrl, freshState);
 
     return { freshState, urlMatches };
+  }
+
+  private targetUrlReached(action: Action, expectedUrl: string, state: ActionResult): boolean {
+    return this.isSameExpectedOrigin(expectedUrl, action.stateManager) && matchesNavigationUrl(expectedUrl, this.comparableUrl(state, expectedUrl));
   }
 
   private async ariaDiff(freshState: ActionResult, previous: ActionResult): Promise<string | null> {

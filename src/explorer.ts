@@ -255,6 +255,7 @@ class Explorer {
     const projectRoot = configParser.getProjectRoot();
     (global as any).output_dir = configParser.getStatesDir();
     (global as any).codecept_dir = projectRoot;
+    (global as any).codeceptjs = codeceptjs;
 
     configParser.validateConfig(this.config);
 
