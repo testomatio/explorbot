@@ -7,9 +7,9 @@ import { Command } from 'commander';
 import figureSet from 'figures';
 import { render } from 'ink';
 import React from 'react';
+import { flushTelemetry } from '../src/ai/provider.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
-import { flushTelemetry } from '../src/ai/provider.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { remote } from '../src/remote.js';
@@ -546,6 +546,7 @@ program
   .command('learn [url] [description]')
   .description('Add knowledge for URLs')
   .option('-p, --path <path>', 'Working directory path')
+  .option('--replace', 'Replace existing knowledge for this URL instead of appending')
   .action(async (url, description, options) => {
     try {
       await ConfigParser.getInstance().loadConfig({
@@ -556,7 +557,7 @@ program
       const tracker = new KnowledgeTracker();
 
       if (url && description) {
-        const result = tracker.addKnowledge(url, description);
+        const result = tracker.addKnowledge(url, description, { replace: options.replace });
         const action = result.isNewFile ? 'Created' : 'Updated';
         console.log(`Knowledge ${action} in: ${result.filename}`);
         return;

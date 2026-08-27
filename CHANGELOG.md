@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-08-27
+
+### Changes
+
+- [Navigator] Arriving somewhere you already are is no longer a failure. Navigating to the URL the
+  browser is already on used to be structurally unresolvable — the state hash could never change —
+  so `start /` on a landing-page site burned the whole retry budget (one user lost 27 minutes)
+  while being told "URL verification failed: expected /, got /", and that wrong diagnosis was fed
+  back into the AI retry prompt. Same-URL targets now resolve instantly, and a URL mismatch is
+  reported separately from a page that did not react.
+- [CLI] `init` now writes a CommonJS `explorbot.config.js` in default npm projects and an ESM
+  config in projects whose `package.json` says `"type": "module"`. Generated configs keep the
+  documented filename and load regardless of the package type.
+- [CLI] Local `init` now asks which AI provider to use and writes the config and `.env` for that
+  provider, instead of silently hard-wiring OpenRouter. Anthropic gained recommended `model` and
+  `visionModel` entries, so its scaffold no longer contains placeholders.
+- [CLI] `learn --replace` rewrites the knowledge for a URL instead of appending with a `---`
+  separator, so a mistaken entry no longer requires hand-editing the file.
+- [Explorer] The CodeceptJS module is pinned into `global.codeceptjs` at startup, making explorbot
+  immune to npm hoisting layouts where the Playwright helper cannot resolve `codeceptjs` after an
+  upgrade.
+- Fixed a typo in the init "Next steps" output (`aurhorize`).
+
 ## 2026-08-26
 
 ### Changes
