@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { compactAriaSnapshot, diffAriaSnapshots } from '../../src/utils/aria.ts';
+import { compactAriaSnapshot, diffAriaSnapshots, parseAriaLocator } from '../../src/utils/aria.ts';
 
 describe('aria', () => {
   it('returns null diff for identical snapshots', () => {
@@ -252,5 +252,14 @@ describe('aria', () => {
 
     expect(result).toContain('ref=e10');
     expect(result).toContain('ref=e13');
+  });
+
+  it('reads an ARIA locator written with the name key, as CodeceptJS resolves it', () => {
+    expect(parseAriaLocator("{ role: 'checkbox', name: 'Select test or suite' }")).toEqual({ role: 'checkbox', text: 'Select test or suite' });
+    expect(parseAriaLocator("{ role: 'button', text: 'Save' }")).toEqual({ role: 'button', text: 'Save' });
+  });
+
+  it('rejects a key that carries no accessible name', () => {
+    expect(parseAriaLocator("{ role: 'button', aria-label: 'Close' }")).toBeNull();
   });
 });
