@@ -27,6 +27,7 @@ import { withdrawVisionTools } from './tools.ts';
 
 const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
 const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
+const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
 
@@ -1038,6 +1039,12 @@ export class Pilot implements Agent {
 
         if (resultMessage) line += `\n   result: ${resultMessage}`;
         if (errorDetail && errorDetail !== resultMessage) line += `\n   error: ${errorDetail}`;
+
+        if (!t.wasSuccessful && t.reasoning) {
+          let rationale = t.reasoning;
+          if (rationale.length > PILOT_REASONING_LIMIT) rationale = `...${rationale.slice(-PILOT_REASONING_LIMIT)}`;
+          line += `\n   tester reasoned: ${rationale.replace(/\n+/g, ' ')}`;
+        }
 
         const attempts = t.output?.attempts;
         if (attempts && attempts.length > 1 && t.wasSuccessful) {
