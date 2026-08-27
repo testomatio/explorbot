@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-28
+
+### Changes
+
+- [Researcher] UI map rows written as `{ role: 'checkbox', name: 'Filter' }` keep their locator. Both
+  `text` and `name` name an element the same way when a locator runs, but the UI map only recognised
+  `text` and blanked every row using `name` to `-`, throwing away a locator that works. Three prompts
+  also spent a line teaching that `name` is wrong; they no longer do.
+
 ## 2026-08-23
 
 ### Changes
