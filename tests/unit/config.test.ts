@@ -141,7 +141,7 @@ describe('ConfigParser environment mode', () => {
   });
 
   it('rejects a role the provider has no recommendation for', async () => {
-    await expect(resolveModel('anthropic', 'model')).rejects.toThrow(/no recommended model/);
+    await expect(resolveModel('poolside', 'visionModel')).rejects.toThrow(/has no recommended/);
   });
 
   it('fills every role from one provider name', async () => {

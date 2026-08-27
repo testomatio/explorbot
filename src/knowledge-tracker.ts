@@ -95,7 +95,7 @@ export class KnowledgeTracker {
     return this.applicationSpec?.renderFor(state) || '';
   }
 
-  addKnowledge(urlPattern: string, description: string): { filename: string; filePath: string; isNewFile: boolean } {
+  addKnowledge(urlPattern: string, description: string, opts?: { replace?: boolean }): { filename: string; filePath: string; isNewFile: boolean } {
     const configParser = ConfigParser.getInstance();
     const configPath = configParser.getConfigPath();
 
@@ -130,10 +130,10 @@ export class KnowledgeTracker {
 
       // Append new knowledge with separator
       let newContent;
-      if (existingDescription) {
-        newContent = `${existingDescription}\n\n---\n\n${description}`;
-      } else {
+      if (opts?.replace || !existingDescription) {
         newContent = description;
+      } else {
+        newContent = `${existingDescription}\n\n---\n\n${description}`;
       }
 
       const fileContent = matter.stringify(newContent, frontmatter);

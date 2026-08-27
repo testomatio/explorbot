@@ -10,14 +10,15 @@ import InputReadline from './InputReadline.js';
 const PROVIDER_NAMES = Object.keys(PROVIDERS);
 
 interface InitWizardProps {
-  mode: 'choose' | 'global';
+  mode: 'choose' | 'global' | 'local';
   globalConfigExists: boolean;
   onLocal: () => void;
   onComplete: () => void;
   onCancel: () => void;
+  onLocalProvider?: (provider: string) => void;
 }
 
-const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLocal, onComplete, onCancel }) => {
+const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLocal, onComplete, onCancel, onLocalProvider }) => {
   const [step, setStep] = useState<'target' | 'provider' | 'key' | 'validate'>(mode === 'choose' ? 'target' : 'provider');
   const [targetIndex, setTargetIndex] = useState(0);
   const [providerIndex, setProviderIndex] = useState(0);
@@ -78,7 +79,10 @@ const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLoc
     if (step === 'provider') {
       if (key.upArrow) setProviderIndex((index) => Math.max(0, index - 1));
       if (key.downArrow) setProviderIndex((index) => Math.min(PROVIDER_NAMES.length - 1, index + 1));
-      if (key.return) setStep('key');
+      if (key.return) {
+        if (mode === 'local') onLocalProvider?.(provider);
+        else setStep('key');
+      }
       return;
     }
 
@@ -151,7 +155,7 @@ const InitWizard: React.FC<InitWizardProps> = ({ mode, globalConfigExists, onLoc
 
       <Box marginTop={1}>
         <Text dimColor>
-          Config goes to {globalDir()} | {step === 'key' ? 'Enter: continue' : '↑↓: select | Enter: confirm'} | Ctrl+C: exit
+          Config goes to {mode === 'local' ? 'the current directory' : globalDir()} | {step === 'key' ? 'Enter: continue' : '↑↓: select | Enter: confirm'} | Ctrl+C: exit
         </Text>
       </Box>
     </Box>

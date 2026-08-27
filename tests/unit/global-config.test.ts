@@ -4,10 +4,10 @@ import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { render } from 'ink-testing-library';
 import React from 'react';
-import InitWizard from '../../src/components/InitWizard.tsx';
 import { ApibotConfigParser } from '../../boat/api-tester/src/config.ts';
 import { runInit, runInitCommand } from '../../src/commands/init-command.ts';
-import { ConfigParser } from '../../src/config.ts';
+import InitWizard from '../../src/components/InitWizard.tsx';
+import { ConfigParser, PROVIDERS } from '../../src/config.ts';
 import { listSites, registerSite, resolveSiteTarget, siteFolderName } from '../../src/global-config.ts';
 
 const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'GLOBAL_ONLY_KEY', 'SHARED_KEY'];
@@ -351,6 +351,24 @@ describe('explorbot init', () => {
     expect(readFileSync(join(home, '.explorbot', '.env'), 'utf8')).toContain('GROQ_API_KEY=test-key');
   });
 
+  it('uses an explicit provider locally when a project path is given', async () => {
+    await runInit({ path: workDir, provider: 'anthropic' });
+
+    const config = readFileSync(join(workDir, 'explorbot.config.js'), 'utf8');
+    const env = readFileSync(join(workDir, '.env'), 'utf8');
+    expect(config).toContain(`model: 'anthropic/${ConfigParser.recommendedModels().anthropic.model}'`);
+    expect(env).toContain('ANTHROPIC_API_KEY=');
+    expect(env).toContain('# OPENROUTER_API_KEY=');
+    expect(existsSync(join(home, '.explorbot', 'config.js'))).toBe(false);
+  });
+
+  it('keeps an explicit provider global when no project path is given', async () => {
+    await runInit({ provider: 'groq' });
+
+    expect(readFileSync(join(home, '.explorbot', 'config.js'), 'utf8')).toContain("model: 'groq/");
+    expect(existsSync(join(workDir, 'explorbot.config.js'))).toBe(false);
+  });
+
   it('refuses to overwrite an existing global config without --force and keeps the stored key', async () => {
     await runInit({ global: true, provider: 'groq', apiKey: 'first-key' });
 
@@ -384,6 +402,55 @@ describe('explorbot init', () => {
     expect(wizard.lastFrame()).toContain('•');
   });
 
+  it('ends the local flow with the picked provider and no key entry', async () => {
+    const noop = () => {};
+    let picked: string | null = null;
+    const wizard = render(
+      React.createElement(InitWizard, {
+        mode: 'local',
+        globalConfigExists: false,
+        onLocal: noop,
+        onComplete: noop,
+        onCancel: noop,
+        onLocalProvider: (provider: string) => {
+          picked = provider;
+        },
+      })
+    );
+
+    expect(wizard.lastFrame()).toContain('Pick an AI provider');
+    expect(wizard.lastFrame()).toContain('the current directory');
+
+    wizard.stdin.write('\r');
+
+    expect(picked).toBe(Object.keys(PROVIDERS)[0]);
+  });
+
+  it('cancels the local provider flow without picking a provider', () => {
+    const noop = () => {};
+    let cancelled = false;
+    let picked: string | null = null;
+    const wizard = render(
+      React.createElement(InitWizard, {
+        mode: 'local',
+        globalConfigExists: false,
+        onLocal: noop,
+        onComplete: noop,
+        onCancel: () => {
+          cancelled = true;
+        },
+        onLocalProvider: (provider: string) => {
+          picked = provider;
+        },
+      })
+    );
+
+    wizard.stdin.write('\u001b');
+
+    expect(cancelled).toBe(true);
+    expect(picked).toBeNull();
+  });
+
   it('offers both installations and marks global as installed', () => {
     const noop = () => {};
     const chooser = render(React.createElement(InitWizard, { mode: 'choose', globalConfigExists: true, onLocal: noop, onComplete: noop, onCancel: noop }));
@@ -411,6 +478,20 @@ describe('explorbot init', () => {
     }
   });
 
+  it('writes an ESM config in a "type": "module" project and CommonJS otherwise', async () => {
+    writeFileSync(join(workDir, 'package.json'), '{"name":"t","type":"module"}\n', 'utf8');
+
+    runInitCommand({ path: workDir });
+    expect(readFileSync(join(workDir, 'explorbot.config.js'), 'utf8')).toContain('export default config;');
+    expect((await ConfigParser.getInstance().loadConfig({ path: workDir })).ai?.model).toBeTruthy();
+
+    rmSync(join(workDir, 'explorbot.config.js'));
+    rmSync(join(workDir, 'package.json'));
+
+    runInitCommand({ path: workDir });
+    expect(readFileSync(join(workDir, 'explorbot.config.js'), 'utf8')).toContain('module.exports = config;');
+  });
+
   it('scaffolds a local config that loads without installing a provider package', async () => {
     runInitCommand({ path: workDir });
 
@@ -420,5 +501,21 @@ describe('explorbot init', () => {
     const config = await ConfigParser.getInstance().loadConfig({ path: workDir });
     expect(config.ai.model.modelId).toBe(ConfigParser.recommendedModels().openrouter.model);
     expect(config.ai.visionModel.modelId).toBe(ConfigParser.recommendedModels().openrouter.visionModel);
+  });
+
+  it('writes ESM when an .mjs config path is explicitly requested', () => {
+    runInitCommand({ path: workDir, configPath: 'custom.mjs' });
+
+    expect(readFileSync(join(workDir, 'custom.mjs'), 'utf8')).toContain('export default config;');
+  });
+
+  it('uses the nearest package.json to choose the module format', () => {
+    writeFileSync(join(workDir, 'package.json'), '{"name":"root","type":"commonjs"}\n', 'utf8');
+    mkdirSync(join(workDir, 'nested'));
+    writeFileSync(join(workDir, 'nested', 'package.json'), '{"name":"nested","type":"module"}\n', 'utf8');
+
+    runInitCommand({ path: workDir, configPath: 'nested/explorbot.config.js' });
+
+    expect(readFileSync(join(workDir, 'nested', 'explorbot.config.js'), 'utf8')).toContain('export default config;');
   });
 });
