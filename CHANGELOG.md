@@ -23,11 +23,21 @@
 - [Tester] Research that fails no longer fails the test with it. A page or overlay that could not be
   analyzed is now reported as a warning and the scenario carries on with the accessibility tree it
   already has, instead of ending the test on an error that had nothing to do with the scenario.
+- [Pilot] When a Tester action fails, Pilot now also sees the Tester's own account of why it picked
+  that element, not just the failure message. A Tester that admits it cannot find a control and
+  clicks a made-up one anyway is now visible to Pilot on the first failure, instead of only showing
+  up as a run of identical failed attempts. Shown for failed actions only, and only for models that
+  report their thinking.
 
 ## 2026-08-27
 
 ### Changes
 
+- [CLI] Overnight runs no longer die silently. An uncaught exception now logs the full stack,
+  flushes telemetry and exits with code 1; an unhandled promise rejection — which kills the whole
+  process in Bun — is logged loudly and the run continues. Nightly runs were dying mid-test after
+  ~3.5 hours with no error anywhere; next occurrence will leave a named cause in the log instead
+  of a bare cut-off.
 - [Navigator] Arriving somewhere you already are is no longer a failure. Navigating to the URL the
   browser is already on used to be structurally unresolvable — the state hash could never change —
   so `start /` on a landing-page site burned the whole retry budget (one user lost 27 minutes)
