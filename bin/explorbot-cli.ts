@@ -556,6 +556,7 @@ program
   .command('learn [url] [description]')
   .description('Add knowledge for URLs')
   .option('-p, --path <path>', 'Working directory path')
+  .option('--replace', 'Replace existing knowledge for this URL instead of appending')
   .action(async (url, description, options) => {
     try {
       await ConfigParser.getInstance().loadConfig({
@@ -566,7 +567,7 @@ program
       const tracker = new KnowledgeTracker();
 
       if (url && description) {
-        const result = tracker.addKnowledge(url, description);
+        const result = tracker.addKnowledge(url, description, { replace: options.replace });
         const action = result.isNewFile ? 'Created' : 'Updated';
         console.log(`Knowledge ${action} in: ${result.filename}`);
         return;

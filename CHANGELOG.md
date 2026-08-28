@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-08-28
+
+### Changes
+
+- Page Diff: A click that changed nothing is reported as one again. When a page re-renders a long
+  list without changing anything on it — every row rewritten, but nothing added, removed, selected
+  or checked — the diff listed one empty entry per row. That was enough to suppress the warning
+  that an action produced no observable change, so an agent read "success" and carried on from a
+  step that never happened. Rows carrying no added or removed element are now left out, and a diff
+  left with nothing in it says so.
+- [Researcher] UI map rows written as `{ role: 'checkbox', name: 'Filter' }` keep their locator. Both
+  `text` and `name` name an element the same way when a locator runs, but the UI map only recognised
+  `text` and blanked every row using `name` to `-`, throwing away a locator that works. Three prompts
+  also spent a line teaching that `name` is wrong; they no longer do.
+- [Pilot] When a Tester action fails, Pilot now also sees the Tester's own account of why it picked
+  that element, not just the failure message. A Tester that admits it cannot find a control and
+  clicks a made-up one anyway is now visible to Pilot on the first failure, instead of only showing
+  up as a run of identical failed attempts. Shown for failed actions only, and only for models that
+  report their thinking.
+
 ## 2026-08-27
 
 ### Changes
@@ -9,6 +29,24 @@
   process in Bun — is logged loudly and the run continues. Nightly runs were dying mid-test after
   ~3.5 hours with no error anywhere; next occurrence will leave a named cause in the log instead
   of a bare cut-off.
+- [Navigator] Arriving somewhere you already are is no longer a failure. Navigating to the URL the
+  browser is already on used to be structurally unresolvable — the state hash could never change —
+  so `start /` on a landing-page site burned the whole retry budget (one user lost 27 minutes)
+  while being told "URL verification failed: expected /, got /", and that wrong diagnosis was fed
+  back into the AI retry prompt. Same-URL targets now resolve instantly, and a URL mismatch is
+  reported separately from a page that did not react.
+- [CLI] `init` now writes a CommonJS `explorbot.config.js` in default npm projects and an ESM
+  config in projects whose `package.json` says `"type": "module"`. Generated configs keep the
+  documented filename and load regardless of the package type.
+- [CLI] Local `init` now asks which AI provider to use and writes the config and `.env` for that
+  provider, instead of silently hard-wiring OpenRouter. Anthropic gained recommended `model` and
+  `visionModel` entries, so its scaffold no longer contains placeholders.
+- [CLI] `learn --replace` rewrites the knowledge for a URL instead of appending with a `---`
+  separator, so a mistaken entry no longer requires hand-editing the file.
+- [Explorer] The CodeceptJS module is pinned into `global.codeceptjs` at startup, making explorbot
+  immune to npm hoisting layouts where the Playwright helper cannot resolve `codeceptjs` after an
+  upgrade.
+- Fixed a typo in the init "Next steps" output (`aurhorize`).
 
 ## 2026-08-26
 
