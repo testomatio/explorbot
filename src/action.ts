@@ -332,7 +332,7 @@ class Action {
 
     const executedSteps: ExecutedStep[] = [];
     const assertionSteps: Array<{ name: string; args: any[] }> = [];
-    const stepListener = attachStepLogger(executedSteps, assertionSteps);
+    const detachSteps = attachStepLogger(executedSteps, assertionSteps);
     const groupId = this.recorder ? await this.recorder.beginAction(codeString) : null;
     this.playwrightGroupId = groupId;
     const detachResponses = this.captureResponses();
@@ -387,7 +387,7 @@ class Action {
       this.restorePageTimeout();
       detachResponses();
       if (groupId) await this.recorder!.endAction();
-      detachStepLogger(stepListener);
+      detachSteps();
       if (stepSpan) {
         stepSpan.end();
       }
@@ -489,7 +489,7 @@ const ASSERTION_STEP_NAMES = new Set(['see', 'dontSee', 'seeElement', 'dontSeeEl
 
 type StepListener = (step: any, error?: any) => void;
 
-export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Array<{ name: string; args: any[] }>): StepListener => {
+export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Array<{ name: string; args: any[] }>): (() => void) => {
   const listener: StepListener = (step, error) => {
     if (!step?.toCode) return;
     if (step.name?.startsWith('grab')) return;
@@ -507,12 +507,10 @@ export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Arra
   };
   codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, listener);
   codeceptjs.event.dispatcher.on(codeceptjs.event.step.failed, listener);
-  return listener;
-};
-
-export const detachStepLogger = (listener: StepListener) => {
-  codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, listener);
-  codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, listener);
+  return () => {
+    codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, listener);
+    codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, listener);
+  };
 };
 
 const readFocusedElement = () => {

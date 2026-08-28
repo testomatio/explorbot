@@ -1,6 +1,6 @@
 import codeceptjs from 'codeceptjs';
 import { describe, expect, it } from 'bun:test';
-import { attachStepLogger, detachStepLogger, type ExecutedStep } from '../../src/action.ts';
+import { attachStepLogger, type ExecutedStep } from '../../src/action.ts';
 import { formatExecutedSteps } from '../../src/ai/tools.ts';
 
 function step(code: string) {
@@ -10,12 +10,12 @@ function step(code: string) {
 describe('executed steps', () => {
   it('records each command with its status and stops at the failing one', () => {
     const steps: ExecutedStep[] = [];
-    const listener = attachStepLogger(steps);
+    const detachSteps = attachStepLogger(steps);
 
     codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, step("I.amOnPage('/suite/1')"));
     codeceptjs.event.dispatcher.emit(codeceptjs.event.step.failed, step("I.waitForElement('Some Title')"), new Error('still not present on page after 30 sec'));
 
-    detachStepLogger(listener);
+    detachSteps();
 
     expect(steps).toHaveLength(2);
     expect(steps[0]).toMatchObject({ command: "I.amOnPage('/suite/1')", success: true });
