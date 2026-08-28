@@ -14,6 +14,15 @@
   `text` and `name` name an element the same way when a locator runs, but the UI map only recognised
   `text` and blanked every row using `name` to `-`, throwing away a locator that works. Three prompts
   also spent a line teaching that `name` is wrong; they no longer do.
+- [Researcher] Opening a large overlay no longer breaks the model's context window. When a click or
+  a modal revealed a long list — a folder tree, a picker with hundreds of rows — the whole revealed
+  markup was sent for analysis, which on a big page ran to well over a hundred thousand tokens and
+  the request was simply rejected. The revealed markup now goes through the same cleaning as every
+  other page snapshot, which drops the styling classes that made up half its size, and what is left
+  is capped. The overlay gets described and its elements reach the UI map.
+- [Tester] Research that fails no longer fails the test with it. A page or overlay that could not be
+  analyzed is now reported as a warning and the scenario carries on with the accessibility tree it
+  already has, instead of ending the test on an error that had nothing to do with the scenario.
 - [Pilot] When a Tester action fails, Pilot now also sees the Tester's own account of why it picked
   that element, not just the failure message. A Tester that admits it cannot find a control and
   clicks a made-up one anyway is now visible to Pilot on the first failure, instead of only showing
