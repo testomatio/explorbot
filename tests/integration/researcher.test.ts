@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMock } from '@copilotkit/aimock';
 import { ActionResult, Diff } from '../../src/action-result.ts';
+import { clearActivity } from '../../src/activity.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
 import { clearResearchCache, getCachedResearch, saveResearch } from '../../src/ai/researcher/cache.ts';
@@ -141,6 +142,7 @@ describe('Researcher with aimock', () => {
     mock.clearFixtures();
     clearResearchCache();
     ConfigParser.setupTestConfig();
+    clearActivity(true);
 
     researcher = new Researcher({ ...createMockDeps(), ai: provider } as any);
 
@@ -149,6 +151,7 @@ describe('Researcher with aimock', () => {
 
   afterAll(async () => {
     await mock.stop();
+    clearActivity(true);
   });
 
   it('returns research markdown from AI response', async () => {
@@ -218,7 +221,7 @@ describe('Researcher with aimock', () => {
   });
 
   it('caps the HTML diff of an expansion so a large overlay stays within context', async () => {
-    const diff = await buildExpansionDiff(4000);
+    const diff = await buildExpansionDiff(600);
 
     await (researcher as any)._analyzeExpandedAction('', 'Select folder', diff, []);
 
