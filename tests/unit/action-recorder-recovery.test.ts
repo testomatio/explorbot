@@ -35,6 +35,17 @@ describe('Action recorder recovery', () => {
     await expect(action.execute("I.click('x')")).rejects.toThrow(/recorder is stopped/);
   });
 
+  it('leaves the recorder running so the command after a phantom one reaches the browser', async () => {
+    recorder.start();
+    recorder.stop();
+
+    const action = buildAction(() => undefined);
+    await action.execute("I.click('x')").catch(() => {});
+
+    expect(recorder.isRunning()).toBe(true);
+    expect(await recorderStillExecutes()).toBe(true);
+  });
+
   it('recovers the recorder after a failed step so the next command still executes', async () => {
     recorder.start();
 
