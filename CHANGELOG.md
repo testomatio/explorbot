@@ -4,6 +4,12 @@
 
 ### Changes
 
+- Page Diff: A click that changed nothing is reported as one again. When a page re-renders a long
+  list without changing anything on it — every row rewritten, but nothing added, removed, selected
+  or checked — the diff listed one empty entry per row. That was enough to suppress the warning
+  that an action produced no observable change, so an agent read "success" and carried on from a
+  step that never happened. Rows carrying no added or removed element are now left out, and a diff
+  left with nothing in it says so.
 - [Researcher] UI map rows written as `{ role: 'checkbox', name: 'Filter' }` keep their locator. Both
   `text` and `name` name an element the same way when a locator runs, but the UI map only recognised
   `text` and blanked every row using `name` to `-`, throwing away a locator that works. Three prompts
