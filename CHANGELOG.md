@@ -14,6 +14,11 @@
 - [Tests] Provider unit tests no longer depend on the machine's global explorbot installation: a
   config-priming call in the setup could reject against a real `~/.explorbot` and fail unrelated
   tests as stray unhandled rejections.
+- [Planner] Scenarios describe the item to act on by kind and role instead of naming it. A scenario that
+  named one specific record went stale the moment that record was renamed, deleted, or replaced, and the
+  run was spent hunting for a name the page no longer had.
+- [Pilot] Picks the concrete item a scenario runs against — one already on the page, or a fresh one it
+  creates — and hands the Tester its exact name.
 - [Tester] `form()` and `interact()` now report every command they ran and whether it passed. A batch
   used to come back as a single pass/fail, so one bad command at the end hid the fact that the ones
   before it had worked — the AI and the Pilot both concluded nothing had happened and redid work that
