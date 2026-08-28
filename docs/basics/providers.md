@@ -154,14 +154,12 @@ Set the recommended model in the exported config:
 ```javascript
 export default {
   ai: {
+    model: anthropic('claude-haiku-4-5-20251001'),
+    visionModel: anthropic('claude-haiku-4-5-20251001'),
     agenticModel: anthropic('claude-haiku-4-5-20251001'),
   },
 };
 ```
-
-> [!NOTE]
-> This provider currently doesn't serve `model` and `visionModel`, which is required for Explorbot to run at optimal cost and speed.
-> It is recommended to pair it with another AI provider.
 <!-- END provider:anthropic -->
 
 ### Azure OpenAI
