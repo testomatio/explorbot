@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMock } from '@copilotkit/aimock';
-import { ActionResult } from '../../src/action-result.ts';
+import { ActionResult, Diff } from '../../src/action-result.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
 import { clearResearchCache, getCachedResearch, saveResearch } from '../../src/ai/researcher/cache.ts';
@@ -103,6 +103,15 @@ function extractPromptText(entry: any): string {
       return '';
     })
     .join('\n');
+}
+
+const TREE_ROW = '<li class="tree-node flex items-center px-2 space-x-2 opacity-40"><button class="expand-btn">Open folder</button><span>Folder name here</span></li>';
+
+async function buildExpansionDiff(rows: number): Promise<Diff> {
+  const page = (body: string, aria: string) => new ActionResult({ url: '/tasks/board', title: 'Task Board', html: `<html><body><main>${body}</main></body></html>`, ariaSnapshot: aria });
+  const previous = page('<div class="tree"></div>', '- main');
+  const current = page(`<div class="tree"><ul>${TREE_ROW.repeat(rows)}</ul></div>`, '- main\n- button "Select folder"');
+  return Diff.create(current, previous);
 }
 
 describe('Researcher with aimock', () => {
@@ -209,11 +218,7 @@ describe('Researcher with aimock', () => {
   });
 
   it('caps the HTML diff of an expansion so a large overlay stays within context', async () => {
-    const treeRow = '<li class="tree-node"><button class="expand-btn"></button><span>Folder</span></li>';
-    const diff: any = {
-      ariaChanged: '- button "Select folder"',
-      htmlParts: Array.from({ length: 400 }, (_, i) => ({ container: `body > div:nth-child(${i + 1})`, subtree: treeRow.repeat(20) })),
-    };
+    const diff = await buildExpansionDiff(4000);
 
     await (researcher as any)._analyzeExpandedAction('', 'Select folder', diff, []);
 
@@ -221,6 +226,18 @@ describe('Researcher with aimock', () => {
     const htmlChanges = prompt.slice(prompt.indexOf('HTML changes:'));
     expect(htmlChanges.length).toBeLessThan(25_000);
     expect(prompt).toContain('button "Select folder"');
-    expect(prompt).toContain('[Container: body > div:nth-child(1)]');
+    expect(prompt).toContain('[Container:');
+  });
+
+  it('strips utility classes from an expansion so the cap holds real elements', async () => {
+    await (researcher as any)._analyzeExpandedAction('', 'Select folder', await buildExpansionDiff(2), []);
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    const htmlChanges = prompt.slice(prompt.indexOf('HTML changes:'));
+    expect(htmlChanges).not.toContain('flex');
+    expect(htmlChanges).not.toContain('px-2');
+    expect(htmlChanges).not.toContain('space-x-2');
+    expect(htmlChanges).toContain('tree-node');
+    expect(htmlChanges).toContain('Folder');
   });
 });

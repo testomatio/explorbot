@@ -488,7 +488,8 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         `;
       }
 
-      const htmlChanges = truncate(diff.htmlParts.map((p) => `[Container: ${p.container}]\n${p.subtree}`).join('\n\n'), MAX_HTML_DIFF_CHARS);
+      const cleanedParts = await diff.cleanedHtmlParts();
+      const htmlChanges = truncate(cleanedParts.map((p) => `[Container: ${p.container}]\n${p.subtree}`).join('\n\n'), MAX_HTML_DIFF_CHARS);
 
       const prompt = dedent`
         ${intro}

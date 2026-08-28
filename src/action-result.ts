@@ -550,16 +550,7 @@ export class ActionResult implements ActionResultData {
     }
 
     if (diff.htmlParts.length > 0) {
-      const htmlConfig = this.normalizeHtmlConfig();
-      const processedParts: HtmlDiffPart[] = [];
-      for (const part of diff.htmlParts) {
-        const filteredHtml = htmlCombinedSnapshot(part.subtree, htmlConfig?.combined);
-        const minified = await minifyHtml(filteredHtml);
-        if (minified) {
-          processedParts.push({ ...part, subtree: minified });
-        }
-      }
-      const collapsed = collapseHtmlParts(processedParts);
+      const collapsed = collapseHtmlParts(await diff.cleanedHtmlParts());
       if (collapsed.length > 0) {
         pageDiff.htmlParts = collapsed;
       }
@@ -661,6 +652,17 @@ export class Diff {
   get htmlParts(): HtmlDiffPart[] {
     if (!this._htmlDiffResult) return [];
     return this._htmlDiffResult.parts;
+  }
+
+  async cleanedHtmlParts(): Promise<HtmlDiffPart[]> {
+    const htmlConfig = ConfigParser.getInstance().getConfig().html;
+    const cleaned: HtmlDiffPart[] = [];
+    for (const part of this.htmlParts) {
+      const minified = await minifyHtml(htmlCombinedSnapshot(part.subtree, htmlConfig?.combined));
+      if (!minified) continue;
+      cleaned.push({ ...part, subtree: minified });
+    }
+    return cleaned;
   }
 
   get ariaChanged(): string | null {
