@@ -4,16 +4,11 @@
 
 ### Changes
 
-- Page Diff: A click that changed nothing is reported as one again. When a page re-renders a long
-  list without changing anything on it — every row rewritten, but nothing added, removed, selected
-  or checked — the diff listed one empty entry per row. That was enough to suppress the warning
-  that an action produced no observable change, so an agent read "success" and carried on from a
-  step that never happened. Rows carrying no added or removed element are now left out, and a diff
-  left with nothing in it says so.
-- [Researcher] UI map rows written as `{ role: 'checkbox', name: 'Filter' }` keep their locator. Both
-  `text` and `name` name an element the same way when a locator runs, but the UI map only recognised
-  `text` and blanked every row using `name` to `-`, throwing away a locator that works. Three prompts
-  also spent a line teaching that `name` is wrong; they no longer do.
+- [Tester] `form()` and `interact()` now report every command they ran and whether it passed. A batch
+  used to come back as a single pass/fail, so one bad command at the end hid the fact that the ones
+  before it had worked — the AI and the Pilot both concluded nothing had happened and redid work that
+  was already done. Failures now list each command as OK or FAILED and say how many never ran.
+
 ## 2026-08-27
 
 ### Changes

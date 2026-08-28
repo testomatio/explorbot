@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
+import type { ExecutedStep } from '../action.ts';
 import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
 import { type ExperienceTracker, renderExperienceRecipes } from '../experience-tracker.ts';
 import { Stats } from '../stats.ts';
@@ -411,7 +412,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
             const message = errorText(action.lastError);
             await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
-            let formSuggestion = 'Look into error message and identify which commands passed and which failed. Continue execution using step-by-step approach using click() and form() tools.';
+            let formSuggestion = 'Commands after the failing one never ran. Retry only those, using click() or form().';
             if (message.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN)) {
               const disambiguated = await disambiguateElements(action.lastError, explanation, ai);
               if (disambiguated) {
@@ -421,10 +422,11 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
 
             return failedToolResult(
               'form',
-              `Form execution FAILED! ${message}`,
+              `Form execution FAILED! ${message}\n${formatExecutedSteps(action.executedSteps, codeLines.length)}`,
               {
                 ...toolResult,
                 code: codeBlock,
+                attempts: action.executedSteps,
                 suggestion: formSuggestion,
               },
               action.lastError
@@ -446,6 +448,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
               ...toolResult,
               message: `Form completed successfully with ${lines.length} commands.`,
               commandsExecuted: lines.length,
+              attempts: action.executedSteps,
               code: codeBlock,
               suggestion: 'Verify the form was filled in correctly using see() tool. If needed to submit: try click() tool or form() with I.pressKey("Enter").',
             },
@@ -806,21 +809,26 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
           const actionResult = ActionResult.fromState(currentState);
           const experience = renderExperienceRecipes(explorer.activeTest?.getAppliedExperience(actionResult) ?? []);
           const success = await navigator.resolveState(instruction, actionResult, { experience });
+          const attempts = navigator.executedSteps;
+          let stepReport = '';
+          if (attempts.length) stepReport = `\n${formatExecutedSteps(attempts)}`;
 
           const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, instruction);
 
           if (success) {
             return successToolResult('interact', {
               ...toolResult,
-              message: `Successfully executed: ${instruction}`,
+              message: `Successfully executed: ${instruction}${stepReport}`,
+              attempts,
             });
           }
 
           let reason = '';
           if (navigator.lastFailureReason) reason = `: ${navigator.lastFailureReason}`;
 
-          return failedToolResult('interact', `Failed to execute: ${instruction}${reason}`, {
+          return failedToolResult('interact', `Failed to execute: ${instruction}${reason}${stepReport}`, {
             ...toolResult,
+            attempts,
             suggestion: 'The action could not be completed. Try a different instruction or use more specific element descriptions.',
           });
         } catch (error) {
@@ -1230,6 +1238,14 @@ export function isMajorPageChange(pageDiff: PageDiff): boolean {
 
 export function hasFailedRequest(pageDiff: PageDiff): boolean {
   return (pageDiff.requests ?? []).some((request) => request.status >= 400);
+}
+
+export function formatExecutedSteps(steps: ExecutedStep[], requestedCount = steps.length): string {
+  if (!steps.length) return `No command ran of ${requestedCount} requested.`;
+  const lines = steps.map((step) => `  ${step.success ? 'OK' : 'FAILED'} ${step.command}`);
+  const notRun = requestedCount - steps.length;
+  if (notRun > 0) lines.push(`  NOT RUN ${notRun} more`);
+  return lines.join('\n');
 }
 
 function hasObservablePageChange(data?: Record<string, any>): boolean {

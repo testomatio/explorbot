@@ -3,6 +3,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import { ActionResult } from '../action-result.js';
 import type Action from '../action.ts';
+import type { ExecutedStep } from '../action.ts';
 import type { ExplorbotConfig } from '../config.ts';
 import type { ExperienceTracker } from '../experience-tracker.js';
 import Explorer from '../explorer.ts';
@@ -37,6 +38,7 @@ class Navigator implements Agent {
 
   private MAX_ATTEMPTS = Number.parseInt(process.env.MAX_ATTEMPTS || '5');
   lastFailureReason: string | null = null;
+  executedSteps: ExecutedStep[] = [];
 
   private systemPrompt = dedent`
   <role>
@@ -217,6 +219,7 @@ class Navigator implements Agent {
     if (!this.provider) throw new Error('AI-assisted recovery is unavailable: no AI model is configured.');
 
     this.lastFailureReason = null;
+    this.executedSteps = [];
     tag('info').log('AI Navigator resolving state at', actionResult.url);
     debugLog('Resolution message:', message);
 
@@ -466,6 +469,7 @@ class Navigator implements Agent {
 
     debugLog(`Attempting resolution: ${codeBlock}`);
     const ok = await action.attempt(codeBlock, message);
+    this.executedSteps.push(...action.executedSteps);
 
     const page = action.playwrightHelper?.page;
     if (page) {

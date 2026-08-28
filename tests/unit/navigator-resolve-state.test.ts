@@ -41,6 +41,7 @@ function createHarness(
   const action: any = {
     lastError: null,
     actionResult: null,
+    executedSteps: [],
     exitIframe: async () => {},
     attempt: async (code: string) => {
       attempts.push(code);
