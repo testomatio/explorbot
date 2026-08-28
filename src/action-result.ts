@@ -7,6 +7,7 @@ import { TTLCache } from './utils/cache.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff, liveRegionMessages } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
+import { Overlay } from './utils/overlay.ts';
 import { slugify } from './utils/strings.ts';
 import { extractStatePath, matchesUrl } from './utils/url-matcher.ts';
 
@@ -34,6 +35,7 @@ interface ActionResultData extends WebPageState {
   focusedElement?: FocusedElement | null;
   iframeURL?: string;
   links?: Link[];
+  overlayHtml?: string;
 }
 
 export interface PageDiff {
@@ -86,6 +88,7 @@ export class ActionResult implements ActionResultData {
   notes: string[] = [];
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
+  public overlay: Overlay = new Overlay();
 
   constructor(data: ActionResultData) {
     this.id = data.id;
@@ -130,6 +133,8 @@ export class ActionResult implements ActionResultData {
     if (data.ariaSnapshot !== undefined) {
       this._ariaSnapshot = data.ariaSnapshot;
     }
+
+    this.overlay = Overlay.resolve(data);
 
     if (!this.fullUrl && this.url) {
       this.fullUrl = this.url;
@@ -554,8 +559,9 @@ export class ActionResult implements ActionResultData {
           processedParts.push({ ...part, subtree: minified });
         }
       }
-      if (processedParts.length > 0) {
-        pageDiff.htmlParts = collapseHtmlParts(processedParts);
+      const collapsed = collapseHtmlParts(processedParts);
+      if (collapsed.length > 0) {
+        pageDiff.htmlParts = collapsed;
       }
     }
 
@@ -596,10 +602,12 @@ function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
   const fullPageReRender = total > HTML_PARTS_TOTAL_BUDGET || parts.length > HTML_PARTS_COUNT_LIMIT;
 
   if (fullPageReRender) {
-    return parts.map((part) => ({
-      ...part,
-      subtree: `<html><head></head><body>...collapsed (${part.subtree.length} chars, ${part.added.length} added, ${part.removed.length} removed)...</body></html>`,
-    }));
+    return parts
+      .filter((part) => part.added.length > 0 || part.removed.length > 0)
+      .map((part) => ({
+        ...part,
+        subtree: `<html><head></head><body>...collapsed (${part.subtree.length} chars, ${part.added.length} added, ${part.removed.length} removed)...</body></html>`,
+      }));
   }
 
   return parts.map((part) => {
