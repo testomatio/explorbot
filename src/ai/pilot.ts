@@ -1114,7 +1114,7 @@ export class Pilot implements Agent {
       state), instruct Tester to verify() and finish(). If goal was already true at the start, propose
       different input data so the test is meaningful. If Tester repeats the same successful action, STOP.
 
-      Scenarios name behavior, not data. You pick the concrete item — from the page, or precondition() one — and give Tester its exact name.
+      You pick the concrete item the scenario acts on — from the page, or precondition() one — and give Tester its exact name.
 
       Action classification: GOAL-ADVANCING actions mutate the scenario's subject data (create/edit/delete/submit/verify).
       VIEW-ONLY actions toggle filters/tabs/sort/collapse without changing data. One VIEW-ONLY to reveal a
