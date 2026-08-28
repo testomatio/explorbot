@@ -2,7 +2,8 @@ import { OpenTelemetry } from '@ai-sdk/otel';
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { generateObject, generateText, isStepCount, registerTelemetry, tool } from 'ai';
+import dedent from 'dedent';
+import { APICallError, generateObject, generateText, isStepCount, registerTelemetry, tool } from 'ai';
 import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import { clearActivity, setActivity } from '../activity.ts';
@@ -423,10 +424,19 @@ export class Provider {
     const stopConditions: any[] = [isStepCount(maxRoundtrips)];
     if (extraStop) stopConditions.push(extraStop);
     const config = this.buildGenerateConfig({ tools: toolsWithCommentary, maxOutputTokens: 16384, toolChoice: 'auto', experimental_repairToolCall: repairToolCall }, { stopWhen: stopConditions, model }, options);
+    let attemptMessages = messages;
+    let invalidRequestFeedbackAdded = false;
     try {
       const response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
-          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages, ...config, abortSignal: signal }), config.timeout || 30000)) as any;
+          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages: attemptMessages, ...config, abortSignal: signal }), config.timeout || 30000).catch((error) => {
+            if (!invalidRequestFeedbackAdded) {
+              const amended = withInvalidRequestFeedback(attemptMessages, error);
+              invalidRequestFeedbackAdded = amended !== attemptMessages;
+              attemptMessages = amended;
+            }
+            throw error;
+          })) as any;
           this.recordUsage(options.agentName || 'unknown', modelName, result.usage);
           const hasToolCall = (result.toolCalls?.length || 0) > 0;
           if (!result.text && !hasToolCall && result.finishReason === 'length') {
@@ -691,6 +701,22 @@ export class Provider {
 function repairToolCall(options: ToolCallRepairOptions): any | null {
   if (options.toolCall.toolName.includes('<|channel|>')) return repairChannelMarker(options);
   return repairHarmonyChannel(options);
+}
+
+function withInvalidRequestFeedback(messages: ModelMessage[], error: unknown): ModelMessage[] {
+  if (!(error instanceof APICallError) || error.statusCode !== 400) return messages;
+  tag('warning').log('Provider rejected the request as invalid — relaying its reason before the retry');
+  return [
+    ...messages,
+    {
+      role: 'user',
+      content: dedent`
+        The previous request was rejected by the provider as invalid:
+        "${error.message}"
+        Fix what it describes and re-issue the request.
+      `,
+    },
+  ];
 }
 
 function repairChannelMarker({ toolCall, tools }: ToolCallRepairOptions): any | null {

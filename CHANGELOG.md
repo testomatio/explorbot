@@ -4,6 +4,16 @@
 
 ### Changes
 
+- [Provider] A request the provider rejects as invalid now comes back to the model with the
+  provider's own reason instead of a blind re-roll. gpt-oss sometimes emits tool names carrying its
+  internal channel markers or invents names outright; the provider API rejects the call before any
+  client-side repair can run, and the retry used to resend the same context unchanged — 24, 49 and
+  then 76 wasted generations across the last three overnight runs. The retry now relays the
+  rejection message verbatim (detected by error type and status code, no text matching), so the
+  model sees exactly what it broke and corrects itself on the next attempt.
+- [Tests] Provider unit tests no longer depend on the machine's global explorbot installation: a
+  config-priming call in the setup could reject against a real `~/.explorbot` and fail unrelated
+  tests as stray unhandled rejections.
 - [Tester] `form()` and `interact()` now report every command they ran and whether it passed. A batch
   used to come back as a single pass/fail, so one bad command at the end hid the fact that the ones
   before it had worked — the AI and the Pilot both concluded nothing had happened and redid work that

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { ModelMessage } from 'ai';
-import { tool } from 'ai';
+import { APICallError, tool } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 import { z } from 'zod';
 import { AiError, Provider } from '../../src/ai/provider.js';
@@ -62,7 +62,9 @@ describe('Provider', () => {
       config: {},
       vision: false,
     };
-    ConfigParser.getInstance().loadConfig({});
+    ConfigParser.getInstance()
+      .loadConfig({})
+      .catch(() => {});
     provider = new Provider(aiConfig);
   });
 
@@ -317,6 +319,33 @@ describe('Provider', () => {
       mockAI.setFailure(true, 5);
 
       await expect(provider.chat(messages, mockAI.getModel(), { maxRetries: 2 })).rejects.toThrow(AiError);
+    });
+
+    it('relays an invalid-request rejection back to the retry', async () => {
+      const prompts: any[] = [];
+      let calls = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'test',
+        doGenerate: async (params: any) => {
+          calls++;
+          prompts.push(params.prompt);
+          if (calls === 1) {
+            throw new APICallError({ url: 'http://test.local/v1/chat', statusCode: 400, message: 'Tool call validation failed: attempted to call a tool which was not in request.tools' });
+          }
+          return { text: 'recovered', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'recovered' }] };
+        },
+      });
+      const correctingProvider = new Provider(aiConfig);
+      const tools = { finish: tool({ description: 'Finish the test', inputSchema: z.object({}), execute: async () => ({ success: true }) }) };
+
+      const response = await correctingProvider.generateWithTools([{ role: 'user', content: 'go' }], model, tools, { maxRetries: 3 });
+
+      expect(response.text).toBe('recovered');
+      expect(calls).toBe(2);
+      const relayed = prompts[1].at(-1);
+      expect(relayed.role).toBe('user');
+      expect(JSON.stringify(relayed.content)).toContain('attempted to call a tool which was not in request.tools');
     });
 
     it('should honor configured retry attempts and delay', () => {
