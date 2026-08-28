@@ -44,6 +44,7 @@ mock.module('codeceptjs', () => {
     start: async () => {
       pending = [];
     },
+    isRunning: () => true,
     add: (fn: () => unknown) => {
       const promise = Promise.resolve().then(fn);
       pending.push(promise);

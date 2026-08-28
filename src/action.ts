@@ -360,6 +360,7 @@ class Action {
         await recorder.add(() => sleep(this.config.action?.delay || 500));
         await recorder.promise();
         this.lastValue = await returned;
+        if (!recorder.isRunning()) throw new Error('CodeceptJS recorder is stopped, commands were skipped and never reached the browser');
       }
 
       this.restorePageTimeout();
