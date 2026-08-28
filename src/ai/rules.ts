@@ -71,7 +71,6 @@ const locatorStrategyRule = dedent`
 
   <bad_aria_locator_example>
   { "role": "button", "text": "" }  // INVALID - empty text is useless, use "-" instead
-  { "role": "button", "name": "Save" }  // WRONG key - use "text", not "name"
   </bad_aria_locator_example>
 
   NEVER include \`eidx\` attribute in any locator (ARIA, CSS, XPath). It is an internal annotation.

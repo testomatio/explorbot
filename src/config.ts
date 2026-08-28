@@ -175,8 +175,9 @@ interface AIConfig {
   vision?: boolean;
   visionModel?: any;
   agenticModel?: any;
-  maxAttempts?: number;
+  retryAttempts?: number;
   retryDelay?: number;
+  maxParallelRequests?: number;
   agents?: AgentsConfig;
 }
 

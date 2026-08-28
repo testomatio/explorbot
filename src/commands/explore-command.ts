@@ -63,23 +63,26 @@ export class ExploreCommand extends BaseCommand {
       return;
     }
 
-    if (cfg.enabled) {
-      await this.runReuseMode(mainUrl, feature, cfg);
-    } else {
-      await this.runFreshMode(mainUrl, feature, cfg.styles);
-    }
+    try {
+      if (cfg.enabled) {
+        await this.runReuseMode(mainUrl, feature, cfg);
+      } else {
+        await this.runFreshMode(mainUrl, feature, cfg.styles);
+      }
 
-    const mainPlan = this.completedPlans[0];
-    if (mainPlan) this.explorBot.setCurrentPlan(mainPlan);
-    if (this.dryRun) {
+      const mainPlan = this.completedPlans[0];
+      if (mainPlan) this.explorBot.setCurrentPlan(mainPlan);
+      if (this.dryRun) {
+        this.printResults();
+        return;
+      }
+      if (mainUrl) await this.explorBot.visit(mainUrl).catch((err) => tag('warning').log(`Could not return to ${mainUrl}: ${browserErrorMessage(err)}`));
+      const savedPath = this.explorBot.savePlans(this.completedPlans);
       this.printResults();
-      return;
+      this.printNextSteps(savedPath);
+    } finally {
+      if (!this.dryRun) await this.explorBot.printSessionAnalysis();
     }
-    if (mainUrl) await this.explorBot.visit(mainUrl).catch((err) => tag('warning').log(`Could not return to ${mainUrl}: ${browserErrorMessage(err)}`));
-    const savedPath = this.explorBot.savePlans(this.completedPlans);
-    this.printResults();
-    await this.explorBot.printSessionAnalysis();
-    this.printNextSteps(savedPath);
   }
 
   private originLabel(test: Test): string {

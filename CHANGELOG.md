@@ -4,11 +4,116 @@
 
 ### Changes
 
+- [Researcher] UI map rows written as `{ role: 'checkbox', name: 'Filter' }` keep their locator. Both
+  `text` and `name` name an element the same way when a locator runs, but the UI map only recognised
+  `text` and blanked every row using `name` to `-`, throwing away a locator that works. Three prompts
+  also spent a line teaching that `name` is wrong; they no longer do.
 - [Pilot] When a Tester action fails, Pilot now also sees the Tester's own account of why it picked
   that element, not just the failure message. A Tester that admits it cannot find a control and
   clicks a made-up one anyway is now visible to Pilot on the first failure, instead of only showing
   up as a run of identical failed attempts. Shown for failed actions only, and only for models that
   report their thinking.
+
+## 2026-08-27
+
+### Changes
+
+- [Navigator] Arriving somewhere you already are is no longer a failure. Navigating to the URL the
+  browser is already on used to be structurally unresolvable — the state hash could never change —
+  so `start /` on a landing-page site burned the whole retry budget (one user lost 27 minutes)
+  while being told "URL verification failed: expected /, got /", and that wrong diagnosis was fed
+  back into the AI retry prompt. Same-URL targets now resolve instantly, and a URL mismatch is
+  reported separately from a page that did not react.
+- [CLI] `init` now writes a CommonJS `explorbot.config.js` in default npm projects and an ESM
+  config in projects whose `package.json` says `"type": "module"`. Generated configs keep the
+  documented filename and load regardless of the package type.
+- [CLI] Local `init` now asks which AI provider to use and writes the config and `.env` for that
+  provider, instead of silently hard-wiring OpenRouter. Anthropic gained recommended `model` and
+  `visionModel` entries, so its scaffold no longer contains placeholders.
+- [CLI] `learn --replace` rewrites the knowledge for a URL instead of appending with a `---`
+  separator, so a mistaken entry no longer requires hand-editing the file.
+- [Explorer] The CodeceptJS module is pinned into `global.codeceptjs` at startup, making explorbot
+  immune to npm hoisting layouts where the Playwright helper cannot resolve `codeceptjs` after an
+  upgrade.
+- Fixed a typo in the init "Next steps" output (`aurhorize`).
+
+## 2026-08-26
+
+### Changes
+
+- [Tester] Unmarked modals are now detected at capture time. Apps whose dialogs carry no
+  `role="dialog"`/`aria-modal` markup were invisible to focus-area detection, so the Tester never
+  learned it was inside a modal and interacted with the page behind it. Each state capture now
+  probes the live DOM for overlays the way the Driller does, and the state carries a modal
+  descriptor (`overlay`) that the Tester, Pilot and Researcher read instead of re-deriving it.
+  Class-name matches are only trusted when the element is truly floating (`fixed`/`absolute`/z-index),
+  so a sticky header named "overlay" does not become a false focus scope, and the expensive
+  full-page geometry scan is not run on every action — it stays in the Driller, where it belongs.
+- [Tester] The Tester now remembers every action it took, not only the last one of each turn. When it
+  did several things in one turn — click, click, then check — everything but the final action was
+  dropped from its memory straight afterwards, so it re-clicked buttons it had already clicked and
+  re-checked things it had already confirmed.
+- [Pilot] The Pilot now sees the full list of actions and checks when it decides whether a test
+  passed. Because most of the Tester's steps were being lost, it often had two lines of activity to
+  judge from and failed tests that had in fact succeeded, or kept sending the Tester back to prove
+  something it had already proven.
+- [Historian] Generated test files now contain every recorded step instead of one step per turn.
+- [Provider] Langfuse traces now survive the end of a run. The telemetry batch was never flushed
+  on exit, so every session looked abruptly cut off in Langfuse — final actions and the
+  session-analysis traces never arrived, and a clean shutdown was indistinguishable from a crash.
+  All exit paths (CLI commands and their error branches, TUI `/exit`, Ctrl+C, SIGTERM) now flush
+  pending traces before the process exits.
+
+## 2026-08-25
+
+### Configuration
+
+- **`ai.maxParallelRequests`** — How many requests to the AI model may be in flight at the same time,
+  across all agents. Additional requests wait in line instead of firing together and tripping provider
+  rate limits. Default: `4`.
+- **`ai.retryAttempts`** — Renamed from `ai.maxAttempts`, and now pairs with `ai.retryDelay` ("how
+  many times × with what pause"). If a private config still says `ai.maxAttempts`, JavaScript configs
+  will not warn — rename it manually.
+- **`ai.retryDelay`** — Declared since early on but never read; the provider now actually honors it as
+  the base pause between retries. Default: `10ms`.
+
+### Changes
+
+- [All agents] Screenshot analysis works again. Images were sent to the vision model wrapped as a data
+  URL where the AI SDK expects raw base64, so every visual call failed upstream ("Invalid image_url") —
+  in the last overnight run that was 423 failures across 37 of 61 tests, with the `see` tool never
+  succeeding once. Screenshots are now sent in the format providers accept.
+- [All agents] When the vision model fails, it is now switched off once for the whole session instead
+  of only for one tool — previously the researcher kept calling the broken vision path all night.
+- [Provider] Model calls are capped by `ai.maxParallelRequests`. In the last overnight run unlimited
+  parallelism produced bursts of up to 264 rate-limit errors per minute with tests idling through
+  retries; queued pacing replaces that storm.
+- [Provider] Models that narrate their reasoning mid-run (the gpt-oss channel format) get a sanctioned
+  no-op `commentary` tool instead of a rejected call — that rejection failed the whole generation 132
+  times in the last run. Channel-named tool calls are also repaired instead of dropped.
+- [Pilot] A check that ran successfully is no longer presented to the verdict as "PASS" evidence —
+  what it proves about the goal is what counts, so a check establishing the opposite of the goal reads
+  as failure evidence. Reading page state — a snapshot or a UI-map research — no longer counts as proof
+  the scenario completed. This removes false-green finishes.
+- [Tester] A new test now recovers from an error page left by the previous test before building its AI
+  context. When the next test has a different start URL, Tester navigates there first; genuine errors on
+  the new test's own start page are still reported normally.
+- [Analyst] The end-of-session report is now written even when the exploration loop crashes — the
+  session no longer ends silently without one.
+
+## 2026-08-24
+
+### Changes
+
+- `explorbot init` now writes a config that runs as-is. It used to import
+  `@openrouter/ai-sdk-provider`, a package it never installed, so the very next command failed with
+  "Cannot find package" — under npm the import resolved only because explorbot's own copy got
+  hoisted into the project, and under pnpm, bun, or a bare `npx explorbot init` it never did.
+  Models are now written as `'provider/model-id'`, resolved from the provider packages explorbot
+  already ships. Bringing your own provider package still works — the generated config shows how
+  in a comment.
+- The model ids in the generated config are taken from the recommendations shipped with the
+  release, so a fresh config no longer starts out with stale ones.
 
 ## 2026-08-23
 

@@ -586,7 +586,7 @@ export function parseAriaLocator(ariaStr: string): { role: string; text: string 
   const trimmed = ariaStr.trim();
   if (trimmed === '-' || trimmed === '' || trimmed === '"-"') return null;
 
-  const match = trimmed.match(/\{\s*["']?role["']?\s*:\s*['"]([^'"]+)['"]\s*,\s*["']?text["']?\s*:\s*['"]([^'"]*)['"]\s*\}/);
+  const match = trimmed.match(/\{\s*["']?role["']?\s*:\s*['"]([^'"]+)['"]\s*,\s*["']?(?:text|name)["']?\s*:\s*['"]([^'"]*)['"]\s*\}/);
   if (!match) return null;
 
   return { role: match[1], text: match[2] };
