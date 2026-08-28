@@ -8,11 +8,40 @@
   used to come back as a single pass/fail, so one bad command at the end hid the fact that the ones
   before it had worked — the AI and the Pilot both concluded nothing had happened and redid work that
   was already done. Failures now list each command as OK or FAILED and say how many never ran.
+- Page Diff: A click that changed nothing is reported as one again. When a page re-renders a long
+  list without changing anything on it — every row rewritten, but nothing added, removed, selected
+  or checked — the diff listed one empty entry per row. That was enough to suppress the warning
+  that an action produced no observable change, so an agent read "success" and carried on from a
+  step that never happened. Rows carrying no added or removed element are now left out, and a diff
+  left with nothing in it says so.
+- [Researcher] UI map rows written as `{ role: 'checkbox', name: 'Filter' }` keep their locator. Both
+  `text` and `name` name an element the same way when a locator runs, but the UI map only recognised
+  `text` and blanked every row using `name` to `-`, throwing away a locator that works. Three prompts
+  also spent a line teaching that `name` is wrong; they no longer do.
+- [Researcher] Opening a large overlay no longer breaks the model's context window. When a click or
+  a modal revealed a long list — a folder tree, a picker with hundreds of rows — the whole revealed
+  markup was sent for analysis, which on a big page ran to well over a hundred thousand tokens and
+  the request was simply rejected. The revealed markup now goes through the same cleaning as every
+  other page snapshot, which drops the styling classes that made up half its size, and what is left
+  is capped. The overlay gets described and its elements reach the UI map.
+- [Tester] Research that fails no longer fails the test with it. A page or overlay that could not be
+  analyzed is now reported as a warning and the scenario carries on with the accessibility tree it
+  already has, instead of ending the test on an error that had nothing to do with the scenario.
+- [Pilot] When a Tester action fails, Pilot now also sees the Tester's own account of why it picked
+  that element, not just the failure message. A Tester that admits it cannot find a control and
+  clicks a made-up one anyway is now visible to Pilot on the first failure, instead of only showing
+  up as a run of identical failed attempts. Shown for failed actions only, and only for models that
+  report their thinking.
 
 ## 2026-08-27
 
 ### Changes
 
+- [CLI] Overnight runs no longer die silently. An uncaught exception now logs the full stack,
+  flushes telemetry and exits with code 1; an unhandled promise rejection — which kills the whole
+  process in Bun — is logged loudly and the run continues. Nightly runs were dying mid-test after
+  ~3.5 hours with no error anywhere; next occurrence will leave a named cause in the log instead
+  of a bare cut-off.
 - [Navigator] Arriving somewhere you already are is no longer a failure. Navigating to the URL the
   browser is already on used to be structurally unresolvable — the state hash could never change —
   so `start /` on a landing-page site burned the whole retry budget (one user lost 27 minutes)

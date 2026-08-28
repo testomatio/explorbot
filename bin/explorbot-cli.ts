@@ -16,7 +16,7 @@ import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
 import { getCliName } from '../src/utils/cli-name.ts';
-import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode } from '../src/utils/logger.js';
+import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode, tag } from '../src/utils/logger.js';
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
@@ -29,6 +29,16 @@ const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as stri
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
 remote.registerOption(program);
+
+process.on('uncaughtException', async (error) => {
+  tag('error').log(`Uncaught exception: ${error instanceof Error ? `${error.message}\n${error.stack}` : String(error)}`);
+  await flushTelemetry();
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  tag('error').log(`Unhandled rejection: ${reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason)}`);
+});
 
 if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima')) {
   console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
