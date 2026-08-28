@@ -1,22 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import chalk from 'chalk';
-import dedent from 'dedent';
 import { ConfigParser, PROVIDERS } from '../config.ts';
 import { findGlobalConfig, globalConfigPath, globalDir, globalEnvPath } from '../global-config.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import { log, tag } from '../utils/logger.js';
 import { relativeToCwd } from '../utils/next-steps.ts';
 
-const DEFAULT_CONFIG_TEMPLATE = `import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-// import { '<your provider here>' } from '<your provider package here>';
+function defaultConfigTemplate(provider: string, esm: boolean): string {
+  let moduleExport = 'module.exports = config;';
+  if (esm) moduleExport = 'export default config;';
 
-// Vercel AI SDK is used to connect to AI providers.
-// Bring your own provider or use OpenRouter (one API key, many providers).
-// https://github.com/testomatio/explorbot/blob/main/docs/providers.md
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+  return `// 'provider/model-id' uses a bundled provider.
+// It is also possible to import provider as a module from Vercel AI SDK.
+// https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
 
 const config = {
   web: {
@@ -25,12 +22,7 @@ const config = {
   },
 
   ai: {
-    // fast model with tool calling capabilities
-    model: openrouter('openai/gpt-oss-20b:nitro'),
-    // vision model for screenshot analysis
-    visionModel: openrouter('meta-llama/llama-4-scout-17b-16e-instruct'),
-    // agentic model for decision making
-    agenticModel: openrouter('minimax/minimax-m2.5:nitro'),
+${modelLines(provider)}
   },
 
   reporter: {
@@ -43,16 +35,18 @@ const config = {
   },
 };
 
-export default config;
+${moduleExport}
 `;
+}
 
-const DEFAULT_ENV_TEMPLATE = dedent`
-# AI provider API keys
-OPENROUTER_API_KEY=
+function envTemplate(provider: string): string {
+  const keyLines = Object.entries(PROVIDERS).map(([name, { envKey }]) => {
+    if (name === provider) return `${envKey}=`;
+    return `# ${envKey}=`;
+  });
 
-# OPENAI_API_KEY=
-# ANTHROPIC_API_KEY=
-# GROQ_API_KEY=
+  return `# AI provider API keys
+${keyLines.join('\n')}
 
 # Langfuse Tracing
 LANGFUSE_SECRET_KEY=
@@ -60,11 +54,12 @@ LANGFUSE_PUBLIC_KEY=
 LANGFUSE_BASE_URL=
 
 # Testomat.io API key to publish run results
-TESTOMATIO=
-`;
+TESTOMATIO=`;
+}
 
 export async function runInit(options: InitCommandOptions): Promise<void> {
-  if (options.global || options.provider) {
+  const localRequested = !!(options.configPath || options.path);
+  if (options.global || (options.provider && !localRequested)) {
     await runGlobalInit(options);
     return;
   }
@@ -75,7 +70,12 @@ export async function runInit(options: InitCommandOptions): Promise<void> {
   }
 
   const choice = await renderInitWizard('choose');
-  if (choice === 'local') runInitCommand(options);
+  if (choice !== 'local') return;
+
+  const provider = await renderLocalProviderWizard();
+  if (!provider) return;
+
+  runInitCommand({ ...options, provider });
 }
 
 export function writeGlobalConfig(provider: string, apiKey?: string): void {
@@ -106,7 +106,7 @@ export function writeGlobalConfig(provider: string, apiKey?: string): void {
 }
 
 export function runInitCommand(options: InitCommandOptions): void {
-  const configPath = options.configPath ?? './explorbot.config.js';
+  const provider = options.provider || 'openrouter';
   const force = options.force ?? false;
   const customPath = options.path;
   const originalCwd = process.cwd();
@@ -121,12 +121,15 @@ export function runInitCommand(options: InitCommandOptions): void {
     log(`Working in directory: ${relativeToCwd(dir)}`);
   }
 
+  const configName = 'explorbot.config.js';
+  const configPath = options.configPath ?? `./${configName}`;
+
   try {
     let outPath = resolve(configPath);
     if (existsSync(outPath) && statSync(outPath).isDirectory()) {
-      outPath = join(outPath, 'explorbot.config.js');
+      outPath = join(outPath, configName);
     } else if (!extname(outPath)) {
-      outPath = join(outPath, 'explorbot.config.js');
+      outPath = join(outPath, configName);
     }
 
     const dir = dirname(outPath);
@@ -141,15 +144,21 @@ export function runInitCommand(options: InitCommandOptions): void {
       process.exit(1);
     }
 
-    writeFileSync(outPath, DEFAULT_CONFIG_TEMPLATE, 'utf8');
+    const esm = extname(outPath) !== '.js' || isModuleProject(dirname(outPath));
+    writeFileSync(outPath, defaultConfigTemplate(provider, esm), 'utf8');
     log(`Created config file: ${relativeToCwd(outPath)}`);
 
     const envPath = resolve(process.cwd(), '.env');
     if (!existsSync(envPath)) {
-      writeFileSync(envPath, `${DEFAULT_ENV_TEMPLATE}\n`, 'utf8');
+      writeFileSync(envPath, `${envTemplate(provider)}\n`, 'utf8');
       log(`Created env file: ${relativeToCwd(envPath)}`);
     } else {
       log(`Env file already exists: ${relativeToCwd(envPath)}`);
+    }
+
+    const missing = missingRoles(provider);
+    if (missing.length) {
+      tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set the model ids in ${relativeToCwd(outPath)}`);
     }
 
     log('');
@@ -158,7 +167,7 @@ export function runInitCommand(options: InitCommandOptions): void {
     log('2. Set AI models config file');
     log('3. Set web application URL in the config file');
     log('4. Add initial knowledge (how to authorize to the application, etc.)');
-    tag('substep').log(chalk.yellow(`${getCliName()} learn * 'to aurhorize use these credentials: admin@example.com / secret123'`));
+    tag('substep').log(chalk.yellow(`${getCliName()} learn * 'to authorize use these credentials: admin@example.com / secret123'`));
     tag('substep').log('You can use ${env.LOGIN} and ${env.PASSWORD} to reference environment variables.');
 
     log('5. Launch application on a relative URL');
@@ -222,8 +231,29 @@ async function renderInitWizard(mode: 'choose' | 'global'): Promise<'local' | 'g
   });
 }
 
-function globalConfigTemplate(provider: string): string {
-  const { envKey } = PROVIDERS[provider];
+async function renderLocalProviderWizard(): Promise<string | null> {
+  const [{ render }, React, InitWizard] = await Promise.all([import('ink'), import('react'), import('../components/InitWizard.js').then((m) => m.default)]);
+
+  return new Promise((resolve) => {
+    const finish = (provider: string | null) => {
+      unmount();
+      resolve(provider);
+    };
+    const { unmount } = render(
+      React.createElement(InitWizard, {
+        mode: 'local',
+        globalConfigExists: !!findGlobalConfig(),
+        onLocal: () => finish(null),
+        onComplete: () => finish(null),
+        onCancel: () => finish(null),
+        onLocalProvider: (provider: string) => finish(provider),
+      }),
+      { exitOnCtrlC: false, patchConsole: false }
+    );
+  });
+}
+
+function modelLines(provider: string): string {
   const recommended = ConfigParser.recommendedModels()[provider] || {};
   const roles: Array<[ModelRoleName, string]> = [
     ['model', 'fast model with tool calling capabilities'],
@@ -231,7 +261,11 @@ function globalConfigTemplate(provider: string): string {
     ['agenticModel', 'agentic model for decision making'],
   ];
 
-  const models = roles.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`).join('\n');
+  return roles.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`).join('\n');
+}
+
+function globalConfigTemplate(provider: string): string {
+  const { envKey } = PROVIDERS[provider];
 
   return `// Global Explorbot configuration — used by every directory without its own explorbot.config.js.
 // Models are written as 'provider/model-id' so they resolve without a local node_modules.
@@ -240,7 +274,7 @@ function globalConfigTemplate(provider: string): string {
 // https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
 const config = {
   ai: {
-${models}
+${modelLines(provider)}
   },
 
   reporter: {
@@ -251,8 +285,27 @@ ${models}
   },
 };
 
-export default config;
+module.exports = config;
 `;
+}
+
+function isModuleProject(configDir: string): boolean {
+  let currentDir = resolve(configDir);
+
+  while (true) {
+    const packagePath = join(currentDir, 'package.json');
+    if (existsSync(packagePath)) {
+      try {
+        return JSON.parse(readFileSync(packagePath, 'utf8')).type === 'module';
+      } catch {
+        return false;
+      }
+    }
+
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) return false;
+    currentDir = parentDir;
+  }
 }
 
 function missingRoles(provider: string): string[] {

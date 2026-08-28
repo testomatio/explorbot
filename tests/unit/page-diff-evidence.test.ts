@@ -120,6 +120,32 @@ describe('pageDiff evidence', () => {
     expect(pageDiff?.requests).toEqual([{ method: 'POST', path: '/api/runs', status: 400 }]);
   });
 
+  test('drops parts of a re-render that carry no added or removed element', async () => {
+    const rows = (ids: string[]) => page(ids.map((id) => `<li><span><input id="${id}" type="checkbox"></span></li>`).join(''));
+    const before = rows(Array.from({ length: 12 }, (_, i) => `row-before-${i}`));
+    const after = rows(Array.from({ length: 12 }, (_, i) => `row-after-${i}`));
+
+    const previous = new ActionResult({ id: 1, url: '/plans/new', html: before });
+    const current = new ActionResult({ id: 2, url: '/plans/new', html: after });
+
+    const { pageDiff } = await current.toToolResult(previous, 'Select from list');
+
+    expect(pageDiff?.htmlParts).toBeUndefined();
+    expect(successToolResult('click', { pageDiff }).suggestion).toContain('no observable change');
+  });
+
+  test('keeps parts of a re-render that added elements', async () => {
+    const rows = (extra: string) => page(Array.from({ length: 12 }, (_, i) => `<li><span><input id="row-${i}" type="checkbox">${extra}</span></li>`).join(''));
+
+    const previous = new ActionResult({ id: 1, url: '/plans/new', html: rows('') });
+    const current = new ActionResult({ id: 2, url: '/plans/new', html: rows('<button>Remove</button>') });
+
+    const { pageDiff } = await current.toToolResult(previous, 'Select from list');
+
+    expect(pageDiff?.htmlParts?.length).toBe(12);
+    expect(successToolResult('click', { pageDiff }).suggestion).not.toContain('no observable change');
+  });
+
   test('reports requests of a first-ever capture with no previous state', async () => {
     const current = new ActionResult({
       id: 1,

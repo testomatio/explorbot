@@ -5,7 +5,7 @@ import { executionController } from '../../execution-controller.ts';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
 import { WebPageState } from '../../state-manager.js';
-import { detectFocusArea, diffAriaSnapshots } from '../../utils/aria.ts';
+import { diffAriaSnapshots } from '../../utils/aria.ts';
 import { extractCodeBlocks } from '../../utils/code-extractor.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
@@ -88,7 +88,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     }
 
     async researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null> {
-      const focusArea = detectFocusArea(current.ariaSnapshot);
+      const focusArea = current.overlay;
       if (!focusArea.detected || !focusArea.name) return null;
       if (focusArea.type !== 'dialog' && focusArea.type !== 'modal') return null;
 

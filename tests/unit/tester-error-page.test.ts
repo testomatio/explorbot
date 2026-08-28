@@ -31,6 +31,62 @@ function createConversation() {
 }
 
 describe('Tester error page handling', () => {
+  test('recovers from an error page left by the previous test before creating context', async () => {
+    let currentState = createState('Unauthorized', '<html><body>Not authorized</body></html>', '/basic_auth', 401);
+    const startConversation = mock(() => createConversation());
+    const visit = mock(async () => {
+      currentState = createState('Catalog', '<html><body>Demo catalog</body></html>', '/');
+    });
+    const stopTest = mock(async () => {});
+    const startTest = mock(async () => ({ started: false, stop: stopTest }));
+
+    const explorer: any = {
+      beginTest: startTest,
+      visit,
+    };
+    const provider: any = {
+      getSystemPromptForAgent: () => '',
+      startConversation,
+      invokeConversation: mock(async () => null),
+    };
+    const researcher: any = {
+      research: mock(async () => ''),
+      researchOverlay: mock(async () => null),
+    };
+    const navigator: any = {};
+    const deps: any = {
+      explorer,
+      ai: provider,
+      config: {},
+      stateManager: {
+        getCurrentState: () => currentState,
+        clearHistory: () => {},
+        otherTabs: [],
+        getExperienceTracker: () => ({
+          getExperienceTableOfContents: () => [],
+          renderExperienceFor: () => '',
+          renderExperienceTocFor: () => '',
+        }),
+      },
+      knowledgeTracker: {
+        getRelevantKnowledge: () => [],
+        renderRelevantKnowledge: () => '',
+        renderRelevantContext: () => '',
+      },
+      requestStore: { clear: () => {}, onFailedRequest: () => () => {}, getFailedRequests: () => [] },
+      playwrightRecorder: {},
+    };
+    const tester = new Tester(deps, researcher, navigator);
+    const task = new Test('open catalog item', 'normal', 'item opens', '/');
+
+    await tester.test(task);
+
+    expect(visit).toHaveBeenCalledTimes(1);
+    expect(visit).toHaveBeenCalledWith('/');
+    expect(startConversation).toHaveBeenCalledTimes(1);
+    expect(Object.values(task.notes).some((note) => note.message.includes('Error page detected'))).toBe(false);
+  });
+
   test('stops before creating a conversation when current page is already an error page', async () => {
     const currentState = createState('500 Internal Server Error', '<html><body><h1>500 Internal Server Error</h1></body></html>', '/broken');
     const startConversation = mock(() => createConversation());
