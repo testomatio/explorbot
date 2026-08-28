@@ -8,6 +8,12 @@
   used to come back as a single pass/fail, so one bad command at the end hid the fact that the ones
   before it had worked — the AI and the Pilot both concluded nothing had happened and redid work that
   was already done. Failures now list each command as OK or FAILED and say how many never ran.
+- Action: A browser command that never reached the page is reported as a failure instead of a
+  silent success. When the command channel stops, every `I.*` step is still logged but none of them
+  run, and nothing raises — so clicks landed on elements that were not there, form fills left the
+  page untouched, and assertions passed against text that was never on screen, for a whole session.
+  Each step now checks the channel afterwards and fails loudly, which also restores it for the
+  next command.
 - Page Diff: A click that changed nothing is reported as one again. When a page re-renders a long
   list without changing anything on it — every row rewritten, but nothing added, removed, selected
   or checked — the diff listed one empty entry per row. That was enough to suppress the warning
