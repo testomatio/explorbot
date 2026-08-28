@@ -4,6 +4,10 @@
 
 ### Changes
 
+- [Tester] `form()` and `interact()` now report every command they ran and whether it passed. A batch
+  used to come back as a single pass/fail, so one bad command at the end hid the fact that the ones
+  before it had worked — the AI and the Pilot both concluded nothing had happened and redid work that
+  was already done. Failures now list each command as OK or FAILED and say how many never ran.
 - Action: A browser command that never reached the page is reported as a failure instead of a
   silent success. When the command channel stops, every `I.*` step is still logged but none of them
   run, and nothing raises — so clicks landed on elements that were not there, form fills left the
