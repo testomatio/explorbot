@@ -14,6 +14,12 @@
   `text` and `name` name an element the same way when a locator runs, but the UI map only recognised
   `text` and blanked every row using `name` to `-`, throwing away a locator that works. Three prompts
   also spent a line teaching that `name` is wrong; they no longer do.
+- [Pilot] When a Tester action fails, Pilot now also sees the Tester's own account of why it picked
+  that element, not just the failure message. A Tester that admits it cannot find a control and
+  clicks a made-up one anyway is now visible to Pilot on the first failure, instead of only showing
+  up as a run of identical failed attempts. Shown for failed actions only, and only for models that
+  report their thinking.
+
 ## 2026-08-27
 
 ### Changes
