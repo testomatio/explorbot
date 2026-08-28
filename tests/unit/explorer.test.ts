@@ -39,12 +39,20 @@ mock.module('codeceptjs', () => {
   };
 
   let pending: Array<Promise<unknown>> = [];
+  let running = false;
 
   const recorder = {
     start: async () => {
+      running = true;
       pending = [];
     },
-    isRunning: () => true,
+    stop: () => {
+      running = false;
+    },
+    reset: async () => {
+      pending = [];
+    },
+    isRunning: () => running,
     add: (fn: () => unknown) => {
       const promise = Promise.resolve().then(fn);
       pending.push(promise);
