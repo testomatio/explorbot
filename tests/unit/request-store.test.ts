@@ -95,6 +95,52 @@ describe('RequestStore failures', () => {
   });
 });
 
+describe('findCapturedRequest ranking', () => {
+  let outputDir: string;
+  let store: RequestStore;
+
+  beforeEach(() => {
+    outputDir = mkdtempSync(join(tmpdir(), 'reqstore-'));
+    store = new RequestStore(outputDir);
+  });
+
+  afterEach(() => {
+    if (existsSync(outputDir)) rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  it('prefers a successful capture over a rejected one for the same endpoint', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/suites', 400));
+    store.addCapturedRequest(makeRequest('POST', '/api/suites', 201));
+
+    expect(store.findCapturedRequest('POST', '/api/suites')?.status).toBe(201);
+  });
+
+  it('prefers the exact endpoint over a deeper sub-path', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/suites/42/move', 200));
+    store.addCapturedRequest(makeRequest('POST', '/api/suites', 400));
+
+    expect(store.findCapturedRequest('POST', '/api/suites')?.path).toBe('/api/suites');
+  });
+
+  it('matches {id} patterns and concrete ids against stored ids', () => {
+    store.addCapturedRequest(makeRequest('PATCH', '/api/suites/1a2b3c4d', 200));
+
+    expect(store.findCapturedRequest('PATCH', '/api/suites/{id}')?.status).toBe(200);
+    expect(store.findCapturedRequest('PATCH', '/api/suites/9f8e7d6c')?.status).toBe(200);
+  });
+
+  it('prefers the newest among otherwise equal candidates', () => {
+    const older = makeRequest('POST', '/api/suites', 201);
+    older.timestamp = new Date('2026-01-01');
+    const newer = makeRequest('POST', '/api/suites', 201);
+    newer.timestamp = new Date('2026-02-01');
+    store.addCapturedRequest(older);
+    store.addCapturedRequest(newer);
+
+    expect(store.findCapturedRequest('POST', '/api/suites')?.id).toBe(newer.id);
+  });
+});
+
 describe('RequestStore loadFromDisk', () => {
   let outputDir: string;
 

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { isDynamicSegment } from '../utils/url-matcher.ts';
 import { RequestResult } from './request-result.ts';
 
 const AUTH_HEADERS = ['authorization', 'cookie', 'x-api-key', 'x-csrf-token'];
@@ -108,9 +109,29 @@ export class RequestStore {
     return headers;
   }
 
-  findCapturedRequest(method: string, pathPrefix: string): RequestResult | undefined {
+  findCapturedRequest(method: string, searchPath: string): RequestResult | undefined {
     const upper = method.toUpperCase();
-    return this.capturedRequests.find((r) => r.method === upper && r.path.startsWith(pathPrefix));
+    const search = normalizePathPattern(searchPath).split('/').filter(Boolean);
+
+    let best: RequestResult | undefined;
+    let bestScore = -1;
+
+    for (const req of this.capturedRequests) {
+      if (req.method !== upper) continue;
+      const segments = normalizePathPattern(req.path).split('/').filter(Boolean);
+      if (segments.length < search.length) continue;
+      if (!search.every((segment, i) => segment === segments[i])) continue;
+
+      let score = 0;
+      if (segments.length === search.length) score += 4;
+      if (req.status < 400) score += 2;
+      if (score < bestScore) continue;
+      if (score === bestScore && best && req.timestamp <= best.timestamp) continue;
+      best = req;
+      bestScore = score;
+    }
+
+    return best;
   }
 
   toLog(): string {
@@ -148,5 +169,8 @@ export class RequestStore {
 }
 
 function normalizePathPattern(urlPath: string): string {
-  return urlPath.replace(/\/[0-9a-f]{24}\b/g, '/{id}').replace(/\/\d+\b/g, '/{id}');
+  return urlPath
+    .split('/')
+    .map((segment) => (segment && isDynamicSegment(segment) ? '{id}' : segment))
+    .join('/');
 }
