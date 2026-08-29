@@ -190,9 +190,8 @@ describe('diff memoization and areaOfInterest', () => {
       id: 2,
       url: 'https://app.example.com/users',
       html: '<html><body><h1>Users</h1><aside class="panel"><h2>Edit User</h2></aside></body></html>',
-      overlay: { type: 'drawer', name: 'Edit User', root: 'aside.panel' },
+      overlay: { type: 'drawer', name: 'Edit User', root: 'aside.panel', html: '<aside class="panel"><h2>Edit User</h2><form><input name="name"><button>Save</button></form></aside>' },
     });
-    current.regionSubtree = '<aside class="panel"><h2>Edit User</h2><form><input name="name"><button>Save</button></form></aside>';
     const result = await current.toToolResult(previous, 'aside.panel');
     expect(result.pageDiff?.areaOfInterest).toBe('drawer "Edit User" opened, scope: aside.panel');
     expect(result.pageDiff?.htmlParts).toHaveLength(1);

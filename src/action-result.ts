@@ -89,7 +89,6 @@ export class ActionResult implements ActionResultData {
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
   public overlay: Overlay = new Overlay();
-  public regionSubtree: string | undefined = undefined;
   private _diffCache: { previousId: number | undefined; diff: Diff } | null = null;
 
   constructor(data: ActionResultData) {
@@ -546,14 +545,12 @@ export class ActionResult implements ActionResultData {
     }
 
     if (this.overlay.present && !previousState.overlay.present) {
-      let area = `${this.overlay.type} "${this.overlay.name || 'unnamed'}" opened`;
-      if (this.overlay.root) area += `, scope: ${this.overlay.root}`;
-      pageDiff.areaOfInterest = area;
+      pageDiff.areaOfInterest = this.overlay.describe();
     }
 
-    if (pageDiff.areaOfInterest && this.regionSubtree && this.overlay.root) {
+    if (pageDiff.areaOfInterest && this.overlay.html && this.overlay.root) {
       const htmlConfig = ConfigParser.getInstance().getConfig().html;
-      let subtree = await minifyHtml(htmlCombinedSnapshot(this.regionSubtree, htmlConfig?.combined));
+      let subtree = await minifyHtml(htmlCombinedSnapshot(this.overlay.html, htmlConfig?.combined));
       if (subtree.length > HTML_PART_SUBTREE_BUDGET) {
         subtree = `${subtree.slice(0, HTML_PART_SUBTREE_BUDGET)}...<!-- truncated -->`;
       }

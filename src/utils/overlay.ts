@@ -1,19 +1,24 @@
 import { detectFocusArea } from './aria.js';
 import { type HtmlDiffPart, pathToXPath } from './html-diff.js';
 import { extractHeadings } from './html.js';
+import { createDebug } from './logger.js';
+
+const debugLog = createDebug('explorbot:overlay');
 
 export type OverlayType = 'dialog' | 'modal' | 'drawer' | 'region';
-export type OverlayData = { type?: OverlayType | null; name?: string | null; root?: string | null };
+export type OverlayData = { type?: OverlayType | null; name?: string | null; root?: string | null; html?: string | null };
 
 export class Overlay {
   readonly type: OverlayType | null;
   readonly name: string | null;
   readonly root: string | null;
+  readonly html: string | null;
 
   constructor(data: OverlayData = {}) {
     this.type = data.type ?? null;
     this.name = data.name ?? null;
     this.root = data.root ?? null;
+    this.html = data.html ?? null;
   }
 
   get detected(): boolean {
@@ -24,15 +29,11 @@ export class Overlay {
     return this.type !== null;
   }
 
-  static fromSubRoot(subRoot: AppearedSubRoot, verdict: RegionVerdict): Overlay {
-    let type: OverlayType = 'region';
-    if (verdict.overlays) {
-      type = 'drawer';
-      if (verdict.coverage >= FULL_COVERAGE_RATIO) type = 'modal';
-    }
-    let root = subRoot.container;
-    if (root === 'body') root = subRoot.elementXPath;
-    return new Overlay({ type, name: Overlay.nameFromHtml(subRoot.subtree), root });
+  describe(): string {
+    if (!this.present) return '';
+    let text = `${this.type} "${this.name || 'unnamed'}" opened`;
+    if (this.root) text += `, scope: ${this.root}`;
+    return text;
   }
 
   static fromAria(snapshot: string | null): Overlay {
@@ -43,8 +44,89 @@ export class Overlay {
     if (data.overlay) return new Overlay(data.overlay);
     return Overlay.fromAria(data.ariaSnapshot ?? null);
   }
+}
 
-  private static nameFromHtml(html: string): string | null {
+export class OverlayPage {
+  constructor(private page: { evaluate(fn: any, arg: any): Promise<any> } | null) {}
+
+  async detectRegion(parts: HtmlDiffPart[]): Promise<Overlay | null> {
+    const subRoot = this.appearedSubRoot(parts);
+    if (!subRoot) return null;
+    const samples = await this.probe(subRoot.elementXPath);
+    const verdict = this.classify(samples);
+    const overlay = this.toOverlay(subRoot, verdict);
+    debugLog(`Region detected: ${overlay.describe()} coverage=${verdict.coverage.toFixed(2)}`);
+    return overlay;
+  }
+
+  private appearedSubRoot(parts: HtmlDiffPart[]): AppearedSubRoot | null {
+    let best: AppearedSubRoot | null = null;
+    for (const part of parts) {
+      const appeared = part.added.find((line) => line.startsWith('ELEMENT:'));
+      if (!appeared) continue;
+      if (part.subtree.length < SUBROOT_MIN_HTML) continue;
+      if (best && part.subtree.length <= best.size) continue;
+      best = {
+        container: part.container,
+        elementXPath: pathToXPath(appeared.slice('ELEMENT:'.length)),
+        subtree: part.subtree,
+        size: part.subtree.length,
+      };
+    }
+    return best;
+  }
+
+  private async probe(xpath: string): Promise<RegionCoverageSamples | null> {
+    if (!this.page) return null;
+    return this.page
+      .evaluate(
+        ({ probeSource, config }: { probeSource: string; config: any }) => {
+          const probe = new Function(`return ${probeSource}`)() as (config: any) => any;
+          return probe(config);
+        },
+        { probeSource: probeRegionCoverage.toString(), config: { xpath } }
+      )
+      .catch((err: Error) => {
+        debugLog('Region coverage probe failed:', err.message);
+        return null;
+      });
+  }
+
+  private classify(samples: RegionCoverageSamples | null): RegionVerdict {
+    if (!samples?.found) return { overlays: false, coverage: 0 };
+    const viewportArea = samples.viewport.width * samples.viewport.height;
+    if (!viewportArea) return { overlays: false, coverage: 0 };
+
+    const rect = samples.rect;
+    const visibleWidth = Math.min(rect.x + rect.width, samples.viewport.width) - Math.max(rect.x, 0);
+    const visibleHeight = Math.min(rect.y + rect.height, samples.viewport.height) - Math.max(rect.y, 0);
+    const coverage = (Math.max(0, visibleWidth) * Math.max(0, visibleHeight)) / viewportArea;
+
+    if (coverage >= FULL_COVERAGE_RATIO) return { overlays: true, coverage };
+    if (samples.siblingsInert) return { overlays: true, coverage };
+
+    const floating = samples.position === 'fixed' || samples.position === 'absolute' || samples.zIndex > 0;
+    if (!floating) return { overlays: false, coverage };
+
+    const outside = samples.outsideHits;
+    if (outside.length > 0 && outside.every((hit) => hit !== 'page')) return { overlays: true, coverage };
+    if (samples.bodyScrollLocked && outside.length > 0 && outside.filter((hit) => hit !== 'page').length * 2 >= outside.length) return { overlays: true, coverage };
+
+    return { overlays: false, coverage };
+  }
+
+  private toOverlay(subRoot: AppearedSubRoot, verdict: RegionVerdict): Overlay {
+    let type: OverlayType = 'region';
+    if (verdict.overlays) {
+      type = 'drawer';
+      if (verdict.coverage >= FULL_COVERAGE_RATIO) type = 'modal';
+    }
+    let root = subRoot.container;
+    if (root === 'body') root = subRoot.elementXPath;
+    return new Overlay({ type, name: this.nameFrom(subRoot.subtree), root, html: subRoot.subtree });
+  }
+
+  private nameFrom(html: string): string | null {
     const headings = extractHeadings(html);
     return [headings.h1, headings.h2, headings.h3, headings.h4].filter(Boolean).join(' ') || null;
   }
@@ -53,47 +135,8 @@ export class Overlay {
 const SUBROOT_MIN_HTML = 10_000;
 const FULL_COVERAGE_RATIO = 0.8;
 
-export function findAppearedSubRoot(parts: HtmlDiffPart[]): AppearedSubRoot | null {
-  let best: AppearedSubRoot | null = null;
-  for (const part of parts) {
-    const appeared = part.added.find((line) => line.startsWith('ELEMENT:'));
-    if (!appeared) continue;
-    if (part.subtree.length < SUBROOT_MIN_HTML) continue;
-    if (best && part.subtree.length <= best.size) continue;
-    best = {
-      container: part.container,
-      elementXPath: pathToXPath(appeared.slice('ELEMENT:'.length)),
-      subtree: part.subtree,
-      size: part.subtree.length,
-    };
-  }
-  return best;
-}
-
-export function classifyRegionCoverage(samples: RegionCoverageSamples | null): RegionVerdict {
-  if (!samples?.found) return { overlays: false, coverage: 0 };
-  const viewportArea = samples.viewport.width * samples.viewport.height;
-  if (!viewportArea) return { overlays: false, coverage: 0 };
-
-  const rect = samples.rect;
-  const visibleWidth = Math.min(rect.x + rect.width, samples.viewport.width) - Math.max(rect.x, 0);
-  const visibleHeight = Math.min(rect.y + rect.height, samples.viewport.height) - Math.max(rect.y, 0);
-  const coverage = (Math.max(0, visibleWidth) * Math.max(0, visibleHeight)) / viewportArea;
-
-  if (coverage >= FULL_COVERAGE_RATIO) return { overlays: true, coverage };
-  if (samples.siblingsInert) return { overlays: true, coverage };
-
-  const floating = samples.position === 'fixed' || samples.position === 'absolute' || samples.zIndex > 0;
-  if (!floating) return { overlays: false, coverage };
-
-  const outside = samples.outsideHits;
-  if (outside.length > 0 && outside.every((hit) => hit !== 'page')) return { overlays: true, coverage };
-  if (samples.bodyScrollLocked && outside.length > 0 && outside.filter((hit) => hit !== 'page').length * 2 >= outside.length) return { overlays: true, coverage };
-
-  return { overlays: false, coverage };
-}
-
-export function probeRegionCoverage(config: { xpath: string }): RegionCoverageSamples {
+// Serialized via toString() into page.evaluate — must stay a plain function with no outer-scope references.
+function probeRegionCoverage(config: { xpath: string }): RegionCoverageSamples {
   const samples: RegionCoverageSamples = {
     found: false,
     rect: { x: 0, y: 0, width: 0, height: 0 },
@@ -162,23 +205,19 @@ export function probeRegionCoverage(config: { xpath: string }): RegionCoverageSa
   return samples;
 }
 
-export function getRegionCoverageProbeSource(): string {
-  return probeRegionCoverage.toString();
-}
-
-export interface AppearedSubRoot {
+interface AppearedSubRoot {
   container: string;
   elementXPath: string;
   subtree: string;
   size: number;
 }
 
-export interface RegionVerdict {
+interface RegionVerdict {
   overlays: boolean;
   coverage: number;
 }
 
-export interface RegionCoverageSamples {
+interface RegionCoverageSamples {
   found: boolean;
   rect: { x: number; y: number; width: number; height: number };
   viewport: { width: number; height: number };

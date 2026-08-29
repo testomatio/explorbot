@@ -59,27 +59,31 @@ exactly **two** detection signals, both general:
 The selector-heuristic path is **deleted entirely** (see "Removed code"). No third approach, no
 class-name patterns, no priority chain.
 
-The pipeline, run after every action inside `Action.capturePageState`, before the (sync)
-`stateManager.updateState` call — `Action` orchestrates (it is the only browser mover), every
-decision function lives in `overlay.ts`:
+`overlay.ts` exposes exactly two classes: `Overlay`, the immutable value describing what is open,
+and `OverlayPage`, which wraps the live page and owns detection. The single public entry point is
+`new OverlayPage(page).detectRegion(diffParts)`; every lower-level step (subroot picking, the
+browser probe, coverage classification) is a private member. The pipeline runs after every action
+inside `Action.capturePageState`, before the (sync) `stateManager.updateState` call — `Action`
+only hands the page over (it is the only browser mover):
 
 ```
 capture html/aria
   └─ same URL, not iframe, html changed, no ARIA overlay already detected
        └─ diff vs previous state (parse5, memoized — shared with toToolResult)
-            └─ findAppearedSubRoot: appeared subtree ≥ 10K chars      (overlay.ts)
-                 └─ probeRegionCoverage in page.evaluate               (overlay.ts source)
-                      └─ classifyRegionCoverage                        (overlay.ts)
-                           ├─ overlays the page → Overlay 'modal' | 'drawer'
-                           └─ inline            → Overlay 'region'
+            └─ OverlayPage.detectRegion(parts)
+                 ├─ appeared subtree ≥ 10K chars       (private)
+                 ├─ coverage probe via page.evaluate   (private)
+                 └─ coverage classification            (private)
+                      ├─ overlays the page → Overlay 'modal' | 'drawer'
+                      └─ inline            → Overlay 'region'
 ```
 
 Detection is 100% structural — size threshold, diff paths, geometry. No AI in the path. AI enters
 only downstream: `researchOverlay` describes the region, Tester/Pilot decide what to do in it.
 
-### 1. Appeared-subroot detection (`overlay.ts`, over `html-diff.ts` parts)
+### 1. Appeared-subroot detection (`OverlayPage`, over `html-diff.ts` parts)
 
-`findAppearedSubRoot(parts: HtmlDiffPart[])` returns the largest part that contains an appeared
+The first private step of `detectRegion` picks the largest part that contains an appeared
 element (`ELEMENT:` line in `part.added`) and whose minified `subtree` is ≥ `SUBROOT_MIN_HTML`
 (10 000 chars, unexported const — no config knob). `html-diff.ts` stays a generic diff engine; it
 newly exports `pathToXPath` so overlay.ts can convert appeared-element paths.
@@ -96,17 +100,19 @@ both:
 When `container` degrades to `body` (top-level appended node — the common portal case), the
 `elementXPath` doubles as the root selector.
 
-### 2. Coverage verification (`overlay.ts`)
+### 2. Coverage verification (`OverlayPage`)
 
 Split into dumb browser-side collection and a pure classifier, because jsdom has no layout and
-only the pure half can be unit-tested. Both halves live in `overlay.ts`:
+only the pure half can be unit-tested. Both are private members of `OverlayPage`; tests reach
+them through `detectRegion` with a fake page returning canned samples:
 
-- **Browser probe** (`probeRegionCoverage`, shipped as a source string like the existing
-  extractor pattern): resolves the element by XPath, collects raw samples — bounding rect,
+- **Browser probe** (a module-private plain function shipped as a source string into
+  `page.evaluate` — it must stay a plain self-contained function so `toString()` reconstruction
+  works in the browser): resolves the element by XPath, collects raw samples — bounding rect,
   viewport size, computed position and z-index, `elementFromPoint` hits at sample points
   **outside** the region's rect (classified as `inside` / `blocked` / `page`), sibling
   `inert`/`aria-hidden` flags, body scroll lock.
-- **Pure classifier** (`classifyRegionCoverage(samples)`): returns `{ overlays, coverage }`.
+- **Pure classifier**: turns the samples into `{ overlays, coverage }`.
   Overlaying = coverage ≥ 0.8, or siblings inerted, or a floating element whose outside sample
   points are all blocked by a scrim rather than landing on page content.
 
@@ -127,7 +133,11 @@ Tester refuse legitimate navigation.
   `hasDialogAppeared`) keeps its semantics.
 - `get present()` — any region, inline included. New consumers that want "an area of interest
   exists" use this.
-- `Overlay.fromSubRoot(subRoot, verdict)` — verdict `overlays: true` with coverage ≥ 0.8 →
+- `html`: the region's minified subtree, carried on the overlay itself — `toToolResult` renders
+  it as the single diff part instead of a collapsed dump.
+- `describe()` — the one-line human/model-facing summary
+  (`drawer "Edit User" opened, scope: aside.panel`), used for `pageDiff.areaOfInterest`.
+- `OverlayPage.detectRegion` builds the Overlay: verdict `overlays: true` with coverage ≥ 0.8 →
   `modal`; overlaying with partial coverage → `drawer`; otherwise `region`.
 - `Overlay.resolve` simplifies to two sources: stored `overlay` data, else `fromAria`.
 
