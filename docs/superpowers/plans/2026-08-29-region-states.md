@@ -428,7 +428,7 @@ git commit -m "feat: region coverage probe and classifier in overlay module"
 - Consumes: `Overlay.present`, `Overlay.root` (Task 1).
 - Produces (Tasks 4–10 rely on): `get baseHash(): string`; `getStateHash()` including `region_<name>` for named present regions; memoized `diff(previous)` (same `previous.id` → same `Diff` instance); `public regionSubtree: string | undefined`; `PageDiff.areaOfInterest?: string`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/unit/action-result.test.ts`:
 
@@ -488,7 +488,7 @@ describe('diff memoization and areaOfInterest', () => {
 
 Run: `bun test tests/unit/action-result.test.ts tests/unit/action-result-diff.test.ts` — expected FAIL.
 
-- [ ] **Step 2: Implement hash changes**
+- [x] **Step 2: Implement hash changes**
 
 In `src/action-result.ts` replace `getStateHash()` (currently at :478) with:
 
@@ -531,7 +531,7 @@ and add the private method (after the public methods, near `consoleErrors`):
 
 `get hash()` already delegates to `getStateHash()` — leave it.
 
-- [ ] **Step 3: Implement diff memoization and regionSubtree**
+- [x] **Step 3: Implement diff memoization and regionSubtree**
 
 Add fields next to `overlay`:
 
@@ -551,7 +551,7 @@ Replace `diff()` (currently `return Diff.create(this, previousState)`):
   }
 ```
 
-- [ ] **Step 4: Implement the tool-result payoff**
+- [x] **Step 4: Implement the tool-result payoff**
 
 Add to `PageDiff` interface: `areaOfInterest?: string;`
 
@@ -592,12 +592,12 @@ with:
 
 (`minifyHtml`, `htmlCombinedSnapshot`, `ConfigParser` are already imported in this file.)
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `bun test tests/unit/action-result.test.ts tests/unit/action-result-diff.test.ts tests/unit/action-result-memo.test.ts tests/unit/state-manager.test.ts`
 Expected: PASS. If the `region_edit_user` assertion fails on slug shape, print the hash and adjust the expectation to the actual `slugify` output of `region_Edit User` — the invariant under test is fork + containment, not the separator.
 
-- [ ] **Step 6: Format and commit**
+- [x] **Step 6: Format and commit**
 
 ```bash
 bun run format

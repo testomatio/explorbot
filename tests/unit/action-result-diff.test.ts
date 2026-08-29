@@ -169,3 +169,34 @@ describe('ActionResult Diff', () => {
     expect(diff.ariaChanged).not.toBeNull();
   });
 });
+
+describe('diff memoization and areaOfInterest', () => {
+  beforeEach(() => {
+    ConfigParser.resetForTesting();
+    ConfigParser.setupTestConfig();
+  });
+
+  test('returns the same Diff instance for the same previous state', async () => {
+    const previous = new ActionResult({ id: 1, url: 'https://app.example.com/users', html: '<html><body><h1>Users</h1></body></html>' });
+    const current = new ActionResult({ id: 2, url: 'https://app.example.com/users', html: '<html><body><h1>Users</h1><p>changed</p></body></html>' });
+    const first = await current.diff(previous);
+    const second = await current.diff(previous);
+    expect(second).toBe(first);
+  });
+
+  test('reports the appeared region instead of a collapsed dump', async () => {
+    const previous = new ActionResult({ id: 1, url: 'https://app.example.com/users', html: '<html><body><h1>Users</h1></body></html>' });
+    const current = new ActionResult({
+      id: 2,
+      url: 'https://app.example.com/users',
+      html: '<html><body><h1>Users</h1><aside class="panel"><h2>Edit User</h2></aside></body></html>',
+      overlay: { type: 'drawer', name: 'Edit User', root: 'aside.panel' },
+    });
+    current.regionSubtree = '<aside class="panel"><h2>Edit User</h2><form><input name="name"><button>Save</button></form></aside>';
+    const result = await current.toToolResult(previous, 'aside.panel');
+    expect(result.pageDiff?.areaOfInterest).toBe('drawer "Edit User" opened, scope: aside.panel');
+    expect(result.pageDiff?.htmlParts).toHaveLength(1);
+    expect(result.pageDiff?.htmlParts?.[0].container).toBe('aside.panel');
+    expect(result.pageDiff?.htmlParts?.[0].subtree).toContain('Edit User');
+  });
+});

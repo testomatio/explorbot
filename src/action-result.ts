@@ -49,6 +49,7 @@ export interface PageDiff {
   consoleErrors?: string[];
   htmlParts?: HtmlDiffPart[];
   iframes?: string;
+  areaOfInterest?: string;
 }
 
 export interface ToolResultMetadata {
@@ -89,6 +90,8 @@ export class ActionResult implements ActionResultData {
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
   public overlay: Overlay = new Overlay();
+  public regionSubtree: string | undefined = undefined;
+  private _diffCache: { previousId: number | undefined; diff: Diff } | null = null;
 
   constructor(data: ActionResultData) {
     this.id = data.id;
@@ -476,29 +479,18 @@ export class ActionResult implements ActionResultData {
   }
 
   getStateHash(): string {
-    const parts: string[] = [];
+    return this.computeStateHash(true);
+  }
 
-    parts.push(this.relativeUrl || this.url || '/');
-
-    this.extractHeadings(this.html);
-
-    if (this.h1) parts.push(`h1_${this.h1}`);
-    if (this.h2) parts.push(`h2_${this.h2}`);
-
-    let stateString = slugify(parts.map((part) => part.substring(0, 100)).join('_'));
-
-    if (stateString.length > 200) {
-      stateString = stateString.substring(0, 200);
-      if (stateString.endsWith('_')) {
-        stateString = stateString.slice(0, -1);
-      }
-    }
-
-    return stateString;
+  get baseHash(): string {
+    return this.computeStateHash(false);
   }
 
   async diff(previousState: ActionResult | null): Promise<Diff> {
-    return Diff.create(this, previousState);
+    if (this._diffCache && this._diffCache.previousId === previousState?.id) return this._diffCache.diff;
+    const diff = await Diff.create(this, previousState);
+    this._diffCache = { previousId: previousState?.id, diff };
+    return diff;
   }
 
   async toToolResult(previousState: ActionResult | null, locator: string): Promise<ToolResultMetadata> {
@@ -549,7 +541,20 @@ export class ActionResult implements ActionResultData {
       pageDiff.ariaChangeCount = diff.ariaChangeCount;
     }
 
-    if (diff.htmlParts.length > 0) {
+    if (this.overlay.present && !previousState.overlay.present) {
+      let area = `${this.overlay.type} "${this.overlay.name || 'unnamed'}" opened`;
+      if (this.overlay.root) area += `, scope: ${this.overlay.root}`;
+      pageDiff.areaOfInterest = area;
+    }
+
+    if (pageDiff.areaOfInterest && this.regionSubtree && this.overlay.root) {
+      const htmlConfig = ConfigParser.getInstance().getConfig().html;
+      let subtree = await minifyHtml(htmlCombinedSnapshot(this.regionSubtree, htmlConfig?.combined));
+      if (subtree.length > HTML_PART_SUBTREE_BUDGET) {
+        subtree = `${subtree.slice(0, HTML_PART_SUBTREE_BUDGET)}...<!-- truncated -->`;
+      }
+      pageDiff.htmlParts = [{ container: this.overlay.root, subtree, added: [], removed: [] }];
+    } else if (diff.htmlParts.length > 0) {
       const collapsed = collapseHtmlParts(await diff.cleanedHtmlParts());
       if (collapsed.length > 0) {
         pageDiff.htmlParts = collapsed;
@@ -563,6 +568,29 @@ export class ActionResult implements ActionResultData {
     }
 
     return result;
+  }
+
+  private computeStateHash(includeRegion: boolean): string {
+    const parts: string[] = [];
+
+    parts.push(this.relativeUrl || this.url || '/');
+
+    this.extractHeadings(this.html);
+
+    if (this.h1) parts.push(`h1_${this.h1}`);
+    if (this.h2) parts.push(`h2_${this.h2}`);
+    if (includeRegion && this.overlay.present && this.overlay.name) parts.push(`region_${this.overlay.name}`);
+
+    let stateString = slugify(parts.map((part) => part.substring(0, 100)).join('_'));
+
+    if (stateString.length > 200) {
+      stateString = stateString.substring(0, 200);
+      if (stateString.endsWith('_')) {
+        stateString = stateString.slice(0, -1);
+      }
+    }
+
+    return stateString;
   }
 
   private consoleErrors(): string[] {
