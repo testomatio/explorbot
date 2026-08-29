@@ -1192,7 +1192,7 @@ git commit -m "refactor: driller reads nested overlays from page diff instead of
 - Consumes: everything new from Tasks 1–10 (the replacements must be in place first).
 - Produces: `Overlay.resolve(data: { overlay?: OverlayData | null; ariaSnapshot?: string | null })` — narrowed signature, no `overlayHtml`. Deleted symbols (per the spec's "Removed code" table): `Action.captureOverlayHtml`, `ActionResultData.overlayHtml`, `Overlay.fromHtml`, `Overlay.captureConfig`, `OVERLAY_SELECTORS`, `extractVisibleOverlayHtml`, `getVisibleOverlayHtmlExtractorSource`, `VisibleOverlayExtractionConfig`.
 
-- [ ] **Step 1: Update the tests first**
+- [x] **Step 1: Update the tests first**
 
 In `tests/unit/overlay-detection.test.ts`:
 - Delete the `describe('extractVisibleOverlayHtml', …)` block and the `overlayConfig` helper plus the now-unused imports (`extractVisibleOverlayHtml`, `VisibleOverlayExtractionConfig`, `OVERLAY_SELECTORS`, `HTML_*` constants — keep any that other tests in the file still use).
@@ -1213,7 +1213,7 @@ it('resolve falls back to aria detection', () => {
 
 Run: `bun test tests/unit/overlay-detection.test.ts` — expected FAIL (resolve still accepts overlayHtml, extractor still exists — the failures confirm the tests now demand the deletion).
 
-- [ ] **Step 2: Delete in overlay.ts**
+- [x] **Step 2: Delete in overlay.ts**
 
 Remove `OVERLAY_SELECTORS`, `Overlay.fromHtml`, `Overlay.captureConfig`, and the `overlayHtml` branch of `resolve`:
 
@@ -1226,16 +1226,16 @@ Remove `OVERLAY_SELECTORS`, `Overlay.fromHtml`, `Overlay.captureConfig`, and the
 
 Prune imports that only served the deleted code (`HTML_EXTRACTION_LIMITS`, `HTML_SELECTORS`, `HTML_VISIBILITY_LIMITS`, `VisibleOverlayExtractionConfig`). `nameFromHtml` stays — `fromSubRoot` uses it.
 
-- [ ] **Step 3: Delete in action.ts and action-result.ts**
+- [x] **Step 3: Delete in action.ts and action-result.ts**
 
 - `src/action.ts`: remove the `captureOverlayHtml` method; remove `let overlayHtml = '';`, `if (!frame) overlayHtml = await this.captureOverlayHtml();` and the `overlayHtml: overlayHtml || undefined,` constructor line in `capturePageState`; drop `getVisibleOverlayHtmlExtractorSource` from imports.
 - `src/action-result.ts`: remove `overlayHtml?: string;` from `ActionResultData`.
 
-- [ ] **Step 4: Delete in html.ts**
+- [x] **Step 4: Delete in html.ts**
 
 Remove `extractVisibleOverlayHtml`, `getVisibleOverlayHtmlExtractorSource`, and the `VisibleOverlayExtractionConfig` interface. For each limit field used only by them (`overlayHtmlLength`, `maxOverlayCount`, `minOverlayWidth`, `minOverlayHeight`, `maxViewportOverlayRatio`, `minOpacity`): run `grep -rn "<field>" src/` and delete the field only when the extractor was its sole consumer — shared visibility limits used by other extractors stay.
 
-- [ ] **Step 5: Verify the path is gone**
+- [x] **Step 5: Verify the path is gone**
 
 ```bash
 grep -rn "extractVisibleOverlayHtml\|getVisibleOverlayHtmlExtractorSource\|OVERLAY_SELECTORS\|captureConfig\|overlayHtml\|Overlay.fromHtml" src/ tests/
@@ -1243,12 +1243,12 @@ grep -rn "extractVisibleOverlayHtml\|getVisibleOverlayHtmlExtractorSource\|OVERL
 
 Expected: no hits in `src/` (test-fixture prose mentioning "overlay" is fine; symbol references are not).
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `bun test tests/unit/ && bun test tests/integration/`
 Expected: PASS.
 
-- [ ] **Step 7: Format and commit**
+- [x] **Step 7: Format and commit**
 
 ```bash
 bun run format

@@ -35,7 +35,6 @@ interface ActionResultData extends WebPageState {
   focusedElement?: FocusedElement | null;
   iframeURL?: string;
   links?: Link[];
-  overlayHtml?: string;
 }
 
 export interface PageDiff {

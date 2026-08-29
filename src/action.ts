@@ -11,7 +11,7 @@ import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
-import { captureHtmlForSnapshot, getVisibleOverlayHtmlExtractorSource, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
+import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { Overlay, type RegionCoverageSamples, classifyRegionCoverage, findAppearedSubRoot, getRegionCoverageProbeSource } from './utils/overlay.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
@@ -146,13 +146,11 @@ class Action {
       let ariaSnapshot: string | null = null;
       let ariaSnapshotFile: string | undefined = undefined;
       let focusedElement: FocusedElement | null = null;
-      let overlayHtml = '';
 
       try {
         const page = this.playwrightHelper.page;
         ariaSnapshot = await page.locator('body').ariaSnapshot();
         focusedElement = await page.evaluate(readFocusedElement);
-        if (!frame) overlayHtml = await this.captureOverlayHtml();
       } catch (err) {
         debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
@@ -181,7 +179,6 @@ class Action {
         ariaSnapshot,
         ariaSnapshotFile,
         focusedElement,
-        overlayHtml: overlayHtml || undefined,
         iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
       if (!frame) await this.detectRegionOfInterest(result).catch((err: Error) => debugLog('Region detection failed:', err.message));
@@ -194,16 +191,6 @@ class Action {
       const url = this.playwrightHelper.page?.url?.() || '';
       return new ActionResult({ url, error: msg });
     }
-  }
-
-  private async captureOverlayHtml(): Promise<string> {
-    return this.playwrightHelper.page.evaluate(
-      ({ extractorSource, config }: { extractorSource: string; config: any }) => {
-        const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
-        return extract(config);
-      },
-      { extractorSource: getVisibleOverlayHtmlExtractorSource(), config: Overlay.captureConfig() }
-    );
   }
 
   private async detectRegionOfInterest(result: ActionResult): Promise<void> {
