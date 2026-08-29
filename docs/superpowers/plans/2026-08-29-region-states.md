@@ -616,11 +616,11 @@ git commit -m "feat: region-aware state hash, baseHash, memoized diff and areaOf
 - Consumes: `findAppearedSubRoot`, `classifyRegionCoverage`, `Overlay.fromSubRoot`, `getRegionCoverageProbeSource`, type `RegionCoverageSamples` — all from `./utils/overlay.ts` (Tasks 1–2); `result.diff` memoization + `regionSubtree` (Task 3).
 - Produces: every captured `ActionResult` may now carry a diff-detected `overlay` (`modal`/`drawer`/`region`) and `regionSubtree` before `stateManager.updateState` runs. No new exports.
 
-- [ ] **Step 1: Wire imports**
+- [x] **Step 1: Wire imports**
 
 In `src/action.ts` extend the existing `./utils/overlay.ts` import (currently `import { Overlay } from './utils/overlay.js';` or similar — check) to also bring `classifyRegionCoverage`, `findAppearedSubRoot`, `getRegionCoverageProbeSource` and type `RegionCoverageSamples`.
 
-- [ ] **Step 2: Hook detection before updateState**
+- [x] **Step 2: Hook detection before updateState**
 
 In `capturePageState` (src/action.ts:170-188), between `const result = new ActionResult({...})` and `this.stateManager.updateState(result, codeBlock)`:
 
@@ -629,7 +629,7 @@ In `capturePageState` (src/action.ts:170-188), between `const result = new Actio
       this.stateManager.updateState(result, codeBlock);
 ```
 
-- [ ] **Step 3: Implement the private methods**
+- [x] **Step 3: Implement the private methods**
 
 After the existing private `captureOverlayHtml` (private methods stay after public ones):
 
@@ -671,12 +671,12 @@ After the existing private `captureOverlayHtml` (private methods stay after publ
 
 Two guards matter and must not be dropped: `result.overlay.detected` (an ARIA-detected overlay already owns the state) and `isSameUrl` (URL changes are already full state changes with research; the diff path is only for in-place swaps).
 
-- [ ] **Step 4: Verify nothing regressed**
+- [x] **Step 4: Verify nothing regressed**
 
 Run: `bun test tests/unit/`
 Expected: PASS (the glue has no unit test — its pure parts are covered by Tasks 1–3; end-to-end behavior is exercised by the local regression harness, which only the user runs).
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 bun run format

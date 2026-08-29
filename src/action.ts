@@ -13,7 +13,7 @@ import type { StateManager } from './state-manager.js';
 import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { captureHtmlForSnapshot, getVisibleOverlayHtmlExtractorSource, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
-import { Overlay } from './utils/overlay.js';
+import { Overlay, type RegionCoverageSamples, classifyRegionCoverage, findAppearedSubRoot, getRegionCoverageProbeSource } from './utils/overlay.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import { safeFilename } from './utils/strings.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
@@ -184,6 +184,7 @@ class Action {
         overlayHtml: overlayHtml || undefined,
         iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
+      if (!frame) await this.detectRegionOfInterest(result).catch((err: Error) => debugLog('Region detection failed:', err.message));
       this.stateManager.updateState(result, codeBlock);
       return result;
     } catch (err) {
@@ -203,6 +204,40 @@ class Action {
       },
       { extractorSource: getVisibleOverlayHtmlExtractorSource(), config: Overlay.captureConfig() }
     );
+  }
+
+  private async detectRegionOfInterest(result: ActionResult): Promise<void> {
+    if (result.overlay.detected) return;
+    const previousState = this.stateManager.getCurrentState();
+    if (!previousState) return;
+    const previous = ActionResult.fromState(previousState);
+    if (!previous.html || previous.html === result.html) return;
+    if (!result.isSameUrl({ url: previous.url })) return;
+
+    const diff = await result.diff(previous);
+    const subRoot = findAppearedSubRoot(diff.htmlParts);
+    if (!subRoot) return;
+
+    const samples = await this.probeRegion(subRoot.elementXPath);
+    const verdict = classifyRegionCoverage(samples);
+    result.overlay = Overlay.fromSubRoot(subRoot, verdict);
+    result.regionSubtree = subRoot.subtree;
+    debugLog(`Region of interest: ${result.overlay.type} "${result.overlay.name}" root=${result.overlay.root} coverage=${verdict.coverage.toFixed(2)}`);
+  }
+
+  private async probeRegion(xpath: string): Promise<RegionCoverageSamples | null> {
+    return this.playwrightHelper.page
+      .evaluate(
+        ({ probeSource, config }: { probeSource: string; config: any }) => {
+          const probe = new Function(`return ${probeSource}`)() as (config: any) => any;
+          return probe(config);
+        },
+        { probeSource: getRegionCoverageProbeSource(), config: { xpath } }
+      )
+      .catch((err: Error) => {
+        debugLog('Region coverage probe failed:', err.message);
+        return null;
+      });
   }
 
   private async captureMainDocumentStatus(): Promise<number | undefined> {
