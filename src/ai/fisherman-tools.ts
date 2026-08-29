@@ -6,6 +6,7 @@ import type { RequestResult } from '../api/request-result.ts';
 import type { RequestStore } from '../api/request-store.ts';
 import { extractEndpointDefinition } from '../api/spec-reader.ts';
 import { tag } from '../utils/logger.ts';
+import { RequestMap } from '../utils/request-map.ts';
 import { isDynamicSegment } from '../utils/url-matcher.ts';
 
 export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, opts: { spec?: any; baseEndpoint?: string }) {
@@ -159,12 +160,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
           return { finished: false, error: 'No successful write request was made in this run, so nothing was created. Keep working, or call stop if the data cannot be prepared.' };
         }
 
-        const viaById = new Map<string, string>();
-        for (const write of writes) {
-          const { id } = write.extractIdAndTitle();
-          if (id === undefined) continue;
-          viaById.set(String(id), `${write.method} ${write.path}`);
-        }
+        const createdRequests = new RequestMap(writes);
 
         const verified: FishermanResult['created'] = [];
         for (const item of created) {
@@ -172,12 +168,12 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
             verified.push(item);
             continue;
           }
-          const via = viaById.get(String(item.id));
-          if (!via) {
+          const request = createdRequests.get(item.id);
+          if (!request) {
             tag('warning').log(`Fisherman: dropped unverified created item ${item.type} (id: ${item.id})`);
             continue;
           }
-          verified.push({ ...item, via });
+          verified.push({ ...item, request: request.toEndpoint() });
         }
         if (verified.length === 0) verified.push(...writes.map(toCreatedItem));
 
@@ -216,7 +212,7 @@ function synthesizeResult(made: RequestResult[], writes: RequestResult[]): Fishe
 function toCreatedItem(write: RequestResult): FishermanResult['created'][number] {
   const { id, title } = write.extractIdAndTitle();
   const segments = write.path.split('/').filter((s) => s && !isDynamicSegment(s));
-  return { type: segments[segments.length - 1] || 'item', id, title, via: `${write.method} ${write.path}` };
+  return { type: segments[segments.length - 1] || 'item', id, title, request: write.toEndpoint() };
 }
 
 function responseCategory(status: number): ResponseCategory {
@@ -256,7 +252,7 @@ function extractKeyFields(body: any, result: Record<string, any> = {}, depth = 0
 export interface FishermanResult {
   success: boolean;
   summary: string;
-  created: Array<{ type: string; id?: string | number; title?: string; via?: string }>;
+  created: Array<{ type: string; id?: string | number; title?: string; request?: string }>;
   failed: Array<{ type: string; reason: string }>;
 }
 

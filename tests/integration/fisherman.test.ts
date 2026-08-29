@@ -100,7 +100,7 @@ describe('Fisherman with aimock', () => {
     );
   }
 
-  it('scopes the prompt and reports verified created items with via', async () => {
+  it('scopes the prompt and reports verified created items with their request', async () => {
     const created = requestResult('made_1', 'POST', '/api/alpha-shop/suites', 201);
     created.rawResponseBodyValue = JSON.stringify({ data: { id: 's1', title: 'Suite A' } });
     apiResponses.push(created);
@@ -112,7 +112,7 @@ describe('Fisherman with aimock', () => {
     const result = await createFisherman().prepareData('1 suite', '/projects/alpha-shop/suites');
 
     expect(result.success).toBe(true);
-    expect(result.created).toEqual([{ type: 'suite', id: 's1', title: 'Suite A', via: 'POST /api/alpha-shop/suites' }]);
+    expect(result.created).toEqual([{ type: 'suite', id: 's1', title: 'Suite A', request: 'POST /api/alpha-shop/suites' }]);
 
     const systemPrompt = extractPromptText(mock.getRequests()[0]);
     expect(systemPrompt).toContain('POST /api/alpha-shop/suites');

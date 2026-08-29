@@ -90,7 +90,7 @@ describe('ledger-derived results', () => {
     expect(isFinished()).toBe(false);
   });
 
-  it('drops created items whose id no write response returned, keeps verified ones with via', async () => {
+  it('drops created items whose id no write response returned, keeps verified ones with their request', async () => {
     const made: any[] = [];
     const { tools, getResult } = createFishermanTools({} as any, store(undefined, made), {});
     made.push(madeWrite('POST', '/api/suites', 201, { id: 's1', title: 'Suite A' }));
@@ -108,7 +108,7 @@ describe('ledger-derived results', () => {
 
     const result = getResult();
     expect(result.success).toBe(true);
-    expect(result.created).toEqual([{ type: 'suite', id: 's1', via: 'POST /api/suites' }]);
+    expect(result.created).toEqual([{ type: 'suite', id: 's1', request: 'POST /api/suites' }]);
   });
 
   it('synthesizes an honest summary when the loop ends without finish', async () => {
@@ -151,6 +151,7 @@ function madeWrite(method: string, path: string, status: number, body: Record<st
     error: undefined,
     isWrite: true,
     extractIdAndTitle: () => body,
+    toEndpoint: () => `${method} ${path}`,
     toSummary: () => `${method} ${path} → ${status} (0ms)`,
   };
 }

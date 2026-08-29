@@ -182,8 +182,12 @@ export class RequestResult {
     return result;
   }
 
+  toEndpoint(): string {
+    return `${this.method} ${this.path}`;
+  }
+
   toSummary(): string {
-    return `${this.method} ${this.path} → ${this.status} (${this.timing}ms)`;
+    return `${this.toEndpoint()} → ${this.status} (${this.timing}ms)`;
   }
 
   extractIdAndTitle(): { id?: string | number; title?: string } {
