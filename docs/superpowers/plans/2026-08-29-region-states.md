@@ -1274,11 +1274,11 @@ bun test tests/integration/
 
 Expected: everything green. Fix regressions before proceeding; do not skip failing tests.
 
-- [ ] **Step 2: Dedup pass**
+- [x] **Step 2: Dedup pass**
 
 Run the code-duplication-detector agent over the changed files (house rule after major changes). Apply only findings that touch code introduced by this plan.
 
-- [ ] **Step 3: Changelog**
+- [x] **Step 3: Changelog**
 
 Invoke the `/changelog` skill to add the entry for this feature, then commit:
 
@@ -1287,6 +1287,6 @@ git add CHANGELOG.md
 git commit -m "docs: changelog for region-of-interest states"
 ```
 
-- [ ] **Step 4: Report**
+- [x] **Step 4: Report**
 
 Report to the user: what was built, what was deleted (the spec's "Removed code" table), test results, and that end-to-end validation against a real app is available via the local `regression:*` bunosh commands — which only the user decides to run. Never trigger the regression CI workflow.
