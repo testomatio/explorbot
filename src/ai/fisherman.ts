@@ -13,6 +13,7 @@ import { dataProtectionRules } from './rules.ts';
 
 const MAX_ITERATIONS = 15;
 const MAX_TOOL_ROUNDTRIPS = 5;
+const REPEATED_FAILURE_LIMIT = 4;
 
 export class Fisherman implements Agent {
   emoji = '🎣';
@@ -82,6 +83,7 @@ export class Fisherman implements Agent {
       spec: this.spec,
       baseEndpoint: this.baseEndpoint,
     });
+    const ledgerStart = this.requestStore.getMadeRequests().length;
 
     const conversation = this.provider.startConversation(this.buildSystemPrompt(endpointList, Object.keys(tools), scopeUrl), 'fisherman');
     conversation.addUserText(this.buildTaskPrompt(instructions));
@@ -97,6 +99,12 @@ export class Fisherman implements Agent {
         debugLog(`iteration ${iteration} done, text: ${invokeResult?.response?.text?.slice(0, 200) || '(none)'}`);
 
         if (isFinished()) {
+          stop();
+          return;
+        }
+
+        if (this.isStuckOnEndpoint(ledgerStart)) {
+          tag('warning').log('Fisherman: repeated failures on the same endpoint — stopping');
           stop();
           return;
         }
@@ -205,10 +213,19 @@ export class Fisherman implements Agent {
       - Chain requests logically — create parent resources before children
       - Use the response category and error text to decide what failed: validation requires corrected data, authorization requires valid access, not_found requires a valid path or parent, and conflict requires resolving the conflicting state
       - Retry temporary or server failures once. Retry other failures only when the specification or error text gives a concrete correction
+      - Create only the resource types that were requested. If no endpoint creates a requested type, call stop — never create a different type as a substitute
       - Use realistic but unique data for each item (vary names, titles)
 
       ${dataProtectionRules}
     `;
+  }
+
+  private isStuckOnEndpoint(ledgerStart: number): boolean {
+    const made = this.requestStore.getMadeRequests().slice(ledgerStart);
+    if (made.length < REPEATED_FAILURE_LIMIT) return false;
+    const recent = made.slice(-REPEATED_FAILURE_LIMIT);
+    const first = recent[0];
+    return recent.every((r) => (r.status >= 400 || r.error) && r.method === first.method && r.path === first.path);
   }
 
   private buildTaskPrompt(instructions: string): string {
