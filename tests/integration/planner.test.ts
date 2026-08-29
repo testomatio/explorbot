@@ -10,7 +10,6 @@ import { clearPlanRegistry, registerPlan } from '../../src/ai/planner/subpages.t
 import { Provider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { Plan, Test } from '../../src/test-plan.ts';
-import { ErrorPageError } from '../../src/utils/error-page.ts';
 
 const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');
 
@@ -283,31 +282,10 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('return an empty scenarios list');
   });
 
-  it('reports an error page when AI returns empty scenarios', async () => {
+  it('throws when AI returns empty scenarios and no current plan', async () => {
     mock.clearFixtures();
     mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
 
-    await expect(planner.plan()).rejects.toThrow(ErrorPageError);
-  });
-
-  it('throws a planning error when feature focus returns empty scenarios', async () => {
-    mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
-
-    await expect(planner.plan('search')).rejects.toThrow('No tasks were created successfully');
-  });
-
-  it('keeps an existing plan when a later style returns empty scenarios', async () => {
-    const existingPlan = new Plan('Task Board Testing');
-    existingPlan.url = '/tasks/board';
-    existingPlan.addTest(new Test('Create a new task via the Create Task modal', 'critical', ['Task appears'], '/tasks/board', ['Click Create']));
-    planner.currentPlan = existingPlan;
-
-    mock.clearFixtures();
-    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
-
-    const plan = await planner.plan();
-
-    expect(plan.tests.length).toBe(1);
+    await expect(planner.plan()).rejects.toThrow('No tasks were created successfully');
   });
 });

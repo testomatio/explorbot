@@ -10,7 +10,6 @@ import type { StateManager } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { Suite } from '../suite.ts';
 import { Plan, Test } from '../test-plan.ts';
-import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
@@ -196,8 +195,7 @@ export class Planner extends PlannerBase implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
-      if (aiResult.object.scenarios.length === 0 && !this.currentPlan?.tests.length) {
-        if (!feature) throw new ErrorPageError(actionResult.url || state.url, actionResult.title, actionResult.httpStatus);
+      if (aiResult.object.scenarios.length === 0 && !this.currentPlan) {
         throw new Error('No tasks were created successfully');
       }
 

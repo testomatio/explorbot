@@ -6,8 +6,8 @@
 
 - [Planner] A page that reports the thing you asked for does not exist gets no test plan. A missing
   record, a failed load, or a page with nothing on it still came back with a full set of invented
-  scenarios — every one of them written against a page that had nothing to click — and each planning
-  style spent another call inventing more. The planner now returns no scenarios for such a page.
+  scenarios, every one of them written against a page that had nothing to click. The planner now
+  proposes nothing for such a page.
 - Explore: A sub-page that turns out to be an error page is skipped before any research or planning
   runs on it, and exploration moves straight on to the next candidate page.
 
