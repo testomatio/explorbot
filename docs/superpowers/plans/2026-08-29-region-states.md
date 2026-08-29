@@ -696,7 +696,7 @@ git commit -m "feat: detect region of interest from page diff during capture"
 - Consumes: `Overlay.present` (Task 1); region-aware `hash` (Task 3).
 - Produces: transitions recorded for region open/close; `tag('data').log('state', …)` payload gains `region` when a region is present. Rename `hasDialogAppeared` → `hasRegionAppeared` (private — no external consumers).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/unit/state-manager.test.ts` (reuse that file's existing StateManager construction):
 
@@ -732,7 +732,7 @@ describe('region state transitions', () => {
 
 Run: `bun test tests/unit/state-manager.test.ts` — observe which assertions already pass (named open/close comes from the Task 3 hash fork); the tests pin the behavior either way.
 
-- [ ] **Step 2: Generalize the check**
+- [x] **Step 2: Generalize the check**
 
 In `src/state-manager.ts`:
 
@@ -755,7 +755,7 @@ and rename/adjust the private method:
 
 Update the debug line inside the branch to `debugLog('State change detected: region of interest appeared');`.
 
-- [ ] **Step 3: Extend the remote state frame**
+- [x] **Step 3: Extend the remote state frame**
 
 In `emitStateChange`:
 
@@ -765,12 +765,12 @@ In `emitStateChange`:
     tag('data').log('state', payload);
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `bun test tests/unit/state-manager.test.ts tests/unit/state-manager-events.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 bun run format

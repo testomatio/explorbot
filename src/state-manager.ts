@@ -119,7 +119,9 @@ export class StateManager {
    */
   private emitStateChange(event: StateTransition): void {
     const state = event.toState;
-    tag('data').log('state', { url: state.fullUrl || state.url, path: state.url, title: state.title, h1: state.h1 });
+    const payload: Record<string, unknown> = { url: state.fullUrl || state.url, path: state.url, title: state.title, h1: state.h1 };
+    if (state.overlay?.present) payload.region = state.overlay.name || state.overlay.type;
+    tag('data').log('state', payload);
 
     this.stateChangeListeners.forEach((listener) => {
       try {
@@ -143,9 +145,9 @@ export class StateManager {
     if (newState.url) this.allVisitedUrls.add(normalizeUrl(newState.url));
 
     const hashChanged = actionResult.hash !== previousHash;
-    const dialogOpened = !hashChanged && this.hasDialogAppeared(previousState, newState);
+    const regionAppeared = !hashChanged && this.hasRegionAppeared(previousState, newState);
 
-    if (hashChanged || dialogOpened) {
+    if (hashChanged || regionAppeared) {
       const transition: StateTransition = {
         fromState: previousState,
         toState: newState,
@@ -156,8 +158,8 @@ export class StateManager {
       this.stateHistory.push(transition);
       this.emitStateChange(transition);
 
-      if (dialogOpened) {
-        debugLog('State change detected: modal dialog appeared');
+      if (regionAppeared) {
+        debugLog('State change detected: region of interest appeared');
       }
     }
 
@@ -206,10 +208,10 @@ export class StateManager {
     return newState;
   }
 
-  private hasDialogAppeared(previousState: WebPageState | null, newState: WebPageState): boolean {
+  private hasRegionAppeared(previousState: WebPageState | null, newState: WebPageState): boolean {
     const prevFocus = previousState?.overlay ?? Overlay.fromAria(previousState?.ariaSnapshot ?? null);
     const newFocus = newState.overlay ?? Overlay.fromAria(newState.ariaSnapshot ?? null);
-    return !prevFocus.detected && newFocus.detected;
+    return !prevFocus.present && newFocus.present;
   }
 
   /**

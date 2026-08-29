@@ -385,4 +385,32 @@ describe('StateManager', () => {
       expect(stateManager.getListenerCount()).toBe(0);
     });
   });
+
+  describe('region state transitions', () => {
+    const html = '<html><body><h1>Users</h1></body></html>';
+
+    it('records a transition when a named region opens and when it closes', () => {
+      const base = new ActionResult({ url: '/users', html });
+      stateManager.updateState(base);
+      const historyAfterBase = stateManager.getStateHistory().length;
+
+      const withDrawer = new ActionResult({ url: '/users', html, overlay: { type: 'drawer', name: 'Edit User', root: 'aside.panel' } });
+      stateManager.updateState(withDrawer);
+      expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 1);
+
+      const closed = new ActionResult({ url: '/users', html });
+      stateManager.updateState(closed);
+      expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 2);
+    });
+
+    it('records a transition for an unnamed region via hasRegionAppeared', () => {
+      const base = new ActionResult({ url: '/users', html });
+      stateManager.updateState(base);
+      const historyAfterBase = stateManager.getStateHistory().length;
+
+      const unnamed = new ActionResult({ url: '/users', html, overlay: { type: 'modal' } });
+      stateManager.updateState(unnamed);
+      expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 1);
+    });
+  });
 });
