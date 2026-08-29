@@ -52,10 +52,13 @@ export class OverlayPage {
   async detectRegion(parts: HtmlDiffPart[]): Promise<Overlay | null> {
     const subRoot = this.appearedSubRoot(parts);
     if (!subRoot) return null;
-    const samples = await this.probe(subRoot.elementXPath);
-    const verdict = this.classify(samples);
-    const overlay = this.toOverlay(subRoot, verdict);
-    debugLog(`Region detected: ${overlay.describe()} coverage=${verdict.coverage.toFixed(2)}`);
+    const probe = await this.probe(subRoot.elementXPath);
+    if (probe?.found && probe.onScreen && !probe.centerBelongs) {
+      debugLog('Appeared region is hidden or covered, ignoring it');
+      return null;
+    }
+    const overlay = this.toOverlay(subRoot, probe);
+    debugLog(`Region detected: ${overlay.describe()}`);
     return overlay;
   }
 
@@ -76,7 +79,7 @@ export class OverlayPage {
     return best;
   }
 
-  private async probe(xpath: string): Promise<RegionCoverageSamples | null> {
+  private async probe(xpath: string): Promise<RegionProbe | null> {
     if (!this.page) return null;
     return this.page
       .evaluate(
@@ -84,42 +87,19 @@ export class OverlayPage {
           const probe = new Function(`return ${probeSource}`)() as (config: any) => any;
           return probe(config);
         },
-        { probeSource: probeRegionCoverage.toString(), config: { xpath } }
+        { probeSource: inspectRegion.toString(), config: { xpath } }
       )
       .catch((err: Error) => {
-        debugLog('Region coverage probe failed:', err.message);
+        debugLog('Region probe failed:', err.message);
         return null;
       });
   }
 
-  private classify(samples: RegionCoverageSamples | null): RegionVerdict {
-    if (!samples?.found) return { overlays: false, coverage: 0 };
-    const viewportArea = samples.viewport.width * samples.viewport.height;
-    if (!viewportArea) return { overlays: false, coverage: 0 };
-
-    const rect = samples.rect;
-    const visibleWidth = Math.min(rect.x + rect.width, samples.viewport.width) - Math.max(rect.x, 0);
-    const visibleHeight = Math.min(rect.y + rect.height, samples.viewport.height) - Math.max(rect.y, 0);
-    const coverage = (Math.max(0, visibleWidth) * Math.max(0, visibleHeight)) / viewportArea;
-
-    if (coverage >= FULL_COVERAGE_RATIO) return { overlays: true, coverage };
-    if (samples.siblingsInert) return { overlays: true, coverage };
-
-    const floating = samples.position === 'fixed' || samples.position === 'absolute' || samples.zIndex > 0;
-    if (!floating) return { overlays: false, coverage };
-
-    const outside = samples.outsideHits;
-    if (outside.length > 0 && outside.every((hit) => hit !== 'page')) return { overlays: true, coverage };
-    if (samples.bodyScrollLocked && outside.length > 0 && outside.filter((hit) => hit !== 'page').length * 2 >= outside.length) return { overlays: true, coverage };
-
-    return { overlays: false, coverage };
-  }
-
-  private toOverlay(subRoot: AppearedSubRoot, verdict: RegionVerdict): Overlay {
+  private toOverlay(subRoot: AppearedSubRoot, probe: RegionProbe | null): Overlay {
     let type: OverlayType = 'region';
-    if (verdict.overlays) {
+    if (probe?.centerBelongs && probe.floating) {
       type = 'drawer';
-      if (verdict.coverage >= FULL_COVERAGE_RATIO) type = 'modal';
+      if (probe.coverage >= FULL_COVERAGE_RATIO) type = 'modal';
     }
     let root = subRoot.container;
     if (root === 'body') root = subRoot.elementXPath;
@@ -136,73 +116,31 @@ const SUBROOT_MIN_HTML = 10_000;
 const FULL_COVERAGE_RATIO = 0.8;
 
 // Serialized via toString() into page.evaluate — must stay a plain function with no outer-scope references.
-function probeRegionCoverage(config: { xpath: string }): RegionCoverageSamples {
-  const samples: RegionCoverageSamples = {
-    found: false,
-    rect: { x: 0, y: 0, width: 0, height: 0 },
-    viewport: { width: window.innerWidth, height: window.innerHeight },
-    position: 'static',
-    zIndex: 0,
-    outsideHits: [],
-    siblingsInert: false,
-    bodyScrollLocked: false,
-  };
+function inspectRegion(config: { xpath: string }): RegionProbe {
+  const probe: RegionProbe = { found: false, onScreen: false, floating: false, coverage: 0, centerBelongs: false };
 
   const result = document.evaluate(config.xpath, document, null, 9, null);
   const node = result.singleNodeValue;
-  if (!node || node.nodeType !== 1) return samples;
+  if (!node || node.nodeType !== 1) return probe;
   const element = node as HTMLElement;
   const rect = element.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return samples;
+  if (rect.width === 0 && rect.height === 0) return probe;
+  probe.found = true;
 
   const style = window.getComputedStyle(element);
-  samples.found = true;
-  samples.rect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-  samples.position = style.position;
-  samples.zIndex = Number.parseInt(style.zIndex || '0', 10) || 0;
+  probe.floating = style.position === 'fixed' || style.position === 'absolute' || (Number.parseInt(style.zIndex || '0', 10) || 0) > 0;
 
-  const bodyStyle = window.getComputedStyle(document.body);
-  samples.bodyScrollLocked = bodyStyle.overflow === 'hidden' || bodyStyle.overflowY === 'hidden';
+  const left = Math.max(rect.left, 0);
+  const top = Math.max(rect.top, 0);
+  const right = Math.min(rect.right, window.innerWidth);
+  const bottom = Math.min(rect.bottom, window.innerHeight);
+  if (right <= left || bottom <= top) return probe;
+  probe.onScreen = true;
+  probe.coverage = ((right - left) * (bottom - top)) / (window.innerWidth * window.innerHeight);
 
-  for (const sibling of Array.from(element.parentElement?.children || [])) {
-    if (sibling === element) continue;
-    if (!sibling.hasAttribute('inert') && sibling.getAttribute('aria-hidden') !== 'true') continue;
-    samples.siblingsInert = true;
-    break;
-  }
-
-  function classifyHit(hit: Element | null): 'inside' | 'blocked' | 'page' {
-    if (!hit) return 'page';
-    if (element.contains(hit)) return 'inside';
-    let current: Element | null = hit;
-    for (let depth = 0; current && depth < 4; depth++) {
-      const hitStyle = window.getComputedStyle(current as HTMLElement);
-      const hitZ = Number.parseInt(hitStyle.zIndex || '0', 10) || 0;
-      if ((hitStyle.position === 'fixed' || hitStyle.position === 'absolute') && hitZ > 0) return 'blocked';
-      current = current.parentElement;
-    }
-    return 'page';
-  }
-
-  const inset = 10;
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  const points: Array<[number, number]> = [
-    [inset, inset],
-    [width - inset, inset],
-    [inset, height - inset],
-    [width - inset, height - inset],
-    [width / 2, inset],
-    [width / 2, height - inset],
-    [inset, height / 2],
-    [width - inset, height / 2],
-  ];
-  for (const [x, y] of points) {
-    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) continue;
-    samples.outsideHits.push(classifyHit(document.elementFromPoint(x, y)));
-  }
-
-  return samples;
+  const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+  probe.centerBelongs = !!hit && (hit === element || element.contains(hit));
+  return probe;
 }
 
 interface AppearedSubRoot {
@@ -212,18 +150,10 @@ interface AppearedSubRoot {
   size: number;
 }
 
-interface RegionVerdict {
-  overlays: boolean;
-  coverage: number;
-}
-
-interface RegionCoverageSamples {
+interface RegionProbe {
   found: boolean;
-  rect: { x: number; y: number; width: number; height: number };
-  viewport: { width: number; height: number };
-  position: string;
-  zIndex: number;
-  outsideHits: Array<'inside' | 'blocked' | 'page'>;
-  siblingsInert: boolean;
-  bodyScrollLocked: boolean;
+  onScreen: boolean;
+  floating: boolean;
+  coverage: number;
+  centerBelongs: boolean;
 }

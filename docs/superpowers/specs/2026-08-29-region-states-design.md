@@ -100,25 +100,29 @@ both:
 When `container` degrades to `body` (top-level appended node — the common portal case), the
 `elementXPath` doubles as the root selector.
 
-### 2. Coverage verification (`OverlayPage`)
+### 2. Openness verification (`OverlayPage`)
 
-Split into dumb browser-side collection and a pure classifier, because jsdom has no layout and
-only the pure half can be unit-tested. Both are private members of `OverlayPage`; tests reach
-them through `detectRegion` with a fake page returning canned samples:
+One hit-test decides whether the appeared region is **actually open**: take the center of the
+region's visible (viewport-intersected) rect, ask `document.elementFromPoint` what lives there,
+and check the hit belongs to the region (`.modal` is the region; the input at its center belongs
+to it → it is on top). A region whose own center resolves to a foreign element is hidden or
+covered — verified not open, and **discarded** rather than classified.
 
-- **Browser probe** (a module-private plain function shipped as a source string into
-  `page.evaluate` — it must stay a plain self-contained function so `toString()` reconstruction
-  works in the browser): resolves the element by XPath, collects raw samples — bounding rect,
-  viewport size, computed position and z-index, `elementFromPoint` hits at sample points
-  **outside** the region's rect (classified as `inside` / `blocked` / `page`), sibling
-  `inert`/`aria-hidden` flags, body scroll lock.
-- **Pure classifier**: turns the samples into `{ overlays, coverage }`.
-  Overlaying = coverage ≥ 0.8, or siblings inerted, or a floating element whose outside sample
-  points are all blocked by a scrim rather than landing on page content.
+For an open region, two values collected in the same probe decide the kind:
 
-Probe failure (page navigating away, evaluate throws) degrades to `overlays: false` with a debug
-log — a false "inline" verdict costs a softer prompt; a false "overlaying" verdict would make
-Tester refuse legitimate navigation.
+- computed position — floating (`fixed`/`absolute`/positive z-index) → overlaying; in-flow →
+  inline `region` (so soft navigation never triggers the strict focus scope);
+- visible-rect coverage of the viewport — overlaying with coverage ≥ 0.8 → `modal`, else
+  `drawer`.
+
+The probe is a module-private plain function shipped as a source string into `page.evaluate`
+(it must stay self-contained so `toString()` reconstruction works in the browser); tests drive
+`detectRegion` with fake pages returning canned probe results.
+
+When the probe cannot run at all (no page, evaluate throws, element already gone) the region
+degrades to inline `region` with a debug log — never to an overlay: a false "overlaying" verdict
+would make Tester refuse legitimate navigation. An off-screen in-flow region (below the fold)
+also stays inline instead of being discarded.
 
 ### 3. Overlay carries the region (`overlay.ts`)
 
