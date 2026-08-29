@@ -122,7 +122,7 @@ export class RequestStore {
     if (!existsSync(requestsDir)) return;
 
     const existingIds = new Set(this.capturedRequests.map((r) => r.id));
-    const files = readdirSync(requestsDir).filter((f) => f.endsWith('.request.yaml'));
+    const files = readdirSync(requestsDir).filter((f) => f.startsWith('xhr_') && f.endsWith('.request.yaml'));
 
     for (const file of files) {
       try {

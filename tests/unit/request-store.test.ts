@@ -6,10 +6,10 @@ import { RequestResult } from '../../src/api/request-result.js';
 import { RequestStore } from '../../src/api/request-store.js';
 
 let counter = 0;
-function makeRequest(method: string, path: string, status: number): RequestResult {
+function makeRequest(method: string, path: string, status: number, id?: string): RequestResult {
   counter++;
   return new RequestResult({
-    id: `req_${counter}`,
+    id: id || `req_${counter}`,
     method,
     path,
     fullUrl: path,
@@ -92,5 +92,28 @@ describe('RequestStore failures', () => {
     store.addFailedRequest(makeRequest('GET', '/x', 503));
 
     expect(received).toEqual([503]);
+  });
+});
+
+describe('RequestStore loadFromDisk', () => {
+  let outputDir: string;
+
+  beforeEach(() => {
+    outputDir = mkdtempSync(join(tmpdir(), 'reqstore-'));
+  });
+
+  afterEach(() => {
+    if (existsSync(outputDir)) rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  it('loads only browser-captured requests from disk', () => {
+    makeRequest('POST', '/api/suites', 201, 'xhr_001_POST_api_suites').save(outputDir);
+    makeRequest('POST', '/api/suites', 400, '001_POST_api_suites').save(outputDir);
+
+    const fresh = new RequestStore(outputDir);
+    fresh.loadFromDisk();
+
+    expect(fresh.getCapturedRequests()).toHaveLength(1);
+    expect(fresh.getCapturedRequests()[0].id).toBe('xhr_001_POST_api_suites');
   });
 });
