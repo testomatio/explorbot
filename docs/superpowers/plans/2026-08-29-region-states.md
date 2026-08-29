@@ -1138,7 +1138,7 @@ git commit -m "feat: pilot state context distinguishes overlaying modals from in
 - Consumes: `pageDiff.htmlParts` / `pageDiff.areaOfInterest` from tool results (Task 3).
 - Produces: `detectNestedOverlayContext` no longer queries the live DOM; `Driller.getVisibleOverlayHtml` is deleted along with its imports (`getVisibleOverlayHtmlExtractorSource`, `OVERLAY_SELECTORS`, and any `HTML_*` config constants imported only for it).
 
-- [ ] **Step 1: Replace the DOM query with the diff the result already carries**
+- [x] **Step 1: Replace the DOM query with the diff the result already carries**
 
 In `src/ai/driller.ts` `detectNestedOverlayContext` (currently :648), replace the overlay-fetch prologue:
 
@@ -1163,16 +1163,16 @@ with:
 
 The rest of the method (the `<nested_overlay>` dedent block) is unchanged — `overlayHtml` keeps its name and role in the prompt.
 
-- [ ] **Step 2: Delete the private extractor**
+- [x] **Step 2: Delete the private extractor**
 
 Remove the whole `private async getVisibleOverlayHtml()` method (currently :674-692). Then remove from the imports at the top of `driller.ts`: `getVisibleOverlayHtmlExtractorSource`, `OVERLAY_SELECTORS`, and each of `HTML_SELECTORS` / `HTML_EXTRACTION_LIMITS` / `HTML_VISIBILITY_LIMITS` **only if** `grep -n "<name>" src/ai/driller.ts` shows no remaining use in this file.
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `bun test tests/unit/driller.test.ts && bun test tests/unit/`
 Expected: PASS.
 
-- [ ] **Step 4: Format and commit**
+- [x] **Step 4: Format and commit**
 
 ```bash
 bun run format
