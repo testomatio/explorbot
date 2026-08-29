@@ -55,6 +55,18 @@ describe('Fisherman tools', () => {
       expect(result.category).toBe(category);
     }
   });
+
+  it('keeps the HTTP status authoritative over response body fields', async () => {
+    const apiClient = {
+      request: async () => ({ status: 201, statusText: 'Created', rawResponseBody: '', responseBody: { id: 7, status: 'draft' } }),
+    };
+    const { tools } = createFishermanTools(apiClient as any, store(), {});
+
+    const result: any = await tools.request.execute({ method: 'POST', path: '/items' }, {} as any);
+
+    expect(result.status).toBe(201);
+    expect(result.extracted).toEqual({ id: 7, status: 'draft' });
+  });
 });
 
 function store(captured?: any): any {

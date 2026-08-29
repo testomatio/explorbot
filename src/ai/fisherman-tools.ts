@@ -76,7 +76,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
     request: tool({
       description: dedent`
         Make an HTTP request to the API.
-        Returns status, timing, and auto-extracted IDs and names from the response.
+        Returns status, plus IDs and names auto-extracted from the response under 'extracted'.
       `,
       inputSchema: z.object({
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
@@ -119,7 +119,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
         return {
           success: true,
           status: reqResult.status,
-          ...extracted,
+          extracted,
         };
       },
     }),
