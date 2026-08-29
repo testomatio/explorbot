@@ -10,6 +10,7 @@ import type { StateManager } from '../state-manager.js';
 import { Stats } from '../stats.ts';
 import { Suite } from '../suite.ts';
 import { Plan, Test } from '../test-plan.ts';
+import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { jsonToTable } from '../utils/markdown-parser.ts';
 import { mdq } from '../utils/markdown-query.js';
@@ -195,7 +196,8 @@ export class Planner extends PlannerBase implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
-      if (aiResult.object.scenarios.length === 0 && !this.currentPlan) {
+      if (aiResult.object.scenarios.length === 0 && !this.currentPlan?.tests.length) {
+        if (!feature) throw new ErrorPageError(actionResult.url || state.url, actionResult.title, actionResult.httpStatus);
         throw new Error('No tasks were created successfully');
       }
 
@@ -335,6 +337,7 @@ export class Planner extends PlannerBase implements Agent {
       <task>
       Based on the page research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios.
       For each scenario provide specific steps and expected outcomes.
+      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.
       </task>
 
       <rules>
