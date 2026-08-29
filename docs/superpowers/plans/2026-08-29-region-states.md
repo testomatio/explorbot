@@ -37,7 +37,7 @@
   - `findAppearedSubRoot(parts: HtmlDiffPart[]): AppearedSubRoot | null` in `overlay.ts`; `export interface AppearedSubRoot { container: string; elementXPath: string; subtree: string; size: number }` at end of `overlay.ts`.
   - `RegionVerdict` is implemented in Task 2; for this task declare it in `overlay.ts`'s end-of-file types block: `export interface RegionVerdict { overlays: boolean; coverage: number }`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/unit/overlay-detection.test.ts` (extend its imports with `findAppearedSubRoot` from `../../src/utils/overlay.ts` and `htmlDiff` from `../../src/utils/html-diff.ts`):
 
@@ -105,16 +105,16 @@ describe('Overlay.fromSubRoot', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `bun test tests/unit/overlay-detection.test.ts`
 Expected: FAIL — `findAppearedSubRoot` / `fromSubRoot` do not exist.
 
-- [ ] **Step 3: Export `pathToXPath` from html-diff**
+- [x] **Step 3: Export `pathToXPath` from html-diff**
 
 In `src/utils/html-diff.ts` change `function pathToXPath(treePath: string): string {` to `export function pathToXPath(treePath: string): string {`. Nothing else in that file changes.
 
-- [ ] **Step 4: Extend Overlay and add `findAppearedSubRoot`**
+- [x] **Step 4: Extend Overlay and add `findAppearedSubRoot`**
 
 Rewrite `src/utils/overlay.ts` (keep `OVERLAY_SELECTORS`, `fromAria`, `resolve`, `fromHtml`, `captureConfig` bodies verbatim for now — they are deleted in Task 11, not here; `fromHtml` delegates to the new `nameFromHtml`):
 
@@ -207,12 +207,12 @@ export interface RegionVerdict {
 
 `/* unchanged */` markers mean: keep the existing bodies verbatim — do not retype them. Cycle check holds: overlay → html-diff → html, overlay → html, overlay → aria; nothing imports overlay from those three.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `bun test tests/unit/overlay-detection.test.ts && bun test tests/unit/html-diff.test.ts && bun test tests/unit/aria.test.ts && bun test tests/unit/state-manager.test.ts`
 Expected: PASS — `detected` semantics for `dialog`/`modal` are unchanged, and the pre-existing `extractVisibleOverlayHtml`/resolve tests still pass because that path is untouched until Task 11. If the first `findAppearedSubRoot` test's `container` assertion fails, inspect the actual value — `findStableContainer` returns `body` for top-level appended nodes because `html[1]/body[1]` is in `IGNORED_PATHS`.
 
-- [ ] **Step 6: Format and commit**
+- [x] **Step 6: Format and commit**
 
 ```bash
 bun run format

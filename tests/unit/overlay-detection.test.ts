@@ -2,8 +2,9 @@ import 'parse5';
 import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
 import { ActionResult } from '../../src/action-result.ts';
+import { htmlDiff } from '../../src/utils/html-diff.ts';
 import { HTML_EXTRACTION_LIMITS, HTML_SELECTORS, HTML_VISIBILITY_LIMITS, type VisibleOverlayExtractionConfig, extractVisibleOverlayHtml } from '../../src/utils/html.ts';
-import { OVERLAY_SELECTORS, Overlay } from '../../src/utils/overlay.ts';
+import { OVERLAY_SELECTORS, Overlay, findAppearedSubRoot } from '../../src/utils/overlay.ts';
 
 function overlayConfig(overrides: Partial<VisibleOverlayExtractionConfig> = {}): VisibleOverlayExtractionConfig {
   return {
@@ -158,5 +159,67 @@ describe('Overlay', () => {
   it('rehydrates from a plain persisted descriptor', () => {
     expect(new Overlay({ type: 'modal', name: 'Copy report' }).detected).toBe(true);
     expect(new Overlay().detected).toBe(false);
+  });
+});
+
+describe('findAppearedSubRoot', () => {
+  const bigForm = Array.from({ length: 200 }, (_, i) => `<div><label>Field ${i}</label><input name="field-${i}" placeholder="value ${i}"></div>`).join('');
+  const basePage = '<html><body><div id="app"><h1>Users</h1><ul><li><a href="/users/1">First User</a></li></ul></div></body></html>';
+  const pageWithDrawer = `<html><body><div id="app"><h1>Users</h1><ul><li><a href="/users/1">First User</a></li></ul></div><div class="drawer"><h2>Edit User</h2><form>${bigForm}</form></div></body></html>`;
+
+  it('finds a large appeared element with container and element xpath', async () => {
+    const diff = await htmlDiff(basePage, pageWithDrawer);
+    const subRoot = findAppearedSubRoot(diff.parts);
+    expect(subRoot).not.toBeNull();
+    expect(subRoot!.size).toBeGreaterThanOrEqual(10_000);
+    expect(subRoot!.container).toBe('body');
+    expect(subRoot!.elementXPath).toBe('//body/div[2]');
+    expect(subRoot!.subtree).toContain('Edit User');
+  });
+
+  it('returns null when the appeared content is below the threshold', async () => {
+    const before = '<html><body><div id="app"><h1>Users</h1></div></body></html>';
+    const after = '<html><body><div id="app"><h1>Users</h1></div><div class="toast">Saved successfully</div></body></html>';
+    const diff = await htmlDiff(before, after);
+    expect(findAppearedSubRoot(diff.parts)).toBeNull();
+  });
+
+  it('returns null when nothing appeared', async () => {
+    const diff = await htmlDiff(basePage, basePage);
+    expect(findAppearedSubRoot(diff.parts)).toBeNull();
+  });
+});
+
+describe('Overlay.fromSubRoot', () => {
+  const subRoot = {
+    container: 'aside.detail-panel',
+    elementXPath: '//body/div[2]',
+    subtree: '<aside class="detail-panel"><h2>Edit User</h2><form><input name="name"></form></aside>',
+    size: 12000,
+  };
+
+  it('overlaying with full coverage becomes a modal named by headings', () => {
+    const overlay = Overlay.fromSubRoot(subRoot, { overlays: true, coverage: 0.95 });
+    expect(overlay.type).toBe('modal');
+    expect(overlay.name).toBe('Edit User');
+    expect(overlay.root).toBe('aside.detail-panel');
+    expect(overlay.detected).toBe(true);
+    expect(overlay.present).toBe(true);
+  });
+
+  it('overlaying with partial coverage becomes a drawer', () => {
+    expect(Overlay.fromSubRoot(subRoot, { overlays: true, coverage: 0.3 }).type).toBe('drawer');
+  });
+
+  it('inline verdict becomes a region: present but not detected', () => {
+    const overlay = Overlay.fromSubRoot(subRoot, { overlays: false, coverage: 0.3 });
+    expect(overlay.type).toBe('region');
+    expect(overlay.detected).toBe(false);
+    expect(overlay.present).toBe(true);
+  });
+
+  it('body container falls back to the element xpath as root', () => {
+    const overlay = Overlay.fromSubRoot({ ...subRoot, container: 'body' }, { overlays: true, coverage: 1 });
+    expect(overlay.root).toBe('//body/div[2]');
   });
 });

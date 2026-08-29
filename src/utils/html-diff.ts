@@ -492,7 +492,7 @@ function buildContainerSelector(element: ElementNode, allElements: NodeMap): str
   return matchCount === 1 ? selector : null;
 }
 
-function pathToXPath(treePath: string): string {
+export function pathToXPath(treePath: string): string {
   const parts = treePath.split('/');
   const bodyIdx = parts.findIndex((p) => p.startsWith('body'));
   if (bodyIdx === -1) return `//${parts.join('/')}`;
