@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-29
+
+### Changes
+
+- [Provider] Groq prompt cache hits are counted again. Groq reports how much of a prompt it served
+  from cache, but the pinned `@ai-sdk/groq` build read that number out of the response and then
+  dropped it, so every Groq request was recorded as a full-price miss and the cache hit rate showed
+  as zero no matter how much of the prompt was actually reused. Upgrading the provider carries the
+  number through to the run stats and to Langfuse, which records it as `cache_read.input_tokens`.
+  Groq's cache lives on the node that served the request, so expect an uneven rate — a hit covers
+  almost the whole prompt, but only some requests get one.
+
 ## 2026-08-28
 
 ### Changes
