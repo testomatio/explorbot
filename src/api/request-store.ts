@@ -167,6 +167,7 @@ export class RequestStore {
     let scopeKey = '';
     let fewest = Number.POSITIVE_INFINITY;
     for (const segment of scopeSegments) {
+      if (isDynamicSegment(segment)) continue;
       const matches = writes.filter((r) => r.path.split('/').includes(segment)).length;
       if (matches === 0 || matches >= fewest) continue;
       scopeKey = segment;

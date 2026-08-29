@@ -164,6 +164,15 @@ describe('RequestStore scope filtering', () => {
     expect(scoped[0].path).toBe('/api/alpha-shop/suites');
   });
 
+  it('ignores id-shaped page segments when choosing the scope', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+    store.addCapturedRequest(makeRequest('PATCH', '/api/alpha-shop/runs/8471', 200));
+
+    const scoped = store.getWriteRequestsForScope('/projects/alpha-shop/tests/8471');
+
+    expect(scoped.map((r) => r.path)).toContain('/api/alpha-shop/suites');
+  });
+
   it('returns nothing when the scope shares no segment with any write', () => {
     store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
 
