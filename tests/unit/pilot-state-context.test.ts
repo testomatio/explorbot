@@ -103,4 +103,19 @@ describe('Pilot buildStateContext — error signals', () => {
     const context = (pilot as any).buildStateContext(buildActionResult());
     expect(context).toContain('network errors: none');
   });
+
+  it('shows verified overlay with its root', () => {
+    const pilot = buildPilotWithStore(null);
+    const state = new ActionResult({ url: '/users', html: '<html><body><h1>Users</h1></body></html>', overlay: { type: 'drawer', name: 'Edit User', root: 'aside.panel' } });
+    const context = (pilot as any).buildStateContext(state);
+    expect(context).toContain('modal: Edit User (root: aside.panel)');
+  });
+
+  it('shows inline region distinctly from a modal', () => {
+    const pilot = buildPilotWithStore(null);
+    const state = new ActionResult({ url: '/users', html: '<html><body><h1>Users</h1></body></html>', overlay: { type: 'region', name: 'User Details', root: 'section.details' } });
+    const context = (pilot as any).buildStateContext(state);
+    expect(context).toContain('region: User Details (inline, root: section.details)');
+    expect(context).not.toContain('modal: User Details');
+  });
 });

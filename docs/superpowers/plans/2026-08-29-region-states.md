@@ -1050,7 +1050,7 @@ git commit -m "feat: tester context carries region root and inline area of inter
 
 **Note:** `src/ai/pilot.ts` and this test file carry uncommitted in-flight changes — read both fully before editing and integrate, do not revert anything.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/unit/pilot-state-context.test.ts`, following that file's existing pattern for building an `ActionResult` and reading `buildStateContext` output:
 
@@ -1073,7 +1073,7 @@ it('shows inline region distinctly from a modal', () => {
 
 Run: `bun test tests/unit/pilot-state-context.test.ts` — expected FAIL.
 
-- [ ] **Step 2: Implement the state lines**
+- [x] **Step 2: Implement the state lines**
 
 In `src/ai/pilot.ts` `buildStateContext` (currently :828-834) replace:
 
@@ -1103,7 +1103,7 @@ with:
     }
 ```
 
-- [ ] **Step 3: One general prompt bullet**
+- [x] **Step 3: One general prompt bullet**
 
 In `getSystemPrompt`, in the "Diagnostic patterns" list, add one line:
 
@@ -1113,12 +1113,12 @@ In `getSystemPrompt`, in the "Diagnostic patterns" list, add one line:
 
 Nothing else in the prompt changes.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `bun test tests/unit/pilot-state-context.test.ts && bun test tests/integration/`
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
 
 ```bash
 bun run format
