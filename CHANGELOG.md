@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-08-29
+
+### Changes
+
+- [Fisherman] No longer treats its own past API calls as captured browser traffic. Replicate mode
+  used to reload every request it had ever made — rejected ones included — and hand the next run a
+  failed request body as "the example", sending it into long guessing loops. Only real browser
+  requests are read back now; a project with no captured browser traffic reports data preparation
+  as unavailable instead of replaying its own mistakes.
+- [Fisherman] Picks the best captured example for an endpoint instead of the first one found: an
+  exact endpoint match beats a deeper sub-path, a successful request beats a rejected one, and
+  newer beats older.
+- [Fisherman] The endpoint list shown to the AI is scoped to the page being tested by matching the
+  page URL against captured request paths, so endpoints from other projects no longer appear. When
+  scoping isn't possible the prompt says so explicitly instead of silently listing everything.
+- [Fisherman] `finish` no longer reports success on faith. Reporting success requires at least one
+  API write that actually succeeded in this run, and every claimed created item is checked against
+  the ids the API really returned — unverifiable claims are dropped, and each confirmed item shows
+  which request created it. A run that ends without finishing now reports how many requests were
+  made, how many succeeded, and the last failure, instead of an empty result.
+- [Fisherman] Stops after four failures in a row against the same endpoint instead of spending the
+  whole iteration budget guessing request bodies.
+- [Pilot] Precondition steps now record which API request created each item.
+
 ## 2026-08-28
 
 ### Changes
