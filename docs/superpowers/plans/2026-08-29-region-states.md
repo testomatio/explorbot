@@ -1263,7 +1263,7 @@ git commit -m "refactor: remove selector-based overlay detection; overlay.ts is 
 **Files:**
 - Modify: `CHANGELOG.md` (via the `/changelog` skill)
 
-- [ ] **Step 1: Full verification**
+- [x] **Step 1: Full verification**
 
 ```bash
 bun run format

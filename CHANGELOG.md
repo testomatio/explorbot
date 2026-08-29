@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-08-29
+
+### Changes
+
+- State Manager: Drawers, side panels and swapped-in subviews are now recognised as pages in their
+  own right. Until now only a modal that announced itself as a dialog counted as a state; a panel
+  built as a plain positioned element, or a wizard step that replaced half the screen without
+  changing the URL, was invisible — the agent kept aiming at the elements behind it, and a test that
+  opened and closed the same panel over and over looked like it was standing still. A large area
+  appearing on the page is now detected by comparing the page before and after the action and
+  measuring whether it covers what is behind it, so opening one is recorded as a move to a new state
+  and closing it as a move back.
+- Action: The result of a click that opens a panel now leads with the panel. A large change used to
+  be written off as a whole-page redraw and replaced with a placeholder saying how many characters
+  were dropped, which threw away the one thing worth reading. The result now names what opened and
+  where it lives, and carries that area's markup instead of the placeholder.
+- [Tester] Knows to keep working inside the area that just opened. For a panel that covers the page,
+  it is told the exact container to scope its locators to. For one that appears inline, it is told
+  the scenario most likely continues there while the rest of the page stays available — the stricter
+  "nothing outside is clickable" wording is reserved for areas actually measured as covering.
+- [Pilot] Tells a covering modal apart from an inline area. The state summary now shows the
+  container for a modal and a separate `region:` line for an area that appeared in place, so Pilot
+  can steer a stuck Tester into a subview instead of assuming a dialog is blocking it.
+- [Researcher] Describes drawers and subviews, not just dialogs. The extra pass that documents what
+  a modal contains now runs for any named area that opens, and its notes are still filed under the
+  page they belong to, so a panel that is open when a page is first analyzed no longer splits that
+  page's UI map in two.
+- Experience Tracker: Steps learned while a panel was open are now scoped to it. Experience files
+  written for such a state record the panel's container as `root:` in their frontmatter, and are
+  loaded only while a matching area is open — so panel-specific recipes stop being offered as advice
+  on the plain page. Existing files without the key behave exactly as before.
+- [Driller] Reads a nested popup or menu from what the click already reported instead of asking the
+  browser a second time.
+- Overlay detection is now one mechanism instead of three. The old path recognised overlays by
+  looking for class names containing words like "modal" or "drawer", which only ever worked on sites
+  that happened to name their CSS that way; it has been removed in favour of accessibility roles
+  plus the page-comparison and geometry check above. One consequence: an overlay already on screen
+  at the very first capture that carries no accessibility role is no longer detected until the next
+  action.
+
 ## 2026-08-28
 
 ### Changes
