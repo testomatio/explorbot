@@ -120,19 +120,36 @@ rendering the page blows it, and a modal-close re-render of the base content blo
 the same principle as change 2's cross-URL similarity floor, seen from the other side — a region
 requires that most of the page **survived**.
 
-Root selection still needs its own care (a genuinely small drawer can still climb to a shell ancestor
-when no intermediate stable container exists):
+Root selection still needs its own care, and its rule is now stricter: **roots are semantic only**. A
+positional XPath is never a `root` — it neither reaches a prompt nor an experience file. It survives
+strictly as the overlay's internal `xpath`, the handle the openness/persistence probe needs to find
+the element, never rendered to agents. (This supersedes the original design's body → element-XPath
+fallback.)
 
-- A container whose subtree spans most of the document (same treatment as literal `body`) is never a
-  scope.
-- When the container degrades, the appeared element itself is tried for a stable selector first (id or
-  meaningful classes, the same filtering `findStableContainer` already applies), with the positional
-  XPath as the last resort it was always documented to be. `html-diff` exposes this as an optional
-  `appearedSelector` on the part; root preference becomes: non-shell container → appeared element's
-  semantic selector → element XPath.
+The real root of the appeared subtree is often an anonymous wrapper with no identity of its own —
+`body > div > div > div.bg-overlay > div > div.modal` — so the search may **skip the real root in
+either direction** when a better candidate exists:
 
-This kills both observed false-positive roots (`div.main-app`) and upgrades `//body/div[16]`-class
-roots wherever the app gives the element any identity.
+- **Up:** stable ancestors, as today — except a container whose subtree spans most of the document is
+  a shell, never a scope (same treatment as literal `body`).
+- **The appeared element itself**, when it carries a stable id or meaningful classes (the same
+  filters `findStableContainer` already applies: dynamic ids out, digit/framework/Tailwind utility
+  classes out, document-unique required).
+- **Down:** unwrap the appeared subtree — repeatedly descend into the child that holds the bulk of
+  the subtree's content (`ROOT_CONTENT_RATIO`, ~0.8; a wrapper has one dominant child), testing each
+  node for a semantic selector. In the example above, the anonymous wrappers and the `bg-overlay`
+  utility class are all rejected by the existing filters, and the descent lands on `div.modal`.
+- **Nothing semantic anywhere → the overlay has no root.** The context blocks already render their
+  scope sentence only when a root exists; agents then scope by the region's name and ARIA, and the
+  experience file simply omits its optional `root:` key.
+
+Preference order: semantic non-shell ancestor → appeared element → deepest dominant descendant →
+none. Classification is unaffected: the openness probe keeps measuring the topmost appeared element
+(the whole overlay, backdrop included), while `root` answers the different question — where locators
+should aim.
+
+This kills both observed root failures: `div.main-app` (shell) and `//body/div[16]` (positional)
+can never be produced again.
 
 ### 4. Classify with ancestors and isolation
 
@@ -207,8 +224,10 @@ lost:
 
 - Unit: carry-forward and close transitions (StateManager history shows open → carried → closed);
   cross-URL detection above/below the similarity floor; the size band — below 10K no region, inside
-  the band a region, above `REGION_MAX_RATIO` no overlay and a plain state change; shell-container
-  rejection in root selection; ancestor-floating classification; dominance guard against scattered
+  the band a region, above `REGION_MAX_RATIO` no overlay and a plain state change; root selection —
+  semantic ancestor preferred, wrapper-chain descent landing on a nested semantic container, shell
+  rejection, and the no-semantic case yielding a rootless overlay with no positional XPath anywhere
+  in prompts or frontmatter; ancestor-floating classification; dominance guard against scattered
   diffs; newest-heading naming with a nested-panel fixture; ARIA+probe merge producing rooted
   `dialog`; failure-path capture.
 - The seven Langfuse sessions above are the acceptance fixture: re-run the same two focus commands
