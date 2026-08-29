@@ -104,11 +104,27 @@ produces no region; a drawer rendered over the still-present page does. The acce
 of the original spec ("first paint with no ARIA role") stands; this closes the much larger gap the field
 runs actually hit.
 
-### 3. Reject shell containers, prefer semantic roots
+### 3. Bound the region: bigger than a widget, smaller than the page
 
-- The body fallback generalizes: a container whose subtree spans most of the document
-  (`containerSize >= SHELL_RATIO * bodySize`, measured on the diff's own maps, ~0.8) is a shell, not a
-  scope — same treatment as literal `body`.
+A region is a **band**, not just a floor. The appeared subtree must satisfy both:
+
+- `size >= SUBROOT_MIN_HTML` (10K, as today) — below it, a widget, ignored;
+- `size <= REGION_MAX_RATIO * pageSize` (~0.6, measured on the same minified representations the diff
+  already produces) — above it, **this is not a region change anymore, it is a new state**. No overlay
+  is set; the ordinary state-change machinery (url + headings hash, research on change) owns a page
+  that mostly replaced itself. A full-page takeover that swaps more than 60% of the HTML *is* a new
+  state semantically, and takeovers bring their own headings, so state identity still forks.
+
+The cap is the primary defense against the observed false positives: a hydration burst that finishes
+rendering the page blows it, and a modal-close re-render of the base content blows it too. It is also
+the same principle as change 2's cross-URL similarity floor, seen from the other side — a region
+requires that most of the page **survived**.
+
+Root selection still needs its own care (a genuinely small drawer can still climb to a shell ancestor
+when no intermediate stable container exists):
+
+- A container whose subtree spans most of the document (same treatment as literal `body`) is never a
+  scope.
 - When the container degrades, the appeared element itself is tried for a stable selector first (id or
   meaningful classes, the same filtering `findStableContainer` already applies), with the positional
   XPath as the last resort it was always documented to be. `html-diff` exposes this as an optional
@@ -124,8 +140,8 @@ roots wherever the app gives the element any identity.
   body* is fixed/absolute/z-indexed. A re-render inside an open drawer now classifies as the drawer it
   is.
 - **Isolation guard.** A region requires a dominant single addition: the winning part must account for
-  the bulk of the diff's total changed subtree length (`REGION_DOMINANCE`, ~0.7). A hydration burst
-  that touches containers all over the page no longer qualifies, independent of the shell-root fix.
+  the bulk of the diff's total changed subtree length (`REGION_DOMINANCE`, ~0.7). This catches what the
+  change-3 cap cannot: many *small* scattered changes with no dominant subtree.
 - **Close is not open.** Because change 1 runs the close check first, a click that dismisses the current
   overlay is consumed as a close transition; re-rendered base content underneath cannot double as a
   fresh region in the same capture.
@@ -190,9 +206,11 @@ lost:
 ## Validation
 
 - Unit: carry-forward and close transitions (StateManager history shows open → carried → closed);
-  cross-URL detection above/below the similarity floor; shell-container rejection; ancestor-floating
-  classification; dominance guard against scattered diffs; newest-heading naming with a nested-panel
-  fixture; ARIA+probe merge producing rooted `dialog`; failure-path capture.
+  cross-URL detection above/below the similarity floor; the size band — below 10K no region, inside
+  the band a region, above `REGION_MAX_RATIO` no overlay and a plain state change; shell-container
+  rejection in root selection; ancestor-floating classification; dominance guard against scattered
+  diffs; newest-heading naming with a nested-panel fixture; ARIA+probe merge producing rooted
+  `dialog`; failure-path capture.
 - The seven Langfuse sessions above are the acceptance fixture: re-run the same two focus commands
   (`create test`, `create plan of different kinds`) and require — hash forks containing `region_`,
   Pilot `<state>` showing the region while open, zero `.modal`-guess `interact()` scopes, and no
