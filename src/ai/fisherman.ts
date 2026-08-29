@@ -27,6 +27,7 @@ export class Fisherman implements Agent {
   private spec: any | null = null;
   private mode: 'replicate' | 'achieve' | 'disabled' = 'disabled';
   private hasApiConfig: boolean;
+  private scopeDegraded = false;
 
   constructor(provider: Provider, apiClient: ApiClient, requestStore: RequestStore, specLoader: () => Promise<any | null>, baseEndpoint: string, cookieProvider: () => Promise<Record<string, string>>, configHeaders: Record<string, string> = {}, hasApiConfig = false) {
     this.provider = provider;
@@ -161,31 +162,25 @@ export class Fisherman implements Agent {
   }
 
   private buildEndpointList(scopeUrl?: string): string {
+    this.scopeDegraded = false;
     if (this.mode === 'achieve' && this.spec) {
       const specEndpoints = listAllEndpoints(this.spec, this.baseEndpoint);
       if (specEndpoints) return specEndpoints;
     }
 
-    let writeRequests = this.requestStore.getWriteRequestsForScope(scopeUrl || '/');
-    if (writeRequests.length === 0) {
-      writeRequests = this.requestStore.getWriteRequestsForScope('/');
-    }
+    const scoped = this.requestStore.toEndpointList(scopeUrl || '/');
+    if (scoped) return scoped;
 
-    const seen = new Set<string>();
-    const lines: string[] = [];
-
-    for (const req of writeRequests) {
-      const key = `${req.method} ${req.path}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      lines.push(key);
-    }
-
-    return lines.join('\n');
+    this.scopeDegraded = true;
+    return this.requestStore.toEndpointList();
   }
 
   private buildSystemPrompt(endpointList: string, toolNames: string[], scopeUrl?: string): string {
-    const scopeBlock = scopeUrl ? `\n\nSCOPE: You are operating within ${scopeUrl}.\nAll created items must belong to this scope.` : '';
+    let scopeBlock = '';
+    if (scopeUrl) {
+      scopeBlock = `\n\nSCOPE: You are operating within ${scopeUrl}.\nAll created items must belong to this scope.`;
+      if (this.scopeDegraded) scopeBlock += '\nThe endpoint list could not be narrowed to this scope and may include endpoints belonging to other scopes. Before writing, confirm the target belongs to this scope.';
+    }
 
     return dedent`
       You are Fisherman — a data preparation agent. You create test data by making API requests.

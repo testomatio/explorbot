@@ -141,6 +141,57 @@ describe('findCapturedRequest ranking', () => {
   });
 });
 
+describe('RequestStore scope filtering', () => {
+  let outputDir: string;
+  let store: RequestStore;
+
+  beforeEach(() => {
+    outputDir = mkdtempSync(join(tmpdir(), 'reqstore-'));
+    store = new RequestStore(outputDir);
+  });
+
+  afterEach(() => {
+    if (existsSync(outputDir)) rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  it('scopes writes by the most selective segment shared with the page URL', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+    store.addCapturedRequest(makeRequest('PATCH', '/api/other-shop/suites/5', 200));
+
+    const scoped = store.getWriteRequestsForScope('/projects/alpha-shop/suites');
+
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0].path).toBe('/api/alpha-shop/suites');
+  });
+
+  it('returns nothing when the scope shares no segment with any write', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+
+    expect(store.getWriteRequestsForScope('/dashboard')).toHaveLength(0);
+  });
+
+  it('returns all writes for the root scope', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+    store.addCapturedRequest(makeRequest('POST', '/api/other-shop/labels', 201));
+
+    expect(store.getWriteRequestsForScope('/')).toHaveLength(2);
+  });
+
+  it('deduplicates endpoint list lines by id pattern', () => {
+    store.addCapturedRequest(makeRequest('PATCH', '/api/suites/1a2b3c4d', 200));
+    store.addCapturedRequest(makeRequest('PATCH', '/api/suites/9f8e7d6c', 200));
+
+    expect(store.toEndpointList()).toBe('PATCH /api/suites/{id}');
+  });
+
+  it('scopes the endpoint list when a scope path is given', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+    store.addCapturedRequest(makeRequest('POST', '/api/other-shop/suites', 201));
+
+    expect(store.toEndpointList('/projects/alpha-shop')).toBe('POST /api/alpha-shop/suites');
+  });
+});
+
 describe('RequestStore loadFromDisk', () => {
   let outputDir: string;
 

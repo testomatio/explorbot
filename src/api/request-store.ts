@@ -78,13 +78,15 @@ export class RequestStore {
     return this.madeRequests.filter((r) => r.status === status);
   }
 
-  toEndpointList(): string {
+  toEndpointList(scopePath?: string): string {
+    let requests = this.capturedRequests;
+    if (scopePath) requests = this.getWriteRequestsForScope(scopePath);
+
     const seen = new Set<string>();
     const lines: string[] = [];
 
-    for (const req of this.capturedRequests) {
-      const normalized = normalizePathPattern(req.path);
-      const key = `${req.method} ${normalized}`;
+    for (const req of requests) {
+      const key = `${req.method} ${normalizePathPattern(req.path)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       lines.push(key);
@@ -158,7 +160,21 @@ export class RequestStore {
 
   getWriteRequestsForScope(scopePath: string): RequestResult[] {
     const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-    return this.capturedRequests.filter((r) => writeMethods.has(r.method) && r.path.startsWith(scopePath));
+    const writes = this.capturedRequests.filter((r) => writeMethods.has(r.method));
+    const scopeSegments = scopePath.split('/').filter(Boolean);
+    if (scopeSegments.length === 0) return writes;
+
+    let scopeKey = '';
+    let fewest = Number.POSITIVE_INFINITY;
+    for (const segment of scopeSegments) {
+      const matches = writes.filter((r) => r.path.split('/').includes(segment)).length;
+      if (matches === 0 || matches >= fewest) continue;
+      scopeKey = segment;
+      fewest = matches;
+    }
+    if (!scopeKey) return [];
+
+    return writes.filter((r) => r.path.split('/').includes(scopeKey));
   }
 
   clear(): void {
