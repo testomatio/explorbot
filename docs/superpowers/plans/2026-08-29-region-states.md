@@ -951,7 +951,7 @@ git commit -m "feat: key research by base page hash and research any named regio
 - Consumes: `Overlay.present`/`root` (Task 1), `baseHash` (Task 3), widened `researchOverlay` (Task 7).
 - Produces: `<focus_scope>` carries the root selector; new `<area_of_interest>` block for inline regions injected once per state change; `pageStateHash` holds `baseHash`.
 
-- [ ] **Step 1: Track state-change trigger**
+- [x] **Step 1: Track state-change trigger**
 
 In `reinjectContextIfNeeded` (src/ai/tester.ts:528), replace the tracking prologue:
 
@@ -972,7 +972,7 @@ with:
     this.previousStateHash = currentStateHash;
 ```
 
-- [ ] **Step 2: Root selector in focus_scope**
+- [x] **Step 2: Root selector in focus_scope**
 
 In the `if (focusArea.detected)` block (currently :558), add before `context +=`:
 
@@ -989,7 +989,7 @@ and change the first line of the dedent block to:
 
 (the rest of the block unchanged — the strict "not actionable outside" wording stays, and stays gated on `detected`, i.e. on a probe-verified or ARIA-verified overlay).
 
-- [ ] **Step 3: Inline area_of_interest block**
+- [x] **Step 3: Inline area_of_interest block**
 
 Immediately after the `if (focusArea.detected) { ... }` block add:
 
@@ -1009,7 +1009,7 @@ Immediately after the `if (focusArea.detected) { ... }` block add:
 
 General wording only — no element names, no site specifics.
 
-- [ ] **Step 4: baseHash for research keys and widened overlay-research gate**
+- [x] **Step 4: baseHash for research keys and widened overlay-research gate**
 
 At :592 replace `this.pageStateHash = currentStateHash;` with:
 
@@ -1023,12 +1023,12 @@ At :630 replace the condition `if (focusArea.detected && focusArea.name && this.
     if (focusArea.present && focusArea.name && this.pageStateHash && this.pageActionResult) {
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `bun test tests/unit/ && bun test tests/integration/`
 Expected: PASS (prompt changes must go through the integration suite before pushing — house rule).
 
-- [ ] **Step 6: Format and commit**
+- [x] **Step 6: Format and commit**
 
 ```bash
 bun run format

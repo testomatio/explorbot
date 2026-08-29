@@ -530,6 +530,7 @@ export class Tester extends TaskAgent implements Agent {
     const currentStateHash = currentState.hash;
 
     const isNewUrl = this.previousUrl !== currentUrl;
+    const isNewState = !isNewUrl && this.previousStateHash !== null && this.previousStateHash !== currentStateHash;
 
     this.previousUrl = currentUrl;
     this.previousStateHash = currentStateHash;
@@ -557,13 +558,27 @@ export class Tester extends TaskAgent implements Agent {
 
     if (focusArea.detected) {
       const areaName = focusArea.name ? ` "${focusArea.name}"` : '';
+      let rootHint = '';
+      if (focusArea.root) rootHint = `\nIts content lives inside \`${focusArea.root}\` — scope locators to it.`;
       context += dedent`
         <focus_scope>
-        A ${focusArea.type}${areaName} is currently open above the page.
+        A ${focusArea.type}${areaName} is currently open above the page.${rootHint}
         Scope all interactions to elements inside this ${focusArea.type}.
         Page navigation, filters, and tabs that exist outside it are not actionable while it is open and may share names or roles with elements inside it — prefer the locator inside the ${focusArea.type}.
         Use <page_aria> to confirm the element you target is actually inside the ${focusArea.type}.
         </focus_scope>
+      `;
+    }
+
+    if (!focusArea.detected && focusArea.present && isNewState) {
+      let rootHint = '';
+      if (focusArea.root) rootHint = `\nIt lives inside \`${focusArea.root}\`.`;
+      context += dedent`
+        <area_of_interest>
+        A large new area "${focusArea.name || 'unnamed area'}" appeared on this page without navigation.${rootHint}
+        The scenario most likely continues inside this area — prefer its elements for your next actions.
+        The rest of the page (navigation, menus, filters) is still interactive and remains available.
+        </area_of_interest>
       `;
     }
 
@@ -589,7 +604,7 @@ export class Tester extends TaskAgent implements Agent {
       if (!alreadySeenUiMap) {
         research = await this.researcher.research(currentState).catch(this.skipResearch);
       }
-      this.pageStateHash = currentStateHash;
+      this.pageStateHash = currentState.baseHash;
       this.pageActionResult = currentState;
       let uiMapSection = '';
       if (research) {
@@ -627,7 +642,7 @@ export class Tester extends TaskAgent implements Agent {
       return context;
     }
 
-    if (focusArea.detected && focusArea.name && this.pageStateHash && this.pageActionResult) {
+    if (focusArea.present && focusArea.name && this.pageStateHash && this.pageActionResult) {
       const overlaySection = await this.researcher.researchOverlay(currentState, this.pageActionResult, this.pageStateHash).catch(this.skipResearch);
       if (overlaySection) {
         context += dedent`
