@@ -890,7 +890,7 @@ git commit -m "feat: root selector envelope key scopes experience to open region
 - Consumes: `baseHash` (Task 3), `Overlay.present` (Task 1).
 - Produces: research cache keyed by `baseHash` (region states share the page's research); `researchOverlay` fires for any named present region, not only dialog/modal.
 
-- [ ] **Step 1: Key the cache by baseHash**
+- [x] **Step 1: Key the cache by baseHash**
 
 In `src/ai/researcher.ts`:
 
@@ -910,7 +910,7 @@ At :99 replace `const stateHash = state.hash || this.actionResult.getStateHash()
 
 Then run `grep -n "\.hash" src/ai/researcher.ts src/ai/researcher/*.ts` and audit each hit: cache reads/writes (`getCachedResearch`, `saveResearch`, `getPreviousResearch`, `researchPath` keys) move to `baseHash`; state-equality comparisons (e.g. `getStateHash() === getCurrentState()?.hash` at :154 and :317) stay full-hash — both sides use the same computation, so they remain consistent.
 
-- [ ] **Step 2: Widen researchOverlay**
+- [x] **Step 2: Widen researchOverlay**
 
 In `src/ai/researcher/deep-analysis.ts` at :93-95 replace:
 
@@ -927,12 +927,12 @@ with:
       if (!focusArea.present || !focusArea.name) return null;
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `bun test tests/unit/ && bun test tests/integration/`
 Expected: PASS. Failures here mean a cache-key call site was converted that should not have been (or vice versa) — re-audit the grep list before changing anything else.
 
-- [ ] **Step 4: Format and commit**
+- [x] **Step 4: Format and commit**
 
 ```bash
 bun run format

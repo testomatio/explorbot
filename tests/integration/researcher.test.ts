@@ -90,6 +90,10 @@ function createMockDeps(state = fakeState) {
   };
 }
 
+function fakeStateBaseHash(): string {
+  return ActionResult.fromState(fakeState as any).baseHash;
+}
+
 function extractPromptText(entry: any): string {
   if (!entry?.body?.messages) return '';
   return entry.body.messages
@@ -194,7 +198,7 @@ describe('Researcher with aimock', () => {
   });
 
   it('returns cached research verbatim and without an AI call', async () => {
-    saveResearch({ hash: fakeState.hash!, url: fakeState.url }, '## Cached Research\n\nPreviously analyzed page.');
+    saveResearch({ hash: fakeStateBaseHash(), url: fakeState.url }, '## Cached Research\n\nPreviously analyzed page.');
 
     const result = await researcher.research(fakeState, { fix: false });
 
@@ -203,7 +207,7 @@ describe('Researcher with aimock', () => {
   });
 
   it('force flag bypasses cache', async () => {
-    saveResearch({ hash: fakeState.hash!, url: fakeState.url }, '## Cached Research\n\nOld cached content.');
+    saveResearch({ hash: fakeStateBaseHash(), url: fakeState.url }, '## Cached Research\n\nOld cached content.');
 
     const result = await researcher.research(fakeState, { fix: false, force: true });
 
@@ -215,7 +219,7 @@ describe('Researcher with aimock', () => {
   it('saves research result to cache after AI call', async () => {
     await researcher.research(fakeState, { fix: false });
 
-    const cached = getCachedResearch(fakeState.hash!);
+    const cached = getCachedResearch(fakeStateBaseHash());
     expect(cached).toContain('## Navigation');
     expect(cached).toContain('Create Task');
   });
