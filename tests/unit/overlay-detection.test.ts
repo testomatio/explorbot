@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ActionResult } from '../../src/action-result.ts';
 import { htmlDiff } from '../../src/utils/html-diff.ts';
 import { HTML_EXTRACTION_LIMITS, HTML_SELECTORS, HTML_VISIBILITY_LIMITS, type VisibleOverlayExtractionConfig, extractVisibleOverlayHtml } from '../../src/utils/html.ts';
-import { OVERLAY_SELECTORS, Overlay, findAppearedSubRoot } from '../../src/utils/overlay.ts';
+import { OVERLAY_SELECTORS, Overlay, type RegionCoverageSamples, classifyRegionCoverage, findAppearedSubRoot, getRegionCoverageProbeSource } from '../../src/utils/overlay.ts';
 
 function overlayConfig(overrides: Partial<VisibleOverlayExtractionConfig> = {}): VisibleOverlayExtractionConfig {
   return {
@@ -221,5 +221,64 @@ describe('Overlay.fromSubRoot', () => {
   it('body container falls back to the element xpath as root', () => {
     const overlay = Overlay.fromSubRoot({ ...subRoot, container: 'body' }, { overlays: true, coverage: 1 });
     expect(overlay.root).toBe('//body/div[2]');
+  });
+});
+
+const samplesBase = (): RegionCoverageSamples => ({
+  found: true,
+  rect: { x: 0, y: 0, width: 1280, height: 720 },
+  viewport: { width: 1280, height: 720 },
+  position: 'fixed',
+  zIndex: 100,
+  outsideHits: [],
+  siblingsInert: false,
+  bodyScrollLocked: false,
+});
+
+describe('classifyRegionCoverage', () => {
+  it('full viewport coverage is overlaying', () => {
+    const verdict = classifyRegionCoverage(samplesBase());
+    expect(verdict.overlays).toBe(true);
+    expect(verdict.coverage).toBeCloseTo(1);
+  });
+
+  it('partial floating region with all outside points blocked is overlaying', () => {
+    const samples = samplesBase();
+    samples.rect = { x: 880, y: 0, width: 400, height: 720 };
+    samples.outsideHits = ['blocked', 'blocked', 'blocked', 'blocked'];
+    const verdict = classifyRegionCoverage(samples);
+    expect(verdict.overlays).toBe(true);
+    expect(verdict.coverage).toBeLessThan(0.8);
+  });
+
+  it('inert siblings mean overlaying regardless of geometry', () => {
+    const samples = samplesBase();
+    samples.rect = { x: 0, y: 0, width: 400, height: 400 };
+    samples.siblingsInert = true;
+    expect(classifyRegionCoverage(samples).overlays).toBe(true);
+  });
+
+  it('static in-flow region with page hits outside is inline', () => {
+    const samples = samplesBase();
+    samples.rect = { x: 200, y: 100, width: 800, height: 500 };
+    samples.position = 'static';
+    samples.zIndex = 0;
+    samples.outsideHits = ['page', 'page', 'page'];
+    expect(classifyRegionCoverage(samples).overlays).toBe(false);
+  });
+
+  it('missing element or null samples is inline with zero coverage', () => {
+    expect(classifyRegionCoverage(null)).toEqual({ overlays: false, coverage: 0 });
+    const samples = samplesBase();
+    samples.found = false;
+    expect(classifyRegionCoverage(samples)).toEqual({ overlays: false, coverage: 0 });
+  });
+});
+
+describe('getRegionCoverageProbeSource', () => {
+  it('serializes to a reconstructible function', () => {
+    const source = getRegionCoverageProbeSource();
+    const fn = new Function(`return ${source}`)();
+    expect(typeof fn).toBe('function');
   });
 });

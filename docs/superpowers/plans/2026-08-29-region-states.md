@@ -232,7 +232,7 @@ git commit -m "feat: Overlay carries region types and root; detect appeared subr
 - Consumes: `RegionVerdict` (Task 1).
 - Produces (Task 4 relies on): `classifyRegionCoverage(samples: RegionCoverageSamples | null): RegionVerdict`; `probeRegionCoverage(config: { xpath: string }): RegionCoverageSamples` (runs inside the browser); `getRegionCoverageProbeSource(): string`; `export interface RegionCoverageSamples { found: boolean; rect: { x: number; y: number; width: number; height: number }; viewport: { width: number; height: number }; position: string; zIndex: number; outsideHits: Array<'inside' | 'blocked' | 'page'>; siblingsInert: boolean; bodyScrollLocked: boolean }` at end of `overlay.ts`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/unit/overlay-detection.test.ts` (import `classifyRegionCoverage`, `getRegionCoverageProbeSource` and type `RegionCoverageSamples` from `../../src/utils/overlay.ts`):
 
@@ -299,7 +299,7 @@ describe('getRegionCoverageProbeSource', () => {
 
 Run: `bun test tests/unit/overlay-detection.test.ts` — expected FAIL.
 
-- [ ] **Step 2: Implement classifier and probe**
+- [x] **Step 2: Implement classifier and probe**
 
 In `src/utils/overlay.ts`, below `findAppearedSubRoot`:
 
@@ -403,12 +403,12 @@ export function getRegionCoverageProbeSource(): string {
 
 Add `RegionCoverageSamples` to the end-of-file types block. The probe runs in the browser via `new Function`, so it must stay self-contained — no imports, no outer-scope references; type annotations erase at runtime so `toString()` stays valid. `9` is `XPathResult.FIRST_ORDERED_NODE_TYPE` as a literal.
 
-- [ ] **Step 3: Run tests to verify they pass**
+- [x] **Step 3: Run tests to verify they pass**
 
 Run: `bun test tests/unit/overlay-detection.test.ts`
 Expected: PASS.
 
-- [ ] **Step 4: Format and commit**
+- [x] **Step 4: Format and commit**
 
 ```bash
 bun run format
