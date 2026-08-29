@@ -86,6 +86,17 @@ To make the close/confirm check possible, `Overlay` additionally records the app
 The confirm probe is the existing center hit-test (`OverlayPage`), run against the stored XPath — one
 cheap probe per capture, and only while an overlay is being carried.
 
+Two persistence refinements keep common flows from losing state:
+
+- **One-deep parent restore.** When a new detection replaces a carried overlay (a picker opening
+  inside an open drawer), the replaced overlay's identity (`type`/`name`/`root`/`xpath`, no `html`)
+  travels on the new one as `parent`. When the nested region closes, the parent's XPath is probed —
+  still open → it is restored as the current overlay. One level, deterministic; the traced
+  suite-picker-inside-drawer flow keeps its drawer.
+- **ARIA continuity.** A fresh ARIA detection whose type and name match the previous overlay keeps the
+  previous *instance* — otherwise a root enriched by change 6 would survive exactly one capture before
+  a bare `fromAria` result replaced it.
+
 This single change is what unlocks the already-built downstream behavior: the hash forks
 (`region_<name>`), `isNewState` fires once, `<focus_scope>`/`<area_of_interest>` inject,
 Pilot's `<state>` shows the region, and experience files for region states get written with their
@@ -109,8 +120,9 @@ runs actually hit.
 A region is a **band**, not just a floor. The appeared subtree must satisfy both:
 
 - `size >= SUBROOT_MIN_HTML` (10K, as today) — below it, a widget, ignored;
-- `size <= REGION_MAX_RATIO * pageSize` (~0.6, measured on the same minified representations the diff
-  already produces) — above it, **this is not a region change anymore, it is a new state**. No overlay
+- `size <= REGION_MAX_RATIO * pageSize` (~0.6, raw serialized subtree against raw serialized body —
+  like against like, using the strings the diff already has in hand, no extra minify pass) — above it,
+  **this is not a region change anymore, it is a new state**. No overlay
   is set; the ordinary state-change machinery (url + headings hash, research on change) owns a page
   that mostly replaced itself. A full-page takeover that swaps more than 60% of the HTML *is* a new
   state semantically, and takeovers bring their own headings, so state identity still forks.

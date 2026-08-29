@@ -1,24 +1,36 @@
 import { detectFocusArea } from './aria.js';
-import { type HtmlDiffPart, pathToXPath } from './html-diff.js';
+import type { HtmlDiffPart } from './html-diff.js';
+import { pathToXPath } from './html-diff.js';
 import { extractHeadings } from './html.js';
 import { createDebug } from './logger.js';
 
 const debugLog = createDebug('explorbot:overlay');
 
 export type OverlayType = 'dialog' | 'modal' | 'drawer' | 'region';
-export type OverlayData = { type?: OverlayType | null; name?: string | null; root?: string | null; html?: string | null };
+export type OverlayData = {
+  type?: OverlayType | null;
+  name?: string | null;
+  root?: string | null;
+  html?: string | null;
+  xpath?: string | null;
+  parent?: OverlayData | null;
+};
 
 export class Overlay {
   readonly type: OverlayType | null;
   readonly name: string | null;
   readonly root: string | null;
   readonly html: string | null;
+  readonly xpath: string | null;
+  readonly parent: OverlayData | null;
 
   constructor(data: OverlayData = {}) {
     this.type = data.type ?? null;
     this.name = data.name ?? null;
     this.root = data.root ?? null;
     this.html = data.html ?? null;
+    this.xpath = data.xpath ?? null;
+    this.parent = data.parent ?? null;
   }
 
   get detected(): boolean {
@@ -36,6 +48,27 @@ export class Overlay {
     return text;
   }
 
+  withGeometry(geometry: Overlay): Overlay {
+    return new Overlay({
+      type: this.type,
+      name: this.name || geometry.name,
+      root: geometry.root,
+      html: geometry.html,
+      xpath: geometry.xpath,
+    });
+  }
+
+  withParent(parent: Overlay): Overlay {
+    return new Overlay({
+      type: this.type,
+      name: this.name,
+      root: this.root,
+      html: this.html,
+      xpath: this.xpath,
+      parent: { type: parent.type, name: parent.name, root: parent.root, xpath: parent.xpath },
+    });
+  }
+
   static fromAria(snapshot: string | null): Overlay {
     return new Overlay(detectFocusArea(snapshot));
   }
@@ -49,22 +82,34 @@ export class Overlay {
 export class OverlayPage {
   constructor(private page: { evaluate(fn: any, arg: any): Promise<any> } | null) {}
 
-  async detectRegion(parts: HtmlDiffPart[]): Promise<Overlay | null> {
-    const subRoot = this.appearedSubRoot(parts);
+  async detectRegion(diff: RegionDiff): Promise<Overlay | null> {
+    if (!diff.sameUrl && diff.similarity < SOFT_NAVIGATION_SIMILARITY) return null;
+    const subRoot = this.appearedSubRoot(diff);
     if (!subRoot) return null;
     const probe = await this.probe(subRoot.elementXPath);
     if (probe?.found && probe.onScreen && !probe.centerBelongs) {
       debugLog('Appeared region is hidden or covered, ignoring it');
       return null;
     }
-    const overlay = this.toOverlay(subRoot, probe);
+    const overlay = this.toOverlay(subRoot, probe, diff.previousHtml);
     debugLog(`Region detected: ${overlay.describe()}`);
     return overlay;
   }
 
-  private appearedSubRoot(parts: HtmlDiffPart[]): AppearedSubRoot | null {
+  async isStillOpen(overlay: Overlay): Promise<boolean> {
+    if (!overlay.xpath) return true;
+    const probe = await this.probe(overlay.xpath);
+    if (!probe) return true;
+    if (!probe.found) return false;
+    if (probe.onScreen && !probe.centerBelongs) return false;
+    return true;
+  }
+
+  private appearedSubRoot(diff: RegionDiff): AppearedSubRoot | null {
     let best: AppearedSubRoot | null = null;
-    for (const part of parts) {
+    let totalRawSize = 0;
+    for (const part of diff.parts) {
+      totalRawSize += part.rawSize;
       const appeared = part.added.find((line) => line.startsWith('ELEMENT:'));
       if (!appeared) continue;
       if (part.subtree.length < SUBROOT_MIN_HTML) continue;
@@ -74,7 +119,18 @@ export class OverlayPage {
         elementXPath: pathToXPath(appeared.slice('ELEMENT:'.length)),
         subtree: part.subtree,
         size: part.subtree.length,
+        rawSize: part.rawSize,
+        appearedSelector: part.appearedSelector,
       };
+    }
+    if (!best) return null;
+    if (diff.pageSize > 0 && best.rawSize > REGION_MAX_RATIO * diff.pageSize) {
+      debugLog(`Appeared subtree spans ${Math.round((best.rawSize / diff.pageSize) * 100)}% of the page — a new state, not a region`);
+      return null;
+    }
+    if (totalRawSize > 0 && best.rawSize < REGION_DOMINANCE * totalRawSize) {
+      debugLog('Changes are scattered across the page, no dominant region');
+      return null;
     }
     return best;
   }
@@ -95,25 +151,33 @@ export class OverlayPage {
       });
   }
 
-  private toOverlay(subRoot: AppearedSubRoot, probe: RegionProbe | null): Overlay {
+  private toOverlay(subRoot: AppearedSubRoot, probe: RegionProbe | null, previousHtml: string): Overlay {
     let type: OverlayType = 'region';
     if (probe?.centerBelongs && probe.floating) {
       type = 'drawer';
       if (probe.coverage >= FULL_COVERAGE_RATIO) type = 'modal';
     }
-    let root = subRoot.container;
-    if (root === 'body') root = subRoot.elementXPath;
-    return new Overlay({ type, name: this.nameFrom(subRoot.subtree), root, html: subRoot.subtree });
+    let root: string | null = null;
+    if (subRoot.container !== 'body' && !subRoot.container.startsWith('//')) root = subRoot.container;
+    if (!root && subRoot.appearedSelector) root = subRoot.appearedSelector;
+    return new Overlay({ type, name: this.nameFrom(subRoot.subtree, previousHtml), root, html: subRoot.subtree, xpath: subRoot.elementXPath });
   }
 
-  private nameFrom(html: string): string | null {
+  private nameFrom(html: string, previousHtml: string): string | null {
     const headings = extractHeadings(html);
-    return [headings.h1, headings.h2, headings.h3, headings.h4].filter(Boolean).join(' ') || null;
+    const candidates = [headings.h1, headings.h2, headings.h3, headings.h4].filter(Boolean) as string[];
+    if (candidates.length === 0) return null;
+    const fresh = candidates.filter((heading) => !previousHtml.includes(heading));
+    if (fresh.length > 0) return fresh[0];
+    return candidates.join(' ');
   }
 }
 
 const SUBROOT_MIN_HTML = 10_000;
 const FULL_COVERAGE_RATIO = 0.8;
+const SOFT_NAVIGATION_SIMILARITY = 50;
+const REGION_MAX_RATIO = 0.6;
+const REGION_DOMINANCE = 0.7;
 
 // Serialized via toString() into page.evaluate — must stay a plain function with no outer-scope references.
 function inspectRegion(config: { xpath: string }): RegionProbe {
@@ -127,8 +191,12 @@ function inspectRegion(config: { xpath: string }): RegionProbe {
   if (rect.width === 0 && rect.height === 0) return probe;
   probe.found = true;
 
-  const style = window.getComputedStyle(element);
-  probe.floating = style.position === 'fixed' || style.position === 'absolute' || (Number.parseInt(style.zIndex || '0', 10) || 0) > 0;
+  let node2: HTMLElement | null = element;
+  while (node2 && node2 !== document.body && !probe.floating) {
+    const style = window.getComputedStyle(node2);
+    if (style.position === 'fixed' || style.position === 'absolute' || (Number.parseInt(style.zIndex || '0', 10) || 0) > 0) probe.floating = true;
+    node2 = node2.parentElement;
+  }
 
   const left = Math.max(rect.left, 0);
   const top = Math.max(rect.top, 0);
@@ -143,11 +211,21 @@ function inspectRegion(config: { xpath: string }): RegionProbe {
   return probe;
 }
 
+export interface RegionDiff {
+  parts: HtmlDiffPart[];
+  pageSize: number;
+  similarity: number;
+  sameUrl: boolean;
+  previousHtml: string;
+}
+
 interface AppearedSubRoot {
   container: string;
   elementXPath: string;
   subtree: string;
   size: number;
+  rawSize: number;
+  appearedSelector?: string;
 }
 
 interface RegionProbe {

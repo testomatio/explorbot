@@ -75,7 +75,7 @@ describe('ActionResult Diff', () => {
     expect(diff.htmlParts.length).toBeGreaterThan(0);
   });
 
-  test('should not calculate HTML diff when URLs differ', async () => {
+  test('computes HTML diff across URL changes but keeps aria diff same-url only', async () => {
     const previous = new ActionResult({
       url: '/page1',
       html: '<html><body><h1>Page 1</h1></body></html>',
@@ -90,10 +90,27 @@ describe('ActionResult Diff', () => {
 
     const diff = await Diff.create(current, previous);
 
-    expect(diff.htmlDiff).toBeNull();
-    expect(diff.htmlParts).toEqual([]);
+    expect(diff.htmlDiff).not.toBeNull();
+    expect(diff.pageSize).toBeGreaterThan(0);
     expect(diff.ariaChanged).toBeNull();
     expect(diff.ariaChangeCount).toBe(0);
+  });
+
+  test('does not surface navigation htmlParts in tool results', async () => {
+    const previous = new ActionResult({
+      id: 11,
+      url: 'https://app.example.com/page1',
+      html: '<html><body><h1>Page 1</h1><a href="/other">Other link</a></body></html>',
+    });
+    const current = new ActionResult({
+      id: 12,
+      url: 'https://app.example.com/page2',
+      html: '<html><body><h1>Page 2</h1><div><form><input name="one"><input name="two"></form></div></body></html>',
+    });
+
+    const result = await current.toToolResult(previous, 'a');
+    expect(result.pageDiff?.urlChanged).toBe(true);
+    expect(result.pageDiff?.htmlParts).toBeUndefined();
   });
 
   test('should calculate aria diff', async () => {

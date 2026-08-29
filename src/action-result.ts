@@ -554,8 +554,8 @@ export class ActionResult implements ActionResultData {
       if (subtree.length > HTML_PART_SUBTREE_BUDGET) {
         subtree = `${subtree.slice(0, HTML_PART_SUBTREE_BUDGET)}...<!-- truncated -->`;
       }
-      pageDiff.htmlParts = [{ container: this.overlay.root, subtree, added: [], removed: [] }];
-    } else if (diff.htmlParts.length > 0) {
+      pageDiff.htmlParts = [{ container: this.overlay.root, subtree, rawSize: subtree.length, added: [], removed: [] }];
+    } else if (diff.isSameUrl() && diff.htmlParts.length > 0) {
       const collapsed = collapseHtmlParts(await diff.cleanedHtmlParts());
       if (collapsed.length > 0) {
         pageDiff.htmlParts = collapsed;
@@ -710,15 +710,24 @@ export class Diff {
     return this._messages;
   }
 
+  get similarity(): number {
+    return this._htmlDiffResult?.similarity ?? 0;
+  }
+
+  get pageSize(): number {
+    return this._htmlDiffResult?.pageSize ?? 0;
+  }
+
   async calculate(): Promise<void> {
     if (!this.previous) return;
+
+    this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
 
     if (!this._isSameUrl) {
       this._messages = liveRegionMessages(this.previous.html, this.current.html);
       return;
     }
 
-    this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
     this._messages = this._htmlDiffResult.messages;
 
     const ariaDiff = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);

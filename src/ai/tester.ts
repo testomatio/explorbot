@@ -63,6 +63,8 @@ export class Tester extends TaskAgent implements Agent {
   private seenUiMapUrls = new Set<string>();
   private lastAnalyzedStateHash: string | null = null;
   private stalledIterations = 0;
+  private previousRegionPresent: boolean | null = null;
+  private regionTransitioned = false;
   private readonly MAX_STALLED_ITERATIONS = 3;
 
   private skipResearch = (err: Error): string => {
@@ -117,6 +119,8 @@ export class Tester extends TaskAgent implements Agent {
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
     this.stalledIterations = 0;
+    this.previousRegionPresent = null;
+    this.regionTransitioned = false;
     this.stateManager.clearHistory();
     this.resetFailureCount();
     this.pilot?.reset();
@@ -460,6 +464,10 @@ export class Tester extends TaskAgent implements Agent {
   }
 
   private shouldAnalyzeProgress(iteration: number, currentState: ActionResult): boolean {
+    if (this.regionTransitioned) {
+      this.regionTransitioned = false;
+      return true;
+    }
     if (this.consecutiveFailures >= 3) return true;
     if (this.consecutiveEmptyResults >= 2) return true;
     if (iteration % this.progressCheckInterval !== 0) return false;
@@ -531,6 +539,11 @@ export class Tester extends TaskAgent implements Agent {
 
     const isNewUrl = this.previousUrl !== currentUrl;
     const isNewState = !isNewUrl && this.previousStateHash !== null && this.previousStateHash !== currentStateHash;
+
+    if (this.previousRegionPresent !== null && this.previousRegionPresent !== currentState.overlay.present) {
+      this.regionTransitioned = true;
+    }
+    this.previousRegionPresent = currentState.overlay.present;
 
     this.previousUrl = currentUrl;
     this.previousStateHash = currentStateHash;
