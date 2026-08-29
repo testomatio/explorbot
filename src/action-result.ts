@@ -544,7 +544,7 @@ export class ActionResult implements ActionResultData {
       pageDiff.ariaChangeCount = diff.ariaChangeCount;
     }
 
-    if (this.overlay.present && !previousState.overlay.present) {
+    if (this.overlay.present && (!previousState.overlay.present || previousState.overlay.name !== this.overlay.name)) {
       pageDiff.areaOfInterest = this.overlay.describe();
     }
 

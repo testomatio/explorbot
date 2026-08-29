@@ -215,4 +215,23 @@ describe('diff memoization and areaOfInterest', () => {
     expect(result.pageDiff?.htmlParts?.[0].container).toBe('aside.panel');
     expect(result.pageDiff?.htmlParts?.[0].subtree).toContain('Edit User');
   });
+
+  test('announces a nested region replacing an open one, but not a carried one', async () => {
+    const html = '<html><body><h1>Users</h1><aside class="panel"><h2>Edit User</h2></aside></body></html>';
+    const withDrawer = { type: 'drawer' as const, name: 'Edit User', root: 'aside.panel' };
+
+    const drawerState = new ActionResult({ id: 21, url: 'https://app.example.com/users', html, overlay: withDrawer });
+    const nested = new ActionResult({
+      id: 22,
+      url: 'https://app.example.com/users',
+      html: `${html} `,
+      overlay: { type: 'region', name: 'Select tests', root: 'div.picker' },
+    });
+    const nestedResult = await nested.toToolResult(drawerState, 'div.picker');
+    expect(nestedResult.pageDiff?.areaOfInterest).toBe('region "Select tests" opened, scope: div.picker');
+
+    const carried = new ActionResult({ id: 23, url: 'https://app.example.com/users', html: `${html}  `, overlay: withDrawer });
+    const carriedResult = await carried.toToolResult(drawerState, 'aside.panel');
+    expect(carriedResult.pageDiff?.areaOfInterest).toBeUndefined();
+  });
 });
