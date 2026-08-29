@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-08-30
+
+### Changes
+
+- State Manager: An open panel now stays part of the state until it actually closes. Detection used
+  to fire only on the single action that opened a drawer — one step later the agent forgot the
+  drawer existed, so its scope hints, the Pilot's state line and the panel's own experience file
+  never materialised. The panel is now re-checked on every action and carried forward while its
+  content is still on top; when it closes, the state moves back and the transition is recorded.
+- State Manager: A panel that opens inside another open panel no longer erases the outer one. When
+  the inner panel closes, the outer drawer is checked and restored as the active area.
+- Action: Drawers that open together with a URL change are now detected. A side panel that updates
+  the address bar used to be indistinguishable from real navigation; it now counts as a panel as
+  long as most of the previous page is still there underneath.
+- Action: A change that replaces most of the page is treated as a new page, not a panel. Content
+  finishing to load, or a page redrawing after a dialog closes, no longer gets reported as an
+  opened drawer — and scattered small changes across the page never count as one either.
+- Action: Panel scope selectors are always meaningful now — an id or a real CSS class, found by
+  walking past anonymous wrapper elements and utility classes into the panel itself. A positional
+  path like `//body/div[10]` or a container that spans the whole page is never suggested as a
+  scope; when nothing meaningful exists, the scope is simply omitted.
+- Action: A newly opened panel is named by the heading that just appeared, not by the title of the
+  page or panel behind it.
+- Action: Dialogs recognised by their accessibility role now also get a scope selector, so the
+  "scope your locators here" hint works for them too.
+- Action: When a batch of commands fails midway, the page state is still captured — a drawer opened
+  by the second command no longer goes unnoticed because the third command failed — and the report
+  now correctly shows which commands succeeded before the failure instead of marking all of them
+  failed.
+- [Pilot] Reviews progress immediately when a panel opens or closes, instead of staying silent for
+  the whole life of a drawer between scheduled check-ins.
+
 ## 2026-08-29
 
 ### Changes
