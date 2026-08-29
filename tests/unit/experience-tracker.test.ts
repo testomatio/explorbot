@@ -421,4 +421,33 @@ describe('ExperienceTracker', () => {
       expect(toc[0].fileTag).toBe('A');
     });
   });
+
+  describe('region experience root', () => {
+    const html = '<html><body><h1>Users</h1></body></html>';
+    const regionOverlay = { type: 'drawer' as const, name: 'Edit User', root: 'aside.panel' };
+
+    it('writes root frontmatter for a region state', () => {
+      const regionState = new ActionResult({ url: '/users', html, overlay: regionOverlay });
+      experienceTracker.writeAction(regionState, { title: 'Save the edit form', code: 'I.click("Save")', explanation: '' });
+      const { data } = experienceTracker.readExperienceFile(regionState.getStateHash());
+      expect(data.root).toBe('aside.panel');
+    });
+
+    it('skips root-scoped records when no region is open, loads them when it matches', () => {
+      const regionState = new ActionResult({ url: '/users', html, overlay: regionOverlay });
+      experienceTracker.writeAction(regionState, { title: 'Save the edit form', code: 'I.click("Save")', explanation: '' });
+
+      const baseState = new ActionResult({ url: '/users', html });
+      const baseContents = experienceTracker.getRelevantExperience(baseState).map((e) => e.content);
+      expect(baseContents.join('\n')).not.toContain('save the edit form');
+
+      const openState = new ActionResult({ url: '/users', html, overlay: regionOverlay });
+      const openContents = experienceTracker.getRelevantExperience(openState).map((e) => e.content);
+      expect(openContents.join('\n')).toContain('save the edit form');
+
+      const otherRegion = new ActionResult({ url: '/users', html, overlay: { type: 'drawer' as const, name: 'Filters', root: 'div.filters' } });
+      const otherContents = experienceTracker.getRelevantExperience(otherRegion).map((e) => e.content);
+      expect(otherContents.join('\n')).not.toContain('save the edit form');
+    });
+  });
 });

@@ -790,7 +790,7 @@ git commit -m "feat: record region-of-interest transitions in state manager"
 - Consumes: `Overlay.present` / `Overlay.root` (Task 1), region-hashed states (Task 3).
 - Produces: experience frontmatter key `root` (single writer: `ExperienceTracker.ensureExperienceFile`); retrieval gate in `ActionResult.isRelevantExperienceRecord(record: WebPageState & { root?: string }, …)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/unit/experience-tracker.test.ts`, reusing that file's existing `beforeEach` setup (temp experience dir, tracker construction). The tests need only the `tracker` it already builds:
 
@@ -827,7 +827,7 @@ describe('region experience root', () => {
 
 Run: `bun test tests/unit/experience-tracker.test.ts` — expected FAIL.
 
-- [ ] **Step 2: Implement the writer**
+- [x] **Step 2: Implement the writer**
 
 In `src/experience-tracker.ts` `ensureExperienceFile` (currently :118), replace the frontmatter literal:
 
@@ -846,7 +846,7 @@ In `src/experience-tracker.ts` `ensureExperienceFile` (currently :118), replace 
 
 Plain `if` — no conditional spread.
 
-- [ ] **Step 3: Implement the retrieval gate**
+- [x] **Step 3: Implement the retrieval gate**
 
 In `src/action-result.ts` `isRelevantExperienceRecord` (currently :261), widen the signature and add the gate as the first check after the null guard:
 
@@ -862,16 +862,16 @@ In `src/action-result.ts` `isRelevantExperienceRecord` (currently :261), widen t
 
 (rest of the method unchanged). A record without `root` behaves exactly as today — envelope rule 3. The `root` gate comes first so behavior does not depend on heading coincidences between region and page states.
 
-- [ ] **Step 4: Document the envelope key**
+- [x] **Step 4: Document the envelope key**
 
 In `CLAUDE.md`, "Data Envelope Formats" table, Experience row: change the envelope cell from `sparse frontmatter` to `sparse frontmatter: url, title, optional root (region scoping selector — record loads only while a matching region is open)`.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `bun test tests/unit/experience-tracker.test.ts tests/unit/experience-compactor.test.ts tests/unit/historian-experience.test.ts`
 Expected: PASS.
 
-- [ ] **Step 6: Format and commit**
+- [x] **Step 6: Format and commit**
 
 ```bash
 bun run format
