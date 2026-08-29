@@ -85,6 +85,10 @@ export class RequestResult {
     }
   }
 
+  get isWrite(): boolean {
+    return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(this.method);
+  }
+
   save(outputDir: string): void {
     const requestsDir = path.join(outputDir, 'requests');
     if (!existsSync(requestsDir)) {

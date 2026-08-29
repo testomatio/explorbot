@@ -2,15 +2,20 @@ import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
 import type { ApiClient } from '../api/api-client.ts';
+import type { RequestResult } from '../api/request-result.ts';
 import type { RequestStore } from '../api/request-store.ts';
 import { extractEndpointDefinition } from '../api/spec-reader.ts';
 import { tag } from '../utils/logger.ts';
+import { isDynamicSegment } from '../utils/url-matcher.ts';
 
 export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, opts: { spec?: any; baseEndpoint?: string }) {
   let finished = false;
-  let result: FishermanResult = { success: false, summary: '', created: [], failed: [] };
+  let result: FishermanResult | null = null;
+  const ledgerStart = requestStore.getMadeRequests().length;
 
-  const getResult = () => result;
+  const runRequests = () => requestStore.getMadeRequests().slice(ledgerStart);
+  const successfulWrites = () => runRequests().filter((r) => r.isWrite && !r.error && r.status >= 200 && r.status < 400);
+  const getResult = () => result ?? synthesizeResult(runRequests(), successfulWrites());
   const isFinished = () => finished;
 
   const tools = {
@@ -148,9 +153,37 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
           .describe('List of items that could not be created'),
       }),
       execute: async ({ summary, created, failed }) => {
+        const writes = successfulWrites();
+        if (writes.length === 0) {
+          tag('warning').log('Fisherman: finish rejected — no successful write request in this run');
+          return { finished: false, error: 'No successful write request was made in this run, so nothing was created. Keep working, or call stop if the data cannot be prepared.' };
+        }
+
+        const viaById = new Map<string, string>();
+        for (const write of writes) {
+          const { id } = write.extractIdAndTitle();
+          if (id === undefined) continue;
+          viaById.set(String(id), `${write.method} ${write.path}`);
+        }
+
+        const verified: FishermanResult['created'] = [];
+        for (const item of created) {
+          if (item.id === undefined) {
+            verified.push(item);
+            continue;
+          }
+          const via = viaById.get(String(item.id));
+          if (!via) {
+            tag('warning').log(`Fisherman: dropped unverified created item ${item.type} (id: ${item.id})`);
+            continue;
+          }
+          verified.push({ ...item, via });
+        }
+        if (verified.length === 0) verified.push(...writes.map(toCreatedItem));
+
         tag('success').log(`Fisherman done: ${summary}`);
         finished = true;
-        result = { success: true, summary, created, failed: failed || [] };
+        result = { success: true, summary, created: verified, failed: failed || [] };
         return { finished: true };
       },
     }),
@@ -170,6 +203,20 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   };
 
   return { tools, getResult, isFinished };
+}
+
+function synthesizeResult(made: RequestResult[], writes: RequestResult[]): FishermanResult {
+  const failures = made.filter((r) => r.status >= 400 || r.error);
+  let summary = `Stopped before finishing: ${made.length} requests, ${writes.length} successful writes, ${failures.length} failed`;
+  const lastFailure = failures[failures.length - 1];
+  if (lastFailure) summary += `; last failure: ${lastFailure.toSummary()}`;
+  return { success: writes.length > 0, summary, created: writes.map(toCreatedItem), failed: [] };
+}
+
+function toCreatedItem(write: RequestResult): FishermanResult['created'][number] {
+  const { id, title } = write.extractIdAndTitle();
+  const segments = write.path.split('/').filter((s) => s && !isDynamicSegment(s));
+  return { type: segments[segments.length - 1] || 'item', id, title, via: `${write.method} ${write.path}` };
 }
 
 function responseCategory(status: number): ResponseCategory {
@@ -209,7 +256,7 @@ function extractKeyFields(body: any, result: Record<string, any> = {}, depth = 0
 export interface FishermanResult {
   success: boolean;
   summary: string;
-  created: Array<{ type: string; id?: string | number; title?: string }>;
+  created: Array<{ type: string; id?: string | number; title?: string; via?: string }>;
   failed: Array<{ type: string; reason: string }>;
 }
 

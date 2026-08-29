@@ -69,9 +69,88 @@ describe('Fisherman tools', () => {
   });
 });
 
-function store(captured?: any): any {
+describe('ledger-derived results', () => {
+  it('rejects finish when no successful write was made in this run', async () => {
+    const { tools, isFinished } = createFishermanTools({} as any, store(), {});
+
+    const result: any = await tools.finish.execute({ summary: 'done', created: [{ type: 'suite', id: '1' }] }, {} as any);
+
+    expect(result.finished).toBe(false);
+    expect(result.error).toContain('No successful write');
+    expect(isFinished()).toBe(false);
+  });
+
+  it('ignores writes made before this run started', async () => {
+    const made = [madeWrite('POST', '/api/suites', 201, { id: 's1' })];
+    const { tools, isFinished } = createFishermanTools({} as any, store(undefined, made), {});
+
+    const result: any = await tools.finish.execute({ summary: 'done', created: [{ type: 'suite', id: 's1' }] }, {} as any);
+
+    expect(result.finished).toBe(false);
+    expect(isFinished()).toBe(false);
+  });
+
+  it('drops created items whose id no write response returned, keeps verified ones with via', async () => {
+    const made: any[] = [];
+    const { tools, getResult } = createFishermanTools({} as any, store(undefined, made), {});
+    made.push(madeWrite('POST', '/api/suites', 201, { id: 's1', title: 'Suite A' }));
+
+    await tools.finish.execute(
+      {
+        summary: 'done',
+        created: [
+          { type: 'suite', id: 's1' },
+          { type: 'milestone', id: 'm9' },
+        ],
+      },
+      {} as any
+    );
+
+    const result = getResult();
+    expect(result.success).toBe(true);
+    expect(result.created).toEqual([{ type: 'suite', id: 's1', via: 'POST /api/suites' }]);
+  });
+
+  it('synthesizes an honest summary when the loop ends without finish', async () => {
+    const made: any[] = [];
+    const { getResult } = createFishermanTools({} as any, store(undefined, made), {});
+    made.push(madeWrite('POST', '/api/suites', 201, { id: 's1', title: 'Suite A' }));
+    made.push(madeWrite('POST', '/api/tests', 400));
+
+    const result = getResult();
+    expect(result.success).toBe(true);
+    expect(result.summary).toContain('1 successful write');
+    expect(result.summary).toContain('POST /api/tests → 400');
+    expect(result.created[0].id).toBe('s1');
+  });
+
+  it('reports failure with a reason when the loop ends with no successful writes', async () => {
+    const made: any[] = [];
+    const { getResult } = createFishermanTools({} as any, store(undefined, made), {});
+    made.push(madeWrite('POST', '/api/tests', 400));
+
+    const result = getResult();
+    expect(result.success).toBe(false);
+    expect(result.summary).not.toBe('');
+  });
+});
+
+function store(captured?: any, made: any[] = []): any {
   return {
     findCapturedRequest: () => captured,
-    addMadeRequest: () => {},
+    addMadeRequest: (r: any) => made.push(r),
+    getMadeRequests: () => made,
+  };
+}
+
+function madeWrite(method: string, path: string, status: number, body: Record<string, any> = {}): any {
+  return {
+    method,
+    path,
+    status,
+    error: undefined,
+    isWrite: true,
+    extractIdAndTitle: () => body,
+    toSummary: () => `${method} ${path} → ${status} (0ms)`,
   };
 }
