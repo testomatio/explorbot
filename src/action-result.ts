@@ -170,6 +170,7 @@ export class ActionResult implements ActionResultData {
   set html(value: string) {
     this._html = value;
     this.snapshotCache.clear();
+    this._diffCache = null;
   }
 
   get screenshot(): Buffer | undefined {
