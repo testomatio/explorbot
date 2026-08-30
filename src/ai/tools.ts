@@ -8,8 +8,9 @@ import { Stats } from '../stats.ts';
 import { type Task, TestResult } from '../test-plan.js';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
+import { cleanHtmlSnippet } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
-import { compactErrorMessage } from '../utils/strings.ts';
+import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
@@ -1332,20 +1333,23 @@ export function clickFailureSuggestion(attempts: Array<{ error?: string }>): str
 }
 
 const MAX_DISAMBIGUATE_ELEMENTS = 10;
+const MAX_DISAMBIGUATE_TEXT = 80;
+const MAX_DISAMBIGUATE_HTML = 300;
 const MULTIPLE_ELEMENTS_PATTERN = 'multiple elements';
 
-async function extractWebElements(error: Error | null | undefined): Promise<Array<{ xpath: string; html: string }> | null> {
+async function extractWebElements(error: Error | null | undefined): Promise<Array<{ xpath: string; html: string; text: string }> | null> {
   if (!error || error.name !== 'MultipleElementsFound') return null;
 
-  const elements = (error as any).webElements as Array<{ toAbsoluteXPath: () => Promise<string>; toSimplifiedHTML: () => Promise<string> }> | undefined;
+  const elements = (error as any).webElements as Array<{ toAbsoluteXPath: () => Promise<string>; toOuterHTML: () => Promise<string>; getText: () => Promise<string | null> }> | undefined;
   if (!elements?.length) return null;
 
-  const result: Array<{ xpath: string; html: string }> = [];
+  const result: Array<{ xpath: string; html: string; text: string }> = [];
   for (let i = 0; i < Math.min(elements.length, MAX_DISAMBIGUATE_ELEMENTS); i++) {
     try {
       const xpath = await elements[i].toAbsoluteXPath();
-      const html = await elements[i].toSimplifiedHTML();
-      result.push({ xpath, html });
+      const html = truncate(cleanHtmlSnippet(await elements[i].toOuterHTML()), MAX_DISAMBIGUATE_HTML);
+      const text = truncate(normalizeInlineText((await elements[i].getText()) || ''), MAX_DISAMBIGUATE_TEXT);
+      result.push({ xpath, html, text });
     } catch (e) {
       debugLog('Failed to get details for element %d: %s', i, e);
     }
@@ -1353,17 +1357,21 @@ async function extractWebElements(error: Error | null | undefined): Promise<Arra
   return result.length > 0 ? result : null;
 }
 
-async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
+function formatElementList(details: Array<{ xpath: string; html: string; text: string }>): string {
+  return details.map((el, i) => `Element ${i + 1}:\nText: "${el.text}"\nXPath: ${el.xpath}\nHTML: ${el.html}`).join('\n\n');
+}
+
+export async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
   const details = await extractWebElements(error);
   if (!details) return 'Could not fetch element details. Repeat the action to get better info.';
-  return details.map((el, i) => `Element ${i + 1}\nXPath: ${el.xpath}\nHTML: ${el.html}`).join('\n\n');
+  return formatElementList(details);
 }
 
 async function disambiguateElements(error: Error | null | undefined, explanation: string, provider: AIProvider): Promise<{ position: number; xpath: string } | null> {
   const elementDetails = await extractWebElements(error);
   if (!elementDetails) return null;
 
-  const elementList = elementDetails.map((el, i) => `Element ${i + 1}:\nXPath: ${el.xpath}\nHTML: ${el.html}`).join('\n\n');
+  const elementList = formatElementList(elementDetails);
 
   const schema = z.object({
     position: z.number().nullable().describe('1-based position of the correct element, or null if none match'),
