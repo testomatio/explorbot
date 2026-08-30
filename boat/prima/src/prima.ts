@@ -25,7 +25,7 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
-import { type EnvelopeData, type InstanceInfo, writeArtifacts } from './envelope.ts';
+import { type EnvelopeData, type InstanceInfo, STATUS_FILE, readArtifacts, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
@@ -376,7 +376,6 @@ export class Prima {
 
     const problems = [...unreached.map((expectation) => `not reached: ${expectation.text}`), ...contradicted.map((expectation) => `the picture and the run disagree about: ${expectation.text}`)];
     if (problems.length) envelope.failure = { error: problems.join('\n') };
-    if (contradicted.length) envelope.artifacts = this.artifacts;
 
     if (!test.hasFinished || test.isSkipped) {
       envelope.ok = false;
@@ -982,14 +981,17 @@ export class Prima {
   }
 
   private async successEnvelope(command: string, used: string[], result: ActionResult, previousState: WebPageState | null): Promise<EnvelopeData> {
+    const changes = await this.pageChanges(result, previousState, used[0]);
+    const status = await this.saveStatus(result);
     return {
       ok: true,
       command,
       used,
       page: this.pageBlock(result, previousState),
-      changes: await this.pageChanges(result, previousState, used[0]),
+      changes,
       instance: await this.instanceInfo(),
-      status: await this.saveStatus(result),
+      status,
+      artifacts: this.artifacts,
     };
   }
 
@@ -998,24 +1000,28 @@ export class Prima {
     const failure: EnvelopeData['failure'] = { error: browserErrorMessage(error) };
     if (result.ariaSnapshot) failure.compactAria = compactAriaSnapshot(result.ariaSnapshot, true);
 
+    const status = await this.saveStatus(result);
     return {
       ok: false,
       command,
       page: this.pageBlock(result, previousState),
       failure,
       instance: await this.instanceInfo(),
-      status: await this.saveStatus(result),
+      status,
+      artifacts: this.artifacts,
     };
   }
 
   private async reportEnvelope(command: string, result: ActionResult, previousState: WebPageState | null, outcome: Partial<EnvelopeData>): Promise<EnvelopeData> {
+    const status = await this.saveStatus(result);
     return {
       ok: true,
       command,
       page: this.pageBlock(result, previousState),
       ...outcome,
       instance: await this.instanceInfo(),
-      status: await this.saveStatus(result),
+      status,
+      artifacts: this.artifacts,
     };
   }
 
@@ -1060,9 +1066,16 @@ export class Prima {
   }
 
   async status(hash: string): Promise<EnvelopeData> {
+    if (!this.artifactsDir) {
+      const sites = listSites();
+      const site = sites.find((candidate) => existsSync(path.join(candidate.dir, 'output', 'prima', hash))) || sites[0];
+      if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
+      await this.loadConfig();
+    }
+
     const dir = this.statusDir(hash);
-    const statusFile = path.join(dir, 'status.json');
-    if (!existsSync(statusFile)) return this.toolFailureEnvelope(`status ${hash}`, `No command was recorded under ${hash}. Every envelope prints its own hash on the Instance line.`);
+    const statusFile = path.join(dir, STATUS_FILE);
+    if (!existsSync(statusFile)) return this.toolFailureEnvelope(`status ${hash}`, `No command was recorded under ${dir}. Every envelope prints its own hash on the Instance line.`);
 
     const saved = JSON.parse(readFileSync(statusFile, 'utf-8'));
     return {
@@ -1070,14 +1083,14 @@ export class Prima {
       command: `status ${hash}`,
       page: saved.page,
       instance: await this.instanceInfo(),
-      artifacts: { aria: path.join(dir, 'aria.yml'), html: path.join(dir, 'page.html') },
+      artifacts: readArtifacts(dir),
     };
   }
 
   private async saveStatus(result: ActionResult): Promise<string> {
     const hash = this.statusHash();
     await this.writeSnapshot(result);
-    writeFileSync(path.join(this.statusDir(hash), 'status.json'), JSON.stringify({ page: this.pageBlock(result, null) }), 'utf-8');
+    writeFileSync(path.join(this.statusDir(hash), STATUS_FILE), JSON.stringify({ page: this.pageBlock(result, null) }), 'utf-8');
     return hash;
   }
 
