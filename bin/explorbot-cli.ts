@@ -12,7 +12,7 @@ import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
-import { registerKnowledgeOption } from '../src/knowledge-tracker.js';
+import { registerKnowledgeOption } from '../src/commands/knowledge-option.js';
 import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { registerKnowledgeOption } from '../../../src/knowledge-tracker.ts';
+import { registerKnowledgeOption } from '../../../src/commands/knowledge-option.ts';
 import { remote } from '../../../src/remote.ts';
 import { createApiCommands } from '../src/cli.ts';
 

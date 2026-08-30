@@ -6,7 +6,8 @@ import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.js';
 import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
 import { ConfigParser } from '../../src/config';
-import { KnowledgeTracker, registerKnowledgeOption } from '../../src/knowledge-tracker';
+import { registerKnowledgeOption } from '../../src/commands/knowledge-option';
+import { KnowledgeTracker } from '../../src/knowledge-tracker';
 import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
 
 const knowledgeDir = '/tmp/explorbot-test-knowledge';
