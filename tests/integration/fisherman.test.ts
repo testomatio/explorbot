@@ -52,6 +52,7 @@ describe('Fisherman with aimock', () => {
   let outputDir: string;
   let requestStore: RequestStore;
   let apiResponses: RequestResult[];
+  let apiHeaders: Record<string, string>;
 
   beforeAll(async () => {
     mock = new LLMock({ port: 0, logLevel: 'silent' });
@@ -73,6 +74,7 @@ describe('Fisherman with aimock', () => {
     requestStore.addCapturedRequest(requestResult('xhr_001_POST_api_alpha-shop_suites', 'POST', '/api/alpha-shop/suites', 201, { title: 'Suite' }));
     requestStore.addCapturedRequest(requestResult('xhr_002_POST_api_other-shop_suites', 'POST', '/api/other-shop/suites', 201, { title: 'Suite' }));
     apiResponses = [];
+    apiHeaders = {};
   });
 
   afterEach(() => {
@@ -84,11 +86,11 @@ describe('Fisherman with aimock', () => {
     ConfigParser.cleanupAllTestDirectories();
   });
 
-  function createFisherman(): Fisherman {
+  function createFisherman(browserHeaders: Record<string, string> = {}, configHeaders: Record<string, string> = {}, hasApiConfig = false): Fisherman {
     const apiClient = {
       request: async () => apiResponses.shift(),
-      setHeaders: () => {},
-      getHeaders: () => ({}),
+      setHeaders: (h: Record<string, string>) => Object.assign(apiHeaders, h),
+      getHeaders: () => ({ ...apiHeaders }),
     };
     return new Fisherman(
       provider,
@@ -96,7 +98,9 @@ describe('Fisherman with aimock', () => {
       requestStore,
       async () => null,
       'https://example.test/api',
-      async () => ({})
+      async () => browserHeaders,
+      configHeaders,
+      hasApiConfig
     );
   }
 
@@ -128,5 +132,30 @@ describe('Fisherman with aimock', () => {
     expect(result.success).toBe(false);
     expect(result.created).toHaveLength(0);
     expect(result.summary).toBe('The data cannot be created');
+  });
+
+  it('sends the current browser session credentials, replacing captured ones', async () => {
+    const captured = requestResult('xhr_010_POST_api_alpha-shop_tests', 'POST', '/api/alpha-shop/tests', 201);
+    captured.requestHeaders = { 'x-csrf-token': 'captured-token', cookie: 'session=captured' };
+    requestStore.addCapturedRequest(captured);
+
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('c1', 'stop', { reason: 'nothing to do' })] });
+    mock.on({}, { content: 'done' });
+
+    await createFisherman({ Cookie: 'session=live', 'x-csrf-token': 'live-token' }).prepareData('1 suite', '/projects/alpha-shop/suites');
+
+    expect(apiHeaders.Cookie).toBe('session=live');
+    expect(apiHeaders['x-csrf-token']).toBe('live-token');
+    expect(apiHeaders.cookie).toBeUndefined();
+  });
+
+  it('achieve mode authenticates only through config headers, never the browser session', async () => {
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('c1', 'stop', { reason: 'nothing to do' })] });
+    mock.on({}, { content: 'done' });
+
+    await createFisherman({ Cookie: 'session=live' }, { 'x-api-key': 'from-config' }, true).prepareData('1 suite', '/projects/alpha-shop/suites');
+
+    expect(apiHeaders['x-api-key']).toBe('from-config');
+    expect(apiHeaders.Cookie).toBeUndefined();
   });
 });

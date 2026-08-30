@@ -154,14 +154,16 @@ export class Fisherman implements Agent {
   }
 
   private async refreshAuth(): Promise<void> {
-    const cookies = await this.cookieProvider();
-    if (Object.keys(cookies).length > 0) {
-      this.apiClient.setHeaders(cookies);
-    }
+    if (this.mode === 'replicate') {
+      const xhrHeaders = this.requestStore.extractAuthHeaders();
+      if (Object.keys(xhrHeaders).length > 0) {
+        this.apiClient.setHeaders(xhrHeaders);
+      }
 
-    const xhrHeaders = this.requestStore.extractAuthHeaders();
-    if (Object.keys(xhrHeaders).length > 0) {
-      this.apiClient.setHeaders(xhrHeaders);
+      const cookies = await this.cookieProvider();
+      if (Object.keys(cookies).length > 0) {
+        this.apiClient.setHeaders(cookies);
+      }
     }
 
     if (Object.keys(this.configHeaders).length > 0) {
