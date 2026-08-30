@@ -21,7 +21,7 @@ export class Fisherman implements Agent {
   private apiClient: ApiClient;
   private requestStore: RequestStore;
   private specLoader: () => Promise<any | null>;
-  private cookieProvider: () => Promise<Record<string, string>>;
+  private browserHeaderProvider: () => Promise<Record<string, string>>;
   private configHeaders: Record<string, string>;
   private sessionName?: string;
   private baseEndpoint: string;
@@ -30,13 +30,13 @@ export class Fisherman implements Agent {
   private hasApiConfig: boolean;
   private scopeDegraded = false;
 
-  constructor(provider: Provider, apiClient: ApiClient, requestStore: RequestStore, specLoader: () => Promise<any | null>, baseEndpoint: string, cookieProvider: () => Promise<Record<string, string>>, configHeaders: Record<string, string> = {}, hasApiConfig = false) {
+  constructor(provider: Provider, apiClient: ApiClient, requestStore: RequestStore, specLoader: () => Promise<any | null>, baseEndpoint: string, browserHeaderProvider: () => Promise<Record<string, string>>, configHeaders: Record<string, string> = {}, hasApiConfig = false) {
     this.provider = provider;
     this.apiClient = apiClient;
     this.requestStore = requestStore;
     this.specLoader = specLoader;
     this.baseEndpoint = baseEndpoint;
-    this.cookieProvider = cookieProvider;
+    this.browserHeaderProvider = browserHeaderProvider;
     this.configHeaders = configHeaders;
     this.hasApiConfig = hasApiConfig;
     this.mode = hasApiConfig ? 'achieve' : 'replicate';
@@ -160,9 +160,9 @@ export class Fisherman implements Agent {
         this.apiClient.setHeaders(xhrHeaders);
       }
 
-      const cookies = await this.cookieProvider();
-      if (Object.keys(cookies).length > 0) {
-        this.apiClient.setHeaders(cookies);
+      const browserHeaders = await this.browserHeaderProvider();
+      if (Object.keys(browserHeaders).length > 0) {
+        this.apiClient.setHeaders(browserHeaders);
       }
     }
 

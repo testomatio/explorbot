@@ -346,14 +346,22 @@ export class ExplorBot {
         }
       };
 
-      const cookieProvider = async (): Promise<Record<string, string>> => {
-        const cookies = await this.explorer.withPage((page) => page.context().cookies(baseEndpoint)).catch(() => []);
-        if (!cookies.length) return {};
-        return { Cookie: cookies.map((c: any) => `${c.name}=${c.value}`).join('; ') };
+      const browserHeaderProvider = async (): Promise<Record<string, string>> => {
+        const session = await this.explorer
+          .withPage(async (page) => ({
+            cookies: await page.context().cookies(baseEndpoint),
+            csrf: await page.evaluate(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''),
+          }))
+          .catch(() => ({ cookies: [] as any[], csrf: '' }));
+
+        const headers: Record<string, string> = {};
+        if (session.cookies.length) headers.Cookie = session.cookies.map((c: any) => `${c.name}=${c.value}`).join('; ');
+        if (session.csrf) headers['x-csrf-token'] = session.csrf;
+        return headers;
       };
 
       this.agents.fisherman = this.createAgent(({ ai }) => {
-        return new Fisherman(ai, apiClient, requestStore, specLoader, baseEndpoint, cookieProvider, configHeaders, hasApiConfig);
+        return new Fisherman(ai, apiClient, requestStore, specLoader, baseEndpoint, browserHeaderProvider, configHeaders, hasApiConfig);
       });
     }
     return this.agents.fisherman;
