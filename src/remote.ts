@@ -1,4 +1,3 @@
-import type { Command } from 'commander';
 import stripAnsi from 'strip-ansi';
 import { type ActivityEntry, addActivityListener } from './activity.ts';
 import { executionController } from './execution-controller.ts';
@@ -29,15 +28,6 @@ export class Remote implements LogDestination {
   private asks = new Map<string, (value: string | null) => void>();
   private askCounter = 0;
   private lastActivity: string | null = null;
-
-  registerOption(program: Command): void {
-    program.option('--ws <url>', 'Stream this run to a remote UI over WebSocket');
-    program.hook('preAction', (_thisCommand, actionCommand) => {
-      const url = actionCommand.optsWithGlobals().ws || process.env.EXPLORBOT_WS_URL;
-      if (!url) return;
-      this.attach(String(url), this.commandPath(actionCommand));
-    });
-  }
 
   attach(url: string, command: string): void {
     if (this.url) return;
@@ -224,16 +214,6 @@ export class Remote implements LogDestination {
     if (typeof failure === 'string') return failure;
     if (typeof failure.message === 'string') return failure.message;
     return undefined;
-  }
-
-  private commandPath(command: Command): string {
-    const parts: string[] = [];
-    let node: Command | null = command;
-    while (node) {
-      parts.unshift(node.name());
-      node = node.parent;
-    }
-    return parts.slice(1).join(' ') || parts.join(' ');
   }
 }
 

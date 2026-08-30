@@ -563,7 +563,15 @@ Consequently `isInteractive()` (`src/ai/task-agent.ts`) is **`INK_RUNNING || exe
 
 **There are no frame types.** A frame is `{type, ts, ...whatever}`; `send(type, data)` puts data on the wire and the UI renders what it recognises. Neither side validates the other's shape, so either can start sending more at any time. It queues while disconnected, reconnects with backoff, and `remote.close(exitCode)` flushes before exit (called from `showStatsAndExit`).
 
-`remote.registerOption(program)` adds the flag through a Commander `preAction` hook, so it covers every command including the mounted `api`/`docs` subcommands and the standalone `boat/*` bins.
+`--ws` itself is declared outside remote, as a `BaseOption` in `src/commands/options/` — see below — and its hook calls `remote.attach()`.
+
+## Shared CLI options (`src/commands/options/`)
+
+A flag that belongs to a run rather than to one command lives here, one `BaseOption` subclass per flag: `flags`, `description`, an optional `collect` for a repeatable value, and an `apply()` that runs after parsing. `register(program)` declares the flag on the program root and hooks `preAction`, so one registration covers every command, the mounted `api`/`docs` subcommands and the standalone `boat/*` bins alike, and the flag can sit anywhere on the line.
+
+Each bin registers the options it offers — `wsOption.register(program)`, `knowledgeOption.register(program)` — so a boat carries only the flags that mean something for it.
+
+`apply()` hands the value to whoever owns it and nothing else: `--ws` to `remote.attach()`, `--knowledge` to config, which holds the run's inputs. Nothing downstream learns that a command line exists.
 
 ## Command Line Usage
 

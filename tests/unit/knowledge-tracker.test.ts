@@ -6,7 +6,7 @@ import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.js';
 import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
 import { ConfigParser } from '../../src/config';
-import { registerKnowledgeOption } from '../../src/config';
+import { knowledgeOption } from '../../src/commands/options/index';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
 import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
 
@@ -314,7 +314,7 @@ describe('KnowledgeTracker', () => {
 
     it('reaches the tracker from a --knowledge flag anywhere on the command line', () => {
       const program = new Command();
-      registerKnowledgeOption(program);
+      knowledgeOption.register(program);
       const rendered: string[] = [];
       program.command('explore <path>').action(() => {
         rendered.push(new KnowledgeTracker().renderRelevantKnowledge(new ActionResult({ url: '/pay' })));

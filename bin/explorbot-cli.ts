@@ -10,7 +10,8 @@ import React from 'react';
 import { flushTelemetry } from '../src/ai/provider.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
-import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS, registerKnowledgeOption } from '../src/config.js';
+import { knowledgeOption, wsOption } from '../src/commands/options/index.js';
+import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
@@ -28,8 +29,8 @@ const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../p
 const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as string;
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
-remote.registerOption(program);
-registerKnowledgeOption(program);
+wsOption.register(program);
+knowledgeOption.register(program);
 
 process.on('uncaughtException', async (error) => {
   tag('error').log(`Uncaught exception: ${error instanceof Error ? `${error.message}\n${error.stack}` : String(error)}`);
