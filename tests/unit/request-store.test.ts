@@ -199,6 +199,12 @@ describe('RequestStore scope filtering', () => {
 
     expect(store.toEndpointList('/projects/alpha-shop')).toBe('POST /api/alpha-shop/suites');
   });
+
+  it('keeps version segments literal in the endpoint list', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/v1/suites', 201));
+
+    expect(store.toEndpointList()).toBe('POST /api/v1/suites');
+  });
 });
 
 describe('RequestStore loadFromDisk', () => {

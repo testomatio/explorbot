@@ -9,6 +9,7 @@ export function isDynamicSegment(segment: string): boolean {
     /* config not loaded yet */
   }
 
+  if (/^v\d+$/i.test(segment)) return false;
   // numeric: /users/123
   if (/^\d+$/.test(segment)) return true;
   // UUID: /items/550e8400-e29b-41d4-a716-446655440000

@@ -50,6 +50,17 @@ describe('url-matcher', () => {
       expect(isDynamicSegment('new-test')).toBe(false);
     });
 
+    it('rejects version segments', () => {
+      expect(isDynamicSegment('v1')).toBe(false);
+      expect(isDynamicSegment('v2')).toBe(false);
+      expect(isDynamicSegment('V3')).toBe(false);
+    });
+
+    it('still detects real ids alongside version segments', () => {
+      expect(isDynamicSegment('1a2b3c4d')).toBe(true);
+      expect(isDynamicSegment('8471')).toBe(true);
+    });
+
     it('respects user-provided dynamicPageRegex override', () => {
       const instance = ConfigParser.getInstance();
       (instance as any).config = { ...(instance as any).config, dynamicPageRegex: '^custom-\\d+$' };

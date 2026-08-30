@@ -350,7 +350,7 @@ export class ExplorBot {
         const session = await this.explorer
           .withPage(async (page) => ({
             cookies: await page.context().cookies(baseEndpoint),
-            csrf: await page.evaluate(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''),
+            csrf: await page.evaluate(() => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '').catch(() => ''),
           }))
           .catch(() => ({ cookies: [] as any[], csrf: '' }));
 
