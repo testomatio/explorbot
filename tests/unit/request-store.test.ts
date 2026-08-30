@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RequestResult } from '../../src/api/request-result.js';
 import { RequestStore } from '../../src/api/request-store.js';
 
 let counter = 0;
-function makeRequest(method: string, path: string, status: number, id?: string): RequestResult {
+function makeRequest(method: string, path: string, status: number, id?: string, headers: Record<string, string> = {}): RequestResult {
   counter++;
   return new RequestResult({
     id: id || `req_${counter}`,
     method,
     path,
     fullUrl: path,
-    requestHeaders: {},
+    requestHeaders: headers,
     status,
     statusText: String(status),
     responseHeaders: {},
@@ -221,5 +221,77 @@ describe('RequestStore loadFromDisk', () => {
 
     expect(fresh.getCapturedRequests()).toHaveLength(1);
     expect(fresh.getCapturedRequests()[0].id).toBe('xhr_001_POST_api_suites');
+  });
+});
+
+describe('extractAuthHeaders session gating', () => {
+  let outputDir: string;
+
+  beforeEach(() => {
+    outputDir = mkdtempSync(join(tmpdir(), 'reqstore-'));
+  });
+
+  afterEach(() => {
+    if (existsSync(outputDir)) rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  it('ignores auth headers from captures of previous sessions', () => {
+    const stale = makeRequest('DELETE', '/api/old-project/suites', 200, 'xhr_033_DELETE_api_old', { 'x-csrf-token': 'stale-token' });
+    stale.timestamp = new Date('2026-07-07');
+    stale.save(outputDir);
+
+    const store = new RequestStore(outputDir);
+    store.loadFromDisk();
+
+    expect(store.extractAuthHeaders()).toEqual({});
+  });
+
+  it('returns auth headers from captures made during this session', () => {
+    const store = new RequestStore(outputDir);
+    store.addCapturedRequest(makeRequest('POST', '/api/suites', 201, undefined, { authorization: 'Bearer live', 'x-csrf-token': 'live-token' }));
+
+    expect(store.extractAuthHeaders()).toEqual({ authorization: 'Bearer live', 'x-csrf-token': 'live-token' });
+  });
+
+  it('never returns cookie headers from captures', () => {
+    const store = new RequestStore(outputDir);
+    store.addCapturedRequest(makeRequest('POST', '/api/suites', 201, undefined, { cookie: 'session=captured', 'x-csrf-token': 'live-token' }));
+
+    expect(store.extractAuthHeaders()).toEqual({ 'x-csrf-token': 'live-token' });
+  });
+
+  it('prefers the newest session capture when values differ', () => {
+    const store = new RequestStore(outputDir);
+    const older = makeRequest('POST', '/api/suites', 201, undefined, { 'x-csrf-token': 'first' });
+    older.timestamp = new Date(Date.now() + 1000);
+    const newer = makeRequest('POST', '/api/tests', 201, undefined, { 'x-csrf-token': 'second' });
+    newer.timestamp = new Date(Date.now() + 2000);
+    store.addCapturedRequest(older);
+    store.addCapturedRequest(newer);
+
+    expect(store.extractAuthHeaders()).toEqual({ 'x-csrf-token': 'second' });
+  });
+
+  it('resolves a same-id collision between a stale disk file and a live capture', () => {
+    const stale = makeRequest('POST', '/api/suites', 201, 'xhr_001_POST_api_suites', { 'x-csrf-token': 'stale-token' });
+    stale.timestamp = new Date('2026-07-07');
+    stale.save(outputDir);
+
+    const store = new RequestStore(outputDir);
+    store.loadFromDisk();
+    store.addCapturedRequest(makeRequest('POST', '/api/suites', 201, 'xhr_001_POST_api_suites', { 'x-csrf-token': 'live-token' }));
+
+    expect(store.extractAuthHeaders()).toEqual({ 'x-csrf-token': 'live-token' });
+  });
+
+  it('treats a capture file without a timestamp as stale', () => {
+    const requestsDir = join(outputDir, 'requests');
+    mkdirSync(requestsDir, { recursive: true });
+    writeFileSync(join(requestsDir, 'xhr_002_POST_api_x.request.yaml'), '---\nmethod: POST\nurl: /api/x\nfullUrl: /api/x\nheaders:\n  x-csrf-token: orphan\nstatus: 200\nstatusText: OK\nresponseHeaders:\n---\n', 'utf8');
+
+    const store = new RequestStore(outputDir);
+    store.loadFromDisk();
+
+    expect(store.extractAuthHeaders()).toEqual({});
   });
 });

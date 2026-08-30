@@ -3,7 +3,7 @@ import path from 'node:path';
 import { isDynamicSegment } from '../utils/url-matcher.ts';
 import { RequestResult } from './request-result.ts';
 
-const AUTH_HEADERS = ['authorization', 'cookie', 'x-api-key', 'x-csrf-token'];
+const AUTH_HEADERS = ['authorization', 'x-api-key', 'x-csrf-token'];
 
 export class RequestStore {
   private capturedRequests: RequestResult[] = [];
@@ -11,6 +11,7 @@ export class RequestStore {
   private failedRequests: RequestResult[] = [];
   private onFailedListeners: Array<(r: RequestResult) => void> = [];
   private outputDir: string;
+  private sessionStartedAt = new Date();
 
   constructor(outputDir: string) {
     this.outputDir = outputDir;
@@ -97,15 +98,14 @@ export class RequestStore {
 
   extractAuthHeaders(): Record<string, string> {
     const headers: Record<string, string> = {};
+    const sessionCaptures = this.capturedRequests.filter((r) => r.timestamp >= this.sessionStartedAt).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
-    for (let i = this.capturedRequests.length - 1; i >= 0; i--) {
-      const req = this.capturedRequests[i];
+    for (const req of sessionCaptures) {
       for (const [key, value] of Object.entries(req.requestHeaders)) {
         if (AUTH_HEADERS.includes(key.toLowerCase()) && !headers[key]) {
           headers[key] = value;
         }
       }
-      if (AUTH_HEADERS.every((h) => Object.keys(headers).some((k) => k.toLowerCase() === h))) break;
     }
 
     return headers;

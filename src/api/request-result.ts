@@ -173,7 +173,7 @@ export class RequestResult {
       statusText: meta.statusText || '',
       responseHeaders: meta.responseHeaders || {},
       timing: Number.parseInt(meta.timing) || 0,
-      timestamp: new Date(meta.timestamp || Date.now()),
+      timestamp: new Date(meta.timestamp || 0),
     });
 
     result.requestFile = requestFile;
