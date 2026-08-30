@@ -631,11 +631,18 @@ async function buildDiffParts(originalMap: NodeMap, modifiedMap: NodeMap, pageSi
     const subtree = serialized ? await minifyHtml(serialized) : '';
     if (!subtree) continue;
 
-    const addedLines = paths.filter((p) => addedTopLevel.includes(p)).map((p) => `ELEMENT:${p}`);
+    const appearedPaths = paths.filter((p) => addedTopLevel.includes(p));
+    const sizeOf = (p: string) => {
+      const node = modifiedMap.get(p);
+      if (!node) return 0;
+      return serializeNode(node).length;
+    };
+    appearedPaths.sort((a, b) => sizeOf(b) - sizeOf(a));
+    const addedLines = appearedPaths.map((p) => `ELEMENT:${p}`);
     const removedLines: string[] = [];
 
     const part: HtmlDiffPart = { container: selector, subtree, rawSize: serialized.length, added: addedLines, removed: removedLines };
-    const appearedPath = paths.find((p) => addedTopLevel.includes(p));
+    const appearedPath = appearedPaths[0];
     if (appearedPath) {
       const appearedElement = modifiedMap.get(appearedPath);
       if (appearedElement) {

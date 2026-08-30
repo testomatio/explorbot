@@ -213,6 +213,15 @@ describe('OverlayPage.detectRegion', () => {
     expect(overlay!.root).toBe('div.drawer');
   });
 
+  it('probes the largest appeared element when an empty guard appears alongside the panel', async () => {
+    const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div class="guard"></div><div class="panel"><h2>Edit User</h2><form>${bigForm}</form></div></body></html>`;
+    const diff = await regionDiff(basePage, after);
+    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    expect(overlay).not.toBeNull();
+    expect(overlay!.root).toBe('div.panel');
+    expect(overlay!.xpath).toBe('//body/div[3]');
+  });
+
   it('drops a large appearance that has neither a heading nor a semantic root', async () => {
     const anonymousRows = Array.from({ length: 150 }, (_, i) => `<div><span>Row content number ${i} without any identity</span></div>`).join('');
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div><div>${anonymousRows}</div></div></body></html>`;
