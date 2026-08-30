@@ -23,11 +23,33 @@
 - [Fisherman] Stops after four failures in a row against the same endpoint instead of spending the
   whole iteration budget guessing request bodies.
 - [Pilot] Precondition steps now record which API request created each item.
+- [Provider] Groq prompt cache hits are counted again. Groq reports how much of a prompt it served
+  from cache, but the pinned `@ai-sdk/groq` build read that number out of the response and then
+  dropped it, so every Groq request was recorded as a full-price miss and the cache hit rate showed
+  as zero no matter how much of the prompt was actually reused. Upgrading the provider carries the
+  number through to the run stats and to Langfuse, which records it as `cache_read.input_tokens`.
+  Groq's cache lives on the node that served the request, so expect an uneven rate — a hit covers
+  almost the whole prompt, but only some requests get one.
 
 ## 2026-08-28
 
 ### Changes
 
+- [Provider] A request the provider rejects as invalid now comes back to the model with the
+  provider's own reason instead of a blind re-roll. gpt-oss sometimes emits tool names carrying its
+  internal channel markers or invents names outright; the provider API rejects the call before any
+  client-side repair can run, and the retry used to resend the same context unchanged — 24, 49 and
+  then 76 wasted generations across the last three overnight runs. The retry now relays the
+  rejection message verbatim (detected by error type and status code, no text matching), so the
+  model sees exactly what it broke and corrects itself on the next attempt.
+- [Tests] Provider unit tests no longer depend on the machine's global explorbot installation: a
+  config-priming call in the setup could reject against a real `~/.explorbot` and fail unrelated
+  tests as stray unhandled rejections.
+- [Planner] Scenarios describe the item to act on by kind and role instead of naming it. A scenario that
+  named one specific record went stale the moment that record was renamed, deleted, or replaced, and the
+  run was spent hunting for a name the page no longer had.
+- [Pilot] Picks the concrete item a scenario runs against — one already on the page, or a fresh one it
+  creates — and hands the Tester its exact name.
 - [Tester] `form()` and `interact()` now report every command they ran and whether it passed. A batch
   used to come back as a single pass/fail, so one bad command at the end hid the fact that the ones
   before it had worked — the AI and the Pilot both concluded nothing had happened and redid work that
