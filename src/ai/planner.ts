@@ -33,7 +33,7 @@ const TasksSchema = z.object({
   scenarios: z
     .array(
       z.object({
-        scenario: z.string().describe('A single sentence describing what to test'),
+        scenario: z.string().describe('A single sentence describing the behavior to test.'),
         priority: z.enum(['critical', 'important', 'high', 'normal', 'low']).describe('Priority of the task based on business importance'),
         startUrl: z.string().nullable().describe('Start URL for the test if different from plan URL. Use only stable feature/list/detail pages, not transient create/edit/modal URLs unless the scenario specifically starts inside that form.'),
         steps: z.array(z.string()).describe('List of steps to perform for this scenario. Each step should be a specific action (e.g., "Open the form", "Enter required data", "Submit the form"). Keep steps atomic and actionable.'),

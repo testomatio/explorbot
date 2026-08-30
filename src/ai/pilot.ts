@@ -1120,6 +1120,8 @@ export class Pilot implements Agent {
       state), instruct Tester to verify() and finish(). If goal was already true at the start, propose
       different input data so the test is meaningful. If Tester repeats the same successful action, STOP.
 
+      If needed you should pick the exact item the scenario should act on (from the page, or precondition() one) and pass it to tester
+
       Action classification: GOAL-ADVANCING actions mutate the scenario's subject data (create/edit/delete/submit/verify).
       VIEW-ONLY actions toggle filters/tabs/sort/collapse without changing data. One VIEW-ONLY to reveal a
       target is fine; ≥2 consecutive VIEW-ONLY actions with no GOAL-ADVANCING action in between is thrashing
