@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path, { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
+import type { Command } from 'commander';
 import dedent from 'dedent';
 import matter from 'gray-matter';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from './global-config.js';
@@ -20,6 +21,7 @@ export const PROVIDERS: Record<string, ProviderInfo> = {
 };
 
 let cachedOutputRoot: string | null = null;
+let knowledgeFromOptions: string[] = [];
 
 interface PlaywrightConfig {
   browser: 'chromium' | 'firefox' | 'webkit';
@@ -851,6 +853,17 @@ export function resolveStateRoot(baseUrl: string, ephemeral?: boolean): string {
   if (ephemeral || !url?.host) return mkdtempSync(join(tmpdir(), 'explorbot-'));
 
   return registerSite(url.origin).dir;
+}
+
+export function registerKnowledgeOption(program: Command): void {
+  program.option('--knowledge <text>', 'Knowledge for this run only, not saved to disk. Markdown text; add url: or endpoint: frontmatter to scope it, otherwise it applies everywhere. Repeatable', (value: string, previous: string[] = []) => [...previous, value]);
+  program.hook('preAction', (_thisCommand, actionCommand) => {
+    knowledgeFromOptions = actionCommand.optsWithGlobals().knowledge || [];
+  });
+}
+
+export function optionKnowledge(): string[] {
+  return knowledgeFromOptions;
 }
 
 export function materializeKnowledge(outputRoot: string): void {

@@ -4,8 +4,7 @@ import dedent from 'dedent';
 import matter from 'gray-matter';
 import { ActionResult } from './action-result.js';
 import { ApplicationSpec } from './application-spec.ts';
-import { ConfigParser } from './config.js';
-import { Stats } from './stats.ts';
+import { ConfigParser, optionKnowledge } from './config.js';
 import { getCliName } from './utils/cli-name.ts';
 import { createDebug, pluralize, tag } from './utils/logger.js';
 import { loadMarkdownFiles } from './utils/markdown-files.js';
@@ -52,7 +51,7 @@ export class KnowledgeTracker {
       tag('info').log(`Loaded application spec with ${this.applicationSpec.pageCount} documented pages`);
     }
 
-    this.sessionKnowledge = this.parseSessionKnowledge(options.knowledge ?? Stats.knowledge);
+    this.sessionKnowledge = this.parseSessionKnowledge(options.knowledge ?? optionKnowledge());
   }
 
   private loadKnowledgeFiles(): void {
