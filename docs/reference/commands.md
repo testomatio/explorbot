@@ -431,6 +431,8 @@ npx explorbot test 3 --from-plan output/plans/login.md   # index first, plan via
 | `--grep <pattern>` | Run only tests whose scenario matches the pattern |
 | `--from-plan <file>` | Load this plan file when the first argument is a test index |
 
+The plan names the site it runs against: the URL of its `### Prerequisite` section, or the `## Requirements` URL of its first test. With a [global installation](configuration.md#running-from-anywhere-the-global-installation) that is enough to run a plan from any directory without a project config — `npx explorbot test ~/plans/checkout.md` registers the site and stores its output under `~/.explorbot/sites/<host>/`.
+
 ### drill
 
 Drill all components on a page to learn interactions.

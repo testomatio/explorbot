@@ -98,7 +98,7 @@ export function WithPlaywright<T extends Constructor>(Base: T) {
       lines.push('');
       lines.push(`test.describe('${escapeString(plan.title)}', () => {`);
 
-      const startUrl = plan.url || plan.tests[0]?.startUrl;
+      const startUrl = plan.startUrl;
       if (startUrl) {
         lines.push('  test.beforeEach(async ({ page }) => {');
         lines.push(`    await page.goto('${escapeString(startUrl)}');`);

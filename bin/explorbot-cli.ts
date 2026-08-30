@@ -276,7 +276,7 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
       const lines: string[] = [];
       lines.push(`## #${idx} ${test.scenario}\n`);
       lines.push(`**Priority:** ${test.priority}`);
-      const planUrl = plan.url || plan.tests[0]?.startUrl;
+      const planUrl = plan.startUrl;
       if (planUrl) lines.push(`**Plan URL:** ${planUrl}`);
       if (test.startUrl && test.startUrl !== planUrl) lines.push(`**Test URL:** ${test.startUrl}`);
       if (test.plannedSteps.length) {
@@ -293,7 +293,7 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
       return;
     }
 
-    const planUrl = plan.url || plan.tests[0]?.startUrl;
+    const planUrl = plan.startUrl;
     const lines: string[] = [`**${plan.title}** (${plan.tests.length} tests)\n`];
     if (planUrl) {
       lines.push(`URL: ${planUrl}\n`);
@@ -325,9 +325,6 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
 addCommonOptions(program.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1,3, 1-5, *, all').option('--grep <pattern>', 'Run tests matching pattern').option('--from-plan <file>', 'Load plan file when the first argument is a test index')).action(
   async (planfile, index, options) => {
     try {
-      const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
-      await explorBot.start();
-
       let planfileArg = planfile;
       let indexArg = index;
       if (options.fromPlan) {
@@ -335,11 +332,17 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
         indexArg = planfile;
       }
 
+      const planFile = [planfileArg, `${planfileArg}.md`].find((file) => fs.existsSync(file));
+      const planTarget = planFile ? Plan.fromMarkdown(planFile).startUrl : undefined;
+
+      const explorBot = new ExplorBot(buildExplorBotOptions(planTarget, options));
+      await explorBot.start();
+
       const plan = explorBot.loadPlan(planfileArg);
       const pending = plan.getPendingTests();
       log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests, ${pending.length} pending)`);
 
-      const startUrl = plan.url || pending[0]?.startUrl;
+      const startUrl = plan.startUrl;
       if (!startUrl) {
         throw new Error('No URL found in plan or tests. Cannot determine where to navigate.');
       }
@@ -347,7 +350,7 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
       log(`Navigating to ${startUrl}`);
       await explorBot.visit(startUrl);
 
-      let args = '';
+      let args = '*';
       if (indexArg) args = indexArg;
       else if (options.grep) args = options.grep;
 

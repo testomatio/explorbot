@@ -455,6 +455,10 @@ export class Plan {
     return this.tests.filter((test) => test.status === 'pending' && test.enabled);
   }
 
+  get startUrl(): string | undefined {
+    return this.url || this.tests[0]?.startUrl;
+  }
+
   get isComplete(): boolean {
     return this.tests.length > 0 && this.tests.every((test) => test.hasFinished);
   }

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-08-31
+
+### Changes
+
+- `explorbot test <planfile>` takes the site to run against from the plan itself — the URL of its
+  `### Prerequisite` section, or the `## Requirements` URL of its first test. A plan is therefore
+  enough to run it from any directory with a global installation (`~/.explorbot/config.js`) or with
+  the `EXPLORBOT_*` variables, both of which used to refuse to start with "No site to explore"
+  because the command named no URL of its own.
+- `explorbot test <planfile>` without an index runs every enabled test in the plan, as the help and
+  the docs already described. It used to run only the first pending one.
+
 ## 2026-08-30
 
 ### Changes

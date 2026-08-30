@@ -340,4 +340,59 @@ priority: low
       expect(context).toContain('- Enter text');
     });
   });
+
+  describe('startUrl', () => {
+    test('should take the prerequisite URL of the suite', () => {
+      const markdown = `<!-- suite -->
+# Test Suite
+
+### Prerequisite
+
+* URL: https://app.example.com/projects/demo/runs
+
+<!-- test
+priority: critical
+-->
+# Test Scenario
+
+## Requirements
+https://app.example.com/projects/demo/runs
+
+## Expected
+* Page is rendered
+`;
+
+      writeFileSync(testFilePath, markdown, 'utf-8');
+      const plan = Plan.fromMarkdown(testFilePath);
+
+      expect(plan.startUrl).toBe('https://app.example.com/projects/demo/runs');
+    });
+
+    test('should fall back to the first test URL when suite has no prerequisite', () => {
+      const markdown = `<!-- suite -->
+# Test Suite
+
+<!-- test
+priority: normal
+-->
+# Test Scenario
+
+## Requirements
+/login
+
+## Expected
+* Login form is shown
+`;
+
+      writeFileSync(testFilePath, markdown, 'utf-8');
+      const plan = Plan.fromMarkdown(testFilePath);
+
+      expect(plan.url).toBeUndefined();
+      expect(plan.startUrl).toBe('/login');
+    });
+
+    test('should be undefined when neither suite nor tests carry a URL', () => {
+      expect(new Plan('Test Suite').startUrl).toBeUndefined();
+    });
+  });
 });
