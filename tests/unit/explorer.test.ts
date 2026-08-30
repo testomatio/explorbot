@@ -6,23 +6,23 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const pageRegistry = new Map<string, string>();
 
 mock.module('codeceptjs', () => {
-  const listeners = new Map<string, Array<(payload: any) => void>>();
+  const listeners = new Map<string, Array<(...args: any[]) => void>>();
   const dispatch = {
-    on(event: string, handler: (payload: any) => void) {
+    on(event: string, handler: (...args: any[]) => void) {
       const handlers = listeners.get(event) || [];
       listeners.set(event, [...handlers, handler]);
     },
-    off(event: string, handler: (payload: any) => void) {
+    off(event: string, handler: (...args: any[]) => void) {
       const handlers = listeners.get(event) || [];
       listeners.set(
         event,
         handlers.filter((fn) => fn !== handler)
       );
     },
-    emit(event: string, payload: any) {
+    emit(event: string, ...args: any[]) {
       const handlers = listeners.get(event) || [];
       for (const handler of handlers) {
-        handler(payload);
+        handler(...args);
       }
     },
   };
@@ -39,11 +39,14 @@ mock.module('codeceptjs', () => {
   };
 
   let pending: Array<Promise<unknown>> = [];
+  let running = false;
 
   const recorder = {
     start: async () => {
+      running = true;
       pending = [];
     },
+    isRunning: () => running,
     add: (fn: () => unknown) => {
       const promise = Promise.resolve().then(fn);
       pending.push(promise);
@@ -62,6 +65,7 @@ mock.module('codeceptjs', () => {
       pending = [];
     },
     stop: async () => {
+      running = false;
       pending = [];
     },
     retry: () => {},

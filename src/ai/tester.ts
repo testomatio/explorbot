@@ -8,10 +8,9 @@ import { clearActivity, setActivity } from '../activity.ts';
 import type { RequestStore } from '../api/request-store.ts';
 import type { TestRun } from '../explorer.ts';
 import { Observability } from '../observability.ts';
-import type { StateTransition } from '../state-manager.ts';
+import { type StateTransition, normalizeUrl } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult, type TestResultType } from '../test-plan.ts';
-import { detectFocusArea } from '../utils/aria.ts';
 import { ErrorPageError, isErrorPage } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
@@ -66,6 +65,12 @@ export class Tester extends TaskAgent implements Agent {
   private stalledIterations = 0;
   private readonly MAX_STALLED_ITERATIONS = 3;
 
+  private skipResearch = (err: Error): string => {
+    if (err.name === 'AbortError') throw err;
+    tag('warning').log(`Research skipped: ${err.message}`);
+    return '';
+  };
+
   constructor(deps: AgentDeps, researcher: Researcher, navigator: Navigator, agentTools?: any) {
     super(deps);
     this.requestStore = deps.requestStore;
@@ -100,7 +105,7 @@ export class Tester extends TaskAgent implements Agent {
 
   async test(task: Test, opts: TestOptions = {}): Promise<{ success: boolean }> {
     Stats.tests++;
-    const state = this.stateManager.getCurrentState();
+    let state = this.stateManager.getCurrentState();
     if (!state) throw new Error('No state found');
 
     setActivity(`🧪 Testing: ${task.scenario}`, 'action');
@@ -122,7 +127,21 @@ export class Tester extends TaskAgent implements Agent {
       task.addObservation(`Network error: ${r.method} ${r.path} → ${r.status}`);
     });
 
-    const initialState = ActionResult.fromState(state);
+    let initialState = ActionResult.fromState(state);
+    const currentUrl = state.fullUrl || state.url;
+    let startOnCurrentPage = opts.startOnCurrentPage;
+    if (isErrorPage(initialState) && !startOnCurrentPage && task.startUrl && normalizeUrl(currentUrl) !== normalizeUrl(task.startUrl)) {
+      debugLog(`Recovering from error page at ${currentUrl} by navigating to ${task.startUrl}`);
+      try {
+        await this.explorer.visit(task.startUrl);
+        state = this.stateManager.getCurrentState();
+        if (!state) throw new Error('No state found after navigating to test start URL');
+        initialState = ActionResult.fromState(state);
+        startOnCurrentPage = true;
+      } catch (error) {
+        debugLog(`Could not recover from error page: ${compactErrorMessage(error)}`);
+      }
+    }
     if (isErrorPage(initialState)) {
       task.start();
       this.testRun = await this.explorer.beginTest(task);
@@ -153,7 +172,7 @@ export class Tester extends TaskAgent implements Agent {
           expected: task.expected,
         },
       },
-      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest }, opts)
+      async () => this.runTestSession(task, initialState, conversation, { offFailedRequest }, { ...opts, startOnCurrentPage })
     );
   }
 
@@ -481,7 +500,7 @@ export class Tester extends TaskAgent implements Agent {
       <rules>
       Use tools ${this.ACTION_TOOLS.join(', ')} to interact with the page.
       Fall back to interact() when those fail, when the step needs a sequence of actions, or when your context is not enough to locate the element.
-      Use tool names exactly as listed in this prompt. Do not invent combined tool names, aliases, or names with channel markers such as "commentary".
+      Use tool names exactly as listed in this prompt. Do not invent combined tool names or aliases.
       Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
       Do not do unsuccesful clicks again.
       Do not run same tool calls with same parameters again.
@@ -517,7 +536,7 @@ export class Tester extends TaskAgent implements Agent {
 
     let context = '';
 
-    const focusArea = detectFocusArea(currentState.ariaSnapshot);
+    const focusArea = currentState.overlay;
 
     const focusedElement = currentState.focusedElement;
     if (focusedElement) {
@@ -568,12 +587,7 @@ export class Tester extends TaskAgent implements Agent {
       const alreadySeenUiMap = this.seenUiMapUrls.has(currentUrl);
       let research = '';
       if (!alreadySeenUiMap) {
-        try {
-          research = await this.researcher.research(currentState);
-        } catch (err) {
-          if (!(err instanceof ErrorPageError)) throw err;
-          tag('warning').log(`Research skipped: ${err.message}`);
-        }
+        research = await this.researcher.research(currentState).catch(this.skipResearch);
       }
       this.pageStateHash = currentStateHash;
       this.pageActionResult = currentState;
@@ -614,7 +628,7 @@ export class Tester extends TaskAgent implements Agent {
     }
 
     if (focusArea.detected && focusArea.name && this.pageStateHash && this.pageActionResult) {
-      const overlaySection = await this.researcher.researchOverlay(currentState, this.pageActionResult, this.pageStateHash);
+      const overlaySection = await this.researcher.researchOverlay(currentState, this.pageActionResult, this.pageStateHash).catch(this.skipResearch);
       if (overlaySection) {
         context += dedent`
 

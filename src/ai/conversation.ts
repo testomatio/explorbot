@@ -5,17 +5,20 @@ export interface ToolExecution {
   input: any;
   output: any;
   wasSuccessful: boolean;
+  reasoning?: string;
 }
 
-export function toToolExecution(toolName: string, input: any, rawOutput: any): ToolExecution {
+export function toToolExecution(toolName: string, input: any, rawOutput: any, reasoning?: string): ToolExecution {
   let output = rawOutput;
   if (rawOutput?.type === 'json' && rawOutput?.value) output = rawOutput.value;
-  return { toolName, input, output, wasSuccessful: output?.success !== false };
+  return { toolName, input, output, wasSuccessful: output?.success !== false, reasoning };
 }
 
 export function toolExecutionLabel(input: Record<string, any> | undefined): string {
   return input?.explanation || input?.assertion || input?.reason || input?.request || '';
 }
+
+export const NARRATION_TOOL = 'commentary';
 
 const AUTO_COMPACT_ARIA_CHANGES_CUTOFF = 500;
 const AUTO_COMPACT_TARGETED_HTML_CUTOFF = 500;
@@ -211,13 +214,17 @@ export class Conversation {
   }
 
   getToolExecutions(): ToolExecution[] {
-    const toolCalls = new Map<string, any>();
+    const toolCalls = new Map<string, { input: any; reasoning?: string }>();
     for (const message of this.messages) {
       if (message.role !== 'assistant') continue;
       if (!Array.isArray(message.content)) continue;
+      const reasoning = message.content
+        .filter((part: any) => part.type === 'reasoning' && part.text?.trim())
+        .map((part: any) => part.text.trim())
+        .join('\n');
       for (const part of message.content) {
         if (part.type !== 'tool-call') continue;
-        toolCalls.set(part.toolCallId, part.input);
+        toolCalls.set(part.toolCallId, { input: part.input, reasoning });
       }
     }
 
@@ -227,7 +234,9 @@ export class Conversation {
       if (!Array.isArray(message.content)) continue;
       for (const part of message.content) {
         if (part.type !== 'tool-result') continue;
-        executions.push(toToolExecution(part.toolName, toolCalls.get(part.toolCallId) || {}, part.output));
+        if (part.toolName === NARRATION_TOOL) continue;
+        const call = toolCalls.get(part.toolCallId);
+        executions.push(toToolExecution(part.toolName, call?.input || {}, part.output, call?.reasoning));
       }
     }
 

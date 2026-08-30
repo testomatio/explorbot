@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import figureSet from 'figures';
 import { render } from 'ink';
 import React from 'react';
+import { flushTelemetry } from '../src/ai/provider.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
@@ -16,7 +17,7 @@ import { remote } from '../src/remote.js';
 import { Stats } from '../src/stats.js';
 import { Plan } from '../src/test-plan.js';
 import { getCliName } from '../src/utils/cli-name.ts';
-import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode } from '../src/utils/logger.js';
+import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode, tag } from '../src/utils/logger.js';
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
@@ -30,6 +31,16 @@ const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as stri
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
 remote.registerOption(program);
 registerKnowledgeOption(program);
+
+process.on('uncaughtException', async (error) => {
+  tag('error').log(`Uncaught exception: ${error instanceof Error ? `${error.message}\n${error.stack}` : String(error)}`);
+  await flushTelemetry();
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  tag('error').log(`Unhandled rejection: ${reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason)}`);
+});
 
 if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima')) {
   console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
@@ -105,9 +116,7 @@ async function startTUI(explorBot: ExplorBot): Promise<void> {
 async function showStatsAndExit(code: number): Promise<never> {
   if (remote.isAttached()) {
     await remote.close(code);
-    process.exit(code);
-  }
-  if (Stats.hasActivity()) {
+  } else if (Stats.hasActivity()) {
     await new Promise<void>((resolve) => {
       const { unmount } = render(
         React.createElement(StatusPane, {
@@ -123,6 +132,7 @@ async function showStatsAndExit(code: number): Promise<never> {
       );
     });
   }
+  await flushTelemetry();
   process.exit(code);
 }
 
@@ -548,6 +558,7 @@ program
   .command('learn [url] [description]')
   .description('Add knowledge for URLs')
   .option('-p, --path <path>', 'Working directory path')
+  .option('--replace', 'Replace existing knowledge for this URL instead of appending')
   .action(async (url, description, options) => {
     try {
       await ConfigParser.getInstance().loadConfig({
@@ -558,7 +569,7 @@ program
       const tracker = new KnowledgeTracker();
 
       if (url && description) {
-        const result = tracker.addKnowledge(url, description);
+        const result = tracker.addKnowledge(url, description, { replace: options.replace });
         const action = result.isNewFile ? 'Created' : 'Updated';
         console.log(`Knowledge ${action} in: ${result.filename}`);
         return;

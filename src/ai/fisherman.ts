@@ -196,7 +196,7 @@ export class Fisherman implements Agent {
 
       AVAILABLE TOOLS:
       ${toolNames.join(', ')}.
-      Use tool names exactly as listed. Do not invent aliases, combined names, or names with channel markers such as "commentary".
+      Use tool names exactly as listed. Do not invent aliases or combined names.
       Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
 
       WORKFLOW:

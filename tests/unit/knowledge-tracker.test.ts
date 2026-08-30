@@ -250,6 +250,17 @@ describe('KnowledgeTracker', () => {
       expect(matched.length).toBeGreaterThan(0);
       expect(matched[0].content).toContain('Use admin credentials');
     });
+
+    it('replaces existing knowledge with the replace option instead of appending', () => {
+      const tracker = new KnowledgeTracker();
+      tracker.addKnowledge('/login', 'first entry');
+
+      tracker.addKnowledge('/login', 'corrected entry', { replace: true });
+
+      const matched = tracker.getMatchingKnowledge('/login');
+      expect(matched[0].content).toContain('corrected entry');
+      expect(matched[0].content).not.toContain('first entry');
+    });
   });
 
   describe('session knowledge', () => {

@@ -142,6 +142,7 @@ export class ExplorBot {
   async stop(): Promise<void> {
     this.agents.quartermaster?.stop();
     await this.explorer?.stop();
+    await this.provider?.stop();
   }
 
   async visitInitialState(): Promise<void> {

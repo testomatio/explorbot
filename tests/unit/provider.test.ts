@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { ModelMessage } from 'ai';
-import { tool } from 'ai';
+import { APICallError, tool } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 import { z } from 'zod';
 import { AiError, Provider } from '../../src/ai/provider.js';
 import { ConfigParser } from '../../src/config.js';
 import type { AIConfig } from '../../src/config.js';
 import { executionController } from '../../src/execution-controller.js';
+import { Stats } from '../../src/stats.js';
 import { MockAIProvider } from '../mocks/ai-provider.mock.js';
 
 function buildHangingModel(capture: { signal?: AbortSignal }): MockLanguageModelV3 {
@@ -61,12 +62,15 @@ describe('Provider', () => {
       config: {},
       vision: false,
     };
-    ConfigParser.getInstance().loadConfig({});
+    ConfigParser.getInstance()
+      .loadConfig({})
+      .catch(() => {});
     provider = new Provider(aiConfig);
   });
 
   afterEach(() => {
     mockAI.reset();
+    Stats.visionDisabled = false;
   });
 
   describe('constructor', () => {
@@ -171,6 +175,131 @@ describe('Provider', () => {
       expect(response.toolCalls?.[0]?.invalid).toBe(true);
       expect(response.toolResults?.length ?? 0).toBe(0);
     });
+
+    it('should inject a commentary tool into every toolset', async () => {
+      const messages = [{ role: 'user', content: 'Hello' }];
+      let toolNames: string[] = [];
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'tools-list-model',
+        doGenerate: async (params: any) => {
+          toolNames = params.tools.map((t: any) => t.name);
+          return { text: 'ok', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'ok' }] };
+        },
+      });
+
+      await provider.generateWithTools(messages, model, { click: tool({ description: 'Click', inputSchema: z.object({}) }) });
+
+      expect(toolNames).toContain('commentary');
+    });
+
+    it('should repair bare harmony channel tool calls to commentary', async () => {
+      const messages = [{ role: 'user', content: 'Use a tool' }];
+      const tools = {
+        click: tool({
+          description: 'Click an element',
+          inputSchema: z.object({ commands: z.array(z.string()) }),
+          execute: async () => ({ success: true }),
+        }),
+      };
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'harmony-model',
+        doGenerate: async () => ({
+          text: undefined,
+          toolCalls: [{ toolCallId: 'call-1', toolName: 'analysis', args: { content: 'planning' } }],
+          finishReason: 'tool-calls' as const,
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'analysis', input: 'I should click the submit button next' }],
+        }),
+      });
+
+      const response = await provider.generateWithTools(messages, model, tools);
+
+      expect(response.toolCalls?.[0]?.toolName).toBe('commentary');
+      expect(response.toolResults?.[0]?.output).toEqual({ message: 'Noted. Continue with your next action.' });
+    });
+
+    it('should not deadlock when a tool execution calls back into the provider', async () => {
+      aiConfig.maxParallelRequests = 1;
+      const limited = new Provider(aiConfig);
+      let innerText = '';
+      const innerModel = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'inner-model',
+        doGenerate: async () => ({ text: 'inner ok', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'inner ok' }] }),
+      });
+      const tools = {
+        verify: tool({
+          description: 'Verify an assertion',
+          inputSchema: z.object({ assertion: z.string() }),
+          execute: async () => {
+            const res = await limited.chat([{ role: 'user', content: 'inner question' }], innerModel);
+            innerText = res.text;
+            return { success: true };
+          },
+        }),
+      };
+      let roundtrip = 0;
+      const outerModel = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'outer-model',
+        doGenerate: async () => {
+          roundtrip++;
+          if (roundtrip === 1) {
+            return {
+              text: undefined,
+              toolCalls: [{ toolCallId: 'call-1', toolName: 'verify', args: { assertion: 'x' } }],
+              finishReason: 'tool-calls' as const,
+              usage: { inputTokens: 1, outputTokens: 1 },
+              content: [{ type: 'tool-call' as const, toolCallId: 'call-1', toolName: 'verify', input: '{"assertion":"x"}' }],
+            };
+          }
+          return { text: 'done', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'done' }] };
+        },
+      });
+
+      const response = await limited.generateWithTools([{ role: 'user', content: 'go' }], outerModel, tools);
+
+      expect(response.text).toBe('done');
+      expect(innerText).toBe('inner ok');
+      expect(response.toolResults?.[0]?.output).toEqual({ success: true });
+    });
+  });
+
+  describe('processImage', () => {
+    it('should send raw base64 image data, not a data URL', async () => {
+      let capturedParts: any[] = [];
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'vision-model',
+        doGenerate: async (params: any) => {
+          capturedParts = params.prompt[0].content;
+          return { text: 'a picture', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'a picture' }] };
+        },
+      });
+      aiConfig.visionModel = model;
+      const visionProvider = new Provider(aiConfig);
+
+      const response = await visionProvider.processImage('What is here?', Buffer.from('fakepng').toString('base64'));
+
+      expect(response.text).toBe('a picture');
+      const filePart = capturedParts.find((p) => p.type === 'file');
+      expect(filePart).toBeDefined();
+      const raw = filePart.data?.type === 'data' ? filePart.data.data : filePart.data;
+      expect(raw).toBe(Buffer.from('fakepng').toString('base64'));
+    });
+  });
+
+  describe('vision availability', () => {
+    it('should report vision disabled after a vision failure', () => {
+      aiConfig.visionModel = mockAI.getModel();
+      const visionProvider = new Provider(aiConfig);
+      expect(visionProvider.hasVision()).toBe(true);
+
+      Stats.visionDisabled = true;
+      expect(visionProvider.hasVision()).toBe(false);
+    });
   });
 
   describe('retry functionality', () => {
@@ -190,6 +319,66 @@ describe('Provider', () => {
       mockAI.setFailure(true, 5);
 
       await expect(provider.chat(messages, mockAI.getModel(), { maxRetries: 2 })).rejects.toThrow(AiError);
+    });
+
+    it('relays an invalid-request rejection back to the retry', async () => {
+      const prompts: any[] = [];
+      let calls = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'test',
+        doGenerate: async (params: any) => {
+          calls++;
+          prompts.push(params.prompt);
+          if (calls === 1) {
+            throw new APICallError({ url: 'http://test.local/v1/chat', statusCode: 400, message: 'Tool call validation failed: attempted to call a tool which was not in request.tools' });
+          }
+          return { text: 'recovered', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'recovered' }] };
+        },
+      });
+      const correctingProvider = new Provider(aiConfig);
+      const tools = { finish: tool({ description: 'Finish the test', inputSchema: z.object({}), execute: async () => ({ success: true }) }) };
+
+      const response = await correctingProvider.generateWithTools([{ role: 'user', content: 'go' }], model, tools, { maxRetries: 3 });
+
+      expect(response.text).toBe('recovered');
+      expect(calls).toBe(2);
+      const relayed = prompts[1].at(-1);
+      expect(relayed.role).toBe('user');
+      expect(JSON.stringify(relayed.content)).toContain('attempted to call a tool which was not in request.tools');
+    });
+
+    it('should honor configured retry attempts and delay', () => {
+      aiConfig.retryAttempts = 7;
+      aiConfig.retryDelay = 250;
+      const configured = new Provider(aiConfig);
+
+      const opts = (configured as any).getRetryOptions();
+
+      expect(opts.maxAttempts).toBe(7);
+      expect(opts.baseDelay).toBe(250);
+    });
+  });
+
+  describe('model call concurrency', () => {
+    it('should serialize model calls when maxParallelRequests is 1', async () => {
+      aiConfig.maxParallelRequests = 1;
+      const limited = new Provider(aiConfig);
+      const events: string[] = [];
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'slow-model',
+        doGenerate: async () => {
+          events.push('start');
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          events.push('end');
+          return { text: 'ok', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'ok' }] };
+        },
+      });
+
+      await Promise.all([limited.chat([{ role: 'user', content: 'a' }], model), limited.chat([{ role: 'user', content: 'b' }], model)]);
+
+      expect(events).toEqual(['start', 'end', 'start', 'end']);
     });
   });
 

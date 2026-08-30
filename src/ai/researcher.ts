@@ -403,7 +403,6 @@ export class Researcher extends ResearcherBase implements Agent {
       - If an element has data-explorbot-hit="covered" or "offscreen", do not present it as directly actionable. Prefer the overlay, drawer, dialog, or focused section covering it, and mention what must be dismissed or revealed first.
       - Every element with an eidx attribute MUST appear in exactly one matching UI map section — describe icon-only buttons by their visual role.
       - Every UI map row needs a CSS selector; ARIA may be "-" for icon-only buttons, CSS must never be "-".
-      - ARIA locator JSON uses keys "role" and "text" (NOT "name").
       - Mark elements with likely hover interactions (title, aria-describedby, menu items with submenus) as "(hover)".
       </rules>
 

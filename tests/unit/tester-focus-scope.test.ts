@@ -133,6 +133,46 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
   });
 });
 
+describe('Tester research failures', () => {
+  it('keeps the scenario running when page research fails, reporting it as a warning', async () => {
+    const tester = buildTester();
+    (tester as any).researcher.research = async () => {
+      throw new Error('Please reduce the length of the messages or completion.');
+    };
+    const state = buildState('- main:\n  - button "Save"', '/page');
+
+    const context = await (tester as any).reinjectContextIfNeeded(2, state);
+
+    expect(context).toContain('CURRENT URL: /page');
+    expect(context).not.toContain('</page_ui_map>');
+  });
+
+  it('keeps the scenario running when overlay research fails', async () => {
+    const tester = buildTester();
+    (tester as any).researcher.researchOverlay = async () => {
+      throw new Error('Please reduce the length of the messages or completion.');
+    };
+    await (tester as any).reinjectContextIfNeeded(1, buildState('- main:', '/page'));
+
+    const context = await (tester as any).reinjectContextIfNeeded(2, buildState('- dialog "Select folder":\n  - button "OK"', '/page'));
+
+    expect(context).toContain('<focus_scope>');
+    expect(context).not.toContain('</page_ui_map_overlay>');
+  });
+
+  it('still aborts the scenario when research is interrupted', async () => {
+    const tester = buildTester();
+    (tester as any).researcher.research = async () => {
+      const err = new Error('aborted');
+      err.name = 'AbortError';
+      throw err;
+    };
+    const state = buildState('- main:', '/page');
+
+    await expect((tester as any).reinjectContextIfNeeded(2, state)).rejects.toThrow('aborted');
+  });
+});
+
 describe('Tester experience context', () => {
   it('keeps recorded experience out of the scenario prompt, so only what the Pilot forwards reaches it', () => {
     const tester = buildTesterWithExperience();

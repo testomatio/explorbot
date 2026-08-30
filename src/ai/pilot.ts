@@ -9,7 +9,7 @@ import type { PlaywrightRecorder } from '../playwright-recorder.ts';
 import type { StateManager } from '../state-manager.ts';
 import { Stats } from '../stats.ts';
 import { type Test, TestResult } from '../test-plan.ts';
-import { collectInteractiveNodes, detectFocusArea } from '../utils/aria.ts';
+import { collectInteractiveNodes } from '../utils/aria.ts';
 import { ErrorPageError } from '../utils/error-page.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 
@@ -25,8 +25,10 @@ import { capabilityGroundingRule, dataProtectionRules } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
 import { withdrawVisionTools } from './tools.ts';
 
-const CHECK_TOOLS = ['verify', 'see', 'research', 'context'];
+const CHECK_TOOLS = ['verify', 'see', 'research'];
+const EVIDENCE_TOOLS = ['verify', 'see'];
 const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
+const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
 
@@ -326,6 +328,10 @@ export class Pilot implements Agent {
       overrides the others — weigh them together. Tester's record() notes are the LEAST reliable; always
       cross-check against actual actions and state. Visual screenshot analysis is strong for UI state
       (active tabs, visible counts, colors).
+      Judge every check by WHAT IT ESTABLISHES, never by the fact that it ran. A check that executed
+      successfully is failure evidence when its content negates the scenario goal — the goal's object
+      absent, the action not performed, the interaction impossible. "The check passed" and "the goal was
+      met" are different claims.
       If the final page clearly shows an equivalent success state in a different UI form, do not fail only
       because one narrow assertion targeted a specific badge, count, toast, or wording that the product
       represents differently.
@@ -574,8 +580,8 @@ export class Pilot implements Agent {
   }
 
   async settleExpectations(task: Test, finalState?: ActionResult): Promise<SettledExpectation[]> {
-    let image: string | null = null;
-    if (finalState?.screenshot && this.provider.hasVision()) image = `data:image/png;base64,${finalState.screenshot.toString('base64')}`;
+    let image: Buffer | null = null;
+    if (finalState?.screenshot && this.provider.hasVision()) image = finalState.screenshot;
 
     const decided = (text: string): 'passed' | 'failed' => {
       if (task.hasAchievedAny() && !task.getRemainingExpectations().includes(text)) return 'passed';
@@ -819,7 +825,7 @@ export class Pilot implements Agent {
     lines.push(`h3: ${state.h3 || ''}`);
     lines.push(`h4: ${state.h4 || ''}`);
 
-    const focusArea = detectFocusArea(state.ariaSnapshot);
+    const focusArea = state.overlay;
     if (focusArea.detected) {
       lines.push(`modal: ${focusArea.name || focusArea.type}`);
     } else {
@@ -995,20 +1001,20 @@ export class Pilot implements Agent {
 
   private hasSuccessfulCheckEvidence(currentState: ActionResult, testerConversation: Conversation): boolean {
     if (Object.values(currentState.verifications ?? {}).some(Boolean)) return true;
-    return testerConversation.getToolExecutions().some((t) => CHECK_TOOLS.includes(t.toolName) && t.wasSuccessful);
+    return testerConversation.getToolExecutions().some((t) => EVIDENCE_TOOLS.includes(t.toolName) && t.wasSuccessful);
   }
 
   private formatSuccessfulAssertions(currentState: ActionResult, testerConversation: Conversation): string {
     const lines: string[] = [];
     for (const [assertion, passed] of Object.entries(currentState.verifications ?? {})) {
-      if (passed) lines.push(`PASS state verification: ${assertion}`);
+      if (passed) lines.push(`state verification (passed): ${assertion}`);
     }
 
     for (const exec of testerConversation.getToolExecutions()) {
-      if (!CHECK_TOOLS.includes(exec.toolName) || !exec.wasSuccessful) continue;
+      if (!EVIDENCE_TOOLS.includes(exec.toolName) || !exec.wasSuccessful) continue;
       const description = exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
       const result = exec.output?.message || exec.output?.analysis || exec.output?.result;
-      lines.push(`PASS ${exec.toolName}: ${description}${result ? ` -> ${result}` : ''}`);
+      lines.push(`CHECK ${exec.toolName} (executed successfully): ${description}${result ? ` -> ${result}` : ''}`);
     }
 
     return [...new Set(lines)].join('\n');
@@ -1038,6 +1044,12 @@ export class Pilot implements Agent {
 
         if (resultMessage) line += `\n   result: ${resultMessage}`;
         if (errorDetail && errorDetail !== resultMessage) line += `\n   error: ${errorDetail}`;
+
+        if (!t.wasSuccessful && t.reasoning) {
+          let rationale = t.reasoning;
+          if (rationale.length > PILOT_REASONING_LIMIT) rationale = `...${rationale.slice(-PILOT_REASONING_LIMIT)}`;
+          line += `\n   tester reasoned: ${rationale.replace(/\n+/g, ' ')}`;
+        }
 
         const attempts = t.output?.attempts;
         if (attempts && attempts.length > 1 && t.wasSuccessful) {
@@ -1102,6 +1114,8 @@ export class Pilot implements Agent {
       state), instruct Tester to verify() and finish(). If goal was already true at the start, propose
       different input data so the test is meaningful. If Tester repeats the same successful action, STOP.
 
+      If needed you should pick the exact item the scenario should act on (from the page, or precondition() one) and pass it to tester
+
       Action classification: GOAL-ADVANCING actions mutate the scenario's subject data (create/edit/delete/submit/verify).
       VIEW-ONLY actions toggle filters/tabs/sort/collapse without changing data. One VIEW-ONLY to reveal a
       target is fine; ≥2 consecutive VIEW-ONLY actions with no GOAL-ADVANCING action in between is thrashing
@@ -1137,7 +1151,7 @@ export class Pilot implements Agent {
 
       Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
       visualClick, back, getVisitedStates, reset, stop, finish, record.
-      Use tool names exactly as listed. Do not invent combined names, aliases, or names with channel markers such as "commentary".
+      Use tool names exactly as listed. Do not invent combined names or aliases.
 
       ${capabilityGroundingRule}
 

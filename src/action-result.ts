@@ -7,6 +7,7 @@ import { TTLCache } from './utils/cache.ts';
 import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff, liveRegionMessages } from './utils/html-diff.ts';
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
+import { Overlay } from './utils/overlay.ts';
 import { slugify } from './utils/strings.ts';
 import { extractStatePath, matchesUrl } from './utils/url-matcher.ts';
 
@@ -34,6 +35,7 @@ interface ActionResultData extends WebPageState {
   focusedElement?: FocusedElement | null;
   iframeURL?: string;
   links?: Link[];
+  overlayHtml?: string;
 }
 
 export interface PageDiff {
@@ -86,6 +88,7 @@ export class ActionResult implements ActionResultData {
   notes: string[] = [];
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
+  public overlay: Overlay = new Overlay();
 
   constructor(data: ActionResultData) {
     this.id = data.id;
@@ -130,6 +133,8 @@ export class ActionResult implements ActionResultData {
     if (data.ariaSnapshot !== undefined) {
       this._ariaSnapshot = data.ariaSnapshot;
     }
+
+    this.overlay = Overlay.resolve(data);
 
     if (!this.fullUrl && this.url) {
       this.fullUrl = this.url;
@@ -545,17 +550,9 @@ export class ActionResult implements ActionResultData {
     }
 
     if (diff.htmlParts.length > 0) {
-      const htmlConfig = this.normalizeHtmlConfig();
-      const processedParts: HtmlDiffPart[] = [];
-      for (const part of diff.htmlParts) {
-        const filteredHtml = htmlCombinedSnapshot(part.subtree, htmlConfig?.combined);
-        const minified = await minifyHtml(filteredHtml);
-        if (minified) {
-          processedParts.push({ ...part, subtree: minified });
-        }
-      }
-      if (processedParts.length > 0) {
-        pageDiff.htmlParts = collapseHtmlParts(processedParts);
+      const collapsed = collapseHtmlParts(await diff.cleanedHtmlParts());
+      if (collapsed.length > 0) {
+        pageDiff.htmlParts = collapsed;
       }
     }
 
@@ -596,10 +593,12 @@ function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
   const fullPageReRender = total > HTML_PARTS_TOTAL_BUDGET || parts.length > HTML_PARTS_COUNT_LIMIT;
 
   if (fullPageReRender) {
-    return parts.map((part) => ({
-      ...part,
-      subtree: `<html><head></head><body>...collapsed (${part.subtree.length} chars, ${part.added.length} added, ${part.removed.length} removed)...</body></html>`,
-    }));
+    return parts
+      .filter((part) => part.added.length > 0 || part.removed.length > 0)
+      .map((part) => ({
+        ...part,
+        subtree: `<html><head></head><body>...collapsed (${part.subtree.length} chars, ${part.added.length} added, ${part.removed.length} removed)...</body></html>`,
+      }));
   }
 
   return parts.map((part) => {
@@ -653,6 +652,17 @@ export class Diff {
   get htmlParts(): HtmlDiffPart[] {
     if (!this._htmlDiffResult) return [];
     return this._htmlDiffResult.parts;
+  }
+
+  async cleanedHtmlParts(): Promise<HtmlDiffPart[]> {
+    const htmlConfig = ConfigParser.getInstance().getConfig().html;
+    const cleaned: HtmlDiffPart[] = [];
+    for (const part of this.htmlParts) {
+      const minified = await minifyHtml(htmlCombinedSnapshot(part.subtree, htmlConfig?.combined));
+      if (!minified) continue;
+      cleaned.push({ ...part, subtree: minified });
+    }
+    return cleaned;
   }
 
   get ariaChanged(): string | null {

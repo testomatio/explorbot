@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMock } from '@copilotkit/aimock';
-import { ActionResult } from '../../src/action-result.ts';
+import { ActionResult, Diff } from '../../src/action-result.ts';
+import { clearActivity } from '../../src/activity.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
 import { clearResearchCache, getCachedResearch, saveResearch } from '../../src/ai/researcher/cache.ts';
@@ -105,6 +106,15 @@ function extractPromptText(entry: any): string {
     .join('\n');
 }
 
+const TREE_ROW = '<li class="tree-node flex items-center px-2 space-x-2 opacity-40"><button class="expand-btn">Open folder</button><span>Folder name here</span></li>';
+
+async function buildExpansionDiff(rows: number): Promise<Diff> {
+  const page = (body: string, aria: string) => new ActionResult({ url: '/tasks/board', title: 'Task Board', html: `<html><body><main>${body}</main></body></html>`, ariaSnapshot: aria });
+  const previous = page('<div class="tree"></div>', '- main');
+  const current = page(`<div class="tree"><ul>${TREE_ROW.repeat(rows)}</ul></div>`, '- main\n- button "Select folder"');
+  return Diff.create(current, previous);
+}
+
 describe('Researcher with aimock', () => {
   let mock: LLMock;
   let provider: Provider;
@@ -132,6 +142,7 @@ describe('Researcher with aimock', () => {
     mock.clearFixtures();
     clearResearchCache();
     ConfigParser.setupTestConfig();
+    clearActivity(true);
 
     researcher = new Researcher({ ...createMockDeps(), ai: provider } as any);
 
@@ -140,6 +151,7 @@ describe('Researcher with aimock', () => {
 
   afterAll(async () => {
     await mock.stop();
+    clearActivity(true);
   });
 
   it('returns research markdown from AI response', async () => {
@@ -206,5 +218,29 @@ describe('Researcher with aimock', () => {
     const cached = getCachedResearch(fakeState.hash!);
     expect(cached).toContain('## Navigation');
     expect(cached).toContain('Create Task');
+  });
+
+  it('caps the HTML diff of an expansion so a large overlay stays within context', async () => {
+    const diff = await buildExpansionDiff(600);
+
+    await (researcher as any)._analyzeExpandedAction('', 'Select folder', diff, []);
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    const htmlChanges = prompt.slice(prompt.indexOf('HTML changes:'));
+    expect(htmlChanges.length).toBeLessThan(25_000);
+    expect(prompt).toContain('button "Select folder"');
+    expect(prompt).toContain('[Container:');
+  });
+
+  it('strips utility classes from an expansion so the cap holds real elements', async () => {
+    await (researcher as any)._analyzeExpandedAction('', 'Select folder', await buildExpansionDiff(2), []);
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    const htmlChanges = prompt.slice(prompt.indexOf('HTML changes:'));
+    expect(htmlChanges).not.toContain('flex');
+    expect(htmlChanges).not.toContain('px-2');
+    expect(htmlChanges).not.toContain('space-x-2');
+    expect(htmlChanges).toContain('tree-node');
+    expect(htmlChanges).toContain('Folder');
   });
 });

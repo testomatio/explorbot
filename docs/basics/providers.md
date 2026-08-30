@@ -2,6 +2,8 @@
 
 Explorbot connects to AI providers through the [Vercel AI SDK](https://sdk.vercel.ai/). Use any supported provider, and mix providers across different models.
 
+Every provider below is set up the classical way: install its package, import it, build the client. Explorbot bundles some of these packages — for those you can skip the install and name the model as `'provider/model-id'` instead. See [Getting Started](./getting-started.md#2-configure) for that list and the two styles side by side.
+
 > The `export default` config block inside each `<!-- START/END provider -->` marker is generated from [`models.json`](../../models.json). After editing that file, run `bunosh docs:sync`. Everything else — including the import blocks — is hand-written.
 
 ## Requirements
@@ -152,14 +154,12 @@ Set the recommended model in the exported config:
 ```javascript
 export default {
   ai: {
+    model: anthropic('claude-haiku-4-5-20251001'),
+    visionModel: anthropic('claude-haiku-4-5-20251001'),
     agenticModel: anthropic('claude-haiku-4-5-20251001'),
   },
 };
 ```
-
-> [!NOTE]
-> This provider currently doesn't serve `model` and `visionModel`, which is required for Explorbot to run at optimal cost and speed.
-> It is recommended to pair it with another AI provider.
 <!-- END provider:anthropic -->
 
 ### Azure OpenAI

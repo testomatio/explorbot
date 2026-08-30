@@ -11,8 +11,9 @@ import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
-import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
+import { captureHtmlForSnapshot, getVisibleOverlayHtmlExtractorSource, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
+import { Overlay } from './utils/overlay.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import { safeFilename } from './utils/strings.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
@@ -36,6 +37,7 @@ class Action {
   public playwrightHelper: any;
   public playwrightGroupId: string | null = null;
   public assertionSteps: Array<{ name: string; args: any[] }> = [];
+  public executedSteps: ExecutedStep[] = [];
   public lastValue: unknown;
   private recorder?: PlaywrightRecorder;
   private recovery: RecoveryRunner;
@@ -144,11 +146,13 @@ class Action {
       let ariaSnapshot: string | null = null;
       let ariaSnapshotFile: string | undefined = undefined;
       let focusedElement: FocusedElement | null = null;
+      let overlayHtml = '';
 
       try {
         const page = this.playwrightHelper.page;
         ariaSnapshot = await page.locator('body').ariaSnapshot();
         focusedElement = await page.evaluate(readFocusedElement);
+        if (!frame) overlayHtml = await this.captureOverlayHtml();
       } catch (err) {
         debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
@@ -177,6 +181,7 @@ class Action {
         ariaSnapshot,
         ariaSnapshotFile,
         focusedElement,
+        overlayHtml: overlayHtml || undefined,
         iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
       this.stateManager.updateState(result, codeBlock);
@@ -188,6 +193,16 @@ class Action {
       const url = this.playwrightHelper.page?.url?.() || '';
       return new ActionResult({ url, error: msg });
     }
+  }
+
+  private async captureOverlayHtml(): Promise<string> {
+    return this.playwrightHelper.page.evaluate(
+      ({ extractorSource, config }: { extractorSource: string; config: any }) => {
+        const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
+        return extract(config);
+      },
+      { extractorSource: getVisibleOverlayHtmlExtractorSource(), config: Overlay.captureConfig() }
+    );
   }
 
   private async captureMainDocumentStatus(): Promise<number | undefined> {
@@ -315,9 +330,9 @@ class Action {
 
     let codeString = code.replace(/^\(I\) => /, '').trim();
 
-    const executedSteps: string[] = [];
+    const executedSteps: ExecutedStep[] = [];
     const assertionSteps: Array<{ name: string; args: any[] }> = [];
-    const stepListener = attachStepLogger(executedSteps, assertionSteps);
+    const detachSteps = attachStepLogger(executedSteps, assertionSteps);
     const groupId = this.recorder ? await this.recorder.beginAction(codeString) : null;
     this.playwrightGroupId = groupId;
     const detachResponses = this.captureResponses();
@@ -346,12 +361,13 @@ class Action {
         await recorder.add(() => sleep(this.config.action?.delay || 500));
         await recorder.promise();
         this.lastValue = await returned;
+        if (!recorder.isRunning()) throw new Error('CodeceptJS recorder is stopped, commands were skipped and never reached the browser');
       }
 
       this.restorePageTimeout();
 
       if (executedSteps.length > 0) {
-        codeString = executedSteps.join('\n');
+        codeString = executedSteps.map((step) => step.command).join('\n');
       }
 
       const pageState = await this.captureOnce({ codeBlock: codeString });
@@ -368,10 +384,11 @@ class Action {
       this.assertionSteps = [];
       throw err;
     } finally {
+      this.executedSteps = executedSteps;
       this.restorePageTimeout();
       detachResponses();
       if (groupId) await this.recorder!.endAction();
-      detachStepLogger(stepListener);
+      detachSteps();
       if (stepSpan) {
         stepSpan.end();
       }
@@ -473,11 +490,13 @@ const ASSERTION_STEP_NAMES = new Set(['see', 'dontSee', 'seeElement', 'dontSeeEl
 
 type StepListener = (step: any, error?: any) => void;
 
-const attachStepLogger = (target: string[], assertionsTarget?: Array<{ name: string; args: any[] }>): StepListener => {
+export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Array<{ name: string; args: any[] }>): (() => void) => {
   const listener: StepListener = (step, error) => {
     if (!step?.toCode) return;
     if (step.name?.startsWith('grab')) return;
-    target.push(step.toCode());
+    const executed: ExecutedStep = { command: step.toCode(), success: !error };
+    if (error) executed.error = errorToString(error);
+    target.push(executed);
     if (assertionsTarget && ASSERTION_STEP_NAMES.has(step.name)) {
       assertionsTarget.push({ name: step.name, args: step.args || [] });
     }
@@ -489,12 +508,10 @@ const attachStepLogger = (target: string[], assertionsTarget?: Array<{ name: str
   };
   codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, listener);
   codeceptjs.event.dispatcher.on(codeceptjs.event.step.failed, listener);
-  return listener;
-};
-
-const detachStepLogger = (listener: StepListener) => {
-  codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, listener);
-  codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, listener);
+  return () => {
+    codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, listener);
+    codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, listener);
+  };
 };
 
 const readFocusedElement = () => {
@@ -516,3 +533,9 @@ const readFocusedElement = () => {
   if (typeof value === 'string' && value) focused.value = value.slice(0, 200);
   return focused;
 };
+
+export interface ExecutedStep {
+  command: string;
+  success: boolean;
+  error?: string;
+}

@@ -16,6 +16,7 @@ describe('Navigator resolveState attempt hook', () => {
     const action: any = {
       lastError: null,
       actionResult: null,
+      executedSteps: [],
       exitIframe: async () => {},
       attempt: async (code: string) => {
         if (code.includes(succeedsWith)) {
