@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-08-30
+
+### Changes
+
+- [Fisherman] In replicate mode, API requests now authenticate with the current browser session:
+  cookies are taken from the live jar filtered to the API origin, the CSRF token is read from the
+  page, and auth headers are never reused from previous sessions' captured requests. Achieve mode
+  authenticates solely through `api.headers` config.
+
 ## 2026-08-29
 
 ### Changes
