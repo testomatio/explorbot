@@ -71,7 +71,7 @@ capture html/aria
   └─ same URL, not iframe, html changed, no ARIA overlay already detected
        └─ diff vs previous state (parse5, memoized — shared with toToolResult)
             └─ OverlayPage.detectRegion(parts)
-                 ├─ appeared subtree ≥ 10K chars       (private)
+                 ├─ appeared subtree ≥ 5K chars       (private)
                  ├─ coverage probe via page.evaluate   (private)
                  └─ coverage classification            (private)
                       ├─ overlays the page → Overlay 'modal' | 'drawer'
@@ -247,7 +247,7 @@ site-shape heuristic that violates the core "no memorized surface forms" princip
 | What the probe measures | The appeared element (`elementXPath`), never the diff `container` | Container is a both-sides ancestor; portal roots have lying geometry |
 | `detected` semantics | Unchanged: verified overlaying only; new `present` for any region | A false overlay claim makes Tester refuse legitimate navigation — worse than no detection |
 | Hash contribution | Named regions only; `baseHash` escape hatch for research keys | Heading names are stable; selectors are not; research must stay keyed to the page |
-| Threshold | `SUBROOT_MIN_HTML = 10_000` on the minified subtree, unexported const | Single named constant; no config knob until someone needs one |
+| Threshold | `SUBROOT_MIN_HTML = 5_000` on the minified subtree, unexported const | Single named constant; no config knob until someone needs one |
 | `root` retrieval gating | Sync string equality against `overlay.root`, require `overlay.present` | Deterministic, no DOM query in the sync retrieval path |
 
 ## Non-goals / follow-ups

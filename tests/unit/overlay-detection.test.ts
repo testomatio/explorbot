@@ -203,6 +203,23 @@ describe('OverlayPage.detectRegion', () => {
     expect(overlay!.type).toBe('region');
   });
 
+  it('detects a mid-size panel between the floor and the old 10K threshold', async () => {
+    const midForm = Array.from({ length: 90 }, (_, i) => `<div><label>Field ${i}</label><input name="field-${i}" placeholder="value ${i}"></div>`).join('');
+    const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div class="drawer"><h2>New Plan</h2><form>${midForm}</form></div></body></html>`;
+    const diff = await regionDiff(basePage, after);
+    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    expect(overlay).not.toBeNull();
+    expect(overlay!.name).toBe('New Plan');
+    expect(overlay!.root).toBe('div.drawer');
+  });
+
+  it('drops a large appearance that has neither a heading nor a semantic root', async () => {
+    const anonymousRows = Array.from({ length: 150 }, (_, i) => `<div><span>Row content number ${i} without any identity</span></div>`).join('');
+    const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div><div>${anonymousRows}</div></div></body></html>`;
+    const diff = await regionDiff(basePage, after);
+    expect(await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff)).toBeNull();
+  });
+
   it('treats a change spanning most of the page as a new state, not a region', async () => {
     const smallBase = '<html><body><div id="app"><h1>Users</h1></div></body></html>';
     const takeover = `<html><body><div id="app"><h1>Users</h1></div><div class="drawer"><h2>Edit User</h2><form>${bigForm}</form></div></body></html>`;

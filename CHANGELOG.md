@@ -31,6 +31,12 @@
   failed.
 - [Pilot] Reviews progress immediately when a panel opens or closes, instead of staying silent for
   the whole life of a drawer between scheduled check-ins.
+- Action: Smaller side panels are recognised now — a split-pane form of a few thousand characters
+  used to fall under the size floor and go undetected while the agent worked inside it blind. The
+  floor is 5K of cleaned panel content, still well above dropdowns and toasts.
+- Action: A large redraw with no identity is no longer reported as a panel. A list that re-renders
+  its rows has no new heading and no meaningful container, so announcing it as an unnamed region
+  only added noise; a panel must bring either a name or a scope selector to count.
 
 ## 2026-08-29
 

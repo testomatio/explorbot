@@ -92,6 +92,10 @@ export class OverlayPage {
       return null;
     }
     const overlay = this.toOverlay(subRoot, probe, diff.previousHtml);
+    if (!overlay.name && !overlay.root) {
+      debugLog('Appeared region has no name and no semantic root, ignoring it');
+      return null;
+    }
     debugLog(`Region detected: ${overlay.describe()}`);
     return overlay;
   }
@@ -173,7 +177,7 @@ export class OverlayPage {
   }
 }
 
-const SUBROOT_MIN_HTML = 10_000;
+const SUBROOT_MIN_HTML = 5_000;
 const FULL_COVERAGE_RATIO = 0.8;
 const SOFT_NAVIGATION_SIMILARITY = 50;
 const REGION_MAX_RATIO = 0.6;

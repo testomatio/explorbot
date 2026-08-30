@@ -119,7 +119,9 @@ runs actually hit.
 
 A region is a **band**, not just a floor. The appeared subtree must satisfy both:
 
-- `size >= SUBROOT_MIN_HTML` (10K, as today) — below it, a widget, ignored;
+- `size >= SUBROOT_MIN_HTML` (5K minified; the second field run showed a real split-pane form panel
+  at 6.6K minified / 9K raw sitting under the original 10K floor, while dropdowns stay under 1K) —
+  below it, a widget, ignored;
 - `size <= REGION_MAX_RATIO * pageSize` (~0.6, raw serialized subtree against raw serialized body —
   like against like, using the strings the diff already has in hand, no extra minify pass) — above it,
   **this is not a region change anymore, it is a new state**. No overlay
@@ -131,6 +133,13 @@ The cap is the primary defense against the observed false positives: a hydration
 rendering the page blows it, and a modal-close re-render of the base content blows it too. It is also
 the same principle as change 2's cross-URL similarity floor, seen from the other side — a region
 requires that most of the page **survived**.
+
+The band alone is not enough — the second field run produced a list re-render (search filter cleared,
+rows repopulated) that passed floor, cap and dominance yet had no heading and no semantic root
+anywhere in its dominant chain. Such a detection can neither fork the hash nor scope anything, so it
+is pure noise. Hence an **identity gate** after classification: an overlay with neither a `name` nor
+a `root` is dropped. Either one alone keeps it — a named rootless overlay still forks state identity,
+a rooted nameless one still scopes.
 
 Root selection still needs its own care, and its rule is now stricter: **roots are semantic only**. A
 positional XPath is never a `root` — it neither reaches a prompt nor an experience file. It survives
@@ -235,7 +244,7 @@ lost:
 ## Validation
 
 - Unit: carry-forward and close transitions (StateManager history shows open → carried → closed);
-  cross-URL detection above/below the similarity floor; the size band — below 10K no region, inside
+  cross-URL detection above/below the similarity floor; the size band — below 5K no region, inside
   the band a region, above `REGION_MAX_RATIO` no overlay and a plain state change; root selection —
   semantic ancestor preferred, wrapper-chain descent landing on a nested semantic container, shell
   rejection, and the no-semantic case yielding a rootless overlay with no positional XPath anywhere
