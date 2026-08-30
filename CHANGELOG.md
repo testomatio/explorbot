@@ -4,6 +4,13 @@
 
 ### Changes
 
+- [Provider] Work a tool already did is no longer redone when the turn it was part of breaks partway
+  through. A model turn can run several tool calls before it fails — because the model asked for a
+  tool that does not exist, answered in plain text where a tool call was demanded, or ran the
+  conversation past the model's context limit. The whole turn was then retried from its starting
+  point, with no trace that the earlier calls had already gone through, so everything they had
+  created got created again, once per retry. The calls that completed now carry over into the retry
+  and into the conversation, and the model continues from them instead of repeating them.
 - Doc Collector: a `docs collect` run streamed with `--ws` now sends the spec index it generates as a
   `docs` frame — the file path and the full markdown of `docs/index.md` — so a listening UI can show
   the finished documentation the same way an exploration run streams its session report.
