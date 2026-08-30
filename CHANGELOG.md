@@ -37,6 +37,15 @@
 - Action: A large redraw with no identity is no longer reported as a panel. A list that re-renders
   its rows has no new heading and no meaningful container, so announcing it as an unnamed region
   only added noise; a panel must bring either a name or a scope selector to count.
+- Action: A dialog is found even when the app redraws half the page around it. Opening a modal used
+  to be missed entirely when it came with a burst of stray rendering — the burst won the "biggest
+  change" contest and cancelled detection. Every appeared area is considered now: oversized redraws
+  are set aside, the area bringing a new heading is preferred, and anything covered by another
+  element on screen is passed over — so the dialog itself gets the scope, like "Select suite for
+  test" in #modal-overlays.
+- Action: The element probed for visibility is the panel itself, not an invisible helper that
+  appeared with it — a transparent resize guard rendered next to a side panel used to make the
+  visibility check fail and silently drop the panel.
 
 ## 2026-08-29
 

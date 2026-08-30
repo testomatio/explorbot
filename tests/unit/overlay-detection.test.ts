@@ -229,6 +229,34 @@ describe('OverlayPage.detectRegion', () => {
     expect(await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff)).toBeNull();
   });
 
+  it('prefers a fresh-heading candidate over a larger reflowed one, skipping an oversized flood', async () => {
+    const before = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div id="overlays"></div><div class="shell-pane"></div></body></html>`;
+    const flood = Array.from({ length: 2000 }, (_, i) => `<li><a href="/u/${i}">User row filler text ${i}</a></li>`).join('');
+    const midForm = Array.from({ length: 120 }, (_, i) => `<div><label>Field ${i}</label><input name="field-${i}"></div>`).join('');
+    const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div>${flood}<div id="overlays"><div class="dialog"><h2>Pick a suite</h2><form>${midForm}</form></div></div><div class="shell-pane"><div><h1>Users</h1><ul>${bigList}</ul></div></div></body></html>`;
+    const diff = await regionDiff(before, after);
+    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    expect(overlay).not.toBeNull();
+    expect(overlay!.name).toBe('Pick a suite');
+    expect(overlay!.root).toBe('#overlays');
+  });
+
+  it('moves to the next candidate when the largest one is covered', async () => {
+    const before = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><aside id="back-panel"></aside><aside id="front-panel"></aside></body></html>`;
+    const midForm = Array.from({ length: 120 }, (_, i) => `<div><label>Field ${i}</label><input name="field-${i}"></div>`).join('');
+    const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><aside id="back-panel"><div class="behind"><h2>Background panel</h2><form>${bigForm}</form></div></aside><aside id="front-panel"><div class="front"><h2>Front dialog</h2><form>${midForm}</form></div></aside></body></html>`;
+    const diff = await regionDiff(before, after);
+    const probing = {
+      evaluate: async (_fn: any, arg: any) => {
+        if (arg.config.xpath === '//body/aside[1]/div[1]') return regionProbe({ centerBelongs: false });
+        return regionProbe();
+      },
+    };
+    const overlay = await new OverlayPage(probing).detectRegion(diff);
+    expect(overlay).not.toBeNull();
+    expect(overlay!.root).toBe('#front-panel');
+  });
+
   it('treats a change spanning most of the page as a new state, not a region', async () => {
     const smallBase = '<html><body><div id="app"><h1>Users</h1></div></body></html>';
     const takeover = `<html><body><div id="app"><h1>Users</h1></div><div class="drawer"><h2>Edit User</h2><form>${bigForm}</form></div></body></html>`;

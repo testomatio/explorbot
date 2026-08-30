@@ -84,20 +84,21 @@ export class OverlayPage {
 
   async detectRegion(diff: RegionDiff): Promise<Overlay | null> {
     if (!diff.sameUrl && diff.similarity < SOFT_NAVIGATION_SIMILARITY) return null;
-    const subRoot = this.appearedSubRoot(diff);
-    if (!subRoot) return null;
-    const probe = await this.probe(subRoot.elementXPath);
-    if (probe?.found && probe.onScreen && !probe.centerBelongs) {
-      debugLog('Appeared region is hidden or covered, ignoring it');
-      return null;
+    for (const subRoot of this.appearedSubRoots(diff)) {
+      const probe = await this.probe(subRoot.elementXPath);
+      if (probe?.found && probe.onScreen && !probe.centerBelongs) {
+        debugLog('Appeared region is hidden or covered, trying the next candidate');
+        continue;
+      }
+      const overlay = this.toOverlay(subRoot, probe, diff.previousHtml);
+      if (!overlay.name && !overlay.root) {
+        debugLog('Appeared region has no name and no semantic root, ignoring it');
+        continue;
+      }
+      debugLog(`Region detected: ${overlay.describe()}`);
+      return overlay;
     }
-    const overlay = this.toOverlay(subRoot, probe, diff.previousHtml);
-    if (!overlay.name && !overlay.root) {
-      debugLog('Appeared region has no name and no semantic root, ignoring it');
-      return null;
-    }
-    debugLog(`Region detected: ${overlay.describe()}`);
-    return overlay;
+    return null;
   }
 
   async isStillOpen(overlay: Overlay): Promise<boolean> {
@@ -109,34 +110,35 @@ export class OverlayPage {
     return true;
   }
 
-  private appearedSubRoot(diff: RegionDiff): AppearedSubRoot | null {
-    let best: AppearedSubRoot | null = null;
-    let totalRawSize = 0;
+  private appearedSubRoots(diff: RegionDiff): AppearedSubRoot[] {
+    const candidates: AppearedSubRoot[] = [];
     for (const part of diff.parts) {
-      totalRawSize += part.rawSize;
       const appeared = part.added.find((line) => line.startsWith('ELEMENT:'));
       if (!appeared) continue;
       if (part.subtree.length < SUBROOT_MIN_HTML) continue;
-      if (best && part.subtree.length <= best.size) continue;
-      best = {
+      if (diff.pageSize > 0 && part.rawSize > REGION_MAX_RATIO * diff.pageSize) {
+        debugLog(`Appeared subtree spans ${Math.round((part.rawSize / diff.pageSize) * 100)}% of the page — a new state, not a region`);
+        continue;
+      }
+      candidates.push({
         container: part.container,
         elementXPath: pathToXPath(appeared.slice('ELEMENT:'.length)),
         subtree: part.subtree,
         size: part.subtree.length,
         rawSize: part.rawSize,
         appearedSelector: part.appearedSelector,
-      };
+        fresh: !!this.freshHeading(part.subtree, diff.previousHtml),
+      });
     }
-    if (!best) return null;
-    if (diff.pageSize > 0 && best.rawSize > REGION_MAX_RATIO * diff.pageSize) {
-      debugLog(`Appeared subtree spans ${Math.round((best.rawSize / diff.pageSize) * 100)}% of the page — a new state, not a region`);
-      return null;
-    }
-    if (totalRawSize > 0 && best.rawSize < REGION_DOMINANCE * totalRawSize) {
+    if (candidates.length === 0) return [];
+    const totalRawSize = candidates.reduce((sum, c) => sum + c.rawSize, 0);
+    const largest = Math.max(...candidates.map((c) => c.rawSize));
+    if (largest < REGION_DOMINANCE * totalRawSize) {
       debugLog('Changes are scattered across the page, no dominant region');
-      return null;
+      return [];
     }
-    return best;
+    candidates.sort((a, b) => Number(b.fresh) - Number(a.fresh) || b.size - a.size);
+    return candidates;
   }
 
   private async probe(xpath: string): Promise<RegionProbe | null> {
@@ -168,12 +170,21 @@ export class OverlayPage {
   }
 
   private nameFrom(html: string, previousHtml: string): string | null {
-    const headings = extractHeadings(html);
-    const candidates = [headings.h1, headings.h2, headings.h3, headings.h4].filter(Boolean) as string[];
+    const fresh = this.freshHeading(html, previousHtml);
+    if (fresh) return fresh;
+    const candidates = this.headingsOf(html);
     if (candidates.length === 0) return null;
-    const fresh = candidates.filter((heading) => !previousHtml.includes(heading));
-    if (fresh.length > 0) return fresh[0];
     return candidates.join(' ');
+  }
+
+  private freshHeading(html: string, previousHtml: string): string | null {
+    const fresh = this.headingsOf(html).filter((heading) => !previousHtml.includes(heading));
+    return fresh[0] ?? null;
+  }
+
+  private headingsOf(html: string): string[] {
+    const headings = extractHeadings(html);
+    return [headings.h1, headings.h2, headings.h3, headings.h4].filter(Boolean) as string[];
   }
 }
 
@@ -230,6 +241,7 @@ interface AppearedSubRoot {
   size: number;
   rawSize: number;
   appearedSelector?: string;
+  fresh: boolean;
 }
 
 interface RegionProbe {

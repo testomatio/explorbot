@@ -141,6 +141,18 @@ is pure noise. Hence an **identity gate** after classification: an overlay with 
 a `root` is dropped. Either one alone keeps it — a named rootless overlay still forks state identity,
 a rooted nameless one still scopes.
 
+A third field run (a suite-selector dialog) showed the gates must be **per-candidate filters, not
+whole-detection aborts**. Opening that dialog produced three appeared parts at once: a 622K flood of
+detached list nodes rendered directly under `body` (96% of the page), the app shell re-keyed by the
+flood's positional renumbering (196K of old content the differ saw as "appeared"), and the real 13K
+modal. "Largest candidate wins, then cap" picked the flood and aborted, losing the modal every time.
+Detection now walks all in-band candidates instead: cap-tripping parts are skipped (they are page
+redraw, not regions), dominance is measured across the surviving candidates, and among survivors the
+one that brings a **fresh heading** is preferred over larger heading-stale reflows — the same
+newest-heading principle naming already uses, applied to selection. The probe then walks the ordered
+candidates and skips any whose center is covered by another element, so a background pane never wins
+over the dialog stacked on top of it.
+
 Root selection still needs its own care, and its rule is now stricter: **roots are semantic only**. A
 positional XPath is never a `root` — it neither reaches a prompt nor an experience file. It survives
 strictly as the overlay's internal `xpath`, the handle the openness/persistence probe needs to find
