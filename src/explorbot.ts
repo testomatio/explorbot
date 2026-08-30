@@ -347,7 +347,7 @@ export class ExplorBot {
       };
 
       const cookieProvider = async (): Promise<Record<string, string>> => {
-        const cookies = await this.explorer.withPage((page) => page.context().cookies()).catch(() => []);
+        const cookies = await this.explorer.withPage((page) => page.context().cookies(baseEndpoint)).catch(() => []);
         if (!cookies.length) return {};
         return { Cookie: cookies.map((c: any) => `${c.name}=${c.value}`).join('; ') };
       };
