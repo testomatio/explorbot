@@ -86,7 +86,7 @@ endpoint: /orders/*
 Send X-Api-Key: ${env.API_KEY} on every request'
 ```
 
-For config-free runs driven entirely from the environment, `EXPLORBOT_KNOWLEDGE` does the same job — see [Agentic usage](./agentic-usage.md).
+For runs driven from the environment — config-free, or on the global configuration — `EXPLORBOT_KNOWLEDGE` does the same job for the length of one run. See [Agentic usage](./agentic-usage.md).
 
 ## URL Patterns
 

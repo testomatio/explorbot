@@ -2,8 +2,49 @@
 
 ## 2026-08-30
 
+### New CLI Options
+
+- **`--endpoint`** (api) — The base API endpoint an `explorbot api` run tests, so the API boat no longer
+  needs a config file to know where the API is. `api test`, which takes a plan file rather than an
+  endpoint, reads it from here too, and a path prefix is kept: given
+  `https://api.example.com/v1`, a step on `/users` is sent to `https://api.example.com/v1/users`.
+  It sets the same value as `EXPLORBOT_URL`, and wins when both are given.
+  ```bash
+  explorbot api plan /users --endpoint https://api.example.com/v1
+  explorbot api test output/plans/users.md --endpoint https://api.example.com/v1
+  ```
+- **`--spec`** (api) — The OpenAPI spec for the run, as a local file or a URL. Chief plans from it and
+  Curler looks up schemas in it; given here it replaces `api.spec` from the config file. It sets the
+  same value as `EXPLORBOT_API_SPEC`.
+  ```bash
+  explorbot api plan /users --spec ./openapi.yaml
+  explorbot api plan /users --spec https://api.example.com/openapi.json
+  ```
+- **`--spec`** (prima) — The collected documentation a prima run reads as page knowledge: a Docbot
+  application spec directory, or its `index.md`. It is the flag form of the `--spec` that
+  `explorbot start` already takes, and the new `EXPLORBOT_SPEC` variable sets the same thing for
+  every browser command — `PRIMA_CLI_SPEC` for prima, like the other variables it mirrors.
+  ```bash
+  prima check "a project can be archived" --spec output/docs
+  PRIMA_CLI_SPEC=output/docs prima do "open the account menu"
+  ```
+- **`--url`** (docs collect) — The base URL to document when the path argument is relative, so the
+  site can come from the command line rather than only from an absolute path or the environment. An
+  absolute path argument still carries its own. Same value as `EXPLORBOT_URL`.
+  ```bash
+  explorbot docs collect /dashboard --url https://app.example.com
+  ```
+
 ### Changes
 
+- Knowledge from `EXPLORBOT_KNOWLEDGE` and `EXPLORBOT_KNOWLEDGE_FILE` now reaches runs that use the
+  global configuration in `~/.explorbot` — exploration, prima, doc collection and API testing alike.
+  Each run writes what they carry into the site's knowledge directory, where the agents read it like
+  any other knowledge file; the next run rewrites it, and a run that sets neither variable removes
+  it, so `learn` and `know` remain the way to keep a fact. Until now those two variables only had an
+  effect when no configuration file existed at all.
+- `config` no longer prints a directory as the project root with an absolute path glued onto the
+  end. An absolute `dirs` entry, such as an application spec outside the project, is shown as it is.
 - Doc Collector: a `docs collect` run streamed with `--ws` now sends the spec index it generates as a
   `docs` frame — the file path and the full markdown of `docs/index.md` — so a listening UI can show
   the finished documentation the same way an exploration run streams its session report.

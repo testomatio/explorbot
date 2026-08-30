@@ -271,6 +271,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_EPHEMERAL', description: 'Keep no state between runs — output goes to a fresh temp directory instead of the site dir' },
   { name: 'EXPLORBOT_KNOWLEDGE', description: 'Inline knowledge text, applied to every page' },
   { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
+  { name: 'EXPLORBOT_SPEC', description: 'Docbot application spec directory or index.md, used as page knowledge' },
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
   { name: 'EXPLORBOT_NO_BANNER', description: 'Suppress the startup banner, for machine-readable output' },
 ];
@@ -403,6 +404,8 @@ export class ConfigParser {
       if (resolvedPath && isGlobalConfigPath(resolvedPath)) {
         this.enterGlobalMode(this.config, target);
       }
+
+      this.applyEnvSpec(this.config);
 
       // Restore original directory after successful config load
       if (options?.path && originalCwd !== process.cwd()) {
@@ -554,8 +557,16 @@ export class ConfigParser {
 
     config.dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
     config.playwright = { ...config.playwright, browser: config.playwright?.browser || 'chromium', url: site.baseUrl };
+    materializeKnowledge(this.site.dir);
 
     log(`Global mode: ${site.baseUrl} stored in ${this.site.dir}`);
+  }
+
+  private applyEnvSpec(config: ExplorbotConfig): void {
+    const spec = process.env.EXPLORBOT_SPEC;
+    if (!spec) return;
+    if (!config.dirs) config.dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
+    config.dirs.spec = spec;
   }
 
   private async buildEnvConfig(baseUrl: string | undefined, outputRoot: string): Promise<ExplorbotConfig> {

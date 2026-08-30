@@ -13,11 +13,19 @@ function buildOptions(options: any): ApibotOptions {
     verbose: options.verbose || options.debug,
     config: options.config,
     path: options.path,
+    baseEndpoint: options.endpoint,
+    spec: options.spec,
   };
 }
 
 function addCommonOptions(cmd: Command): Command {
-  return cmd.option('-v, --verbose', 'Enable verbose logging').option('--debug', 'Enable debug logging').option('-c, --config <path>', 'Path to configuration file').option('-p, --path <path>', 'Working directory path');
+  return cmd
+    .option('-v, --verbose', 'Enable verbose logging')
+    .option('--debug', 'Enable debug logging')
+    .option('-c, --config <path>', 'Path to configuration file')
+    .option('-p, --path <path>', 'Working directory path')
+    .option('--endpoint <url>', 'Base API endpoint to test (env: EXPLORBOT_URL)')
+    .option('--spec <path>', 'OpenAPI spec file or URL (env: EXPLORBOT_API_SPEC)');
 }
 
 function selectTests(tests: any[], index?: string): any[] {
@@ -90,8 +98,10 @@ export function createApiCommands(name = 'api'): Command {
     .action(async (endpoint, options) => {
       const parser = ApibotConfigParser.getInstance();
       const [site] = listSites();
+      const runOptions = buildOptions(options);
+      runOptions.endpoint = endpoint || site?.url;
       try {
-        const config = await parser.loadConfig({ config: options.config, path: options.path, endpoint: endpoint || site?.url });
+        const config = await parser.loadConfig(runOptions);
         console.log(ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot(), json: options.json }));
       } catch (error) {
         console.error(error instanceof Error ? error.message : 'Unknown error');

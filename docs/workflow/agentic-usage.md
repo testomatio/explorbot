@@ -56,6 +56,7 @@ No `init`, no config file, no project directory, no model IDs to look up. These 
 | `EXPLORBOT_EPHEMERAL` | no | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | no | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | no | Path to a knowledge markdown file |
+| `EXPLORBOT_SPEC` | no | Docbot application spec directory or index.md, used as page knowledge |
 | `EXPLORBOT_API_SPEC` | no | OpenAPI spec path for the API boat |
 | `EXPLORBOT_NO_BANNER` | no | Suppress the startup banner, for machine-readable output |
 <!-- END env -->
@@ -123,7 +124,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 EXPLORBOT_KNOWLEDGE_FILE=./checkout-knowledge.md npx explorbot explore /checkout
 ```
 
-Both variables belong to config-free mode. The `--knowledge` flag does the same thing as an argument and works with or without a project config, so prefer it when one command needs one fact:
+Both variables work in config-free runs and in runs on the global configuration, where what they carry is written into the site's knowledge directory for that run — rewritten on the next run, and removed by a run that sets neither variable. Facts worth keeping belong in `learn` or `know`. The `--knowledge` flag does the same thing as an argument, works with a project config as well, and writes nothing, so prefer it when one command needs one fact:
 
 ```bash
 npx explorbot explore /checkout --knowledge 'Use the sandbox card 4111 1111 1111 1111'
@@ -218,8 +219,10 @@ The same variables drive API testing and doc collection.
 EXPLORBOT_URL=https://api.example.com \
 EXPLORBOT_API_SPEC=./openapi.yaml \
 EXPLORBOT_AI_PROVIDER=openrouter \
-  npx explorbot api explore
+  npx explorbot api explore /users
 ```
+
+The API boat also takes those two as flags, so one line carries the whole run: `npx explorbot api explore /users --endpoint https://api.example.com --spec ./openapi.yaml`.
 
 ```bash
 EXPLORBOT_AI_PROVIDER=openrouter \

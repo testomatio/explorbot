@@ -35,7 +35,7 @@ export class ApiBot {
   }
 
   async start(): Promise<void> {
-    this.config = await this.configParser.loadConfig({ config: this.options.config, path: this.options.path, endpoint: this.options.endpoint });
+    this.config = await this.configParser.loadConfig(this.options);
     this.provider = new AIProvider(this.config.ai);
     await this.provider.validateConnection();
 
@@ -204,6 +204,8 @@ interface ApibotOptions {
   config?: string;
   path?: string;
   endpoint?: string;
+  baseEndpoint?: string;
+  spec?: string;
 }
 
 export type { ApibotOptions };
