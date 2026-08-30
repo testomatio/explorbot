@@ -133,6 +133,32 @@ describe('ledger-derived results', () => {
     expect(result.success).toBe(false);
     expect(result.summary).not.toBe('');
   });
+
+  it('treats a text-only turn as finish, using the text as summary when writes succeeded', () => {
+    const made: any[] = [];
+    const { finishFromText, getResult, isFinished } = createFishermanTools({} as any, store(undefined, made), {});
+    made.push(madeWrite('POST', '/api/suites', 201, { id: 's1' }));
+
+    finishFromText('Created the suite');
+
+    expect(isFinished()).toBe(true);
+    const result = getResult();
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('Created the suite');
+    expect(result.created[0].id).toBe('s1');
+  });
+
+  it('keeps the honest failure summary when a text-only turn ends a run with no successful writes', () => {
+    const made: any[] = [];
+    const { finishFromText, getResult } = createFishermanTools({} as any, store(undefined, made), {});
+    made.push(madeWrite('POST', '/api/tests', 400));
+
+    finishFromText('All done successfully');
+
+    const result = getResult();
+    expect(result.success).toBe(false);
+    expect(result.summary).not.toBe('All done successfully');
+  });
 });
 
 function store(captured?: any, made: any[] = []): any {

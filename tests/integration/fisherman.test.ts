@@ -158,4 +158,19 @@ describe('Fisherman with aimock', () => {
     expect(apiHeaders['x-api-key']).toBe('from-config');
     expect(apiHeaders.Cookie).toBeUndefined();
   });
+
+  it('treats a no-tool-call response as finish with the text as summary', async () => {
+    const created = requestResult('made_2', 'POST', '/api/alpha-shop/suites', 201);
+    created.rawResponseBodyValue = JSON.stringify({ data: { id: 's2', title: 'Suite B' } });
+    apiResponses.push(created);
+
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('c1', 'request', { method: 'POST', path: '/api/alpha-shop/suites', body: { title: 'Suite B' } })] });
+    mock.on({}, { content: 'Created one suite' });
+
+    const result = await createFisherman().prepareData('1 suite', '/projects/alpha-shop/suites');
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('Created one suite');
+    expect(result.created).toEqual([{ type: 'suites', id: 's2', title: 'Suite B', request: 'POST /api/alpha-shop/suites' }]);
+  });
 });

@@ -18,6 +18,12 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   const successfulWrites = () => runRequests().filter((r) => r.isWrite && !r.error && r.status >= 200 && r.status < 400);
   const getResult = () => result ?? synthesizeResult(runRequests(), successfulWrites());
   const isFinished = () => finished;
+  const finishFromText = (text?: string) => {
+    finished = true;
+    const synthesized = synthesizeResult(runRequests(), successfulWrites());
+    if (text && synthesized.success) synthesized.summary = text;
+    result = synthesized;
+  };
 
   const tools = {
     getEndpointSpec: tool({
@@ -198,7 +204,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
     }),
   };
 
-  return { tools, getResult, isFinished };
+  return { tools, getResult, isFinished, finishFromText };
 }
 
 function synthesizeResult(made: RequestResult[], writes: RequestResult[]): FishermanResult {

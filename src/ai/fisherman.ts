@@ -79,7 +79,7 @@ export class Fisherman implements Agent {
     await this.refreshAuth();
     debugLog(`auth headers: ${Object.keys(this.apiClient.getHeaders()).join(', ')}`);
 
-    const { tools, getResult, isFinished } = createFishermanTools(this.apiClient, this.requestStore, {
+    const { tools, getResult, isFinished, finishFromText } = createFishermanTools(this.apiClient, this.requestStore, {
       spec: this.spec,
       baseEndpoint: this.baseEndpoint,
     });
@@ -93,12 +93,18 @@ export class Fisherman implements Agent {
         debugLog(`iteration ${iteration}`);
         const invokeResult = await this.provider.invokeConversation(conversation, tools, {
           maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS,
-          toolChoice: 'required',
           agentName: 'fisherman',
         });
         debugLog(`iteration ${iteration} done, text: ${invokeResult?.response?.text?.slice(0, 200) || '(none)'}`);
 
         if (isFinished()) {
+          stop();
+          return;
+        }
+
+        if (!invokeResult?.toolExecutions?.length) {
+          debugLog('no tool call in this turn — treating as finish');
+          finishFromText(invokeResult?.response?.text);
           stop();
           return;
         }

@@ -8,6 +8,10 @@
   cookies are taken from the live jar filtered to the API origin, the CSRF token is read from the
   page, and auth headers are never reused from previous sessions' captured requests. Achieve mode
   authenticates solely through `api.headers` config.
+- [Fisherman] A turn without a tool call now ends the run as a finish instead of erroring: tool
+  choice is no longer forced, and when writes already succeeded the model's text becomes the
+  summary while created items still come from the request ledger. Models that close with prose
+  instead of the `finish` tool no longer trigger retries that re-create the same data.
 
 ## 2026-08-29
 
