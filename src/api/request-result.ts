@@ -85,6 +85,10 @@ export class RequestResult {
     }
   }
 
+  get isWrite(): boolean {
+    return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(this.method);
+  }
+
   save(outputDir: string): void {
     const requestsDir = path.join(outputDir, 'requests');
     if (!existsSync(requestsDir)) {
@@ -169,7 +173,7 @@ export class RequestResult {
       statusText: meta.statusText || '',
       responseHeaders: meta.responseHeaders || {},
       timing: Number.parseInt(meta.timing) || 0,
-      timestamp: new Date(meta.timestamp || Date.now()),
+      timestamp: new Date(meta.timestamp || 0),
     });
 
     result.requestFile = requestFile;
@@ -178,8 +182,12 @@ export class RequestResult {
     return result;
   }
 
+  toEndpoint(): string {
+    return `${this.method} ${this.path}`;
+  }
+
   toSummary(): string {
-    return `${this.method} ${this.path} → ${this.status} (${this.timing}ms)`;
+    return `${this.toEndpoint()} → ${this.status} (${this.timing}ms)`;
   }
 
   extractIdAndTitle(): { id?: string | number; title?: string } {

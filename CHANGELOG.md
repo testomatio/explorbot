@@ -44,11 +44,32 @@
   saved plan, which is searched for in the plans directory of every registered site.
 - `explorbot test <planfile>` without an index runs every enabled test in the plan, as the help and
   the docs already described. It used to run only the first pending one.
+- [Fisherman] A run that gives up no longer counts as prepared data. When the run ran out of
+  iterations or stopped after repeated failures on one endpoint, a single successful write was
+  enough to report success, so a half-built precondition looked ready to the test. Only a run the
+  model actually ends — through `finish` or a closing message — can report success now; a run that
+  gives up reports what it managed to do, and the test falls back to checking what the page shows.
+- [Fisherman] The endpoint list no longer guesses the scope when the page URL says two different
+  things. If two segments of the page URL are equally narrow but point at different requests — a
+  generic one like `projects` and the actual project slug — the list is no longer scoped by
+  whichever came first, which could hand the model another project's endpoints. Such a page falls
+  back to the full endpoint list with the warning to confirm the target belongs to this scope.
+- URL matching: short words spelled with hex letters (`/api/feed`, `/cafe`, `/dead`) are no longer
+  mistaken for ids, so those pages keep their own identity instead of collapsing into `/api/{id}`.
+  A hex segment counts as an id when it carries a digit, or when it is at least 8 characters long.
 
 ## 2026-08-30
 
 ### Changes
 
+- [Fisherman] In replicate mode, API requests now authenticate with the current browser session:
+  cookies are taken from the live jar filtered to the API origin, the CSRF token is read from the
+  page, and auth headers are never reused from previous sessions' captured requests. Achieve mode
+  authenticates solely through `api.headers` config.
+- [Fisherman] A turn without a tool call now ends the run as a finish instead of erroring: tool
+  choice is no longer forced, and when writes already succeeded the model's text becomes the
+  summary while created items still come from the request ledger. Models that close with prose
+  instead of the `finish` tool no longer trigger retries that re-create the same data.
 - [Provider] Work a tool already did is no longer redone when the turn it was part of breaks partway
   through. A model turn can run several tool calls before it fails — because the model asked for a
   tool that does not exist, answered in plain text where a tool call was demanded, or ran the
@@ -75,6 +96,25 @@
 
 ### Changes
 
+- [Fisherman] No longer treats its own past API calls as captured browser traffic. Replicate mode
+  used to reload every request it had ever made — rejected ones included — and hand the next run a
+  failed request body as "the example", sending it into long guessing loops. Only real browser
+  requests are read back now; a project with no captured browser traffic reports data preparation
+  as unavailable instead of replaying its own mistakes.
+- [Fisherman] Picks the best captured example for an endpoint instead of the first one found: an
+  exact endpoint match beats a deeper sub-path, a successful request beats a rejected one, and
+  newer beats older.
+- [Fisherman] The endpoint list shown to the AI is scoped to the page being tested by matching the
+  page URL against captured request paths, so endpoints from other projects no longer appear. When
+  scoping isn't possible the prompt says so explicitly instead of silently listing everything.
+- [Fisherman] `finish` no longer reports success on faith. Reporting success requires at least one
+  API write that actually succeeded in this run, and every claimed created item is checked against
+  the ids the API really returned — unverifiable claims are dropped, and each confirmed item shows
+  which request created it. A run that ends without finishing now reports how many requests were
+  made, how many succeeded, and the last failure, instead of an empty result.
+- [Fisherman] Stops after four failures in a row against the same endpoint instead of spending the
+  whole iteration budget guessing request bodies.
+- [Pilot] Precondition steps now record which API request created each item.
 - [Provider] Groq prompt cache hits are counted again. Groq reports how much of a prompt it served
   from cache, but the pinned `@ai-sdk/groq` build read that number out of the response and then
   dropped it, so every Groq request was recorded as a full-price miss and the cache hit rate showed
