@@ -230,7 +230,6 @@ describe('isDynamicSegment', () => {
   });
 
   it('detects hex IDs', () => {
-    expect(isDynamicSegment('abcd')).toBe(true);
     expect(isDynamicSegment('70dae98a')).toBe(true);
     expect(isDynamicSegment('cddb14a6')).toBe(true);
   });
@@ -258,6 +257,8 @@ describe('isDynamicSegment', () => {
     expect(isDynamicSegment('login')).toBe(false);
     expect(isDynamicSegment('about')).toBe(false);
     expect(isDynamicSegment('feedback')).toBe(false);
+    expect(isDynamicSegment('feed')).toBe(false);
+    expect(isDynamicSegment('cafe')).toBe(false);
     expect(isDynamicSegment('users')).toBe(false);
     expect(isDynamicSegment('new-test')).toBe(false);
     expect(isDynamicSegment('projects')).toBe(false);

@@ -79,15 +79,15 @@ export class PlansCommand extends BaseCommand {
       return file;
     }
 
-    const resolved = this.explorBot.resolvePlanPath(target);
-    if (!existsSync(resolved)) {
-      throw new Error(`Plan file not found: ${resolved}`);
+    const plan = Plan.loadFromFile(target, this.explorBot.getPlansDir());
+    if (!plan?.filePath) {
+      throw new Error(`Plan file not found: ${target}`);
     }
 
     return {
-      name: path.basename(resolved),
-      path: resolved,
-      modifiedAt: statSync(resolved).mtimeMs,
+      name: path.basename(plan.filePath),
+      path: plan.filePath,
+      modifiedAt: statSync(plan.filePath).mtimeMs,
     };
   }
 }

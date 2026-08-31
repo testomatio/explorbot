@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { ModelMessage } from 'ai';
-import { tool } from 'ai';
+import { APICallError, tool } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 import { z } from 'zod';
 import { AiError, Provider } from '../../src/ai/provider.js';
@@ -62,7 +62,9 @@ describe('Provider', () => {
       config: {},
       vision: false,
     };
-    ConfigParser.getInstance().loadConfig({});
+    ConfigParser.getInstance()
+      .loadConfig({})
+      .catch(() => {});
     provider = new Provider(aiConfig);
   });
 
@@ -317,6 +319,120 @@ describe('Provider', () => {
       mockAI.setFailure(true, 5);
 
       await expect(provider.chat(messages, mockAI.getModel(), { maxRetries: 2 })).rejects.toThrow(AiError);
+    });
+
+    it('relays an invalid-request rejection back to the retry', async () => {
+      const prompts: any[] = [];
+      let calls = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'test',
+        doGenerate: async (params: any) => {
+          calls++;
+          prompts.push(params.prompt);
+          if (calls === 1) {
+            throw new APICallError({ url: 'http://test.local/v1/chat', statusCode: 400, message: 'Tool call validation failed: attempted to call a tool which was not in request.tools' });
+          }
+          return { text: 'recovered', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'recovered' }] };
+        },
+      });
+      const correctingProvider = new Provider(aiConfig);
+      const tools = { finish: tool({ description: 'Finish the test', inputSchema: z.object({}), execute: async () => ({ success: true }) }) };
+
+      const response = await correctingProvider.generateWithTools([{ role: 'user', content: 'go' }], model, tools, { maxRetries: 3 });
+
+      expect(response.text).toBe('recovered');
+      expect(calls).toBe(2);
+      const relayed = prompts[1].at(-1);
+      expect(relayed.role).toBe('user');
+      expect(JSON.stringify(relayed.content)).toContain('attempted to call a tool which was not in request.tools');
+    });
+
+    it('carries tool steps that already ran into the retry', async () => {
+      const prompts: any[] = [];
+      let calls = 0;
+      let created = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'test',
+        doGenerate: async (params: any) => {
+          calls++;
+          prompts.push(params.prompt);
+          if (calls === 1) {
+            return {
+              text: undefined,
+              toolCalls: [{ toolCallId: 'c1', toolName: 'create', args: { name: 'suite' } }],
+              finishReason: 'tool-calls' as const,
+              usage: { inputTokens: 1, outputTokens: 1 },
+              content: [{ type: 'tool-call' as const, toolCallId: 'c1', toolName: 'create', input: JSON.stringify({ name: 'suite' }) }],
+            };
+          }
+          if (calls === 2) {
+            throw new APICallError({ url: 'http://test.local/v1/chat', statusCode: 400, message: 'Tool call validation failed: attempted to call a tool which was not in request.tools' });
+          }
+          return { text: 'done', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'done' }] };
+        },
+      });
+      aiConfig.retryDelay = 1;
+      const retryingProvider = new Provider(aiConfig);
+      const tools = {
+        create: tool({
+          description: 'Create a record',
+          inputSchema: z.object({ name: z.string() }),
+          execute: async () => {
+            created++;
+            return { id: 1 };
+          },
+        }),
+      };
+
+      const response = await retryingProvider.generateWithTools([{ role: 'user', content: 'go' }], model, tools, { maxRetries: 3 });
+
+      expect(created).toBe(1);
+      expect(JSON.stringify(prompts[2])).toContain('c1');
+      expect(response.responseMessages.filter((m: any) => m.role === 'tool')).toHaveLength(1);
+      expect(response.responseMessages.at(-1).content).toEqual([{ type: 'text', text: 'done' }]);
+    });
+
+    it('returns the tool steps that ran when the provider rejects every retry', async () => {
+      let calls = 0;
+      let created = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'test',
+        doGenerate: async () => {
+          calls++;
+          if (calls === 1) {
+            return {
+              text: undefined,
+              toolCalls: [{ toolCallId: 'c1', toolName: 'create', args: { name: 'suite' } }],
+              finishReason: 'tool-calls' as const,
+              usage: { inputTokens: 1, outputTokens: 1 },
+              content: [{ type: 'tool-call' as const, toolCallId: 'c1', toolName: 'create', input: JSON.stringify({ name: 'suite' }) }],
+            };
+          }
+          throw new APICallError({ url: 'http://test.local/v1/chat', statusCode: 400, message: 'Tool choice is required, but model did not call a tool' });
+        },
+      });
+      aiConfig.retryDelay = 1;
+      const retryingProvider = new Provider(aiConfig);
+      const tools = {
+        create: tool({
+          description: 'Create a record',
+          inputSchema: z.object({ name: z.string() }),
+          execute: async () => {
+            created++;
+            return { id: 1 };
+          },
+        }),
+      };
+
+      const response = await retryingProvider.generateWithTools([{ role: 'user', content: 'go' }], model, tools, { maxRetries: 2 });
+
+      expect(created).toBe(1);
+      expect(response.text).toBe('');
+      expect(response.responseMessages).toHaveLength(2);
+      expect(response.responseMessages[1].role).toBe('tool');
     });
 
     it('should honor configured retry attempts and delay', () => {
@@ -629,6 +745,49 @@ describe('Provider', () => {
 
       expect(response.text).toBe('recovered');
       expect(calls).toBe(2);
+    });
+
+    it('keeps tool steps that already ran when it reduces messages', async () => {
+      const prompts: any[] = [];
+      let calls = 0;
+      let created = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'ctx-tools-model',
+        doGenerate: async (params: any) => {
+          calls++;
+          prompts.push(params.prompt);
+          if (calls === 1) {
+            return {
+              text: undefined,
+              toolCalls: [{ toolCallId: 'c1', toolName: 'create', args: { name: 'suite' } }],
+              finishReason: 'tool-calls' as const,
+              usage: { inputTokens: 1, outputTokens: 1 },
+              content: [{ type: 'tool-call' as const, toolCallId: 'c1', toolName: 'create', input: JSON.stringify({ name: 'suite' }) }],
+            };
+          }
+          if (calls === 2) throw new Error('context length exceeded');
+          return { text: 'recovered', finishReason: 'stop' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'recovered' }] };
+        },
+      });
+      const tools = {
+        create: tool({
+          description: 'Create a record',
+          inputSchema: z.object({ name: z.string() }),
+          execute: async () => {
+            created++;
+            return { id: 1 };
+          },
+        }),
+      };
+      const messages: ModelMessage[] = [{ role: 'user', content: `<data>${'x'.repeat(5000)}</data>` }];
+
+      const response = await provider.generateWithTools(messages, model, tools, { maxRetries: 1 });
+
+      expect(created).toBe(1);
+      expect(response.text).toBe('recovered');
+      expect(JSON.stringify(prompts[2])).toContain('c1');
+      expect(response.responseMessages.filter((m: any) => m.role === 'tool')).toHaveLength(1);
     });
   });
 

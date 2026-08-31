@@ -27,6 +27,64 @@
   panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
   open.
 
+## 2026-08-31
+
+### New CLI Options
+
+- **`--max-duration <minutes>`** — a wall-clock budget for the whole run. Explorbot stops starting new
+  tests, planning styles, and sub-page expansion before the limit, wraps up the test in flight, and then
+  finishes the session the normal way — plan files, session report, Testomatio run finalized, telemetry
+  flushed, exit code 0 — instead of being killed mid-test by a CI job timeout, which loses all of that.
+  Set it a few minutes below the job's `timeout-minutes`. The same budget can be set through
+  `EXPLORBOT_MAX_DURATION`; the flag wins.
+  ```bash
+  explorbot explore / --max-tests 50 --max-duration 40   # 45-minute CI job
+  EXPLORBOT_MAX_DURATION=40 explorbot explore /           # same, via environment
+  explorbot freesail --max-duration 120
+  ```
+
+### Changes
+
+- [Tester] A test still running when the hard cutoff arrives is stopped at the next iteration and graded
+  on the evidence it recorded — passed only if every expected outcome was already met — while its
+  generated code, screencast, and Testomatio steps are still saved. The session report notes that the
+  time budget was reached.
+- Prima: every command now prints `### Artifacts` naming the files it just wrote — the ARIA tree and
+  the html always, plus the screenshot and network log when they were captured. Until now those files
+  were written on every command but only named when a `check` came back with a CONTRADICTION, so the
+  envelope offered a hash and nothing to suggest there was a page on disk worth reading. The ARIA tree
+  carries values and checked states, so one `grep` over it often answers a question that would
+  otherwise cost another `verify` or `ask`.
+- Prima: `do` now names the per-step captures by file rather than only their directory, so the
+  `diff.yaml` recording what each step changed is visible from the envelope.
+- Prima: `prima status <hash>` no longer needs a browser. It only reads recorded files, but it used to
+  open a session first and failed with "No browser to drive" once the run it was meant to explain had
+  finished. It also looks the hash up across every recorded site instead of assuming the most recent
+  one, and lists everything else kept under the hash. A hash that really is missing now reports the
+  directory it looked in.
+- `explorbot test <planfile>` takes the site to run against from the plan itself — the URL of its
+  `### Prerequisite` section, or the `## Requirements` URL of its first test. A plan is therefore
+  enough to run it from any directory with a global installation (`~/.explorbot/config.js`) or with
+  the `EXPLORBOT_*` variables, both of which used to refuse to start with "No site to explore"
+  because the command named no URL of its own.
+  The plan is looked up the same way whichever name it is given — a path, or the bare file name of a
+  saved plan, which is searched for in the plans directory of every registered site.
+- `explorbot test <planfile>` without an index runs every enabled test in the plan, as the help and
+  the docs already described. It used to run only the first pending one.
+- [Fisherman] A run that gives up no longer counts as prepared data. When the run ran out of
+  iterations or stopped after repeated failures on one endpoint, a single successful write was
+  enough to report success, so a half-built precondition looked ready to the test. Only a run the
+  model actually ends — through `finish` or a closing message — can report success now; a run that
+  gives up reports what it managed to do, and the test falls back to checking what the page shows.
+- [Fisherman] The endpoint list no longer guesses the scope when the page URL says two different
+  things. If two segments of the page URL are equally narrow but point at different requests — a
+  generic one like `projects` and the actual project slug — the list is no longer scoped by
+  whichever came first, which could hand the model another project's endpoints. Such a page falls
+  back to the full endpoint list with the warning to confirm the target belongs to this scope.
+- URL matching: short words spelled with hex letters (`/api/feed`, `/cafe`, `/dead`) are no longer
+  mistaken for ids, so those pages keep their own identity instead of collapsing into `/api/{id}`.
+  A hex segment counts as an id when it carries a digit, or when it is at least 8 characters long.
+
 ## 2026-08-30
 
 ### Changes
@@ -73,6 +131,35 @@
 - Action: The element probed for visibility is the panel itself, not an invisible helper that
   appeared with it — a transparent resize guard rendered next to a side panel used to make the
   visibility check fail and silently drop the panel.
+- [Fisherman] In replicate mode, API requests now authenticate with the current browser session:
+  cookies are taken from the live jar filtered to the API origin, the CSRF token is read from the
+  page, and auth headers are never reused from previous sessions' captured requests. Achieve mode
+  authenticates solely through `api.headers` config.
+- [Fisherman] A turn without a tool call now ends the run as a finish instead of erroring: tool
+  choice is no longer forced, and when writes already succeeded the model's text becomes the
+  summary while created items still come from the request ledger. Models that close with prose
+  instead of the `finish` tool no longer trigger retries that re-create the same data.
+- [Provider] Work a tool already did is no longer redone when the turn it was part of breaks partway
+  through. A model turn can run several tool calls before it fails — because the model asked for a
+  tool that does not exist, answered in plain text where a tool call was demanded, or ran the
+  conversation past the model's context limit. The whole turn was then retried from its starting
+  point, with no trace that the earlier calls had already gone through, so everything they had
+  created got created again, once per retry. The calls that completed now carry over into the retry
+  and into the conversation, and the model continues from them instead of repeating them.
+- [Tester] When a click matches more than one element, the pick between them is now made from what
+  those elements actually say. Candidates were described by their markup alone, and the step that
+  trimmed that markup threw away everything nested inside — so a menu holding "New test" and "New
+  tests from requirement" offered two identical empty buttons to choose from, and the choice was a
+  coin flip that could open the wrong screen and report success. Each candidate now carries its own
+  visible text, and its markup keeps the label and meaningful class names while layout and generated
+  styling classes are dropped, so the description says what the element is instead of how it is
+  styled.
+- Doc Collector: a `docs collect` run streamed with `--ws` now sends the spec index it generates as a
+  `docs` frame — the file path and the full markdown of `docs/index.md` — so a listening UI can show
+  the finished documentation the same way an exploration run streams its session report.
+- Doc Collector: a streamed run now closes the connection on its way out instead of exiting from
+  under it, so the final `result` frame arrives and anything still queued is flushed. Previously the
+  index frame, written moments before exit, was the one most likely to be lost.
 
 ## 2026-08-29
 
@@ -113,11 +200,52 @@
   plus the page-comparison and geometry check above. One consequence: an overlay already on screen
   at the very first capture that carries no accessibility role is no longer detected until the next
   action.
+- [Fisherman] No longer treats its own past API calls as captured browser traffic. Replicate mode
+  used to reload every request it had ever made — rejected ones included — and hand the next run a
+  failed request body as "the example", sending it into long guessing loops. Only real browser
+  requests are read back now; a project with no captured browser traffic reports data preparation
+  as unavailable instead of replaying its own mistakes.
+- [Fisherman] Picks the best captured example for an endpoint instead of the first one found: an
+  exact endpoint match beats a deeper sub-path, a successful request beats a rejected one, and
+  newer beats older.
+- [Fisherman] The endpoint list shown to the AI is scoped to the page being tested by matching the
+  page URL against captured request paths, so endpoints from other projects no longer appear. When
+  scoping isn't possible the prompt says so explicitly instead of silently listing everything.
+- [Fisherman] `finish` no longer reports success on faith. Reporting success requires at least one
+  API write that actually succeeded in this run, and every claimed created item is checked against
+  the ids the API really returned — unverifiable claims are dropped, and each confirmed item shows
+  which request created it. A run that ends without finishing now reports how many requests were
+  made, how many succeeded, and the last failure, instead of an empty result.
+- [Fisherman] Stops after four failures in a row against the same endpoint instead of spending the
+  whole iteration budget guessing request bodies.
+- [Pilot] Precondition steps now record which API request created each item.
+- [Provider] Groq prompt cache hits are counted again. Groq reports how much of a prompt it served
+  from cache, but the pinned `@ai-sdk/groq` build read that number out of the response and then
+  dropped it, so every Groq request was recorded as a full-price miss and the cache hit rate showed
+  as zero no matter how much of the prompt was actually reused. Upgrading the provider carries the
+  number through to the run stats and to Langfuse, which records it as `cache_read.input_tokens`.
+  Groq's cache lives on the node that served the request, so expect an uneven rate — a hit covers
+  almost the whole prompt, but only some requests get one.
 
 ## 2026-08-28
 
 ### Changes
 
+- [Provider] A request the provider rejects as invalid now comes back to the model with the
+  provider's own reason instead of a blind re-roll. gpt-oss sometimes emits tool names carrying its
+  internal channel markers or invents names outright; the provider API rejects the call before any
+  client-side repair can run, and the retry used to resend the same context unchanged — 24, 49 and
+  then 76 wasted generations across the last three overnight runs. The retry now relays the
+  rejection message verbatim (detected by error type and status code, no text matching), so the
+  model sees exactly what it broke and corrects itself on the next attempt.
+- [Tests] Provider unit tests no longer depend on the machine's global explorbot installation: a
+  config-priming call in the setup could reject against a real `~/.explorbot` and fail unrelated
+  tests as stray unhandled rejections.
+- [Planner] Scenarios describe the item to act on by kind and role instead of naming it. A scenario that
+  named one specific record went stale the moment that record was renamed, deleted, or replaced, and the
+  run was spent hunting for a name the page no longer had.
+- [Pilot] Picks the concrete item a scenario runs against — one already on the page, or a fresh one it
+  creates — and hands the Tester its exact name.
 - [Tester] `form()` and `interact()` now report every command they ran and whether it passed. A batch
   used to come back as a single pass/fail, so one bad command at the end hid the fact that the ones
   before it had worked — the AI and the Pilot both concluded nothing had happened and redid work that
@@ -409,6 +537,7 @@ to fill in a form that was already filled.
   reaches the test log instead of stopping at the navigator.
 - A browser that crashes and cannot be restored now stops navigation at once. It used to spend every
   remaining attempt, and a model call with each one, against a page that was already gone.
+
 ## 2026-08-19
 
 ### `explorbot config` names the provider behind every model
