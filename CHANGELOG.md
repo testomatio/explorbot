@@ -4,6 +4,13 @@
 
 ### Changes
 
+- [Provider] Work a tool already did is no longer redone when the turn it was part of breaks partway
+  through. A model turn can run several tool calls before it fails — because the model asked for a
+  tool that does not exist, answered in plain text where a tool call was demanded, or ran the
+  conversation past the model's context limit. The whole turn was then retried from its starting
+  point, with no trace that the earlier calls had already gone through, so everything they had
+  created got created again, once per retry. The calls that completed now carry over into the retry
+  and into the conversation, and the model continues from them instead of repeating them.
 - [Tester] When a click matches more than one element, the pick between them is now made from what
   those elements actually say. Candidates were described by their markup alone, and the step that
   trimmed that markup threw away everything nested inside — so a menu holding "New test" and "New
