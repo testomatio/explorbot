@@ -106,7 +106,7 @@ describe('Pilot buildStateContext — error signals', () => {
 
   it('shows verified overlay with its root', () => {
     const pilot = buildPilotWithStore(null);
-    const state = new ActionResult({ url: '/users', html: '<html><body><h1>Users</h1></body></html>', overlay: { type: 'drawer', name: 'Edit User', root: 'aside.panel' } });
+    const state = new ActionResult({ url: '/users', html: '<html><body><h1>Users</h1></body></html>', overlay: { type: 'modal', name: 'Edit User', root: 'aside.panel' } });
     const context = (pilot as any).buildStateContext(state);
     expect(context).toContain('modal: Edit User (root: aside.panel)');
   });

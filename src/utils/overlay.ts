@@ -6,7 +6,7 @@ import { createDebug } from './logger.js';
 
 const debugLog = createDebug('explorbot:overlay');
 
-export type OverlayType = 'dialog' | 'modal' | 'drawer' | 'region';
+export type OverlayType = 'modal' | 'region';
 export type OverlayData = {
   type?: OverlayType | null;
   name?: string | null;
@@ -106,7 +106,7 @@ export class OverlayPage {
     const probe = await this.probe(overlay.xpath);
     if (!probe) return true;
     if (!probe.found) return false;
-    if (probe.onScreen && !probe.centerBelongs) return false;
+    if (probe.onScreen && !probe.centerBelongs && !probe.coveredByFloating) return false;
     return true;
   }
 
@@ -159,10 +159,7 @@ export class OverlayPage {
 
   private toOverlay(subRoot: AppearedSubRoot, probe: RegionProbe | null, previousHtml: string): Overlay {
     let type: OverlayType = 'region';
-    if (probe?.centerBelongs && probe.floating) {
-      type = 'drawer';
-      if (probe.coverage >= FULL_COVERAGE_RATIO) type = 'modal';
-    }
+    if (probe?.centerBelongs && probe.floating) type = 'modal';
     let root: string | null = null;
     if (subRoot.container !== 'body' && !subRoot.container.startsWith('//')) root = subRoot.container;
     if (!root && subRoot.appearedSelector) root = subRoot.appearedSelector;
@@ -189,14 +186,23 @@ export class OverlayPage {
 }
 
 const SUBROOT_MIN_HTML = 5_000;
-const FULL_COVERAGE_RATIO = 0.8;
 const SOFT_NAVIGATION_SIMILARITY = 50;
 const REGION_MAX_RATIO = 0.6;
 const REGION_DOMINANCE = 0.7;
 
 // Serialized via toString() into page.evaluate — must stay a plain function with no outer-scope references.
 function inspectRegion(config: { xpath: string }): RegionProbe {
-  const probe: RegionProbe = { found: false, onScreen: false, floating: false, coverage: 0, centerBelongs: false };
+  const probe: RegionProbe = { found: false, onScreen: false, floating: false, centerBelongs: false, coveredByFloating: false };
+
+  const isFloating = (start: HTMLElement | null): boolean => {
+    let node = start;
+    while (node && node !== document.body) {
+      const style = window.getComputedStyle(node);
+      if (style.position === 'fixed' || style.position === 'absolute' || (Number.parseInt(style.zIndex || '0', 10) || 0) > 0) return true;
+      node = node.parentElement;
+    }
+    return false;
+  };
 
   const result = document.evaluate(config.xpath, document, null, 9, null);
   const node = result.singleNodeValue;
@@ -206,12 +212,7 @@ function inspectRegion(config: { xpath: string }): RegionProbe {
   if (rect.width === 0 && rect.height === 0) return probe;
   probe.found = true;
 
-  let node2: HTMLElement | null = element;
-  while (node2 && node2 !== document.body && !probe.floating) {
-    const style = window.getComputedStyle(node2);
-    if (style.position === 'fixed' || style.position === 'absolute' || (Number.parseInt(style.zIndex || '0', 10) || 0) > 0) probe.floating = true;
-    node2 = node2.parentElement;
-  }
+  probe.floating = isFloating(element);
 
   const left = Math.max(rect.left, 0);
   const top = Math.max(rect.top, 0);
@@ -219,10 +220,10 @@ function inspectRegion(config: { xpath: string }): RegionProbe {
   const bottom = Math.min(rect.bottom, window.innerHeight);
   if (right <= left || bottom <= top) return probe;
   probe.onScreen = true;
-  probe.coverage = ((right - left) * (bottom - top)) / (window.innerWidth * window.innerHeight);
 
   const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
   probe.centerBelongs = !!hit && (hit === element || element.contains(hit));
+  if (hit && !probe.centerBelongs) probe.coveredByFloating = isFloating(hit as HTMLElement);
   return probe;
 }
 
@@ -248,6 +249,6 @@ interface RegionProbe {
   found: boolean;
   onScreen: boolean;
   floating: boolean;
-  coverage: number;
   centerBelongs: boolean;
+  coveredByFloating: boolean;
 }

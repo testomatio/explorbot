@@ -219,12 +219,14 @@ class Action {
         carried = previousOverlay;
       } else {
         debugLog(`Region closed: ${previousOverlay.name || previousOverlay.type}`);
-        const parent = previousOverlay.parent;
-        if (parent?.xpath) {
-          const restored = new Overlay(parent);
-          if (await overlayPage.isStillOpen(restored)) result.overlay = restored;
+        if (!result.overlay.detected) {
+          const parent = previousOverlay.parent;
+          if (parent?.xpath) {
+            const restored = new Overlay(parent);
+            if (await overlayPage.isStillOpen(restored)) result.overlay = restored;
+          }
+          return;
         }
-        return;
       }
     }
 

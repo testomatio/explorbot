@@ -50,6 +50,8 @@ export interface WebPageState {
   links?: Link[];
   verifications?: Record<string, boolean>;
   overlay?: Overlay;
+  /** Region name, the persisted scalar form of overlay.name used in experience frontmatter */
+  region?: string;
   /** Region root selector, the persisted scalar form of overlay.root used in experience frontmatter */
   root?: string;
 }

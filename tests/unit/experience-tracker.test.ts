@@ -424,7 +424,7 @@ describe('ExperienceTracker', () => {
 
   describe('region experience root', () => {
     const html = '<html><body><h1>Users</h1></body></html>';
-    const regionOverlay = { type: 'drawer' as const, name: 'Edit User', root: 'aside.panel' };
+    const regionOverlay = { type: 'modal' as const, name: 'Edit User', root: 'aside.panel' };
 
     it('writes root frontmatter for a region state', () => {
       const regionState = new ActionResult({ url: '/users', html, overlay: regionOverlay });
@@ -445,9 +445,39 @@ describe('ExperienceTracker', () => {
       const openContents = experienceTracker.getRelevantExperience(openState).map((e) => e.content);
       expect(openContents.join('\n')).toContain('save the edit form');
 
-      const otherRegion = new ActionResult({ url: '/users', html, overlay: { type: 'drawer' as const, name: 'Filters', root: 'div.filters' } });
+      const otherRegion = new ActionResult({ url: '/users', html, overlay: { type: 'modal' as const, name: 'Filters', root: 'div.filters' } });
       const otherContents = experienceTracker.getRelevantExperience(otherRegion).map((e) => e.content);
       expect(otherContents.join('\n')).not.toContain('save the edit form');
+    });
+
+    it('loads a record by region name when the current region exposes no root', () => {
+      const regionState = new ActionResult({ url: '/users', html, overlay: regionOverlay });
+      experienceTracker.writeAction(regionState, { title: 'Save the edit form', code: 'I.click("Save")', explanation: '' });
+
+      const rootless = new ActionResult({ url: '/users', html, ariaSnapshot: '- dialog "Edit User"' });
+      expect(rootless.overlay.root).toBeNull();
+      const contents = experienceTracker.getRelevantExperience(rootless).map((e) => e.content);
+      expect(contents.join('\n')).toContain('save the edit form');
+    });
+
+    it('keeps a sibling region out when the current region exposes no root', () => {
+      const regionState = new ActionResult({ url: '/users', html, overlay: regionOverlay });
+      experienceTracker.writeAction(regionState, { title: 'Save the edit form', code: 'I.click("Save")', explanation: '' });
+
+      const sibling = new ActionResult({ url: '/users', html, ariaSnapshot: '- dialog "Filters"' });
+      const contents = experienceTracker.getRelevantExperience(sibling).map((e) => e.content);
+      expect(contents.join('\n')).not.toContain('save the edit form');
+    });
+
+    it('leaves the page record unscoped when an open region has no name to fork the hash', () => {
+      const nameless = new ActionResult({ url: '/users', html, overlay: { type: 'modal' as const, root: 'aside.panel' } });
+      expect(nameless.getStateHash()).toBe(new ActionResult({ url: '/users', html }).getStateHash());
+      experienceTracker.writeAction(nameless, { title: 'Open the user list', code: 'I.click("Users")', explanation: '' });
+
+      const { data } = experienceTracker.readExperienceFile(nameless.getStateHash());
+      expect(data.root).toBeUndefined();
+      const baseContents = experienceTracker.getRelevantExperience(new ActionResult({ url: '/users', html })).map((e) => e.content);
+      expect(baseContents.join('\n')).toContain('open the user list');
     });
   });
 });

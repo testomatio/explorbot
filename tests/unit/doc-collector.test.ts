@@ -938,7 +938,7 @@ describe('documentarian interactive mode', () => {
       }
     );
 
-    expect(result.interactions?.[0]?.targetState).toEqual({ kind: 'dialog', label: 'Import tests', url: '/suites' });
+    expect(result.interactions?.[0]?.targetState).toEqual({ kind: 'modal', label: 'Import tests', url: '/suites' });
     expect(screenshotLifecycle).toEqual(['before', 'click', 'after:before', 'restore']);
     expect(stateIndex).toBe(0);
   });

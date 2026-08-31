@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-09-01
+
+### Changes
+
+- State Manager: A panel that replaces another one in the same click is now recognised as a new
+  region instead of being dropped. Clicking Next in a wizard, or opening a confirmation over the
+  form you were filling, used to leave the agent believing it was back on the plain page; the new
+  panel now gets its own state, its own scope and its own experience file.
+- State Manager: A panel opened on top of another no longer marks the one underneath as closed.
+  Explorbot used to test whether a panel was still open by looking at what sits at its centre, so
+  anything stacked over it read as a close. The panel underneath is now remembered and comes back
+  when the top one is dismissed.
+- State Manager: When several dialogs are open at once, the innermost one is used. Previously the
+  first one on the page won, so a picker opened from inside a dialog was either ignored or reported
+  under the outer dialog's name.
+- State Manager: Panels are recognised by their dialog role, their modal flag, or by floating above
+  the page. Recognition by "Close dialog" button labels was dropped — it only worked for that exact
+  English wording, and anything labelled that carefully already carries a dialog role. Every panel
+  is now reported as `modal` or `region`; the separate `dialog` and `drawer` wordings are gone from
+  prompts and from generated documentation.
+- Experience Tracker: Experience recorded inside a panel now stores the panel's name and is loaded
+  back only while that same panel is open, so recipes learned in one modal stop leaking into a
+  different modal on the same page.
+- Experience Tracker: An unnamed panel no longer marks a page's own experience file as
+  panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
+  open.
+
 ## 2026-08-30
 
 ### Changes

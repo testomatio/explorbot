@@ -394,7 +394,7 @@ describe('StateManager', () => {
       stateManager.updateState(base);
       const historyAfterBase = stateManager.getStateHistory().length;
 
-      const withDrawer = new ActionResult({ url: '/users', html, overlay: { type: 'drawer', name: 'Edit User', root: 'aside.panel' } });
+      const withDrawer = new ActionResult({ url: '/users', html, overlay: { type: 'modal', name: 'Edit User', root: 'aside.panel' } });
       stateManager.updateState(withDrawer);
       expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 1);
 

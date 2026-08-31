@@ -149,7 +149,7 @@ describe('region state hash', () => {
     const withRegion = new ActionResult({
       url: 'https://app.example.com/users',
       html,
-      overlay: { type: 'drawer', name: 'Edit User', root: 'aside.panel' },
+      overlay: { type: 'modal', name: 'Edit User', root: 'aside.panel' },
     });
     expect(withRegion.hash).not.toBe(plain.hash);
     expect(withRegion.hash).toContain('region_edit_user');

@@ -262,6 +262,7 @@ export class ActionResult implements ActionResultData {
 
   isRelevantExperienceRecord(record: WebPageState, options?: { includeDescendantExperience?: boolean }): boolean {
     if (!record.url || !this.url) return false;
+    if (record.region && this.overlay.name !== record.region) return false;
     if (record.root) {
       if (!this.overlay.present) return false;
       if (this.overlay.root && this.overlay.root !== record.root) return false;

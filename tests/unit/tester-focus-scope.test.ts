@@ -99,8 +99,8 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
     const context = await (tester as any).reinjectContextIfNeeded(2, state);
 
     expect(context).toContain('<focus_scope>');
-    expect(context).toContain('A dialog "Create Requirement"');
-    expect(context).toContain('Scope all interactions to elements inside this dialog');
+    expect(context).toContain('A modal "Create Requirement"');
+    expect(context).toContain('Scope all interactions to elements inside this modal');
   });
 
   it('emits <focus_scope> for alertdialog role', async () => {
@@ -110,7 +110,7 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
     const context = await (tester as any).reinjectContextIfNeeded(2, state);
 
     expect(context).toContain('<focus_scope>');
-    expect(context).toContain('A dialog "Confirm Delete"');
+    expect(context).toContain('A modal "Confirm Delete"');
   });
 
   it('omits <focus_scope> when no dialog or modal is open', async () => {
@@ -129,7 +129,7 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
     const context = await (tester as any).reinjectContextIfNeeded(2, newUrlState);
 
     expect(context).toContain('<focus_scope>');
-    expect(context).toContain('A dialog "New Form"');
+    expect(context).toContain('A modal "New Form"');
   });
 });
 
