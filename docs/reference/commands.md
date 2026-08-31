@@ -234,6 +234,7 @@ The CLI form navigates to `<path>` first. The TUI form always runs on the curren
 | Option | Description |
 |---|---|
 | `--max-tests <n>` | Hard cap on tests executed in this run. Sub-page expansion stops once the cap is hit. |
+| `--max-duration <minutes>` | Wall-clock budget for the whole run. New tests, planning, and sub-page expansion stop before the limit; an in-flight test is cut at the hard cutoff so the report, Testomatio run, and teardown always complete. Set it a few minutes below your CI job timeout. |
 | `--focus <feature>` | Narrow planning to a single feature area (e.g. `--focus checkout`). The focus also becomes part of the saved plan filename. |
 | `--configure <spec>` | Reuse a saved plan, mix old + new tests, filter by style/priority, control sub-page behavior. See below. |
 | `--dry-run` | Mark every picked test as `skipped` instead of executing. New-test planning still runs (so you can preview what would be picked) but no AI tester actions and no plan-file writes. |
@@ -351,6 +352,7 @@ npx explorbot freesail /dashboard --scope /app --max-tests 20
 | `--shallow` | Breadth-first: pick the globally least-visited page |
 | `--scope <prefix>` | Restrict navigation to URLs starting with this prefix |
 | `--max-tests <n>` | Maximum number of tests to run |
+| `--max-duration <minutes>` | Wall-clock budget in minutes for the whole run; freesail stops starting new pages before the limit |
 
 ### research
 

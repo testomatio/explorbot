@@ -375,3 +375,91 @@ describe('ExploreCommand priority filter applies to NEW tests too', () => {
     expect(skippedNew.map((t) => t.priority).sort()).toEqual(['low', 'normal']);
   });
 });
+
+describe('ExploreCommand max duration', () => {
+  function setupCountingBot() {
+    const counters = { plan: 0, test: 0, savePlans: 0, analysis: 0 };
+    const explorBot = {
+      stateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }),
+      generatePlanFilename: () => 'live.md',
+      loadPlans: () => [],
+      agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
+      setCurrentPlan: () => {},
+      plan: async () => {
+        counters.plan++;
+      },
+      agentTester: () => ({
+        test: async () => {
+          counters.test++;
+        },
+      }),
+      visit: async () => {},
+      savePlans: () => {
+        counters.savePlans++;
+        return null;
+      },
+      printSessionAnalysis: async () => {
+        counters.analysis++;
+      },
+      agentHistorian: () => ({ getSavedFiles: () => [] }),
+      getCurrentPlan: () => undefined,
+      lastPlanError: null,
+    } as unknown as ExplorBot;
+    return { explorBot, counters };
+  }
+
+  test('--max-duration 0 closes every gate but still runs the normal end path', async () => {
+    const { explorBot, counters } = setupCountingBot();
+    const cmd = new ExploreCommand(explorBot);
+    await cmd.execute('--max-duration 0');
+
+    expect(counters.plan).toBe(0);
+    expect(counters.test).toBe(0);
+    expect(counters.savePlans).toBe(1);
+    expect(counters.analysis).toBe(1);
+  });
+
+  test('a pre-injected past deadline prevents test execution', async () => {
+    const { explorBot, counters } = setupCountingBot();
+    const cmd = new ExploreCommand(explorBot);
+    cmd.hardDeadlineAt = Date.now() - 1;
+    await cmd.execute('');
+
+    expect(counters.test).toBe(0);
+    expect(counters.analysis).toBe(1);
+  });
+
+  test('a far-future deadline does not interfere with the tests cap', async () => {
+    const fakePlan = new Plan('Live');
+    fakePlan.url = '/live';
+    fakePlan.addTest(new Test('seed loaded', 'critical', 'ok', '/live'));
+
+    let testerCalled = 0;
+    const explorBot = {
+      stateManager: () => ({ getCurrentState: () => ({ url: '/live' }) }),
+      generatePlanFilename: () => 'live.md',
+      loadPlans: () => [fakePlan],
+      agentPlanner: () => ({ registerPlanInSession: () => {}, collectSubPageCandidates: () => [], pickNextSubPage: async () => null }),
+      setCurrentPlan: () => {},
+      agentTester: () => ({
+        test: async () => {
+          testerCalled++;
+        },
+      }),
+      visit: async () => {},
+      savePlans: () => null,
+      printSessionAnalysis: async () => {},
+      agentHistorian: () => ({ getSavedFiles: () => [] }),
+      plan: async () => undefined,
+      getCurrentPlan: () => fakePlan,
+      lastPlanError: null,
+    } as unknown as ExplorBot;
+
+    const cmd = new ExploreCommand(explorBot);
+    cmd.maxTests = 1;
+    cmd.hardDeadlineAt = Date.now() + 60 * 60_000;
+    await cmd.execute('--configure "new:0%"');
+
+    expect(testerCalled).toBe(1);
+  });
+});
