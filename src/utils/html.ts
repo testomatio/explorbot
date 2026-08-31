@@ -1021,6 +1021,19 @@ export function htmlCombinedSnapshot(html: string, htmlConfig?: HtmlConfig['comb
 }
 
 /**
+ * Cleans a small HTML snippet for AI consumption: keeps structure and text,
+ * drops noisy attributes and generated class names
+ */
+export function cleanHtmlSnippet(html: string): string {
+  const fragment = parseFragment(html);
+  for (const node of fragment.childNodes) {
+    if (!('tagName' in node)) continue;
+    cleanAllElements(node as parse5TreeAdapter.Element);
+  }
+  return serialize(fragment);
+}
+
+/**
  * Creates text-only snapshot with markdown formatting
  */
 export function htmlTextSnapshot(html: string, htmlConfig?: HtmlConfig['text']): string {
@@ -1526,6 +1539,7 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
     if (attr.name === 'class') {
       attr.value = attr.value
         .split(/\s+/)
+        .filter(Boolean)
         .filter((className) => !/\d/.test(className))
         .filter((className) => !className.includes(':'))
         .filter((className) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(className)))

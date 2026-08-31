@@ -147,6 +147,7 @@ addCommonOptions(
     .command('explore <path>')
     .description('Explore a page autonomously and run invented scenarios')
     .option('--max-tests <count>', 'Maximum number of tests to run')
+    .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run; wraps up before the limit is hit')
     .option('--focus <feature>', 'Focus area for exploration')
     .option('--configure <spec>', 'Reuse spec: keys new|from|style|subpages|pick_by|priority, e.g. "new:25%;pick_by=random;priority=critical,high"')
     .option('--dry-run', 'Mark picked tests as skipped without executing or generating new ones')
@@ -158,6 +159,8 @@ addCommonOptions(
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
     const cmd = new ExploreCommand(explorBot);
     if (options.maxTests) cmd.maxTests = Number.parseInt(options.maxTests, 10);
+    if (options.maxDuration) cmd.maxDurationMinutes = Number.parseInt(options.maxDuration, 10);
+    else if (process.env.EXPLORBOT_MAX_DURATION) cmd.maxDurationMinutes = Number.parseInt(process.env.EXPLORBOT_MAX_DURATION, 10);
     if (options.dryRun) cmd.dryRun = true;
     const execArgs: string[] = [];
     if (options.focus) execArgs.push('--focus', `"${options.focus}"`);
@@ -442,10 +445,11 @@ addCommonOptions(
     .option('--shallow', 'Breadth-first: pick globally least-visited page')
     .option('--scope <prefix>', 'Restrict navigation to URL prefix')
     .option('--max-tests <count>', 'Maximum number of tests to run')
+    .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run')
 ).action(async (startUrl, options) => {
   const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
   await explorBot.start();
-  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`].filter(Boolean).join(' ');
+  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`, options.maxDuration && `--max-duration ${options.maxDuration}`].filter(Boolean).join(' ');
   const { FreesailCommand } = await import('../src/commands/freesail-command.js');
   const cmd = new FreesailCommand(explorBot);
   await cmd.execute(args);

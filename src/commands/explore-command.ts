@@ -14,12 +14,15 @@ import { BaseCommand, type Suggestion } from './base-command.js';
 
 const MAX_SUB_PAGE_ATTEMPTS = 30;
 const PRIORITY_ORDER: Record<string, number> = { critical: 0, important: 1, high: 2, normal: 3, low: 4 };
+export const DEADLINE_RESERVE_MS = 3 * 60_000;
+export const DEADLINE_TEST_ALLOWANCE_MS = 5 * 60_000;
 
 export class ExploreCommand extends BaseCommand {
   name = 'explore';
   description = 'Start web exploration';
   options = [
     { flags: '--max-tests <number>', description: 'Maximum number of tests to run' },
+    { flags: '--max-duration <minutes>', description: 'Wall-clock budget in minutes; wraps up the session before the limit is hit' },
     { flags: '--focus <feature>', description: 'Focus area for exploration' },
     { flags: '--configure <spec>', description: 'Reuse spec: keys new|from|style|subpages|pick_by|priority, e.g. "new:25%;pick_by=random;priority=critical,high"' },
     { flags: '--dry-run', description: 'Mark picked tests as skipped without executing or generating new ones' },
@@ -31,8 +34,11 @@ export class ExploreCommand extends BaseCommand {
   ];
 
   maxTests?: number;
+  maxDurationMinutes?: number;
+  hardDeadlineAt?: number;
   dryRun = false;
   private testsRun = 0;
+  private deadlineLogged = false;
   private completedPlans: Plan[] = [];
   private failedSubPages = new Set<string>();
   private oldTestRefs = new Set<Test>();
@@ -47,6 +53,12 @@ export class ExploreCommand extends BaseCommand {
     const { opts, args: remaining } = this.parseArgs(args);
     if (opts.maxTests) {
       this.maxTests = Number.parseInt(opts.maxTests as string, 10);
+    }
+    if (opts.maxDuration) {
+      this.maxDurationMinutes = Number.parseInt(opts.maxDuration as string, 10);
+    }
+    if (this.hardDeadlineAt == null && this.maxDurationMinutes != null) {
+      this.hardDeadlineAt = Date.now() + this.maxDurationMinutes * 60_000 - DEADLINE_RESERVE_MS;
     }
 
     const feature = (opts.focus as string) || remaining.join(' ') || undefined;
@@ -526,7 +538,18 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private isLimitReached(): boolean {
-    return this.maxTests != null && this.testsRun >= this.maxTests;
+    if (this.maxTests != null && this.testsRun >= this.maxTests) return true;
+    return this.isDeadlineReached();
+  }
+
+  private isDeadlineReached(): boolean {
+    if (this.hardDeadlineAt == null) return false;
+    if (Date.now() < this.hardDeadlineAt - DEADLINE_TEST_ALLOWANCE_MS) return false;
+    if (!this.deadlineLogged) {
+      this.deadlineLogged = true;
+      tag('info').log(`Time budget reached after ${this.testsRun} test(s): stopping new work and finishing the session`);
+    }
+    return true;
   }
 
   private async runPendingTests(): Promise<void> {
@@ -548,7 +571,7 @@ export class ExploreCommand extends BaseCommand {
       test.start();
       test.finish(TestResult.SKIPPED);
     } else {
-      await this.explorBot.agentTester().test(test);
+      await this.explorBot.agentTester().test(test, { deadline: this.hardDeadlineAt });
     }
     this.testsRun++;
   }
