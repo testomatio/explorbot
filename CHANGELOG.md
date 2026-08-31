@@ -4,6 +4,14 @@
 
 ### Changes
 
+- [Tester] When a click matches more than one element, the pick between them is now made from what
+  those elements actually say. Candidates were described by their markup alone, and the step that
+  trimmed that markup threw away everything nested inside — so a menu holding "New test" and "New
+  tests from requirement" offered two identical empty buttons to choose from, and the choice was a
+  coin flip that could open the wrong screen and report success. Each candidate now carries its own
+  visible text, and its markup keeps the label and meaningful class names while layout and generated
+  styling classes are dropped, so the description says what the element is instead of how it is
+  styled.
 - Doc Collector: a `docs collect` run streamed with `--ws` now sends the spec index it generates as a
   `docs` frame — the file path and the full markdown of `docs/index.md` — so a listening UI can show
   the finished documentation the same way an exploration run streams its session report.
