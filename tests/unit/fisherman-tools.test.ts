@@ -111,14 +111,14 @@ describe('ledger-derived results', () => {
     expect(result.created).toEqual([{ type: 'suite', id: 's1', request: 'POST /api/suites' }]);
   });
 
-  it('synthesizes an honest summary when the loop ends without finish', async () => {
+  it('reports failure when the loop ends without finish, even after a successful write', async () => {
     const made: any[] = [];
     const { getResult } = createFishermanTools({} as any, store(undefined, made), {});
     made.push(madeWrite('POST', '/api/suites', 201, { id: 's1', title: 'Suite A' }));
     made.push(madeWrite('POST', '/api/tests', 400));
 
     const result = getResult();
-    expect(result.success).toBe(true);
+    expect(result.success).toBe(false);
     expect(result.summary).toContain('1 successful write');
     expect(result.summary).toContain('POST /api/tests → 400');
     expect(result.created[0].id).toBe('s1');

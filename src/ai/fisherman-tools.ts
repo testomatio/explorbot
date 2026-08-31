@@ -16,11 +16,11 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
 
   const runRequests = () => requestStore.getMadeRequests().slice(ledgerStart);
   const successfulWrites = () => runRequests().filter((r) => r.isWrite && !r.error && r.status >= 200 && r.status < 400);
-  const getResult = () => result ?? synthesizeResult(runRequests(), successfulWrites());
+  const getResult = () => result ?? synthesizeResult(runRequests(), successfulWrites(), false);
   const isFinished = () => finished;
   const finishFromText = (text?: string) => {
     finished = true;
-    const synthesized = synthesizeResult(runRequests(), successfulWrites());
+    const synthesized = synthesizeResult(runRequests(), successfulWrites(), true);
     if (text && synthesized.success) synthesized.summary = text;
     result = synthesized;
   };
@@ -207,12 +207,12 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   return { tools, getResult, isFinished, finishFromText };
 }
 
-function synthesizeResult(made: RequestResult[], writes: RequestResult[]): FishermanResult {
+function synthesizeResult(made: RequestResult[], writes: RequestResult[], declaredDone: boolean): FishermanResult {
   const failures = made.filter((r) => r.status >= 400 || r.error);
   let summary = `Stopped before finishing: ${made.length} requests, ${writes.length} successful writes, ${failures.length} failed`;
   const lastFailure = failures[failures.length - 1];
   if (lastFailure) summary += `; last failure: ${lastFailure.toSummary()}`;
-  return { success: writes.length > 0, summary, created: writes.map(toCreatedItem), failed: [] };
+  return { success: declaredDone && writes.length > 0, summary, created: writes.map(toCreatedItem), failed: [] };
 }
 
 function toCreatedItem(write: RequestResult): FishermanResult['created'][number] {
