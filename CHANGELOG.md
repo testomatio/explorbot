@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-08-31
+
+### Changes
+
+- [Fisherman] A run that gives up no longer counts as prepared data. When the run ran out of
+  iterations or stopped after repeated failures on one endpoint, a single successful write was
+  enough to report success, so a half-built precondition looked ready to the test. Only a run the
+  model actually ends — through `finish` or a closing message — can report success now; a run that
+  gives up reports what it managed to do, and the test falls back to checking what the page shows.
+- [Fisherman] The endpoint list no longer guesses the scope when the page URL says two different
+  things. If two segments of the page URL are equally narrow but point at different requests — a
+  generic one like `projects` and the actual project slug — the list is no longer scoped by
+  whichever came first, which could hand the model another project's endpoints. Such a page falls
+  back to the full endpoint list with the warning to confirm the target belongs to this scope.
+- URL matching: short words spelled with hex letters (`/api/feed`, `/cafe`, `/dead`) are no longer
+  mistaken for ids, so those pages keep their own identity instead of collapsing into `/api/{id}`.
+  A hex segment counts as an id when it carries a digit, or when it is at least 8 characters long.
+
 ## 2026-08-30
 
 ### Changes
