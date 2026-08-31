@@ -9,6 +9,7 @@ Once your Explorbot setup works locally — it logs in, explores, and produces s
 - **A headless browser.** That's the default — don't pass `--show` and there is nothing to configure.
 - **A start path and a test budget.** `npx explorbot explore / --max-tests 10` keeps the run bounded and predictable.
 - **A hard timeout as backstop.** AI runs can stall; a job-level timeout guarantees the pipeline never hangs.
+- **A time budget below that timeout.** Pass `--max-duration` (or set `EXPLORBOT_MAX_DURATION`) a few minutes under the job timeout: Explorbot stops starting new tests, wraps up the in-flight one, writes the report, and finalizes the Testomatio run on its own — instead of being killed mid-test, which loses the report. The budget minus a 3-minute teardown reserve is the hard cutoff; 5 minutes before that, no new work starts.
 
 For login, commit your `knowledge/` directory to the repo — it's the input you control, and Explorbot reads it on every run. Keep credentials out of the files with `${env.NAME}` interpolation, as described in [Knowledge](./knowledge.md), and set those variables as pipeline secrets too. Add `--session` to the run command so Explorbot logs in once and reuses the saved session.
 

@@ -273,6 +273,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
   { name: 'EXPLORBOT_NO_BANNER', description: 'Suppress the startup banner, for machine-readable output' },
+  { name: 'EXPLORBOT_MAX_DURATION', description: 'Wall-clock budget in minutes for an explore run; same as --max-duration' },
 ];
 
 export type {

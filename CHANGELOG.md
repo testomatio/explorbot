@@ -2,8 +2,41 @@
 
 ## 2026-08-31
 
+### New CLI Options
+
+- **`--max-duration <minutes>`** — a wall-clock budget for the whole run. Explorbot stops starting new
+  tests, planning styles, and sub-page expansion before the limit, wraps up the test in flight, and then
+  finishes the session the normal way — plan files, session report, Testomatio run finalized, telemetry
+  flushed, exit code 0 — instead of being killed mid-test by a CI job timeout, which loses all of that.
+  Set it a few minutes below the job's `timeout-minutes`. The same budget can be set through
+  `EXPLORBOT_MAX_DURATION`; the flag wins.
+  ```bash
+  explorbot explore / --max-tests 50 --max-duration 40   # 45-minute CI job
+  EXPLORBOT_MAX_DURATION=40 explorbot explore /           # same, via environment
+  explorbot freesail --max-duration 120
+  ```
+
 ### Changes
 
+- [Tester] A test still running when the hard cutoff arrives is stopped at the next iteration and graded
+  on the evidence it recorded — passed only if every expected outcome was already met — while its
+  generated code, screencast, and Testomatio steps are still saved. The session report notes that the
+  time budget was reached.
+### Changes
+
+- Prima: every command now prints `### Artifacts` naming the files it just wrote — the ARIA tree and
+  the html always, plus the screenshot and network log when they were captured. Until now those files
+  were written on every command but only named when a `check` came back with a CONTRADICTION, so the
+  envelope offered a hash and nothing to suggest there was a page on disk worth reading. The ARIA tree
+  carries values and checked states, so one `grep` over it often answers a question that would
+  otherwise cost another `verify` or `ask`.
+- Prima: `do` now names the per-step captures by file rather than only their directory, so the
+  `diff.yaml` recording what each step changed is visible from the envelope.
+- Prima: `prima status <hash>` no longer needs a browser. It only reads recorded files, but it used to
+  open a session first and failed with "No browser to drive" once the run it was meant to explain had
+  finished. It also looks the hash up across every recorded site instead of assuming the most recent
+  one, and lists everything else kept under the hash. A hash that really is missing now reports the
+  directory it looked in.
 - [Fisherman] A run that gives up no longer counts as prepared data. When the run ran out of
   iterations or stopped after repeated failures on one endpoint, a single successful write was
   enough to report success, so a half-built precondition looked ready to the test. Only a run the
@@ -30,6 +63,27 @@
   choice is no longer forced, and when writes already succeeded the model's text becomes the
   summary while created items still come from the request ledger. Models that close with prose
   instead of the `finish` tool no longer trigger retries that re-create the same data.
+- [Provider] Work a tool already did is no longer redone when the turn it was part of breaks partway
+  through. A model turn can run several tool calls before it fails — because the model asked for a
+  tool that does not exist, answered in plain text where a tool call was demanded, or ran the
+  conversation past the model's context limit. The whole turn was then retried from its starting
+  point, with no trace that the earlier calls had already gone through, so everything they had
+  created got created again, once per retry. The calls that completed now carry over into the retry
+  and into the conversation, and the model continues from them instead of repeating them.
+- [Tester] When a click matches more than one element, the pick between them is now made from what
+  those elements actually say. Candidates were described by their markup alone, and the step that
+  trimmed that markup threw away everything nested inside — so a menu holding "New test" and "New
+  tests from requirement" offered two identical empty buttons to choose from, and the choice was a
+  coin flip that could open the wrong screen and report success. Each candidate now carries its own
+  visible text, and its markup keeps the label and meaningful class names while layout and generated
+  styling classes are dropped, so the description says what the element is instead of how it is
+  styled.
+- Doc Collector: a `docs collect` run streamed with `--ws` now sends the spec index it generates as a
+  `docs` frame — the file path and the full markdown of `docs/index.md` — so a listening UI can show
+  the finished documentation the same way an exploration run streams its session report.
+- Doc Collector: a streamed run now closes the connection on its way out instead of exiting from
+  under it, so the final `result` frame arrives and anything still queued is flushed. Previously the
+  index frame, written moments before exit, was the one most likely to be lost.
 
 ## 2026-08-29
 

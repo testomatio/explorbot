@@ -426,10 +426,20 @@ export class Provider {
     const config = this.buildGenerateConfig({ tools: toolsWithCommentary, maxOutputTokens: 16384, toolChoice: 'auto', experimental_repairToolCall: repairToolCall }, { stopWhen: stopConditions, model }, options);
     let attemptMessages = messages;
     let invalidRequestFeedbackAdded = false;
+    const executedStepMessages: ModelMessage[] = [];
     try {
       const response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
-          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages: attemptMessages, ...config, abortSignal: signal }), config.timeout || 30000).catch((error) => {
+          const stepMessages: ModelMessage[] = [];
+          const onStepEnd = (step: any) => {
+            stepMessages.push(...(step.response?.messages || []));
+          };
+          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages: attemptMessages, ...config, abortSignal: signal, onStepEnd }), config.timeout || 30000).catch((error) => {
+            if (stepMessages.length > 0) {
+              tag('warning').log(`Keeping ${stepMessages.length} messages from tool steps that already ran before the failure`);
+              executedStepMessages.push(...stepMessages);
+              attemptMessages = [...attemptMessages, ...stepMessages];
+            }
             if (!invalidRequestFeedbackAdded) {
               const amended = withInvalidRequestFeedback(attemptMessages, error);
               invalidRequestFeedbackAdded = amended !== attemptMessages;
@@ -448,6 +458,8 @@ export class Provider {
 
       clearActivity();
 
+      withExecutedSteps(response, executedStepMessages);
+
       // Log tool usage summary
       if (response.toolCalls && response.toolCalls.length > 0) {
         responseLog(response.toolCalls);
@@ -462,12 +474,13 @@ export class Provider {
     } catch (error: any) {
       clearActivity();
       if (error?.message?.includes('Tool choice is required')) {
-        return { text: '', toolCalls: [], toolResults: [], response: { messages: [] }, usage: null };
+        return { text: '', toolCalls: [], toolResults: [], responseMessages: executedStepMessages, usage: null };
       }
       if (error?.name === 'AbortError') throw error;
       if (error instanceof ContextLengthError) throw error;
       if (Provider.isContextLengthError(error)) {
-        return this.recoverFromContextLength(error, messages, options, (m, o) => this.generateWithTools(m, model, tools, o));
+        const recovered = await this.recoverFromContextLength(error, attemptMessages, options, (m, o) => this.generateWithTools(m, model, tools, o));
+        return withExecutedSteps(recovered, executedStepMessages);
       }
       if (error.constructor?.name === 'AI_APICallError') {
         responseLog(error.message);
@@ -701,6 +714,11 @@ export class Provider {
 function repairToolCall(options: ToolCallRepairOptions): any | null {
   if (options.toolCall.toolName.includes('<|channel|>')) return repairChannelMarker(options);
   return repairHarmonyChannel(options);
+}
+
+function withExecutedSteps(result: any, executed: ModelMessage[]): any {
+  if (executed.length === 0) return result;
+  return Object.defineProperty(result, 'responseMessages', { value: [...executed, ...(result.responseMessages || [])], configurable: true, enumerable: true });
 }
 
 function withInvalidRequestFeedback(messages: ModelMessage[], error: unknown): ModelMessage[] {

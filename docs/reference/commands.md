@@ -106,6 +106,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
+| `EXPLORBOT_MAX_DURATION` | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->
 
 `npx explorbot config` prints the values a run actually uses — models per role, the config file behind them, the output, knowledge and experience directories, and every `EXPLORBOT_*` variable currently set. The boats answer for their own configuration the same way: `npx explorbot api config`, `npx explorbot docs config`, `npx explorbot prima config`. Add `--json` on any of them to get the same values as an object a script can read.
@@ -234,6 +235,7 @@ The CLI form navigates to `<path>` first. The TUI form always runs on the curren
 | Option | Description |
 |---|---|
 | `--max-tests <n>` | Hard cap on tests executed in this run. Sub-page expansion stops once the cap is hit. |
+| `--max-duration <minutes>` | Wall-clock budget for the whole run. New tests, planning, and sub-page expansion stop before the limit; an in-flight test is cut at the hard cutoff so the report, Testomatio run, and teardown always complete. Set it a few minutes below your CI job timeout. |
 | `--focus <feature>` | Narrow planning to a single feature area (e.g. `--focus checkout`). The focus also becomes part of the saved plan filename. |
 | `--configure <spec>` | Reuse a saved plan, mix old + new tests, filter by style/priority, control sub-page behavior. See below. |
 | `--dry-run` | Mark every picked test as `skipped` instead of executing. New-test planning still runs (so you can preview what would be picked) but no AI tester actions and no plan-file writes. |
@@ -351,6 +353,7 @@ npx explorbot freesail /dashboard --scope /app --max-tests 20
 | `--shallow` | Breadth-first: pick the globally least-visited page |
 | `--scope <prefix>` | Restrict navigation to URLs starting with this prefix |
 | `--max-tests <n>` | Maximum number of tests to run |
+| `--max-duration <minutes>` | Wall-clock budget in minutes for the whole run; freesail stops starting new pages before the limit |
 
 ### research
 
@@ -685,7 +688,9 @@ html: /home/you/.explorbot/sites/app.example.com/output/prima/2026-08-04T10-04-2
 
 `used:` is code that already executed: for `go` the CodeceptJS step it ran, for `pw` the Playwright expression you passed, which a CodeceptJS test needs wrapped in `I.usePlaywrightTo(...)`. Log lines can precede the envelope, so start parsing at the first `###` line.
 
-`### Changes` renders on every action envelope, saying `no change` when the tree is identical — so a successful command proves what it did instead of leaving you to check. `check` and `do` report per step rather than in aggregate: `### Steps` names each step with the code it ran and what proved it, and `page after each step:` points at the captures. `check` adds `### Expected outcomes`; `ask`, `research`, and `verify` add `### Answer`, `### Research`, or `### Assertions`; `pw` adds `### Value` when its expression returns one. `network:` appears under `### Artifacts` only when requests were captured, and everything else recorded for a command is behind `prima status <hash>`.
+`### Changes` renders on every action envelope, saying `no change` when the tree is identical — so a successful command proves what it did instead of leaving you to check. `check` and `do` report per step rather than in aggregate: `### Steps` names each step with the code it ran and what proved it, and `page after each step:` names the per-step captures. `check` adds `### Expected outcomes`; `ask`, `research`, and `verify` add `### Answer`, `### Research`, or `### Assertions`; `pw` adds `### Value` when its expression returns one.
+
+`### Artifacts` names the files every command leaves on disk: the aria tree and the html always, `screenshot:` and `network:` when a screenshot was taken or requests were captured. The aria tree carries values and checked states, so one `grep` over it settles a question the envelope did not answer, without asking the page again. `prima status <hash>` reprints those paths for an earlier command and lists whatever else was kept under the hash; it only reads recorded files, so it needs no browser and outlives the session.
 
 **A failed action is a failure.** Nothing is retried along a different route and no other element is substituted, so `ok: true` means the action you asked for is the one that landed. A failure adds `### Failure` with the error and the compact ARIA of the page, so you can retarget from the envelope itself instead of opening the artifact files.
 

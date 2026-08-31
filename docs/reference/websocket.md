@@ -19,6 +19,7 @@ Every message is JSON with a `type` and a `ts`, plus whatever that type carries.
 | `screenshot` | the screenshot file just written |
 | `research` | the researcher's map of a page: markdown and its file |
 | `report` | the analyst's end-of-session report: markdown and its file |
+| `docs` | the doc collector's spec index: markdown and its file |
 | `activity` | what the run is doing this second |
 | `log` | a log line and its level |
 | `ask` | a question for a human, carrying an `askId` |
