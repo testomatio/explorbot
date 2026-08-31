@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-08-31
+
+### Changes
+
+- Prima: every command now prints `### Artifacts` naming the files it just wrote — the ARIA tree and
+  the html always, plus the screenshot and network log when they were captured. Until now those files
+  were written on every command but only named when a `check` came back with a CONTRADICTION, so the
+  envelope offered a hash and nothing to suggest there was a page on disk worth reading. The ARIA tree
+  carries values and checked states, so one `grep` over it often answers a question that would
+  otherwise cost another `verify` or `ask`.
+- Prima: `do` now names the per-step captures by file rather than only their directory, so the
+  `diff.yaml` recording what each step changed is visible from the envelope.
+- Prima: `prima status <hash>` no longer needs a browser. It only reads recorded files, but it used to
+  open a session first and failed with "No browser to drive" once the run it was meant to explain had
+  finished. It also looks the hash up across every recorded site instead of assuming the most recent
+  one, and lists everything else kept under the hash. A hash that really is missing now reports the
+  directory it looked in.
+
 ## 2026-08-30
 
 ### Changes

@@ -127,11 +127,12 @@ describe('Prima drives a real page', () => {
     expect(envelope.page.url).toContain('note=the+hinge+arrived+bent');
   });
 
-  test('an action reports a status hash instead of artifact paths, and status resolves it', async () => {
+  test('an action names the files it recorded, and status resolves the hash to the same ones', async () => {
     const envelope = await prima.pw("({ page }) => page.click('text=Submit')");
 
     expect(envelope.status).toMatch(/^[0-9a-f]{15}$/);
-    expect(envelope.artifacts).toBeUndefined();
+    expect(existsSync(envelope.artifacts!.aria)).toBe(true);
+    expect(renderEnvelope(envelope)).toContain(envelope.artifacts!.aria);
     expect(renderEnvelope(envelope)).toContain(`prima status ${envelope.status}`);
 
     const status = await prima.status(envelope.status!);
