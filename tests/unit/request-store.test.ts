@@ -173,6 +173,22 @@ describe('RequestStore scope filtering', () => {
     expect(scoped.map((r) => r.path)).toContain('/api/alpha-shop/suites');
   });
 
+  it('keeps the scope when equally selective segments match the same writes', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+
+    const scoped = store.getWriteRequestsForScope('/projects/alpha-shop/suites');
+
+    expect(scoped).toHaveLength(2);
+  });
+
+  it('refuses to guess when equally selective segments match different writes', () => {
+    store.addCapturedRequest(makeRequest('POST', '/api/projects', 201));
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/tests', 201));
+
+    expect(store.getWriteRequestsForScope('/projects/alpha-shop/suites')).toHaveLength(0);
+  });
+
   it('returns nothing when the scope shares no segment with any write', () => {
     store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
 

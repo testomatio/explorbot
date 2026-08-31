@@ -164,18 +164,24 @@ export class RequestStore {
     const scopeSegments = scopePath.split('/').filter(Boolean);
     if (scopeSegments.length === 0) return writes;
 
-    let scopeKey = '';
+    let scoped: RequestResult[] = [];
     let fewest = Number.POSITIVE_INFINITY;
+    let ambiguous = false;
     for (const segment of scopeSegments) {
       if (isDynamicSegment(segment)) continue;
-      const matches = writes.filter((r) => r.path.split('/').includes(segment)).length;
-      if (matches === 0 || matches >= fewest) continue;
-      scopeKey = segment;
-      fewest = matches;
+      const matches = writes.filter((r) => r.path.split('/').includes(segment));
+      if (matches.length === 0 || matches.length > fewest) continue;
+      if (matches.length === fewest) {
+        if (!scoped.every((r, i) => r.id === matches[i].id)) ambiguous = true;
+        continue;
+      }
+      scoped = matches;
+      fewest = matches.length;
+      ambiguous = false;
     }
-    if (!scopeKey) return [];
+    if (ambiguous) return [];
 
-    return writes.filter((r) => r.path.split('/').includes(scopeKey));
+    return scoped;
   }
 
   clear(): void {
