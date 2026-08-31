@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { unlinkSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { registerSite } from '../../src/global-config.ts';
 import { Plan, Test } from '../../src/test-plan.ts';
 
 describe('Plan', () => {
@@ -338,6 +340,136 @@ priority: low
       expect(context).toContain('**Planned Steps:**');
       expect(context).toContain('- Click button');
       expect(context).toContain('- Enter text');
+    });
+  });
+
+  describe('startUrl', () => {
+    test('should take the prerequisite URL of the suite', () => {
+      const markdown = `<!-- suite -->
+# Test Suite
+
+### Prerequisite
+
+* URL: https://app.example.com/projects/demo/runs
+
+<!-- test
+priority: critical
+-->
+# Test Scenario
+
+## Requirements
+https://app.example.com/projects/demo/runs
+
+## Expected
+* Page is rendered
+`;
+
+      writeFileSync(testFilePath, markdown, 'utf-8');
+      const plan = Plan.fromMarkdown(testFilePath);
+
+      expect(plan.startUrl).toBe('https://app.example.com/projects/demo/runs');
+    });
+
+    test('should fall back to the first test URL when suite has no prerequisite', () => {
+      const markdown = `<!-- suite -->
+# Test Suite
+
+<!-- test
+priority: normal
+-->
+# Test Scenario
+
+## Requirements
+/login
+
+## Expected
+* Login form is shown
+`;
+
+      writeFileSync(testFilePath, markdown, 'utf-8');
+      const plan = Plan.fromMarkdown(testFilePath);
+
+      expect(plan.url).toBeUndefined();
+      expect(plan.startUrl).toBe('/login');
+    });
+
+    test('should be undefined when neither suite nor tests carry a URL', () => {
+      expect(new Plan('Test Suite').startUrl).toBeUndefined();
+    });
+  });
+
+  describe('loadFromFile', () => {
+    let home: string;
+    let workDir: string;
+    let plansDir: string;
+    let originalCwd: string;
+    let homedirSpy: ReturnType<typeof spyOn>;
+
+    const writePlan = (dir: string, name: string): string => {
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, name);
+      writeFileSync(file, '# Plan\n', 'utf-8');
+      return file;
+    };
+
+    beforeEach(() => {
+      home = mkdtempSync(join(tmpdir(), 'explorbot-home-'));
+      workDir = mkdtempSync(join(tmpdir(), 'explorbot-work-'));
+      plansDir = join(workDir, 'output', 'plans');
+      homedirSpy = spyOn(os, 'homedir').mockReturnValue(home);
+      originalCwd = process.cwd();
+      process.chdir(workDir);
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+      homedirSpy.mockRestore();
+      rmSync(home, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    test('loads an absolute path', () => {
+      const file = writePlan(plansDir, 'saved.md');
+      expect(Plan.loadFromFile(file)?.filePath).toBe(file);
+    });
+
+    test('appends .md to an absolute path', () => {
+      const file = writePlan(plansDir, 'saved.md');
+      expect(Plan.loadFromFile(join(plansDir, 'saved'))?.filePath).toBe(file);
+    });
+
+    test('loads a plan named in the working directory', () => {
+      writePlan(workDir, 'saved.md');
+      expect(Plan.loadFromFile('saved')?.filePath).toBe(join(workDir, 'saved.md'));
+      expect(Plan.loadFromFile('saved.md')?.filePath).toBe(join(workDir, 'saved.md'));
+    });
+
+    test('loads a plan named in the plans directory', () => {
+      const file = writePlan(plansDir, 'saved.md');
+      expect(Plan.loadFromFile('saved', plansDir)?.filePath).toBe(file);
+    });
+
+    test('prefers the working directory over the plans directory', () => {
+      writePlan(plansDir, 'saved.md');
+      writePlan(workDir, 'saved.md');
+      expect(Plan.loadFromFile('saved', plansDir)?.filePath).toBe(join(workDir, 'saved.md'));
+    });
+
+    test('loads a plan saved for a registered site when no plans directory is known', () => {
+      const site = registerSite('https://app.example.com');
+      const file = writePlan(join(site.dir, 'output', 'plans'), 'saved.md');
+      expect(Plan.loadFromFile('saved')?.filePath).toBe(file);
+    });
+
+    test('ignores registered sites once a plans directory is known', () => {
+      const site = registerSite('https://app.example.com');
+      writePlan(join(site.dir, 'output', 'plans'), 'saved.md');
+      expect(Plan.loadFromFile('saved', plansDir)).toBeNull();
+    });
+
+    test('returns null when the plan is nowhere to be found', () => {
+      expect(Plan.loadFromFile('missing', plansDir)).toBeNull();
+      expect(Plan.loadFromFile('missing')).toBeNull();
     });
   });
 });

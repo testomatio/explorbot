@@ -22,8 +22,6 @@
   on the evidence it recorded — passed only if every expected outcome was already met — while its
   generated code, screencast, and Testomatio steps are still saved. The session report notes that the
   time budget was reached.
-### Changes
-
 - Prima: every command now prints `### Artifacts` naming the files it just wrote — the ARIA tree and
   the html always, plus the screenshot and network log when they were captured. Until now those files
   were written on every command but only named when a `check` came back with a CONTRADICTION, so the
@@ -37,6 +35,15 @@
   finished. It also looks the hash up across every recorded site instead of assuming the most recent
   one, and lists everything else kept under the hash. A hash that really is missing now reports the
   directory it looked in.
+- `explorbot test <planfile>` takes the site to run against from the plan itself — the URL of its
+  `### Prerequisite` section, or the `## Requirements` URL of its first test. A plan is therefore
+  enough to run it from any directory with a global installation (`~/.explorbot/config.js`) or with
+  the `EXPLORBOT_*` variables, both of which used to refuse to start with "No site to explore"
+  because the command named no URL of its own.
+  The plan is looked up the same way whichever name it is given — a path, or the bare file name of a
+  saved plan, which is searched for in the plans directory of every registered site.
+- `explorbot test <planfile>` without an index runs every enabled test in the plan, as the help and
+  the docs already described. It used to run only the first pending one.
 - [Fisherman] A run that gives up no longer counts as prepared data. When the run ran out of
   iterations or stopped after repeated failures on one endpoint, a single successful write was
   enough to report success, so a half-built precondition looked ready to the test. Only a run the
