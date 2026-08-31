@@ -399,6 +399,7 @@ export class Plan {
   title: string;
   tests: Test[] = [];
   url?: string;
+  filePath?: string;
   iteration = 0;
   parentPlan?: Plan;
   private changeListeners: PlanChangeListener[] = [];
@@ -478,22 +479,23 @@ export class Plan {
 
   updateStatus(): void {}
 
-  static resolvePath(filename: string, plansDir?: string): string {
-    const names = [filename];
-    if (!filename.endsWith('.md')) names.push(`${filename}.md`);
-
-    if (path.isAbsolute(filename)) return names.find(existsSync) || filename;
+  static loadFromFile(file: string, plansDir?: string): Plan | null {
+    const names = [file];
+    if (!file.endsWith('.md')) names.push(`${file}.md`);
 
     const dirs = [process.cwd()];
     if (plansDir) dirs.push(plansDir);
     if (!plansDir) dirs.push(...listSites().map((site) => path.join(site.dir, ...SITE_PLANS_DIR)));
 
     for (const dir of dirs) {
-      const found = names.map((name) => path.join(dir, name)).find(existsSync);
-      if (found) return found;
+      const filePath = names.map((name) => path.resolve(dir, name)).find(existsSync);
+      if (!filePath) continue;
+      const loaded = parsePlanFromMarkdown(filePath);
+      loaded.filePath = filePath;
+      return loaded;
     }
 
-    return path.join(plansDir || process.cwd(), names[names.length - 1]);
+    return null;
   }
 
   static fromMarkdown(filePath: string): Plan {

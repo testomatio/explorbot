@@ -449,25 +449,17 @@ export class ExplorBot {
     return urlPart + featurePart.slice(0, maxFeatureLen) + suffix;
   }
 
-  resolvePlanPath(filename: string): string {
-    return Plan.resolvePath(filename, this.getPlansDir());
-  }
-
   loadPlan(filename: string): Plan {
-    const planPath = this.resolvePlanPath(filename);
-    if (!existsSync(planPath)) {
-      throw new Error(`Plan file not found: ${planPath}`);
-    }
-    this.setCurrentPlan(Plan.fromMarkdown(planPath));
-    return this.currentPlan!;
+    const plan = Plan.loadFromFile(filename, this.getPlansDir());
+    if (!plan) throw new Error(`Plan file not found: ${filename}`);
+    this.setCurrentPlan(plan);
+    return plan;
   }
 
   loadPlans(filename: string): Plan[] {
-    const planPath = this.resolvePlanPath(filename);
-    if (!existsSync(planPath)) {
-      throw new Error(`Plan file not found: ${planPath}`);
-    }
-    return parsePlansFromMarkdown(planPath);
+    const plan = Plan.loadFromFile(filename, this.getPlansDir());
+    if (!plan?.filePath) throw new Error(`Plan file not found: ${filename}`);
+    return parsePlansFromMarkdown(plan.filePath);
   }
 
   setCurrentPlan(plan?: Plan): void {

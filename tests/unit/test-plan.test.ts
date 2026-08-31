@@ -398,7 +398,7 @@ priority: normal
     });
   });
 
-  describe('resolvePath', () => {
+  describe('loadFromFile', () => {
     let home: string;
     let workDir: string;
     let plansDir: string;
@@ -428,48 +428,48 @@ priority: normal
       rmSync(workDir, { recursive: true, force: true });
     });
 
-    test('returns an absolute path as is', () => {
+    test('loads an absolute path', () => {
       const file = writePlan(plansDir, 'saved.md');
-      expect(Plan.resolvePath(file)).toBe(file);
+      expect(Plan.loadFromFile(file)?.filePath).toBe(file);
     });
 
     test('appends .md to an absolute path', () => {
       const file = writePlan(plansDir, 'saved.md');
-      expect(Plan.resolvePath(join(plansDir, 'saved'))).toBe(file);
+      expect(Plan.loadFromFile(join(plansDir, 'saved'))?.filePath).toBe(file);
     });
 
-    test('finds a plan in the working directory', () => {
+    test('loads a plan named in the working directory', () => {
       writePlan(workDir, 'saved.md');
-      expect(Plan.resolvePath('saved')).toBe(join(workDir, 'saved.md'));
-      expect(Plan.resolvePath('saved.md')).toBe(join(workDir, 'saved.md'));
+      expect(Plan.loadFromFile('saved')?.filePath).toBe(join(workDir, 'saved.md'));
+      expect(Plan.loadFromFile('saved.md')?.filePath).toBe(join(workDir, 'saved.md'));
     });
 
-    test('finds a plan in the plans directory', () => {
+    test('loads a plan named in the plans directory', () => {
       const file = writePlan(plansDir, 'saved.md');
-      expect(Plan.resolvePath('saved', plansDir)).toBe(file);
+      expect(Plan.loadFromFile('saved', plansDir)?.filePath).toBe(file);
     });
 
     test('prefers the working directory over the plans directory', () => {
       writePlan(plansDir, 'saved.md');
       writePlan(workDir, 'saved.md');
-      expect(Plan.resolvePath('saved', plansDir)).toBe(join(workDir, 'saved.md'));
+      expect(Plan.loadFromFile('saved', plansDir)?.filePath).toBe(join(workDir, 'saved.md'));
     });
 
-    test('finds a plan in a registered site when no plans directory is known', () => {
+    test('loads a plan saved for a registered site when no plans directory is known', () => {
       const site = registerSite('https://app.example.com');
       const file = writePlan(join(site.dir, 'output', 'plans'), 'saved.md');
-      expect(Plan.resolvePath('saved')).toBe(file);
+      expect(Plan.loadFromFile('saved')?.filePath).toBe(file);
     });
 
     test('ignores registered sites once a plans directory is known', () => {
       const site = registerSite('https://app.example.com');
       writePlan(join(site.dir, 'output', 'plans'), 'saved.md');
-      expect(Plan.resolvePath('saved', plansDir)).toBe(join(plansDir, 'saved.md'));
+      expect(Plan.loadFromFile('saved', plansDir)).toBeNull();
     });
 
-    test('falls back to the plans directory when nothing is found', () => {
-      expect(Plan.resolvePath('missing', plansDir)).toBe(join(plansDir, 'missing.md'));
-      expect(Plan.resolvePath('missing')).toBe(join(workDir, 'missing.md'));
+    test('returns null when the plan is nowhere to be found', () => {
+      expect(Plan.loadFromFile('missing', plansDir)).toBeNull();
+      expect(Plan.loadFromFile('missing')).toBeNull();
     });
   });
 });

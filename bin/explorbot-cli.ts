@@ -260,14 +260,13 @@ addCommonOptions(program.command('plan <path>').description('Generate test plan 
 
 addCommonOptions(program.command('plan:load <planfile> [index]').description('Load a plan file and display its tests. Pass index to see test details.')).action(async (planfile: string, index: string | undefined) => {
   try {
-    const resolvedPath = path.resolve(planfile);
-    if (!fs.existsSync(resolvedPath)) {
-      console.error(`Plan file not found: ${resolvedPath}`);
+    const plan = Plan.loadFromFile(planfile);
+    if (!plan?.filePath) {
+      console.error(`Plan file not found: ${planfile}`);
       process.exit(1);
     }
 
-    const plan = Plan.fromMarkdown(resolvedPath);
-    const planFile = path.basename(resolvedPath);
+    const planFile = path.basename(plan.filePath);
 
     if (index) {
       const idx = Number.parseInt(index, 10);
@@ -335,9 +334,7 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
         indexArg = planfile;
       }
 
-      const planPath = Plan.resolvePath(planfileArg);
-      let planTarget: string | undefined;
-      if (fs.existsSync(planPath)) planTarget = Plan.fromMarkdown(planPath).startUrl;
+      const planTarget = Plan.loadFromFile(planfileArg)?.startUrl;
 
       const explorBot = new ExplorBot(buildExplorBotOptions(planTarget, options));
       await explorBot.start();
