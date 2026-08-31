@@ -9,14 +9,15 @@ export function isDynamicSegment(segment: string): boolean {
     /* config not loaded yet */
   }
 
+  if (/^v\d+$/i.test(segment)) return false;
   // numeric: /users/123
   if (/^\d+$/.test(segment)) return true;
   // UUID: /items/550e8400-e29b-41d4-a716-446655440000
   if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(segment)) return true;
   // ULID: /items/01ARZ3NDEKTSV4RRFFQ69G5FAV
   if (/^[0-9A-HJKMNP-TV-Z]{26}$/.test(segment)) return true;
-  // hex ID (4+ chars): /suite/70dae98a
-  if (/^[a-f0-9]{4,}$/i.test(segment)) return true;
+  // hex ID (4+ chars): /suite/70dae98a — short letters-only hex reads as a word
+  if (/^[a-f0-9]{4,}$/i.test(segment) && (segment.length >= 8 || /\d/.test(segment))) return true;
   // hex-prefixed slug (8+ hex before dash): /suite/95ef0c94-mobile
   if (/^[a-f0-9]{8,}-/i.test(segment)) return true;
   // short mixed alphanumeric (digits + letters, ≤8 chars, no dash): /item/x7f2

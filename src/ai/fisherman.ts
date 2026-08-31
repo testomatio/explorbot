@@ -13,6 +13,7 @@ import { dataProtectionRules } from './rules.ts';
 
 const MAX_ITERATIONS = 15;
 const MAX_TOOL_ROUNDTRIPS = 5;
+const REPEATED_FAILURE_LIMIT = 4;
 
 export class Fisherman implements Agent {
   emoji = '🎣';
@@ -20,21 +21,22 @@ export class Fisherman implements Agent {
   private apiClient: ApiClient;
   private requestStore: RequestStore;
   private specLoader: () => Promise<any | null>;
-  private cookieProvider: () => Promise<Record<string, string>>;
+  private browserHeaderProvider: () => Promise<Record<string, string>>;
   private configHeaders: Record<string, string>;
   private sessionName?: string;
   private baseEndpoint: string;
   private spec: any | null = null;
   private mode: 'replicate' | 'achieve' | 'disabled' = 'disabled';
   private hasApiConfig: boolean;
+  private scopeDegraded = false;
 
-  constructor(provider: Provider, apiClient: ApiClient, requestStore: RequestStore, specLoader: () => Promise<any | null>, baseEndpoint: string, cookieProvider: () => Promise<Record<string, string>>, configHeaders: Record<string, string> = {}, hasApiConfig = false) {
+  constructor(provider: Provider, apiClient: ApiClient, requestStore: RequestStore, specLoader: () => Promise<any | null>, baseEndpoint: string, browserHeaderProvider: () => Promise<Record<string, string>>, configHeaders: Record<string, string> = {}, hasApiConfig = false) {
     this.provider = provider;
     this.apiClient = apiClient;
     this.requestStore = requestStore;
     this.specLoader = specLoader;
     this.baseEndpoint = baseEndpoint;
-    this.cookieProvider = cookieProvider;
+    this.browserHeaderProvider = browserHeaderProvider;
     this.configHeaders = configHeaders;
     this.hasApiConfig = hasApiConfig;
     this.mode = hasApiConfig ? 'achieve' : 'replicate';
@@ -77,10 +79,11 @@ export class Fisherman implements Agent {
     await this.refreshAuth();
     debugLog(`auth headers: ${Object.keys(this.apiClient.getHeaders()).join(', ')}`);
 
-    const { tools, getResult, isFinished } = createFishermanTools(this.apiClient, this.requestStore, {
+    const { tools, getResult, isFinished, finishFromText } = createFishermanTools(this.apiClient, this.requestStore, {
       spec: this.spec,
       baseEndpoint: this.baseEndpoint,
     });
+    const ledgerStart = this.requestStore.getMadeRequests().length;
 
     const conversation = this.provider.startConversation(this.buildSystemPrompt(endpointList, Object.keys(tools), scopeUrl), 'fisherman');
     conversation.addUserText(this.buildTaskPrompt(instructions));
@@ -90,12 +93,24 @@ export class Fisherman implements Agent {
         debugLog(`iteration ${iteration}`);
         const invokeResult = await this.provider.invokeConversation(conversation, tools, {
           maxToolRoundtrips: MAX_TOOL_ROUNDTRIPS,
-          toolChoice: 'required',
           agentName: 'fisherman',
         });
         debugLog(`iteration ${iteration} done, text: ${invokeResult?.response?.text?.slice(0, 200) || '(none)'}`);
 
         if (isFinished()) {
+          stop();
+          return;
+        }
+
+        if (!invokeResult?.toolExecutions?.length) {
+          debugLog('no tool call in this turn — treating as finish');
+          finishFromText(invokeResult?.response?.text);
+          stop();
+          return;
+        }
+
+        if (this.isStuckOnEndpoint(ledgerStart)) {
+          tag('warning').log('Fisherman: repeated failures on the same endpoint — stopping');
           stop();
           return;
         }
@@ -145,14 +160,16 @@ export class Fisherman implements Agent {
   }
 
   private async refreshAuth(): Promise<void> {
-    const cookies = await this.cookieProvider();
-    if (Object.keys(cookies).length > 0) {
-      this.apiClient.setHeaders(cookies);
-    }
+    if (this.mode === 'replicate') {
+      const xhrHeaders = this.requestStore.extractAuthHeaders();
+      if (Object.keys(xhrHeaders).length > 0) {
+        this.apiClient.setHeaders(xhrHeaders);
+      }
 
-    const xhrHeaders = this.requestStore.extractAuthHeaders();
-    if (Object.keys(xhrHeaders).length > 0) {
-      this.apiClient.setHeaders(xhrHeaders);
+      const browserHeaders = await this.browserHeaderProvider();
+      if (Object.keys(browserHeaders).length > 0) {
+        this.apiClient.setHeaders(browserHeaders);
+      }
     }
 
     if (Object.keys(this.configHeaders).length > 0) {
@@ -161,31 +178,25 @@ export class Fisherman implements Agent {
   }
 
   private buildEndpointList(scopeUrl?: string): string {
+    this.scopeDegraded = false;
     if (this.mode === 'achieve' && this.spec) {
       const specEndpoints = listAllEndpoints(this.spec, this.baseEndpoint);
       if (specEndpoints) return specEndpoints;
     }
 
-    let writeRequests = this.requestStore.getWriteRequestsForScope(scopeUrl || '/');
-    if (writeRequests.length === 0) {
-      writeRequests = this.requestStore.getWriteRequestsForScope('/');
-    }
+    const scoped = this.requestStore.toEndpointList(scopeUrl || '/');
+    if (scoped) return scoped;
 
-    const seen = new Set<string>();
-    const lines: string[] = [];
-
-    for (const req of writeRequests) {
-      const key = `${req.method} ${req.path}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      lines.push(key);
-    }
-
-    return lines.join('\n');
+    this.scopeDegraded = true;
+    return this.requestStore.toEndpointList();
   }
 
   private buildSystemPrompt(endpointList: string, toolNames: string[], scopeUrl?: string): string {
-    const scopeBlock = scopeUrl ? `\n\nSCOPE: You are operating within ${scopeUrl}.\nAll created items must belong to this scope.` : '';
+    let scopeBlock = '';
+    if (scopeUrl) {
+      scopeBlock = `\n\nSCOPE: You are operating within ${scopeUrl}.\nAll created items must belong to this scope.`;
+      if (this.scopeDegraded) scopeBlock += '\nThe endpoint list could not be narrowed to this scope and may include endpoints belonging to other scopes. Before writing, confirm the target belongs to this scope.';
+    }
 
     return dedent`
       You are Fisherman — a data preparation agent. You create test data by making API requests.
@@ -210,10 +221,19 @@ export class Fisherman implements Agent {
       - Chain requests logically — create parent resources before children
       - Use the response category and error text to decide what failed: validation requires corrected data, authorization requires valid access, not_found requires a valid path or parent, and conflict requires resolving the conflicting state
       - Retry temporary or server failures once. Retry other failures only when the specification or error text gives a concrete correction
+      - Create only the resource types that were requested. If no endpoint creates a requested type, call stop — never create a different type as a substitute
       - Use realistic but unique data for each item (vary names, titles)
 
       ${dataProtectionRules}
     `;
+  }
+
+  private isStuckOnEndpoint(ledgerStart: number): boolean {
+    const made = this.requestStore.getMadeRequests().slice(ledgerStart);
+    if (made.length < REPEATED_FAILURE_LIMIT) return false;
+    const recent = made.slice(-REPEATED_FAILURE_LIMIT);
+    const first = recent[0];
+    return recent.every((r) => (r.status >= 400 || r.error) && r.method === first.method && r.path === first.path);
   }
 
   private buildTaskPrompt(instructions: string): string {

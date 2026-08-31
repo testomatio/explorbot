@@ -765,6 +765,7 @@ export class Pilot implements Agent {
             const parts = [c.type];
             if (c.title) parts.push(`"${c.title}"`);
             if (c.id) parts.push(`(id: ${c.id})`);
+            if (c.request) parts.push(`via ${c.request}`);
             return parts.join(' ');
           });
           const stepText = `Precondition: created ${items.join(', ')}`;
