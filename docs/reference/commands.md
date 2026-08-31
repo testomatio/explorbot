@@ -106,6 +106,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
+| `EXPLORBOT_MAX_DURATION` | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->
 
 `npx explorbot config` prints the values a run actually uses — models per role, the config file behind them, the output, knowledge and experience directories, and every `EXPLORBOT_*` variable currently set. The boats answer for their own configuration the same way: `npx explorbot api config`, `npx explorbot docs config`, `npx explorbot prima config`. Add `--json` on any of them to get the same values as an object a script can read.
