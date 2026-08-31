@@ -136,6 +136,8 @@ describe('Prima.pw', () => {
     expect(existsSync(path.join(artifactsRoot, envelope.status!, 'aria.yml'))).toBe(true);
     expect(existsSync(path.join(artifactsRoot, envelope.status!, 'page.html'))).toBe(true);
     expect(existsSync(path.join(artifactsRoot, envelope.status!, 'network.jsonl'))).toBe(false);
+    expect(envelope.artifacts?.aria).toBe(path.join(artifactsRoot, envelope.status!, 'aria.yml'));
+    expect(envelope.artifacts?.network).toBeUndefined();
     expect(envelope.instance.name).toBe('default');
   });
 

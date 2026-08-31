@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { type EnvelopeData, renderEnvelope, writeArtifacts } from '../src/envelope.ts';
+import { type EnvelopeData, readArtifacts, renderEnvelope, writeArtifacts } from '../src/envelope.ts';
 
 const base: EnvelopeData = {
   ok: true,
@@ -161,10 +161,47 @@ describe('renderEnvelope', () => {
     expect(out).not.toContain('### Artifacts');
   });
 
+  test('a successful action names the files it recorded, so they invite reading', () => {
+    const out = renderEnvelope(base);
+    expect(out).toContain('### Artifacts');
+    expect(out).toContain('aria:       /tmp/x/aria.yml');
+    expect(out).toContain('html:       /tmp/x/page.html');
+    expect(out).toContain('network:    /tmp/x/network.jsonl');
+    expect(out).not.toContain('screenshot:');
+  });
+
+  test('files recorded beside the named ones are listed too', () => {
+    const out = renderEnvelope({ ...base, artifacts: { ...base.artifacts!, files: ['1-click-add.aria.yaml', '1-click-add.diff.yaml'] } });
+    expect(out).toContain('also here:  1-click-add.aria.yaml, 1-click-add.diff.yaml');
+  });
+
+  test('step captures name the files written for each step, not just their directory', () => {
+    const out = renderEnvelope({ ...base, steps: [{ label: "I.click('Add')", ok: true, proof: '' }], stepFiles: '/tmp/x' });
+    expect(out).toContain('page after each step: /tmp/x/<n>-<step>.{aria.yaml,html,diff.yaml}');
+  });
+
   test('open tabs alone are evidence enough for a running browser', () => {
     const out = renderEnvelope({ ...base, instance: { name: 'default', tabs: 2, others: [] } });
     expect(out).toContain('| running');
     expect(out).not.toContain('browser: not running');
+  });
+});
+
+describe('readArtifacts', () => {
+  test('reports the files a recorded command left behind, and only those', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'prima-'));
+    writeArtifacts(dir, { aria: '- button "Login"', html: '<html></html>', requests: [] });
+    writeFileSync(path.join(dir, 'status.json'), '{}', 'utf-8');
+    writeFileSync(path.join(dir, '1-click-add.diff.yaml'), 'added: []', 'utf-8');
+
+    const found = readArtifacts(dir);
+
+    expect(found.aria).toBe(path.join(dir, 'aria.yml'));
+    expect(found.html).toBe(path.join(dir, 'page.html'));
+    expect(found.network).toBeUndefined();
+    expect(found.screenshot).toBeUndefined();
+    expect(found.files).toEqual(['1-click-add.diff.yaml']);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
