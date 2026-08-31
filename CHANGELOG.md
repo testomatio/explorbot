@@ -12,6 +12,12 @@
   visible text, and its markup keeps the label and meaningful class names while layout and generated
   styling classes are dropped, so the description says what the element is instead of how it is
   styled.
+- Doc Collector: a `docs collect` run streamed with `--ws` now sends the spec index it generates as a
+  `docs` frame — the file path and the full markdown of `docs/index.md` — so a listening UI can show
+  the finished documentation the same way an exploration run streams its session report.
+- Doc Collector: a streamed run now closes the connection on its way out instead of exiting from
+  under it, so the final `result` frame arrives and anything still queued is flushed. Previously the
+  index frame, written moments before exit, was the one most likely to be lost.
 
 ## 2026-08-29
 

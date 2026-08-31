@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
+import { remote } from '../../../src/remote.ts';
 import { isVerboseMode, setPreserveConsoleLogs, setQuietMode } from '../../../src/utils/logger.ts';
 import { DocBot, type DocbotOptions } from './docbot.ts';
 
@@ -59,9 +60,11 @@ export function createDocsCommands(name = 'docs'): Command {
       console.log(`Use in Explorbot: npx explorbot start ${startPath} --spec "${result.outputDir}"`);
 
       await bot.stop();
+      await remote.close(0);
       process.exit(0);
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+      await remote.close(1);
       process.exit(1);
     }
   });
