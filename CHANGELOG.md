@@ -2,6 +2,26 @@
 
 ## 2026-08-31
 
+### New CLI Options
+
+- **`--max-duration <minutes>`** — a wall-clock budget for the whole run. Explorbot stops starting new
+  tests, planning styles, and sub-page expansion before the limit, wraps up the test in flight, and then
+  finishes the session the normal way — plan files, session report, Testomatio run finalized, telemetry
+  flushed, exit code 0 — instead of being killed mid-test by a CI job timeout, which loses all of that.
+  Set it a few minutes below the job's `timeout-minutes`. The same budget can be set through
+  `EXPLORBOT_MAX_DURATION`; the flag wins.
+  ```bash
+  explorbot explore / --max-tests 50 --max-duration 40   # 45-minute CI job
+  EXPLORBOT_MAX_DURATION=40 explorbot explore /           # same, via environment
+  explorbot freesail --max-duration 120
+  ```
+
+### Changes
+
+- [Tester] A test still running when the hard cutoff arrives is stopped at the next iteration and graded
+  on the evidence it recorded — passed only if every expected outcome was already met — while its
+  generated code, screencast, and Testomatio steps are still saved. The session report notes that the
+  time budget was reached.
 ### Changes
 
 - Prima: every command now prints `### Artifacts` naming the files it just wrote — the ARIA tree and
