@@ -34,6 +34,7 @@ import { Plan, type Test } from './test-plan.ts';
 import { browserErrorMessage } from './utils/browser-errors.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
 import { relativeToCwd } from './utils/next-steps.ts';
+import { resolvePlanPath as findPlanPath } from './utils/plan-path.ts';
 import { sanitizeFilename } from './utils/strings.ts';
 import { parsePlansFromMarkdown } from './utils/test-plan-markdown.ts';
 
@@ -450,23 +451,7 @@ export class ExplorBot {
   }
 
   resolvePlanPath(filename: string): string {
-    let planPath = filename;
-
-    if (path.isAbsolute(filename)) {
-      if (!existsSync(planPath) && !filename.endsWith('.md')) {
-        planPath = `${filename}.md`;
-      }
-    } else if (existsSync(filename) || existsSync(`${filename}.md`)) {
-      planPath = existsSync(filename) ? filename : `${filename}.md`;
-    } else {
-      const plansDir = this.getPlansDir();
-      planPath = path.join(plansDir, filename);
-      if (!existsSync(planPath) && !filename.endsWith('.md')) {
-        planPath = path.join(plansDir, `${filename}.md`);
-      }
-    }
-
-    return planPath;
+    return findPlanPath(filename, this.getPlansDir());
   }
 
   loadPlan(filename: string): Plan {

@@ -9,6 +9,8 @@
   enough to run it from any directory with a global installation (`~/.explorbot/config.js`) or with
   the `EXPLORBOT_*` variables, both of which used to refuse to start with "No site to explore"
   because the command named no URL of its own.
+  The plan is looked up the same way whichever name it is given — a path, or the bare file name of a
+  saved plan, which is searched for in the plans directory of every registered site.
 - `explorbot test <planfile>` without an index runs every enabled test in the plan, as the help and
   the docs already described. It used to run only the first pending one.
 

@@ -20,6 +20,7 @@ import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode, tag } from '.
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
+import { resolvePlanPath } from '../src/utils/plan-path.ts';
 
 const program = new Command();
 const cli = getCliName();
@@ -332,8 +333,9 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
         indexArg = planfile;
       }
 
-      const planFile = [planfileArg, `${planfileArg}.md`].find((file) => fs.existsSync(file));
-      const planTarget = planFile ? Plan.fromMarkdown(planFile).startUrl : undefined;
+      const planPath = resolvePlanPath(planfileArg);
+      let planTarget: string | undefined;
+      if (fs.existsSync(planPath)) planTarget = Plan.fromMarkdown(planPath).startUrl;
 
       const explorBot = new ExplorBot(buildExplorBotOptions(planTarget, options));
       await explorBot.start();
