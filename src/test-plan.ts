@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import figures from 'figures';
 import type { ActionResult } from './action-result.ts';
+import { listSites } from './global-config.ts';
 import { WebPageState } from './state-manager.ts';
 import { tag } from './utils/logger.ts';
 import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown, savePlansToMarkdown } from './utils/test-plan-markdown.ts';
@@ -388,6 +391,8 @@ export class Test extends Task {
   }
 }
 
+const SITE_PLANS_DIR = ['output', 'plans'];
+
 type PlanChangeListener = (tests: Test[]) => void;
 
 export class Plan {
@@ -472,6 +477,24 @@ export class Plan {
   }
 
   updateStatus(): void {}
+
+  static resolvePath(filename: string, plansDir?: string): string {
+    const names = [filename];
+    if (!filename.endsWith('.md')) names.push(`${filename}.md`);
+
+    if (path.isAbsolute(filename)) return names.find(existsSync) || filename;
+
+    const dirs = [process.cwd()];
+    if (plansDir) dirs.push(plansDir);
+    if (!plansDir) dirs.push(...listSites().map((site) => path.join(site.dir, ...SITE_PLANS_DIR)));
+
+    for (const dir of dirs) {
+      const found = names.map((name) => path.join(dir, name)).find(existsSync);
+      if (found) return found;
+    }
+
+    return path.join(plansDir || process.cwd(), names[names.length - 1]);
+  }
 
   static fromMarkdown(filePath: string): Plan {
     return parsePlanFromMarkdown(filePath);

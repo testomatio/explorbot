@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { unlinkSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { registerSite } from '../../src/global-config.ts';
 import { Plan, Test } from '../../src/test-plan.ts';
 
 describe('Plan', () => {
@@ -393,6 +395,81 @@ priority: normal
 
     test('should be undefined when neither suite nor tests carry a URL', () => {
       expect(new Plan('Test Suite').startUrl).toBeUndefined();
+    });
+  });
+
+  describe('resolvePath', () => {
+    let home: string;
+    let workDir: string;
+    let plansDir: string;
+    let originalCwd: string;
+    let homedirSpy: ReturnType<typeof spyOn>;
+
+    const writePlan = (dir: string, name: string): string => {
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, name);
+      writeFileSync(file, '# Plan\n', 'utf-8');
+      return file;
+    };
+
+    beforeEach(() => {
+      home = mkdtempSync(join(tmpdir(), 'explorbot-home-'));
+      workDir = mkdtempSync(join(tmpdir(), 'explorbot-work-'));
+      plansDir = join(workDir, 'output', 'plans');
+      homedirSpy = spyOn(os, 'homedir').mockReturnValue(home);
+      originalCwd = process.cwd();
+      process.chdir(workDir);
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+      homedirSpy.mockRestore();
+      rmSync(home, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    test('returns an absolute path as is', () => {
+      const file = writePlan(plansDir, 'saved.md');
+      expect(Plan.resolvePath(file)).toBe(file);
+    });
+
+    test('appends .md to an absolute path', () => {
+      const file = writePlan(plansDir, 'saved.md');
+      expect(Plan.resolvePath(join(plansDir, 'saved'))).toBe(file);
+    });
+
+    test('finds a plan in the working directory', () => {
+      writePlan(workDir, 'saved.md');
+      expect(Plan.resolvePath('saved')).toBe(join(workDir, 'saved.md'));
+      expect(Plan.resolvePath('saved.md')).toBe(join(workDir, 'saved.md'));
+    });
+
+    test('finds a plan in the plans directory', () => {
+      const file = writePlan(plansDir, 'saved.md');
+      expect(Plan.resolvePath('saved', plansDir)).toBe(file);
+    });
+
+    test('prefers the working directory over the plans directory', () => {
+      writePlan(plansDir, 'saved.md');
+      writePlan(workDir, 'saved.md');
+      expect(Plan.resolvePath('saved', plansDir)).toBe(join(workDir, 'saved.md'));
+    });
+
+    test('finds a plan in a registered site when no plans directory is known', () => {
+      const site = registerSite('https://app.example.com');
+      const file = writePlan(join(site.dir, 'output', 'plans'), 'saved.md');
+      expect(Plan.resolvePath('saved')).toBe(file);
+    });
+
+    test('ignores registered sites once a plans directory is known', () => {
+      const site = registerSite('https://app.example.com');
+      writePlan(join(site.dir, 'output', 'plans'), 'saved.md');
+      expect(Plan.resolvePath('saved', plansDir)).toBe(join(plansDir, 'saved.md'));
+    });
+
+    test('falls back to the plans directory when nothing is found', () => {
+      expect(Plan.resolvePath('missing', plansDir)).toBe(join(plansDir, 'missing.md'));
+      expect(Plan.resolvePath('missing')).toBe(join(workDir, 'missing.md'));
     });
   });
 });

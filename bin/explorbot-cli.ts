@@ -20,7 +20,6 @@ import { isVerboseMode, log, setPreserveConsoleLogs, setQuietMode, tag } from '.
 import { jsonToTable } from '../src/utils/markdown-parser.js';
 import { parseMarkdownToTerminal } from '../src/utils/markdown-terminal.js';
 import { type NextStepSection, printNextSteps, relativeToCwd } from '../src/utils/next-steps.ts';
-import { resolvePlanPath } from '../src/utils/plan-path.ts';
 
 const program = new Command();
 const cli = getCliName();
@@ -336,7 +335,7 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
         indexArg = planfile;
       }
 
-      const planPath = resolvePlanPath(planfileArg);
+      const planPath = Plan.resolvePath(planfileArg);
       let planTarget: string | undefined;
       if (fs.existsSync(planPath)) planTarget = Plan.fromMarkdown(planPath).startUrl;
 

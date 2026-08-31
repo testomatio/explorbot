@@ -34,7 +34,6 @@ import { Plan, type Test } from './test-plan.ts';
 import { browserErrorMessage } from './utils/browser-errors.ts';
 import { setVerboseMode, tag } from './utils/logger.ts';
 import { relativeToCwd } from './utils/next-steps.ts';
-import { resolvePlanPath as findPlanPath } from './utils/plan-path.ts';
 import { sanitizeFilename } from './utils/strings.ts';
 import { parsePlansFromMarkdown } from './utils/test-plan-markdown.ts';
 
@@ -451,7 +450,7 @@ export class ExplorBot {
   }
 
   resolvePlanPath(filename: string): string {
-    return findPlanPath(filename, this.getPlansDir());
+    return Plan.resolvePath(filename, this.getPlansDir());
   }
 
   loadPlan(filename: string): Plan {
