@@ -123,10 +123,14 @@ export class ExperienceTracker {
     const filePath = this.getExperienceFilePath(stateHash);
 
     if (!existsSync(filePath)) {
-      const frontmatter = {
+      const frontmatter: Record<string, unknown> = {
         url: state.url ? extractStatePath(state.url) : '',
         title: state.title,
       };
+      if (state.overlay.present && state.overlay.name) {
+        frontmatter.region = state.overlay.name;
+        if (state.overlay.root) frontmatter.root = state.overlay.root;
+      }
       this.writeExperienceFile(stateHash, '', frontmatter);
     }
 

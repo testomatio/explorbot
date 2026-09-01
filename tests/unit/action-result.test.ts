@@ -140,3 +140,25 @@ describe('ActionResult', () => {
     });
   });
 });
+
+describe('region state hash', () => {
+  const html = '<html><body><h1>Users</h1></body></html>';
+
+  it('named region forks the hash; baseHash stays the page hash', () => {
+    const plain = new ActionResult({ url: 'https://app.example.com/users', html });
+    const withRegion = new ActionResult({
+      url: 'https://app.example.com/users',
+      html,
+      overlay: { type: 'modal', name: 'Edit User', root: 'aside.panel' },
+    });
+    expect(withRegion.hash).not.toBe(plain.hash);
+    expect(withRegion.hash).toContain('region_edit_user');
+    expect(withRegion.baseHash).toBe(plain.hash);
+  });
+
+  it('unnamed region does not fork the hash', () => {
+    const plain = new ActionResult({ url: 'https://app.example.com/users', html });
+    const unnamed = new ActionResult({ url: 'https://app.example.com/users', html, overlay: { type: 'modal' } });
+    expect(unnamed.hash).toBe(plain.hash);
+  });
+});

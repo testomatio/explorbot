@@ -470,51 +470,20 @@ const formatDiff = (added: string[], removed: string[], toggled: string[], typed
 
 export interface FocusAreaResult {
   detected: boolean;
-  type: 'dialog' | 'modal' | null;
+  type: 'modal' | null;
   name: string | null;
 }
 
-const CLOSE_OVERLAY_BUTTON_RE = /^close\s+(modal|dialog|popup|drawer|panel|sheet)\b/i;
-
-const findOverlayByCloseButton = (nodeList: AriaNode[]): FocusAreaResult | null => {
-  const closeIdx = nodeList.findIndex((n) => n.role === 'button' && CLOSE_OVERLAY_BUTTON_RE.test(n.name || ''));
-  if (closeIdx !== -1) {
-    let heading: AriaNode | undefined;
-    for (let i = closeIdx - 1; i >= 0; i--) {
-      if (nodeList[i].role === 'heading' && nodeList[i].name) {
-        heading = nodeList[i];
-        break;
-      }
-    }
-    if (!heading) {
-      for (let i = closeIdx + 1; i < nodeList.length; i++) {
-        if (nodeList[i].role === 'heading' && nodeList[i].name) {
-          heading = nodeList[i];
-          break;
-        }
-      }
-    }
-    return { detected: true, type: 'dialog', name: heading?.name || null };
-  }
-  for (const node of nodeList) {
-    const inner = findOverlayByCloseButton(node.children);
-    if (inner) return inner;
-  }
-  return null;
-};
-
 const findDialogOrModal = (nodes: AriaNode[]): FocusAreaResult | null => {
+  let topmost: FocusAreaResult | null = null;
   for (const node of nodes) {
-    if (node.role === 'dialog' || node.role === 'alertdialog') {
-      return { detected: true, type: 'dialog', name: node.name || null };
-    }
-    if (node.attributes.modal === true || node.attributes.modal === 'true') {
-      return { detected: true, type: 'modal', name: node.name || null };
+    if (node.role === 'dialog' || node.role === 'alertdialog' || node.attributes.modal === true || node.attributes.modal === 'true') {
+      topmost = { detected: true, type: 'modal', name: node.name || null };
     }
     const child = findDialogOrModal(node.children);
-    if (child) return child;
+    if (child) topmost = child;
   }
-  return null;
+  return topmost;
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -561,13 +530,7 @@ export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
   tree = unwrapIgnored(tree);
   tree = dropEmpty(tree, { keepNamed: true });
 
-  const direct = findDialogOrModal(tree);
-  if (direct) return direct;
-
-  const fallback = findOverlayByCloseButton(tree);
-  if (fallback?.name) return fallback;
-
-  return { detected: false, type: null, name: null };
+  return findDialogOrModal(tree) ?? { detected: false, type: null, name: null };
 };
 
 export const collectInteractiveNodes = (snapshot: string | null): Array<Record<string, unknown>> => {

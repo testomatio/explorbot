@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-09-01
+
+### Changes
+
+- State Manager: A panel that replaces another one in the same click is now recognised as a new
+  region instead of being dropped. Clicking Next in a wizard, or opening a confirmation over the
+  form you were filling, used to leave the agent believing it was back on the plain page; the new
+  panel now gets its own state, its own scope and its own experience file.
+- State Manager: A panel opened on top of another no longer marks the one underneath as closed.
+  Explorbot used to test whether a panel was still open by looking at what sits at its centre, so
+  anything stacked over it read as a close. The panel underneath is now remembered and comes back
+  when the top one is dismissed.
+- State Manager: When several dialogs are open at once, the innermost one is used. Previously the
+  first one on the page won, so a picker opened from inside a dialog was either ignored or reported
+  under the outer dialog's name.
+- State Manager: Panels are recognised by their dialog role, their modal flag, or by floating above
+  the page. Recognition by "Close dialog" button labels was dropped — it only worked for that exact
+  English wording, and anything labelled that carefully already carries a dialog role. Every panel
+  is now reported as `modal` or `region`; the separate `dialog` and `drawer` wordings are gone from
+  prompts and from generated documentation.
+- Experience Tracker: Experience recorded inside a panel now stores the panel's name and is loaded
+  back only while that same panel is open, so recipes learned in one modal stop leaking into a
+  different modal on the same page.
+- Experience Tracker: An unnamed panel no longer marks a page's own experience file as
+  panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
+  open.
+
 ## 2026-08-31
 
 ### New CLI Options
@@ -62,6 +89,48 @@
 
 ### Changes
 
+- State Manager: An open panel now stays part of the state until it actually closes. Detection used
+  to fire only on the single action that opened a drawer — one step later the agent forgot the
+  drawer existed, so its scope hints, the Pilot's state line and the panel's own experience file
+  never materialised. The panel is now re-checked on every action and carried forward while its
+  content is still on top; when it closes, the state moves back and the transition is recorded.
+- State Manager: A panel that opens inside another open panel no longer erases the outer one. When
+  the inner panel closes, the outer drawer is checked and restored as the active area.
+- Action: Drawers that open together with a URL change are now detected. A side panel that updates
+  the address bar used to be indistinguishable from real navigation; it now counts as a panel as
+  long as most of the previous page is still there underneath.
+- Action: A change that replaces most of the page is treated as a new page, not a panel. Content
+  finishing to load, or a page redrawing after a dialog closes, no longer gets reported as an
+  opened drawer — and scattered small changes across the page never count as one either.
+- Action: Panel scope selectors are always meaningful now — an id or a real CSS class, found by
+  walking past anonymous wrapper elements and utility classes into the panel itself. A positional
+  path like `//body/div[10]` or a container that spans the whole page is never suggested as a
+  scope; when nothing meaningful exists, the scope is simply omitted.
+- Action: A newly opened panel is named by the heading that just appeared, not by the title of the
+  page or panel behind it.
+- Action: Dialogs recognised by their accessibility role now also get a scope selector, so the
+  "scope your locators here" hint works for them too.
+- Action: When a batch of commands fails midway, the page state is still captured — a drawer opened
+  by the second command no longer goes unnoticed because the third command failed — and the report
+  now correctly shows which commands succeeded before the failure instead of marking all of them
+  failed.
+- [Pilot] Reviews progress immediately when a panel opens or closes, instead of staying silent for
+  the whole life of a drawer between scheduled check-ins.
+- Action: Smaller side panels are recognised now — a split-pane form of a few thousand characters
+  used to fall under the size floor and go undetected while the agent worked inside it blind. The
+  floor is 5K of cleaned panel content, still well above dropdowns and toasts.
+- Action: A large redraw with no identity is no longer reported as a panel. A list that re-renders
+  its rows has no new heading and no meaningful container, so announcing it as an unnamed region
+  only added noise; a panel must bring either a name or a scope selector to count.
+- Action: A dialog is found even when the app redraws half the page around it. Opening a modal used
+  to be missed entirely when it came with a burst of stray rendering — the burst won the "biggest
+  change" contest and cancelled detection. Every appeared area is considered now: oversized redraws
+  are set aside, the area bringing a new heading is preferred, and anything covered by another
+  element on screen is passed over — so the dialog itself gets the scope, like "Select suite for
+  test" in #modal-overlays.
+- Action: The element probed for visibility is the panel itself, not an invisible helper that
+  appeared with it — a transparent resize guard rendered next to a side panel used to make the
+  visibility check fail and silently drop the panel.
 - [Fisherman] In replicate mode, API requests now authenticate with the current browser session:
   cookies are taken from the live jar filtered to the API origin, the CSRF token is read from the
   page, and auth headers are never reused from previous sessions' captured requests. Achieve mode
@@ -104,6 +173,41 @@
   candidate page. An error page is caught before any research or planning runs on it, and a page the
   planner proposes no scenarios for is dropped as well, instead of being reported as a planning
   failure and retried once per planning style.
+- State Manager: Drawers, side panels and swapped-in subviews are now recognised as pages in their
+  own right. Until now only a modal that announced itself as a dialog counted as a state; a panel
+  built as a plain positioned element, or a wizard step that replaced half the screen without
+  changing the URL, was invisible — the agent kept aiming at the elements behind it, and a test that
+  opened and closed the same panel over and over looked like it was standing still. A large area
+  appearing on the page is now detected by comparing the page before and after the action and
+  measuring whether it covers what is behind it, so opening one is recorded as a move to a new state
+  and closing it as a move back.
+- Action: The result of a click that opens a panel now leads with the panel. A large change used to
+  be written off as a whole-page redraw and replaced with a placeholder saying how many characters
+  were dropped, which threw away the one thing worth reading. The result now names what opened and
+  where it lives, and carries that area's markup instead of the placeholder.
+- [Tester] Knows to keep working inside the area that just opened. For a panel that covers the page,
+  it is told the exact container to scope its locators to. For one that appears inline, it is told
+  the scenario most likely continues there while the rest of the page stays available — the stricter
+  "nothing outside is clickable" wording is reserved for areas actually measured as covering.
+- [Pilot] Tells a covering modal apart from an inline area. The state summary now shows the
+  container for a modal and a separate `region:` line for an area that appeared in place, so Pilot
+  can steer a stuck Tester into a subview instead of assuming a dialog is blocking it.
+- [Researcher] Describes drawers and subviews, not just dialogs. The extra pass that documents what
+  a modal contains now runs for any named area that opens, and its notes are still filed under the
+  page they belong to, so a panel that is open when a page is first analyzed no longer splits that
+  page's UI map in two.
+- Experience Tracker: Steps learned while a panel was open are now scoped to it. Experience files
+  written for such a state record the panel's container as `root:` in their frontmatter, and are
+  loaded only while a matching area is open — so panel-specific recipes stop being offered as advice
+  on the plain page. Existing files without the key behave exactly as before.
+- [Driller] Reads a nested popup or menu from what the click already reported instead of asking the
+  browser a second time.
+- Overlay detection is now one mechanism instead of three. The old path recognised overlays by
+  looking for class names containing words like "modal" or "drawer", which only ever worked on sites
+  that happened to name their CSS that way; it has been removed in favour of accessibility roles
+  plus the page-comparison and geometry check above. One consequence: an overlay already on screen
+  at the very first capture that carries no accessibility role is no longer detected until the next
+  action.
 - [Fisherman] No longer treats its own past API calls as captured browser traffic. Replicate mode
   used to reload every request it had ever made — rejected ones included — and hand the next run a
   failed request body as "the example", sending it into long guessing loops. Only real browser
@@ -441,6 +545,7 @@ to fill in a form that was already filled.
   reaches the test log instead of stopping at the navigator.
 - A browser that crashes and cannot be restored now stops navigation at once. It used to spend every
   remaining attempt, and a model call with each one, against a page that was already gone.
+
 ## 2026-08-19
 
 ### `explorbot config` names the provider behind every model

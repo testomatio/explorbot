@@ -35,7 +35,6 @@ interface ActionResultData extends WebPageState {
   focusedElement?: FocusedElement | null;
   iframeURL?: string;
   links?: Link[];
-  overlayHtml?: string;
 }
 
 export interface PageDiff {
@@ -49,6 +48,7 @@ export interface PageDiff {
   consoleErrors?: string[];
   htmlParts?: HtmlDiffPart[];
   iframes?: string;
+  areaOfInterest?: string;
 }
 
 export interface ToolResultMetadata {
@@ -89,6 +89,7 @@ export class ActionResult implements ActionResultData {
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
   public overlay: Overlay = new Overlay();
+  private _diffCache: { previousId: number | undefined; diff: Diff } | null = null;
 
   constructor(data: ActionResultData) {
     this.id = data.id;
@@ -168,6 +169,7 @@ export class ActionResult implements ActionResultData {
   set html(value: string) {
     this._html = value;
     this.snapshotCache.clear();
+    this._diffCache = null;
   }
 
   get screenshot(): Buffer | undefined {
@@ -260,6 +262,11 @@ export class ActionResult implements ActionResultData {
 
   isRelevantExperienceRecord(record: WebPageState, options?: { includeDescendantExperience?: boolean }): boolean {
     if (!record.url || !this.url) return false;
+    if (record.region && this.overlay.name !== record.region) return false;
+    if (record.root) {
+      if (!this.overlay.present) return false;
+      if (this.overlay.root && this.overlay.root !== record.root) return false;
+    }
     if (this.isMatchedBy(record)) return true;
     if (!options?.includeDescendantExperience) return false;
     const cur = extractStatePath(this.url);
@@ -476,29 +483,18 @@ export class ActionResult implements ActionResultData {
   }
 
   getStateHash(): string {
-    const parts: string[] = [];
+    return this.computeStateHash(true);
+  }
 
-    parts.push(this.relativeUrl || this.url || '/');
-
-    this.extractHeadings(this.html);
-
-    if (this.h1) parts.push(`h1_${this.h1}`);
-    if (this.h2) parts.push(`h2_${this.h2}`);
-
-    let stateString = slugify(parts.map((part) => part.substring(0, 100)).join('_'));
-
-    if (stateString.length > 200) {
-      stateString = stateString.substring(0, 200);
-      if (stateString.endsWith('_')) {
-        stateString = stateString.slice(0, -1);
-      }
-    }
-
-    return stateString;
+  get baseHash(): string {
+    return this.computeStateHash(false);
   }
 
   async diff(previousState: ActionResult | null): Promise<Diff> {
-    return Diff.create(this, previousState);
+    if (this._diffCache && this._diffCache.previousId === previousState?.id) return this._diffCache.diff;
+    const diff = await Diff.create(this, previousState);
+    this._diffCache = { previousId: previousState?.id, diff };
+    return diff;
   }
 
   async toToolResult(previousState: ActionResult | null, locator: string): Promise<ToolResultMetadata> {
@@ -549,7 +545,18 @@ export class ActionResult implements ActionResultData {
       pageDiff.ariaChangeCount = diff.ariaChangeCount;
     }
 
-    if (diff.htmlParts.length > 0) {
+    if (this.overlay.present && (!previousState.overlay.present || previousState.overlay.name !== this.overlay.name)) {
+      pageDiff.areaOfInterest = this.overlay.describe();
+    }
+
+    if (pageDiff.areaOfInterest && this.overlay.html && this.overlay.root) {
+      const htmlConfig = ConfigParser.getInstance().getConfig().html;
+      let subtree = await minifyHtml(htmlCombinedSnapshot(this.overlay.html, htmlConfig?.combined));
+      if (subtree.length > HTML_PART_SUBTREE_BUDGET) {
+        subtree = `${subtree.slice(0, HTML_PART_SUBTREE_BUDGET)}...<!-- truncated -->`;
+      }
+      pageDiff.htmlParts = [{ container: this.overlay.root, subtree, rawSize: subtree.length, added: [], removed: [] }];
+    } else if (diff.isSameUrl() && diff.htmlParts.length > 0) {
       const collapsed = collapseHtmlParts(await diff.cleanedHtmlParts());
       if (collapsed.length > 0) {
         pageDiff.htmlParts = collapsed;
@@ -563,6 +570,29 @@ export class ActionResult implements ActionResultData {
     }
 
     return result;
+  }
+
+  private computeStateHash(includeRegion: boolean): string {
+    const parts: string[] = [];
+
+    parts.push(this.relativeUrl || this.url || '/');
+
+    this.extractHeadings(this.html);
+
+    if (this.h1) parts.push(`h1_${this.h1}`);
+    if (this.h2) parts.push(`h2_${this.h2}`);
+    if (includeRegion && this.overlay.present && this.overlay.name) parts.push(`region_${this.overlay.name}`);
+
+    let stateString = slugify(parts.map((part) => part.substring(0, 100)).join('_'));
+
+    if (stateString.length > 200) {
+      stateString = stateString.substring(0, 200);
+      if (stateString.endsWith('_')) {
+        stateString = stateString.slice(0, -1);
+      }
+    }
+
+    return stateString;
   }
 
   private consoleErrors(): string[] {
@@ -681,15 +711,24 @@ export class Diff {
     return this._messages;
   }
 
+  get similarity(): number {
+    return this._htmlDiffResult?.similarity ?? 0;
+  }
+
+  get pageSize(): number {
+    return this._htmlDiffResult?.pageSize ?? 0;
+  }
+
   async calculate(): Promise<void> {
     if (!this.previous) return;
+
+    this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
 
     if (!this._isSameUrl) {
       this._messages = liveRegionMessages(this.previous.html, this.current.html);
       return;
     }
 
-    this._htmlDiffResult = await htmlDiff(this.previous.html, this.current.html, ConfigParser.getInstance().getConfig().html);
     this._messages = this._htmlDiffResult.messages;
 
     const ariaDiff = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);
