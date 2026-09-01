@@ -114,11 +114,14 @@ export class Planner extends PlannerBase implements Agent {
       Tests must be relevant to the page
       Tests must be achievable from UI
       Tests must be verifiable from UI
-      NEVER split one workflow into multiple tests. Each test must be a complete end-to-end flow.
+      One test covers ONE business operation, end to end — its own setup, action, and verification.
+      Micro-steps of a single operation never become separate tests.
       Bad: "Open delete dropdown" + "Confirm deletion" — these are ONE test, not two.
       Bad: "Search for X" + "Verify search results" — searching and verifying is ONE test.
       Bad: "Leave field empty" + "Click submit" — that's one negative test, not two.
-      If two scenarios cannot run independently (one requires the other to run first), merge them into one.${featureDirective}${focusExistingDataDirective}
+      Separate business operations on the same record — creating it, updating it, deleting it — are SEPARATE tests.
+      Each test prepares its own starting state (its own disposable record, or one already on the page) and must never rely on another test having run first: a chained scenario fails at its first broken step and hides which operations actually work.
+      Plan for what the page actually shows. When the page reports a record is not found or unavailable, that record is not a testable surface — plan list-level or recovery behavior instead of operations on that record.${featureDirective}${focusExistingDataDirective}
     </task>
 
     ${customPrompt || ''}

@@ -26,6 +26,16 @@
 - Experience Tracker: An unnamed panel no longer marks a page's own experience file as
   panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
   open.
+- [Planner] One scenario now covers one business operation. The old rule told the planner to merge any
+  scenarios that depend on each other, so a record's whole lifecycle — create it, rename it, delete it —
+  landed in a single test. Such chains were the longest tests of a run and failed as a whole at the
+  first broken step, discarding everything after it. Creating, updating and deleting the same record are
+  now separate tests, each preparing its own starting state instead of continuing where another test
+  stopped.
+- [Planner] Scenarios are no longer planned for a record the page reports as missing. When a detail page
+  shows a "not found" message instead of the record, the planner used to invent edit-form scenarios for
+  the dead record anyway, and every one of them stopped immediately. The list and recovery behavior are
+  planned instead.
 
 ## 2026-08-31
 

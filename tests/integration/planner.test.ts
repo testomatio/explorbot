@@ -219,6 +219,26 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('One section is marked as **Focused**');
   });
 
+  it('scopes one test to one business operation and forbids relying on other tests', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('One test covers ONE business operation');
+    expect(prompt).toContain('Micro-steps of a single operation never become separate tests');
+    expect(prompt).toContain('are SEPARATE tests');
+    expect(prompt).toContain('never rely on another test having run first');
+    expect(prompt).not.toContain('merge them into one');
+  });
+
+  it('forbids planning operations on a record the page reports missing', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('Plan for what the page actually shows');
+    expect(prompt).toContain('not a testable surface');
+    expect(prompt).toContain('list-level or recovery behavior');
+  });
+
   it('expands existing plan without duplicating tests', async () => {
     const existingPlan = new Plan('Task Board Testing');
     existingPlan.url = '/tasks/board';
