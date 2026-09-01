@@ -165,6 +165,14 @@
 
 ### Changes
 
+- [Planner] A page that reports the thing you asked for does not exist gets no test plan. A missing
+  record, a failed load, or a page with nothing on it still came back with a full set of invented
+  scenarios, every one of them written against a page that had nothing to click. The planner now
+  proposes nothing for such a page.
+- Explore: A sub-page with nothing to test is skipped and exploration moves straight on to the next
+  candidate page. An error page is caught before any research or planning runs on it, and a page the
+  planner proposes no scenarios for is dropped as well, instead of being reported as a planning
+  failure and retried once per planning style.
 - State Manager: Drawers, side panels and swapped-in subviews are now recognised as pages in their
   own right. Until now only a modal that announced itself as a dialog counted as a state; a panel
   built as a plain positioned element, or a wizard step that replaced half the screen without

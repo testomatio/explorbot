@@ -195,10 +195,6 @@ export class Planner extends PlannerBase implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
-      if (aiResult.object.scenarios.length === 0 && !this.currentPlan) {
-        throw new Error('No tasks were created successfully');
-      }
-
       const defaultStartUrl = this.getDefaultStartUrl(state);
       const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, s.startUrl || defaultStartUrl, s.steps || []));
 
@@ -335,6 +331,7 @@ export class Planner extends PlannerBase implements Agent {
       <task>
       Based on the page research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios.
       For each scenario provide specific steps and expected outcomes.
+      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.
       </task>
 
       <rules>
