@@ -52,10 +52,10 @@ export function generalizeSegment(segment: string): string {
   return '[^/]+';
 }
 
-export function generalizeUrl(url: string): string {
+export function generalizeUrl(url: string, replaceSegment: (segment: string) => string = generalizeSegment): string {
   return url
     .split('/')
-    .map((seg) => (seg.length > 0 && isDynamicSegment(seg) ? generalizeSegment(seg) : seg))
+    .map((seg) => (seg.length > 0 && isDynamicSegment(seg) ? replaceSegment(seg) : seg))
     .join('/');
 }
 

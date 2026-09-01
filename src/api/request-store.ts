@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { isDynamicSegment } from '../utils/url-matcher.ts';
+import { generalizeUrl, isDynamicSegment } from '../utils/url-matcher.ts';
 import { RequestResult } from './request-result.ts';
 
 const AUTH_HEADERS = ['authorization', 'x-api-key', 'x-csrf-token'];
@@ -87,7 +87,7 @@ export class RequestStore {
     const lines: string[] = [];
 
     for (const req of requests) {
-      const key = `${req.method} ${normalizePathPattern(req.path)}`;
+      const key = `${req.method} ${generalizeUrl(req.path, () => '{id}')}`;
       if (seen.has(key)) continue;
       seen.add(key);
       lines.push(key);
@@ -113,14 +113,14 @@ export class RequestStore {
 
   findCapturedRequest(method: string, searchPath: string): RequestResult | undefined {
     const upper = method.toUpperCase();
-    const search = normalizePathPattern(searchPath).split('/').filter(Boolean);
+    const search = generalizeUrl(searchPath, () => '{id}').split('/').filter(Boolean);
 
     let best: RequestResult | undefined;
     let bestScore = -1;
 
     for (const req of this.capturedRequests) {
       if (req.method !== upper) continue;
-      const segments = normalizePathPattern(req.path).split('/').filter(Boolean);
+      const segments = generalizeUrl(req.path, () => '{id}').split('/').filter(Boolean);
       if (segments.length < search.length) continue;
       if (!search.every((segment, i) => segment === segments[i])) continue;
 
@@ -193,11 +193,4 @@ export class RequestStore {
 
 export function isFailedRequest(request: RequestResult): boolean {
   return request.status >= 400 || Boolean(request.error);
-}
-
-function normalizePathPattern(urlPath: string): string {
-  return urlPath
-    .split('/')
-    .map((segment) => (segment && isDynamicSegment(segment) ? '{id}' : segment))
-    .join('/');
 }
