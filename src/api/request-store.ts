@@ -159,8 +159,7 @@ export class RequestStore {
   }
 
   getWriteRequestsForScope(scopePath: string): RequestResult[] {
-    const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-    const writes = this.capturedRequests.filter((r) => writeMethods.has(r.method));
+    const writes = this.capturedRequests.filter((r) => r.isWrite);
     const scopeSegments = scopePath.split('/').filter(Boolean);
     if (scopeSegments.length === 0) return writes;
 
