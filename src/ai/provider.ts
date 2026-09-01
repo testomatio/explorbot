@@ -428,7 +428,7 @@ export class Provider {
     let invalidRequestFeedbackAdded = false;
     const executedStepMessages: ModelMessage[] = [];
     try {
-      const response = await this.withModelRequestSlot(() =>
+      let response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
           const stepMessages: ModelMessage[] = [];
           const onStepEnd = (step: any) => {
@@ -458,7 +458,7 @@ export class Provider {
 
       clearActivity();
 
-      withExecutedSteps(response, executedStepMessages);
+      response = withExecutedSteps(response, executedStepMessages);
 
       // Log tool usage summary
       if (response.toolCalls && response.toolCalls.length > 0) {
