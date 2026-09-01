@@ -4,7 +4,7 @@ import { ConfigParser } from '../config.js';
 export function isDynamicSegment(segment: string): boolean {
   try {
     const configRegex = ConfigParser.getInstance().getConfig().dynamicPageRegex;
-    if (configRegex) return new RegExp(configRegex, 'i').test(segment);
+    if (configRegex && new RegExp(configRegex, 'i').test(segment)) return true;
   } catch {
     /* config not loaded yet */
   }
