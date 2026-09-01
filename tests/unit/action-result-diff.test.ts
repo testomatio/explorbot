@@ -75,7 +75,7 @@ describe('ActionResult Diff', () => {
     expect(diff.htmlParts.length).toBeGreaterThan(0);
   });
 
-  test('should not calculate HTML diff when URLs differ', async () => {
+  test('computes HTML diff across URL changes but keeps aria diff same-url only', async () => {
     const previous = new ActionResult({
       url: '/page1',
       html: '<html><body><h1>Page 1</h1></body></html>',
@@ -90,10 +90,27 @@ describe('ActionResult Diff', () => {
 
     const diff = await Diff.create(current, previous);
 
-    expect(diff.htmlDiff).toBeNull();
-    expect(diff.htmlParts).toEqual([]);
+    expect(diff.htmlDiff).not.toBeNull();
+    expect(diff.pageSize).toBeGreaterThan(0);
     expect(diff.ariaChanged).toBeNull();
     expect(diff.ariaChangeCount).toBe(0);
+  });
+
+  test('does not surface navigation htmlParts in tool results', async () => {
+    const previous = new ActionResult({
+      id: 11,
+      url: 'https://app.example.com/page1',
+      html: '<html><body><h1>Page 1</h1><a href="/other">Other link</a></body></html>',
+    });
+    const current = new ActionResult({
+      id: 12,
+      url: 'https://app.example.com/page2',
+      html: '<html><body><h1>Page 2</h1><div><form><input name="one"><input name="two"></form></div></body></html>',
+    });
+
+    const result = await current.toToolResult(previous, 'a');
+    expect(result.pageDiff?.urlChanged).toBe(true);
+    expect(result.pageDiff?.htmlParts).toBeUndefined();
   });
 
   test('should calculate aria diff', async () => {
@@ -167,5 +184,54 @@ describe('ActionResult Diff', () => {
 
     expect(diff.hasChanges()).toBe(true);
     expect(diff.ariaChanged).not.toBeNull();
+  });
+});
+
+describe('diff memoization and areaOfInterest', () => {
+  beforeEach(() => {
+    ConfigParser.resetForTesting();
+    ConfigParser.setupTestConfig();
+  });
+
+  test('returns the same Diff instance for the same previous state', async () => {
+    const previous = new ActionResult({ id: 1, url: 'https://app.example.com/users', html: '<html><body><h1>Users</h1></body></html>' });
+    const current = new ActionResult({ id: 2, url: 'https://app.example.com/users', html: '<html><body><h1>Users</h1><p>changed</p></body></html>' });
+    const first = await current.diff(previous);
+    const second = await current.diff(previous);
+    expect(second).toBe(first);
+  });
+
+  test('reports the appeared region instead of a collapsed dump', async () => {
+    const previous = new ActionResult({ id: 1, url: 'https://app.example.com/users', html: '<html><body><h1>Users</h1></body></html>' });
+    const current = new ActionResult({
+      id: 2,
+      url: 'https://app.example.com/users',
+      html: '<html><body><h1>Users</h1><aside class="panel"><h2>Edit User</h2></aside></body></html>',
+      overlay: { type: 'modal', name: 'Edit User', root: 'aside.panel', html: '<aside class="panel"><h2>Edit User</h2><form><input name="name"><button>Save</button></form></aside>' },
+    });
+    const result = await current.toToolResult(previous, 'aside.panel');
+    expect(result.pageDiff?.areaOfInterest).toBe('modal "Edit User" opened, scope: aside.panel');
+    expect(result.pageDiff?.htmlParts).toHaveLength(1);
+    expect(result.pageDiff?.htmlParts?.[0].container).toBe('aside.panel');
+    expect(result.pageDiff?.htmlParts?.[0].subtree).toContain('Edit User');
+  });
+
+  test('announces a nested region replacing an open one, but not a carried one', async () => {
+    const html = '<html><body><h1>Users</h1><aside class="panel"><h2>Edit User</h2></aside></body></html>';
+    const withDrawer = { type: 'modal' as const, name: 'Edit User', root: 'aside.panel' };
+
+    const drawerState = new ActionResult({ id: 21, url: 'https://app.example.com/users', html, overlay: withDrawer });
+    const nested = new ActionResult({
+      id: 22,
+      url: 'https://app.example.com/users',
+      html: `${html} `,
+      overlay: { type: 'region', name: 'Select tests', root: 'div.picker' },
+    });
+    const nestedResult = await nested.toToolResult(drawerState, 'div.picker');
+    expect(nestedResult.pageDiff?.areaOfInterest).toBe('region "Select tests" opened, scope: div.picker');
+
+    const carried = new ActionResult({ id: 23, url: 'https://app.example.com/users', html: `${html}  `, overlay: withDrawer });
+    const carriedResult = await carried.toToolResult(drawerState, 'aside.panel');
+    expect(carriedResult.pageDiff?.areaOfInterest).toBeUndefined();
   });
 });

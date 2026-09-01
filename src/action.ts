@@ -11,9 +11,9 @@ import { Observability } from './observability.ts';
 import type { PlaywrightRecorder } from './playwright-recorder.ts';
 import type { StateManager } from './state-manager.js';
 import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
-import { captureHtmlForSnapshot, getVisibleOverlayHtmlExtractorSource, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
+import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
-import { Overlay } from './utils/overlay.js';
+import { Overlay, OverlayPage } from './utils/overlay.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import { safeFilename } from './utils/strings.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
@@ -146,13 +146,11 @@ class Action {
       let ariaSnapshot: string | null = null;
       let ariaSnapshotFile: string | undefined = undefined;
       let focusedElement: FocusedElement | null = null;
-      let overlayHtml = '';
 
       try {
         const page = this.playwrightHelper.page;
         ariaSnapshot = await page.locator('body').ariaSnapshot();
         focusedElement = await page.evaluate(readFocusedElement);
-        if (!frame) overlayHtml = await this.captureOverlayHtml();
       } catch (err) {
         debugLog('ARIA snapshot failed:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
@@ -181,9 +179,9 @@ class Action {
         ariaSnapshot,
         ariaSnapshotFile,
         focusedElement,
-        overlayHtml: overlayHtml || undefined,
         iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
+      if (!frame) await this.detectRegionOfInterest(result).catch((err: Error) => debugLog('Region detection failed:', err.message));
       this.stateManager.updateState(result, codeBlock);
       return result;
     } catch (err) {
@@ -195,14 +193,64 @@ class Action {
     }
   }
 
-  private async captureOverlayHtml(): Promise<string> {
-    return this.playwrightHelper.page.evaluate(
-      ({ extractorSource, config }: { extractorSource: string; config: any }) => {
-        const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
-        return extract(config);
-      },
-      { extractorSource: getVisibleOverlayHtmlExtractorSource(), config: Overlay.captureConfig() }
-    );
+  private async detectRegionOfInterest(result: ActionResult): Promise<void> {
+    const previousState = this.stateManager.getCurrentState();
+    if (!previousState) return;
+    const previous = ActionResult.fromState(previousState);
+    const previousOverlay = previous.overlay;
+    const sameUrl = !!previous.url && result.isSameUrl({ url: previous.url });
+    const overlayPage = new OverlayPage(this.playwrightHelper.page);
+
+    if (result.overlay.detected && previousOverlay.detected && previousOverlay.root && previousOverlay.type === result.overlay.type && previousOverlay.name === result.overlay.name) {
+      result.overlay = previousOverlay;
+      return;
+    }
+
+    if (!previous.html) return;
+
+    if (previous.html === result.html) {
+      if (sameUrl && previousOverlay.present && previousOverlay.xpath && !result.overlay.detected) result.overlay = previousOverlay;
+      return;
+    }
+
+    let carried: Overlay | null = null;
+    if (sameUrl && previousOverlay.present && previousOverlay.xpath) {
+      if (await overlayPage.isStillOpen(previousOverlay)) {
+        carried = previousOverlay;
+      } else {
+        debugLog(`Region closed: ${previousOverlay.name || previousOverlay.type}`);
+        if (!result.overlay.detected) {
+          const parent = previousOverlay.parent;
+          if (parent?.xpath) {
+            const restored = new Overlay(parent);
+            if (await overlayPage.isStillOpen(restored)) result.overlay = restored;
+          }
+          return;
+        }
+      }
+    }
+
+    const diff = await result.diff(previous);
+    const detected = await overlayPage.detectRegion({
+      parts: diff.htmlParts,
+      pageSize: diff.pageSize,
+      similarity: diff.similarity,
+      sameUrl,
+      previousHtml: previous.html,
+    });
+
+    if (result.overlay.detected) {
+      if (detected) result.overlay = result.overlay.withGeometry(detected);
+      return;
+    }
+
+    if (detected) {
+      result.overlay = detected;
+      if (carried) result.overlay = detected.withParent(carried);
+      return;
+    }
+
+    if (carried) result.overlay = carried;
   }
 
   private async captureMainDocumentStatus(): Promise<number | undefined> {
@@ -381,6 +429,13 @@ class Action {
         await recorder.reset();
         await recorder.start();
       }
+      if (executedSteps.length > 0) {
+        codeString = executedSteps.map((step) => step.command).join('\n');
+      }
+      if (!isFatalBrowserError(err)) {
+        const captured = await this.captureOnce({ codeBlock: codeString }).catch(() => null);
+        if (captured && !captured.error) this.actionResult = captured;
+      }
       this.assertionSteps = [];
       throw err;
     } finally {
@@ -491,11 +546,29 @@ const ASSERTION_STEP_NAMES = new Set(['see', 'dontSee', 'seeElement', 'dontSeeEl
 type StepListener = (step: any, error?: any) => void;
 
 export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Array<{ name: string; args: any[] }>): (() => void) => {
+  const recorded = new WeakMap<object, ExecutedStep>();
+  let batchFailed = false;
   const listener: StepListener = (step, error) => {
     if (!step?.toCode) return;
     if (step.name?.startsWith('grab')) return;
+
+    const existing = recorded.get(step);
+    if (existing) {
+      if (!error && !existing.success) {
+        existing.success = true;
+        existing.error = undefined;
+        batchFailed = target.some((entry) => !entry.success);
+      }
+      return;
+    }
+    if (batchFailed) return;
+
     const executed: ExecutedStep = { command: step.toCode(), success: !error };
-    if (error) executed.error = errorToString(error);
+    if (error) {
+      executed.error = errorToString(error);
+      batchFailed = true;
+    }
+    recorded.set(step, executed);
     target.push(executed);
     if (assertionsTarget && ASSERTION_STEP_NAMES.has(step.name)) {
       assertionsTarget.push({ name: step.name, args: step.args || [] });
