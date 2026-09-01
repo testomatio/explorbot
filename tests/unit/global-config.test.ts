@@ -10,7 +10,7 @@ import InitWizard from '../../src/components/InitWizard.tsx';
 import { ConfigParser, PROVIDERS } from '../../src/config.ts';
 import { listSites, registerSite, resolveSiteTarget, siteFolderName } from '../../src/global-config.ts';
 
-const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'GLOBAL_ONLY_KEY', 'SHARED_KEY'];
+const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_SPEC', 'EXPLORBOT_API_SPEC', 'EXPLORBOT_KNOWLEDGE', 'EXPLORBOT_KNOWLEDGE_FILE', 'GLOBAL_ONLY_KEY', 'SHARED_KEY'];
 const GLOBAL_CONFIG = "export default { ai: { model: { modelId: 'global-model' } } };\n";
 
 let home: string;
@@ -45,6 +45,14 @@ async function typeUntilFrame(wizard: ReturnType<typeof render>, input: string, 
 
 function siteDir(folder: string): string {
   return join(home, '.explorbot', 'sites', folder);
+}
+
+function resetApibotParser(): ApibotConfigParser {
+  const parser = ApibotConfigParser.getInstance();
+  (parser as any).config = null;
+  (parser as any).configPath = null;
+  (parser as any).site = null;
+  return parser;
 }
 
 beforeEach(() => {
@@ -263,6 +271,26 @@ describe('global mode', () => {
     expect(parser.getOutputDir()).toBe(join(siteDir('app.example.com'), 'output'));
   });
 
+  it('writes environment knowledge into the site knowledge directory', async () => {
+    const parser = ConfigParser.getInstance();
+    writeGlobalConfig();
+    process.env.EXPLORBOT_KNOWLEDGE = 'Log in as admin@example.com / secret123';
+
+    await parser.loadConfig({ path: workDir, from: 'https://app.example.com' });
+
+    expect(readFileSync(join(siteDir('app.example.com'), 'knowledge', 'global.md'), 'utf8')).toContain('Log in as admin@example.com / secret123');
+  });
+
+  it('takes the application spec from the environment', async () => {
+    const parser = ConfigParser.getInstance();
+    writeGlobalConfig();
+    process.env.EXPLORBOT_SPEC = join(workDir, 'docs');
+
+    const config = await parser.loadConfig({ path: workDir, from: 'https://app.example.com' });
+
+    expect(config.dirs?.spec).toBe(join(workDir, 'docs'));
+  });
+
   it('falls back to a URL pinned in the global config when the command passes none', async () => {
     const parser = ConfigParser.getInstance();
     writeGlobalConfig("export default { web: { url: 'https://pinned.example.com' }, ai: { model: { modelId: 'global-model' } } };\n");
@@ -322,10 +350,7 @@ describe('global mode', () => {
 describe('global mode in the API boat', () => {
   it('derives the base endpoint and site folder from the endpoint host', async () => {
     writeGlobalConfig();
-    const parser = ApibotConfigParser.getInstance();
-    (parser as any).config = null;
-    (parser as any).configPath = null;
-    (parser as any).site = null;
+    const parser = resetApibotParser();
 
     const config = await parser.loadConfig({ path: workDir, endpoint: 'https://api.example.com/users' });
 
@@ -334,9 +359,46 @@ describe('global mode in the API boat', () => {
     expect(parser.getKnowledgeDir()).toBe(join(siteDir('api.example.com'), 'knowledge'));
     expect(parser.resolveEndpointPath('https://api.example.com/users')).toBe('/users');
 
-    (parser as any).config = null;
-    (parser as any).configPath = null;
-    (parser as any).site = null;
+    resetApibotParser();
+  });
+
+  it('keeps the path prefix of the endpoint option in the base endpoint', async () => {
+    writeGlobalConfig();
+    const parser = resetApibotParser();
+
+    const config = await parser.loadConfig({ path: workDir, baseEndpoint: 'https://api.example.com/v2/team' });
+
+    expect(config.api.baseEndpoint).toBe('https://api.example.com/v2/team');
+    expect(parser.getOutputDir()).toBe(join(siteDir('api.example.com'), 'output'));
+    expect(parser.resolveEndpointPath('/users')).toBe('/users');
+    expect(parser.resolveEndpointPath('https://api.example.com/v2/team/users')).toBe('/users');
+    expect(parser.resolveEndpointPath('https://api.example.com/v2/team')).toBe('/');
+
+    resetApibotParser();
+  });
+
+  it('takes the spec from the command option over the config file', async () => {
+    writeGlobalConfig("export default { ai: { model: { modelId: 'global-model' } }, api: { spec: ['from-config.yaml'] } };\n");
+    const parser = resetApibotParser();
+
+    const config = await parser.loadConfig({ path: workDir, baseEndpoint: 'https://api.example.com', spec: 'from-option.yaml' });
+
+    expect(config.api.spec).toEqual(['from-option.yaml']);
+    expect(process.env.EXPLORBOT_API_SPEC).toBe('from-option.yaml');
+
+    resetApibotParser();
+  });
+
+  it('writes environment knowledge into the site knowledge directory', async () => {
+    writeGlobalConfig();
+    process.env.EXPLORBOT_KNOWLEDGE = 'Send a bearer token with every request';
+    const parser = resetApibotParser();
+
+    await parser.loadConfig({ path: workDir, baseEndpoint: 'https://api.example.com' });
+
+    expect(readFileSync(join(siteDir('api.example.com'), 'knowledge', 'global.md'), 'utf8')).toContain('Send a bearer token with every request');
+
+    resetApibotParser();
   });
 });
 

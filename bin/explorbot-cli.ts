@@ -10,6 +10,7 @@ import React from 'react';
 import { flushTelemetry } from '../src/ai/provider.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
+import { knowledgeOption, wsOption } from '../src/commands/options/index.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
 import { ExplorBot, type ExplorBotOptions } from '../src/explorbot.js';
 import { remote } from '../src/remote.js';
@@ -28,7 +29,8 @@ const pkgPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../p
 const pkgVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version as string;
 
 program.name(cli).description('AI-powered web exploration tool').version(pkgVersion, '-V, --version');
-remote.registerOption(program);
+wsOption.register(program);
+knowledgeOption.register(program);
 
 process.on('uncaughtException', async (error) => {
   tag('error').log(`Uncaught exception: ${error instanceof Error ? `${error.message}\n${error.stack}` : String(error)}`);
@@ -706,7 +708,7 @@ addCommonOptions(program.command('navigate <url>').description('Navigate to a UR
 });
 
 addCommonOptions(
-  program.command('drill <url>').alias('driller').description('Drill all components on a page to learn interactions').option('--knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
+  program.command('drill <url>').alias('driller').description('Drill all components on a page to learn interactions').option('--save-knowledge <path>', 'Save learned interactions to knowledge file at this URL path').option('--max-components <count>', 'Maximum number of components to drill')
 ).action(async (url, options) => {
   try {
     const explorBot = new ExplorBot(buildExplorBotOptions(url, options));
@@ -715,7 +717,7 @@ addCommonOptions(
     await explorBot.visit(url);
 
     const plan = await explorBot.agentDriller().drill({
-      knowledgePath: options.knowledge,
+      knowledgePath: options.saveKnowledge,
       maxComponents: Number.parseInt(options.maxComponents || '30', 10),
       interactive: false,
     });

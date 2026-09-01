@@ -87,8 +87,49 @@
 
 ## 2026-08-30
 
+### New CLI Options
+
+- **`--endpoint`** (api) — The base API endpoint an `explorbot api` run tests, so the API boat no longer
+  needs a config file to know where the API is. `api test`, which takes a plan file rather than an
+  endpoint, reads it from here too, and a path prefix is kept: given
+  `https://api.example.com/v1`, a step on `/users` is sent to `https://api.example.com/v1/users`.
+  It sets the same value as `EXPLORBOT_URL`, and wins when both are given.
+  ```bash
+  explorbot api plan /users --endpoint https://api.example.com/v1
+  explorbot api test output/plans/users.md --endpoint https://api.example.com/v1
+  ```
+- **`--spec`** (api) — The OpenAPI spec for the run, as a local file or a URL. Chief plans from it and
+  Curler looks up schemas in it; given here it replaces `api.spec` from the config file. It sets the
+  same value as `EXPLORBOT_API_SPEC`.
+  ```bash
+  explorbot api plan /users --spec ./openapi.yaml
+  explorbot api plan /users --spec https://api.example.com/openapi.json
+  ```
+- **`--spec`** (prima) — The collected documentation a prima run reads as page knowledge: a Docbot
+  application spec directory, or its `index.md`. It is the flag form of the `--spec` that
+  `explorbot start` already takes, and the new `EXPLORBOT_SPEC` variable sets the same thing for
+  every browser command — `PRIMA_CLI_SPEC` for prima, like the other variables it mirrors.
+  ```bash
+  prima check "a project can be archived" --spec output/docs
+  PRIMA_CLI_SPEC=output/docs prima do "open the account menu"
+  ```
+- **`--url`** (docs collect) — The base URL to document when the path argument is relative, so the
+  site can come from the command line rather than only from an absolute path or the environment. An
+  absolute path argument still carries its own. Same value as `EXPLORBOT_URL`.
+  ```bash
+  explorbot docs collect /dashboard --url https://app.example.com
+  ```
+
 ### Changes
 
+- Knowledge from `EXPLORBOT_KNOWLEDGE` and `EXPLORBOT_KNOWLEDGE_FILE` now reaches runs that use the
+  global configuration in `~/.explorbot` — exploration, prima, doc collection and API testing alike.
+  Each run writes what they carry into the site's knowledge directory, where the agents read it like
+  any other knowledge file; the next run rewrites it, and a run that sets neither variable removes
+  it, so `learn` and `know` remain the way to keep a fact. Until now those two variables only had an
+  effect when no configuration file existed at all.
+- `config` no longer prints a directory as the project root with an absolute path glued onto the
+  end. An absolute `dirs` entry, such as an application spec outside the project, is shown as it is.
 - State Manager: An open panel now stays part of the state until it actually closes. Detection used
   to fire only on the single action that opened a drawer — one step later the agent forgot the
   drawer existed, so its scope hints, the Pilot's state line and the panel's own experience file
@@ -397,6 +438,35 @@
 
 ## 2026-08-23
 
+### New CLI Options
+
+- **`--knowledge`** — Facts for one run, passed on the command line instead of stored in `knowledge/`.
+  Nothing is written to disk, so credentials and one-off test data stay out of the repository. Plain
+  text applies everywhere; frontmatter scopes it to a page (`url:`) or an API endpoint (`endpoint:`),
+  with the same patterns knowledge files use. `${env.VAR}` interpolation and page automation fields
+  such as `wait` work as they do in files. Repeat the flag for several facts. Like `--ws`, it is a
+  program-level option: it works on every command of `explorbot`, `explorbot api`, `explorbot docs`
+  and `prima`, and can go anywhere on the line.
+  ```bash
+  explorbot explore /pay --knowledge 'My credit card is 4111 1111 1111 1111'
+  explorbot explore / --knowledge '---
+  url: /login
+  ---
+  Log in as admin@example.com / secret123'
+  explorbot api explore /orders --knowledge 'Send X-Api-Key on every request'
+  prima check "checkout completes" --knowledge 'Use the sandbox card 4111 1111 1111 1111'
+  ```
+- **`--save-knowledge`** (renamed) — `explorbot drill --knowledge <path>` is now
+  `explorbot drill --save-knowledge <path>`, and `/drill --knowledge` is now `/drill --save-knowledge`.
+  It still saves the interactions drilling learned to a knowledge file at that URL path; the rename
+  frees `--knowledge` for the session facts above.
+  ```bash
+  explorbot drill /login --save-knowledge /login
+  ```
+  ```
+  /drill --save-knowledge /login --max-components 10
+  ```
+
 ### Changes
 
 - Prima reads `PRIMA_CLI_*` environment variables. Each one mirrors the `EXPLORBOT_*` variable of the
@@ -424,6 +494,13 @@
   the test.
 - [Pilot] The Pilot no longer pushes a full page of HTML into the Tester mid-test. It can still
   attach the accessibility tree, a page summary, or the UI map when recent actions failed.
+- [Chief] Now reads endpoint knowledge when planning API tests, so auth rules and business
+  constraints written with `explorbot api know` reach the plan.
+- [Curler] Now reads endpoint knowledge when running an API test, so auth headers and payload rules
+  reach the requests themselves rather than only the plan.
+- Knowledge scoped to an API endpoint no longer reaches browser pages. A knowledge file or
+  `--knowledge` entry with `endpoint:` frontmatter is API knowledge, one with `url:` is page
+  knowledge, and one with neither still applies to both.
 - Prima now ships as its own npm package, so `npx prima-cli` runs it without installing explorbot
   first. It is the same tool as the `prima` command that comes with explorbot, built from the same
   source and released alongside it — only the package name and the binary differ.

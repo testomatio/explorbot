@@ -37,7 +37,7 @@ export class ConfigCommand extends BaseCommand {
     const dirs: Record<string, string> = {};
     if (options.root) {
       for (const [name, dir] of Object.entries({ output: 'output', ...config.dirs })) {
-        dirs[name] = path.join(options.root, dir);
+        dirs[name] = path.resolve(options.root, dir);
       }
     }
 

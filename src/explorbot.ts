@@ -166,7 +166,7 @@ export class ExplorBot {
   }
 
   knowledgeTracker(): KnowledgeTracker {
-    return (this._knowledgeTracker ||= new KnowledgeTracker(this.options.applicationSpec));
+    return (this._knowledgeTracker ||= new KnowledgeTracker({ applicationSpec: this.options.applicationSpec }));
   }
 
   experienceTracker(): ExperienceTracker {
