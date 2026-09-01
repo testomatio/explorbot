@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMock } from '@copilotkit/aimock';
-import { EmptyPlanError, Planner } from '../../src/ai/planner.ts';
+import { Planner } from '../../src/ai/planner.ts';
 import { clearSessionDedup } from '../../src/ai/planner/session-dedup.ts';
 import { clearStyleCache } from '../../src/ai/planner/styles.ts';
 import { clearPlanRegistry, registerPlan } from '../../src/ai/planner/subpages.ts';
@@ -282,11 +282,13 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('return an empty scenarios list');
   });
 
-  it('signals an empty plan when AI returns no scenarios and there is no current plan', async () => {
+  it('returns an empty plan when AI returns no scenarios', async () => {
     mock.clearFixtures();
     mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
 
-    await expect(planner.plan()).rejects.toThrow(EmptyPlanError);
+    const plan = await planner.plan();
+
+    expect(plan.tests.length).toBe(0);
   });
 
   it('keeps an existing plan when a later style returns empty scenarios', async () => {

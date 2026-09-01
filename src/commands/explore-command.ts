@@ -1,5 +1,4 @@
 import figureSet from 'figures';
-import { EmptyPlanError } from '../ai/planner.js';
 import { getStyles } from '../ai/planner/styles.js';
 import { outputPath } from '../config.js';
 import { normalizeUrl } from '../state-manager.js';
@@ -113,13 +112,7 @@ export class ExploreCommand extends BaseCommand {
   }
 
   private async runFreshMode(mainUrl: string | undefined, feature: string | undefined, styles?: string[]): Promise<void> {
-    try {
-      await this.runAllStyles(mainUrl, feature, undefined, undefined, styles);
-    } catch (err) {
-      if (!(err instanceof EmptyPlanError)) throw err;
-      tag('warning').log(`Nothing to test here: ${err.message}`);
-      return;
-    }
+    await this.runAllStyles(mainUrl, feature, undefined, undefined, styles);
     this.rememberCurrentPlan();
     const mainPlan = this.explorBot.getCurrentPlan();
     if (!mainPlan) return;
@@ -276,16 +269,12 @@ export class ExploreCommand extends BaseCommand {
         }
         await this.runAllStyles(pick.url, undefined, mainPlan, this.completedPlans, styles);
         const subPlan = this.explorBot.getCurrentPlan();
-        if (subPlan && !this.completedPlans.includes(subPlan)) {
+        if (subPlan?.tests.length && !this.completedPlans.includes(subPlan)) {
           this.completedPlans.push(subPlan);
         }
         knownUrls.add(normalizeUrl(pick.url));
       } catch (err) {
         this.failedSubPages.add(normalizeUrl(pick.url));
-        if (err instanceof EmptyPlanError) {
-          tag('info').log(`Skipping sub-page: ${err.message}`);
-          continue;
-        }
         tag('warning').log(`Sub-page exploration failed: ${err instanceof Error ? err.message : err}`);
       }
     }
@@ -315,6 +304,11 @@ export class ExploreCommand extends BaseCommand {
       if (fresh && parentPlan) opts.extend = parentPlan;
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
+      const plan = this.explorBot.getCurrentPlan();
+      if (plan && plan.tests.length === 0) {
+        tag('warning').log('Nothing to test on this page, moving on');
+        return;
+      }
       await this.runPendingTests();
       this.rememberCurrentPlan();
       fresh = false;
@@ -334,7 +328,7 @@ export class ExploreCommand extends BaseCommand {
 
     await this.explorBot.plan(feature, opts);
     if (this.explorBot.lastPlanError) {
-      if (this.explorBot.lastPlanError instanceof ErrorPageError || this.explorBot.lastPlanError instanceof EmptyPlanError) {
+      if (this.explorBot.lastPlanError instanceof ErrorPageError) {
         throw this.explorBot.lastPlanError;
       }
       tag('info').log(`Retrying planning style '${opts.style}'...`);

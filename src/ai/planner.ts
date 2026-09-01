@@ -195,10 +195,6 @@ export class Planner extends PlannerBase implements Agent {
         throw new Error('No tasks were created successfully');
       }
 
-      if (aiResult.object.scenarios.length === 0 && !this.currentPlan) {
-        throw new EmptyPlanError(actionResult.url || state.url);
-      }
-
       const defaultStartUrl = this.getDefaultStartUrl(state);
       const fromPlanning = aiResult.object.scenarios.map((s: any) => new Test(s.scenario, s.priority, s.expectedOutcomes, s.startUrl || defaultStartUrl, s.steps || []));
 
@@ -632,12 +628,5 @@ export class Planner extends PlannerBase implements Agent {
       8. For a fresh plan propose at least ${this.MIN_TASKS} tests; when expanding an existing plan return ONLY new scenarios not in the tested list, and an empty array if none remain.
     </task>
     `;
-  }
-}
-
-export class EmptyPlanError extends Error {
-  constructor(public readonly url: string) {
-    super(`no scenarios proposed for ${url}`);
-    this.name = 'EmptyPlanError';
   }
 }
