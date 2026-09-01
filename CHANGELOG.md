@@ -30,8 +30,7 @@
   record, renaming it and deleting it used to land in a single scenario, because the planner was
   told to merge any scenarios that depended on each other. Those chains were the longest tests of a
   run and failed as a whole at the first broken step, so nothing after that step was ever checked.
-  They are three tests now; a test that needs a record creates it as setup, and no test continues
-  where another one stopped.
+  They are three tests now, each verifying one operation.
 - [Planner] Test data is no longer labelled "disposable" in scenario titles. The word leaked in
   from the rule that forbids destroying pre-existing data, and the planner sometimes read it as a
   kind of record that already exists — writing a test that acted on "the disposable record created

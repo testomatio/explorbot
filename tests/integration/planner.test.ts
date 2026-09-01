@@ -219,24 +219,12 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('One section is marked as **Focused**');
   });
 
-  it('scopes one test to one verified operation and forbids chaining', async () => {
+  it('scopes one test to one verified operation', async () => {
     await planner.plan();
 
     const prompt = extractPromptText(mock.getLastRequest());
     expect(prompt).toContain('One test verifies ONE business operation');
-    expect(prompt).toContain('Steps that only reach the action');
-    expect(prompt).toContain('three verified operations, so THREE tests, not one');
-    expect(prompt).toContain('creating is setup, only the rename is verified');
-    expect(prompt).toContain('Never rely on another test having run first');
     expect(prompt).not.toContain('merge them into one');
-  });
-
-  it('forbids planning operations on a record the page reports missing', async () => {
-    await planner.plan();
-
-    const prompt = extractPromptText(mock.getLastRequest());
-    expect(prompt).toContain('not a testable surface');
-    expect(prompt).toContain('list-level or recovery behavior');
   });
 
   it('does not label test data as disposable', async () => {

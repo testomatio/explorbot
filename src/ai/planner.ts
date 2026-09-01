@@ -120,7 +120,7 @@ export class Planner extends PlannerBase implements Agent {
       Bad: "Search for X" + "Verify search results" — searching and verifying is ONE test.
       Bad: "Leave field empty" + "Click submit" — that's one negative test, not two.
       Bad: "Create a record, rename it, delete it" — three verified operations, so THREE tests, not one.
-      Good: "Rename existing record and verify the new title" — ONE test; creating is skipped, we asume record already exists, only the rename is verified.
+      Good: "Rename existing record and verify the new title" — ONE test; creating is skipped, we assume record already exists, only the rename is verified.
       You may rely on another test having run first in case we deal with empty state and no relevant data was created yet and we expect another our test creates it
       When the page reports a record is missing or unavailable, it is not a testable surface — plan list-level or recovery behavior instead of operations on that record.${featureDirective}${focusExistingDataDirective}
     </task>
