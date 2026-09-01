@@ -30,8 +30,8 @@
   scenarios that depend on each other, so a record's whole lifecycle — create it, rename it, delete it —
   landed in a single test. Such chains were the longest tests of a run and failed as a whole at the
   first broken step, discarding everything after it. Creating, updating and deleting the same record are
-  now separate tests, each preparing its own starting state instead of continuing where another test
-  stopped.
+  now separate tests; a test that needs a record names it and the data is prepared before the test, so
+  no test continues where another one stopped.
 - [Planner] Scenarios are no longer planned for a record the page reports as missing. When a detail page
   shows a "not found" message instead of the record, the planner used to invent edit-form scenarios for
   the dead record anyway, and every one of them stopped immediately. The list and recovery behavior are

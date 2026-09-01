@@ -224,8 +224,9 @@ describe('Planner with aimock', () => {
 
     const prompt = extractPromptText(mock.getLastRequest());
     expect(prompt).toContain('One test covers ONE business operation');
-    expect(prompt).toContain('Micro-steps of a single operation never become separate tests');
+    expect(prompt).toContain('Steps that merely reach the action');
     expect(prompt).toContain('are SEPARATE tests');
+    expect(prompt).toContain("Creating a record is never another test's setup");
     expect(prompt).toContain('never rely on another test having run first');
     expect(prompt).not.toContain('merge them into one');
   });
