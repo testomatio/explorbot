@@ -46,10 +46,6 @@ export class RequestStore {
     result.save(this.outputDir);
   }
 
-  addRequest(result: RequestResult): void {
-    this.addMadeRequest(result);
-  }
-
   getCapturedRequests(): RequestResult[] {
     return this.capturedRequests;
   }
@@ -58,25 +54,8 @@ export class RequestStore {
     return this.madeRequests;
   }
 
-  getRequests(): RequestResult[] {
-    return this.madeRequests;
-  }
-
   getLastRequest(): RequestResult | undefined {
     return this.madeRequests[this.madeRequests.length - 1];
-  }
-
-  getRequestsByEndpoint(pathPrefix: string): RequestResult[] {
-    return this.madeRequests.filter((r) => r.path.startsWith(pathPrefix));
-  }
-
-  getRequestsByMethod(method: string): RequestResult[] {
-    const upper = method.toUpperCase();
-    return this.madeRequests.filter((r) => r.method === upper);
-  }
-
-  getRequestsByStatus(status: number): RequestResult[] {
-    return this.madeRequests.filter((r) => r.status === status);
   }
 
   toEndpointList(scopePath?: string): string {

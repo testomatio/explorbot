@@ -1113,7 +1113,7 @@ export class Prima {
       aria: result.ariaSnapshot,
       html: await result.combinedHtml(),
       screenshot: result.screenshot,
-      requests: this.bot.requestStore().getRequests(),
+      requests: this.bot.requestStore().getMadeRequests(),
     });
   }
 
