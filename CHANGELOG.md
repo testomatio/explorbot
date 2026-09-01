@@ -8,8 +8,10 @@
   record, a failed load, or a page with nothing on it still came back with a full set of invented
   scenarios, every one of them written against a page that had nothing to click. The planner now
   proposes nothing for such a page.
-- Explore: A sub-page that turns out to be an error page is skipped before any research or planning
-  runs on it, and exploration moves straight on to the next candidate page.
+- Explore: A sub-page with nothing to test is skipped and exploration moves straight on to the next
+  candidate page. An error page is caught before any research or planning runs on it, and a page the
+  planner proposes no scenarios for is dropped as well, instead of being reported as a planning
+  failure and retried once per planning style.
 - [Provider] Groq prompt cache hits are counted again. Groq reports how much of a prompt it served
   from cache, but the pinned `@ai-sdk/groq` build read that number out of the response and then
   dropped it, so every Groq request was recorded as a full-price miss and the cache hit rate showed

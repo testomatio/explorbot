@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createOpenAI } from '@ai-sdk/openai';
 import { LLMock } from '@copilotkit/aimock';
-import { Planner } from '../../src/ai/planner.ts';
+import { EmptyPlanError, Planner } from '../../src/ai/planner.ts';
 import { clearSessionDedup } from '../../src/ai/planner/session-dedup.ts';
 import { clearStyleCache } from '../../src/ai/planner/styles.ts';
 import { clearPlanRegistry, registerPlan } from '../../src/ai/planner/subpages.ts';
@@ -282,10 +282,24 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('return an empty scenarios list');
   });
 
-  it('throws when AI returns empty scenarios and no current plan', async () => {
+  it('signals an empty plan when AI returns no scenarios and there is no current plan', async () => {
     mock.clearFixtures();
     mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
 
-    await expect(planner.plan()).rejects.toThrow('No tasks were created successfully');
+    await expect(planner.plan()).rejects.toThrow(EmptyPlanError);
+  });
+
+  it('keeps an existing plan when a later style returns empty scenarios', async () => {
+    const existingPlan = new Plan('Task Board Testing');
+    existingPlan.url = '/tasks/board';
+    existingPlan.addTest(new Test('Create a new task via the Create Task modal', 'critical', ['Task appears'], '/tasks/board', ['Click Create']));
+    planner.currentPlan = existingPlan;
+
+    mock.clearFixtures();
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
+
+    const plan = await planner.plan();
+
+    expect(plan.tests.length).toBe(1);
   });
 });
