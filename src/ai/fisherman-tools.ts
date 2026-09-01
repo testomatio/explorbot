@@ -3,24 +3,20 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import type { ApiClient } from '../api/api-client.ts';
 import type { RequestResult } from '../api/request-result.ts';
-import type { RequestStore } from '../api/request-store.ts';
+import type { Haul, RequestStore } from '../api/request-store.ts';
 import { extractEndpointDefinition } from '../api/spec-reader.ts';
 import { tag } from '../utils/logger.ts';
-import { RequestMap } from '../utils/request-map.ts';
 import { isDynamicSegment } from '../utils/url-matcher.ts';
 
-export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, opts: { spec?: any; baseEndpoint?: string }) {
+export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, haul: Haul, opts: { spec?: any; baseEndpoint?: string }) {
   let finished = false;
   let result: FishermanResult | null = null;
-  const ledgerStart = requestStore.getMadeRequests().length;
 
-  const runRequests = () => requestStore.getMadeRequests().slice(ledgerStart);
-  const successfulWrites = () => runRequests().filter((r) => r.isWrite && !r.error && r.status >= 200 && r.status < 400);
-  const getResult = () => result ?? synthesizeResult(runRequests(), successfulWrites(), false);
+  const getResult = () => result ?? synthesizeResult(haul, false);
   const isFinished = () => finished;
   const finishFromText = (text?: string) => {
     finished = true;
-    const synthesized = synthesizeResult(runRequests(), successfulWrites(), true);
+    const synthesized = synthesizeResult(haul, true);
     if (text && synthesized.success) synthesized.summary = text;
     result = synthesized;
   };
@@ -160,32 +156,12 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
           .describe('List of items that could not be created'),
       }),
       execute: async ({ summary, created, failed }) => {
-        const writes = successfulWrites();
-        if (writes.length === 0) {
-          tag('warning').log('Fisherman: finish rejected — no successful write request in this run');
-          return { finished: false, error: 'No successful write request was made in this run, so nothing was created. Keep working, or call stop if the data cannot be prepared.' };
-        }
-
-        const createdRequests = new RequestMap(writes);
-
-        const verified: FishermanResult['created'] = [];
-        for (const item of created) {
-          if (item.id === undefined) {
-            verified.push(item);
-            continue;
-          }
-          const request = createdRequests.get(item.id);
-          if (!request) {
-            tag('warning').log(`Fisherman: dropped unverified created item ${item.type} (id: ${item.id})`);
-            continue;
-          }
-          verified.push({ ...item, request: request.toEndpoint() });
-        }
-        if (verified.length === 0) verified.push(...writes.map(toCreatedItem));
+        const { result: verified, error } = verifyFinish(haul, { summary, created, failed });
+        if (!verified) return { finished: false, error };
 
         tag('success').log(`Fisherman done: ${summary}`);
         finished = true;
-        result = { success: true, summary, created: verified, failed: failed || [] };
+        result = verified;
         return { finished: true };
       },
     }),
@@ -207,8 +183,37 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   return { tools, getResult, isFinished, finishFromText };
 }
 
-function synthesizeResult(made: RequestResult[], writes: RequestResult[], declaredDone: boolean): FishermanResult {
-  const failures = made.filter((r) => r.status >= 400 || r.error);
+export function verifyFinish(haul: Haul, input: { summary: string; created: FishermanResult['created']; failed?: FishermanResult['failed'] }): { result: FishermanResult | null; error?: string } {
+  const writes = haul.successfulWrites();
+  if (writes.length === 0) {
+    tag('warning').log('Fisherman: finish rejected — no successful write request in this run');
+    return { result: null, error: 'No successful write request was made in this run, so nothing was created. Keep working, or call stop if the data cannot be prepared.' };
+  }
+
+  const createdRequests = haul.byId();
+
+  const verified: FishermanResult['created'] = [];
+  for (const item of input.created) {
+    if (item.id === undefined) {
+      verified.push(item);
+      continue;
+    }
+    const request = createdRequests.get(String(item.id));
+    if (!request) {
+      tag('warning').log(`Fisherman: dropped unverified created item ${item.type} (id: ${item.id})`);
+      continue;
+    }
+    verified.push({ ...item, request: request.toEndpoint() });
+  }
+  if (verified.length === 0) verified.push(...writes.map(toCreatedItem));
+
+  return { result: { success: true, summary: input.summary, created: verified, failed: input.failed || [] } };
+}
+
+function synthesizeResult(haul: Haul, declaredDone: boolean): FishermanResult {
+  const made = haul.requests();
+  const writes = haul.successfulWrites();
+  const failures = haul.failed();
   let summary = `Stopped before finishing: ${made.length} requests, ${writes.length} successful writes, ${failures.length} failed`;
   const lastFailure = failures[failures.length - 1];
   if (lastFailure) summary += `; last failure: ${lastFailure.toSummary()}`;

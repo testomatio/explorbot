@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { createFishermanTools } from '../../src/ai/fisherman-tools.ts';
+import { Haul } from '../../src/api/request-store.ts';
 
 describe('Fisherman tools', () => {
   it('does not present a rejected capture as a request example', async () => {
     const captured = { method: 'POST', path: '/plans', status: 400, requestBody: { plan: 'wrong' } };
-    const { tools } = createFishermanTools({} as any, store(captured), {});
+    const { tools } = fishermanTools({} as any, store(captured), {});
 
     const result: any = await tools.getEndpointSpec.execute({ method: 'POST', path: '/plans' }, {} as any);
 
@@ -16,7 +17,7 @@ describe('Fisherman tools', () => {
   it('prefers the specification when the captured request was rejected', async () => {
     const captured = { method: 'POST', path: '/plans', status: 422, requestBody: { plan: 'wrong' } };
     const spec = { paths: { '/plans': { post: { requestBody: { required: true } } } } };
-    const { tools } = createFishermanTools({} as any, store(captured), { spec });
+    const { tools } = fishermanTools({} as any, store(captured), { spec });
 
     const result: any = await tools.getEndpointSpec.execute({ method: 'POST', path: '/plans' }, {} as any);
 
@@ -27,7 +28,7 @@ describe('Fisherman tools', () => {
 
   it('keeps a successful captured request as a usable example', async () => {
     const captured = { method: 'POST', path: '/plans', status: 201, requestBody: { title: 'Plan' } };
-    const { tools } = createFishermanTools({} as any, store(captured), {});
+    const { tools } = fishermanTools({} as any, store(captured), {});
 
     const result: any = await tools.getEndpointSpec.execute({ method: 'POST', path: '/plans' }, {} as any);
 
@@ -48,7 +49,7 @@ describe('Fisherman tools', () => {
       const apiClient = {
         request: async () => ({ status, statusText: String(status), rawResponseBody: '{}', responseBody: null }),
       };
-      const { tools } = createFishermanTools(apiClient as any, store(), {});
+      const { tools } = fishermanTools(apiClient as any, store(), {});
 
       const result: any = await tools.request.execute({ method: 'POST', path: '/plans' }, {} as any);
 
@@ -60,7 +61,7 @@ describe('Fisherman tools', () => {
     const apiClient = {
       request: async () => ({ status: 201, statusText: 'Created', rawResponseBody: '', responseBody: { id: 7, status: 'draft' } }),
     };
-    const { tools } = createFishermanTools(apiClient as any, store(), {});
+    const { tools } = fishermanTools(apiClient as any, store(), {});
 
     const result: any = await tools.request.execute({ method: 'POST', path: '/items' }, {} as any);
 
@@ -71,7 +72,7 @@ describe('Fisherman tools', () => {
 
 describe('ledger-derived results', () => {
   it('rejects finish when no successful write was made in this run', async () => {
-    const { tools, isFinished } = createFishermanTools({} as any, store(), {});
+    const { tools, isFinished } = fishermanTools({} as any, store(), {});
 
     const result: any = await tools.finish.execute({ summary: 'done', created: [{ type: 'suite', id: '1' }] }, {} as any);
 
@@ -82,7 +83,7 @@ describe('ledger-derived results', () => {
 
   it('ignores writes made before this run started', async () => {
     const made = [madeWrite('POST', '/api/suites', 201, { id: 's1' })];
-    const { tools, isFinished } = createFishermanTools({} as any, store(undefined, made), {});
+    const { tools, isFinished } = fishermanTools({} as any, store(undefined, made), {});
 
     const result: any = await tools.finish.execute({ summary: 'done', created: [{ type: 'suite', id: 's1' }] }, {} as any);
 
@@ -92,7 +93,7 @@ describe('ledger-derived results', () => {
 
   it('drops created items whose id no write response returned, keeps verified ones with their request', async () => {
     const made: any[] = [];
-    const { tools, getResult } = createFishermanTools({} as any, store(undefined, made), {});
+    const { tools, getResult } = fishermanTools({} as any, store(undefined, made), {});
     made.push(madeWrite('POST', '/api/suites', 201, { id: 's1', title: 'Suite A' }));
 
     await tools.finish.execute(
@@ -113,7 +114,7 @@ describe('ledger-derived results', () => {
 
   it('reports failure when the loop ends without finish, even after a successful write', async () => {
     const made: any[] = [];
-    const { getResult } = createFishermanTools({} as any, store(undefined, made), {});
+    const { getResult } = fishermanTools({} as any, store(undefined, made), {});
     made.push(madeWrite('POST', '/api/suites', 201, { id: 's1', title: 'Suite A' }));
     made.push(madeWrite('POST', '/api/tests', 400));
 
@@ -126,7 +127,7 @@ describe('ledger-derived results', () => {
 
   it('reports failure with a reason when the loop ends with no successful writes', async () => {
     const made: any[] = [];
-    const { getResult } = createFishermanTools({} as any, store(undefined, made), {});
+    const { getResult } = fishermanTools({} as any, store(undefined, made), {});
     made.push(madeWrite('POST', '/api/tests', 400));
 
     const result = getResult();
@@ -136,7 +137,7 @@ describe('ledger-derived results', () => {
 
   it('treats a text-only turn as finish, using the text as summary when writes succeeded', () => {
     const made: any[] = [];
-    const { finishFromText, getResult, isFinished } = createFishermanTools({} as any, store(undefined, made), {});
+    const { finishFromText, getResult, isFinished } = fishermanTools({} as any, store(undefined, made), {});
     made.push(madeWrite('POST', '/api/suites', 201, { id: 's1' }));
 
     finishFromText('Created the suite');
@@ -150,7 +151,7 @@ describe('ledger-derived results', () => {
 
   it('keeps the honest failure summary when a text-only turn ends a run with no successful writes', () => {
     const made: any[] = [];
-    const { finishFromText, getResult } = createFishermanTools({} as any, store(undefined, made), {});
+    const { finishFromText, getResult } = fishermanTools({} as any, store(undefined, made), {});
     made.push(madeWrite('POST', '/api/tests', 400));
 
     finishFromText('All done successfully');
@@ -160,6 +161,10 @@ describe('ledger-derived results', () => {
     expect(result.summary).not.toBe('All done successfully');
   });
 });
+
+function fishermanTools(apiClient: any, requestStore: any, opts: any): any {
+  return createFishermanTools(apiClient, requestStore, new Haul(requestStore), opts);
+}
 
 function store(captured?: any, made: any[] = []): any {
   return {

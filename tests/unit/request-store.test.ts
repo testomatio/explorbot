@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RequestResult } from '../../src/api/request-result.js';
-import { RequestStore } from '../../src/api/request-store.js';
+import { Haul, RequestStore } from '../../src/api/request-store.js';
 
 let counter = 0;
 function makeRequest(method: string, path: string, status: number, id?: string, headers: Record<string, string> = {}): RequestResult {
@@ -315,5 +315,34 @@ describe('extractAuthHeaders session gating', () => {
     store.loadFromDisk();
 
     expect(store.extractAuthHeaders()).toEqual({});
+  });
+});
+
+describe('Haul', () => {
+  let outputDir: string;
+
+  beforeEach(() => {
+    outputDir = mkdtempSync(join(tmpdir(), 'reqstore-'));
+  });
+
+  afterEach(() => {
+    if (existsSync(outputDir)) rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  it('sees only the requests made after it was created', () => {
+    const store = new RequestStore(outputDir);
+    store.addMadeRequest(makeRequest('GET', '/api/suites', 200));
+    store.addMadeRequest(makeRequest('POST', '/api/suites', 201));
+
+    const haul = new Haul(store);
+    store.addMadeRequest(makeRequest('POST', '/api/tests', 422));
+    const created = makeRequest('POST', '/api/tests', 201);
+    created.rawResponseBodyValue = JSON.stringify({ id: 42, title: 'Test A' });
+    store.addMadeRequest(created);
+
+    expect(haul.requests()).toHaveLength(2);
+    expect(haul.failed()).toHaveLength(1);
+    expect(haul.successfulWrites()).toHaveLength(1);
+    expect(haul.byId().get('42')?.path).toBe('/api/tests');
   });
 });
