@@ -5,8 +5,8 @@ import { Command } from 'commander';
 import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.js';
 import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
-import { ConfigParser } from '../../src/config';
 import { knowledgeOption } from '../../src/commands/options/index';
+import { ConfigParser } from '../../src/config';
 import { KnowledgeTracker } from '../../src/knowledge-tracker';
 import { clearRegisteredSecrets, redactSecrets } from '../../src/utils/secrets';
 
@@ -30,9 +30,11 @@ describe('KnowledgeTracker', () => {
       dirs: { knowledge: 'explorbot-test-knowledge' },
     };
     (configParser as any).configPath = '/tmp/config.js';
+    KnowledgeTracker.resetSessionKnowledge();
   });
 
   afterEach(() => {
+    KnowledgeTracker.resetSessionKnowledge();
     if (existsSync(knowledgeDir)) {
       rmSync(knowledgeDir, { recursive: true, force: true });
     }
@@ -264,9 +266,36 @@ describe('KnowledgeTracker', () => {
     });
   });
 
+  describe('endpoint knowledge', () => {
+    it('keeps an endpoint scoped file out of page knowledge', () => {
+      writeFileSync(`${knowledgeDir}/users.md`, matter.stringify('Send X-Token header', { endpoint: '/users/*' }), 'utf8');
+      const tracker = new KnowledgeTracker();
+
+      expect(tracker.renderEndpointKnowledge('/users/42')).toContain('Send X-Token header');
+      expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/users/42' }))).toBe('');
+      expect(tracker.getStateParameters(new ActionResult({ url: '/users/42' }), ['endpoint'])).toEqual({});
+    });
+
+    it('keeps a page scoped file out of endpoint knowledge', () => {
+      writeKnowledgeFile('users.md', '/users/*', 'The list is paginated');
+      const tracker = new KnowledgeTracker();
+
+      expect(tracker.renderEndpointKnowledge('/users/42')).toBe('');
+    });
+
+    it('applies a file without url or endpoint to both', () => {
+      writeFileSync(`${knowledgeDir}/general.md`, matter.stringify('The staging data is reset nightly', {}), 'utf8');
+      const tracker = new KnowledgeTracker();
+
+      expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/anywhere' }))).toContain('reset nightly');
+      expect(tracker.renderEndpointKnowledge('/users')).toContain('reset nightly');
+    });
+  });
+
   describe('session knowledge', () => {
     it('applies knowledge without frontmatter to every page and endpoint', () => {
-      const tracker = new KnowledgeTracker({ knowledge: ['My credit card is 4111 1111 1111 1111'] });
+      KnowledgeTracker.appendSessionKnowledge('My credit card is 4111 1111 1111 1111');
+      const tracker = new KnowledgeTracker();
 
       expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/pay' }))).toContain('4111 1111 1111 1111');
       expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/anywhere-else' }))).toContain('4111 1111 1111 1111');
@@ -274,24 +303,27 @@ describe('KnowledgeTracker', () => {
     });
 
     it('scopes knowledge with url frontmatter to matching pages only', () => {
-      const tracker = new KnowledgeTracker({ knowledge: [matter.stringify('Card expires 12/30', { url: '/pay' })] });
+      KnowledgeTracker.appendSessionKnowledge(matter.stringify('Card expires 12/30', { url: '/pay' }));
+      const tracker = new KnowledgeTracker();
 
       expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/pay' }))).toContain('Card expires 12/30');
       expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/dashboard' }))).toBe('');
       expect(tracker.renderEndpointKnowledge('/pay')).toBe('');
     });
 
-    it('scopes knowledge with endpoint frontmatter to matching endpoints', () => {
-      const tracker = new KnowledgeTracker({ knowledge: [matter.stringify('Send X-Token header', { endpoint: '/users/*' })] });
+    it('scopes knowledge with endpoint frontmatter to endpoints only', () => {
+      KnowledgeTracker.appendSessionKnowledge(matter.stringify('Send X-Token header', { endpoint: '/users/*' }));
+      const tracker = new KnowledgeTracker();
 
       expect(tracker.renderEndpointKnowledge('/users/42')).toContain('Send X-Token header');
       expect(tracker.renderEndpointKnowledge('/orders')).toBe('');
+      expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/users/42' }))).toBe('');
     });
 
     it('keeps several entries independent', () => {
-      const tracker = new KnowledgeTracker({
-        knowledge: [matter.stringify('Login as admin', { url: '/login' }), matter.stringify('Use the sandbox card', { url: '/pay' })],
-      });
+      KnowledgeTracker.appendSessionKnowledge(matter.stringify('Login as admin', { url: '/login' }));
+      KnowledgeTracker.appendSessionKnowledge(matter.stringify('Use the sandbox card', { url: '/pay' }));
+      const tracker = new KnowledgeTracker();
 
       const rendered = tracker.renderRelevantKnowledge(new ActionResult({ url: '/pay' }));
       expect(rendered).toContain('Use the sandbox card');
@@ -299,14 +331,16 @@ describe('KnowledgeTracker', () => {
     });
 
     it('exposes frontmatter hints through state parameters', () => {
-      const tracker = new KnowledgeTracker({ knowledge: [matter.stringify('Slow page', { url: '/reports', wait: 3000 })] });
+      KnowledgeTracker.appendSessionKnowledge(matter.stringify('Slow page', { url: '/reports', wait: 3000 }));
+      const tracker = new KnowledgeTracker();
 
       expect(tracker.getStateParameters(new ActionResult({ url: '/reports' }), ['wait'])).toEqual({ wait: 3000 });
     });
 
     it('interpolates environment variables', () => {
       process.env.EXPLORBOT_TEST_TOKEN = 'abc123';
-      const tracker = new KnowledgeTracker({ knowledge: ['Token is ${env.EXPLORBOT_TEST_TOKEN}'] });
+      KnowledgeTracker.appendSessionKnowledge('Token is ${env.EXPLORBOT_TEST_TOKEN}');
+      const tracker = new KnowledgeTracker();
 
       expect(tracker.renderRelevantKnowledge(new ActionResult({ url: '/any' }))).toContain('Token is abc123');
       Reflect.deleteProperty(process.env, 'EXPLORBOT_TEST_TOKEN');
@@ -321,6 +355,7 @@ describe('KnowledgeTracker', () => {
       });
 
       program.parse(['explore', '/', '--knowledge', matter.stringify('Use the sandbox card', { url: '/pay' })], { from: 'user' });
+      KnowledgeTracker.resetSessionKnowledge();
       program.parse(['explore', '/'], { from: 'user' });
 
       expect(rendered[0]).toContain('Use the sandbox card');
@@ -328,7 +363,8 @@ describe('KnowledgeTracker', () => {
     });
 
     it('never writes session knowledge to the knowledge directory', () => {
-      const tracker = new KnowledgeTracker({ knowledge: ['Temporary fact'] });
+      KnowledgeTracker.appendSessionKnowledge('Temporary fact');
+      const tracker = new KnowledgeTracker();
       tracker.renderRelevantKnowledge(new ActionResult({ url: '/any' }));
 
       expect(tracker.listAllKnowledge()).toHaveLength(0);

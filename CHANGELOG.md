@@ -286,6 +286,9 @@
   constraints written with `explorbot api know` reach the plan.
 - [Curler] Now reads endpoint knowledge when running an API test, so auth headers and payload rules
   reach the requests themselves rather than only the plan.
+- Knowledge scoped to an API endpoint no longer reaches browser pages. A knowledge file or
+  `--knowledge` entry with `endpoint:` frontmatter is API knowledge, one with `url:` is page
+  knowledge, and one with neither still applies to both.
 - Prima now ships as its own npm package, so `npx prima-cli` runs it without installing explorbot
   first. It is the same tool as the `prima` command that comes with explorbot, built from the same
   source and released alongside it — only the package name and the binary differ.

@@ -1,4 +1,4 @@
-import { setOptionKnowledge } from '../../config.js';
+import { KnowledgeTracker } from '../../knowledge-tracker.js';
 import { BaseOption } from './base-option.js';
 
 export class KnowledgeOption extends BaseOption {
@@ -7,6 +7,8 @@ export class KnowledgeOption extends BaseOption {
   collect = (value: string, previous: string[] = []) => [...previous, value];
 
   protected apply(options: Record<string, any>): void {
-    setOptionKnowledge(options.knowledge || []);
+    for (const text of options.knowledge || []) {
+      KnowledgeTracker.appendSessionKnowledge(text);
+    }
   }
 }

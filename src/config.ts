@@ -20,7 +20,6 @@ export const PROVIDERS: Record<string, ProviderInfo> = {
 };
 
 let cachedOutputRoot: string | null = null;
-let knowledgeFromOptions: string[] = [];
 
 interface PlaywrightConfig {
   browser: 'chromium' | 'firefox' | 'webkit';
@@ -852,14 +851,6 @@ export function resolveStateRoot(baseUrl: string, ephemeral?: boolean): string {
   if (ephemeral || !url?.host) return mkdtempSync(join(tmpdir(), 'explorbot-'));
 
   return registerSite(url.origin).dir;
-}
-
-export function setOptionKnowledge(values: string[]): void {
-  knowledgeFromOptions = values;
-}
-
-export function optionKnowledge(): string[] {
-  return knowledgeFromOptions;
 }
 
 export function materializeKnowledge(outputRoot: string): void {

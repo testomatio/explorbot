@@ -122,9 +122,12 @@ Notes:
 
 | Field | Purpose |
 |-------|---------|
-| `url` | URL pattern to match (optional, defaults to `*`) |
+| `url` | Page URL pattern to match |
+| `endpoint` | API endpoint pattern to match |
 | `title` | Human-readable title (optional) |
 | Custom fields | Any additional metadata for agents |
+
+`url` scopes a file to browser pages and `endpoint` scopes it to API endpoints. A file with neither applies to both.
 
 ## Variables
 

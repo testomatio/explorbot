@@ -99,7 +99,7 @@ Two tiers. **Data parts** are deterministic memory — they answer "what is true
 | Module | Does | Must never do |
 |---|---|---|
 | **StateManager** | Where am I / where have I been: states, transitions, hashes, loop detection, events | Call AI; interpret semantics ("this is a login page"); execute actions |
-| **KnowledgeTracker** | Load/filter human facts by URL or endpoint pattern, from `knowledge/` and from `--knowledge` session entries; expose hints verbatim | Judge relevance semantically; act on hints; be written mid-run outside learn/drill flow |
+| **KnowledgeTracker** | Load/filter human facts by URL or endpoint pattern, from `knowledge/` and from the session entries `appendSessionKnowledge()` collects; expose hints verbatim | Judge relevance semantically; act on hints; be written mid-run outside learn/drill flow; declare CLI flags |
 | **ExperienceTracker** | Store/retrieve lessons per state hash; dedup blocks | Rank by meaning; compact itself (ExperienceCompactor's job); change behavior directly |
 | **Config** | Resolve immutable settings once at startup | Change mid-run; hold site-specific values; be read by agents directly (injected instead) |
 
@@ -136,7 +136,7 @@ All persisted formats share one rule: **envelope keys (YAML frontmatter, HTML co
 
 | Format | Location & owner | Envelope | Body grammar |
 |---|---|---|---|
-| Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `endpoint`, `wait`, `waitForElement`, `noExperienceReading/Writing` | Free prose facts |
+| Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `endpoint`, `wait`, `waitForElement`, `noExperienceReading/Writing` — `url`/`path` scopes to pages, `endpoint` to API endpoints, neither to both | Free prose facts |
 | Experience | `experience/<stateHash>.md`, ExperienceTracker | sparse frontmatter | `## FLOW:` / `## ACTION:` h2 blocks; bullets + ```js``` + `Solution:` line; h3 forbidden under blocks |
 | Test plan | `output/plans/*.md`, test-plan-markdown.ts | `<!-- test ... -->` comment: `priority`, `style`; scenario heading, `url:` line, bullets as steps | Notes/results appended by runner |
 
@@ -571,7 +571,7 @@ A flag that belongs to a run rather than to one command lives here, one `BaseOpt
 
 Each bin registers the options it offers — `wsOption.register(program)`, `knowledgeOption.register(program)` — so a boat carries only the flags that mean something for it.
 
-`apply()` hands the value to whoever owns it and nothing else: `--ws` to `remote.attach()`, `--knowledge` to config, which holds the run's inputs. Nothing downstream learns that a command line exists.
+`apply()` hands the value to whoever owns it and nothing else: `--ws` to `remote.attach()`, `--knowledge` to `KnowledgeTracker.appendSessionKnowledge()`, which keeps the run's facts beside the ones it loads from disk. Nothing downstream learns that a command line exists.
 
 ## Command Line Usage
 
