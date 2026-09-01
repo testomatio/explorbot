@@ -182,7 +182,8 @@ describe('renderEnvelope', () => {
 
   test('the advertised step-file line names every STEP_FILES extension', () => {
     const out = renderEnvelope({ ...base, steps: [{ label: "I.click('Add')", ok: true, proof: '' }], stepFiles: '/tmp/x' });
-    for (const extension of Object.values(STEP_FILES)) expect(out).toContain(extension);
+    const line = out.split('\n').find((entry) => entry.includes('page after each step'))!;
+    for (const extension of Object.values(STEP_FILES)) expect(line).toContain(extension);
   });
 
   test('open tabs alone are evidence enough for a running browser', () => {
