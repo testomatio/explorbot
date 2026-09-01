@@ -3,12 +3,13 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import type { ApiClient } from '../api/api-client.ts';
 import type { RequestResult } from '../api/request-result.ts';
-import type { Haul, RequestStore } from '../api/request-store.ts';
+import type { RequestStore } from '../api/request-store.ts';
 import { extractEndpointDefinition } from '../api/spec-reader.ts';
 import { tag } from '../utils/logger.ts';
 import { isDynamicSegment } from '../utils/url-matcher.ts';
+import type { RequestHaul } from './fisherman/request-haul.ts';
 
-export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, haul: Haul, opts: { spec?: any; baseEndpoint?: string }) {
+export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, haul: RequestHaul, opts: { spec?: any; baseEndpoint?: string }) {
   let finished = false;
   let result: FishermanResult | null = null;
 
@@ -183,7 +184,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   return { tools, getResult, isFinished, finishFromText };
 }
 
-export function verifyFinish(haul: Haul, input: { summary: string; created: FishermanResult['created']; failed?: FishermanResult['failed'] }): { result: FishermanResult | null; error?: string } {
+export function verifyFinish(haul: RequestHaul, input: { summary: string; created: FishermanResult['created']; failed?: FishermanResult['failed'] }): { result: FishermanResult | null; error?: string } {
   const writes = haul.successfulWrites();
   if (writes.length === 0) {
     tag('warning').log('Fisherman: finish rejected — no successful write request in this run');
@@ -210,7 +211,7 @@ export function verifyFinish(haul: Haul, input: { summary: string; created: Fish
   return { result: { success: true, summary: input.summary, created: verified, failed: input.failed || [] } };
 }
 
-function synthesizeResult(haul: Haul, declaredDone: boolean): FishermanResult {
+function synthesizeResult(haul: RequestHaul, declaredDone: boolean): FishermanResult {
   const made = haul.requests();
   const writes = haul.successfulWrites();
   const failures = haul.failed();

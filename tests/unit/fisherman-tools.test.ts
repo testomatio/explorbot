@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createFishermanTools } from '../../src/ai/fisherman-tools.ts';
-import { Haul } from '../../src/api/request-store.ts';
+import { RequestHaul } from '../../src/ai/fisherman/request-haul.ts';
 
 describe('Fisherman tools', () => {
   it('does not present a rejected capture as a request example', async () => {
@@ -163,7 +163,7 @@ describe('ledger-derived results', () => {
 });
 
 function fishermanTools(apiClient: any, requestStore: any, opts: any): any {
-  return createFishermanTools(apiClient, requestStore, new Haul(requestStore), opts);
+  return createFishermanTools(apiClient, requestStore, new RequestHaul(requestStore), opts);
 }
 
 function store(captured?: any, made: any[] = []): any {

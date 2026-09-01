@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { RequestHaul } from '../../src/ai/fisherman/request-haul.js';
 import { RequestResult } from '../../src/api/request-result.js';
-import { Haul, RequestStore } from '../../src/api/request-store.js';
+import { RequestStore } from '../../src/api/request-store.js';
 
 let counter = 0;
 function makeRequest(method: string, path: string, status: number, id?: string, headers: Record<string, string> = {}): RequestResult {
@@ -318,7 +319,7 @@ describe('extractAuthHeaders session gating', () => {
   });
 });
 
-describe('Haul', () => {
+describe('RequestHaul', () => {
   let outputDir: string;
 
   beforeEach(() => {
@@ -334,7 +335,7 @@ describe('Haul', () => {
     store.addMadeRequest(makeRequest('GET', '/api/suites', 200));
     store.addMadeRequest(makeRequest('POST', '/api/suites', 201));
 
-    const haul = new Haul(store);
+    const haul = new RequestHaul(store);
     store.addMadeRequest(makeRequest('POST', '/api/tests', 422));
     const created = makeRequest('POST', '/api/tests', 201);
     created.rawResponseBodyValue = JSON.stringify({ id: 42, title: 'Test A' });

@@ -1,6 +1,6 @@
 import dedent from 'dedent';
 import type { ApiClient } from '../api/api-client.ts';
-import { Haul, type RequestStore, isFailedRequest } from '../api/request-store.ts';
+import { type RequestStore, isFailedRequest } from '../api/request-store.ts';
 import { listAllEndpoints } from '../api/spec-reader.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 
@@ -8,6 +8,7 @@ const debugLog = createDebug('explorbot:fisherman');
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import { type FishermanResult, createFishermanTools } from './fisherman-tools.ts';
+import { RequestHaul } from './fisherman/request-haul.ts';
 import type { Provider } from './provider.ts';
 import { dataProtectionRules } from './rules.ts';
 
@@ -79,7 +80,7 @@ export class Fisherman implements Agent {
     await this.refreshAuth();
     debugLog(`auth headers: ${Object.keys(this.apiClient.getHeaders()).join(', ')}`);
 
-    const haul = new Haul(this.requestStore);
+    const haul = new RequestHaul(this.requestStore);
     const { tools, getResult, isFinished, finishFromText } = createFishermanTools(this.apiClient, this.requestStore, haul, {
       spec: this.spec,
       baseEndpoint: this.baseEndpoint,
@@ -228,7 +229,7 @@ export class Fisherman implements Agent {
     `;
   }
 
-  private isStuckOnEndpoint(haul: Haul): boolean {
+  private isStuckOnEndpoint(haul: RequestHaul): boolean {
     const made = haul.requests();
     if (made.length < REPEATED_FAILURE_LIMIT) return false;
     const recent = made.slice(-REPEATED_FAILURE_LIMIT);
