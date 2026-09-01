@@ -25,7 +25,7 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
-import { type ArtifactPaths, type EnvelopeData, type InstanceInfo, STATUS_FILE, readArtifacts, writeArtifacts } from './envelope.ts';
+import { type ArtifactPaths, type EnvelopeData, type InstanceInfo, STATUS_FILE, STEP_FILES, readArtifacts, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
@@ -1098,9 +1098,9 @@ export class Prima {
     const stem = path.join(dir, `${index}-${safeFilename(label.slice(0, 60))}`);
     const result = ActionResult.fromState(state);
 
-    writeFileSync(`${stem}.aria.yaml`, result.ariaSnapshot ?? '', 'utf-8');
-    writeFileSync(`${stem}.html`, await result.combinedHtml(), 'utf-8');
-    if (diff) writeFileSync(`${stem}.diff.yaml`, diff, 'utf-8');
+    writeFileSync(`${stem}.${STEP_FILES.aria}`, result.ariaSnapshot ?? '', 'utf-8');
+    writeFileSync(`${stem}.${STEP_FILES.html}`, await result.combinedHtml(), 'utf-8');
+    if (diff) writeFileSync(`${stem}.${STEP_FILES.diff}`, diff, 'utf-8');
   }
 
   private async writeSnapshot(result: ActionResult): Promise<ArtifactPaths> {
