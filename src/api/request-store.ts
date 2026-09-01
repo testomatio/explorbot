@@ -92,14 +92,18 @@ export class RequestStore {
 
   findCapturedRequest(method: string, searchPath: string): RequestResult | undefined {
     const upper = method.toUpperCase();
-    const search = generalizeUrl(searchPath, () => '{id}').split('/').filter(Boolean);
+    const search = generalizeUrl(searchPath, () => '{id}')
+      .split('/')
+      .filter(Boolean);
 
     let best: RequestResult | undefined;
     let bestScore = -1;
 
     for (const req of this.capturedRequests) {
       if (req.method !== upper) continue;
-      const segments = generalizeUrl(req.path, () => '{id}').split('/').filter(Boolean);
+      const segments = generalizeUrl(req.path, () => '{id}')
+        .split('/')
+        .filter(Boolean);
       if (segments.length < search.length) continue;
       if (!search.every((segment, i) => segment === segments[i])) continue;
 
