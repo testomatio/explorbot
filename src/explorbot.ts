@@ -465,9 +465,9 @@ export class ExplorBot {
   }
 
   loadPlans(filename: string): Plan[] {
-    const plan = Plan.loadFromFile(filename, this.getPlansDir());
-    if (!plan?.filePath) throw new Error(`Plan file not found: ${filename}`);
-    return parsePlansFromMarkdown(plan.filePath);
+    const filePath = Plan.resolveFile(filename, this.getPlansDir());
+    if (!filePath) throw new Error(`Plan file not found: ${filename}`);
+    return parsePlansFromMarkdown(filePath);
   }
 
   setCurrentPlan(plan?: Plan): void {

@@ -334,12 +334,14 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
         indexArg = planfile;
       }
 
-      const planTarget = Plan.loadFromFile(planfileArg)?.startUrl;
+      const peeked = Plan.loadFromFile(planfileArg);
 
-      const explorBot = new ExplorBot(buildExplorBotOptions(planTarget, options));
+      const explorBot = new ExplorBot(buildExplorBotOptions(peeked?.startUrl, options));
       await explorBot.start();
 
-      const plan = explorBot.loadPlan(planfileArg);
+      let plan = peeked;
+      if (plan) explorBot.setCurrentPlan(plan);
+      if (!plan) plan = explorBot.loadPlan(planfileArg);
       const pending = plan.getPendingTests();
       log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests, ${pending.length} pending)`);
 
