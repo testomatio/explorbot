@@ -26,6 +26,10 @@
 - Experience Tracker: An unnamed panel no longer marks a page's own experience file as
   panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
   open.
+- Test Plan: A plan file passed to `explorbot test` is now resolved once — the pre-config peek and
+  the run itself share the same parsed file, instead of being scanned and parsed twice with two
+  different search orders. Cross-site directory scanning (looking a path up across every registered
+  site, used by plan loading and by prima's `status`) now has a single owner in `global-config.ts`.
 
 ## 2026-08-31
 
