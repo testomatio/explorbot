@@ -25,7 +25,7 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
-import { type EnvelopeData, type InstanceInfo, STATUS_FILE, readArtifacts, writeArtifacts } from './envelope.ts';
+import { type ArtifactPaths, type EnvelopeData, type InstanceInfo, STATUS_FILE, readArtifacts, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
@@ -74,7 +74,6 @@ export class Prima {
   private server: { close: () => Promise<void> } | null = null;
   private attached: string | null = null;
   private session: SessionRun | null = null;
-  private artifacts?: EnvelopeData['artifacts'];
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -982,16 +981,13 @@ export class Prima {
 
   private async successEnvelope(command: string, used: string[], result: ActionResult, previousState: WebPageState | null): Promise<EnvelopeData> {
     const changes = await this.pageChanges(result, previousState, used[0]);
-    const status = await this.saveStatus(result);
     return {
       ok: true,
       command,
       used,
       page: this.pageBlock(result, previousState),
       changes,
-      instance: await this.instanceInfo(),
-      status,
-      artifacts: this.artifacts,
+      ...(await this.envelopeTail(result)),
     };
   }
 
@@ -1000,29 +996,28 @@ export class Prima {
     const failure: EnvelopeData['failure'] = { error: browserErrorMessage(error) };
     if (result.ariaSnapshot) failure.compactAria = compactAriaSnapshot(result.ariaSnapshot, true);
 
-    const status = await this.saveStatus(result);
     return {
       ok: false,
       command,
       page: this.pageBlock(result, previousState),
       failure,
-      instance: await this.instanceInfo(),
-      status,
-      artifacts: this.artifacts,
+      ...(await this.envelopeTail(result)),
     };
   }
 
   private async reportEnvelope(command: string, result: ActionResult, previousState: WebPageState | null, outcome: Partial<EnvelopeData>): Promise<EnvelopeData> {
-    const status = await this.saveStatus(result);
     return {
       ok: true,
       command,
       page: this.pageBlock(result, previousState),
       ...outcome,
-      instance: await this.instanceInfo(),
-      status,
-      artifacts: this.artifacts,
+      ...(await this.envelopeTail(result)),
     };
+  }
+
+  private async envelopeTail(result: ActionResult): Promise<Pick<EnvelopeData, 'instance' | 'status' | 'artifacts'>> {
+    const { hash, artifacts } = await this.saveStatus(result);
+    return { instance: await this.instanceInfo(), status: hash, artifacts };
   }
 
   private async capturedResult(previousState: WebPageState | null, opts: { screenshot?: boolean } = {}): Promise<ActionResult> {
@@ -1087,11 +1082,11 @@ export class Prima {
     };
   }
 
-  private async saveStatus(result: ActionResult): Promise<string> {
+  private async saveStatus(result: ActionResult): Promise<{ hash: string; artifacts: ArtifactPaths }> {
     const hash = this.statusHash();
-    await this.writeSnapshot(result);
+    const artifacts = await this.writeSnapshot(result);
     writeFileSync(path.join(this.statusDir(hash), STATUS_FILE), JSON.stringify({ page: this.pageBlock(result, null) }), 'utf-8');
-    return hash;
+    return { hash, artifacts };
   }
 
   private async writeStepFiles(index: number, label: string, diff: string): Promise<void> {
@@ -1108,12 +1103,12 @@ export class Prima {
     if (diff) writeFileSync(`${stem}.diff.yaml`, diff, 'utf-8');
   }
 
-  private async writeSnapshot(result: ActionResult): Promise<void> {
-    this.artifacts = writeArtifacts(this.statusDir(), {
+  private async writeSnapshot(result: ActionResult): Promise<ArtifactPaths> {
+    return writeArtifacts(this.statusDir(), {
       aria: result.ariaSnapshot,
       html: await result.combinedHtml(),
       screenshot: result.screenshot,
-      requests: this.bot.requestStore().getRequests(),
+      requests: this.bot.requestStore().getMadeRequests(),
     });
   }
 
