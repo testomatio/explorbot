@@ -146,6 +146,7 @@ addCommonOptions(
     .command('explore <path>')
     .description('Explore a page autonomously and run invented scenarios')
     .option('--max-tests <count>', 'Maximum number of tests to run')
+    .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run; wraps up before the limit is hit')
     .option('--focus <feature>', 'Focus area for exploration')
     .option('--configure <spec>', 'Reuse spec: keys new|from|style|subpages|pick_by|priority, e.g. "new:25%;pick_by=random;priority=critical,high"')
     .option('--dry-run', 'Mark picked tests as skipped without executing or generating new ones')
@@ -157,6 +158,8 @@ addCommonOptions(
     const { ExploreCommand } = await import('../src/commands/explore-command.js');
     const cmd = new ExploreCommand(explorBot);
     if (options.maxTests) cmd.maxTests = Number.parseInt(options.maxTests, 10);
+    if (options.maxDuration) cmd.maxDurationMinutes = Number.parseInt(options.maxDuration, 10);
+    else if (process.env.EXPLORBOT_MAX_DURATION) cmd.maxDurationMinutes = Number.parseInt(process.env.EXPLORBOT_MAX_DURATION, 10);
     if (options.dryRun) cmd.dryRun = true;
     const execArgs: string[] = [];
     if (options.focus) execArgs.push('--focus', `"${options.focus}"`);
@@ -257,14 +260,13 @@ addCommonOptions(program.command('plan <path>').description('Generate test plan 
 
 addCommonOptions(program.command('plan:load <planfile> [index]').description('Load a plan file and display its tests. Pass index to see test details.')).action(async (planfile: string, index: string | undefined) => {
   try {
-    const resolvedPath = path.resolve(planfile);
-    if (!fs.existsSync(resolvedPath)) {
-      console.error(`Plan file not found: ${resolvedPath}`);
+    const plan = Plan.loadFromFile(planfile);
+    if (!plan?.filePath) {
+      console.error(`Plan file not found: ${planfile}`);
       process.exit(1);
     }
 
-    const plan = Plan.fromMarkdown(resolvedPath);
-    const planFile = path.basename(resolvedPath);
+    const planFile = path.basename(plan.filePath);
 
     if (index) {
       const idx = Number.parseInt(index, 10);
@@ -276,7 +278,7 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
       const lines: string[] = [];
       lines.push(`## #${idx} ${test.scenario}\n`);
       lines.push(`**Priority:** ${test.priority}`);
-      const planUrl = plan.url || plan.tests[0]?.startUrl;
+      const planUrl = plan.startUrl;
       if (planUrl) lines.push(`**Plan URL:** ${planUrl}`);
       if (test.startUrl && test.startUrl !== planUrl) lines.push(`**Test URL:** ${test.startUrl}`);
       if (test.plannedSteps.length) {
@@ -293,7 +295,7 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
       return;
     }
 
-    const planUrl = plan.url || plan.tests[0]?.startUrl;
+    const planUrl = plan.startUrl;
     const lines: string[] = [`**${plan.title}** (${plan.tests.length} tests)\n`];
     if (planUrl) {
       lines.push(`URL: ${planUrl}\n`);
@@ -325,9 +327,6 @@ addCommonOptions(program.command('plan:load <planfile> [index]').description('Lo
 addCommonOptions(program.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1,3, 1-5, *, all').option('--grep <pattern>', 'Run tests matching pattern').option('--from-plan <file>', 'Load plan file when the first argument is a test index')).action(
   async (planfile, index, options) => {
     try {
-      const explorBot = new ExplorBot(buildExplorBotOptions(undefined, options));
-      await explorBot.start();
-
       let planfileArg = planfile;
       let indexArg = index;
       if (options.fromPlan) {
@@ -335,11 +334,16 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
         indexArg = planfile;
       }
 
+      const planTarget = Plan.loadFromFile(planfileArg)?.startUrl;
+
+      const explorBot = new ExplorBot(buildExplorBotOptions(planTarget, options));
+      await explorBot.start();
+
       const plan = explorBot.loadPlan(planfileArg);
       const pending = plan.getPendingTests();
       log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests, ${pending.length} pending)`);
 
-      const startUrl = plan.url || pending[0]?.startUrl;
+      const startUrl = plan.startUrl;
       if (!startUrl) {
         throw new Error('No URL found in plan or tests. Cannot determine where to navigate.');
       }
@@ -347,7 +351,7 @@ addCommonOptions(program.command('test <planfile> [index]').description('Execute
       log(`Navigating to ${startUrl}`);
       await explorBot.visit(startUrl);
 
-      let args = '';
+      let args = '*';
       if (indexArg) args = indexArg;
       else if (options.grep) args = options.grep;
 
@@ -437,10 +441,11 @@ addCommonOptions(
     .option('--shallow', 'Breadth-first: pick globally least-visited page')
     .option('--scope <prefix>', 'Restrict navigation to URL prefix')
     .option('--max-tests <count>', 'Maximum number of tests to run')
+    .option('--max-duration <minutes>', 'Wall-clock budget in minutes for the whole run')
 ).action(async (startUrl, options) => {
   const explorBot = new ExplorBot(buildExplorBotOptions(startUrl || '/', options));
   await explorBot.start();
-  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`].filter(Boolean).join(' ');
+  const args = [options.deep && '--deep', options.shallow && '--shallow', options.scope && `--scope ${options.scope}`, options.maxTests && `--max-tests ${options.maxTests}`, options.maxDuration && `--max-duration ${options.maxDuration}`].filter(Boolean).join(' ');
   const { FreesailCommand } = await import('../src/commands/freesail-command.js');
   const cmd = new FreesailCommand(explorBot);
   await cmd.execute(args);

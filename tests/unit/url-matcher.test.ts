@@ -26,9 +26,18 @@ describe('url-matcher', () => {
     });
 
     it('detects hex IDs (4+ chars)', () => {
-      expect(isDynamicSegment('abcd')).toBe(true);
       expect(isDynamicSegment('70dae98a')).toBe(true);
       expect(isDynamicSegment('cddb14a6')).toBe(true);
+      expect(isDynamicSegment('507f1f77bcf86cd799439011')).toBe(true);
+      expect(isDynamicSegment('aababeac')).toBe(true);
+    });
+
+    it('rejects short letters-only hex that spells a word', () => {
+      expect(isDynamicSegment('feed')).toBe(false);
+      expect(isDynamicSegment('cafe')).toBe(false);
+      expect(isDynamicSegment('dead')).toBe(false);
+      expect(isDynamicSegment('facade')).toBe(false);
+      expect(isDynamicSegment('abcd')).toBe(false);
     });
 
     it('detects hex-prefixed slugs (8+ hex before dash)', () => {
@@ -48,6 +57,17 @@ describe('url-matcher', () => {
       expect(isDynamicSegment('users')).toBe(false);
       expect(isDynamicSegment('dashboard')).toBe(false);
       expect(isDynamicSegment('new-test')).toBe(false);
+    });
+
+    it('rejects version segments', () => {
+      expect(isDynamicSegment('v1')).toBe(false);
+      expect(isDynamicSegment('v2')).toBe(false);
+      expect(isDynamicSegment('V3')).toBe(false);
+    });
+
+    it('still detects real ids alongside version segments', () => {
+      expect(isDynamicSegment('1a2b3c4d')).toBe(true);
+      expect(isDynamicSegment('8471')).toBe(true);
     });
 
     it('respects user-provided dynamicPageRegex override', () => {

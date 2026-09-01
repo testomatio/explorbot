@@ -246,6 +246,7 @@ export class Tester extends TaskAgent implements Agent {
     const codeceptjsTools = createCodeceptJSTools(this.toolDeps, task);
     let assertionPerformed = false;
     let extensions = 0;
+    let deadlineReached = false;
     let shouldContinue = true;
 
     while (shouldContinue) {
@@ -253,6 +254,12 @@ export class Tester extends TaskAgent implements Agent {
 
       await loop(
         async ({ stop, pause, iteration, userInput }) => {
+          if (opts.deadline != null && Date.now() >= opts.deadline) {
+            deadlineReached = true;
+            task.addNote('Time budget reached. Stopped');
+            stop();
+            return;
+          }
           debugLog('iteration', iteration);
           if (!(await this.explorer.recover()).ok) {
             task.addNote('Browser page is unavailable');
@@ -420,6 +427,7 @@ export class Tester extends TaskAgent implements Agent {
       );
 
       if (task.hasFinished) break;
+      if (deadlineReached) break;
 
       if (!(await this.explorer.recover()).ok) break;
 
@@ -1172,4 +1180,5 @@ interface TestSessionHandlers {
 
 export interface TestOptions {
   startOnCurrentPage?: boolean;
+  deadline?: number;
 }

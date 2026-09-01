@@ -1,5 +1,9 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+export const STATUS_FILE = 'status.json';
+
+const ARTIFACT_FILES = { aria: 'aria.yml', html: 'page.html', screenshot: 'page.png', network: 'network.jsonl' };
 
 const EXPECTATION_LABELS = {
   passed: 'PASSED       ',
@@ -33,7 +37,7 @@ export interface EnvelopeData {
   failure?: { error: string; compactAria?: string };
   instance: InstanceInfo;
   status?: string;
-  artifacts?: { aria: string; html: string; screenshot?: string; network?: string };
+  artifacts?: ArtifactPaths;
 }
 
 export function renderEnvelope(data: EnvelopeData): string {
@@ -41,24 +45,37 @@ export function renderEnvelope(data: EnvelopeData): string {
   return sections.filter((section) => section).join('\n\n');
 }
 
-export function writeArtifacts(dir: string, snapshot: { aria: string | null; html: string | null; screenshot?: Buffer; requests: unknown[] }): { aria: string; html: string; screenshot?: string; network?: string } {
+export function writeArtifacts(dir: string, snapshot: { aria: string | null; html: string | null; screenshot?: Buffer; requests: unknown[] }): ArtifactPaths {
   mkdirSync(dir, { recursive: true });
-  const paths: { aria: string; html: string; screenshot?: string; network?: string } = {
-    aria: path.resolve(dir, 'aria.yml'),
-    html: path.resolve(dir, 'page.html'),
+  const paths: ArtifactPaths = {
+    aria: path.resolve(dir, ARTIFACT_FILES.aria),
+    html: path.resolve(dir, ARTIFACT_FILES.html),
   };
   writeFileSync(paths.aria, snapshot.aria ?? '', 'utf-8');
   writeFileSync(paths.html, snapshot.html ?? '', 'utf-8');
 
   if (snapshot.screenshot) {
-    paths.screenshot = path.resolve(dir, 'page.png');
+    paths.screenshot = path.resolve(dir, ARTIFACT_FILES.screenshot);
     writeFileSync(paths.screenshot, snapshot.screenshot);
   }
 
   if (!snapshot.requests.length) return paths;
 
-  paths.network = path.resolve(dir, 'network.jsonl');
+  paths.network = path.resolve(dir, ARTIFACT_FILES.network);
   writeFileSync(paths.network, snapshot.requests.map((request) => `${JSON.stringify(request)}\n`).join(''), 'utf-8');
+  return paths;
+}
+
+export function readArtifacts(dir: string): ArtifactPaths {
+  const paths: ArtifactPaths = { aria: path.resolve(dir, ARTIFACT_FILES.aria), html: path.resolve(dir, ARTIFACT_FILES.html) };
+  if (existsSync(path.resolve(dir, ARTIFACT_FILES.screenshot))) paths.screenshot = path.resolve(dir, ARTIFACT_FILES.screenshot);
+  if (existsSync(path.resolve(dir, ARTIFACT_FILES.network))) paths.network = path.resolve(dir, ARTIFACT_FILES.network);
+
+  const recorded = [...Object.values(ARTIFACT_FILES), STATUS_FILE];
+  const files = readdirSync(dir)
+    .filter((entry) => !recorded.includes(entry))
+    .sort();
+  if (files.length) paths.files = files;
   return paths;
 }
 
@@ -100,7 +117,7 @@ function renderSteps(data: EnvelopeData): string | null {
     lines.push(`${index + 1}. ${mark} ${step.label}`);
     for (const line of (step.proof || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
-  if (data.stepFiles) lines.push('', `page after each step: ${data.stepFiles}`);
+  if (data.stepFiles) lines.push('', `page after each step: ${data.stepFiles}/<n>-<step>.{aria.yaml,html,diff.yaml}`);
   return section('Steps', lines.join('\n'));
 }
 
@@ -178,6 +195,7 @@ export function renderArtifacts(data: EnvelopeData): string | null {
   const lines = [`aria:       ${data.artifacts.aria}`, `html:       ${data.artifacts.html}`];
   if (data.artifacts.screenshot) lines.push(`screenshot: ${data.artifacts.screenshot}`);
   if (data.artifacts.network) lines.push(`network:    ${data.artifacts.network}`);
+  if (data.artifacts.files?.length) lines.push(`also here:  ${data.artifacts.files.join(', ')}`);
   return section('Artifacts', lines.join('\n'));
 }
 
@@ -188,4 +206,12 @@ function align(label: string, marker: string, width: number): string {
 
 function section(title: string, body: string): string {
   return `### ${title}\n${body}`;
+}
+
+export interface ArtifactPaths {
+  aria: string;
+  html: string;
+  screenshot?: string;
+  network?: string;
+  files?: string[];
 }

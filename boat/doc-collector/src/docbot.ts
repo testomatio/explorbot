@@ -465,7 +465,9 @@ class DocBot {
   private saveIndex(startPath: string, pages: DocumentedPage[], skipped: SkippedPage[], maxPages: number): { indexPath: string; diagramPath: string } {
     const outputDir = this.configParser.getOutputDir();
     const indexPath = path.join(outputDir, 'index.md');
-    writeFileSync(indexPath, renderSpecIndex(outputDir, startPath, pages, skipped, maxPages), 'utf8');
+    const index = renderSpecIndex(outputDir, startPath, pages, skipped, maxPages);
+    writeFileSync(indexPath, index, 'utf8');
+    tag('data').log('docs', { path: indexPath, content: index });
     const diagramPath = path.join(outputDir, 'state-diagram.mmd');
     writeFileSync(diagramPath, renderMermaidBody(outputDir, pages), 'utf8');
     return { indexPath, diagramPath };

@@ -77,7 +77,6 @@ describe('TestCommand', () => {
 function createMockExplorBot(overrides: Partial<ExplorBot> = {}): ExplorBot {
   return {
     getPlansDir: () => tmpPath,
-    resolvePlanPath: (filename: string) => path.join(tmpPath, filename),
     ...overrides,
   } as unknown as ExplorBot;
 }
