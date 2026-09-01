@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-02
+
+### Changes
+
+- Utils: The tailwind/trash class checks are now named predicates (`isTailwindClass`, `isTrashClass`) shared
+  by the HTML snapshots and the diff's container-class filter, replacing three copies of the same inline
+  lambda.
+
 ## 2026-09-01
 
 ### Changes
