@@ -40,4 +40,49 @@ describe('executed steps', () => {
   it('reports when nothing ran', () => {
     expect(formatExecutedSteps([], 2)).toBe('No command ran of 2 requested.');
   });
+
+  it('ignores unwind flushes after the first failure so passed steps stay passed', () => {
+    const steps: ExecutedStep[] = [];
+    const detachSteps = attachStepLogger(steps);
+
+    const fill = step("I.fillField('Title', 'My test')");
+    const openPicker = step("I.click('Select suite')");
+    const pickSuite = step("I.click('Test Suite for GraphQL Links')");
+    const save = step("I.click('Save')");
+
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, fill);
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, openPicker);
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.failed, pickSuite, new Error('2 elements found'));
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.failed, fill, new Error('2 elements found'));
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.failed, openPicker, new Error('2 elements found'));
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.failed, save, new Error('2 elements found'));
+
+    detachSteps();
+
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toMatchObject({ command: "I.fillField('Title', 'My test')", success: true });
+    expect(steps[1]).toMatchObject({ command: "I.click('Select suite')", success: true });
+    expect(steps[2]?.success).toBe(false);
+    const report = formatExecutedSteps(steps, 4);
+    expect(report).toContain("OK I.click('Select suite')");
+    expect(report).toContain('NOT RUN 1 more');
+  });
+
+  it('lets a retried step upgrade from failed to passed', () => {
+    const steps: ExecutedStep[] = [];
+    const detachSteps = attachStepLogger(steps);
+
+    const flaky = step("I.click('Save')");
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.failed, flaky, new Error('execution context was destroyed'));
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, flaky);
+    const next = step("I.see('Saved')");
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, next);
+
+    detachSteps();
+
+    expect(steps).toHaveLength(2);
+    expect(steps[0]).toMatchObject({ command: "I.click('Save')", success: true });
+    expect(steps[0]?.error).toBeUndefined();
+    expect(steps[1]).toMatchObject({ command: "I.see('Saved')", success: true });
+  });
 });

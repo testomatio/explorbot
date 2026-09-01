@@ -1,0 +1,269 @@
+# Region States Fixes — Persist the Overlay, Widen the Gates, Reject the Shell
+
+**Date:** 2026-08-29
+**Status:** Planned
+**Follows:** `2026-08-29-region-states-design.md`
+**Evidence:** 7 traced test sessions against beta.testomat.io (Langfuse, 2026-08-29 10:19–13:01), analyzed
+trace-by-trace: `SharedConstitutionalChocolate674`, `ManualConsciousPeach543`, `MagicDepressedRose1`,
+`MedicalUnfairGold673`, `ProudHungryChocolate14`, `RegularQuarrelsomeTurquoise190`, `InevitablePoisedBlack301`.
+
+## Problem
+
+The region-of-interest feature detects correctly and then loses its own result. Across every traced run
+where the diff path fired, `pageDiff.areaOfInterest` carried the right announcement — and the state hash
+never forked (`region_` appears in **zero** traces), Pilot's `region:` line appeared **never**, and the
+Tester context blocks arrived once-late or not at all. The concrete bill for one run
+(`MagicDepressedRose1`): the correct scope `//body/div[16]` sat unused in the tool result while
+`interact()` burned 9 attempts on a guessed `.modal` selector that does not exist — roughly half of a
+4-minute run spent compensating for guidance the feature had already computed.
+
+Where detection did classify, quality was poor at the edges: every diff-detected root was either a
+positional XPath (`//body/div[9..16]`) or the whole app shell (`div.main-app`); a hydration burst was
+classified as a `drawer` covering the page; a modal-*closing* click registered as a drawer *opening*; a
+genuine overlay (its subtree literally contains `modal-footer`, Pilot's screenshot read "obscured by a
+modal") classified as inline `region`; and nested panels inherited the outer panel's name.
+
+Meanwhile the app pattern these runs actually exercise — a drawer that opens **with a URL change**
+(`/suites/suite/new-test`, `/plans/new/manual`) — is invisible to the diff path by design, and the one
+overlay the old ARIA path caught got no root because ARIA detection pre-empts the probe entirely.
+
+## Mechanisms found
+
+1. **Edge-triggered overlay, wiped one capture later.** `Action.detectRegionOfInterest` sets
+   `result.overlay` only on the action whose diff crossed the threshold. The next capture finds no new
+   appeared subtree (the region is no longer *new*), falls through to `Overlay.fromAria` — empty, these
+   drawers carry no `role=dialog` — and `updateState` replaces the current state with an overlay-less
+   one. Everything downstream of the state (hash fork, `isNewState`, `<focus_scope>`,
+   `<area_of_interest>`, Pilot's `region:` line, experience `root:` frontmatter) starves. Confirmed
+   empirically: `reinjectContextIfNeeded` demonstrably ran every iteration (658 `current_focus` tags in
+   one trace) while its region branches fired 0 times against 2 real detections.
+2. **URL-change blind spot.** `Diff.calculate` short-circuits to `liveRegionMessages` whenever the URL
+   changed, and `detectRegionOfInterest` guards on `isSameUrl`. A route-synced SPA drawer — the standard
+   pattern in the app under test — is therefore never evaluated, in any run.
+3. **Shell containers pass the body guard.** `toOverlay` falls back to the element XPath only when the
+   container is literally `body`. `div.main-app` — body's sole meaningful child — sailed through as a
+   "scope", producing `<focus_scope>` text that was factually false ("elements outside are not
+   actionable" about a container that wraps the entire page, `MedicalUnfairGold673` 12:49:08).
+4. **Hydration and modal-close read as regions.** A ~2s same-URL hydration window between a failed click
+   and a `context()` call crossed the flat 10K threshold and, with a stray fixed-position widget, was
+   classified `drawer (root: div.main-app)`. Separately, dismissing a picker re-rendered base content
+   and fired `drawer "New Plan" opened, scope: div.main-app` on a click that *closed* an overlay
+   (`InevitablePoisedBlack301` 13:00:53). Both false positives share a shell root.
+5. **Floating check ignores ancestors.** `inspectRegion` reads `position`/`z-index` off the appeared
+   node only. A large subtree appearing *inside* an already-floating drawer classifies as inline
+   `region` even when the subtree itself contains `modal-footer` and a screenshot shows an overlay
+   (`MagicDepressedRose1` 12:45:23).
+6. **Naming picks the largest part, not the newest heading.** `appearedSubRoot` maximizes subtree size,
+   then `nameFrom` joins h1–h4 of that subtree — so a nested picker is named after the outer panel
+   ("New Plan", "New Test") instead of its own heading ("Select tests for plan", "Select suite for
+   test"), which sat in the same state's h3 the whole time.
+7. **ARIA pre-empts the probe; failed batches capture nothing.** `if (result.overlay.detected) return`
+   means an ARIA-detected modal never gets `root`/`html` enrichment — every `<focus_scope>` in
+   `ManualConsciousPeach543` lacked the scope sentence. And `executeOnce` only captures state on
+   success: the click that opened that modal succeeded *inside* a `form()` batch whose third line
+   failed, so no capture, no detection, and a tool result that labeled all four sub-commands FAILED —
+   including the two that succeeded. Cost: ~26s clicking a button behind a modal the system had been
+   told twice (by its own `see()`) was open.
+
+## Changes
+
+### 1. Persist the detected overlay until it verifiably closes (the P0)
+
+The overlay stops being a per-action edge and becomes state that is carried forward. In
+`Action`'s detection step, per capture, in order:
+
+1. **Same URL, HTML unchanged** → carry the previous state's overlay verbatim. Nothing moved.
+2. **Close check before open check.** If the previous overlay was diff-detected (has an element XPath)
+   and its element is gone from the new HTML or the openness probe says its center no longer belongs to
+   it → drop it (debug log "region closed"). The hash reverts, `updateState` records the close
+   transition — open/close cycles become visible to `isInDeadLoop`, as the original spec intended.
+3. **New detection** from the diff, as today.
+4. **No new detection, previous overlay still confirmed open** → carry it forward onto the new
+   `ActionResult`.
+
+To make the close/confirm check possible, `Overlay` additionally records the appeared element's XPath
+(`xpath`, internal — never rendered into prompts; `root` remains the scoping selector shown to agents).
+The confirm probe is the existing center hit-test (`OverlayPage`), run against the stored XPath — one
+cheap probe per capture, and only while an overlay is being carried.
+
+Two persistence refinements keep common flows from losing state:
+
+- **One-deep parent restore.** When a new detection replaces a carried overlay (a picker opening
+  inside an open drawer), the replaced overlay's identity (`type`/`name`/`root`/`xpath`, no `html`)
+  travels on the new one as `parent`. When the nested region closes, the parent's XPath is probed —
+  still open → it is restored as the current overlay. One level, deterministic; the traced
+  suite-picker-inside-drawer flow keeps its drawer.
+- **ARIA continuity.** A fresh ARIA detection whose type and name match the previous overlay keeps the
+  previous *instance* — otherwise a root enriched by change 6 would survive exactly one capture before
+  a bare `fromAria` result replaced it.
+
+This single change is what unlocks the already-built downstream behavior: the hash forks
+(`region_<name>`), `isNewState` fires once, `<focus_scope>`/`<area_of_interest>` inject,
+Pilot's `<state>` shows the region, and experience files for region states get written with their
+`root:` frontmatter.
+
+### 2. Detect route-synced drawers across URL changes
+
+`Diff` always computes the HTML diff, URL change or not. Tool-result behavior for navigations does not
+change — `PageDiff` keeps surfacing only messages for a changed URL, never navigation-noise
+`htmlParts` — the diff is computed for detection's sake and stays memoized (one parse5 pass, shared).
+
+Detection drops the hard `isSameUrl` gate and replaces it with a structural rule: across a URL change, a
+region is considered only when `similarity >= SOFT_NAVIGATION_SIMILARITY` (unexported const, ~50) — the
+old page must still substantially exist under the new content. A real navigation (low similarity)
+produces no region; a drawer rendered over the still-present page does. The accepted-trade-off section
+of the original spec ("first paint with no ARIA role") stands; this closes the much larger gap the field
+runs actually hit.
+
+### 3. Bound the region: bigger than a widget, smaller than the page
+
+A region is a **band**, not just a floor. The appeared subtree must satisfy both:
+
+- `size >= SUBROOT_MIN_HTML` (5K minified; the second field run showed a real split-pane form panel
+  at 6.6K minified / 9K raw sitting under the original 10K floor, while dropdowns stay under 1K) —
+  below it, a widget, ignored;
+- `size <= REGION_MAX_RATIO * pageSize` (~0.6, raw serialized subtree against raw serialized body —
+  like against like, using the strings the diff already has in hand, no extra minify pass) — above it,
+  **this is not a region change anymore, it is a new state**. No overlay
+  is set; the ordinary state-change machinery (url + headings hash, research on change) owns a page
+  that mostly replaced itself. A full-page takeover that swaps more than 60% of the HTML *is* a new
+  state semantically, and takeovers bring their own headings, so state identity still forks.
+
+The cap is the primary defense against the observed false positives: a hydration burst that finishes
+rendering the page blows it, and a modal-close re-render of the base content blows it too. It is also
+the same principle as change 2's cross-URL similarity floor, seen from the other side — a region
+requires that most of the page **survived**.
+
+The band alone is not enough — the second field run produced a list re-render (search filter cleared,
+rows repopulated) that passed floor, cap and dominance yet had no heading and no semantic root
+anywhere in its dominant chain. Such a detection can neither fork the hash nor scope anything, so it
+is pure noise. Hence an **identity gate** after classification: an overlay with neither a `name` nor
+a `root` is dropped. Either one alone keeps it — a named rootless overlay still forks state identity,
+a rooted nameless one still scopes.
+
+A third field run (a suite-selector dialog) showed the gates must be **per-candidate filters, not
+whole-detection aborts**. Opening that dialog produced three appeared parts at once: a 622K flood of
+detached list nodes rendered directly under `body` (96% of the page), the app shell re-keyed by the
+flood's positional renumbering (196K of old content the differ saw as "appeared"), and the real 13K
+modal. "Largest candidate wins, then cap" picked the flood and aborted, losing the modal every time.
+Detection now walks all in-band candidates instead: cap-tripping parts are skipped (they are page
+redraw, not regions), dominance is measured across the surviving candidates, and among survivors the
+one that brings a **fresh heading** is preferred over larger heading-stale reflows — the same
+newest-heading principle naming already uses, applied to selection. The probe then walks the ordered
+candidates and skips any whose center is covered by another element, so a background pane never wins
+over the dialog stacked on top of it.
+
+Root selection still needs its own care, and its rule is now stricter: **roots are semantic only**. A
+positional XPath is never a `root` — it neither reaches a prompt nor an experience file. It survives
+strictly as the overlay's internal `xpath`, the handle the openness/persistence probe needs to find
+the element, never rendered to agents. (This supersedes the original design's body → element-XPath
+fallback.)
+
+The real root of the appeared subtree is often an anonymous wrapper with no identity of its own —
+`body > div > div > div.bg-overlay > div > div.modal` — so the search may **skip the real root in
+either direction** when a better candidate exists:
+
+- **Up:** stable ancestors, as today — except a container whose subtree spans most of the document is
+  a shell, never a scope (same treatment as literal `body`).
+- **The appeared element itself**, when it carries a stable id or meaningful classes (the same
+  filters `findStableContainer` already applies: dynamic ids out, digit/framework/Tailwind utility
+  classes out, document-unique required).
+- **Down:** unwrap the appeared subtree — repeatedly descend into the child that holds the bulk of
+  the subtree's content (`ROOT_CONTENT_RATIO`, ~0.8; a wrapper has one dominant child), testing each
+  node for a semantic selector. In the example above, the anonymous wrappers and the `bg-overlay`
+  utility class are all rejected by the existing filters, and the descent lands on `div.modal`.
+- **Nothing semantic anywhere → the overlay has no root.** The context blocks already render their
+  scope sentence only when a root exists; agents then scope by the region's name and ARIA, and the
+  experience file simply omits its optional `root:` key.
+
+Preference order: semantic non-shell ancestor → appeared element → deepest dominant descendant →
+none. Classification is unaffected: the openness probe keeps measuring the topmost appeared element
+(the whole overlay, backdrop included), while `root` answers the different question — where locators
+should aim.
+
+This kills both observed root failures: `div.main-app` (shell) and `//body/div[16]` (positional)
+can never be produced again.
+
+### 4. Classify with ancestors and isolation
+
+- **Floating check walks up.** `inspectRegion` reports floating when the element *or any ancestor up to
+  body* is fixed/absolute/z-indexed. A re-render inside an open drawer now classifies as the drawer it
+  is.
+- **Isolation guard.** A region requires a dominant single addition: the winning part must account for
+  the bulk of the diff's total changed subtree length (`REGION_DOMINANCE`, ~0.7). This catches what the
+  change-3 cap cannot: many *small* scattered changes with no dominant subtree.
+- **Close is not open.** Because change 1 runs the close check first, a click that dismisses the current
+  overlay is consumed as a close transition; re-rendered base content underneath cannot double as a
+  fresh region in the same capture.
+
+### 5. Name from the newest heading
+
+`nameFrom` filters the subtree's headings to those **absent from the previous HTML** (plain containment
+check against the prior snapshot — structural, no semantics) and takes the first survivor; only when
+none survives does it fall back to the current first-heading join. A nested picker opening inside "New
+Plan" is now named "Select tests for plan" — which also keys its own hash fork and its own experience
+file, instead of colliding with the outer panel's.
+
+### 6. Merge ARIA identity with probe geometry
+
+ARIA detection no longer pre-empts the probe — the two paths answer different questions and merge:
+
+- ARIA supplies **identity** (type `dialog`/`modal`, accessible name) — it is authoritative when
+  present.
+- The diff+probe supplies **geometry** (`root`, `xpath`, `html`) when a qualifying appeared subtree
+  exists for the same moment.
+
+An ARIA-detected modal whose opening also produced a large diff gets a root and a region snapshot; the
+`<focus_scope>` scope sentence and Pilot's `(root: …)` suffix stop being diff-path-only.
+
+### 7. Capture on the failure path, report batches truthfully
+
+- `executeOnce` captures page state (detection included) on non-fatal failures too, not only on
+  success. A batch that opened a drawer on line 2 and died on line 3 must still produce a state with
+  the drawer in it.
+- The `form()` failure report attributes per-line status from the steps that actually ran (the
+  `executedSteps` machinery from #150), instead of stamping every sub-command FAILED. The model must
+  learn "your click already opened something" from the tool result, not from 26 seconds of timeouts.
+
+### 8. Region transitions wake the Pilot
+
+`shouldAnalyzeProgress` treats a region open/close transition since the last analysis like a new-page
+event: analysis triggers at the next iteration regardless of the interval modulo. In
+`RegularQuarrelsomeTurquoise190`, Pilot went dark for 27 tool calls — the entire lifetime of the region,
+three server 400s included; the feature's Pilot surface is worthless if Pilot never runs while a region
+is open.
+
+## Out of scope — separate follow-ups
+
+Real issues from the same traces that are not this feature's subsystem, recorded here so they are not
+lost:
+
+- **Verdict integrity** (`MedicalUnfairGold673` false pass): pre-existing entities accepted as proof
+  despite the provenance rule; Pilot's own screenshot doubt discarded between two calls 3 seconds
+  apart; verbatim expected-result settlement unenforced at `finish()`; the post-run recipe compactor
+  correctly concluded "no step actually creates a test" and that signal reaches nothing.
+- **Reload primitive**: `pressKey('F5')` is a no-op that reports success; persistence scenarios need a
+  real reload action.
+- **Pilot server-error triage**: a raw backend error (`WRONGTYPE`) was first misdiagnosed as a form
+  problem; 4xx/5xx with non-validation bodies should bias to stop-and-report on first occurrence.
+- **Experience vocabulary**: a stored recipe describing the picker as a "modal" steered `interact()`
+  into guessing `.modal`; supersede stale wording when a fresh run's classification disagrees, instead
+  of suppressing the new write as a duplicate.
+- **App defects found** (report to the product, they are findings, not bugs here): plans `POST` → 400
+  `WRONGTYPE` with partial persistence; suites search → 500; stale Ember modal backdrop blocking Save;
+  Monaco editor duplicating filled content.
+
+## Validation
+
+- Unit: carry-forward and close transitions (StateManager history shows open → carried → closed);
+  cross-URL detection above/below the similarity floor; the size band — below 5K no region, inside
+  the band a region, above `REGION_MAX_RATIO` no overlay and a plain state change; root selection —
+  semantic ancestor preferred, wrapper-chain descent landing on a nested semantic container, shell
+  rejection, and the no-semantic case yielding a rootless overlay with no positional XPath anywhere
+  in prompts or frontmatter; ancestor-floating classification; dominance guard against scattered
+  diffs; newest-heading naming with a nested-panel fixture; ARIA+probe merge producing rooted
+  `dialog`; failure-path capture.
+- The seven Langfuse sessions above are the acceptance fixture: re-run the same two focus commands
+  (`create test`, `create plan of different kinds`) and require — hash forks containing `region_`,
+  Pilot `<state>` showing the region while open, zero `.modal`-guess `interact()` scopes, and no
+  `div.main-app` root anywhere.

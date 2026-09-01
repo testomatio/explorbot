@@ -101,17 +101,12 @@ export const HTML_SELECTORS = {
 } as const;
 
 export const HTML_VISIBILITY_LIMITS = {
-  maxViewportOverlayRatio: 0.95,
   minOpacity: 0.1,
-  minOverlayHeight: 40,
-  minOverlayWidth: 80,
 } as const;
 
 export const HTML_EXTRACTION_LIMITS = {
   componentScopeHtmlLength: 8000,
-  maxOverlayCount: 3,
   maxScopeInteractiveCount: 16,
-  overlayHtmlLength: 6000,
 } as const;
 
 export const CODE_EDITOR_MARKERS = ['monaco', 'codemirror', 'ace', 'ace_editor', 'code'] as const;
@@ -158,14 +153,6 @@ export const ELEMENT_EXTRACTION_CONFIG = {
 
 export type ElementExtractionConfig = typeof ELEMENT_EXTRACTION_CONFIG;
 export type RawElementData = NonNullable<ReturnType<typeof extractElementData>>;
-export type VisibleOverlayExtractionConfig = {
-  interactiveContentSelector: string;
-  limits: typeof HTML_EXTRACTION_LIMITS;
-  overlaySelectors: readonly string[];
-  overlaySemanticSelector: string;
-  visibilityLimits: typeof HTML_VISIBILITY_LIMITS;
-  geometryFallback?: boolean;
-};
 export type ComponentScopeExtractionConfig = {
   eidxAttr: string;
   interactiveControlSelector: string;
@@ -449,80 +436,6 @@ export function getElementDataExtractorSource(): string {
   return extractElementData.toString();
 }
 
-export function extractVisibleOverlayHtml(config: VisibleOverlayExtractionConfig): string {
-  function isVisible(element: Element): boolean {
-    const html = element as HTMLElement;
-    const style = window.getComputedStyle(html);
-    const rect = html.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return false;
-    if (style.display === 'none' || style.visibility === 'hidden') return false;
-    if (Number.parseFloat(style.opacity || '1') < config.visibilityLimits.minOpacity) return false;
-    return true;
-  }
-
-  function getUsefulContent(element: Element): { interactiveCount: number; text: string } {
-    const text = (element.textContent || '').replace(/\s+/g, ' ').trim();
-    const interactiveCount = element.querySelectorAll(config.interactiveContentSelector).length;
-    return { interactiveCount, text };
-  }
-
-  function isLikelyFloatingOverlay(element: Element): boolean {
-    const html = element as HTMLElement;
-    const style = window.getComputedStyle(html);
-    const rect = html.getBoundingClientRect();
-    const zIndex = Number.parseInt(style.zIndex || '0', 10);
-    const isFloating = style.position === 'fixed' || style.position === 'absolute' || style.position === 'sticky' || zIndex > 0;
-    if (!isFloating) return false;
-    if (rect.width < config.visibilityLimits.minOverlayWidth || rect.height < config.visibilityLimits.minOverlayHeight) return false;
-    if (rect.bottom < 0 || rect.right < 0 || rect.top > window.innerHeight || rect.left > window.innerWidth) return false;
-    if (rect.width >= window.innerWidth * config.visibilityLimits.maxViewportOverlayRatio && rect.height >= window.innerHeight * config.visibilityLimits.maxViewportOverlayRatio) return false;
-    const { interactiveCount, text } = getUsefulContent(element);
-    return interactiveCount > 0 || text.length > 0;
-  }
-
-  function isFloatingOverlay(element: Element): boolean {
-    const style = window.getComputedStyle(element as HTMLElement);
-    return style.position === 'fixed' || style.position === 'absolute' || Number.parseInt(style.zIndex || '0', 10) > 0;
-  }
-
-  const seen = new Set<Element>();
-  const collected: Element[] = [];
-  for (const selector of config.overlaySelectors) {
-    for (const element of Array.from(document.querySelectorAll(selector))) {
-      if (seen.has(element)) continue;
-      seen.add(element);
-      if (!isVisible(element)) continue;
-      if (!element.matches(config.overlaySemanticSelector) && !isFloatingOverlay(element)) continue;
-      const { interactiveCount, text } = getUsefulContent(element);
-      if (interactiveCount === 0 && text.length === 0) continue;
-      collected.push(element);
-    }
-  }
-
-  const overlays = collected.filter((element) => !collected.some((other) => other !== element && element.contains(other))).map((element) => (element as HTMLElement).outerHTML.slice(0, config.limits.overlayHtmlLength));
-
-  if (overlays.length === 0 && config.geometryFallback !== false) {
-    const floatingCandidates = Array.from(document.body.querySelectorAll('*'))
-      .filter((element) => !seen.has(element) && isVisible(element) && isLikelyFloatingOverlay(element))
-      .sort((left, right) => {
-        const leftStyle = window.getComputedStyle(left as HTMLElement);
-        const rightStyle = window.getComputedStyle(right as HTMLElement);
-        const leftZ = Number.parseInt(leftStyle.zIndex || '0', 10) || 0;
-        const rightZ = Number.parseInt(rightStyle.zIndex || '0', 10) || 0;
-        if (leftZ !== rightZ) return rightZ - leftZ;
-        const leftRect = (left as HTMLElement).getBoundingClientRect();
-        const rightRect = (right as HTMLElement).getBoundingClientRect();
-        return leftRect.width * leftRect.height - rightRect.width * rightRect.height;
-      });
-
-    for (const element of floatingCandidates.slice(0, config.limits.maxOverlayCount)) {
-      overlays.push((element as HTMLElement).outerHTML.slice(0, config.limits.overlayHtmlLength));
-    }
-  }
-
-  return overlays.slice(0, config.limits.maxOverlayCount).join('\n\n--- overlay ---\n\n');
-}
-
 export function extractComponentScopeHtml(eidx: string, config: ComponentScopeExtractionConfig): string {
   const element = document.querySelector(`[${config.eidxAttr}="${eidx}"]`);
   if (!element) return '';
@@ -542,10 +455,6 @@ export function extractComponentScopeHtml(eidx: string, config: ComponentScopeEx
 
   if (element instanceof HTMLElement) return element.outerHTML.slice(0, config.limits.componentScopeHtmlLength);
   return '';
-}
-
-export function getVisibleOverlayHtmlExtractorSource(): string {
-  return extractVisibleOverlayHtml.toString();
 }
 
 export function getComponentScopeHtmlExtractorSource(): string {
@@ -1018,6 +927,19 @@ export function htmlCombinedSnapshot(html: string, htmlConfig?: HtmlConfig['comb
   cleanAllElements(body);
 
   return serialize(document);
+}
+
+/**
+ * Cleans a small HTML snippet for AI consumption: keeps structure and text,
+ * drops noisy attributes and generated class names
+ */
+export function cleanHtmlSnippet(html: string): string {
+  const fragment = parseFragment(html);
+  for (const node of fragment.childNodes) {
+    if (!('tagName' in node)) continue;
+    cleanAllElements(node as parse5TreeAdapter.Element);
+  }
+  return serialize(fragment);
 }
 
 /**
@@ -1526,6 +1448,7 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
     if (attr.name === 'class') {
       attr.value = attr.value
         .split(/\s+/)
+        .filter(Boolean)
         .filter((className) => !/\d/.test(className))
         .filter((className) => !className.includes(':'))
         .filter((className) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(className)))

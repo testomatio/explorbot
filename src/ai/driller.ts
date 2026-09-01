@@ -6,23 +6,9 @@ import { setActivity } from '../activity.ts';
 import { Observability } from '../observability.ts';
 import { Plan, Test, TestResult } from '../test-plan.ts';
 import { collectInteractiveNodes } from '../utils/aria.ts';
-import {
-  EXPLORBOT_ATTRS,
-  HTML_COMPOSITE_AREA_HINTS,
-  HTML_COMPOSITE_TARGET_ROLES,
-  HTML_EXTRACTION_LIMITS,
-  HTML_FORM_CONTROL_ROLES,
-  HTML_FORM_CONTROL_TAGS,
-  HTML_INTERACTIVE_ROLES,
-  HTML_SELECTORS,
-  HTML_VISIBILITY_LIMITS,
-  getComponentScopeHtmlExtractorSource,
-  getVisibleOverlayHtmlExtractorSource,
-  inferHtmlRole,
-} from '../utils/html.ts';
+import { EXPLORBOT_ATTRS, HTML_COMPOSITE_AREA_HINTS, HTML_COMPOSITE_TARGET_ROLES, HTML_EXTRACTION_LIMITS, HTML_FORM_CONTROL_ROLES, HTML_FORM_CONTROL_TAGS, HTML_INTERACTIVE_ROLES, HTML_SELECTORS, getComponentScopeHtmlExtractorSource, inferHtmlRole } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 import { loop, pause } from '../utils/loop.ts';
-import { OVERLAY_SELECTORS } from '../utils/overlay.ts';
 import { annotatePageElements } from '../utils/web-annotate.ts';
 import { eidxInContainer } from '../utils/web-eidx.ts';
 import { WebElement } from '../utils/web-element.ts';
@@ -648,8 +634,11 @@ export class Driller extends TaskAgent implements Agent {
   private async detectNestedOverlayContext(component: ComponentInfo, result: any): Promise<string | null> {
     if (!result?.pageDiff?.ariaChanges || result.pageDiff.urlChanged) return null;
 
-    const overlayHtml = await this.getVisibleOverlayHtml();
-    if (!overlayHtml) return null;
+    const parts = result.pageDiff.htmlParts ?? [];
+    let appeared = parts.filter((part: any) => part.added?.length > 0);
+    if (result.pageDiff.areaOfInterest) appeared = parts;
+    const appearedHtml = appeared.map((part: any) => part.subtree).join('\n');
+    if (!appearedHtml) return null;
 
     const state = this.stateManager.getCurrentState();
     if (!state) return null;
@@ -661,7 +650,7 @@ export class Driller extends TaskAgent implements Agent {
       Keep the recorded code reusable and include the parent-opening action when the nested element requires the overlay to be open.
 
       <overlay_html>
-      ${overlayHtml}
+      ${appearedHtml}
       </overlay_html>
 
       <current_page_aria>
@@ -669,27 +658,6 @@ export class Driller extends TaskAgent implements Agent {
       </current_page_aria>
       </nested_overlay>
     `;
-  }
-
-  private async getVisibleOverlayHtml(): Promise<string> {
-    return this.explorer.withPage((page) =>
-      page.evaluate(
-        ({ extractorSource, config }) => {
-          const extract = new Function(`return ${extractorSource}`)() as (config: any) => string;
-          return extract(config);
-        },
-        {
-          extractorSource: getVisibleOverlayHtmlExtractorSource(),
-          config: {
-            interactiveContentSelector: HTML_SELECTORS.interactiveContent,
-            limits: HTML_EXTRACTION_LIMITS,
-            overlaySelectors: OVERLAY_SELECTORS.semanticOverlays,
-            overlaySemanticSelector: OVERLAY_SELECTORS.overlaySemanticSelector,
-            visibilityLimits: HTML_VISIBILITY_LIMITS,
-          },
-        }
-      )
-    );
   }
 
   private async getComponentScopeHtml(component: ComponentInfo, originalState: ActionResult): Promise<string> {

@@ -89,8 +89,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
 
     async researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null> {
       const focusArea = current.overlay;
-      if (!focusArea.detected || !focusArea.name) return null;
-      if (focusArea.type !== 'dialog' && focusArea.type !== 'modal') return null;
+      if (!focusArea.present || !focusArea.name) return null;
 
       const cached = getCachedResearch(pageStateHash);
       if (!cached) return null;

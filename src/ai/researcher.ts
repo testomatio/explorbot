@@ -76,7 +76,7 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   static getCachedResearch(state: WebPageState): string {
-    return getCachedResearch(state.hash || '');
+    return getCachedResearch(ActionResult.fromState(state).baseHash);
   }
 
   getSystemMessage(): string {
@@ -96,7 +96,7 @@ export class Researcher extends ResearcherBase implements Agent {
     const maxRetries = (this.config.ai?.agents?.researcher as any)?.retries ?? 2;
     let retriesLeft = opts._retriesLeft ?? maxRetries;
     this.actionResult = ActionResult.fromState(state);
-    const stateHash = state.hash || this.actionResult.getStateHash();
+    const stateHash = this.actionResult.baseHash;
     const researchState = { ...state, hash: stateHash };
 
     if (!force && stateHash) {
@@ -268,7 +268,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       if (!interrupted() && deep) {
         try {
-          await this.performDeepAnalysis(state, result);
+          await this.performDeepAnalysis(researchState, result);
         } catch (err) {
           tag('warning').log(`Deep analysis failed, continuing with best-effort research: ${err instanceof Error ? err.message : err}`);
         }

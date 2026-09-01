@@ -31,9 +31,9 @@ const checkHelp = dedent`
               as false.
   Outcomes are settled against a screenshot of the whole page: what a user can see is
   the proof, and the run log only says what was done. CONTRADICTION means the two
-  disagree - reported with both sides rather than settled one way, and ### Artifacts
-  then names the html, aria and screenshot on disk so you can judge it yourself. Not
-  finding something in the picture is not enough on its own; that is "not verified".
+  disagree - reported with both sides rather than settled one way, so read the html,
+  aria and screenshot named under ### Artifacts and judge it yourself. Not finding
+  something in the picture is not enough on its own; that is "not verified".
   ok: follows those outcomes - false when one FAILED or CONTRADICTED, or when the run
   could not complete, which is reported as such rather than as an app failure.
   Page problems seen on the way appear under ### Answer, not as step failures.
@@ -51,6 +51,13 @@ const verifyHelp = dedent`
   Reports each assertion it could express as PASSED or FAILED with its playwright form,
   and gives no overall verdict - read the lines and decide. "none ran" means the claim
   could not be expressed, which is not the same as false.
+`;
+
+const statusHelp = dedent`
+  Reads the files a command recorded, so it needs no browser and outlives the session.
+  The hash is looked up across every recorded site. ### Artifacts names every file kept
+  under it: the aria tree, the html, the screenshot and network log when they were
+  captured, and the per-step captures of a do run.
 `;
 
 const reportHelp = dedent`
@@ -124,7 +131,7 @@ function primaFor(options: any): Prima {
   return new Prima(buildOptions(options));
 }
 
-async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>, record = true): Promise<void> {
+async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>): Promise<void> {
   setQuietMode(!isVerboseMode());
   trackActivityLine();
   const prima = primaFor(options);
@@ -138,7 +145,7 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
     envelope = await prima.toolFailureEnvelope(command, error);
   }
 
-  if (record) prima.record(envelope, Date.now() - startedAt);
+  prima.record(envelope, Date.now() - startedAt);
   clearActivityLine();
   console.log(renderEnvelope(envelope));
   await prima.stop().catch(() => {});
@@ -213,9 +220,15 @@ export function createPrimaCommands(name = 'prima'): Command {
       process.exit(0);
     });
 
-  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command')).action(async (hash, options) => {
-    await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), false);
-  });
+  addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command'))
+    .addHelpText('after', `\n${statusHelp}`)
+    .action(async (hash, options) => {
+      setQuietMode(!isVerboseMode());
+      const prima = primaFor(options);
+      const envelope = await prima.status(hash).catch((error: unknown) => prima.toolFailureEnvelope(`status ${hash}`, error));
+      console.log(renderEnvelope(envelope));
+      process.exit(envelope.ok ? 0 : 1);
+    });
 
   addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report'))
     .addHelpText('after', `\n${reportHelp}`)

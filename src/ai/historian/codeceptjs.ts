@@ -64,7 +64,7 @@ export function WithCodeceptJS<T extends Constructor>(Base: T) {
       lines.push(`Feature('${escapeString(plan.title)}')`);
       lines.push('');
 
-      const startUrl = plan.url || plan.tests[0]?.startUrl;
+      const startUrl = plan.startUrl;
       if (startUrl) {
         lines.push('Before(({ I }) => {');
         lines.push(`  I.amOnPage('${escapeString(startUrl)}');`);

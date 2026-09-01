@@ -59,6 +59,7 @@ No `init`, no config file, no project directory, no model IDs to look up. These 
 | `EXPLORBOT_SPEC` | no | Docbot application spec directory or index.md, used as page knowledge |
 | `EXPLORBOT_API_SPEC` | no | OpenAPI spec path for the API boat |
 | `EXPLORBOT_NO_BANNER` | no | Suppress the startup banner, for machine-readable output |
+| `EXPLORBOT_MAX_DURATION` | no | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->
 
 `EXPLORBOT_URL` is optional when the command itself carries an absolute URL, as `docs collect https://…` does. The [API boat](../api-testing/basics.md) reads it as the base endpoint.

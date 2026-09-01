@@ -1,5 +1,90 @@
 # Changelog
 
+## 2026-09-01
+
+### Changes
+
+- State Manager: A panel that replaces another one in the same click is now recognised as a new
+  region instead of being dropped. Clicking Next in a wizard, or opening a confirmation over the
+  form you were filling, used to leave the agent believing it was back on the plain page; the new
+  panel now gets its own state, its own scope and its own experience file.
+- State Manager: A panel opened on top of another no longer marks the one underneath as closed.
+  Explorbot used to test whether a panel was still open by looking at what sits at its centre, so
+  anything stacked over it read as a close. The panel underneath is now remembered and comes back
+  when the top one is dismissed.
+- State Manager: When several dialogs are open at once, the innermost one is used. Previously the
+  first one on the page won, so a picker opened from inside a dialog was either ignored or reported
+  under the outer dialog's name.
+- State Manager: Panels are recognised by their dialog role, their modal flag, or by floating above
+  the page. Recognition by "Close dialog" button labels was dropped — it only worked for that exact
+  English wording, and anything labelled that carefully already carries a dialog role. Every panel
+  is now reported as `modal` or `region`; the separate `dialog` and `drawer` wordings are gone from
+  prompts and from generated documentation.
+- Experience Tracker: Experience recorded inside a panel now stores the panel's name and is loaded
+  back only while that same panel is open, so recipes learned in one modal stop leaking into a
+  different modal on the same page.
+- Experience Tracker: An unnamed panel no longer marks a page's own experience file as
+  panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
+  open.
+
+## 2026-08-31
+
+### New CLI Options
+
+- **`--max-duration <minutes>`** — a wall-clock budget for the whole run. Explorbot stops starting new
+  tests, planning styles, and sub-page expansion before the limit, wraps up the test in flight, and then
+  finishes the session the normal way — plan files, session report, Testomatio run finalized, telemetry
+  flushed, exit code 0 — instead of being killed mid-test by a CI job timeout, which loses all of that.
+  Set it a few minutes below the job's `timeout-minutes`. The same budget can be set through
+  `EXPLORBOT_MAX_DURATION`; the flag wins.
+  ```bash
+  explorbot explore / --max-tests 50 --max-duration 40   # 45-minute CI job
+  EXPLORBOT_MAX_DURATION=40 explorbot explore /           # same, via environment
+  explorbot freesail --max-duration 120
+  ```
+
+### Changes
+
+- [Tester] A test still running when the hard cutoff arrives is stopped at the next iteration and graded
+  on the evidence it recorded — passed only if every expected outcome was already met — while its
+  generated code, screencast, and Testomatio steps are still saved. The session report notes that the
+  time budget was reached.
+- Prima: every command now prints `### Artifacts` naming the files it just wrote — the ARIA tree and
+  the html always, plus the screenshot and network log when they were captured. Until now those files
+  were written on every command but only named when a `check` came back with a CONTRADICTION, so the
+  envelope offered a hash and nothing to suggest there was a page on disk worth reading. The ARIA tree
+  carries values and checked states, so one `grep` over it often answers a question that would
+  otherwise cost another `verify` or `ask`.
+- Prima: `do` now names the per-step captures by file rather than only their directory, so the
+  `diff.yaml` recording what each step changed is visible from the envelope.
+- Prima: `prima status <hash>` no longer needs a browser. It only reads recorded files, but it used to
+  open a session first and failed with "No browser to drive" once the run it was meant to explain had
+  finished. It also looks the hash up across every recorded site instead of assuming the most recent
+  one, and lists everything else kept under the hash. A hash that really is missing now reports the
+  directory it looked in.
+- `explorbot test <planfile>` takes the site to run against from the plan itself — the URL of its
+  `### Prerequisite` section, or the `## Requirements` URL of its first test. A plan is therefore
+  enough to run it from any directory with a global installation (`~/.explorbot/config.js`) or with
+  the `EXPLORBOT_*` variables, both of which used to refuse to start with "No site to explore"
+  because the command named no URL of its own.
+  The plan is looked up the same way whichever name it is given — a path, or the bare file name of a
+  saved plan, which is searched for in the plans directory of every registered site.
+- `explorbot test <planfile>` without an index runs every enabled test in the plan, as the help and
+  the docs already described. It used to run only the first pending one.
+- [Fisherman] A run that gives up no longer counts as prepared data. When the run ran out of
+  iterations or stopped after repeated failures on one endpoint, a single successful write was
+  enough to report success, so a half-built precondition looked ready to the test. Only a run the
+  model actually ends — through `finish` or a closing message — can report success now; a run that
+  gives up reports what it managed to do, and the test falls back to checking what the page shows.
+- [Fisherman] The endpoint list no longer guesses the scope when the page URL says two different
+  things. If two segments of the page URL are equally narrow but point at different requests — a
+  generic one like `projects` and the actual project slug — the list is no longer scoped by
+  whichever came first, which could hand the model another project's endpoints. Such a page falls
+  back to the full endpoint list with the warning to confirm the target belongs to this scope.
+- URL matching: short words spelled with hex letters (`/api/feed`, `/cafe`, `/dead`) are no longer
+  mistaken for ids, so those pages keep their own identity instead of collapsing into `/api/{id}`.
+  A hex segment counts as an id when it carries a digit, or when it is at least 8 characters long.
+
 ## 2026-08-30
 
 ### New CLI Options
@@ -45,6 +130,71 @@
   effect when no configuration file existed at all.
 - `config` no longer prints a directory as the project root with an absolute path glued onto the
   end. An absolute `dirs` entry, such as an application spec outside the project, is shown as it is.
+- State Manager: An open panel now stays part of the state until it actually closes. Detection used
+  to fire only on the single action that opened a drawer — one step later the agent forgot the
+  drawer existed, so its scope hints, the Pilot's state line and the panel's own experience file
+  never materialised. The panel is now re-checked on every action and carried forward while its
+  content is still on top; when it closes, the state moves back and the transition is recorded.
+- State Manager: A panel that opens inside another open panel no longer erases the outer one. When
+  the inner panel closes, the outer drawer is checked and restored as the active area.
+- Action: Drawers that open together with a URL change are now detected. A side panel that updates
+  the address bar used to be indistinguishable from real navigation; it now counts as a panel as
+  long as most of the previous page is still there underneath.
+- Action: A change that replaces most of the page is treated as a new page, not a panel. Content
+  finishing to load, or a page redrawing after a dialog closes, no longer gets reported as an
+  opened drawer — and scattered small changes across the page never count as one either.
+- Action: Panel scope selectors are always meaningful now — an id or a real CSS class, found by
+  walking past anonymous wrapper elements and utility classes into the panel itself. A positional
+  path like `//body/div[10]` or a container that spans the whole page is never suggested as a
+  scope; when nothing meaningful exists, the scope is simply omitted.
+- Action: A newly opened panel is named by the heading that just appeared, not by the title of the
+  page or panel behind it.
+- Action: Dialogs recognised by their accessibility role now also get a scope selector, so the
+  "scope your locators here" hint works for them too.
+- Action: When a batch of commands fails midway, the page state is still captured — a drawer opened
+  by the second command no longer goes unnoticed because the third command failed — and the report
+  now correctly shows which commands succeeded before the failure instead of marking all of them
+  failed.
+- [Pilot] Reviews progress immediately when a panel opens or closes, instead of staying silent for
+  the whole life of a drawer between scheduled check-ins.
+- Action: Smaller side panels are recognised now — a split-pane form of a few thousand characters
+  used to fall under the size floor and go undetected while the agent worked inside it blind. The
+  floor is 5K of cleaned panel content, still well above dropdowns and toasts.
+- Action: A large redraw with no identity is no longer reported as a panel. A list that re-renders
+  its rows has no new heading and no meaningful container, so announcing it as an unnamed region
+  only added noise; a panel must bring either a name or a scope selector to count.
+- Action: A dialog is found even when the app redraws half the page around it. Opening a modal used
+  to be missed entirely when it came with a burst of stray rendering — the burst won the "biggest
+  change" contest and cancelled detection. Every appeared area is considered now: oversized redraws
+  are set aside, the area bringing a new heading is preferred, and anything covered by another
+  element on screen is passed over — so the dialog itself gets the scope, like "Select suite for
+  test" in #modal-overlays.
+- Action: The element probed for visibility is the panel itself, not an invisible helper that
+  appeared with it — a transparent resize guard rendered next to a side panel used to make the
+  visibility check fail and silently drop the panel.
+- [Fisherman] In replicate mode, API requests now authenticate with the current browser session:
+  cookies are taken from the live jar filtered to the API origin, the CSRF token is read from the
+  page, and auth headers are never reused from previous sessions' captured requests. Achieve mode
+  authenticates solely through `api.headers` config.
+- [Fisherman] A turn without a tool call now ends the run as a finish instead of erroring: tool
+  choice is no longer forced, and when writes already succeeded the model's text becomes the
+  summary while created items still come from the request ledger. Models that close with prose
+  instead of the `finish` tool no longer trigger retries that re-create the same data.
+- [Provider] Work a tool already did is no longer redone when the turn it was part of breaks partway
+  through. A model turn can run several tool calls before it fails — because the model asked for a
+  tool that does not exist, answered in plain text where a tool call was demanded, or ran the
+  conversation past the model's context limit. The whole turn was then retried from its starting
+  point, with no trace that the earlier calls had already gone through, so everything they had
+  created got created again, once per retry. The calls that completed now carry over into the retry
+  and into the conversation, and the model continues from them instead of repeating them.
+- [Tester] When a click matches more than one element, the pick between them is now made from what
+  those elements actually say. Candidates were described by their markup alone, and the step that
+  trimmed that markup threw away everything nested inside — so a menu holding "New test" and "New
+  tests from requirement" offered two identical empty buttons to choose from, and the choice was a
+  coin flip that could open the wrong screen and report success. Each candidate now carries its own
+  visible text, and its markup keeps the label and meaningful class names while layout and generated
+  styling classes are dropped, so the description says what the element is instead of how it is
+  styled.
 - Doc Collector: a `docs collect` run streamed with `--ws` now sends the spec index it generates as a
   `docs` frame — the file path and the full markdown of `docs/index.md` — so a listening UI can show
   the finished documentation the same way an exploration run streams its session report.
@@ -56,6 +206,60 @@
 
 ### Changes
 
+- State Manager: Drawers, side panels and swapped-in subviews are now recognised as pages in their
+  own right. Until now only a modal that announced itself as a dialog counted as a state; a panel
+  built as a plain positioned element, or a wizard step that replaced half the screen without
+  changing the URL, was invisible — the agent kept aiming at the elements behind it, and a test that
+  opened and closed the same panel over and over looked like it was standing still. A large area
+  appearing on the page is now detected by comparing the page before and after the action and
+  measuring whether it covers what is behind it, so opening one is recorded as a move to a new state
+  and closing it as a move back.
+- Action: The result of a click that opens a panel now leads with the panel. A large change used to
+  be written off as a whole-page redraw and replaced with a placeholder saying how many characters
+  were dropped, which threw away the one thing worth reading. The result now names what opened and
+  where it lives, and carries that area's markup instead of the placeholder.
+- [Tester] Knows to keep working inside the area that just opened. For a panel that covers the page,
+  it is told the exact container to scope its locators to. For one that appears inline, it is told
+  the scenario most likely continues there while the rest of the page stays available — the stricter
+  "nothing outside is clickable" wording is reserved for areas actually measured as covering.
+- [Pilot] Tells a covering modal apart from an inline area. The state summary now shows the
+  container for a modal and a separate `region:` line for an area that appeared in place, so Pilot
+  can steer a stuck Tester into a subview instead of assuming a dialog is blocking it.
+- [Researcher] Describes drawers and subviews, not just dialogs. The extra pass that documents what
+  a modal contains now runs for any named area that opens, and its notes are still filed under the
+  page they belong to, so a panel that is open when a page is first analyzed no longer splits that
+  page's UI map in two.
+- Experience Tracker: Steps learned while a panel was open are now scoped to it. Experience files
+  written for such a state record the panel's container as `root:` in their frontmatter, and are
+  loaded only while a matching area is open — so panel-specific recipes stop being offered as advice
+  on the plain page. Existing files without the key behave exactly as before.
+- [Driller] Reads a nested popup or menu from what the click already reported instead of asking the
+  browser a second time.
+- Overlay detection is now one mechanism instead of three. The old path recognised overlays by
+  looking for class names containing words like "modal" or "drawer", which only ever worked on sites
+  that happened to name their CSS that way; it has been removed in favour of accessibility roles
+  plus the page-comparison and geometry check above. One consequence: an overlay already on screen
+  at the very first capture that carries no accessibility role is no longer detected until the next
+  action.
+- [Fisherman] No longer treats its own past API calls as captured browser traffic. Replicate mode
+  used to reload every request it had ever made — rejected ones included — and hand the next run a
+  failed request body as "the example", sending it into long guessing loops. Only real browser
+  requests are read back now; a project with no captured browser traffic reports data preparation
+  as unavailable instead of replaying its own mistakes.
+- [Fisherman] Picks the best captured example for an endpoint instead of the first one found: an
+  exact endpoint match beats a deeper sub-path, a successful request beats a rejected one, and
+  newer beats older.
+- [Fisherman] The endpoint list shown to the AI is scoped to the page being tested by matching the
+  page URL against captured request paths, so endpoints from other projects no longer appear. When
+  scoping isn't possible the prompt says so explicitly instead of silently listing everything.
+- [Fisherman] `finish` no longer reports success on faith. Reporting success requires at least one
+  API write that actually succeeded in this run, and every claimed created item is checked against
+  the ids the API really returned — unverifiable claims are dropped, and each confirmed item shows
+  which request created it. A run that ends without finishing now reports how many requests were
+  made, how many succeeded, and the last failure, instead of an empty result.
+- [Fisherman] Stops after four failures in a row against the same endpoint instead of spending the
+  whole iteration budget guessing request bodies.
+- [Pilot] Precondition steps now record which API request created each item.
 - [Provider] Groq prompt cache hits are counted again. Groq reports how much of a prompt it served
   from cache, but the pinned `@ai-sdk/groq` build read that number out of the response and then
   dropped it, so every Groq request was recorded as a full-price miss and the cache hit rate showed
@@ -410,6 +614,7 @@ to fill in a form that was already filled.
   reaches the test log instead of stopping at the navigator.
 - A browser that crashes and cannot be restored now stops navigation at once. It used to spend every
   remaining attempt, and a model call with each one, against a page that was already gone.
+
 ## 2026-08-19
 
 ### `explorbot config` names the provider behind every model

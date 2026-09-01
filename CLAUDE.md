@@ -137,7 +137,7 @@ All persisted formats share one rule: **envelope keys (YAML frontmatter, HTML co
 | Format | Location & owner | Envelope | Body grammar |
 |---|---|---|---|
 | Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `endpoint`, `wait`, `waitForElement`, `noExperienceReading/Writing` — `url`/`path` scopes to pages, `endpoint` to API endpoints, neither to both | Free prose facts |
-| Experience | `experience/<stateHash>.md`, ExperienceTracker | sparse frontmatter | `## FLOW:` / `## ACTION:` h2 blocks; bullets + ```js``` + `Solution:` line; h3 forbidden under blocks |
+| Experience | `experience/<stateHash>.md`, ExperienceTracker | sparse frontmatter: `url`, `title`, optional `region` (the open region's name, the same identity the state hash forks on) and `root` (its scoping selector) — a scoped record loads only while that region is open | `## FLOW:` / `## ACTION:` h2 blocks; bullets + ```js``` + `Solution:` line; h3 forbidden under blocks |
 | Test plan | `output/plans/*.md`, test-plan-markdown.ts | `<!-- test ... -->` comment: `priority`, `style`; scenario heading, `url:` line, bullets as steps | Notes/results appended by runner |
 
 These are **data formats**: written and read back inside the runtime loop (knowledge/experience steer every run; plans are consumed by the runner and rerun).

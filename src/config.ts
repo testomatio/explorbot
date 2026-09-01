@@ -274,6 +274,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_SPEC', description: 'Docbot application spec directory or index.md, used as page knowledge' },
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
   { name: 'EXPLORBOT_NO_BANNER', description: 'Suppress the startup banner, for machine-readable output' },
+  { name: 'EXPLORBOT_MAX_DURATION', description: 'Wall-clock budget in minutes for an explore run; same as --max-duration' },
 ];
 
 export type {

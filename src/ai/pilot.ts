@@ -765,6 +765,7 @@ export class Pilot implements Agent {
             const parts = [c.type];
             if (c.title) parts.push(`"${c.title}"`);
             if (c.id) parts.push(`(id: ${c.id})`);
+            if (c.request) parts.push(`via ${c.request}`);
             return parts.join(' ');
           });
           const stepText = `Precondition: created ${items.join(', ')}`;
@@ -827,7 +828,13 @@ export class Pilot implements Agent {
 
     const focusArea = state.overlay;
     if (focusArea.detected) {
-      lines.push(`modal: ${focusArea.name || focusArea.type}`);
+      let line = `modal: ${focusArea.name || focusArea.type}`;
+      if (focusArea.root) line += ` (root: ${focusArea.root})`;
+      lines.push(line);
+    } else if (focusArea.present) {
+      let line = `region: ${focusArea.name || 'unnamed'} (inline`;
+      if (focusArea.root) line += `, root: ${focusArea.root}`;
+      lines.push(`${line})`);
     } else {
       lines.push('modal: none');
     }
@@ -1133,6 +1140,7 @@ export class Pilot implements Agent {
       Diagnostic patterns (use <state>, executed/element/skipped fields, ariaDiff):
       - Click failed + button in "disabled buttons" → required field missing. Instruct fill first.
       - "modal: none" but Tester targets a modal → modal closed; re-trigger.
+      - "region:" in <state> → a large area appeared in place without navigation (subview, wizard step, panel). Direct Tester to act inside it; the rest of the page is still usable.
       - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
       - MultipleElementsFound → xpathCheck() to identify the right one, then precise locator or visualClick().
       - Wrong page (settings vs feature) → getVisitedStates() then back() or reset(). Don't try breadcrumbs (SPA back-nav is unreliable).

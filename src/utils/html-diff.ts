@@ -7,8 +7,10 @@ import { isDynamicId, isGenericClass } from './xpath.ts';
 export interface HtmlDiffPart {
   container: string;
   subtree: string;
+  rawSize: number;
   added: string[];
   removed: string[];
+  appearedSelector?: string;
 }
 
 export interface HtmlDiffResult {
@@ -16,6 +18,7 @@ export interface HtmlDiffResult {
   added: string[];
   removed: string[];
   similarity: number;
+  pageSize: number;
   summary: string;
   messages: string[];
 }
@@ -29,6 +32,9 @@ interface HtmlNode {
 }
 
 const IGNORED_PATHS = new Set(['html[1]', 'html[1]/head[1]', 'html[1]/body[1]']);
+
+const SHELL_RATIO = 0.8;
+const ROOT_CONTENT_RATIO = 0.8;
 
 const LIVE_REGION_ROLES = new Set(['alert', 'alertdialog', 'status', 'log']);
 const TEXT_LINE_PREFIX = 'TEXT:';
@@ -211,7 +217,12 @@ export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlC
 
   const originalMap = collectElementMap(originalDocument);
   const modifiedMap = collectElementMap(modifiedDocument);
-  const parts = await buildDiffParts(originalMap, modifiedMap);
+
+  const modifiedBody = findBodyElement(modifiedDocument);
+  let pageSize = modifiedHtml.length;
+  if (modifiedBody) pageSize = serializeNode(modifiedBody).length;
+
+  const parts = await buildDiffParts(originalMap, modifiedMap, pageSize);
 
   const structuralAdditions = parts.flatMap((p) => p.added.filter((a) => a.startsWith('ELEMENT:')));
   const allAdded = [...added, ...structuralAdditions];
@@ -223,9 +234,14 @@ export async function htmlDiff(originalHtml: string, modifiedHtml: string, htmlC
     added: allAdded,
     removed,
     similarity,
+    pageSize,
     summary,
     messages: collectMessages(originalMap, modifiedMap, allAdded),
   };
+}
+
+function serializeNode(node: parse5TreeAdapter.Node): string {
+  return serialize({ childNodes: [node], nodeName: '#document-fragment' } as any);
 }
 
 /**
@@ -492,14 +508,14 @@ function buildContainerSelector(element: ElementNode, allElements: NodeMap): str
   return matchCount === 1 ? selector : null;
 }
 
-function pathToXPath(treePath: string): string {
+export function pathToXPath(treePath: string): string {
   const parts = treePath.split('/');
   const bodyIdx = parts.findIndex((p) => p.startsWith('body'));
   if (bodyIdx === -1) return `//${parts.join('/')}`;
   return `//body/${parts.slice(bodyIdx + 1).join('/')}`;
 }
 
-function findStableContainer(topLevelPath: string, originalMap: NodeMap, modifiedMap: NodeMap): { path: string; selector: string } {
+function findStableContainer(topLevelPath: string, originalMap: NodeMap, modifiedMap: NodeMap, pageSize: number): { path: string; selector: string } {
   const segments = topLevelPath.split('/');
 
   for (let i = segments.length - 2; i >= 1; i--) {
@@ -508,6 +524,7 @@ function findStableContainer(topLevelPath: string, originalMap: NodeMap, modifie
     if (!originalMap.has(candidatePath) || !modifiedMap.has(candidatePath)) continue;
 
     const element = modifiedMap.get(candidatePath)!;
+    if (pageSize > 0 && serializeNode(element).length >= SHELL_RATIO * pageSize) break;
     const css = buildContainerSelector(element, modifiedMap);
     if (css) return { path: candidatePath, selector: css };
     return { path: candidatePath, selector: pathToXPath(candidatePath) };
@@ -516,7 +533,29 @@ function findStableContainer(topLevelPath: string, originalMap: NodeMap, modifie
   return { path: 'html[1]/body[1]', selector: 'body' };
 }
 
-async function buildDiffParts(originalMap: NodeMap, modifiedMap: NodeMap): Promise<HtmlDiffPart[]> {
+function dominantChild(element: ElementNode): ElementNode | null {
+  const children = (element.childNodes ?? []).filter((child): child is ElementNode => 'tagName' in child && !!child.tagName);
+  if (children.length === 0) return null;
+  if (children.length === 1) return children[0];
+  const parentSize = serializeNode(element).length;
+  if (!parentSize) return null;
+  for (const child of children) {
+    if (serializeNode(child).length >= ROOT_CONTENT_RATIO * parentSize) return child;
+  }
+  return null;
+}
+
+function semanticSelectorFor(element: ElementNode, allElements: NodeMap): string | undefined {
+  let current: ElementNode | null = element;
+  while (current) {
+    const selector = buildContainerSelector(current, allElements);
+    if (selector) return selector;
+    current = dominantChild(current);
+  }
+  return undefined;
+}
+
+async function buildDiffParts(originalMap: NodeMap, modifiedMap: NodeMap, pageSize: number): Promise<HtmlDiffPart[]> {
   const addedPaths: string[] = [];
   const changedPaths: string[] = [];
 
@@ -546,7 +585,7 @@ async function buildDiffParts(originalMap: NodeMap, modifiedMap: NodeMap): Promi
   const grouped = new Map<string, { selector: string; paths: string[] }>();
 
   for (const path of allTopLevel) {
-    const { path: containerPath, selector } = findStableContainer(path, originalMap, modifiedMap);
+    const { path: containerPath, selector } = findStableContainer(path, originalMap, modifiedMap, pageSize);
     const existing = grouped.get(containerPath);
     if (existing) {
       existing.paths.push(path);
@@ -592,10 +631,26 @@ async function buildDiffParts(originalMap: NodeMap, modifiedMap: NodeMap): Promi
     const subtree = serialized ? await minifyHtml(serialized) : '';
     if (!subtree) continue;
 
-    const addedLines = paths.filter((p) => addedTopLevel.includes(p)).map((p) => `ELEMENT:${p}`);
+    const appearedPaths = paths.filter((p) => addedTopLevel.includes(p));
+    const sizeOf = (p: string) => {
+      const node = modifiedMap.get(p);
+      if (!node) return 0;
+      return serializeNode(node).length;
+    };
+    appearedPaths.sort((a, b) => sizeOf(b) - sizeOf(a));
+    const addedLines = appearedPaths.map((p) => `ELEMENT:${p}`);
     const removedLines: string[] = [];
 
-    parts.push({ container: selector, subtree, added: addedLines, removed: removedLines });
+    const part: HtmlDiffPart = { container: selector, subtree, rawSize: serialized.length, added: addedLines, removed: removedLines };
+    const appearedPath = appearedPaths[0];
+    if (appearedPath) {
+      const appearedElement = modifiedMap.get(appearedPath);
+      if (appearedElement) {
+        const appearedSelector = semanticSelectorFor(appearedElement, modifiedMap);
+        if (appearedSelector) part.appearedSelector = appearedSelector;
+      }
+    }
+    parts.push(part);
   }
 
   return parts;
