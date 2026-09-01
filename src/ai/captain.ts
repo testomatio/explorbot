@@ -160,7 +160,7 @@ export class Captain extends CaptainBase implements Agent {
     const headingsBlock = headingLines.join('\n');
 
     let pageSummary = '';
-    const cachedResearch = Researcher.getCachedResearch(state);
+    const cachedResearch = Researcher.getCachedResearch(actionResult);
     if (cachedResearch) {
       pageSummary = `<page_summary>\n${this.explorBot.agentResearcher().extractBrief(cachedResearch)}\n</page_summary>`;
     }

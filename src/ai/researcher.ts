@@ -76,6 +76,7 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   static getCachedResearch(state: WebPageState): string {
+    if (state instanceof ActionResult) return getCachedResearch(state.baseHash);
     return getCachedResearch(ActionResult.fromState(state).baseHash);
   }
 
