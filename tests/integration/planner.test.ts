@@ -219,6 +219,20 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('One section is marked as **Focused**');
   });
 
+  it('scopes one test to one verified operation', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('One test verifies ONE business operation');
+    expect(prompt).not.toContain('merge them into one');
+  });
+
+  it('does not label test data as disposable', async () => {
+    await planner.plan();
+
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('disposable');
+  });
+
   it('expands existing plan without duplicating tests', async () => {
     const existingPlan = new Plan('Task Board Testing');
     existingPlan.url = '/tasks/board';

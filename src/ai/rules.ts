@@ -154,11 +154,11 @@ export const protectionRule = dedent`
 
   Pre-existing data on the page belongs to the application, not the test.
   Items that were not created inside the current test scenario must not be deleted, removed, emptied, reset, archived, or otherwise destroyed.
-  If a scenario needs to verify destructive behaviour, the same scenario must first create a disposable target and then destroy that specific target — never operate on data that was already there when the test started.
+  If a scenario needs to verify destructive behaviour, the same scenario must first create its own target and then destroy that specific target — never operate on data that was already there when the test started.
 
   The resource that the current page URL represents is "under test".
   The test must not destroy the resource it is running against — doing so invalidates every subsequent scenario that starts on the same URL.
-  Do not propose or perform delete/remove/archive actions on the entity that owns the current URL; propose such actions only on disposable children created within the scenario itself.
+  Do not propose or perform delete/remove/archive actions on the entity that owns the current URL; propose such actions only on children created within the scenario itself.
   </important>
 `;
 
@@ -174,7 +174,7 @@ export const dataProtectionRules = dedent`
   filter, tab, or list-inspection constraint. Use visible existing data when it is available.
   If no suitable data exists, report the missing precondition instead of creating data.
 
-  Destructive actions are allowed only against disposable data created by the current scenario
+  Destructive actions are allowed only against data created by the current scenario
   or prepared for that scenario by Fisherman/API preconditions. Existing application data must
   remain unchanged.
   </data_protection_rules>
