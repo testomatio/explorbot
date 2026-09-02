@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Projects — Deep Space</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; color: #1b2430; }
+  header { padding: 16px 32px; border-bottom: 1px solid #dfe4ea; display: flex; justify-content: space-between; align-items: center; }
+  main { padding: 24px 32px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef1f5; }
+  .backdrop { position: fixed; inset: 0; background: rgba(19, 26, 38, 0.55); display: flex; align-items: center; justify-content: center; }
+  .dialog { background: #fff; border-radius: 10px; width: 460px; padding: 24px; box-shadow: 0 24px 60px rgba(0,0,0,0.3); }
+  .dialog h2 { margin: 0 0 12px; font-size: 20px; }
+  .dialog input { width: 100%; padding: 8px 10px; margin: 12px 0 20px; border: 1px solid #c7cfd9; border-radius: 6px; }
+  .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  button { padding: 8px 16px; border-radius: 6px; border: 1px solid #c7cfd9; background: #fff; cursor: pointer; }
+  button.danger { background: #d13b3b; border-color: #d13b3b; color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Deep Space</strong>
+  <nav><a href="/projects">Projects</a> · <a href="/runs">Runs</a> · <a href="/settings">Settings</a></nav>
+</header>
+<main>
+  <h1>Projects</h1>
+  <p>Every project keeps its own runs, environments and API keys. Removing a project removes its history with it.</p>
+  <p><button id="delete-project">Delete project</button></p>
+  <table>
+    <thead><tr><th>Project</th><th>Environment</th><th>Runs</th><th>Last activity</th><th></th></tr></thead>
+    <tbody id="projects"></tbody>
+  </table>
+</main>
+<div id="dialog-host"></div>
+<script>
+  var rows = document.getElementById('projects');
+  for (var i = 1; i <= 40; i++) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>Orbital service ' + i + '</td><td>staging</td><td>' + (i * 13) + '</td><td>3 hours ago</td><td><a href="/projects/' + i + '">Open</a></td>';
+    rows.appendChild(tr);
+  }
+
+  document.querySelector('#delete-project').addEventListener('click', function () {
+    var host = document.getElementById('dialog-host');
+    var backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    var dialog = document.createElement('div');
+    dialog.className = 'dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', 'dialog-title');
+    var title = document.createElement('h2');
+    title.id = 'dialog-title';
+    title.textContent = 'Delete project';
+    var text = document.createElement('p');
+    text.textContent = 'This removes every run, environment and API key that belongs to the project. Type its name to confirm.';
+    var input = document.createElement('input');
+    input.setAttribute('aria-label', 'Project name');
+    input.setAttribute('placeholder', 'Orbital service 1');
+    var actions = document.createElement('div');
+    actions.className = 'dialog-actions';
+    var cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', function () { host.innerHTML = ''; });
+    var confirm = document.createElement('button');
+    confirm.className = 'danger';
+    confirm.textContent = 'Delete project';
+    actions.appendChild(cancel);
+    actions.appendChild(confirm);
+    dialog.appendChild(title);
+    dialog.appendChild(text);
+    dialog.appendChild(input);
+    dialog.appendChild(actions);
+    backdrop.appendChild(dialog);
+    host.appendChild(backdrop);
+  });
+</script>
+</body>
+</html>
