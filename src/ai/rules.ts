@@ -333,15 +333,15 @@ export const actionRule = dedent`
   Prefer text/ARIA locators with context over complex CSS/XPath selectors.
   For inline create/edit flows, after filling a field verify it contains the value, then confirm using the nearest explicit button/link, an adjacent icon-only confirm control in the same row/form, or Enter if the field remains focused.
   If locator doesn't work, try CSS or XPath locators.
-  When one locator matches several elements, select among them by position instead of inventing another locator.
-  Pass step.opts({ elementIndex: N }) as the LAST argument. N is 1-based, in document order.
+  If nothing works, use I.clickXY(x, y) as last resort.
+
+  When a click result reports several matches, pick one from its numbered list by position rather than guessing a new locator.
+  Reuse the same locator with step.opts({ elementIndex: N }) as the LAST argument. N is the "Element N" number.
 
   <example>
     I.click('Remove', step.opts({ elementIndex: 2 }));
     I.click({ role: 'link', text: 'Details' }, '.panel', step.opts({ elementIndex: 1 }));
   </example>
-
-  If nothing works, use I.clickXY(x, y) as last resort.
 
   For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.
 

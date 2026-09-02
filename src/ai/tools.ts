@@ -1256,7 +1256,7 @@ export async function failedToolResult(action: string, message: string, data?: R
 
 function getMultipleElementsSuggestion(): string {
   return dedent`
-    Multiple elements matched your locator, so NOTHING was clicked and the page is unchanged.
+    Multiple elements matched your locator, so that command did nothing — it selected no element and acted on none.
     Read the numbered elements list and click the one you meant by its number:
     reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
     If none of them is the element you want, narrow the locator with a container or its full unique text.
