@@ -77,15 +77,8 @@ export class XhrCapture {
     const origin = parsedUrl.pathname + parsedUrl.search;
     const id = generateRequestId(method, parsedUrl.pathname, 'xhr_');
 
-    const requestHeaders: Record<string, string> = {};
-    for (const [k, v] of Object.entries(request.headers())) {
-      requestHeaders[k] = String(v);
-    }
-
-    const responseHeaders: Record<string, string> = {};
-    for (const [k, v] of Object.entries(response.headers())) {
-      responseHeaders[k] = String(v);
-    }
+    const requestHeaders = this.toHeaderMap(request.headers());
+    const responseHeaders = this.toHeaderMap(response.headers());
 
     let rawBody = '';
     try {
@@ -124,11 +117,7 @@ export class XhrCapture {
 
   private captureReadEndpoint(request: any, response: any): void {
     const parsedUrl = new URL(request.url());
-
-    const requestHeaders: Record<string, string> = {};
-    for (const [k, v] of Object.entries(request.headers())) {
-      requestHeaders[k] = String(v);
-    }
+    const requestHeaders = this.toHeaderMap(request.headers());
 
     const result = new RequestResult({
       id: generateRequestId('GET', parsedUrl.pathname, 'xhr_'),
@@ -145,5 +134,13 @@ export class XhrCapture {
     result.rawResponseBodyValue = '';
 
     this.store.addReadRequest(result);
+  }
+
+  private toHeaderMap(headers: Record<string, unknown>): Record<string, string> {
+    const map: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headers)) {
+      map[k] = String(v);
+    }
+    return map;
   }
 }

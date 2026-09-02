@@ -25,6 +25,16 @@ describe('Fisherman tools', () => {
     expect(result.rejectedCapture.status).toBe(422);
   });
 
+  it('prefers the specification over a bodiless GET capture', async () => {
+    const captured = { method: 'GET', path: '/labels', status: 200, requestBody: undefined };
+    const spec = { paths: { '/labels': { get: { responses: { '200': { description: 'list of labels' } } } } } };
+    const { tools } = createFishermanTools({} as any, store(captured), { spec });
+
+    const result: any = await tools.getEndpointSpec.execute({ method: 'GET', path: '/labels' }, {} as any);
+
+    expect(result.source).toBe('spec');
+  });
+
   it('keeps a successful captured request as a usable example', async () => {
     const captured = { method: 'POST', path: '/plans', status: 201, requestBody: { title: 'Plan' } };
     const { tools } = createFishermanTools({} as any, store(captured), {});
