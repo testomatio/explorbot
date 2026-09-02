@@ -95,7 +95,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
     }),
     getCurrentState: () => fakeState(),
     getConfig: () => ({}),
-    requestStore: () => ({ getRequests: () => [] }),
+    requestStore: () => ({ getMadeRequests: () => [] }),
     getProvider: () => ({ chat: async () => '' }),
   };
   (prima as any).artifactsDir = artifactsRoot;

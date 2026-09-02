@@ -19,6 +19,8 @@ export const PROVIDERS: Record<string, ProviderInfo> = {
   sambanova: { envKey: 'SAMBANOVA_API_KEY', load: async () => (await import('sambanova-ai-provider')).createSambaNova() },
 };
 
+export const MODEL_ROLES: ModelRole[] = ['model', 'visionModel', 'agenticModel'];
+
 let cachedOutputRoot: string | null = null;
 
 interface PlaywrightConfig {
@@ -765,6 +767,11 @@ export async function resolveModel(spec: string, role: ModelRole = 'model'): Pro
   return createModel(spec, modelId);
 }
 
+export function missingModelRoles(provider: string): ModelRole[] {
+  const recommended = ConfigParser.recommendedModels()[provider] || {};
+  return MODEL_ROLES.filter((role) => !recommended[role]);
+}
+
 export class ConfigMissingError extends Error {}
 
 export function envConfigRequested(): boolean {
@@ -786,6 +793,7 @@ export function missingConfigMessage(configFile = 'explorbot.config.js'): string
         EXPLORBOT_AI_PROVIDER=openrouter EXPLORBOT_URL=https://your-app.example.com ${cli} ...
 
     Providers: ${Object.keys(PROVIDERS).join(', ')}
+    See the models each one recommends: ${cli} recommended-models
   `;
 }
 
@@ -818,8 +826,7 @@ export function configuredModels(ai?: AIConfig): Record<string, ConfiguredModel>
 export async function resolveConfigModels(ai?: AIConfig): Promise<void> {
   if (!ai) return;
 
-  const roles: ModelRole[] = ['model', 'visionModel', 'agenticModel'];
-  for (const role of roles) {
+  for (const role of MODEL_ROLES) {
     if (typeof ai[role] === 'string') ai[role] = await resolveModel(ai[role], role);
   }
 

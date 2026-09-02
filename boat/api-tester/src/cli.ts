@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
+import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { listSites } from '../../../src/global-config.ts';
 import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
 import { getStyles } from './ai/chief/styles.ts';
@@ -108,6 +109,8 @@ export function createApiCommands(name = 'api'): Command {
         process.exit(1);
       }
     });
+
+  RecommendedModelsCommand.register(cmd);
 
   addCommonOptions(cmd.command('test <planfile> [index]').description('Execute tests from a plan file. Index: 1, 1-3, *')).action(async (planfile, index, options) => {
     setPreserveConsoleLogs(true);
