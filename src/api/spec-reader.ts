@@ -6,7 +6,7 @@ import { tag } from '../utils/logger.ts';
 
 export function validateSpecs(specs?: string[]): void {
   if (!specs?.length) {
-    throw new Error('API spec is required. Set api.spec in your config file.');
+    throw new Error('API spec is required. Pass --spec, set EXPLORBOT_API_SPEC, or set api.spec in your config file.');
   }
 }
 

@@ -219,6 +219,20 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('One section is marked as **Focused**');
   });
 
+  it('scopes one test to one verified operation', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('One test verifies ONE business operation');
+    expect(prompt).not.toContain('merge them into one');
+  });
+
+  it('does not label test data as disposable', async () => {
+    await planner.plan();
+
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('disposable');
+  });
+
   it('expands existing plan without duplicating tests', async () => {
     const existingPlan = new Plan('Task Board Testing');
     existingPlan.url = '/tasks/board';
@@ -275,10 +289,33 @@ describe('Planner with aimock', () => {
     expect(mock.getRequests().length).toBe(0);
   });
 
-  it('throws when AI returns empty scenarios and no current plan', async () => {
+  it('instructs to return no scenarios for a page with nothing to exercise', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('return an empty scenarios list');
+  });
+
+  it('returns an empty plan when AI returns no scenarios', async () => {
     mock.clearFixtures();
     mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
 
-    await expect(planner.plan()).rejects.toThrow('No tasks were created successfully');
+    const plan = await planner.plan();
+
+    expect(plan.tests.length).toBe(0);
+  });
+
+  it('keeps an existing plan when a later style returns empty scenarios', async () => {
+    const existingPlan = new Plan('Task Board Testing');
+    existingPlan.url = '/tasks/board';
+    existingPlan.addTest(new Test('Create a new task via the Create Task modal', 'critical', ['Task appears'], '/tasks/board', ['Click Create']));
+    planner.currentPlan = existingPlan;
+
+    mock.clearFixtures();
+    mock.on({}, { content: JSON.stringify({ planName: 'Empty', scenarios: [] }) });
+
+    const plan = await planner.plan();
+
+    expect(plan.tests.length).toBe(1);
   });
 });
