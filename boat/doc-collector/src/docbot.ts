@@ -24,7 +24,7 @@ class DocBot {
 
   constructor(options: DocbotOptions = {}) {
     this.options = options;
-    const baseUrl = this.extractAbsoluteBaseUrl(options.startUrl || '/');
+    const baseUrl = this.extractAbsoluteBaseUrl(options.startUrl || '/') || options.baseUrl;
     this.explorBot = new ExplorBot({
       baseUrl,
       verbose: options.verbose,

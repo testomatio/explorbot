@@ -1,6 +1,6 @@
 import dedent from 'dedent';
 import type { ApiClient } from '../api/api-client.ts';
-import type { RequestStore } from '../api/request-store.ts';
+import { type RequestStore, isFailedRequest } from '../api/request-store.ts';
 import { listAllEndpoints } from '../api/spec-reader.ts';
 import { createDebug, tag } from '../utils/logger.ts';
 
@@ -8,6 +8,7 @@ const debugLog = createDebug('explorbot:fisherman');
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import { type FishermanResult, createFishermanTools } from './fisherman-tools.ts';
+import { RequestHaul } from './fisherman/request-haul.ts';
 import type { Provider } from './provider.ts';
 import { dataProtectionRules } from './rules.ts';
 
@@ -79,11 +80,11 @@ export class Fisherman implements Agent {
     await this.refreshAuth();
     debugLog(`auth headers: ${Object.keys(this.apiClient.getHeaders()).join(', ')}`);
 
-    const { tools, getResult, isFinished, finishFromText } = createFishermanTools(this.apiClient, this.requestStore, {
+    const haul = new RequestHaul(this.requestStore);
+    const { tools, getResult, isFinished, finishFromText } = createFishermanTools(this.apiClient, this.requestStore, haul, {
       spec: this.spec,
       baseEndpoint: this.baseEndpoint,
     });
-    const ledgerStart = this.requestStore.getMadeRequests().length;
 
     const conversation = this.provider.startConversation(this.buildSystemPrompt(endpointList, Object.keys(tools), scopeUrl), 'fisherman');
     conversation.addUserText(this.buildTaskPrompt(instructions));
@@ -109,7 +110,7 @@ export class Fisherman implements Agent {
           return;
         }
 
-        if (this.isStuckOnEndpoint(ledgerStart)) {
+        if (this.isStuckOnEndpoint(haul)) {
           tag('warning').log('Fisherman: repeated failures on the same endpoint — stopping');
           stop();
           return;
@@ -228,12 +229,12 @@ export class Fisherman implements Agent {
     `;
   }
 
-  private isStuckOnEndpoint(ledgerStart: number): boolean {
-    const made = this.requestStore.getMadeRequests().slice(ledgerStart);
+  private isStuckOnEndpoint(haul: RequestHaul): boolean {
+    const made = haul.requests();
     if (made.length < REPEATED_FAILURE_LIMIT) return false;
     const recent = made.slice(-REPEATED_FAILURE_LIMIT);
     const first = recent[0];
-    return recent.every((r) => (r.status >= 400 || r.error) && r.method === first.method && r.path === first.path);
+    return recent.every((r) => isFailedRequest(r) && r.method === first.method && r.path === first.path);
   }
 
   private buildTaskPrompt(instructions: string): string {
