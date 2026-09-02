@@ -100,7 +100,7 @@ function fakeDeps(errorFor: (command: string) => Error) {
   const deps: any = {
     explorer: { action: () => action },
     stateManager: { getCurrentState: () => state },
-    ai: {},
+    ai: { getModelForAgent: () => ({}), generateObject: async () => ({ object: { position: 1 } }) },
   };
   return { deps, action };
 }
@@ -148,7 +148,11 @@ describe('click on an ambiguous locator', () => {
 
 Run: `bun test tests/unit/click-ambiguity.test.ts`
 
-Expected: both tests FAIL. The first fails because `action.ran` also contains the internal `step.opts({ elementIndex: … })` retry (and `result.disambiguated` may be set). The second fails because `elements` reads `Could not fetch element details.` — `action.lastError` at return time is the not-found error, not the ambiguity error.
+Expected: both tests FAIL.
+
+The first fails on `action.ran`: the old code disambiguates and retries, so `ran` holds three commands — the original, the original plus `step.opts({ elementIndex: 1 })`, and the picked XPath. The fake `ai` must answer `generateObject`; with an empty `ai` object the disambiguator throws, is swallowed by its own `catch`, returns `null`, and the test would pass against unfixed code for the wrong reason.
+
+The second fails on `elements`, which reads `Could not fetch element details.` — at return time `action.lastError` is the not-found error from the second command, not the ambiguity error from the first.
 
 - [ ] **Step 3: Capture the ambiguity error in the command loop**
 
@@ -366,11 +370,11 @@ In `src/ai/rules.ts`, inside `actionRule`'s `### I.click` section, insert after 
 
 ```
   When one locator matches several elements, select among them by position instead of inventing another locator.
-  Pass step.opts({ elementIndex: N }) as the LAST argument. N is 1-based in document order; negative counts from the end, and 'first'/'last' also work.
+  Pass step.opts({ elementIndex: N }) as the LAST argument. N is 1-based, in document order.
 
   <example>
     I.click('Remove', step.opts({ elementIndex: 2 }));
-    I.click({ role: 'switch' }, '.panel', step.opts({ elementIndex: 1 }));
+    I.click({ role: 'link', text: 'Details' }, '.panel', step.opts({ elementIndex: 1 }));
   </example>
 ```
 
@@ -385,6 +389,7 @@ function getMultipleElementsSuggestion(): string {
     Read the numbered elements list and click the one you meant by its number:
     reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
     If none of them is the element you want, narrow the locator with a container or its full unique text.
+    If the list is missing, call xpathCheck() to see what the locator matches.
   `;
 }
 ```
@@ -486,7 +491,11 @@ Open a PR against `main` titled `Let the model resolve an ambiguous click by pos
 
 - [ ] **Step 7: Close the superseded pull request**
 
-PR #179 (`fix/click-disambiguation-not-a-failure`) implements the rejected approach — it kept the auto-retry and only made its reporting honest. Ask the user before closing it, then close with a comment naming the replacement PR.
+PR #179 (`fix/click-disambiguation-not-a-failure`) implements the rejected approach — it kept the auto-retry and only made its reporting honest. Ask the user before closing it, then close with a comment naming the replacement PR and remove its worktree:
+
+```bash
+bunosh worktree:delete fix/click-disambiguation-not-a-failure
+```
 
 ---
 
@@ -495,4 +504,6 @@ PR #179 (`fix/click-disambiguation-not-a-failure`) implements the rejected appro
 - `MULTIPLE_ELEMENTS_PATTERN` is `'multiple elements'`, matched case-insensitively against error text. Task 1 additionally matches `error.name === 'MultipleElementsFound'` to pick the right error object out of several failed attempts — the string check stays where it is for the suggestion routing, because a failure can reach `failedToolResult` with only the text and no error object.
 - `formatElementList` numbers entries `Element 1:`, `Element 2:` … 1-based, which is exactly the numbering `elementIndex` expects. Do not renumber either side.
 - The `MAX_DISAMBIGUATE_*` constants keep their names. They cap the list the model reads; renaming them is churn with no user-visible effect.
+- `elementIndex` also accepts a negative index counting from the end, and the strings `'first'`/`'last'` (`node_modules/codeceptjs/lib/helper/extras/elementSelection.js`, shared by the Playwright and WebDriver helpers). That is left out of the prompt on purpose: the element list is numbered 1..N, so positive integers are all the model needs. Do not "complete" the rule by adding them.
+- `grep -rn "disambiguat|elementIndex|multiple elements" docs/` was run against this tree. Nothing in `docs/` claims Explorbot picks the matching element itself, so no user documentation needs updating. `docs/superpowers/specs/2026-08-01-actor-boat-design.md:73` mentions cheap-model disambiguation, but that is a historical design doc for the actor boat and no boat implements it — leave it alone.
 - Do not add a knowledge file, a locator table, or any site-specific selector. The reference trace's app has two unlabelled `button[role="switch"]` controls; that is an accessibility gap in the application under test, not something to encode here.
