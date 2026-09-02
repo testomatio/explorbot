@@ -26,6 +26,10 @@
 - Experience Tracker: An unnamed panel no longer marks a page's own experience file as
   panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
   open.
+- Test Plan: A plan file passed to `explorbot test` is now resolved once — the pre-config peek and
+  the run itself share the same parsed file, instead of being scanned and parsed twice with two
+  different search orders. Cross-site directory scanning (looking a path up across every registered
+  site, used by plan loading and by prima's `status`) now has a single owner in `global-config.ts`.
 - [Planner] A test now covers one operation instead of a record's whole lifecycle. Creating a
   record, renaming it and deleting it used to land in a single scenario, because the planner was
   told to merge any scenarios that depended on each other. Those chains were the longest tests of a
