@@ -7,6 +7,8 @@ import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
 
+const researchFirst = 'Run prima research first when a page is large or its structure is unclear.';
+
 const helpContract = dedent`
   Prima is a high-level AI extension to playwright-cli, driving the browser it has open.
 
@@ -19,6 +21,15 @@ const helpContract = dedent`
     prima check "a workflow can be created and appears in the list" --expected "the new workflow is listed"
     prima do "open the account menu" "choose the settings entry" "switch the theme to dark" "check it took effect"
     prima pw "({ page }) => page.click('[data-test=submit]')"
+
+  No command but research maps a page.
+  ${researchFirst}
+`;
+
+const pageContextHelp = dedent`
+  Works from the accessibility tree, and never maps a page itself. Where prima research has
+  already mapped a page, that map joins the context.
+  ${researchFirst}
 `;
 
 const checkHelp = dedent`
@@ -47,10 +58,21 @@ const doHelp = dedent`
   what makes this tier cheap.
 `;
 
+const askHelp = dedent`
+  Answers from a screenshot of the page, or from its structure under --no-vision, and never maps
+  the page itself.
+  ${researchFirst}
+`;
+
 const verifyHelp = dedent`
   Reports each assertion it could express as PASSED or FAILED with its playwright form,
   and gives no overall verdict - read the lines and decide. "none ran" means the claim
   could not be expressed, which is not the same as false.
+`;
+
+const researchHelp = dedent`
+  The map is kept under the page's state and joins the context of later commands on that page,
+  so one research run pays for every command that follows it.
 `;
 
 const statusHelp = dedent`
@@ -175,21 +197,23 @@ export function createPrimaCommands(name = 'prima'): Command {
   });
 
   addCommonOptions(cmd.command('do <instructions...>').description('Run high-level instructions tester-style, one argument per instruction'))
-    .addHelpText('after', `\n${doHelp}`)
+    .addHelpText('after', `\n${doHelp}\n\n${pageContextHelp}`)
     .action(async (instructions, options) => {
       await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
     });
 
   addCommonOptions(cmd.command('check <scenario>').description('Run a scenario end to end as a test, with its own verification, and report the steps it took'))
     .option('--expected <outcome>', 'An outcome the run must reach; repeat the flag for several', (value: string, all: string[]) => [...all, value], [])
-    .addHelpText('after', `\n${checkHelp}`)
+    .addHelpText('after', `\n${checkHelp}\n\n${pageContextHelp}`)
     .action(async (scenario, options) => {
       await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
     });
 
-  addCommonOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot')).action(async (question, options) => {
-    await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
-  });
+  addCommonOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot'))
+    .addHelpText('after', `\n${askHelp}`)
+    .action(async (question, options) => {
+      await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
+    });
 
   addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page'))
     .addHelpText('after', `\n${verifyHelp}`)
@@ -197,11 +221,11 @@ export function createPrimaCommands(name = 'prima'): Command {
       await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
     });
 
-  addCommonOptions(
-    cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again')
-  ).action(async (options) => {
-    await runPrima(options, 'research', (prima) => prima.research({ data: options.data, deep: options.deep, fresh: options.fresh }));
-  });
+  addCommonOptions(cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again'))
+    .addHelpText('after', `\n${researchHelp}`)
+    .action(async (options) => {
+      await runPrima(options, 'research', (prima) => prima.research({ data: options.data, deep: options.deep, fresh: options.fresh }));
+    });
 
   addCommonOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
     if (URL.canParse(target)) options.baseUrl = target;

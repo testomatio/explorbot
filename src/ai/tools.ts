@@ -759,6 +759,12 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
           const researchResult = await researcher.research(currentState, { screenshot: true, data: true });
 
+          if (!researchResult) {
+            return failedToolResult('research', 'No UI map is available for this page.', {
+              suggestion: 'Use context() to read the page structure and act on the elements it lists.',
+            });
+          }
+
           return successToolResult('research', {
             analysis: researchResult,
             aria: cap(ActionResult.fromState(currentState).getInteractiveARIA(), ARIA_OUTPUT_CAP),

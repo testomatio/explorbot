@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-09-03
+
+### Changes
+
+- [Prima] `prima research` is the only command that maps a page. `check` used to map every new url
+  it landed on, and map an opening panel on top of that, before it could act; `do` was handed a
+  `research` tool it could spend a full model call on in the middle of an instruction. Both now work
+  from the accessibility tree and the page markup, and their help points at `prima research` for a
+  large or unfamiliar page. Nothing inside a run can talk it into mapping a page — not the agent
+  driving it, not the supervisor asking for a UI map, not the `research` tool. An explorbot run
+  still maps pages as it did.
+- The `research` tool reports "No UI map is available for this page" instead of returning an empty
+  map as a success.
+- A recorded map handed to a run is reported like a freshly produced one, so a host watching over
+  `--ws` sees the map the run is acting on rather than watching it act on something unseen.
+- [Tester] The lines telling the model how to read `<page_ui_map>` now travel with the map rather
+  than with every new page, so a page that has no map no longer arrives with instructions for one.
+- [Prima] A recorded research map now joins the page context instead of replacing it. `do` used to
+  swap the accessibility tree out for the map once a page had been visited three times, taking the
+  element refs with it, and it looked the map up under the panel-scoped hash, so no map was found
+  while a panel was open. Tree and map are now given together whenever a map exists.
+
+### Configuration
+
+- **`ai.agents.prima.researchAfterVisits`** is gone. A map recorded by `prima research` is used
+  from the next command onwards, so there is nothing left to wait for.
+
 ## 2026-09-01
 
 ### Changes

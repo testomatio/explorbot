@@ -19,7 +19,7 @@ import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
-import { findSimilarResearch, getCachedResearch, reportResearch, saveResearch } from './researcher/cache.ts';
+import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
 import { type CoordinateMethods, WithCoordinates } from './researcher/coordinates.ts';
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
 import { detectFocusedSection, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
@@ -106,6 +106,13 @@ export class Researcher extends ResearcherBase implements Agent {
         reportResearch(stateHash, cached);
         return cached;
       }
+    }
+
+    if (Stats.researchDisabled) {
+      debugLog('Research is off for this session, answering with the recorded map');
+      const recorded = getPreviousResearch(stateHash);
+      if (recorded) reportResearch(stateHash, recorded);
+      return recorded;
     }
 
     Stats.researches++;

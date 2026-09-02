@@ -5,6 +5,7 @@ import { executionController } from '../../execution-controller.ts';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
 import { WebPageState } from '../../state-manager.js';
+import { Stats } from '../../stats.ts';
 import { diffAriaSnapshots } from '../../utils/aria.ts';
 import { extractCodeBlocks } from '../../utils/code-extractor.ts';
 import { tag } from '../../utils/logger.js';
@@ -88,6 +89,8 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     }
 
     async researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null> {
+      if (Stats.researchDisabled) return null;
+
       const focusArea = current.overlay;
       if (!focusArea.present || !focusArea.name) return null;
 
