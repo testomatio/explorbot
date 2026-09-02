@@ -4,7 +4,9 @@ import type { AIProvider } from '../../../../src/ai/provider.ts';
 import type Explorer from '../../../../src/explorer.ts';
 import type { StateManager } from '../../../../src/state-manager.ts';
 import type { WebPageState } from '../../../../src/state-manager.ts';
+import { parseAriaLocator } from '../../../../src/utils/aria.ts';
 import { tag } from '../../../../src/utils/logger.ts';
+import { parseResearchSections } from '../../../../src/ai/researcher/parser.ts';
 import type { DocbotConfig } from '../config.ts';
 import { type CaptureInteractionState, type DocStateTransition, collectDocInteractions } from './tools.ts';
 
@@ -182,6 +184,9 @@ class Documentarian {
       Only list capabilities that are grounded in the provided page research.
       Put actions into "can" only when there is direct evidence in the page context.
       Put actions into "might" only when the UI strongly suggests a capability but proof is incomplete.
+      Going to another page is navigation, not a capability. "can" and "might" list only actions the user performs on this page; links and menus are documented in a separate navigation section, never here.
+      Raw interaction observations that change the URL are navigation evidence only. Never turn them into "can" or "might" actions.
+      Exclude capabilities supplied by unrelated embedded support, marketing, consent, or feedback widgets. Include an embedded interface only when it is part of the current page's documented purpose.
       Describe each action from the end-user perspective.
       Be explicit about scope:
       - one item
@@ -189,7 +194,7 @@ class Documentarian {
       - bulk operations
       - all items
       - page-level
-      Avoid implementation details, selectors, and QA wording.
+      Avoid implementation details, selectors, and QA wording — except the machine-consumed element field, which is a locator, not prose.
       Avoid duplicate actions with different phrasing.
       </rules>
 
@@ -241,6 +246,8 @@ class Documentarian {
       - action: concise user-facing capability phrased as "user can ..."
       - scope: one of one item, list of items, bulk operations, all items, page-level
       - evidence: short reason based on visible UI or research
+      - element: required for every "can" and "might" action. Return the proving or suggesting control's locator copied verbatim from the page research table — the value from the ARIA column, or from the CSS column when the ARIA column is empty. Return null only when no single element supports the action. It is machine metadata used for validation and never shown as prose.
+      Never copy the human-readable Element description from interaction_observations into element. It is not a locator.
       </output_requirements>
     `;
   }
@@ -274,8 +281,30 @@ class Documentarian {
     return message.includes('Failed to generate JSON') || message.includes('Failed to validate JSON') || message.includes('failed_generation') || message.includes('No object generated') || message.includes('response did not match schema');
   }
 
-  private normalizeDocumentation(documentation: GeneratedPageDocumentation & Partial<Pick<PageDocumentation, 'interactions'>>, _state: WebPageState, _research: string): PageDocumentation {
+  private normalizeDocumentation(documentation: GeneratedPageDocumentation & Partial<Pick<PageDocumentation, 'interactions'>>, _state: WebPageState, research: string): PageDocumentation {
     const normalized = { ...documentation };
+    const navigationLocators = new Set<string>();
+    const researchLocators = new Set<string>();
+    for (const section of parseResearchSections(research)) {
+      for (const element of section.elements) {
+        const aria = element.aria ? `{ role: '${element.aria.role}', text: '${element.aria.text}' }` : null;
+        if (aria) researchLocators.add(this.locatorKey(aria));
+        if (element.css) researchLocators.add(this.locatorKey(element.css));
+        if (element.aria?.role !== 'link') continue;
+        if (aria) navigationLocators.add(this.locatorKey(aria));
+        if (element.css) navigationLocators.add(this.locatorKey(element.css));
+      }
+    }
+    normalized.can = normalized.can.filter((capability) => {
+      if (!capability.element) return true;
+      const key = this.locatorKey(capability.element);
+      return researchLocators.has(key) && !navigationLocators.has(key);
+    });
+    normalized.might = normalized.might.filter((capability) => {
+      if (!capability.element) return false;
+      const key = this.locatorKey(capability.element);
+      return researchLocators.has(key) && !navigationLocators.has(key);
+    });
     if (!normalized.interactions) {
       normalized.interactions = undefined;
     }
@@ -286,6 +315,18 @@ class Documentarian {
       ...normalized,
       qualityNotes,
     });
+  }
+
+  private locatorKey(locator: string): string {
+    const aria = parseAriaLocator(locator);
+    if (aria) return `aria:${aria.role}:${aria.text}`;
+    const trimmed = locator.trim();
+    const first = trimmed.at(0);
+    const last = trimmed.at(-1);
+    if (first === last && (first === '`' || first === '"' || first === "'")) {
+      return `css:${trimmed.slice(1, -1).trim()}`;
+    }
+    return `css:${trimmed}`;
   }
 
   private evaluateDocumentationQuality(documentation: PageDocumentation): string[] {
@@ -355,6 +396,14 @@ const capabilitySchema = z.object({
   action: z.string(),
   scope: z.enum(['one item', 'list of items', 'bulk operations', 'all items', 'page-level']),
   evidence: z.string(),
+  element: z.string().nullable().optional(),
+});
+
+const generatedCapabilitySchema = z.object({
+  action: z.string(),
+  scope: z.enum(['one item', 'list of items', 'bulk operations', 'all items', 'page-level']),
+  evidence: z.string(),
+  element: z.string().nullable(),
 });
 
 const stateTransitionSchema = z.object({
@@ -397,11 +446,14 @@ const stateTransitionSchema = z.object({
 
 const generatedPageDocumentationSchema = z.object({
   summary: z.string(),
-  can: z.array(capabilitySchema),
-  might: z.array(capabilitySchema),
+  can: z.array(generatedCapabilitySchema),
+  might: z.array(generatedCapabilitySchema),
 });
 
-const pageDocumentationSchema = generatedPageDocumentationSchema.extend({
+const pageDocumentationSchema = z.object({
+  summary: z.string(),
+  can: z.array(capabilitySchema),
+  might: z.array(capabilitySchema),
   interactions: z.array(stateTransitionSchema).optional(),
   qualityNotes: z.array(z.string()).optional(),
 });

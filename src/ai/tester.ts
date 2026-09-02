@@ -548,17 +548,17 @@ export class Tester extends TaskAgent implements Agent {
     const isNewUrl = this.previousUrl !== currentUrl;
     const isNewState = !isNewUrl && this.previousStateHash !== null && this.previousStateHash !== currentStateHash;
 
-    if (this.previousRegionPresent !== null && this.previousRegionPresent !== currentState.overlay.present) {
+    if (this.previousRegionPresent !== null && this.previousRegionPresent !== currentState.overlay.isOpen) {
       this.regionTransitioned = true;
     }
-    this.previousRegionPresent = currentState.overlay.present;
+    this.previousRegionPresent = currentState.overlay.isOpen;
 
     this.previousUrl = currentUrl;
     this.previousStateHash = currentStateHash;
 
     let context = '';
 
-    const focusArea = currentState.overlay;
+    const region = currentState.overlay;
 
     const focusedElement = currentState.focusedElement;
     if (focusedElement) {
@@ -577,29 +577,29 @@ export class Tester extends TaskAgent implements Agent {
       `;
     }
 
-    if (focusArea.detected) {
-      const areaName = focusArea.name ? ` "${focusArea.name}"` : '';
+    if (region.isModal) {
+      const areaName = region.name ? ` "${region.name}"` : '';
       let rootHint = '';
-      if (focusArea.root) rootHint = `\nIts content lives inside \`${focusArea.root}\` — scope locators to it.`;
+      if (region.root) rootHint = `\nIts content lives inside \`${region.root}\` — scope locators to it.`;
       context += dedent`
-        <focus_scope>
-        A ${focusArea.type}${areaName} is currently open above the page.${rootHint}
-        Scope all interactions to elements inside this ${focusArea.type}.
-        Page navigation, filters, and tabs that exist outside it are not actionable while it is open and may share names or roles with elements inside it — prefer the locator inside the ${focusArea.type}.
-        Use <page_aria> to confirm the element you target is actually inside the ${focusArea.type}.
-        </focus_scope>
+        <overlay>
+        An overlay${areaName} is currently open above the page.${rootHint}
+        Scope all interactions to elements inside this overlay.
+        Page navigation, filters, and tabs that exist outside it are not actionable while it is open and may share names or roles with elements inside it — prefer the locator inside the overlay.
+        Use <page_aria> to confirm the element you target is actually inside the overlay.
+        </overlay>
       `;
     }
 
-    if (!focusArea.detected && focusArea.present && isNewState) {
+    if (!region.isModal && region.isOpen && isNewState) {
       let rootHint = '';
-      if (focusArea.root) rootHint = `\nIt lives inside \`${focusArea.root}\`.`;
+      if (region.root) rootHint = `\nIt lives inside \`${region.root}\`.`;
       context += dedent`
-        <area_of_interest>
-        A large new area "${focusArea.name || 'unnamed area'}" appeared on this page without navigation.${rootHint}
+        <region>
+        A large new region "${region.name || 'unnamed region'}" appeared on this page without navigation.${rootHint}
         The scenario most likely continues inside this area — prefer its elements for your next actions.
         The rest of the page (navigation, menus, filters) is still interactive and remains available.
-        </area_of_interest>
+        </region>
       `;
     }
 
@@ -663,7 +663,7 @@ export class Tester extends TaskAgent implements Agent {
       return context;
     }
 
-    if (focusArea.present && focusArea.name && this.pageStateHash && this.pageActionResult) {
+    if (region.isOpen && region.name && this.pageStateHash && this.pageActionResult) {
       const overlaySection = await this.researcher.researchOverlay(currentState, this.pageActionResult, this.pageStateHash).catch(this.skipResearch);
       if (overlaySection) {
         context += dedent`

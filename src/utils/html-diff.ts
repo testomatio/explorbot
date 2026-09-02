@@ -11,6 +11,7 @@ export interface HtmlDiffPart {
   added: string[];
   removed: string[];
   appearedSelector?: string;
+  containerWasEmpty?: boolean;
 }
 
 export interface HtmlDiffResult {
@@ -639,7 +640,8 @@ async function buildDiffParts(originalMap: NodeMap, modifiedMap: NodeMap, pageSi
     const addedLines = appearedPaths.map((p) => `ELEMENT:${p}`);
     const removedLines: string[] = [];
 
-    const part: HtmlDiffPart = { container: selector, subtree, rawSize: serialized.length, added: addedLines, removed: removedLines };
+    const heldContentBefore = (originalMap.get(containerPath)?.childNodes ?? []).some((child) => 'tagName' in child && !!child.tagName);
+    const part: HtmlDiffPart = { container: selector, subtree, rawSize: serialized.length, added: addedLines, removed: removedLines, containerWasEmpty: !heldContentBefore };
     const appearedPath = appearedPaths[0];
     if (appearedPath) {
       const appearedElement = modifiedMap.get(appearedPath);

@@ -827,17 +827,17 @@ export class Pilot implements Agent {
     lines.push(`h3: ${state.h3 || ''}`);
     lines.push(`h4: ${state.h4 || ''}`);
 
-    const focusArea = state.overlay;
-    if (focusArea.detected) {
-      let line = `modal: ${focusArea.name || focusArea.type}`;
-      if (focusArea.root) line += ` (root: ${focusArea.root})`;
+    const region = state.overlay;
+    if (region.isModal) {
+      let line = `overlay: ${region.name || region.type}`;
+      if (region.root) line += ` (root: ${region.root})`;
       lines.push(line);
-    } else if (focusArea.present) {
-      let line = `region: ${focusArea.name || 'unnamed'} (inline`;
-      if (focusArea.root) line += `, root: ${focusArea.root}`;
+    } else if (region.isOpen) {
+      let line = `region: ${region.name || 'unnamed'} (inline`;
+      if (region.root) line += `, root: ${region.root}`;
       lines.push(`${line})`);
     } else {
-      lines.push('modal: none');
+      lines.push('overlay: none');
     }
 
     const tabs = this.stateManager.otherTabs;
@@ -1144,7 +1144,7 @@ export class Pilot implements Agent {
 
       Diagnostic patterns (use <state>, executed/element/skipped fields, ariaDiff):
       - Click failed + button in "disabled buttons" → required field missing. Instruct fill first.
-      - "modal: none" but Tester targets a modal → modal closed; re-trigger.
+      - "overlay: none" but Tester targets an overlay → overlay closed; re-trigger.
       - "region:" in <state> → a large area appeared in place without navigation (subview, wizard step, panel). Direct Tester to act inside it; the rest of the page is still usable.
       - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
       - MultipleElementsFound → xpathCheck() to identify the right one, then precise locator or visualClick().

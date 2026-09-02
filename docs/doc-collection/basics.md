@@ -105,22 +105,28 @@ Title: User Management
 
 Lists all user accounts and provides entry points for managing them.
 
-## Screenshots
-
-![Page screenshot](../screenshots/admin_users_page.png)
-
 ## User Can
 
 - user can search users by name -> list of items
   Proof: Search input above the users table.
+  ![user can search users by name](../screenshots/admin_users_can_1.png)
 
 ## User Might
 
 - user might export the user list -> all items
   Signal: Toolbar shows an unlabeled download icon.
+
+## Screenshots
+
+![Page screenshot](../screenshots/admin_users_page.png)
+
+## Navigation
+
+- Create user: /admin/users/new
+- Audit log: /admin/audit
 ```
 
-`User Can` lists capabilities proven by visible UI, each with its evidence. `User Might` lists capabilities the UI suggests but research could not fully confirm. Pages where research found almost nothing are skipped rather than padded with guesses.
+`User Can` lists capabilities proven by visible UI, each with its evidence. `User Might` lists capabilities the UI suggests but research could not fully confirm. Links to other pages are collected in their own `Navigation` section and never counted as capabilities. Pages where research found almost nothing are skipped rather than padded with guesses.
 
 ## Next steps
 

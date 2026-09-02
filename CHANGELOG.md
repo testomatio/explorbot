@@ -11,9 +11,49 @@
   was skipped as impossible.
 - [Pilot] The requests it sees after each action now include the ones that succeeded, not only the
   failures, so a page that fetched its data is distinguishable from one that never asked for any.
+- State Manager: A dialog that opens inside the panel it covers, rather than in a container of its
+  own, is now scoped to the dialog. Explorbot used to name the form behind it as the area to work
+  in, so clicks were sent with the wrong context and recipes were filed against the wrong scope.
+  Dialogs that do get their own container keep naming that container, which stays stable between
+  runs.
+- Page Diff: The markup shown for a panel that does not fit the size budget now keeps its ending as
+  well as its beginning. A picker with a long list used to be cut off before its buttons, leaving
+  the agent hunting for a Cancel or Confirm it could not see.
 
 ## 2026-09-02
 
+### Changes
+
+- Doc Collector: Generated page docs now lead with what a reader needs. User Can and User Might come
+  right after the purpose, followed by screenshots and a new Navigation section; state maps, state
+  transitions and coverage notes move to the end. The site index follows the same logic — the page
+  list comes before the state diagrams.
+- Doc Collector: Links to other pages are listed in their own Navigation section and no longer counted
+  as capabilities. The documentarian is told that going to another page is navigation, not a capability,
+  so "user can open Settings" no longer pads User Can. Capabilities from unrelated embedded support,
+  marketing, consent, and feedback widgets are excluded as well.
+- Doc Collector: Documentation screenshots no longer carry the research markup. The boxes, element
+  numbers and the corner legend drawn for the vision model stayed in the page after research and ended
+  up in every page and section screenshot. They are now removed from the page as soon as the vision
+  analysis is done, before any documentation capture.
+- Doc Collector: Pages that share a documented layout are skipped by default. On template-driven
+  sections like a blog, every post used to get full research and its own page doc while differing
+  only in prose. After a page loads, the crawler compares its structure — the tree of ARIA roles with
+  all text dropped — against the pages already documented; a page whose layout matches is skipped and
+  reported in the index as `same layout as <url> (only content differs)`. URL collapsing already
+  handled `/users/1`-style pages; this catches slug pages like `/blog/my-post` it cannot see. A page
+  counts as a clone at 90% structural similarity — identical templates score near 100, look-alike
+  pages of different purpose score around 80 and stay documented. The bar moves with
+  `docs.templateSimilarity` or `--template-similarity <percent>`, and the whole feature turns off with
+  `docs.collapseTemplatePages: false` or `--no-collapse-template-pages`. Links found on a collapsed page
+  are still added to the crawl queue, so deduplication cannot hide unique downstream pages.
+- Doc Collector: Proven capabilities now carry a picture. Each User Can bullet names the control that
+  proves it, and the collector crops that element from a live screenshot with generous surrounding
+  context (~250px) so the reader sees where on the page it sits — not a bare close-up. Bullets whose
+  proving control cannot be found stay text-only; nothing fails when the element is gone.
+- Doc Collector: Documentation capture dismisses transient overlays before taking page, section, and
+  capability evidence screenshots, preventing a previously opened dialog or embedded widget from
+  covering the control being documented.
 ### New CLI Options
 
 - **`recommended-models`** — Prints the model this version recommends for every role of every AI
@@ -42,8 +82,6 @@
 
 - The errors raised when no model is configured now name `recommended-models` as the way to pick
   one; the vision error points at the providers that serve a vision model.
-### Changes
-
 - Utils: The tailwind/trash class checks are now named predicates (`isTailwindClass`, `isTrashClass`) shared
   by the HTML snapshots and the diff's container-class filter, replacing three copies of the same inline
   lambda.
@@ -53,6 +91,17 @@
 - API Requests: Page-URL generalization and the API endpoint list now share one implementation.
   The endpoint list used to walk paths with its own copy of the dynamic-segment logic, which could
   drift from the URL matcher used everywhere else.
+- State Manager: A dialog is now recognised from how much of the screen it blocks and how much
+  there is to do inside it, instead of from how much markup it brings. Small confirmation dialogs —
+  "Delete project?" with two buttons — used to be too small to notice, and the agent now scopes its
+  work to them.
+- State Manager: Bars pinned to an edge of the page — cookie notices, toasts, notification panels —
+  are no longer treated as the area to work in. They leave the rest of the page usable, so testing
+  continues on the page behind them.
+- State Manager: The size floor still applies to panels that appear inside the page, such as an
+  inline drawer or a split-pane form.
+- The area the agent is told to stay inside is called an overlay when it floats above the page and
+  a region when it sits in it. Logs and the supervisor's notes now use that wording throughout.
 
 ## 2026-09-01
 
