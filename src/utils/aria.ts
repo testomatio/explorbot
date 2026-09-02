@@ -469,7 +469,6 @@ const formatDiff = (added: string[], removed: string[], toggled: string[], typed
 // ─────────────────────────────────────────────────────────────────
 
 export interface FocusAreaResult {
-  detected: boolean;
   type: 'modal' | null;
   name: string | null;
 }
@@ -478,7 +477,7 @@ const findDialogOrModal = (nodes: AriaNode[]): FocusAreaResult | null => {
   let topmost: FocusAreaResult | null = null;
   for (const node of nodes) {
     if (node.role === 'dialog' || node.role === 'alertdialog' || node.attributes.modal === true || node.attributes.modal === 'true') {
-      topmost = { detected: true, type: 'modal', name: node.name || null };
+      topmost = { type: 'modal', name: node.name || null };
     }
     const child = findDialogOrModal(node.children);
     if (child) topmost = child;
@@ -530,7 +529,7 @@ export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
   tree = unwrapIgnored(tree);
   tree = dropEmpty(tree, { keepNamed: true });
 
-  return findDialogOrModal(tree) ?? { detected: false, type: null, name: null };
+  return findDialogOrModal(tree) ?? { type: null, name: null };
 };
 
 export const collectInteractiveNodes = (snapshot: string | null): Array<Record<string, unknown>> => {

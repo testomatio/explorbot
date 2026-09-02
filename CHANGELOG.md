@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-03
+
+### Changes
+
+- State Manager: A dialog that opens inside the panel it covers, rather than in a container of its
+  own, is now scoped to the dialog. Explorbot used to name the form behind it as the area to work
+  in, so clicks were sent with the wrong context and recipes were filed against the wrong scope.
+  Dialogs that do get their own container keep naming that container, which stays stable between
+  runs.
+- Page Diff: The markup shown for a panel that does not fit the size budget now keeps its ending as
+  well as its beginning. A picker with a long list used to be cut off before its buttons, leaving
+  the agent hunting for a Cancel or Confirm it could not see.
+
 ## 2026-09-02
 
 ### Changes
@@ -62,8 +75,6 @@
 
 - The errors raised when no model is configured now name `recommended-models` as the way to pick
   one; the vision error points at the providers that serve a vision model.
-### Changes
-
 - Utils: The tailwind/trash class checks are now named predicates (`isTailwindClass`, `isTrashClass`) shared
   by the HTML snapshots and the diff's container-class filter, replacing three copies of the same inline
   lambda.
@@ -73,6 +84,17 @@
 - API Requests: Page-URL generalization and the API endpoint list now share one implementation.
   The endpoint list used to walk paths with its own copy of the dynamic-segment logic, which could
   drift from the URL matcher used everywhere else.
+- State Manager: A dialog is now recognised from how much of the screen it blocks and how much
+  there is to do inside it, instead of from how much markup it brings. Small confirmation dialogs —
+  "Delete project?" with two buttons — used to be too small to notice, and the agent now scopes its
+  work to them.
+- State Manager: Bars pinned to an edge of the page — cookie notices, toasts, notification panels —
+  are no longer treated as the area to work in. They leave the rest of the page usable, so testing
+  continues on the page behind them.
+- State Manager: The size floor still applies to panels that appear inside the page, such as an
+  inline drawer or a split-pane form.
+- The area the agent is told to stay inside is called an overlay when it floats above the page and
+  a region when it sits in it. Logs and the supervisor's notes now use that wording throughout.
 
 ## 2026-09-01
 
