@@ -43,6 +43,12 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
           Container narrows search area. Use when page has multiple matching elements.
           Example: Page has 3 "Delete" buttons in different rows:
           I.click("Delete", ".row-1") - clicks Delete inside element with class row-1
+        I.click(locator, step.opts({ elementIndex: N })) - click the Nth element the locator matches
+          Use after a result reported several matches. N is the "Element N" number from that list.
+          step.opts() always goes LAST, after the container when there is one.
+          Example: the result listed 3 "Delete" buttons and you want the second:
+          I.click("Delete", step.opts({ elementIndex: 2 }))
+          I.click("Delete", ".table", step.opts({ elementIndex: 2 })) - same, narrowed to a container
 
         IMPORTANT: This tool ONLY accepts click commands. For typing text, use form() tool.
         CRITICAL: All commands MUST target the SAME element using different locators.
