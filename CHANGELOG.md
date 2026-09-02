@@ -37,6 +37,22 @@
 - Experience Tracker: An unnamed panel no longer marks a page's own experience file as
   panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
   open.
+- Test Plan: A plan file passed to `explorbot test` is now resolved once — the pre-config peek and
+  the run itself share the same parsed file, instead of being scanned and parsed twice with two
+  different search orders. Cross-site directory scanning (looking a path up across every registered
+  site, used by plan loading and by prima's `status`) now has a single owner in `global-config.ts`.
+- [Planner] A test now covers one operation instead of a record's whole lifecycle. Creating a
+  record, renaming it and deleting it used to land in a single scenario, because the planner was
+  told to merge any scenarios that depended on each other. Those chains were the longest tests of a
+  run and failed as a whole at the first broken step, so nothing after that step was ever checked.
+  They are three tests now, each verifying one operation.
+- [Planner] Test data is no longer labelled "disposable" in scenario titles. The word leaked in
+  from the rule that forbids destroying pre-existing data, and the planner sometimes read it as a
+  kind of record that already exists — writing a test that acted on "the disposable record created
+  for this scenario" without any step that created it.
+- [Planner] Scenarios are no longer planned for a record the page reports as missing. When a detail
+  page shows a not-found message instead of the record, the list and recovery behavior are planned
+  instead of edit or delete steps that stop immediately.
 
 ## 2026-08-31
 

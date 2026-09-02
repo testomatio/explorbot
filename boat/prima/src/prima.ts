@@ -15,7 +15,7 @@ import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../..
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
-import { listSites } from '../../../src/global-config.ts';
+import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
@@ -1067,8 +1067,7 @@ export class Prima {
 
   async status(hash: string): Promise<EnvelopeData> {
     if (!this.artifactsDir) {
-      const sites = listSites();
-      const site = sites.find((candidate) => existsSync(path.join(candidate.dir, 'output', 'prima', hash))) || sites[0];
+      const site = findSiteWith(path.join('output', 'prima', hash)) || listSites()[0];
       if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
       await this.loadConfig();
     }
