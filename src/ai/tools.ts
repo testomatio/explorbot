@@ -61,6 +61,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
           3. I.click(CSS, container) - e.g. I.click("#btn", ".modal")
           4. I.click(CSS) or I.click(XPath) - when locator already includes context (ID, XPath)
           5. I.clickXY(x, y) - coordinates fallback
+          After a result reporting multiple matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
         `),
         explanation: z.string().describe('Why you are clicking this element'),
       }),
@@ -1255,13 +1256,11 @@ export async function failedToolResult(action: string, message: string, data?: R
 
 function getMultipleElementsSuggestion(): string {
   return dedent`
-    Multiple elements matched your locator. To fix this:
-    1. Use container context: I.click({ "role": "button", "text": "Submit" }, '.form-container')
-    2. Use more specific CSS: target the actual element (input, button, a) not wrapper divs
-    3. Add distinguishing attributes: input[type="submit"], button[type="submit"], [value="..."]
-    4. If buttons have similar text like "Create" and "Create Demo", use the FULL unique text
-    5. Use xpathCheck() to inspect matched elements and pick the correct one
-    6. Use visualClick() to click the right element by visual appearance
+    Multiple elements matched your locator, so NOTHING was clicked and the page is unchanged.
+    Read the numbered elements list and click the one you meant by its number:
+    reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
+    If none of them is the element you want, narrow the locator with a container or its full unique text.
+    If the list is missing, call xpathCheck() to see what the locator matches.
   `;
 }
 

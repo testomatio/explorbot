@@ -1142,7 +1142,7 @@ export class Pilot implements Agent {
       - "modal: none" but Tester targets a modal → modal closed; re-trigger.
       - "region:" in <state> → a large area appeared in place without navigation (subview, wizard step, panel). Direct Tester to act inside it; the rest of the page is still usable.
       - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
-      - MultipleElementsFound → xpathCheck() to identify the right one, then precise locator or visualClick().
+      - MultipleElementsFound → nothing was clicked. Tell Tester to reuse the same locator with step.opts({ elementIndex: N }) from the numbered elements list.
       - Wrong page (settings vs feature) → getVisitedStates() then back() or reset(). Don't try breadcrumbs (SPA back-nav is unreliable).
       - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
       - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.

@@ -61,6 +61,7 @@ describe('click on an ambiguous locator', () => {
     expect(result.multipleElementsDetected).toBe(true);
     expect(result.elements).toContain('Element 1:');
     expect(result.elements).toContain('Element 2:');
+    expect(result.suggestion).toContain('elementIndex');
   });
 
   it('keeps the ambiguous match when a later fallback command failed differently', async () => {
