@@ -1,56 +1,22 @@
 import { detectFocusArea } from './aria.js';
-import type { HtmlDiffPart } from './html-diff.js';
 import { pathToXPath } from './html-diff.js';
 import { extractHeadings } from './html.js';
 import { createDebug } from './logger.js';
+import { Region, type RegionData, type RegionDiff } from './region.js';
 
 const debugLog = createDebug('explorbot:overlay');
 
-export type OverlayType = 'modal' | 'region';
-export type OverlayData = {
-  type?: OverlayType | null;
-  name?: string | null;
-  root?: string | null;
-  html?: string | null;
-  xpath?: string | null;
-  parent?: OverlayData | null;
-};
-
-export class Overlay {
-  readonly type: OverlayType | null;
-  readonly name: string | null;
-  readonly root: string | null;
-  readonly html: string | null;
-  readonly xpath: string | null;
-  readonly parent: OverlayData | null;
-
-  constructor(data: OverlayData = {}) {
-    this.type = data.type ?? null;
-    this.name = data.name ?? null;
-    this.root = data.root ?? null;
-    this.html = data.html ?? null;
-    this.xpath = data.xpath ?? null;
-    this.parent = data.parent ?? null;
+export class Overlay extends Region {
+  constructor(data: RegionData = {}) {
+    super({ ...data, type: 'overlay' });
   }
 
-  get detected(): boolean {
-    return this.type !== null && this.type !== 'region';
+  get isModal(): boolean {
+    return true;
   }
 
-  get present(): boolean {
-    return this.type !== null;
-  }
-
-  describe(): string {
-    if (!this.present) return '';
-    let text = `${this.type} "${this.name || 'unnamed'}" opened`;
-    if (this.root) text += `, scope: ${this.root}`;
-    return text;
-  }
-
-  withGeometry(geometry: Overlay): Overlay {
+  withGeometry(geometry: Region): Overlay {
     return new Overlay({
-      type: this.type,
       name: this.name || geometry.name,
       root: geometry.root,
       html: geometry.html,
@@ -58,23 +24,15 @@ export class Overlay {
     });
   }
 
-  withParent(parent: Overlay): Overlay {
-    return new Overlay({
-      type: this.type,
-      name: this.name,
-      root: this.root,
-      html: this.html,
-      xpath: this.xpath,
-      parent: { type: parent.type, name: parent.name, root: parent.root, xpath: parent.xpath },
-    });
+  static fromAria(snapshot: string | null): Region {
+    const focus = detectFocusArea(snapshot);
+    if (!focus.type) return new Region();
+    return new Overlay({ name: focus.name });
   }
 
-  static fromAria(snapshot: string | null): Overlay {
-    return new Overlay(detectFocusArea(snapshot));
-  }
-
-  static resolve(data: { overlay?: OverlayData | null; ariaSnapshot?: string | null }): Overlay {
-    if (data.overlay) return new Overlay(data.overlay);
+  static resolve(data: { overlay?: RegionData | null; ariaSnapshot?: string | null }): Region {
+    if (data.overlay?.type === 'overlay') return new Overlay(data.overlay);
+    if (data.overlay) return new Region(data.overlay);
     return Overlay.fromAria(data.ariaSnapshot ?? null);
   }
 }
@@ -82,7 +40,7 @@ export class Overlay {
 export class OverlayPage {
   constructor(private page: { evaluate(fn: any, arg: any): Promise<any> } | null) {}
 
-  async detectRegion(diff: RegionDiff): Promise<Overlay | null> {
+  async detectRegion(diff: RegionDiff): Promise<Region | null> {
     if (!diff.sameUrl && diff.similarity < SOFT_NAVIGATION_SIMILARITY) return null;
     for (const subRoot of this.appearedSubRoots(diff)) {
       const probe = await this.probe(subRoot.elementXPath);
@@ -101,9 +59,9 @@ export class OverlayPage {
     return null;
   }
 
-  async isStillOpen(overlay: Overlay): Promise<boolean> {
-    if (!overlay.xpath) return true;
-    const probe = await this.probe(overlay.xpath);
+  async isStillOpen(region: Region): Promise<boolean> {
+    if (!region.xpath) return true;
+    const probe = await this.probe(region.xpath);
     if (!probe) return true;
     if (!probe.found) return false;
     if (probe.onScreen && !probe.centerBelongs && !probe.coveredByFloating) return false;
@@ -157,13 +115,13 @@ export class OverlayPage {
       });
   }
 
-  private toOverlay(subRoot: AppearedSubRoot, probe: RegionProbe | null, previousHtml: string): Overlay {
-    let type: OverlayType = 'region';
-    if (probe?.centerBelongs && probe.floating) type = 'modal';
+  private toOverlay(subRoot: AppearedSubRoot, probe: RegionProbe | null, previousHtml: string): Region {
     let root: string | null = null;
     if (subRoot.container !== 'body' && !subRoot.container.startsWith('//')) root = subRoot.container;
     if (!root && subRoot.appearedSelector) root = subRoot.appearedSelector;
-    return new Overlay({ type, name: this.nameFrom(subRoot.subtree, previousHtml), root, html: subRoot.subtree, xpath: subRoot.elementXPath });
+    const data = { name: this.nameFrom(subRoot.subtree, previousHtml), root, html: subRoot.subtree, xpath: subRoot.elementXPath };
+    if (probe?.centerBelongs && probe.floating) return new Overlay(data);
+    return new Region({ ...data, type: 'region' });
   }
 
   private nameFrom(html: string, previousHtml: string): string | null {
@@ -225,14 +183,6 @@ function inspectRegion(config: { xpath: string }): RegionProbe {
   probe.centerBelongs = !!hit && (hit === element || element.contains(hit));
   if (hit && !probe.centerBelongs) probe.coveredByFloating = isFloating(hit as HTMLElement);
   return probe;
-}
-
-export interface RegionDiff {
-  parts: HtmlDiffPart[];
-  pageSize: number;
-  similarity: number;
-  sameUrl: boolean;
-  previousHtml: string;
 }
 
 interface AppearedSubRoot {

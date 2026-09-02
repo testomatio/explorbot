@@ -8,6 +8,7 @@ import { type HtmlDiffPart, type HtmlDiffResult, htmlDiff, liveRegionMessages } 
 import { extractHeadings, extractLinks, extractTargetedHtml, htmlCombinedSnapshot, htmlMinimalUISnapshot, htmlTextSnapshot, minifyHtml } from './utils/html.ts';
 import { createDebug } from './utils/logger.ts';
 import { Overlay } from './utils/overlay.ts';
+import { Region } from './utils/region.ts';
 import { slugify } from './utils/strings.ts';
 import { extractStatePath, matchesUrl } from './utils/url-matcher.ts';
 
@@ -88,7 +89,7 @@ export class ActionResult implements ActionResultData {
   notes: string[] = [];
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
-  public overlay: Overlay = new Overlay();
+  public overlay: Region = new Region();
   private _diffCache: { previousId: number | undefined; diff: Diff } | null = null;
 
   constructor(data: ActionResultData) {
@@ -264,7 +265,7 @@ export class ActionResult implements ActionResultData {
     if (!record.url || !this.url) return false;
     if (record.region && this.overlay.name !== record.region) return false;
     if (record.root) {
-      if (!this.overlay.present) return false;
+      if (!this.overlay.isOpen) return false;
       if (this.overlay.root && this.overlay.root !== record.root) return false;
     }
     if (this.isMatchedBy(record)) return true;
@@ -545,7 +546,7 @@ export class ActionResult implements ActionResultData {
       pageDiff.ariaChangeCount = diff.ariaChangeCount;
     }
 
-    if (this.overlay.present && (!previousState.overlay.present || previousState.overlay.name !== this.overlay.name)) {
+    if (this.overlay.isOpen && (!previousState.overlay.isOpen || previousState.overlay.name !== this.overlay.name)) {
       pageDiff.areaOfInterest = this.overlay.describe();
     }
 
@@ -581,7 +582,7 @@ export class ActionResult implements ActionResultData {
 
     if (this.h1) parts.push(`h1_${this.h1}`);
     if (this.h2) parts.push(`h2_${this.h2}`);
-    if (includeRegion && this.overlay.present && this.overlay.name) parts.push(`region_${this.overlay.name}`);
+    if (includeRegion && this.overlay.isOpen && this.overlay.name) parts.push(`region_${this.overlay.name}`);
 
     let stateString = slugify(parts.map((part) => part.substring(0, 100)).join('_'));
 

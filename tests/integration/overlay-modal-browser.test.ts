@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { type Browser, type Page, chromium } from 'playwright';
 import { htmlDiff } from '../../src/utils/html-diff.ts';
 import { captureHtmlForSnapshot } from '../../src/utils/html.ts';
-import { Overlay, OverlayPage, type RegionDiff } from '../../src/utils/overlay.ts';
+import { Overlay, OverlayPage } from '../../src/utils/overlay.ts';
+import type { RegionDiff } from '../../src/utils/region.ts';
 
 const FIXTURE_URL = `file://${join(process.cwd(), 'test-data', 'testomat_modal.html')}`;
 

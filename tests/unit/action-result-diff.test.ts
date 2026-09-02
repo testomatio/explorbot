@@ -207,10 +207,10 @@ describe('diff memoization and areaOfInterest', () => {
       id: 2,
       url: 'https://app.example.com/users',
       html: '<html><body><h1>Users</h1><aside class="panel"><h2>Edit User</h2></aside></body></html>',
-      overlay: { type: 'modal', name: 'Edit User', root: 'aside.panel', html: '<aside class="panel"><h2>Edit User</h2><form><input name="name"><button>Save</button></form></aside>' },
+      overlay: { type: 'overlay', name: 'Edit User', root: 'aside.panel', html: '<aside class="panel"><h2>Edit User</h2><form><input name="name"><button>Save</button></form></aside>' },
     });
     const result = await current.toToolResult(previous, 'aside.panel');
-    expect(result.pageDiff?.areaOfInterest).toBe('modal "Edit User" opened, scope: aside.panel');
+    expect(result.pageDiff?.areaOfInterest).toBe('overlay "Edit User" opened, scope: aside.panel');
     expect(result.pageDiff?.htmlParts).toHaveLength(1);
     expect(result.pageDiff?.htmlParts?.[0].container).toBe('aside.panel');
     expect(result.pageDiff?.htmlParts?.[0].subtree).toContain('Edit User');
@@ -218,7 +218,7 @@ describe('diff memoization and areaOfInterest', () => {
 
   test('announces a nested region replacing an open one, but not a carried one', async () => {
     const html = '<html><body><h1>Users</h1><aside class="panel"><h2>Edit User</h2></aside></body></html>';
-    const withDrawer = { type: 'modal' as const, name: 'Edit User', root: 'aside.panel' };
+    const withDrawer = { type: 'overlay' as const, name: 'Edit User', root: 'aside.panel' };
 
     const drawerState = new ActionResult({ id: 21, url: 'https://app.example.com/users', html, overlay: withDrawer });
     const nested = new ActionResult({

@@ -4,13 +4,14 @@ import Action from '../../src/action.ts';
 import { ActionResult } from '../../src/action-result.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { htmlDiff } from '../../src/utils/html-diff.ts';
-import { Overlay, type OverlayData, OverlayPage, type RegionDiff } from '../../src/utils/overlay.ts';
+import { Overlay, OverlayPage } from '../../src/utils/overlay.ts';
+import { Region, type RegionData, type RegionDiff } from '../../src/utils/region.ts';
 
 describe('ActionResult overlay', () => {
   it('falls back to the aria snapshot when no overlay was stored', () => {
     const result = new ActionResult({ url: '/', ariaSnapshot: '- dialog "Delete confirmation"' });
-    expect(result.overlay.detected).toBe(true);
-    expect(result.overlay.type).toBe('modal');
+    expect(result.overlay.isModal).toBe(true);
+    expect(result.overlay.type).toBe('overlay');
     expect(result.overlay.name).toBe('Delete confirmation');
   });
 
@@ -25,8 +26,8 @@ describe('ActionResult overlay', () => {
   });
 
   it('prefers the stored descriptor of a restored state', () => {
-    const result = new ActionResult({ url: '/', overlay: new Overlay({ type: 'modal', name: 'Saved filter' }) });
-    expect(result.overlay.type).toBe('modal');
+    const result = new ActionResult({ url: '/', overlay: new Overlay({ type: 'overlay', name: 'Saved filter' }) });
+    expect(result.overlay.type).toBe('overlay');
     expect(result.overlay.name).toBe('Saved filter');
   });
 
@@ -34,7 +35,7 @@ describe('ActionResult overlay', () => {
     const result = new ActionResult({
       url: '/',
       html: '<html><body><h1>Users</h1></body></html>',
-      overlay: { type: 'modal', name: 'Edit User', root: 'div.editor', xpath: '//body/div[2]', parent: { type: 'modal', name: 'Outer', xpath: '//body/div[1]' } },
+      overlay: { type: 'overlay', name: 'Edit User', root: 'div.editor', xpath: '//body/div[2]', parent: { type: 'overlay', name: 'Outer', xpath: '//body/div[1]' } },
     });
     const restored = ActionResult.fromState(result);
     expect(restored.overlay.xpath).toBe('//body/div[2]');
@@ -48,38 +49,38 @@ describe('ActionResult overlay', () => {
 describe('Overlay', () => {
   it('resolve prefers stored overlay data over aria', () => {
     const aria = '- dialog "From aria"';
-    const overlay = Overlay.resolve({ overlay: { type: 'modal', name: 'Stored' }, ariaSnapshot: aria });
+    const overlay = Overlay.resolve({ overlay: { type: 'overlay', name: 'Stored' }, ariaSnapshot: aria });
     expect(overlay.name).toBe('Stored');
   });
 
   it('resolve falls back to aria detection', () => {
-    expect(Overlay.resolve({ ariaSnapshot: '- dialog "From aria"' }).detected).toBe(true);
+    expect(Overlay.resolve({ ariaSnapshot: '- dialog "From aria"' }).isModal).toBe(true);
   });
 
   it('rehydrates from a plain persisted descriptor', () => {
-    expect(new Overlay({ type: 'modal', name: 'Copy report' }).detected).toBe(true);
-    expect(new Overlay().detected).toBe(false);
+    expect(new Overlay({ type: 'overlay', name: 'Copy report' }).isModal).toBe(true);
+    expect(new Region().isModal).toBe(false);
   });
 
   it('describes an open region with its scope', () => {
-    const overlay = new Overlay({ type: 'modal', name: 'Edit User', root: 'aside.panel' });
-    expect(overlay.describe()).toBe('modal "Edit User" opened, scope: aside.panel');
-    expect(new Overlay().describe()).toBe('');
+    const overlay = new Overlay({ type: 'overlay', name: 'Edit User', root: 'aside.panel' });
+    expect(overlay.describe()).toBe('overlay "Edit User" opened, scope: aside.panel');
+    expect(new Region().describe()).toBe('');
   });
 
   it('withGeometry keeps aria identity and adopts probe geometry', () => {
-    const aria = new Overlay({ type: 'modal', name: 'Select suite for test' });
-    const geometry = new Overlay({ type: 'region', name: 'Fallback', root: 'div.picker', xpath: '//body/div[3]', html: '<div class="picker"></div>' });
+    const aria = new Overlay({ type: 'overlay', name: 'Select suite for test' });
+    const geometry = new Region({ type: 'region', name: 'Fallback', root: 'div.picker', xpath: '//body/div[3]', html: '<div class="picker"></div>' });
     const merged = aria.withGeometry(geometry);
-    expect(merged.type).toBe('modal');
+    expect(merged.type).toBe('overlay');
     expect(merged.name).toBe('Select suite for test');
     expect(merged.root).toBe('div.picker');
     expect(merged.xpath).toBe('//body/div[3]');
   });
 
   it('withParent stores the replaced overlay without its html', () => {
-    const outer = new Overlay({ type: 'modal', name: 'New Plan', root: 'div.plan', xpath: '//body/div[1]', html: '<div>big</div>' });
-    const nested = new Overlay({ type: 'region', name: 'Select tests', xpath: '//body/div[2]' });
+    const outer = new Overlay({ type: 'overlay', name: 'New Plan', root: 'div.plan', xpath: '//body/div[1]', html: '<div>big</div>' });
+    const nested = new Region({ type: 'region', name: 'Select tests', xpath: '//body/div[2]' });
     const stacked = nested.withParent(outer);
     expect(stacked.parent?.name).toBe('New Plan');
     expect(stacked.parent?.xpath).toBe('//body/div[1]');
@@ -113,12 +114,12 @@ describe('OverlayPage.detectRegion', () => {
     const diff = await regionDiff(basePage, pageWithDrawer);
     const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
     expect(overlay).not.toBeNull();
-    expect(overlay!.type).toBe('modal');
+    expect(overlay!.type).toBe('overlay');
     expect(overlay!.name).toBe('Edit User');
     expect(overlay!.root).toBe('div.drawer');
     expect(overlay!.xpath).toBe('//body/div[2]');
     expect(overlay!.html).toContain('Edit User');
-    expect(overlay!.detected).toBe(true);
+    expect(overlay!.isModal).toBe(true);
   });
 
   it('keeps a stable container selector as root when the region appears inside one', async () => {
@@ -161,8 +162,8 @@ describe('OverlayPage.detectRegion', () => {
     const diff = await regionDiff(basePage, pageWithDrawer);
     const overlay = await new OverlayPage(pageProbing(regionProbe({ floating: false }))).detectRegion(diff);
     expect(overlay!.type).toBe('region');
-    expect(overlay!.detected).toBe(false);
-    expect(overlay!.present).toBe(true);
+    expect(overlay!.isModal).toBe(false);
+    expect(overlay!.isOpen).toBe(true);
   });
 
   it('discards a region whose center belongs to another element', async () => {
@@ -280,7 +281,7 @@ describe('OverlayPage.detectRegion', () => {
     const diff = await regionDiff(basePage, pageWithDrawer, { sameUrl: false });
     const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
     expect(overlay).not.toBeNull();
-    expect(overlay!.type).toBe('modal');
+    expect(overlay!.type).toBe('overlay');
   });
 
   it('treats a replaced page across navigation as no region', async () => {
@@ -303,7 +304,7 @@ describe('OverlayPage.detectRegion', () => {
 });
 
 describe('OverlayPage.isStillOpen', () => {
-  const overlay = new Overlay({ type: 'modal', name: 'Edit User', xpath: '//body/div[2]' });
+  const overlay = new Overlay({ type: 'overlay', name: 'Edit User', xpath: '//body/div[2]' });
 
   it('stays open while the center belongs to the region', async () => {
     expect(await new OverlayPage(pageProbing(regionProbe())).isStillOpen(overlay)).toBe(true);
@@ -328,7 +329,7 @@ describe('OverlayPage.isStillOpen', () => {
   });
 
   it('keeps carrying an overlay that has no xpath', async () => {
-    expect(await new OverlayPage(pageProbing(regionProbe({ found: false }))).isStillOpen(new Overlay({ type: 'modal', name: 'Aria' }))).toBe(true);
+    expect(await new OverlayPage(pageProbing(regionProbe({ found: false }))).isStillOpen(new Overlay({ type: 'overlay', name: 'Aria' }))).toBe(true);
   });
 });
 
@@ -346,33 +347,33 @@ describe('Action region replacement', () => {
     ConfigParser.setupTestConfig();
   });
 
-  const closedDrawer = (parent?: OverlayData) => new ActionResult({ url, html: pageWithDrawer, overlay: { type: 'modal', name: 'Edit User', root: 'div.drawer', xpath: '//body/div[2]', parent } });
+  const closedDrawer = (parent?: RegionData) => new ActionResult({ url, html: pageWithDrawer, overlay: { type: 'overlay', name: 'Edit User', root: 'div.drawer', xpath: '//body/div[2]', parent } });
 
   const detect = async (previous: ActionResult, result: ActionResult, probes: Record<string, unknown>) => {
     const action = new Action({} as any, { getCurrentState: () => previous, updateState: () => {} } as any);
     action.playwrightHelper = { page: pageProbingXPaths({ '//body/div[2]': regionProbe({ found: false }), ...probes }) };
-    await (action as any).detectRegionOfInterest(result);
+    await (action as any).detectRegion(result);
   };
 
   it('enriches the replacement that opened as the previous region closed', async () => {
     const result = new ActionResult({ url, html: pageWithConfirm, ariaSnapshot: '- dialog "Confirm delete"' });
     await detect(closedDrawer(), result, { '//body/div[3]': regionProbe() });
     expect(result.overlay.name).toBe('Confirm delete');
-    expect(result.overlay.type).toBe('modal');
+    expect(result.overlay.type).toBe('overlay');
     expect(result.overlay.root).toBe('div.confirm');
     expect(result.overlay.xpath).toBe('//body/div[3]');
   });
 
   it('keeps the replacement instead of restoring the parent of the closed region', async () => {
     const result = new ActionResult({ url, html: pageWithConfirm, ariaSnapshot: '- dialog "Confirm delete"' });
-    const previous = closedDrawer({ type: 'modal', name: 'Outer', root: 'aside.outer', xpath: '//body/aside[1]' });
+    const previous = closedDrawer({ type: 'overlay', name: 'Outer', root: 'aside.outer', xpath: '//body/aside[1]' });
     await detect(previous, result, { '//body/div[3]': regionProbe(), '//body/aside[1]': regionProbe() });
     expect(result.overlay.name).toBe('Confirm delete');
   });
 
   it('restores the parent without detecting a region when nothing replaced the closed one', async () => {
     const result = new ActionResult({ url, html: pageWithConfirm });
-    const previous = closedDrawer({ type: 'modal', name: 'Outer', root: 'aside.outer', xpath: '//body/aside[1]' });
+    const previous = closedDrawer({ type: 'overlay', name: 'Outer', root: 'aside.outer', xpath: '//body/aside[1]' });
     await detect(previous, result, { '//body/div[3]': regionProbe(), '//body/aside[1]': regionProbe() });
     expect(result.overlay.name).toBe('Outer');
     expect(result.overlay.root).toBe('aside.outer');
