@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-02
+
+### Changes
+
+- Prima: The three envelope builders (`pw`/`do`/`go`, failures, and `check`/`ask`/`verify`/`research`)
+  now share one tail builder instead of each repeating the instance/status/artifacts block. Artifact
+  paths flow back from the write as a return value rather than through a mutable field that had to be
+  read in the right order, so an envelope can no longer come back missing its Artifacts section.
+  Per-step file names (`aria.yaml`/`html`/`diff.yaml`) written during a `do` run now have a single
+  owner shared with the doc line the envelope advertises, so the two can no longer drift apart.
+
 ## 2026-09-01
 
 ### Changes

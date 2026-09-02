@@ -131,7 +131,8 @@ function primaFor(options: any): Prima {
   return new Prima(buildOptions(options));
 }
 
-async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>): Promise<void> {
+async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>, opts: { browser?: boolean; record?: boolean } = {}): Promise<void> {
+  const { browser = true, record = true } = opts;
   setQuietMode(!isVerboseMode());
   trackActivityLine();
   const prima = primaFor(options);
@@ -139,13 +140,13 @@ async function runPrima(options: any, command: string, run: (prima: Prima) => Pr
 
   let envelope: EnvelopeData;
   try {
-    await prima.start();
+    if (browser) await prima.start();
     envelope = await run(prima);
   } catch (error) {
     envelope = await prima.toolFailureEnvelope(command, error);
   }
 
-  prima.record(envelope, Date.now() - startedAt);
+  if (record) prima.record(envelope, Date.now() - startedAt);
   clearActivityLine();
   console.log(renderEnvelope(envelope));
   await prima.stop().catch(() => {});
@@ -223,11 +224,7 @@ export function createPrimaCommands(name = 'prima'): Command {
   addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command'))
     .addHelpText('after', `\n${statusHelp}`)
     .action(async (hash, options) => {
-      setQuietMode(!isVerboseMode());
-      const prima = primaFor(options);
-      const envelope = await prima.status(hash).catch((error: unknown) => prima.toolFailureEnvelope(`status ${hash}`, error));
-      console.log(renderEnvelope(envelope));
-      process.exit(envelope.ok ? 0 : 1);
+      await runPrima(options, `status ${hash}`, (prima) => prima.status(hash), { browser: false, record: false });
     });
 
   addCommonOptions(cmd.command('report').description('Turn every command of a session into one html and markdown report'))
