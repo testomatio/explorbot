@@ -15,8 +15,43 @@
 
 ## 2026-09-02
 
+### New CLI Options
+
+- **`recommended-models`** — Prints the model this version recommends for every role of every AI
+  provider, and the two ways to select one. Set `EXPLORBOT_AI_PROVIDER` and every role takes that
+  provider's recommendation; leave it out and pin the roles yourself with `EXPLORBOT_AI_MODEL`,
+  `EXPLORBOT_VISION_MODEL` and `EXPLORBOT_AGENTIC_MODEL`, which it prints filled in, ready to paste.
+  A role a provider does not serve is named as such. It ends with the model variables and provider
+  keys currently exported, and an OpenRouter one-liner. It reads only the bundled recommendations,
+  so it answers before any configuration exists, and every CLI carries it.
+
+  ```bash
+  explorbot recommended-models          # every provider, both ways to select
+  explorbot recommended-models --json   # the bundled recommendations as an object
+  explorbot api recommended-models      # the same for the API boat, also docs and prima
+  ```
+
+### New TUI Commands
+
+- **`/recommended-models`** — The same list, inside the TUI.
+
+  ```
+  /recommended-models
+  ```
+
 ### Changes
 
+- The errors raised when no model is configured now name `recommended-models` as the way to pick
+  one; the vision error points at the providers that serve a vision model.
+- Utils: The tailwind/trash class checks are now named predicates (`isTailwindClass`, `isTrashClass`) shared
+  by the HTML snapshots and the diff's container-class filter, replacing three copies of the same inline
+  lambda.
+- Config: `dynamicPageRegex` now extends the built-in dynamic-segment heuristics (numeric, UUID,
+  ULID, hex) instead of replacing them. Previously, setting a custom pattern silently disabled
+  every built-in match on any segment the custom pattern didn't also cover.
+- API Requests: Page-URL generalization and the API endpoint list now share one implementation.
+  The endpoint list used to walk paths with its own copy of the dynamic-segment logic, which could
+  drift from the URL matcher used everywhere else.
 - State Manager: A dialog is now recognised from how much of the screen it blocks and how much
   there is to do inside it, instead of from how much markup it brings. Small confirmation dialogs —
   "Delete project?" with two buttons — used to be too small to notice, and the agent now scopes its
@@ -55,6 +90,10 @@
 - Experience Tracker: An unnamed panel no longer marks a page's own experience file as
   panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
   open.
+- Test Plan: A plan file passed to `explorbot test` is now resolved once — the pre-config peek and
+  the run itself share the same parsed file, instead of being scanned and parsed twice with two
+  different search orders. Cross-site directory scanning (looking a path up across every registered
+  site, used by plan loading and by prima's `status`) now has a single owner in `global-config.ts`.
 - [Planner] A test now covers one operation instead of a record's whole lifecycle. Creating a
   record, renaming it and deleting it used to land in a single scenario, because the planner was
   told to merge any scenarios that depended on each other. Those chains were the longest tests of a
