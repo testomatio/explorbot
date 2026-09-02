@@ -3,6 +3,7 @@ import type { ExperienceTracker } from './experience-tracker.js';
 import type { Knowledge, KnowledgeTracker } from './knowledge-tracker.js';
 import { createDebug, tag } from './utils/logger.js';
 import { Overlay } from './utils/overlay.js';
+import type { Region } from './utils/region.js';
 import { slugify } from './utils/strings.js';
 import { extractStatePath } from './utils/url-matcher.js';
 
@@ -49,7 +50,7 @@ export interface WebPageState {
   focusedElement?: FocusedElement | null;
   links?: Link[];
   verifications?: Record<string, boolean>;
-  overlay?: Overlay;
+  overlay?: Region;
   /** Region name, the persisted scalar form of overlay.name used in experience frontmatter */
   region?: string;
   /** Region root selector, the persisted scalar form of overlay.root used in experience frontmatter */
@@ -124,7 +125,7 @@ export class StateManager {
   private emitStateChange(event: StateTransition): void {
     const state = event.toState;
     const payload: Record<string, unknown> = { url: state.fullUrl || state.url, path: state.url, title: state.title, h1: state.h1 };
-    if (state.overlay?.present) payload.region = state.overlay.name || state.overlay.type;
+    if (state.overlay?.isOpen) payload.region = state.overlay.name || state.overlay.type;
     tag('data').log('state', payload);
 
     this.stateChangeListeners.forEach((listener) => {
@@ -149,9 +150,9 @@ export class StateManager {
     if (newState.url) this.allVisitedUrls.add(normalizeUrl(newState.url));
 
     const hashChanged = actionResult.hash !== previousHash;
-    const regionAppeared = !hashChanged && this.hasRegionAppeared(previousState, newState);
+    const regionOpened = !hashChanged && this.regionOpened(previousState, newState);
 
-    if (hashChanged || regionAppeared) {
+    if (hashChanged || regionOpened) {
       const transition: StateTransition = {
         fromState: previousState,
         toState: newState,
@@ -162,7 +163,7 @@ export class StateManager {
       this.stateHistory.push(transition);
       this.emitStateChange(transition);
 
-      if (regionAppeared) {
+      if (regionOpened) {
         debugLog('State change detected: region of interest appeared');
       }
     }
@@ -212,10 +213,10 @@ export class StateManager {
     return newState;
   }
 
-  private hasRegionAppeared(previousState: WebPageState | null, newState: WebPageState): boolean {
-    const prevFocus = previousState?.overlay ?? Overlay.fromAria(previousState?.ariaSnapshot ?? null);
-    const newFocus = newState.overlay ?? Overlay.fromAria(newState.ariaSnapshot ?? null);
-    return !prevFocus.present && newFocus.present;
+  private regionOpened(previousState: WebPageState | null, newState: WebPageState): boolean {
+    const previous = Overlay.resolve(previousState ?? {});
+    const current = Overlay.resolve(newState);
+    return !previous.isOpen && current.isOpen;
   }
 
   /**

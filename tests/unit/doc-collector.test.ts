@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { z } from 'zod';
+import { PNG } from 'pngjs';
 import { Documentarian } from '../../boat/doc-collector/src/ai/documentarian.ts';
 import { pickDocActionCandidates } from '../../boat/doc-collector/src/ai/tools.ts';
 import { DocBot } from '../../boat/doc-collector/src/docbot.ts';
 import { normalizeAction, renderPageDocumentation, renderSpecIndex } from '../../boat/doc-collector/src/docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from '../../boat/doc-collector/src/path-filter.ts';
 import { extractResearchNavigationTargets } from '../../boat/doc-collector/src/research-navigation.ts';
-import { captureDocumentationScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
+import { buildTemplateRecord, findTemplateMatch } from '../../boat/doc-collector/src/template-dedup.ts';
+import { captureDocumentationScreenshots, captureEvidenceScreenshots, getScreenshotSections } from '../../boat/doc-collector/src/screenshots.ts';
 import { renderMermaidBody } from '../../boat/doc-collector/src/state-diagram.ts';
 
 describe('doc-collector path filter', () => {
@@ -153,6 +158,66 @@ describe('doc-collector renderer', () => {
     expect(markdown).toContain('Section: `.login-form`');
   });
 
+  it('renders user-facing sections first and technical sections last', () => {
+    const markdown = renderPageDocumentation(
+      {
+        url: '/users/sign_in',
+        title: 'Testomat.io',
+        links: [
+          { title: 'Sign up', url: '/users/sign_up' },
+          { title: 'Help', url: '/help' },
+        ],
+      },
+      {
+        summary: 'Sign in page for existing users',
+        can: [{ action: 'user can sign in', scope: 'page-level', evidence: 'Form is visible' }],
+        might: [{ action: 'user might reset password', scope: 'one item', evidence: 'Forgot password link' }],
+        interactions: [{ action: 'Submit empty form', before: 'Empty form', after: 'Validation errors', newCapabilities: ['Shows field errors'], targetState: { url: '/users/sign_in', kind: 'dialog', label: 'Validation errors' } }],
+        qualityNotes: ['Coverage is complete.'],
+      },
+      [
+        {
+          title: 'Page screenshot',
+          path: 'D:/output/docs/screenshots/p.png',
+          relativePath: '../screenshots/p.png',
+          kind: 'page',
+        },
+      ]
+    );
+
+    const order = ['## Purpose', '## User Can', '## User Might', '## Screenshots', '## Navigation', '## Coverage Notes', '## State Map', '## State Transitions'].map((heading) => markdown.indexOf(heading));
+    for (const index of order) expect(index).toBeGreaterThanOrEqual(0);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('renders navigation links deduped with a title fallback', () => {
+    const markdown = renderPageDocumentation(
+      {
+        url: '/dashboard',
+        title: 'Dashboard',
+        links: [
+          { title: 'Projects', url: '/projects' },
+          { title: 'Projects again', url: '/projects' },
+          { title: '', url: '/settings' },
+          { title: 'Empty', url: '' },
+        ],
+      },
+      { summary: 'Dashboard', can: [], might: [] }
+    );
+
+    expect(markdown).toContain('## Navigation');
+    expect(markdown).toContain('- Projects: /projects');
+    expect(markdown).toContain('- /settings: /settings');
+    expect(markdown).not.toContain('Projects again');
+    expect(markdown).not.toContain('Empty');
+  });
+
+  it('omits the navigation section when the page has no links', () => {
+    const markdown = renderPageDocumentation({ url: '/dashboard', title: 'Dashboard' }, { summary: 'Dashboard', can: [], might: [] });
+
+    expect(markdown).not.toContain('## Navigation');
+  });
+
   it('renders aggregate spec index with skipped pages', () => {
     const markdown = renderSpecIndex(
       'D:/project/output/docs',
@@ -195,6 +260,8 @@ describe('doc-collector renderer', () => {
     expect(markdown).toContain('- Coverage is complete for the visible sign-in form.');
     expect(markdown).toContain('## Skipped');
     expect(markdown).toContain('/users/auth/google_oauth2. Reason: redirected into external auth flow.');
+    expect(markdown.indexOf('## Pages')).toBeLessThan(markdown.indexOf('## State Transitions'));
+    expect(markdown.indexOf('## Skipped')).toBeLessThan(markdown.indexOf('## State Transitions'));
   });
 
   it('renders a clickable acyclic Mermaid state map with transient states', () => {
@@ -537,11 +604,25 @@ describe('doc-collector screenshots', () => {
 
   it('captures full page and section screenshots from research containers', async () => {
     const captured: Array<{ selector?: string; path: string; fullPage?: boolean }> = [];
+    let annotationsRemoved = false;
+    let escapePressed = false;
     const page = {
+      keyboard: {
+        async press(key: string) {
+          escapePressed = key === 'Escape';
+        },
+      },
       async screenshot(options: { path: string; fullPage?: boolean }) {
         captured.push(options);
       },
       locator(selector: string) {
+        if (selector === '[data-explorbot-annotation]') {
+          return {
+            async evaluateAll() {
+              annotationsRemoved = true;
+            },
+          };
+        }
         return {
           first() {
             return {
@@ -585,6 +666,8 @@ describe('doc-collector screenshots', () => {
     expect(screenshots[0].relativePath).toBe('../screenshots/users_sign_in_page.png');
     expect(screenshots[1].relativePath).toBe('../screenshots/users_sign_in_navigation.png');
     expect(captured.map((item) => item.selector)).toEqual([undefined, '.mainnav-menu']);
+    expect(annotationsRemoved).toBe(true);
+    expect(escapePressed).toBe(true);
   });
 });
 
@@ -735,7 +818,431 @@ describe('doc-collector interactive candidate selection', () => {
   });
 });
 
+describe('doc-collector evidence screenshots', () => {
+  const viewport = { width: 1280, height: 720 };
+  let screenshotsDir: string;
+
+  const buildPage = (box: { x: number; y: number; width: number; height: number } | null, matches: boolean | number = true, path = '/blog/post') => {
+    const png = PNG.sync.write(new PNG({ width: viewport.width, height: viewport.height }));
+    const count = typeof matches === 'number' ? matches : matches ? 1 : 0;
+    const elementLocator = {
+      count: async () => count,
+      scrollIntoViewIfNeeded: async () => {},
+      boundingBox: async () => box,
+    };
+    return {
+      keyboard: { press: async () => {} },
+      url: () => `https://app.test${path}`,
+      async screenshot() {
+        return png;
+      },
+      viewportSize() {
+        return viewport;
+      },
+      getByRole() {
+        return elementLocator;
+      },
+      locator(selector: string) {
+        if (selector === '[data-explorbot-annotation]') {
+          return { async evaluateAll() {} };
+        }
+        return elementLocator;
+      },
+    };
+  };
+
+  it('crops the proving element with generous context and clamps to the viewport', async () => {
+    screenshotsDir = mkdtempSync(join(tmpdir(), 'docbot-evidence-'));
+    const shots = await captureEvidenceScreenshots(
+      { page: buildPage({ x: 500, y: 300, width: 200, height: 100 }) } as any,
+      { url: '/blog/post' },
+      { summary: '', might: [], can: [{ action: 'user can share the article', scope: 'page-level', evidence: 'Share button under the article', element: "{ role: 'button', text: 'Share' }" }] },
+      { pageFilePath: join(screenshotsDir, 'post.md'), screenshotsDir, config: {} }
+    );
+
+    expect(shots).toHaveLength(1);
+    expect(shots[0]?.kind).toBe('evidence');
+    const cropped = PNG.sync.read(readFileSync(shots[0]!.path));
+    expect(cropped.width).toBe(700);
+    expect(cropped.height).toBe(600);
+    rmSync(screenshotsDir, { recursive: true, force: true });
+  });
+
+  it('clamps the crop to the viewport when the element sits at the top-left', async () => {
+    screenshotsDir = mkdtempSync(join(tmpdir(), 'docbot-evidence-'));
+    const shots = await captureEvidenceScreenshots(
+      { page: buildPage({ x: 50, y: 40, width: 100, height: 50 }) } as any,
+      { url: '/blog/post' },
+      { summary: '', might: [], can: [{ action: 'user can open the menu', scope: 'one item', evidence: 'Menu button in the header', element: "{ role: 'button', text: 'Menu' }" }] },
+      { pageFilePath: join(screenshotsDir, 'post.md'), screenshotsDir, config: {} }
+    );
+
+    const cropped = PNG.sync.read(readFileSync(shots[0]!.path));
+    expect(cropped.width).toBe(400);
+    expect(cropped.height).toBe(340);
+    rmSync(screenshotsDir, { recursive: true, force: true });
+  });
+
+  it('resolves a css selector when the element is not an aria locator', async () => {
+    screenshotsDir = mkdtempSync(join(tmpdir(), 'docbot-evidence-'));
+    const shots = await captureEvidenceScreenshots(
+      { page: buildPage({ x: 500, y: 300, width: 200, height: 100 }) } as any,
+      { url: '/blog/post' },
+      { summary: '', might: [], can: [{ action: 'user can share the article', scope: 'page-level', evidence: 'Share button under the article', element: '#share-button' }] },
+      { pageFilePath: join(screenshotsDir, 'post.md'), screenshotsDir, config: {} }
+    );
+
+    expect(shots).toHaveLength(1);
+    expect(shots[0]?.kind).toBe('evidence');
+    const cropped = PNG.sync.read(readFileSync(shots[0]!.path));
+    expect(cropped.width).toBe(700);
+    expect(cropped.height).toBe(600);
+    rmSync(screenshotsDir, { recursive: true, force: true });
+  });
+
+  it('only executes locators present in the research table', async () => {
+    screenshotsDir = mkdtempSync(join(tmpdir(), 'docbot-evidence-'));
+    const research = ['## Toolbar', '', '| Element | ARIA | CSS |', '|---|---|---|', "| Search | { role: 'button', text: 'Search' } | .search |"].join('\n');
+    const shots = await captureEvidenceScreenshots(
+      { page: buildPage({ x: 500, y: 300, width: 200, height: 100 }) } as any,
+      { url: '/blog/post' },
+      {
+        summary: '',
+        might: [],
+        can: [
+          { action: 'user can search', scope: 'page-level', evidence: 'Search control', element: "{ role: 'button', text: 'Search' }" },
+          { action: 'user can invent a control', scope: 'page-level', evidence: 'Unsupported metadata', element: 'role=button, name=Imaginary' },
+        ],
+      },
+      { pageFilePath: join(screenshotsDir, 'post.md'), screenshotsDir, config: {}, research }
+    );
+
+    expect(shots[0]?.kind).toBe('evidence');
+    expect(shots[1]).toBeNull();
+    rmSync(screenshotsDir, { recursive: true, force: true });
+  });
+
+  it('accepts equivalent locator quoting and rejects ambiguous matches', async () => {
+    screenshotsDir = mkdtempSync(join(tmpdir(), 'docbot-evidence-'));
+    const research = ['## Toolbar', '', '| Element | ARIA | CSS |', '|---|---|---|', "| Search | { role: 'button', text: 'Search' } | .search |"].join('\n');
+    const documentation = {
+      summary: '',
+      might: [],
+      can: [{ action: 'user can search', scope: 'page-level' as const, evidence: 'Search control', element: '{ "role": "button", "text": "Search" }' }],
+    };
+
+    const unique = await captureEvidenceScreenshots({ page: buildPage({ x: 500, y: 300, width: 200, height: 100 }) } as any, { url: '/blog/post' }, documentation, {
+      pageFilePath: join(screenshotsDir, 'post.md'),
+      screenshotsDir,
+      config: {},
+      research,
+    });
+    const ambiguous = await captureEvidenceScreenshots({ page: buildPage({ x: 500, y: 300, width: 200, height: 100 }, 2) } as any, { url: '/blog/post' }, documentation, {
+      pageFilePath: join(screenshotsDir, 'post.md'),
+      screenshotsDir,
+      config: {},
+      research,
+    });
+
+    expect(unique[0]?.kind).toBe('evidence');
+    expect(ambiguous).toEqual([null]);
+    rmSync(screenshotsDir, { recursive: true, force: true });
+  });
+
+  it('requires the current query and hash to match the documented page', async () => {
+    screenshotsDir = mkdtempSync(join(tmpdir(), 'docbot-evidence-'));
+    const documentation = {
+      summary: '',
+      might: [],
+      can: [{ action: 'user can search', scope: 'page-level' as const, evidence: 'Search control', element: '.search' }],
+    };
+
+    const matching = await captureEvidenceScreenshots({ page: buildPage({ x: 500, y: 300, width: 200, height: 100 }, true, '/blog/post?tab=search#results') } as any, { url: '/blog/post?tab=search#results' }, documentation, {
+      pageFilePath: join(screenshotsDir, 'post.md'),
+      screenshotsDir,
+      config: {},
+    });
+    const different = await captureEvidenceScreenshots({ page: buildPage({ x: 500, y: 300, width: 200, height: 100 }, true, '/blog/post?tab=other#results') } as any, { url: '/blog/post?tab=search#results' }, documentation, {
+      pageFilePath: join(screenshotsDir, 'post.md'),
+      screenshotsDir,
+      config: {},
+    });
+
+    expect(matching[0]?.kind).toBe('evidence');
+    expect(different).toEqual([null]);
+    rmSync(screenshotsDir, { recursive: true, force: true });
+  });
+
+  it('skips items without a resolvable element', async () => {
+    screenshotsDir = mkdtempSync(join(tmpdir(), 'docbot-evidence-'));
+    const documentation = {
+      summary: '',
+      might: [],
+      can: [
+        { action: 'user can browse the archive', scope: 'page-level', evidence: 'Archive link' },
+        { action: 'user can search', scope: 'list of items', evidence: 'Search field', element: 'not-a-locator' },
+        { action: 'user can sort results', scope: 'list of items', evidence: 'Sort control', element: "{ role: 'button', text: '' }" },
+      ],
+    };
+    const missingPage = buildPage(null, false, '/x');
+    const shotsMissing = await captureEvidenceScreenshots({ page: missingPage } as any, { url: '/x' }, documentation, { pageFilePath: join(screenshotsDir, 'x.md'), screenshotsDir, config: {} });
+    const shotsNoBox = await captureEvidenceScreenshots({ page: buildPage(null, true, '/x') } as any, { url: '/x' }, documentation, { pageFilePath: join(screenshotsDir, 'x.md'), screenshotsDir, config: {} });
+    const noPage = await captureEvidenceScreenshots({ page: null } as any, { url: '/x' }, documentation, { pageFilePath: join(screenshotsDir, 'x.md'), screenshotsDir, config: {} });
+
+    expect(shotsMissing).toEqual([null, null, null]);
+    expect(shotsNoBox).toEqual([null, null, null]);
+    expect(noPage).toEqual([null, null, null]);
+    rmSync(screenshotsDir, { recursive: true, force: true });
+  });
+
+  it('attaches the evidence image under its User Can bullet only', () => {
+    const markdown = renderPageDocumentation(
+      { url: '/users/sign_in', title: 'Testomat.io' },
+      {
+        summary: 'Sign in page',
+        can: [
+          { action: 'user can sign in with email and password', scope: 'page-level', evidence: 'Form is visible', element: "{ role: 'button', text: 'Sign in' }" },
+          { action: 'user can request a password reset', scope: 'one item', evidence: 'Reset link' },
+        ],
+        might: [],
+      },
+      [],
+      [{ title: 'sign in', path: 'a', relativePath: '../screenshots/users_sign_in_can_1.png', kind: 'evidence' }, null]
+    );
+
+    expect(markdown).toContain('- user can sign in with email and password -> page-level');
+    expect(markdown).toContain('  Proof: Form is visible.\n\n  ![user can sign in with email and password](../screenshots/users_sign_in_can_1.png)\n\n- user can request a password reset');
+    expect(markdown).not.toContain('can_2.png');
+  });
+});
+
+describe('doc-collector template dedup', () => {
+  const postSnapshot = [
+    '- banner:',
+    '  - link "Acme"',
+    '- navigation "Main":',
+    '  - list:',
+    '    - listitem:',
+    '      - link "Blog"',
+    '- main:',
+    '  - article:',
+    '    - heading "Shipping velocity" [level=1]',
+    '    - paragraph: How we ship weekly.',
+    '    - paragraph: More detail here.',
+    '    - figure:',
+    '      - img "Deploy chart"',
+    '    - list:',
+    '      - listitem:',
+    '        - link "devops"',
+    '    - button "Share"',
+    '  - section:',
+    '    - heading "Comments" [level=2]',
+    '    - list:',
+    '      - listitem:',
+    '        - link "Reply"',
+    '- contentinfo:',
+    '  - link "Privacy"',
+  ].join('\n');
+
+  const siblingPostSnapshot = [
+    '- banner:',
+    '  - link "Acme"',
+    '- navigation "Main":',
+    '  - list:',
+    '    - listitem:',
+    '      - link "Blog"',
+    '- main:',
+    '  - article:',
+    '    - heading "Release notes" [level=1]',
+    '    - paragraph: One.',
+    '    - paragraph: Two.',
+    '    - paragraph: Three.',
+    '    - paragraph: Four.',
+    '    - paragraph: Five.',
+    '    - paragraph: Six.',
+    '    - paragraph: Seven.',
+    '    - paragraph: Eight.',
+    '    - figure:',
+    '      - img "Latency graph"',
+    '    - list:',
+    '      - listitem:',
+    '        - link "devops"',
+    '      - listitem:',
+    '        - link "release"',
+    '    - button "Share"',
+    '  - section:',
+    '    - heading "Comments" [level=2]',
+    '    - list:',
+    '      - listitem:',
+    '        - link "Reply"',
+    '- contentinfo:',
+    '  - link "Privacy"',
+  ].join('\n');
+
+  const variantPostSnapshot = [
+    '- main:',
+    '  - article:',
+    '    - heading "Roadmap" [level=1]',
+    '    - paragraph: Where we are going.',
+    '    - list:',
+    '      - listitem:',
+    '        - link "devops"',
+    '    - button "Share"',
+    '  - section:',
+    '    - heading "Comments" [level=2]',
+    '    - list:',
+    '      - listitem:',
+    '        - link "Reply"',
+  ].join('\n');
+
+  const swappedPostSnapshot = [
+    '- main:',
+    '  - article:',
+    '    - heading "Roadmap" [level=1]',
+    '    - paragraph: Where we are going.',
+    '    - blockquote:',
+    '      - paragraph: Quoted plan.',
+    '      - link "Source"',
+    '    - list:',
+    '      - listitem:',
+    '        - link "devops"',
+    '    - button "Share"',
+    '  - section:',
+    '    - heading "Comments" [level=2]',
+    '    - list:',
+    '      - listitem:',
+    '        - link "Reply"',
+  ].join('\n');
+
+  const blogIndexSnapshot = [
+    '- main:',
+    '  - heading "Blog" [level=1]',
+    '  - list:',
+    '    - listitem:',
+    '      - article:',
+    '        - heading "Post one" [level=2]',
+    '        - paragraph: Teaser one.',
+    '        - link "Read more"',
+    '    - listitem:',
+    '      - article:',
+    '        - heading "Post two" [level=2]',
+    '        - paragraph: Teaser two.',
+    '        - link "Read more"',
+  ].join('\n');
+
+  const aboutSnapshot = ['- main:', '  - heading "About" [level=1]', '  - paragraph: We are Acme.', '  - paragraph: Founded in 2015.', '  - link "Careers"'].join('\n');
+
+  it('matches a sibling post of the same template and names the canonical page', () => {
+    const known = [buildTemplateRecord('/blog/shipping-velocity', postSnapshot)!];
+
+    expect(findTemplateMatch(siblingPostSnapshot, known)).toBe('/blog/shipping-velocity');
+  });
+
+  it('still matches a post missing one optional block', () => {
+    const known = [buildTemplateRecord('/blog/shipping-velocity', postSnapshot)!];
+
+    expect(findTemplateMatch(variantPostSnapshot, known)).toBe('/blog/shipping-velocity');
+  });
+
+  it('treats a swapped block as a different page unless the threshold is lowered', () => {
+    const known = [buildTemplateRecord('/blog/shipping-velocity', postSnapshot)!];
+
+    expect(findTemplateMatch(swappedPostSnapshot, known)).toBeNull();
+    expect(findTemplateMatch(swappedPostSnapshot, known, 80)).toBe('/blog/shipping-velocity');
+  });
+
+  it('does not match a blog index against a post', () => {
+    const known = [buildTemplateRecord('/blog/shipping-velocity', postSnapshot)!];
+
+    expect(findTemplateMatch(blogIndexSnapshot, known)).toBeNull();
+  });
+
+  it('demands near-identity from small generic signatures', () => {
+    const firstSettings = ['- main:', '  - heading "Profile" [level=1]', '  - form:', '    - textbox "Name"', '    - checkbox "Visible"', '    - switch "Notifications"', '    - button "Save"', '  - list:', '    - listitem:', '      - link "Back"'].join('\n');
+    const secondSettings = ['- main:', '  - heading "Notifications" [level=1]', '  - form:', '    - textbox "Email"', '    - combobox "Frequency"', '    - radio "Weekly"', '    - button "Save"', '  - list:', '    - listitem:', '      - link "Back"'].join('\n');
+
+    expect(buildTemplateRecord('/settings/profile', firstSettings)).not.toBeNull();
+    expect(findTemplateMatch(secondSettings, [buildTemplateRecord('/settings/profile', firstSettings)!])).toBeNull();
+  });
+
+  it('does not register thin prose pages as templates', () => {
+    const thinSnapshot = ['- main:', '  - heading "About" [level=1]', '  - paragraph: We are Acme.', '  - link "Careers"'].join('\n');
+    const otherThinSnapshot = ['- main:', '  - heading "Terms" [level=1]', '  - paragraph: Legal text.', '  - link "Privacy"'].join('\n');
+
+    expect(buildTemplateRecord('/about', thinSnapshot)).toBeNull();
+    expect(buildTemplateRecord('/about', aboutSnapshot)).toBeNull();
+    expect(findTemplateMatch(otherThinSnapshot, [])).toBeNull();
+  });
+
+  it('resolves the collapse flag from CLI override and config', () => {
+    const bot = new DocBot();
+    expect((bot as any).shouldCollapseTemplates()).toBe(true);
+    expect((bot as any).shouldCollapseTemplates(false)).toBe(false);
+    (bot as any).config = { docs: { collapseTemplatePages: false } };
+    expect((bot as any).shouldCollapseTemplates()).toBe(false);
+    expect((bot as any).shouldCollapseTemplates(true)).toBe(false);
+  });
+
+  it('resolves the similarity threshold with sane bounds', () => {
+    const bot = new DocBot();
+    expect((bot as any).getTemplateSimilarity()).toBeUndefined();
+    expect((bot as any).getTemplateSimilarity(80)).toBe(80);
+    expect((bot as any).getTemplateSimilarity(Number.NaN)).toBeUndefined();
+    expect((bot as any).getTemplateSimilarity(0)).toBeUndefined();
+    expect((bot as any).getTemplateSimilarity(150)).toBeUndefined();
+    (bot as any).config = { docs: { templateSimilarity: 85 } };
+    expect((bot as any).getTemplateSimilarity()).toBe(85);
+    expect((bot as any).getTemplateSimilarity(80)).toBe(80);
+  });
+});
+
 describe('documentarian fallback', () => {
+  it('removes link-backed navigation from generated capabilities', async () => {
+    const provider = {
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Landing page',
+            can: [
+              { action: 'user can start onboarding', scope: 'page-level', evidence: 'Get Started link', element: '{ "role": "link", "text": "Get Started" }' },
+              { action: 'user can search', scope: 'page-level', evidence: 'Search button', element: '{ "role": "button", "text": "Search" }' },
+            ],
+            might: [],
+          },
+        };
+      },
+    } as any;
+    const research = ['## Controls', '', '| Element | ARIA | CSS |', '|---|---|---|', "| Start | { role: 'link', text: 'Get Started' } | a.start |", "| Search | { role: 'button', text: 'Search' } | button.search |"].join('\n');
+
+    const result = await new Documentarian(provider, {}).document({ url: '/', title: 'Home' }, research);
+
+    expect(result.can.map((item) => item.action)).toEqual(['user can search']);
+  });
+
+  it('keeps only research-backed non-navigation possible capabilities', async () => {
+    const provider = {
+      async generateObject() {
+        return {
+          object: {
+            summary: 'Landing page',
+            can: [],
+            might: [
+              { action: 'user might open another page', scope: 'page-level', evidence: 'Card link', element: "{ role: 'link', text: 'Details' }" },
+              { action: 'user might search', scope: 'page-level', evidence: 'Search button', element: "{ role: 'button', text: 'Search' }" },
+              { action: 'user might export', scope: 'all items', evidence: 'No concrete control', element: null },
+              { action: 'user might invent a control', scope: 'page-level', evidence: 'Unsupported locator', element: '.imaginary' },
+            ],
+          },
+        };
+      },
+    } as any;
+    const research = ['## Controls', '', '| Element | ARIA | CSS |', '|---|---|---|', "| Details | { role: 'link', text: 'Details' } | a.details |", "| Search | { role: 'button', text: 'Search' } | button.search |"].join('\n');
+
+    const result = await new Documentarian(provider, {}).document({ url: '/', title: 'Home' }, research);
+
+    expect(result.might.map((item) => item.action)).toEqual(['user might search']);
+  });
+
   it('asks the model only for generated documentation fields', async () => {
     const provider = {
       async generateObject(messages: Array<{ role: string; content: string }>, schema: any) {
@@ -743,6 +1250,10 @@ describe('documentarian fallback', () => {
 
         expect(jsonSchema.required).toEqual(['summary', 'can', 'might']);
         expect(jsonSchema.properties.interactions).toBeUndefined();
+        expect(jsonSchema.properties.can.items.required).toEqual(['action', 'scope', 'evidence', 'element']);
+        expect(jsonSchema.properties.can.items.properties.element).toBeDefined();
+        expect(messages[1].content).toContain('locator copied verbatim from the page research table');
+        expect(messages[1].content).toContain('Return null only when no single element supports the action');
         expect(messages[1].content).not.toContain('interactions:');
 
         return {
@@ -765,6 +1276,29 @@ describe('documentarian fallback', () => {
     );
 
     expect(result.interactions).toBeUndefined();
+  });
+
+  it('tells the model that navigation is not a capability', async () => {
+    let systemPrompt = '';
+    const provider = {
+      async generateObject(messages: Array<{ role: string; content: string }>) {
+        systemPrompt = messages[0].content;
+        return {
+          object: {
+            summary: 'Static page',
+            can: [],
+            might: [],
+          },
+        };
+      },
+    } as any;
+
+    const documentarian = new Documentarian(provider, {});
+    await documentarian.document({ url: '/test', title: 'Test' }, '## Content\nStatic research');
+
+    expect(systemPrompt).toContain('Going to another page is navigation, not a capability');
+    expect(systemPrompt).toContain('never here');
+    expect(systemPrompt).toContain('unrelated embedded support, marketing, consent, or feedback widgets');
   });
 
   it('retries with sanitized research after JSON generation failure', async () => {

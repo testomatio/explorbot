@@ -424,7 +424,7 @@ describe('ExperienceTracker', () => {
 
   describe('region experience root', () => {
     const html = '<html><body><h1>Users</h1></body></html>';
-    const regionOverlay = { type: 'modal' as const, name: 'Edit User', root: 'aside.panel' };
+    const regionOverlay = { type: 'overlay' as const, name: 'Edit User', root: 'aside.panel' };
 
     it('writes root frontmatter for a region state', () => {
       const regionState = new ActionResult({ url: '/users', html, overlay: regionOverlay });
@@ -445,7 +445,7 @@ describe('ExperienceTracker', () => {
       const openContents = experienceTracker.getRelevantExperience(openState).map((e) => e.content);
       expect(openContents.join('\n')).toContain('save the edit form');
 
-      const otherRegion = new ActionResult({ url: '/users', html, overlay: { type: 'modal' as const, name: 'Filters', root: 'div.filters' } });
+      const otherRegion = new ActionResult({ url: '/users', html, overlay: { type: 'overlay' as const, name: 'Filters', root: 'div.filters' } });
       const otherContents = experienceTracker.getRelevantExperience(otherRegion).map((e) => e.content);
       expect(otherContents.join('\n')).not.toContain('save the edit form');
     });
@@ -470,7 +470,7 @@ describe('ExperienceTracker', () => {
     });
 
     it('leaves the page record unscoped when an open region has no name to fork the hash', () => {
-      const nameless = new ActionResult({ url: '/users', html, overlay: { type: 'modal' as const, root: 'aside.panel' } });
+      const nameless = new ActionResult({ url: '/users', html, overlay: { type: 'overlay' as const, root: 'aside.panel' } });
       expect(nameless.getStateHash()).toBe(new ActionResult({ url: '/users', html }).getStateHash());
       experienceTracker.writeAction(nameless, { title: 'Open the user list', code: 'I.click("Users")', explanation: '' });
 

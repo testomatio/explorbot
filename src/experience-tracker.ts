@@ -127,7 +127,7 @@ export class ExperienceTracker {
         url: state.url ? extractStatePath(state.url) : '',
         title: state.title,
       };
-      if (state.overlay.present && state.overlay.name) {
+      if (state.overlay.isOpen && state.overlay.name) {
         frontmatter.region = state.overlay.name;
         if (state.overlay.root) frontmatter.root = state.overlay.root;
       }
