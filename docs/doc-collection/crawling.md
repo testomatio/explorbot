@@ -4,7 +4,7 @@ With defaults, a run crawls everything it can reach on the same origin, up to 10
 
 ## How the queue is built
 
-After documenting a page, the crawler queues new targets from three sources: links found on the page, navigation entries identified by research (this is how hash-navigated pages such as OpenAPI reference docs get crawled), and URLs discovered through clicks when [interactive mode](./interactive-mode.md) is on. Every target must pass the filters on this page before it is queued. Pages already visited in this session are not revisited, and the crawl stops early if it detects a dead loop.
+After documenting a page, the crawler queues new targets from three sources: links found on the page, navigation entries identified by research (this is how hash-navigated pages such as OpenAPI reference docs get crawled), and URLs discovered through clicks when [interactive mode](./interactive-mode.md) is on. Every target must pass the filters on this page before it is queued. Pages already visited in this session are not revisited.
 
 ## maxPages — the budget
 
@@ -65,3 +65,23 @@ docs: {
 ```
 
 Set it to `false` when such pages genuinely differ and you want each URL documented separately. Expect the page budget to fill up faster.
+
+## collapseTemplatePages — skip pages with a documented layout
+
+URL collapsing cannot see slugs: `/blog/my-post` and `/blog/other-post` look like different pages, yet they share one layout and differ only in their text. By default, after a page is loaded the crawler compares the page structure — the tree of ARIA roles without any text — against the pages it has already documented. A page whose layout matches one of them is skipped and listed under Skipped in the index with the reason `same layout as <url> (only content differs)`. Skipped pages do not consume the page budget.
+
+The first page of each layout is always documented in full; only its clones are skipped.
+
+A page counts as a clone when its structure is at least 90% similar to a documented page. Identical templates score close to 100; pages that merely look alike (same kind of form or list, different purpose) score around 80 and are still documented. If your site leans either way, move the bar with `docs.templateSimilarity` or per-run with `--template-similarity <percent>`; invalid values fall back to the default.
+
+```ts
+docs: {
+  collapseTemplatePages: false,
+}
+```
+
+For a one-off run over every page, use the CLI flag instead:
+
+```bash
+explorbot docs collect /blog --no-collapse-template-pages
+```

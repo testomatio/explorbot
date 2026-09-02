@@ -38,7 +38,14 @@ export function createDocsCommands(name = 'docs'): Command {
   const cmd = new Command(name);
   cmd.description('AI-powered website documentation collector');
 
-  addCommonOptions(cmd.command('collect <path>').description('Crawl pages and generate documentation spec').option('--max-pages <count>', 'Maximum number of pages to document')).action(async (startPath, options) => {
+  addCommonOptions(
+    cmd
+      .command('collect <path>')
+      .description('Crawl pages and generate documentation spec')
+      .option('--max-pages <count>', 'Maximum number of pages to document')
+      .option('--no-collapse-template-pages', 'Visit every page even when its layout matches a documented page')
+      .option('--template-similarity <percent>', 'Structural similarity percent that counts pages as the same layout (default 90)')
+  ).action(async (startPath, options) => {
     setPreserveConsoleLogs(true);
 
     try {
@@ -52,8 +59,12 @@ export function createDocsCommands(name = 'docs'): Command {
       if (options.maxPages) {
         maxPages = Number.parseInt(options.maxPages, 10);
       }
+      let templateSimilarity: number | undefined;
+      if (options.templateSimilarity) {
+        templateSimilarity = Number.parseInt(options.templateSimilarity, 10);
+      }
 
-      const result = await bot.collect(startPath, { maxPages });
+      const result = await bot.collect(startPath, { maxPages, collapseTemplatePages: options.collapseTemplatePages, templateSimilarity });
 
       console.log(`\nDocumented ${result.pages.length} page(s)`);
       console.log(`Skipped ${result.skipped.length} page(s)`);
@@ -112,6 +123,8 @@ export function createDocsCommands(name = 'docs'): Command {
             interactive: false,
             ignoreErrors: true,
             collapseDynamicPages: true,
+            collapseTemplatePages: true,
+            templateSimilarity: 90,
             scope: 'site',
             includePaths: [],
             excludePaths: [],

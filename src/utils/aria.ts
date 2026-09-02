@@ -541,6 +541,30 @@ export const collectInteractiveNodes = (snapshot: string | null): Array<Record<s
   return flatten(tree).map((e) => e.entry);
 };
 
+const TEMPLATE_CHROME_ROLES = new Set(['banner', 'navigation', 'contentinfo', 'complementary']);
+const TEMPLATE_PROSE_ROLE = 'text';
+
+const dropChrome = (nodes: AriaNode[]): AriaNode[] =>
+  nodes.flatMap((node) => {
+    if (TEMPLATE_CHROME_ROLES.has(node.role)) return [];
+    return [{ ...node, children: dropChrome(node.children) }];
+  });
+
+const collectRolePaths = (nodes: AriaNode[], prefix: string, into: Set<string>): void => {
+  for (const node of nodes) {
+    if (node.role === TEMPLATE_PROSE_ROLE) continue;
+    const path = prefix ? `${prefix}/${node.role}` : node.role;
+    into.add(path);
+    collectRolePaths(node.children, path, into);
+  }
+};
+
+export const ariaTemplateSignature = (snapshot: string | null): Set<string> => {
+  const paths = new Set<string>();
+  collectRolePaths(dropChrome(parseSnapshot(snapshot)), '', paths);
+  return paths;
+};
+
 // ─────────────────────────────────────────────────────────────────
 // Standalone helpers (regex on raw strings — not part of the pipeline)
 // ─────────────────────────────────────────────────────────────────
