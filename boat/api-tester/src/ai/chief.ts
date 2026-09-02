@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Conversation } from '../../../../src/ai/conversation.ts';
 import { WithSessionDedup } from '../../../../src/ai/planner/session-dedup.ts';
 import type { AIProvider } from '../../../../src/ai/provider.ts';
+import type { KnowledgeTracker } from '../../../../src/knowledge-tracker.ts';
 import { Observability } from '../../../../src/observability.ts';
 import { Plan, Test } from '../../../../src/test-plan.ts';
 import { createDebug, tag } from '../../../../src/utils/logger.ts';
@@ -33,17 +34,19 @@ export class Chief extends ChiefBase {
   private provider: AIProvider;
   private config: ApibotConfig;
   private apiClient: ApiClient | null;
+  private knowledgeTracker?: KnowledgeTracker;
   currentPlan: Plan | null = null;
   private lastStyleName = '';
 
   MIN_TASKS = 3;
   MAX_TASKS = 10;
 
-  constructor(provider: AIProvider, config: ApibotConfig, apiClient?: ApiClient | null) {
+  constructor(provider: AIProvider, config: ApibotConfig, apiClient?: ApiClient | null, knowledgeTracker?: KnowledgeTracker) {
     super();
     this.provider = provider;
     this.config = config;
     this.apiClient = apiClient || null;
+    this.knowledgeTracker = knowledgeTracker;
   }
 
   async plan(endpoint: string, opts?: { style?: string; specDefinition?: string }): Promise<Plan> {
@@ -55,6 +58,9 @@ export class Chief extends ChiefBase {
     await Observability.run(`chief: ${endpoint}`, { tags: ['chief'], sessionId: endpoint }, async () => {
       const sampleData = await this.collectSampleData(endpoint);
       const conversation = this.buildConversation(endpoint, opts?.style, sampleData);
+
+      const knowledge = this.knowledgeTracker?.renderEndpointKnowledge(endpoint);
+      if (knowledge) conversation.addUserText(knowledge);
 
       if (opts?.specDefinition) {
         conversation.addUserText(dedent`

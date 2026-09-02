@@ -26,7 +26,7 @@ export class DrillCommand extends BaseCommand {
   }
 
   private parseKnowledgeArg(args: string): string | undefined {
-    const match = args.match(/--knowledge\s+(\S+)/);
+    const match = args.match(/--save-knowledge\s+(\S+)/);
     return match ? match[1] : undefined;
   }
 

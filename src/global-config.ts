@@ -47,6 +47,14 @@ export function listSites(): SiteRecord[] {
     .sort((a, b) => b.lastRunAt.localeCompare(a.lastRunAt));
 }
 
+export function findSiteWith(subpath: string): SiteRecord | undefined {
+  return listSites().find((site) => existsSync(join(site.dir, subpath)));
+}
+
+export function listSitePlanDirs(): string[] {
+  return listSites().map((site) => join(site.dir, 'output', 'plans'));
+}
+
 export function registerSite(baseUrl: string): SiteRecord {
   const folder = siteFolderName(baseUrl);
   const dir = join(sitesDir(), folder);
