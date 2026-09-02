@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-02
+
+### Changes
+
+- State Manager: A dialog is now recognised from how much of the screen it blocks and how much
+  there is to do inside it, instead of from how much markup it brings. Small confirmation dialogs —
+  "Delete project?" with two buttons — used to be too small to notice, and the agent now scopes its
+  work to them.
+- State Manager: Bars pinned to an edge of the page — cookie notices, toasts, notification panels —
+  are no longer treated as the area to work in. They leave the rest of the page usable, so testing
+  continues on the page behind them.
+- State Manager: The size floor still applies to panels that appear inside the page, such as an
+  inline drawer or a split-pane form.
+- The area the agent is told to stay inside is called an overlay when it floats above the page and
+  a region when it sits in it. Logs and the supervisor's notes now use that wording throughout.
+
 ## 2026-09-01
 
 ### Changes
