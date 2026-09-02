@@ -128,7 +128,9 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
             }
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, retryCmd);
             await commitNote(activeNote, TestResult.PASSED, toolResult, action);
-            return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true }, action);
+            const resolvedAttempts = attempts.filter((a) => !a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN));
+            resolvedAttempts.push({ command: retryCmd, success: true });
+            return successToolResult('click', { ...toolResult, attempts: resolvedAttempts, code: retryCmd, disambiguated: true, suggestion: DISAMBIGUATED_SUGGESTION }, action);
           }
         }
 
@@ -1129,6 +1131,8 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
 
 const PAGE_DIFF_SUGGESTION =
   'Analyze page diff. htmlParts shows what changed and WHERE — each part has a container selector. Use the container as context when clicking elements from the diff. messages holds text the app showed in response, requests the calls it made and consoleErrors what it logged.';
+
+const DISAMBIGUATED_SUGGESTION = 'Your locator matched several elements; the ambiguity was resolved and the click RAN on the element shown in code. This is not a failure — do not reissue the click with a sharper locator. Repeating a click repeats the action and reverts anything that toggles.';
 
 const FAILED_REQUEST_SUGGESTION = 'The server rejected a request made by this action (see requests). The UI accepted the interaction but the operation did not complete — read messages and consoleErrors for the reason and report it instead of repeating the action.';
 

@@ -41,6 +41,10 @@
 - API Requests: Page-URL generalization and the API endpoint list now share one implementation.
   The endpoint list used to walk paths with its own copy of the dynamic-segment logic, which could
   drift from the URL matcher used everywhere else.
+- Click tool: When a locator matches several elements, the click that follows the right pick is now
+  reported as a plain success. The "multiple elements found" error no longer stays in the result, so
+  the AI stops re-sending the same click with a narrower locator — each resend clicked a second time
+  and silently flipped switches and toggles back to where they started.
 
 ## 2026-09-01
 
