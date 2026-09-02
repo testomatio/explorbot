@@ -4,6 +4,9 @@
 
 ### Changes
 
+- Utils: The tailwind/trash class checks are now named predicates (`isTailwindClass`, `isTrashClass`) shared
+  by the HTML snapshots and the diff's container-class filter, replacing three copies of the same inline
+  lambda.
 - Config: `dynamicPageRegex` now extends the built-in dynamic-segment heuristics (numeric, UUID,
   ULID, hex) instead of replacing them. Previously, setting a custom pattern silently disabled
   every built-in match on any segment the custom pattern didn't also cover.
