@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-03
+
+### Changes
+
+- [Pilot] An empty dropdown or list no longer counts on its own as missing data. Pilot now has the
+  tester wait, checks the page actually changed and that a request went out to load the items, and
+  only calls the list empty once that has been verified. A list that was still loading, or one whose
+  options had not been opened yet, used to be read as "this app has no such data" and the scenario
+  was skipped as impossible.
+- [Pilot] The requests it sees after each action now include the ones that succeeded, not only the
+  failures, so a page that fetched its data is distinguishable from one that never asked for any.
+
 ## 2026-09-02
 
 ### New CLI Options

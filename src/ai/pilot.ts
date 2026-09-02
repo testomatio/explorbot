@@ -31,6 +31,7 @@ const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
 const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
+const PILOT_REQUEST_LIMIT = 5;
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -1071,9 +1072,13 @@ export class Pilot implements Agent {
 
         if (t.output?.pageDiff?.urlChanged) line += `\n   moved: ${t.output.pageDiff.previousUrl} → ${t.output.pageDiff.currentUrl}`;
 
-        const failedRequests = (t.output?.pageDiff?.requests ?? []).filter((r: any) => r.status >= 400);
-        if (failedRequests.length > 0) {
-          line += `\n   requests: ${failedRequests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
+        const pageRequests = t.output?.pageDiff?.requests ?? [];
+        const requests = pageRequests
+          .filter((r: any) => r.status >= 400)
+          .concat(pageRequests.filter((r: any) => r.status < 400))
+          .slice(0, PILOT_REQUEST_LIMIT);
+        if (requests.length > 0) {
+          line += `\n   requests: ${requests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
         }
 
         const messages = (t.output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
@@ -1147,7 +1152,7 @@ export class Pilot implements Agent {
       - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
       - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.
       - ariaDiff shows 5+ added/removed → page entered new mode (editor/modal); call context() before guessing selectors.
-      - Empty dropdown/list when items expected → missing data; call precondition() to create it.
+      - Empty dropdown/list when items expected → wait explicitly, then check the state changed: ariaDiff and any GET that loaded data. If still nothing loaded, confirm the empty state with verify().
       - Search-and-select needs SEQUENCE: focus trigger → type to filter → click option. Tell Tester to split into separate tool calls.
       - Multi-action explanation in one tool call → instruct Tester to split.
 
