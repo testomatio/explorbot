@@ -304,6 +304,63 @@ describe('OverlayPage.detectRegion', () => {
     const diff = await regionDiff(basePage, basePage);
     expect(await new OverlayPage(null).detectRegion(diff)).toBeNull();
   });
+
+  const smallBase = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div id="overlays"></div></body></html>`;
+  const smallDialog = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div id="overlays"><div class="dialog"><h2>Confirm delete</h2><p>This cannot be undone.</p><button>Delete</button><button>Cancel</button></div></div></body></html>`;
+
+  it('classifies a small centred dialog as an overlay', async () => {
+    const diff = await regionDiff(smallBase, smallDialog);
+    const overlay = await new OverlayPage(pageProbing(regionLayout({ holdsViewportCenter: true, viewportCoverage: 0.1, controls: 2 }))).detectRegion(diff);
+    expect(overlay).not.toBeNull();
+    expect(overlay).toBeInstanceOf(Overlay);
+    expect(overlay!.type).toBe('overlay');
+    expect(overlay!.name).toBe('Confirm delete');
+    expect(overlay!.root).toBe('#overlays');
+  });
+
+  it('ignores a popover that leaves the page usable', async () => {
+    const diff = await regionDiff(smallBase, smallDialog);
+    expect(await new OverlayPage(pageProbing(regionLayout({ viewportCoverage: 0.02, controls: 1 }))).detectRegion(diff)).toBeNull();
+  });
+
+  it('ignores small in-flow content under the floor', async () => {
+    const diff = await regionDiff(smallBase, smallDialog);
+    expect(await new OverlayPage(pageProbing(regionLayout({ outOfFlow: false }))).detectRegion(diff)).toBeNull();
+  });
+
+  it('ignores an out-of-flow veil with nothing to do inside it', async () => {
+    const diff = await regionDiff(basePage, pageWithDrawer);
+    expect(await new OverlayPage(pageProbing(regionLayout({ holdsViewportCenter: true, viewportCoverage: 1, controls: 0 }))).detectRegion(diff)).toBeNull();
+  });
+
+  it('ignores a large out-of-flow panel that blocks too little of the screen', async () => {
+    const diff = await regionDiff(basePage, pageWithDrawer);
+    expect(await new OverlayPage(pageProbing(regionLayout({ viewportCoverage: 0.2, controls: 5 }))).detectRegion(diff)).toBeNull();
+  });
+
+  it('does not measure added content that has neither a name nor a scoping root', async () => {
+    const anonymousRows = Array.from({ length: 150 }, (_, i) => `<div><span>Row content number ${i} without any identity</span></div>`).join('');
+    const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div><div>${anonymousRows}</div></div></body></html>`;
+    const diff = await regionDiff(basePage, after);
+    let calls = 0;
+    const counting = {
+      evaluate: async () => {
+        calls++;
+        return regionLayout();
+      },
+    };
+    expect(await new OverlayPage(counting).detectRegion(diff)).toBeNull();
+    expect(calls).toBe(0);
+  });
+
+  it('keeps an in-flow region a plain Region', async () => {
+    const diff = await regionDiff(basePage, pageWithDrawer);
+    const region = await new OverlayPage(pageProbing(regionLayout({ outOfFlow: false }))).detectRegion(diff);
+    expect(region).not.toBeNull();
+    expect(region).not.toBeInstanceOf(Overlay);
+    expect(region!.type).toBe('region');
+    expect(region!.isModal).toBe(false);
+  });
 });
 
 describe('OverlayPage.isStillOpen', () => {
