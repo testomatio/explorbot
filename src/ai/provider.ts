@@ -11,6 +11,7 @@ import { type AIConfig, configuredModels, modelName as getModelName } from '../c
 import { executionController } from '../execution-controller.ts';
 import { Observability } from '../observability.ts';
 import { Stats } from '../stats.ts';
+import { getCliName } from '../utils/cli-name.js';
 import { createDebug, tag } from '../utils/logger.js';
 import { type RetryOptions, withRetry } from '../utils/retry.js';
 import { RulesLoader } from '../utils/rules-loader.ts';
@@ -105,7 +106,7 @@ export class Provider {
 
   constructor(config: AIConfig) {
     if (!config?.model) {
-      throw new AiError('AI model is not configured. Set ai.model in your config file.');
+      throw new AiError(`AI model is not configured. Set ai.model in your config file, or pick one with ${getCliName()} recommended-models`);
     }
     this.config = config;
     this.initLangfuse();
@@ -646,7 +647,7 @@ export class Provider {
 
   async processImage(prompt: string, image: string): Promise<any> {
     if (!this.config.visionModel) {
-      throw new Error('Vision model not configured. Please set ai.visionModel in your config.');
+      throw new Error(`Vision model not configured. Set ai.visionModel in your config; ${getCliName()} recommended-models lists the providers that serve one`);
     }
 
     setActivity(`🤖 Processing image with ${this.config.visionModel}`, 'ai');
