@@ -104,6 +104,9 @@ const regionLayout = (overrides: Record<string, unknown> = {}) => ({
   outOfFlow: true,
   centerBelongs: true,
   coveredOutOfFlow: false,
+  holdsViewportCenter: false,
+  viewportCoverage: 0.5,
+  controls: 4,
   ...overrides,
 });
 
