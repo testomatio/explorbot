@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import dedent from 'dedent';
 import { keepServerRunning } from '../../../src/browser-server.ts';
+import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
@@ -217,6 +218,8 @@ export function createPrimaCommands(name = 'prima'): Command {
       await prima.stop().catch(() => {});
       process.exit(0);
     });
+
+  RecommendedModelsCommand.register(cmd);
 
   addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command'))
     .addHelpText('after', `\n${statusHelp}`)

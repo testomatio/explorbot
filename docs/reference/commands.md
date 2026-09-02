@@ -52,6 +52,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*`, or `~/.explorbot` with `--global` |
 | List registered sites | `npx explorbot sites` | — | Sites stored in the global installation |
 | Show resolved configuration | `npx explorbot config [url] [--json]` | `/config` | Models, config file, paths and `EXPLORBOT_*` in effect |
+| Show recommended models | `npx explorbot recommended-models [--json]` | `/recommended-models` | Models this version recommends per provider |
 | Clean generated files | `npx explorbot clean [target]` | `/clean [target]` | Same targets both ways |
 
 ## Common CLI Options
@@ -110,6 +111,8 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 <!-- END env -->
 
 `npx explorbot config` prints the values a run actually uses — models per role, the config file behind them, the output, knowledge and experience directories, and every `EXPLORBOT_*` variable currently set. The boats answer for their own configuration the same way: `npx explorbot api config`, `npx explorbot docs config`, `npx explorbot prima config`. Add `--json` on any of them to get the same values as an object a script can read.
+
+`npx explorbot recommended-models` prints, per provider, the model this version recommends for each role, and the two ways to select it. Both need the provider's API key exported. Set `EXPLORBOT_AI_PROVIDER=<name>` and every role takes that provider's recommendation; leave it out and pin the roles yourself with `EXPLORBOT_AI_MODEL`, `EXPLORBOT_VISION_MODEL` and `EXPLORBOT_AGENTIC_MODEL`, each written as `provider/model-id` — the command prints those three lines filled in, ready to paste. A role a provider does not serve is named as such, so you know to pair it with another. It closes with the model variables and provider keys currently exported, and a ready-to-run OpenRouter one-liner. It reads nothing but the bundled recommendations, so it answers before any configuration exists and every CLI carries it: `npx explorbot api recommended-models`, `npx explorbot docs recommended-models`, `npx prima recommended-models`. `--json` prints the bundled recommendations as an object.
 
 Explorbot resolves its configuration in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then the `EXPLORBOT_*` variables, and finally `~/.explorbot/config.*` from the global installation. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
 

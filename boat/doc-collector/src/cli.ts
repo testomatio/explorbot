@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
+import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { remote } from '../../../src/remote.ts';
 import { isVerboseMode, setPreserveConsoleLogs, setQuietMode } from '../../../src/utils/logger.ts';
 import { DocBot, type DocbotOptions } from './docbot.ts';
@@ -80,6 +81,8 @@ export function createDocsCommands(name = 'docs'): Command {
         process.exit(1);
       }
     });
+
+  RecommendedModelsCommand.register(cmd);
 
   cmd
     .command('init')

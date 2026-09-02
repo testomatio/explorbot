@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-09-02
+
+### New CLI Options
+
+- **`recommended-models`** — Prints the model this version recommends for every role of every AI
+  provider, and the two ways to select one. Set `EXPLORBOT_AI_PROVIDER` and every role takes that
+  provider's recommendation; leave it out and pin the roles yourself with `EXPLORBOT_AI_MODEL`,
+  `EXPLORBOT_VISION_MODEL` and `EXPLORBOT_AGENTIC_MODEL`, which it prints filled in, ready to paste.
+  A role a provider does not serve is named as such. It ends with the model variables and provider
+  keys currently exported, and an OpenRouter one-liner. It reads only the bundled recommendations,
+  so it answers before any configuration exists, and every CLI carries it.
+
+  ```bash
+  explorbot recommended-models          # every provider, both ways to select
+  explorbot recommended-models --json   # the bundled recommendations as an object
+  explorbot api recommended-models      # the same for the API boat, also docs and prima
+  ```
+
+### New TUI Commands
+
+- **`/recommended-models`** — The same list, inside the TUI.
+
+  ```
+  /recommended-models
+  ```
+
+### Changes
+
+- The errors raised when no model is configured now name `recommended-models` as the way to pick
+  one; the vision error points at the providers that serve a vision model.
+
 ## 2026-09-01
 
 ### Changes

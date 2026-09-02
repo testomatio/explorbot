@@ -8,6 +8,7 @@ import figureSet from 'figures';
 import { render } from 'ink';
 import React from 'react';
 import { flushTelemetry } from '../src/ai/provider.js';
+import { RecommendedModelsCommand } from '../src/commands/recommended-models-command.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
@@ -467,6 +468,8 @@ program
       process.exit(1);
     }
   });
+
+RecommendedModelsCommand.register(program);
 
 program
   .command('init')
