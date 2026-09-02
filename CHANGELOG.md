@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-03
+
+### Changes
+
+- Click tool: A locator that matches several elements is now reported as a failure that clicked nothing,
+  together with the numbered list of what matched. Explorbot no longer guesses which one you meant and
+  clicks it — a guess used to land a real click, so a control that toggles could be switched back by a
+  retry the model thought had failed. The AI now picks a match by its number instead.
+
 ## 2026-09-02
 
 ### New CLI Options
