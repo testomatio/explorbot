@@ -191,6 +191,10 @@ export class RequestStore {
   }
 }
 
+export function isFailedRequest(request: RequestResult): boolean {
+  return request.status >= 400 || Boolean(request.error);
+}
+
 function normalizePathPattern(urlPath: string): string {
   return urlPath
     .split('/')
