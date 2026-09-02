@@ -575,7 +575,7 @@ class Navigator implements Agent {
     }
 
     const currentActionResult = actionResult || ActionResult.fromState(state);
-    const research = Researcher.getCachedResearch(state) || '';
+    const research = Researcher.getCachedResearch(currentActionResult) || '';
     const combinedHtml = await currentActionResult.combinedHtml();
 
     const history = stateManager.getStateHistory();

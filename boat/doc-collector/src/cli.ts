@@ -16,6 +16,7 @@ function buildOptions(options: any): DocbotOptions {
     incognito: options.incognito,
     session: options.session,
     docsConfig: options.docsConfig,
+    baseUrl: options.url,
   };
 }
 
@@ -26,6 +27,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-c, --config <path>', 'Path to explorbot configuration file')
     .option('--docs-config <path>', 'Path to doc collector configuration file')
     .option('-p, --path <path>', 'Working directory path')
+    .option('--url <url>', 'Base URL of the site, when the path argument is relative (env: EXPLORBOT_URL)')
     .option('-s, --show', 'Show browser window')
     .option('--headless', 'Run browser in headless mode')
     .option('--incognito', 'Run without recording experiences')
@@ -74,7 +76,7 @@ export function createDocsCommands(name = 'docs'): Command {
     .action(async (url, options) => {
       setQuietMode(!isVerboseMode());
       try {
-        console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url, json: options.json }));
+        console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url: url || options.url, json: options.json }));
       } catch (error) {
         console.error(error instanceof Error ? error.message : 'Unknown error');
         process.exit(1);

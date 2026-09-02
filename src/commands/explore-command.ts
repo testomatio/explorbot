@@ -261,9 +261,15 @@ export class ExploreCommand extends BaseCommand {
       tag('info').log(`Exploring sub-page: ${pick.url} (${pick.reason})`);
       try {
         await this.explorBot.visit(pick.url);
+        const errorPage = getStateErrorPageError(this.explorBot.stateManager().getCurrentState());
+        if (errorPage) {
+          tag('warning').log(`Skipping sub-page: ${errorPage.message}`);
+          this.failedSubPages.add(normalizeUrl(pick.url));
+          continue;
+        }
         await this.runAllStyles(pick.url, undefined, mainPlan, this.completedPlans, styles);
         const subPlan = this.explorBot.getCurrentPlan();
-        if (subPlan && !this.completedPlans.includes(subPlan)) {
+        if (subPlan?.tests.length && !this.completedPlans.includes(subPlan)) {
           this.completedPlans.push(subPlan);
         }
         knownUrls.add(normalizeUrl(pick.url));
@@ -298,6 +304,11 @@ export class ExploreCommand extends BaseCommand {
       if (fresh && parentPlan) opts.extend = parentPlan;
       if (this.dryRun) opts.noSave = true;
       await this.planWithRetry(feature, opts, pageUrl);
+      const plan = this.explorBot.getCurrentPlan();
+      if (plan && plan.tests.length === 0) {
+        tag('warning').log('Nothing to test on this page, moving on');
+        return;
+      }
       await this.runPendingTests();
       this.rememberCurrentPlan();
       fresh = false;
