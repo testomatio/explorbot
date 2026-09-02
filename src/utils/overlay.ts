@@ -126,7 +126,8 @@ function measureLayout({ config }: { config: { xpath: string; controlsSelector: 
   let outOfFlow = isOutOfFlow(element);
   let boxArea = 0;
   if (outOfFlow) boxArea = clip(element.getBoundingClientRect()).area;
-  const descendants = Array.from(element.querySelectorAll('*')).slice(0, 200) as HTMLElement[];
+  const MAX_DESCENDANTS_SCANNED = 200;
+  const descendants = Array.from(element.querySelectorAll('*')).slice(0, MAX_DESCENDANTS_SCANNED) as HTMLElement[];
   for (const descendant of descendants) {
     if (!isOutOfFlow(descendant)) continue;
     const area = clip(descendant.getBoundingClientRect()).area;

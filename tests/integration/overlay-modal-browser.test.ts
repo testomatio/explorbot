@@ -6,32 +6,45 @@ import { captureHtmlForSnapshot } from '../../src/utils/html.ts';
 import { Overlay, OverlayPage } from '../../src/utils/overlay.ts';
 import type { RegionDiff } from '../../src/utils/region.ts';
 
-const fixtureUrl = (name: string) => `file://${join(process.cwd(), 'test-data', name)}`;
-const FIXTURE_URL = fixtureUrl('testomat_modal.html');
+let browser: Browser;
+
+beforeAll(async () => {
+  browser = await chromium.launch();
+});
+
+afterAll(async () => {
+  await browser?.close();
+});
+
+const openFixture = async (name: string): Promise<Page> => {
+  const page = await browser.newPage();
+  await page.goto(`file://${join(process.cwd(), 'test-data', name)}`, { waitUntil: 'domcontentloaded' });
+  return page;
+};
+
+const diffOf = async (before: string, after: string): Promise<RegionDiff> => {
+  const result = await htmlDiff(before, after);
+  return { parts: result.parts, pageSize: result.pageSize, similarity: result.similarity, sameUrl: true, previousHtml: before };
+};
 
 describe('modal without dialog semantics, detected from layout', () => {
-  let browser: Browser;
   let page: Page;
   let before: string;
   let aria: string;
   let diff: RegionDiff;
 
   beforeAll(async () => {
-    browser = await chromium.launch();
-    page = await browser.newPage();
-    await page.goto(FIXTURE_URL, { waitUntil: 'domcontentloaded' });
+    page = await openFixture('testomat_modal.html');
     before = await page.evaluate(captureHtmlForSnapshot);
     await page.getByRole('button', { name: 'Select suite', exact: true }).click();
     await page.waitForSelector('.ember-modal-dialog');
     const after = await page.evaluate(captureHtmlForSnapshot);
     aria = await page.locator('body').ariaSnapshot();
-    const result = await htmlDiff(before, after);
-    diff = { parts: result.parts, pageSize: result.pageSize, similarity: result.similarity, sameUrl: true, previousHtml: before };
+    diff = await diffOf(before, after);
   });
 
   afterAll(async () => {
     await page?.close();
-    await browser?.close();
   });
 
   it('exposes the open modal in aria as a plain heading, never as a dialog', () => {
@@ -64,28 +77,23 @@ describe('modal without dialog semantics, detected from layout', () => {
   });
 });
 describe('modal with dialog semantics', () => {
-  let browser: Browser;
   let page: Page;
   let before: string;
   let aria: string;
   let diff: RegionDiff;
 
   beforeAll(async () => {
-    browser = await chromium.launch();
-    page = await browser.newPage();
-    await page.goto(fixtureUrl('dialog_modal.html'), { waitUntil: 'domcontentloaded' });
+    page = await openFixture('dialog_modal.html');
     before = await page.evaluate(captureHtmlForSnapshot);
     await page.locator('#delete-project').click();
     await page.waitForSelector('.dialog');
     const after = await page.evaluate(captureHtmlForSnapshot);
     aria = await page.locator('body').ariaSnapshot();
-    const result = await htmlDiff(before, after);
-    diff = { parts: result.parts, pageSize: result.pageSize, similarity: result.similarity, sameUrl: true, previousHtml: before };
+    diff = await diffOf(before, after);
   });
 
   afterAll(async () => {
     await page?.close();
-    await browser?.close();
   });
 
   it('reads the dialog straight out of aria', () => {
@@ -114,25 +122,20 @@ describe('modal with dialog semantics', () => {
 });
 
 describe('cookie banner pinned to the bottom of the page', () => {
-  let browser: Browser;
   let page: Page;
   let diff: RegionDiff;
 
   beforeAll(async () => {
-    browser = await chromium.launch();
-    page = await browser.newPage();
-    await page.goto(fixtureUrl('cookie_banner.html'), { waitUntil: 'domcontentloaded' });
+    page = await openFixture('cookie_banner.html');
     const before = await page.evaluate(captureHtmlForSnapshot);
     await page.locator('#continue-reading').click();
     await page.waitForSelector('.consent');
     const after = await page.evaluate(captureHtmlForSnapshot);
-    const result = await htmlDiff(before, after);
-    diff = { parts: result.parts, pageSize: result.pageSize, similarity: result.similarity, sameUrl: true, previousHtml: before };
+    diff = await diffOf(before, after);
   });
 
   afterAll(async () => {
     await page?.close();
-    await browser?.close();
   });
 
   it('appears as named, rooted content that reaches the layout measurement', () => {
