@@ -91,6 +91,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
         const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
         const action = explorer.action();
         const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
+        let ambiguityError: Error | null = null;
 
         for (let i = 0; i < commands.length; i++) {
           const command = transformContainsCommand(commands[i]);
@@ -100,35 +101,12 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           if (action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
+          if (!ambiguityError && action.lastError?.name === 'MultipleElementsFound') ambiguityError = action.lastError;
+
           if (success) {
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
             await commitNote(activeNote, TestResult.PASSED, toolResult, action);
             return successToolResult('click', { ...toolResult, attempts, code: command }, action);
-          }
-        }
-
-        let disambiguated = null;
-        if (attempts.some((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))) {
-          disambiguated = await disambiguateElements(action.lastError, explanation, ai);
-        }
-
-        if (disambiguated) {
-          debugLog('Disambiguation picked element %d', disambiguated.position);
-          const failedCommand = attempts.find((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))?.command;
-          const retryCommands = [];
-          if (failedCommand) {
-            retryCommands.push(failedCommand.replace(/\)$/, `, step.opts({ elementIndex: ${disambiguated.position} }))`));
-          }
-          retryCommands.push(`I.click('${disambiguated.xpath.replace(/'/g, "\\'")}')`);
-
-          for (const retryCmd of retryCommands) {
-            if (!(await action.attempt(retryCmd, explanation))) {
-              attempts.push({ command: retryCmd, success: false, error: errorText(action.lastError) });
-              continue;
-            }
-            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, retryCmd);
-            await commitNote(activeNote, TestResult.PASSED, toolResult, action);
-            return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true }, action);
           }
         }
 
@@ -145,7 +123,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
             attempts,
             suggestion,
           },
-          action.lastError
+          ambiguityError || action.lastError
         );
       },
     }),
