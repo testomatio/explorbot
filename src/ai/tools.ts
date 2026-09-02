@@ -15,7 +15,6 @@ import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { Navigator } from './navigator.ts';
-import type { AIProvider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
@@ -31,7 +30,7 @@ interface AgentToolDeps extends ToolDeps {
 
 export const ASSERTION_TOOLS = ['verify'] as const;
 
-export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, task: Task) {
+export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task: Task) {
   return {
     click: tool({
       description: dedent`
@@ -391,13 +390,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
             const message = errorText(action.lastError);
             await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
-            let formSuggestion = 'Commands after the failing one never ran. Retry only those, using click() or form().';
-            if (message.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN)) {
-              const disambiguated = await disambiguateElements(action.lastError, explanation, ai);
-              if (disambiguated) {
-                formSuggestion = `Multiple elements matched. Add step.opts({ elementIndex: ${disambiguated.position} }) to the failing command. Fallback locator: ${disambiguated.xpath}`;
-              }
-            }
+            const formSuggestion = 'Commands after the failing one never ran. Retry only those, using click() or form().';
 
             return failedToolResult(
               'form',
@@ -1343,50 +1336,6 @@ export async function formatMatchedElements(error: Error | null | undefined): Pr
   const details = await extractWebElements(error);
   if (!details) return 'Could not fetch element details. Repeat the action to get better info.';
   return formatElementList(details);
-}
-
-async function disambiguateElements(error: Error | null | undefined, explanation: string, provider: AIProvider): Promise<{ position: number; xpath: string } | null> {
-  const elementDetails = await extractWebElements(error);
-  if (!elementDetails) return null;
-
-  const elementList = formatElementList(elementDetails);
-
-  const schema = z.object({
-    position: z.number().nullable().describe('1-based position of the correct element, or null if none match'),
-  });
-
-  try {
-    const result = await provider.generateObject(
-      [
-        {
-          role: 'user' as const,
-          content: dedent`
-            A click action failed because multiple elements matched the locator.
-            The intended action was: ${explanation}
-
-            Here are the matched elements:
-
-            ${elementList}
-
-            Which element (1-${elementDetails.length}) best matches the intended action?
-            Return the position number, or null if none of them match.
-          `,
-        },
-      ],
-      schema,
-      provider.getModelForAgent(),
-      { agentName: 'disambiguator', timeout: 15000 }
-    );
-
-    const position = result?.object?.position;
-    if (position && position >= 1 && position <= elementDetails.length) {
-      return { position, xpath: elementDetails[position - 1].xpath };
-    }
-    return null;
-  } catch (e) {
-    debugLog('Element disambiguation AI call failed: %s', e);
-    return null;
-  }
 }
 
 function getNotFoundSuggestion(errorMessage: string): string | null {
