@@ -317,3 +317,68 @@ describe('extractAuthHeaders session gating', () => {
     expect(store.extractAuthHeaders()).toEqual({});
   });
 });
+
+describe('read endpoint capture', () => {
+  let outputDir: string;
+
+  beforeEach(() => {
+    outputDir = mkdtempSync(join(tmpdir(), 'reqstore-read-'));
+  });
+
+  afterEach(() => {
+    if (existsSync(outputDir)) rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  function makeGet(urlPath: string, search = '', id?: string): RequestResult {
+    return new RequestResult({
+      id: id || `get_${urlPath}${search}`,
+      method: 'GET',
+      path: urlPath,
+      fullUrl: `${urlPath}${search}`,
+      requestHeaders: {},
+      status: 200,
+      statusText: '200',
+      responseHeaders: {},
+      timing: 0,
+      timestamp: new Date(),
+    });
+  }
+
+  it('keeps one entry when the same read endpoint is fetched repeatedly', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g1'));
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g2'));
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g3'));
+
+    expect(store.getCapturedRequests()).toHaveLength(1);
+  });
+
+  it('collapses dynamic path segments into one entry', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/labels/8471', '', 'g1'));
+    store.addReadRequest(makeGet('/api/labels/9382', '', 'g2'));
+
+    expect(store.getCapturedRequests()).toHaveLength(1);
+  });
+
+  it('keeps variants that differ by query parameter names', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/tests', '', 'g1'));
+    store.addReadRequest(makeGet('/api/alpha-shop/tests', '?label=bug', 'g2'));
+    store.addReadRequest(makeGet('/api/alpha-shop/tests', '?label=urgent', 'g3'));
+
+    expect(store.getCapturedRequests()).toHaveLength(2);
+  });
+
+  it('does not write a response file for a bodiless capture', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g1'));
+
+    expect(existsSync(join(outputDir, 'requests', 'g1.request.yaml'))).toBe(true);
+    expect(existsSync(join(outputDir, 'requests', 'g1.response.json'))).toBe(false);
+  });
+});

@@ -12,12 +12,21 @@ export class RequestStore {
   private onFailedListeners: Array<(r: RequestResult) => void> = [];
   private outputDir: string;
   private sessionStartedAt = new Date();
+  private readEndpointKeys = new Set<string>();
 
   constructor(outputDir: string) {
     this.outputDir = outputDir;
   }
 
   addCapturedRequest(result: RequestResult): void {
+    this.capturedRequests.push(result);
+    result.save(this.outputDir);
+  }
+
+  addReadRequest(result: RequestResult): void {
+    const key = readEndpointKey(result);
+    if (this.readEndpointKeys.has(key)) return;
+    this.readEndpointKeys.add(key);
     this.capturedRequests.push(result);
     result.save(this.outputDir);
   }
@@ -152,6 +161,7 @@ export class RequestStore {
         const result = RequestResult.load(path.join(requestsDir, file));
         if (existingIds.has(result.id)) continue;
         this.capturedRequests.push(result);
+        if (!result.isWrite) this.readEndpointKeys.add(readEndpointKey(result));
       } catch {
         // skip invalid files
       }
@@ -188,6 +198,7 @@ export class RequestStore {
     this.capturedRequests = [];
     this.madeRequests = [];
     this.failedRequests = [];
+    this.readEndpointKeys.clear();
   }
 }
 
@@ -196,4 +207,10 @@ function normalizePathPattern(urlPath: string): string {
     .split('/')
     .map((segment) => (segment && isDynamicSegment(segment) ? '{id}' : segment))
     .join('/');
+}
+
+function readEndpointKey(result: RequestResult): string {
+  const query = result.fullUrl.split('?')[1] || '';
+  const names = [...new Set(new URLSearchParams(query).keys())].sort().join(',');
+  return `${result.method} ${normalizePathPattern(result.path)}?${names}`;
 }

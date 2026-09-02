@@ -60,10 +60,16 @@ export class XhrCapture {
       this.store.addFailedRequest(failure);
     }
 
-    if (!WRITE_METHODS.has(method)) return;
-
     const contentType = response.headers()['content-type'] || '';
     if (!JSON_CONTENT_TYPES.test(contentType)) return;
+
+    if (method === 'GET') {
+      if (status !== 200) return;
+      this.captureReadEndpoint(request, response);
+      return;
+    }
+
+    if (!WRITE_METHODS.has(method)) return;
 
     if (status === 304) return;
 
@@ -114,5 +120,30 @@ export class XhrCapture {
     result.rawResponseBodyValue = rawBody;
 
     this.store.addCapturedRequest(result);
+  }
+
+  private captureReadEndpoint(request: any, response: any): void {
+    const parsedUrl = new URL(request.url());
+
+    const requestHeaders: Record<string, string> = {};
+    for (const [k, v] of Object.entries(request.headers())) {
+      requestHeaders[k] = String(v);
+    }
+
+    const result = new RequestResult({
+      id: generateRequestId('GET', parsedUrl.pathname, 'xhr_'),
+      method: 'GET',
+      path: parsedUrl.pathname,
+      fullUrl: parsedUrl.pathname + parsedUrl.search,
+      requestHeaders,
+      status: response.status(),
+      statusText: response.statusText(),
+      responseHeaders: {},
+      timing: 0,
+      timestamp: new Date(),
+    });
+    result.rawResponseBodyValue = '';
+
+    this.store.addReadRequest(result);
   }
 }
