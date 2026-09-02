@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-02
+
+### Changes
+
+- Config: `dynamicPageRegex` now extends the built-in dynamic-segment heuristics (numeric, UUID,
+  ULID, hex) instead of replacing them. Previously, setting a custom pattern silently disabled
+  every built-in match on any segment the custom pattern didn't also cover.
+- API Requests: Page-URL generalization and the API endpoint list now share one implementation.
+  The endpoint list used to walk paths with its own copy of the dynamic-segment logic, which could
+  drift from the URL matcher used everywhere else.
+
 ## 2026-09-01
 
 ### Changes

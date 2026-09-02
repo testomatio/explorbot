@@ -51,12 +51,7 @@ export async function flushTelemetry(): Promise<void> {
 const CONTEXT_LENGTH_PATTERNS = ['reduce the length', 'context length', 'maximum context', 'token limit', 'too many tokens', 'max_tokens', 'context_length_exceeded', 'output truncated at maxtokens'];
 
 function extractCachedTokens(usage: any): number {
-  if (!usage) return 0;
-  const direct = usage.inputTokenDetails?.cacheReadTokens ?? usage.cachedInputTokens;
-  if (typeof direct === 'number') return direct;
-  const raw = usage.raw;
-  const fromRaw = raw?.prompt_tokens_details?.cached_tokens ?? raw?.promptTokensDetails?.cachedTokens;
-  return typeof fromRaw === 'number' ? fromRaw : 0;
+  return usage?.inputTokenDetails?.cacheReadTokens ?? 0;
 }
 
 function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: AbortController): Promise<never> {
@@ -243,8 +238,8 @@ export class Provider {
   private recordUsage(agentName: string, modelName: string, usage: any): void {
     if (!usage) return;
     Stats.recordTokens(agentName, modelName, {
-      input: usage.inputTokens ?? usage.promptTokens ?? 0,
-      output: usage.outputTokens ?? usage.completionTokens ?? 0,
+      input: usage.inputTokens ?? 0,
+      output: usage.outputTokens ?? 0,
       total: usage.totalTokens ?? 0,
       cached: extractCachedTokens(usage),
     });
@@ -428,7 +423,7 @@ export class Provider {
     let invalidRequestFeedbackAdded = false;
     const executedStepMessages: ModelMessage[] = [];
     try {
-      const response = await this.withModelRequestSlot(() =>
+      let response = await this.withModelRequestSlot(() =>
         withRetry(async () => {
           const stepMessages: ModelMessage[] = [];
           const onStepEnd = (step: any) => {
@@ -458,7 +453,7 @@ export class Provider {
 
       clearActivity();
 
-      withExecutedSteps(response, executedStepMessages);
+      response = withExecutedSteps(response, executedStepMessages);
 
       // Log tool usage summary
       if (response.toolCalls && response.toolCalls.length > 0) {
