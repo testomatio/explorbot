@@ -2,6 +2,38 @@
 
 ## 2026-09-02
 
+### Changes
+
+- Doc Collector: Generated page docs now lead with what a reader needs. User Can and User Might come
+  right after the purpose, followed by screenshots and a new Navigation section; state maps, state
+  transitions and coverage notes move to the end. The site index follows the same logic — the page
+  list comes before the state diagrams.
+- Doc Collector: Links to other pages are listed in their own Navigation section and no longer counted
+  as capabilities. The documentarian is told that going to another page is navigation, not a capability,
+  so "user can open Settings" no longer pads User Can. Capabilities from unrelated embedded support,
+  marketing, consent, and feedback widgets are excluded as well.
+- Doc Collector: Documentation screenshots no longer carry the research markup. The boxes, element
+  numbers and the corner legend drawn for the vision model stayed in the page after research and ended
+  up in every page and section screenshot. They are now removed from the page as soon as the vision
+  analysis is done, before any documentation capture.
+- Doc Collector: Pages that share a documented layout are skipped by default. On template-driven
+  sections like a blog, every post used to get full research and its own page doc while differing
+  only in prose. After a page loads, the crawler compares its structure — the tree of ARIA roles with
+  all text dropped — against the pages already documented; a page whose layout matches is skipped and
+  reported in the index as `same layout as <url> (only content differs)`. URL collapsing already
+  handled `/users/1`-style pages; this catches slug pages like `/blog/my-post` it cannot see. A page
+  counts as a clone at 90% structural similarity — identical templates score near 100, look-alike
+  pages of different purpose score around 80 and stay documented. The bar moves with
+  `docs.templateSimilarity` or `--template-similarity <percent>`, and the whole feature turns off with
+  `docs.collapseTemplatePages: false` or `--no-collapse-template-pages`. Links found on a collapsed page
+  are still added to the crawl queue, so deduplication cannot hide unique downstream pages.
+- Doc Collector: Proven capabilities now carry a picture. Each User Can bullet names the control that
+  proves it, and the collector crops that element from a live screenshot with generous surrounding
+  context (~250px) so the reader sees where on the page it sits — not a bare close-up. Bullets whose
+  proving control cannot be found stay text-only; nothing fails when the element is gone.
+- Doc Collector: Documentation capture dismisses transient overlays before taking page, section, and
+  capability evidence screenshots, preventing a previously opened dialog or embedded widget from
+  covering the control being documented.
 ### New CLI Options
 
 - **`recommended-models`** — Prints the model this version recommends for every role of every AI
