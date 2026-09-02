@@ -4,6 +4,10 @@
 
 ### Changes
 
+- Click tool: A locator that matches several elements is now reported as a failure that clicked nothing,
+  together with the numbered list of what matched. Explorbot no longer guesses which one you meant and
+  clicks it — a guess used to land a real click, so a control that toggles could be switched back by a
+  retry the model thought had failed. The AI now picks a match by its number instead.
 - [Pilot] An empty dropdown or list no longer counts on its own as missing data. Pilot now has the
   tester wait, checks the page actually changed and that a request went out to load the items, and
   only calls the list empty once that has been verified. A list that was still loading, or one whose

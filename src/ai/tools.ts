@@ -15,7 +15,6 @@ import { pause } from '../utils/loop.js';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { Navigator } from './navigator.ts';
-import type { AIProvider } from './provider.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
@@ -31,7 +30,7 @@ interface AgentToolDeps extends ToolDeps {
 
 export const ASSERTION_TOOLS = ['verify'] as const;
 
-export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, task: Task) {
+export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task: Task) {
   return {
     click: tool({
       description: dedent`
@@ -44,6 +43,12 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           Container narrows search area. Use when page has multiple matching elements.
           Example: Page has 3 "Delete" buttons in different rows:
           I.click("Delete", ".row-1") - clicks Delete inside element with class row-1
+        I.click(locator, step.opts({ elementIndex: N })) - click the Nth element the locator matches
+          Use after a result reported several matches. N is the "Element N" number from that list.
+          step.opts() always goes LAST, after the container when there is one.
+          Example: the result listed 3 "Delete" buttons and you want the second:
+          I.click("Delete", step.opts({ elementIndex: 2 }))
+          I.click("Delete", ".table", step.opts({ elementIndex: 2 })) - same, narrowed to a container
 
         IMPORTANT: This tool ONLY accepts click commands. For typing text, use form() tool.
         CRITICAL: All commands MUST target the SAME element using different locators.
@@ -62,6 +67,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           3. I.click(CSS, container) - e.g. I.click("#btn", ".modal")
           4. I.click(CSS) or I.click(XPath) - when locator already includes context (ID, XPath)
           5. I.clickXY(x, y) - coordinates fallback
+          After a result reporting multiple matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
         `),
         explanation: z.string().describe('Why you are clicking this element'),
       }),
@@ -91,6 +97,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
         const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
         const action = explorer.action();
         const attempts: Array<{ command: string; success: boolean; error?: string }> = [];
+        let ambiguityError: Error | null = null;
 
         for (let i = 0; i < commands.length; i++) {
           const command = transformContainsCommand(commands[i]);
@@ -100,35 +107,12 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
           if (action.lastError) attempt.error = errorText(action.lastError);
           attempts.push(attempt);
 
+          if (!ambiguityError && action.lastError?.name === 'MultipleElementsFound') ambiguityError = action.lastError;
+
           if (success) {
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
             await commitNote(activeNote, TestResult.PASSED, toolResult, action);
             return successToolResult('click', { ...toolResult, attempts, code: command }, action);
-          }
-        }
-
-        let disambiguated = null;
-        if (attempts.some((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))) {
-          disambiguated = await disambiguateElements(action.lastError, explanation, ai);
-        }
-
-        if (disambiguated) {
-          debugLog('Disambiguation picked element %d', disambiguated.position);
-          const failedCommand = attempts.find((a) => a.error?.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))?.command;
-          const retryCommands = [];
-          if (failedCommand) {
-            retryCommands.push(failedCommand.replace(/\)$/, `, step.opts({ elementIndex: ${disambiguated.position} }))`));
-          }
-          retryCommands.push(`I.click('${disambiguated.xpath.replace(/'/g, "\\'")}')`);
-
-          for (const retryCmd of retryCommands) {
-            if (!(await action.attempt(retryCmd, explanation))) {
-              attempts.push({ command: retryCmd, success: false, error: errorText(action.lastError) });
-              continue;
-            }
-            const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, retryCmd);
-            await commitNote(activeNote, TestResult.PASSED, toolResult, action);
-            return successToolResult('click', { ...toolResult, attempts, code: retryCmd, disambiguated: true }, action);
           }
         }
 
@@ -145,7 +129,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
             attempts,
             suggestion,
           },
-          action.lastError
+          ambiguityError || action.lastError
         );
       },
     }),
@@ -413,13 +397,7 @@ export function createCodeceptJSTools({ explorer, stateManager, ai }: ToolDeps, 
             const message = errorText(action.lastError);
             await commitNote(activeNote, TestResult.FAILED, toolResult, action);
 
-            let formSuggestion = 'Commands after the failing one never ran. Retry only those, using click() or form().';
-            if (message.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN)) {
-              const disambiguated = await disambiguateElements(action.lastError, explanation, ai);
-              if (disambiguated) {
-                formSuggestion = `Multiple elements matched. Add step.opts({ elementIndex: ${disambiguated.position} }) to the failing command. Fallback locator: ${disambiguated.xpath}`;
-              }
-            }
+            const formSuggestion = 'Commands after the failing one never ran. Retry only those, using click() or form().';
 
             return failedToolResult(
               'form',
@@ -1284,13 +1262,11 @@ export async function failedToolResult(action: string, message: string, data?: R
 
 function getMultipleElementsSuggestion(): string {
   return dedent`
-    Multiple elements matched your locator. To fix this:
-    1. Use container context: I.click({ "role": "button", "text": "Submit" }, '.form-container')
-    2. Use more specific CSS: target the actual element (input, button, a) not wrapper divs
-    3. Add distinguishing attributes: input[type="submit"], button[type="submit"], [value="..."]
-    4. If buttons have similar text like "Create" and "Create Demo", use the FULL unique text
-    5. Use xpathCheck() to inspect matched elements and pick the correct one
-    6. Use visualClick() to click the right element by visual appearance
+    Multiple elements matched your locator, so that command did nothing — it selected no element and acted on none.
+    Read the numbered elements list and click the one you meant by its number:
+    reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
+    If none of them is the element you want, narrow the locator with a container or its full unique text.
+    If the list is missing, call xpathCheck() to see what the locator matches.
   `;
 }
 
@@ -1365,50 +1341,6 @@ export async function formatMatchedElements(error: Error | null | undefined): Pr
   const details = await extractWebElements(error);
   if (!details) return 'Could not fetch element details. Repeat the action to get better info.';
   return formatElementList(details);
-}
-
-async function disambiguateElements(error: Error | null | undefined, explanation: string, provider: AIProvider): Promise<{ position: number; xpath: string } | null> {
-  const elementDetails = await extractWebElements(error);
-  if (!elementDetails) return null;
-
-  const elementList = formatElementList(elementDetails);
-
-  const schema = z.object({
-    position: z.number().nullable().describe('1-based position of the correct element, or null if none match'),
-  });
-
-  try {
-    const result = await provider.generateObject(
-      [
-        {
-          role: 'user' as const,
-          content: dedent`
-            A click action failed because multiple elements matched the locator.
-            The intended action was: ${explanation}
-
-            Here are the matched elements:
-
-            ${elementList}
-
-            Which element (1-${elementDetails.length}) best matches the intended action?
-            Return the position number, or null if none of them match.
-          `,
-        },
-      ],
-      schema,
-      provider.getModelForAgent(),
-      { agentName: 'disambiguator', timeout: 15000 }
-    );
-
-    const position = result?.object?.position;
-    if (position && position >= 1 && position <= elementDetails.length) {
-      return { position, xpath: elementDetails[position - 1].xpath };
-    }
-    return null;
-  } catch (e) {
-    debugLog('Element disambiguation AI call failed: %s', e);
-    return null;
-  }
 }
 
 function getNotFoundSuggestion(errorMessage: string): string | null {

@@ -335,6 +335,14 @@ export const actionRule = dedent`
   If locator doesn't work, try CSS or XPath locators.
   If nothing works, use I.clickXY(x, y) as last resort.
 
+  When a click result reports several matches, pick one from its numbered list by position rather than guessing a new locator.
+  Reuse the same locator with step.opts({ elementIndex: N }) as the LAST argument. N is the "Element N" number.
+
+  <example>
+    I.click('Remove', step.opts({ elementIndex: 2 }));
+    I.click({ role: 'link', text: 'Details' }, '.panel', step.opts({ elementIndex: 1 }));
+  </example>
+
   For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.
 
 
