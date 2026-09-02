@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-03
+
+### Changes
+
+- State Manager: A dialog that opens inside the panel it covers, rather than in a container of its
+  own, is now scoped to the dialog. Explorbot used to name the form behind it as the area to work
+  in, so clicks were sent with the wrong context and recipes were filed against the wrong scope.
+  Dialogs that do get their own container keep naming that container, which stays stable between
+  runs.
+- Page Diff: The markup shown for a panel that does not fit the size budget now keeps its ending as
+  well as its beginning. A picker with a long list used to be cut off before its buttons, leaving
+  the agent hunting for a Cancel or Confirm it could not see.
+
 ## 2026-09-02
 
 ### Changes

@@ -216,6 +216,23 @@ describe('diff memoization and areaOfInterest', () => {
     expect(result.pageDiff?.htmlParts?.[0].subtree).toContain('Edit User');
   });
 
+  test('keeps the actions at the end of an oversized region in view', async () => {
+    const rows = Array.from({ length: 60 }, (_, i) => `<li><input id="suite-${i}" type="checkbox"><label for="suite-${i}">Orbital suite ${i}</label></li>`).join('');
+    const picker = `<div class="picker"><h3>Select tests for plan</h3><ul>${rows}</ul><div class="picker-actions"><button>Cancel</button><button>Select 0 tests</button></div></div>`;
+    const previous = new ActionResult({ id: 1, url: 'https://app.example.com/plans/new', html: '<html><body><h1>New Plan</h1></body></html>' });
+    const current = new ActionResult({
+      id: 2,
+      url: 'https://app.example.com/plans/new',
+      html: `<html><body><h1>New Plan</h1>${picker}</body></html>`,
+      overlay: { type: 'overlay', name: 'Select tests for plan', root: 'div.picker', html: picker },
+    });
+    const result = await current.toToolResult(previous, 'div.picker');
+    const subtree = result.pageDiff?.htmlParts?.[0].subtree ?? '';
+    expect(subtree).toContain('Select tests for plan');
+    expect(subtree).toContain('Select 0 tests');
+    expect(subtree).toContain('Cancel');
+  });
+
   test('announces a nested region replacing an open one, but not a carried one', async () => {
     const html = '<html><body><h1>Users</h1><aside class="panel"><h2>Edit User</h2></aside></body></html>';
     const withDrawer = { type: 'overlay' as const, name: 'Edit User', root: 'aside.panel' };

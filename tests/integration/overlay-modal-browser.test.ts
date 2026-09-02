@@ -149,3 +149,35 @@ describe('cookie banner pinned to the bottom of the page', () => {
     expect(await new OverlayPage(page).detectRegion(diff)).toBeNull();
   });
 });
+
+describe('picker mounted inside the panel it covers, with no host of its own', () => {
+  let page: Page;
+  let diff: RegionDiff;
+
+  beforeAll(async () => {
+    page = await openFixture('inline_picker.html');
+    const before = await page.evaluate(captureHtmlForSnapshot);
+    await page.locator('#pick').click();
+    await page.waitForSelector('.picker-dialog');
+    const after = await page.evaluate(captureHtmlForSnapshot);
+    diff = await diffOf(before, after);
+  });
+
+  afterAll(async () => {
+    await page?.close();
+  });
+
+  it('groups under the occupied panel, and still resolves the picker as what appeared', () => {
+    expect(diff.parts).toHaveLength(1);
+    expect(diff.parts[0].container).toBe('main.plan-form');
+    expect(diff.parts[0].appearedSelector).toBe('div.picker-dialog');
+  });
+
+  it('scopes the overlay to the picker, not to the form behind it', async () => {
+    const region = await new OverlayPage(page).detectRegion(diff);
+    expect(region).not.toBeNull();
+    expect(region!.type).toBe('overlay');
+    expect(region!.name).toBe('Select tests for plan');
+    expect(region!.root).toBe('div.picker-dialog');
+  });
+});

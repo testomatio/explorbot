@@ -552,10 +552,7 @@ export class ActionResult implements ActionResultData {
 
     if (pageDiff.areaOfInterest && this.overlay.html && this.overlay.root) {
       const htmlConfig = ConfigParser.getInstance().getConfig().html;
-      let subtree = await minifyHtml(htmlCombinedSnapshot(this.overlay.html, htmlConfig?.combined));
-      if (subtree.length > HTML_PART_SUBTREE_BUDGET) {
-        subtree = `${subtree.slice(0, HTML_PART_SUBTREE_BUDGET)}...<!-- truncated -->`;
-      }
+      const subtree = trimSubtree(await minifyHtml(htmlCombinedSnapshot(this.overlay.html, htmlConfig?.combined)));
       pageDiff.htmlParts = [{ container: this.overlay.root, subtree, rawSize: subtree.length, added: [], removed: [] }];
     } else if (diff.isSameUrl() && diff.htmlParts.length > 0) {
       const collapsed = collapseHtmlParts(await diff.cleanedHtmlParts());
@@ -618,6 +615,7 @@ const CONSOLE_ERROR_LIMIT = 3;
 const HTML_PARTS_TOTAL_BUDGET = 8000;
 const HTML_PARTS_COUNT_LIMIT = 8;
 const HTML_PART_SUBTREE_BUDGET = 2000;
+const SUBTREE_TAIL_BUDGET = 600;
 
 function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
   const total = parts.reduce((sum, p) => sum + p.subtree.length, 0);
@@ -632,14 +630,14 @@ function collapseHtmlParts(parts: HtmlDiffPart[]): HtmlDiffPart[] {
       }));
   }
 
-  return parts.map((part) => {
-    if (part.subtree.length <= HTML_PART_SUBTREE_BUDGET) return part;
-    const head = part.subtree.slice(0, HTML_PART_SUBTREE_BUDGET);
-    return {
-      ...part,
-      subtree: `${head}...<!-- truncated ${part.subtree.length - HTML_PART_SUBTREE_BUDGET} chars -->`,
-    };
-  });
+  return parts.map((part) => ({ ...part, subtree: trimSubtree(part.subtree) }));
+}
+
+function trimSubtree(subtree: string): string {
+  if (subtree.length <= HTML_PART_SUBTREE_BUDGET) return subtree;
+  const head = subtree.slice(0, HTML_PART_SUBTREE_BUDGET - SUBTREE_TAIL_BUDGET);
+  const tail = subtree.slice(-SUBTREE_TAIL_BUDGET);
+  return `${head}...<!-- truncated ${subtree.length - HTML_PART_SUBTREE_BUDGET} chars -->${tail}`;
 }
 
 export class Diff {

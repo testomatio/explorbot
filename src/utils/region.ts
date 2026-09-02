@@ -63,9 +63,11 @@ export function addedSubtrees(diff: RegionDiff): AddedSubtree[] {
     const newHeading = headings.find((heading) => !diff.previousHtml.includes(heading)) ?? null;
     let name = newHeading;
     if (!name && headings.length > 0) name = headings.join(' ');
+    const namedContainer = part.container !== 'body' && !part.container.startsWith('//');
     let root: string | null = null;
-    if (part.container !== 'body' && !part.container.startsWith('//')) root = part.container;
-    if (!root && part.appearedSelector) root = part.appearedSelector;
+    if (namedContainer && part.containerWasEmpty) root = part.container;
+    if (!root) root = part.appearedSelector ?? null;
+    if (!root && namedContainer) root = part.container;
     candidates.push({
       xpath: pathToXPath(appeared.slice('ELEMENT:'.length)),
       html: part.subtree,
