@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-09-04
+
+### New CLI Commands
+
+- **`explorbot help-json [command...]`** — Prints command definitions as JSON: every command with
+  its description, aliases, arguments, options and defaults, plus the version and the
+  `EXPLORBOT_*` variables. Name a command to get just that one; nested boat commands work too.
+  `explorbot help` lists it, so an agent finds it from plain help.
+  ```bash
+  explorbot help-json                # the whole command tree
+  explorbot help-json explore        # one command
+  explorbot help-json api config     # a nested boat command
+  ```
+
+### Changes
+
+- **`--json` no longer collides with the banner** — passing it to any command suppresses the
+  startup banner, so `explorbot config --json | jq` works without setting `EXPLORBOT_NO_BANNER`.
+  `help-json` suppresses it too.
+
 ## 2026-09-03
 
 ### Changes
