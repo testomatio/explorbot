@@ -381,4 +381,34 @@ describe('read endpoint capture', () => {
     expect(existsSync(join(outputDir, 'requests', 'g1.request.yaml'))).toBe(true);
     expect(existsSync(join(outputDir, 'requests', 'g1.response.json'))).toBe(false);
   });
+
+  it('lists read endpoints with their query parameter names, not values', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/tests', '?label=bug&page=2', 'g1'));
+
+    expect(store.toEndpointList(undefined, 'read')).toBe('GET /api/alpha-shop/tests ?label,page');
+  });
+
+  it('keeps read endpoints out of the write list and writes out of the read list', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g1'));
+
+    expect(store.toEndpointList()).toBe('POST /api/alpha-shop/suites');
+    expect(store.toEndpointList(undefined, 'read')).toBe('GET /api/alpha-shop/labels');
+  });
+
+  it('scopes read endpoints the same way write endpoints are scoped', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g1'));
+    store.addReadRequest(makeGet('/api/other-shop/labels', '', 'g2'));
+
+    const scoped = store.getReadRequestsForScope('/projects/alpha-shop/tests');
+
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0].path).toBe('/api/alpha-shop/labels');
+  });
 });

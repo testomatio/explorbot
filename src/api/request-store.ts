@@ -88,18 +88,18 @@ export class RequestStore {
     return this.madeRequests.filter((r) => r.status === status);
   }
 
-  toEndpointList(scopePath?: string): string {
-    let requests = this.capturedRequests;
-    if (scopePath) requests = this.getWriteRequestsForScope(scopePath);
+  toEndpointList(scopePath?: string, methods: EndpointFamily = 'write'): string {
+    let requests = this.capturedRequests.filter((r) => matchesFamily(r, methods));
+    if (scopePath) requests = this.getRequestsForScope(scopePath, methods);
 
     const seen = new Set<string>();
     const lines: string[] = [];
 
     for (const req of requests) {
-      const key = `${req.method} ${normalizePathPattern(req.path)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      lines.push(key);
+      const line = `${req.method} ${normalizePathPattern(req.path)}${queryParamHint(req)}`;
+      if (seen.has(line)) continue;
+      seen.add(line);
+      lines.push(line);
     }
 
     return lines.join('\n');
@@ -169,17 +169,31 @@ export class RequestStore {
   }
 
   getWriteRequestsForScope(scopePath: string): RequestResult[] {
-    const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-    const writes = this.capturedRequests.filter((r) => writeMethods.has(r.method));
+    return this.getRequestsForScope(scopePath, 'write');
+  }
+
+  getReadRequestsForScope(scopePath: string): RequestResult[] {
+    return this.getRequestsForScope(scopePath, 'read');
+  }
+
+  clear(): void {
+    this.capturedRequests = [];
+    this.madeRequests = [];
+    this.failedRequests = [];
+    this.readEndpointKeys.clear();
+  }
+
+  private getRequestsForScope(scopePath: string, methods: EndpointFamily): RequestResult[] {
+    const candidates = this.capturedRequests.filter((r) => matchesFamily(r, methods));
     const scopeSegments = scopePath.split('/').filter(Boolean);
-    if (scopeSegments.length === 0) return writes;
+    if (scopeSegments.length === 0) return candidates;
 
     let scoped: RequestResult[] = [];
     let fewest = Number.POSITIVE_INFINITY;
     let ambiguous = false;
     for (const segment of scopeSegments) {
       if (isDynamicSegment(segment)) continue;
-      const matches = writes.filter((r) => r.path.split('/').includes(segment));
+      const matches = candidates.filter((r) => r.path.split('/').includes(segment));
       if (matches.length === 0 || matches.length > fewest) continue;
       if (matches.length === fewest) {
         if (!scoped.every((r, i) => r.id === matches[i].id)) ambiguous = true;
@@ -192,13 +206,6 @@ export class RequestStore {
     if (ambiguous) return [];
 
     return scoped;
-  }
-
-  clear(): void {
-    this.capturedRequests = [];
-    this.madeRequests = [];
-    this.failedRequests = [];
-    this.readEndpointKeys.clear();
   }
 }
 
@@ -214,3 +221,19 @@ function readEndpointKey(result: RequestResult): string {
   const names = [...new Set(new URLSearchParams(query).keys())].sort().join(',');
   return `${result.method} ${normalizePathPattern(result.path)}?${names}`;
 }
+
+function matchesFamily(result: RequestResult, methods: EndpointFamily): boolean {
+  if (methods === 'write') return result.isWrite;
+  return result.method === 'GET';
+}
+
+function queryParamHint(result: RequestResult): string {
+  if (result.isWrite) return '';
+  const query = result.fullUrl.split('?')[1];
+  if (!query) return '';
+  const names = [...new Set(new URLSearchParams(query).keys())].sort();
+  if (names.length === 0) return '';
+  return ` ?${names.join(',')}`;
+}
+
+export type EndpointFamily = 'read' | 'write';
