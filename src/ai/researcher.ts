@@ -76,6 +76,7 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   static getCachedResearch(state: WebPageState): string {
+    if (state instanceof ActionResult) return getCachedResearch(state.baseHash);
     return getCachedResearch(ActionResult.fromState(state).baseHash);
   }
 
@@ -235,7 +236,7 @@ export class Researcher extends ResearcherBase implements Agent {
         const containers = validContainers.filter((c) => !freshBroken.includes(c.css));
         await this.visuallyAnnotateElements({ containers });
         this.actionResult = await this.explorer.capture({ screenshot: true });
-        const visualResult = await this.analyzeScreenshotForVisualProps();
+        const visualResult = await this.analyzeScreenshotForVisualProps().finally(() => this.removeVisualAnnotations());
         if (visualResult.elements.size > 0) {
           await this.mergeVisualData(result, visualResult.elements);
           result.parseLocators();

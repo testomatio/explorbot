@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { isDynamicSegment } from '../utils/url-matcher.ts';
+import { generalizeUrl, isDynamicSegment } from '../utils/url-matcher.ts';
 import { RequestResult } from './request-result.ts';
 
 const AUTH_HEADERS = ['authorization', 'x-api-key', 'x-csrf-token'];
@@ -55,10 +55,6 @@ export class RequestStore {
     result.save(this.outputDir);
   }
 
-  addRequest(result: RequestResult): void {
-    this.addMadeRequest(result);
-  }
-
   getCapturedRequests(): RequestResult[] {
     return this.capturedRequests;
   }
@@ -67,25 +63,8 @@ export class RequestStore {
     return this.madeRequests;
   }
 
-  getRequests(): RequestResult[] {
-    return this.madeRequests;
-  }
-
   getLastRequest(): RequestResult | undefined {
     return this.madeRequests[this.madeRequests.length - 1];
-  }
-
-  getRequestsByEndpoint(pathPrefix: string): RequestResult[] {
-    return this.madeRequests.filter((r) => r.path.startsWith(pathPrefix));
-  }
-
-  getRequestsByMethod(method: string): RequestResult[] {
-    const upper = method.toUpperCase();
-    return this.madeRequests.filter((r) => r.method === upper);
-  }
-
-  getRequestsByStatus(status: number): RequestResult[] {
-    return this.madeRequests.filter((r) => r.status === status);
   }
 
   toEndpointList(scopePath?: string, methods: EndpointFamily = 'write'): string {
@@ -96,10 +75,10 @@ export class RequestStore {
     const lines: string[] = [];
 
     for (const req of requests) {
-      const line = `${req.method} ${normalizePathPattern(req.path)}${queryParamHint(req)}`;
-      if (seen.has(line)) continue;
-      seen.add(line);
-      lines.push(line);
+      const key = `${req.method} ${generalizeUrl(req.path, () => '{id}')}${queryParamHint(req)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(key);
     }
 
     return lines.join('\n');
@@ -122,14 +101,18 @@ export class RequestStore {
 
   findCapturedRequest(method: string, searchPath: string): RequestResult | undefined {
     const upper = method.toUpperCase();
-    const search = normalizePathPattern(searchPath).split('/').filter(Boolean);
+    const search = generalizeUrl(searchPath, () => '{id}')
+      .split('/')
+      .filter(Boolean);
 
     let best: RequestResult | undefined;
     let bestScore = -1;
 
     for (const req of this.capturedRequests) {
       if (req.method !== upper) continue;
-      const segments = normalizePathPattern(req.path).split('/').filter(Boolean);
+      const segments = generalizeUrl(req.path, () => '{id}')
+        .split('/')
+        .filter(Boolean);
       if (segments.length < search.length) continue;
       if (!search.every((segment, i) => segment === segments[i])) continue;
 
@@ -213,15 +196,12 @@ export class RequestStore {
   }
 }
 
-function normalizePathPattern(urlPath: string): string {
-  return urlPath
-    .split('/')
-    .map((segment) => (segment && isDynamicSegment(segment) ? '{id}' : segment))
-    .join('/');
+export function isFailedRequest(request: RequestResult): boolean {
+  return request.status >= 400 || Boolean(request.error);
 }
 
 function readEndpointKey(result: RequestResult): string {
-  return `${result.method} ${normalizePathPattern(result.path)}?${queryParamNames(result).join(',')}`;
+  return `${result.method} ${generalizeUrl(result.path, () => '{id}')}?${queryParamNames(result).join(',')}`;
 }
 
 function matchesFamily(result: RequestResult, methods: EndpointFamily): boolean {

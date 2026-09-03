@@ -45,7 +45,48 @@ While exploring, use the `/learn` command.
 
 ### API Testing
 
-[API testing](../api-testing/basics.md) shares the same `knowledge/` directory. `npx explorbot api know <endpoint> "<description>"` adds endpoint-scoped notes, stored with an `endpoint:` frontmatter field instead of `url:`.
+[API testing](../api-testing/basics.md) shares the same `knowledge/` directory. `npx explorbot api know <endpoint> "<description>"` adds endpoint-scoped notes, stored with an `endpoint:` frontmatter field instead of `url:`. Chief reads them when planning an endpoint and Curler reads them when running its tests, so auth headers and payload rules reach both.
+
+## Per-Session Knowledge
+
+`--knowledge` passes facts to a single run. Nothing is written to `knowledge/`, so credentials and one-off test data stay out of the repository.
+
+```bash
+npx explorbot explore /pay --knowledge 'My credit card is 4111 1111 1111 1111'
+```
+
+Plain text applies to every page. Add frontmatter to scope it, with the same URL patterns knowledge files use:
+
+```bash
+npx explorbot explore / --knowledge '---
+url: /pay
+---
+Use the sandbox card 4111 1111 1111 1111 with any future expiry'
+```
+
+Repeat the flag for several facts:
+
+```bash
+npx explorbot explore / \
+  --knowledge '---
+url: /login
+---
+Log in as admin@example.com / secret123' \
+  --knowledge 'Dismiss the cookie banner before anything else'
+```
+
+Everything a knowledge file supports works here: `${env.VAR}` interpolation, and page automation fields such as `wait` and `waitForElement`.
+
+The flag works on every command of `explorbot`, `explorbot api`, `explorbot docs` and `prima`, and can go anywhere on the line. Scope API knowledge with `endpoint:` instead of `url:`:
+
+```bash
+npx explorbot api explore /orders --knowledge '---
+endpoint: /orders/*
+---
+Send X-Api-Key: ${env.API_KEY} on every request'
+```
+
+For runs driven from the environment — config-free, or on the global configuration — `EXPLORBOT_KNOWLEDGE` does the same job for the length of one run. See [Agentic usage](./agentic-usage.md).
 
 ## URL Patterns
 
@@ -81,9 +122,12 @@ Notes:
 
 | Field | Purpose |
 |-------|---------|
-| `url` | URL pattern to match (optional, defaults to `*`) |
+| `url` | Page URL pattern to match |
+| `endpoint` | API endpoint pattern to match |
 | `title` | Human-readable title (optional) |
 | Custom fields | Any additional metadata for agents |
+
+`url` scopes a file to browser pages and `endpoint` scopes it to API endpoints. A file with neither applies to both.
 
 ## Variables
 

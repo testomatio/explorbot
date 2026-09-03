@@ -66,7 +66,7 @@ export function createCurlerTools(apiClient: ApiClient, requestState: RequestSto
           queryParams: input.queryParams,
         });
 
-        requestState.addRequest(result);
+        requestState.addMadeRequest(result);
 
         if (result.error) {
           tag('error').log(`${input.method} ${input.path} > Network error: ${result.error}`);

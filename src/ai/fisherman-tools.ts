@@ -6,244 +6,249 @@ import type { RequestResult } from '../api/request-result.ts';
 import type { RequestStore } from '../api/request-store.ts';
 import { extractEndpointDefinition } from '../api/spec-reader.ts';
 import { tag } from '../utils/logger.ts';
-import { RequestMap } from '../utils/request-map.ts';
 import { isDynamicSegment } from '../utils/url-matcher.ts';
+import type { RequestHaul } from './fisherman/request-haul.ts';
 
 const BODY_PREVIEW_LIMIT = 2000;
 
-export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, opts: { spec?: any; baseEndpoint?: string; readOnly?: boolean }) {
+export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, haul: RequestHaul, opts: { spec?: any; baseEndpoint?: string; readOnly?: boolean }) {
   const readOnly = opts.readOnly === true;
   let finished = false;
   let result: FishermanResult | null = null;
-  const ledgerStart = requestStore.getMadeRequests().length;
 
   let allowedMethods: string[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
   if (readOnly) allowedMethods = ['GET'];
 
-  const runRequests = () => requestStore.getMadeRequests().slice(ledgerStart);
-  const successfulWrites = () => runRequests().filter((r) => r.isWrite && !r.error && r.status >= 200 && r.status < 400);
-  const successfulReads = () => runRequests().filter((r) => !r.isWrite && !r.error && r.status >= 200 && r.status < 400);
-  const succeeded = () => {
-    if (readOnly) return successfulReads();
-    return successfulWrites();
-  };
-  const getResult = () => result ?? synthesizeResult(runRequests(), succeeded(), false, readOnly);
+  const getResult = () => result ?? synthesizeResult(haul, false, readOnly);
   const isFinished = () => finished;
   const finishFromText = (text?: string) => {
     finished = true;
-    const synthesized = synthesizeResult(runRequests(), succeeded(), true, readOnly);
+    const synthesized = synthesizeResult(haul, true, readOnly);
     if (text && synthesized.success) synthesized.summary = text;
     result = synthesized;
   };
 
-  const getEndpointSpec = tool({
-    description: dedent`
-      Get the request specification for an endpoint.
-      Returns the request body example from a previously captured request, or OpenAPI spec definition.
-      Call this before making a request to an endpoint you haven't used before.
-    `,
-    inputSchema: z.object({
-      method: z.enum(allowedMethods as [string, ...string[]]).describe('HTTP method'),
-      path: z.string().describe('Endpoint path, e.g. /suites'),
-    }),
-    execute: async ({ method, path }) => {
-      tag('step').log(`Fisherman: spec lookup ${method} ${path}`);
+  const tools: Record<string, any> = {
+    getEndpointSpec: tool({
+      description: dedent`
+        Get the request specification for an endpoint.
+        Returns the request body example from a previously captured request, or OpenAPI spec definition.
+        Call this before making a request to an endpoint you haven't used before.
+      `,
+      inputSchema: z.object({
+        method: z.enum(allowedMethods as [string, ...string[]]).describe('HTTP method'),
+        path: z.string().describe('Endpoint path, e.g. /suites'),
+      }),
+      execute: async ({ method, path }) => {
+        tag('step').log(`Fisherman: spec lookup ${method} ${path}`);
 
-      let captured = requestStore.findCapturedRequest(method, path);
-      if (captured && !captured.requestBody && opts.spec && captured.status < 400) captured = undefined;
-      if (captured) {
-        if (captured.status >= 400) {
-          const rejectedCapture = {
-            status: captured.status,
-            requestBody: captured.requestBody || 'no body',
-          };
-          if (opts.spec) {
-            try {
-              const definition = extractEndpointDefinition(opts.spec, path, opts.baseEndpoint);
-              return { source: 'spec', method, path, definition, rejectedCapture };
-            } catch {
-              return { source: 'captured', method, path, usable: false, rejectedRequestBody: captured.requestBody || 'no body', status: captured.status };
+        let captured = requestStore.findCapturedRequest(method, path);
+        if (captured && !captured.requestBody && opts.spec && captured.status < 400) captured = undefined;
+        if (captured) {
+          if (captured.status >= 400) {
+            const rejectedCapture = {
+              status: captured.status,
+              requestBody: captured.requestBody || 'no body',
+            };
+            if (opts.spec) {
+              try {
+                const definition = extractEndpointDefinition(opts.spec, path, opts.baseEndpoint);
+                return { source: 'spec', method, path, definition, rejectedCapture };
+              } catch {
+                return { source: 'captured', method, path, usable: false, rejectedRequestBody: captured.requestBody || 'no body', status: captured.status };
+              }
             }
+            return {
+              source: 'captured',
+              method: captured.method,
+              path: captured.path,
+              status: captured.status,
+              usable: false,
+              rejectedRequestBody: captured.requestBody || 'no body',
+            };
           }
           return {
             source: 'captured',
             method: captured.method,
             path: captured.path,
             status: captured.status,
-            usable: false,
-            rejectedRequestBody: captured.requestBody || 'no body',
+            requestBody: captured.requestBody || 'no body',
           };
         }
-        return {
-          source: 'captured',
-          method: captured.method,
-          path: captured.path,
-          status: captured.status,
-          requestBody: captured.requestBody || 'no body',
-        };
-      }
 
-      if (opts.spec) {
-        try {
-          const definition = extractEndpointDefinition(opts.spec, path, opts.baseEndpoint);
-          return { source: 'spec', definition };
-        } catch (err: any) {
-          return { source: 'none', error: err.message };
+        if (opts.spec) {
+          try {
+            const definition = extractEndpointDefinition(opts.spec, path, opts.baseEndpoint);
+            return { source: 'spec', definition };
+          } catch (err: any) {
+            return { source: 'none', error: err.message };
+          }
         }
-      }
 
-      return { source: 'none', error: `No spec found for ${method} ${path}` };
-    },
-  });
-
-  const request = tool({
-    description: dedent`
-      Make an HTTP request to the API.
-      Returns status, plus IDs and names auto-extracted from the response under 'extracted'.
-    `,
-    inputSchema: z.object({
-      method: z.enum(allowedMethods as [string, ...string[]]).describe('HTTP method'),
-      path: z.string().describe('API path (e.g., /suites, /suites/1)'),
-      body: z.any().optional().describe('Request body (JSON object)'),
-      queryParams: z.record(z.string(), z.string()).optional().describe('Query parameters'),
+        return { source: 'none', error: `No spec found for ${method} ${path}` };
+      },
     }),
-    execute: async (input) => {
-      tag('step').log(`Fisherman: ${input.method} ${input.path}`);
 
-      const reqResult = await apiClient.request({
-        method: input.method,
-        path: input.path,
-        body: input.body,
-        queryParams: input.queryParams,
-      });
+    request: tool({
+      description: dedent`
+        Make an HTTP request to the API.
+        Returns status, plus IDs and names auto-extracted from the response under 'extracted'.
+      `,
+      inputSchema: z.object({
+        method: z.enum(allowedMethods as [string, ...string[]]).describe('HTTP method'),
+        path: z.string().describe('API path (e.g., /suites, /suites/1)'),
+        body: z.any().optional().describe('Request body (JSON object)'),
+        queryParams: z.record(z.string(), z.string()).optional().describe('Query parameters'),
+      }),
+      execute: async (input) => {
+        tag('step').log(`Fisherman: ${input.method} ${input.path}`);
 
-      requestStore.addMadeRequest(reqResult);
+        const reqResult = await apiClient.request({
+          method: input.method,
+          path: input.path,
+          body: input.body,
+          queryParams: input.queryParams,
+        });
 
-      if (reqResult.error) {
-        tag('error').log(`Fisherman: ${input.method} ${input.path} > Network error: ${reqResult.error}`);
-        return { success: false, error: reqResult.error };
-      }
+        requestStore.addMadeRequest(reqResult);
 
-      const statusLine = `${reqResult.status} ${reqResult.statusText}`;
+        if (reqResult.error) {
+          tag('error').log(`Fisherman: ${input.method} ${input.path} > Network error: ${reqResult.error}`);
+          return { success: false, error: reqResult.error };
+        }
 
-      if (reqResult.status >= 400) {
-        tag('error').log(`Fisherman: ${input.method} ${input.path} > ${statusLine}`);
-        return {
-          success: false,
+        const statusLine = `${reqResult.status} ${reqResult.statusText}`;
+
+        if (reqResult.status >= 400) {
+          tag('error').log(`Fisherman: ${input.method} ${input.path} > ${statusLine}`);
+          return {
+            success: false,
+            status: reqResult.status,
+            statusText: reqResult.statusText,
+            category: responseCategory(reqResult.status),
+            errorPreview: reqResult.rawResponseBody.substring(0, 300),
+          };
+        }
+
+        const extracted = extractKeyFields(reqResult.responseBody);
+        tag('success').log(`Fisherman: ${input.method} ${input.path} > ${statusLine}`);
+        const output: Record<string, any> = {
+          success: true,
           status: reqResult.status,
-          statusText: reqResult.statusText,
-          category: responseCategory(reqResult.status),
-          errorPreview: reqResult.rawResponseBody.substring(0, 300),
+          extracted,
         };
-      }
-
-      const extracted = extractKeyFields(reqResult.responseBody);
-      tag('success').log(`Fisherman: ${input.method} ${input.path} > ${statusLine}`);
-      const output: Record<string, any> = {
-        success: true,
-        status: reqResult.status,
-        extracted,
-      };
-      if (readOnly) output.bodyPreview = reqResult.rawResponseBody.substring(0, BODY_PREVIEW_LIMIT);
-      return output;
-    },
-  });
-
-  const finishWrite = tool({
-    description: 'Report completion of data preparation. Call when all requested items have been created.',
-    inputSchema: z.object({
-      summary: z.string().describe('Summary of what was created'),
-      created: z
-        .array(
-          z.object({
-            type: z.string().describe('Item type (e.g., suite, test, label)'),
-            id: z.union([z.string(), z.number()]).optional().describe('Created item ID'),
-            title: z.string().optional().describe('Created item name/title'),
-          })
-        )
-        .describe('List of successfully created items'),
-      failed: z
-        .array(
-          z.object({
-            type: z.string().describe('Item type that failed'),
-            reason: z.string().describe('Why it failed'),
-          })
-        )
-        .optional()
-        .describe('List of items that could not be created'),
+        if (readOnly) output.bodyPreview = reqResult.rawResponseBody.substring(0, BODY_PREVIEW_LIMIT);
+        return output;
+      },
     }),
-    execute: async ({ summary, created, failed }) => {
-      const writes = succeeded();
-      if (writes.length === 0) {
-        tag('warning').log('Fisherman: finish rejected — no successful write request in this run');
-        return { finished: false, error: 'No successful write request was made in this run, so nothing was created. Keep working, or call stop if the data cannot be prepared.' };
-      }
 
-      const createdRequests = new RequestMap(writes);
+    finish: tool({
+      description: 'Report completion of data preparation. Call when all requested items have been created.',
+      inputSchema: z.object({
+        summary: z.string().describe('Summary of what was created'),
+        created: z
+          .array(
+            z.object({
+              type: z.string().describe('Item type (e.g., suite, test, label)'),
+              id: z.union([z.string(), z.number()]).optional().describe('Created item ID'),
+              title: z.string().optional().describe('Created item name/title'),
+            })
+          )
+          .describe('List of successfully created items'),
+        failed: z
+          .array(
+            z.object({
+              type: z.string().describe('Item type that failed'),
+              reason: z.string().describe('Why it failed'),
+            })
+          )
+          .optional()
+          .describe('List of items that could not be created'),
+      }),
+      execute: async ({ summary, created, failed }) => {
+        const { result: verified, error } = verifyFinish(haul, { summary, created, failed });
+        if (!verified) return { finished: false, error };
 
-      const verified: FishermanResult['created'] = [];
-      for (const item of created) {
-        if (item.id === undefined) {
-          verified.push(item);
-          continue;
+        tag('success').log(`Fisherman done: ${summary}`);
+        finished = true;
+        result = verified;
+        return { finished: true };
+      },
+    }),
+
+    stop: tool({
+      description: 'Abort data preparation when it cannot be completed.',
+      inputSchema: z.object({
+        reason: z.string().describe('Why preparation cannot continue'),
+      }),
+      execute: async ({ reason }) => {
+        tag('warning').log(`Fisherman stopped: ${reason}`);
+        finished = true;
+        result = { success: false, summary: reason, created: [], failed: [] };
+        return { stopped: true };
+      },
+    }),
+  };
+
+  if (readOnly) {
+    tools.finish = tool({
+      description: 'Report the answer to the question. Call when the requests have shown what exists.',
+      inputSchema: z.object({
+        answer: z.string().describe('What the data shows, quoting the concrete names, titles and ids that were returned'),
+      }),
+      execute: async ({ answer }) => {
+        if (haul.successfulReads().length === 0) {
+          tag('warning').log('Fisherman: finish rejected — no successful request in this run');
+          return { finished: false, error: 'No successful request was made in this run, so nothing was read. Keep working, or call stop if the question cannot be answered.' };
         }
-        const request = createdRequests.get(item.id);
-        if (!request) {
-          tag('warning').log(`Fisherman: dropped unverified created item ${item.type} (id: ${item.id})`);
-          continue;
-        }
-        verified.push({ ...item, request: request.toEndpoint() });
-      }
-      if (verified.length === 0) verified.push(...writes.map(toCreatedItem));
 
-      tag('success').log(`Fisherman done: ${summary}`);
-      finished = true;
-      result = { success: true, summary, created: verified, failed: failed || [] };
-      return { finished: true };
-    },
-  });
-
-  const finishRead = tool({
-    description: 'Report the answer to the question. Call when the requests have shown what exists.',
-    inputSchema: z.object({
-      answer: z.string().describe('What the data shows, quoting the concrete names, titles and ids that were returned'),
-    }),
-    execute: async ({ answer }) => {
-      if (succeeded().length === 0) {
-        tag('warning').log('Fisherman: finish rejected — no successful request in this run');
-        return { finished: false, error: 'No successful request was made in this run, so nothing was read. Keep working, or call stop if the question cannot be answered.' };
-      }
-
-      tag('success').log(`Fisherman answered: ${answer}`);
-      finished = true;
-      result = { success: true, summary: answer, created: [], failed: [] };
-      return { finished: true };
-    },
-  });
-
-  const stop = tool({
-    description: 'Abort data preparation when it cannot be completed.',
-    inputSchema: z.object({
-      reason: z.string().describe('Why preparation cannot continue'),
-    }),
-    execute: async ({ reason }) => {
-      tag('warning').log(`Fisherman stopped: ${reason}`);
-      finished = true;
-      result = { success: false, summary: reason, created: [], failed: [] };
-      return { stopped: true };
-    },
-  });
-
-  const tools: Record<string, any> = { getEndpointSpec, request, finish: finishWrite, stop };
-  if (readOnly) tools.finish = finishRead;
+        tag('success').log(`Fisherman answered: ${answer}`);
+        finished = true;
+        result = { success: true, summary: answer, created: [], failed: [] };
+        return { finished: true };
+      },
+    });
+  }
 
   return { tools, getResult, isFinished, finishFromText };
 }
 
-function synthesizeResult(made: RequestResult[], succeeded: RequestResult[], declaredDone: boolean, readOnly: boolean): FishermanResult {
-  const failures = made.filter((r) => r.status >= 400 || r.error);
+export function verifyFinish(haul: RequestHaul, input: { summary: string; created: FishermanResult['created']; failed?: FishermanResult['failed'] }): { result: FishermanResult | null; error?: string } {
+  const writes = haul.successfulWrites();
+  if (writes.length === 0) {
+    tag('warning').log('Fisherman: finish rejected — no successful write request in this run');
+    return { result: null, error: 'No successful write request was made in this run, so nothing was created. Keep working, or call stop if the data cannot be prepared.' };
+  }
+
+  const createdRequests = haul.byId();
+
+  const verified: FishermanResult['created'] = [];
+  for (const item of input.created) {
+    if (item.id === undefined) {
+      verified.push(item);
+      continue;
+    }
+    const request = createdRequests.get(String(item.id));
+    if (!request) {
+      tag('warning').log(`Fisherman: dropped unverified created item ${item.type} (id: ${item.id})`);
+      continue;
+    }
+    verified.push({ ...item, request: request.toEndpoint() });
+  }
+  if (verified.length === 0) verified.push(...writes.map(toCreatedItem));
+
+  return { result: { success: true, summary: input.summary, created: verified, failed: input.failed || [] } };
+}
+
+function synthesizeResult(haul: RequestHaul, declaredDone: boolean, readOnly: boolean): FishermanResult {
+  const made = haul.requests();
+  const failures = haul.failed();
+  let succeeded = haul.successfulWrites();
   let successLabel = 'successful writes';
-  if (readOnly) successLabel = 'successful reads';
+  if (readOnly) {
+    succeeded = haul.successfulReads();
+    successLabel = 'successful reads';
+  }
   let summary = `Stopped before finishing: ${made.length} requests, ${succeeded.length} ${successLabel}, ${failures.length} failed`;
   const lastFailure = failures[failures.length - 1];
   if (lastFailure) summary += `; last failure: ${lastFailure.toSummary()}`;

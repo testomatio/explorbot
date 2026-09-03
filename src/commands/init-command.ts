@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import chalk from 'chalk';
-import { ConfigParser, PROVIDERS } from '../config.ts';
+import { ConfigParser, type ModelRole, PROVIDERS, missingModelRoles } from '../config.ts';
 import { findGlobalConfig, globalConfigPath, globalDir, globalEnvPath } from '../global-config.ts';
 import { getCliName } from '../utils/cli-name.ts';
 import { log, tag } from '../utils/logger.js';
@@ -91,7 +91,7 @@ export function writeGlobalConfig(provider: string, apiKey?: string): void {
   writeEnvKey(envKey, apiKey || '');
   log(`Stored ${envKey} in ${globalEnvPath()}`);
 
-  const missing = missingRoles(provider);
+  const missing = missingModelRoles(provider);
   if (missing.length) {
     tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set the model ids in ${globalConfigPath()}`);
   }
@@ -156,7 +156,7 @@ export function runInitCommand(options: InitCommandOptions): void {
       log(`Env file already exists: ${relativeToCwd(envPath)}`);
     }
 
-    const missing = missingRoles(provider);
+    const missing = missingModelRoles(provider);
     if (missing.length) {
       tag('warning').log(`No recommended ${missing.join(' and ')} for ${provider} — set the model ids in ${relativeToCwd(outPath)}`);
     }
@@ -255,7 +255,7 @@ async function renderLocalProviderWizard(): Promise<string | null> {
 
 function modelLines(provider: string): string {
   const recommended = ConfigParser.recommendedModels()[provider] || {};
-  const roles: Array<[ModelRoleName, string]> = [
+  const roles: Array<[ModelRole, string]> = [
     ['model', 'fast model with tool calling capabilities'],
     ['visionModel', 'vision model for screenshot analysis'],
     ['agenticModel', 'agentic model for decision making'],
@@ -308,11 +308,6 @@ function isModuleProject(configDir: string): boolean {
   }
 }
 
-function missingRoles(provider: string): string[] {
-  const recommended = ConfigParser.recommendedModels()[provider] || {};
-  return ['model', 'visionModel', 'agenticModel'].filter((role) => !recommended[role]);
-}
-
 function writeEnvKey(key: string, value: string): void {
   const envPath = globalEnvPath();
   let content = '# AI provider API keys';
@@ -326,8 +321,6 @@ function writeEnvKey(key: string, value: string): void {
 
   writeFileSync(envPath, `${lines.join('\n').trimEnd()}\n`, 'utf8');
 }
-
-type ModelRoleName = 'model' | 'visionModel' | 'agenticModel';
 
 type InitCommandOptions = {
   configPath?: string;

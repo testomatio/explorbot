@@ -154,11 +154,11 @@ export const protectionRule = dedent`
 
   Pre-existing data on the page belongs to the application, not the test.
   Items that were not created inside the current test scenario must not be deleted, removed, emptied, reset, archived, or otherwise destroyed.
-  If a scenario needs to verify destructive behaviour, the same scenario must first create a disposable target and then destroy that specific target — never operate on data that was already there when the test started.
+  If a scenario needs to verify destructive behaviour, the same scenario must first create its own target and then destroy that specific target — never operate on data that was already there when the test started.
 
   The resource that the current page URL represents is "under test".
   The test must not destroy the resource it is running against — doing so invalidates every subsequent scenario that starts on the same URL.
-  Do not propose or perform delete/remove/archive actions on the entity that owns the current URL; propose such actions only on disposable children created within the scenario itself.
+  Do not propose or perform delete/remove/archive actions on the entity that owns the current URL; propose such actions only on children created within the scenario itself.
   </important>
 `;
 
@@ -176,7 +176,7 @@ export const dataProtectionRules = dedent`
   Reading through the API to establish what already exists is not a mutation and stays allowed
   under a read-only constraint.
 
-  Destructive actions are allowed only against disposable data created by the current scenario
+  Destructive actions are allowed only against data created by the current scenario
   or prepared for that scenario by Fisherman/API preconditions. Existing application data must
   remain unchanged.
   </data_protection_rules>
@@ -336,6 +336,14 @@ export const actionRule = dedent`
   For inline create/edit flows, after filling a field verify it contains the value, then confirm using the nearest explicit button/link, an adjacent icon-only confirm control in the same row/form, or Enter if the field remains focused.
   If locator doesn't work, try CSS or XPath locators.
   If nothing works, use I.clickXY(x, y) as last resort.
+
+  When a click result reports several matches, pick one from its numbered list by position rather than guessing a new locator.
+  Reuse the same locator with step.opts({ elementIndex: N }) as the LAST argument. N is the "Element N" number.
+
+  <example>
+    I.click('Remove', step.opts({ elementIndex: 2 }));
+    I.click({ role: 'link', text: 'Details' }, '.panel', step.opts({ elementIndex: 1 }));
+  </example>
 
   For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.
 
