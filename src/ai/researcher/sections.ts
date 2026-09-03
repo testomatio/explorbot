@@ -1,6 +1,6 @@
 import dedent from 'dedent';
 import type { ActionResult } from '../../action-result.js';
-import type { ExplorbotConfig } from '../../config.ts';
+import { type ExplorbotConfig, agentSettings } from '../../config.ts';
 import { executionController } from '../../execution-controller.ts';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
@@ -66,7 +66,7 @@ export function WithSections<T extends Constructor>(Base: T) {
     }
 
     private async _detectFocusCss(): Promise<string | null> {
-      const focusSections = (this.config.ai?.agents?.researcher as any)?.focusSections as string[] | undefined;
+      const focusSections = agentSettings(this.config, 'researcher').focusSections;
       if (!focusSections?.length) return null;
 
       for (const css of focusSections) {

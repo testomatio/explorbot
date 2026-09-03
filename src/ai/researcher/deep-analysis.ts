@@ -1,6 +1,6 @@
 import dedent from 'dedent';
 import { ActionResult, type Diff } from '../../action-result.js';
-import type { ExplorbotConfig } from '../../config.ts';
+import { type ExplorbotConfig, agentSettings } from '../../config.ts';
 import { executionController } from '../../execution-controller.ts';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
@@ -31,7 +31,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       tag('info').log('Starting deep analysis of expandable elements');
       await (this as any).navigateTo(state.fullUrl || state.url);
 
-      const maxClicks = (this.config.ai?.agents?.researcher as any)?.maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
+      const maxClicks = agentSettings(this.config, 'researcher').maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
 
       const expandedSections: string[] = [];
       const navigationLinks: Array<{ code: string; url: string }> = [];
@@ -88,7 +88,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     }
 
     async researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null> {
-      if (this.config.ai?.agents?.researcher?.enabled === false) return null;
+      if (!(this as any).isEnabled()) return null;
 
       const region = current.overlay;
       if (!region.isOpen || !region.name) return null;

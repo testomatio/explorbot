@@ -13,7 +13,7 @@ import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
-import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, agentSettings, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
@@ -583,12 +583,7 @@ export class Prima {
 
   private async loadConfig(): Promise<ExplorbotConfig> {
     const config = await ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path, baseUrl: this.configBaseUrl() });
-    const ai = config.ai;
-    if (ai) {
-      ai.agents ??= {};
-      ai.agents.researcher ??= {};
-      ai.agents.researcher.enabled ??= this.options.command === 'research';
-    }
+    agentSettings(config, 'researcher').enabled ??= this.options.command === 'research';
     return config;
   }
 
