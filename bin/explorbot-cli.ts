@@ -8,6 +8,7 @@ import figureSet from 'figures';
 import { render } from 'ink';
 import React from 'react';
 import { flushTelemetry } from '../src/ai/provider.js';
+import { HelpCommand } from '../src/commands/help-command.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
 import { ConfigParser, EXPLORBOT_ENV_VARS, PROVIDERS } from '../src/config.js';
@@ -40,7 +41,7 @@ process.on('unhandledRejection', (reason) => {
   tag('error').log(`Unhandled rejection: ${reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason)}`);
 });
 
-if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima')) {
+if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima') && !process.argv.includes('--json')) {
   console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
 }
 
@@ -946,5 +947,6 @@ ${rows}
 };
 
 program.addHelpText('after', envHelp);
+HelpCommand.register(program);
 
 program.parse();

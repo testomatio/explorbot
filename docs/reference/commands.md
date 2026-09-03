@@ -52,6 +52,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*`, or `~/.explorbot` with `--global` |
 | List registered sites | `npx explorbot sites` | — | Sites stored in the global installation |
 | Show resolved configuration | `npx explorbot config [url] [--json]` | `/config` | Models, config file, paths and `EXPLORBOT_*` in effect |
+| Describe commands | `npx explorbot help [command...] [--json]` | — | Text help, or the whole command tree as JSON |
 | Clean generated files | `npx explorbot clean [target]` | `/clean [target]` | Same targets both ways |
 
 ## Common CLI Options
