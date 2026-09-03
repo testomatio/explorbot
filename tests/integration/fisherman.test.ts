@@ -103,7 +103,7 @@ describe('Fisherman with aimock', () => {
     ConfigParser.cleanupAllTestDirectories();
   });
 
-  function createFisherman(browserHeaders: Record<string, string> = {}, configHeaders: Record<string, string> = {}, hasApiConfig = false): Fisherman {
+  function createFisherman(browserHeaders: Record<string, string> = {}, configHeaders: Record<string, string> = {}, hasApiConfig = false, spec: any = null): Fisherman {
     const apiClient = {
       request: async () => apiResponses.shift(),
       setHeaders: (h: Record<string, string>) => Object.assign(apiHeaders, h),
@@ -113,7 +113,7 @@ describe('Fisherman with aimock', () => {
       provider,
       apiClient as any,
       requestStore,
-      async () => null,
+      async () => spec,
       'https://example.test/api',
       async () => browserHeaders,
       configHeaders,
@@ -217,6 +217,30 @@ describe('Fisherman with aimock', () => {
     const offeredTools = JSON.stringify(mock.getRequests()[0]?.body?.tools);
     expect(offeredTools).toContain('GET');
     expect(offeredTools).not.toContain('DELETE');
+  });
+
+  it("achieve mode lists the spec's read endpoints without exposing its write verbs", async () => {
+    const spec = {
+      paths: {
+        '/api/books': {
+          get: { summary: 'List books' },
+          post: { summary: 'Add a book' },
+        },
+        '/api/books/{id}': {
+          delete: { summary: 'Remove a book' },
+        },
+      },
+    };
+
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('c1', 'stop', { reason: 'no lookup needed' })] });
+    mock.on({}, { content: 'done' });
+
+    await createFisherman({}, {}, true, spec).lookupData('which books exist?', '/projects/alpha-shop/tests');
+
+    const systemPrompt = extractPromptText(mock.getRequests()[0]);
+    expect(systemPrompt).toContain('GET /books');
+    expect(systemPrompt).not.toContain('POST /books');
+    expect(systemPrompt).not.toContain('DELETE /books');
   });
 
   it('reports honestly when no read endpoint is known', async () => {

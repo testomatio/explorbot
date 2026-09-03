@@ -160,8 +160,12 @@ export class RequestStore {
       try {
         const result = RequestResult.load(path.join(requestsDir, file));
         if (existingIds.has(result.id)) continue;
+        if (!result.isWrite) {
+          const key = readEndpointKey(result);
+          if (this.readEndpointKeys.has(key)) continue;
+          this.readEndpointKeys.add(key);
+        }
         this.capturedRequests.push(result);
-        if (!result.isWrite) this.readEndpointKeys.add(readEndpointKey(result));
       } catch {
         // skip invalid files
       }

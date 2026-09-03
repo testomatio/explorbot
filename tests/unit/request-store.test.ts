@@ -244,6 +244,16 @@ describe('RequestStore loadFromDisk', () => {
     expect(fresh.getCapturedRequests()).toHaveLength(1);
     expect(fresh.getCapturedRequests()[0].id).toBe('xhr_001_POST_api_suites');
   });
+
+  it('dedups read captures for the same endpoint across sessions', () => {
+    makeRequest('GET', '/api/alpha-shop/labels', 200, 'xhr_001_GET_api_alpha-shop_labels').save(outputDir);
+    makeRequest('GET', '/api/alpha-shop/labels', 200, 'xhr_002_GET_api_alpha-shop_labels').save(outputDir);
+
+    const fresh = new RequestStore(outputDir);
+    fresh.loadFromDisk();
+
+    expect(fresh.getCapturedRequests()).toHaveLength(1);
+  });
 });
 
 describe('extractAuthHeaders session gating', () => {

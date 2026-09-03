@@ -35,6 +35,17 @@ describe('Fisherman tools', () => {
     expect(result.source).toBe('spec');
   });
 
+  it('still surfaces a rejected capture with no body when a spec exists', async () => {
+    const captured = { method: 'POST', path: '/plans', status: 400, requestBody: undefined };
+    const spec = { paths: { '/plans': { post: { requestBody: { required: true } } } } };
+    const { tools } = createFishermanTools({} as any, store(captured), { spec });
+
+    const result: any = await tools.getEndpointSpec.execute({ method: 'POST', path: '/plans' }, {} as any);
+
+    expect(result.source).toBe('spec');
+    expect(result.rejectedCapture.status).toBe(400);
+  });
+
   it('keeps a successful captured request as a usable example', async () => {
     const captured = { method: 'POST', path: '/plans', status: 201, requestBody: { title: 'Plan' } };
     const { tools } = createFishermanTools({} as any, store(captured), {});

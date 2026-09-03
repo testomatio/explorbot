@@ -50,7 +50,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
       tag('step').log(`Fisherman: spec lookup ${method} ${path}`);
 
       let captured = requestStore.findCapturedRequest(method, path);
-      if (captured && !captured.requestBody && opts.spec) captured = undefined;
+      if (captured && !captured.requestBody && opts.spec && captured.status < 400) captured = undefined;
       if (captured) {
         if (captured.status >= 400) {
           const rejectedCapture = {

@@ -12,8 +12,10 @@
   whether suitable data is already there, or the exact name or id of an existing record — before
   deciding whether to create anything.
 - [Explorer] Successful GET requests observed in the browser are now captured alongside write
-  requests, so Fisherman's read-only lookups work without an OpenAPI spec. Each is recorded as a
-  path and its query-parameter names only — never the response body or the parameter values.
+  requests, so Fisherman's read-only lookups work without an OpenAPI spec. The endpoint list
+  shown to the model names only the path and its query-parameter names, never their values; the
+  capture on disk holds the full request URL and headers — what write captures have always held —
+  but no response body.
 
 ## 2026-09-01
 
