@@ -8,6 +8,7 @@ import figureSet from 'figures';
 import { render } from 'ink';
 import React from 'react';
 import { flushTelemetry } from '../src/ai/provider.js';
+import { HelpJsonCommand } from '../src/commands/help-json-command.js';
 import { RecommendedModelsCommand } from '../src/commands/recommended-models-command.js';
 import { App } from '../src/components/App.js';
 import { StatusPane } from '../src/components/StatusPane.js';
@@ -43,7 +44,9 @@ process.on('unhandledRejection', (reason) => {
   tag('error').log(`Unhandled rejection: ${reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason)}`);
 });
 
-if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima')) {
+const printsJson = process.argv.includes('--json') || process.argv.includes('help-json');
+
+if (!process.env.EXPLORBOT_NO_BANNER && !process.argv.includes('prima') && !printsJson) {
   console.log(`⛵ ${chalk.yellow.bold(`Explorbot v${pkgVersion}`)} ${chalk.dim('Autonomous Testing Agent')}`);
 }
 
@@ -952,6 +955,8 @@ ${rows}
 `;
 };
 
+program.addHelpText('after', `\nFor agents and tools:\n  ${cli} help-json [command...]  the same definitions as JSON — commands, arguments, options, defaults\n`);
 program.addHelpText('after', envHelp);
+HelpJsonCommand.register(program);
 
 program.parse();
