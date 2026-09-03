@@ -5,7 +5,7 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
 import { type EnvelopeData, renderEnvelope } from './envelope.ts';
-import { askHelp, checkHelp, doHelp, helpContract, pageContextHelp, reportHelp, researchHelp, sessionHelp, statusHelp, verifyHelp } from './help.ts';
+import { askHelp, checkHelp, doHelp, helpContract, reportHelp, researchHelp, sessionHelp, statusHelp, verifyHelp } from './help.ts';
 import { Prima, type PrimaOptions } from './prima.ts';
 
 let rootOptions: () => any = () => ({});
@@ -46,13 +46,16 @@ function addCommonOptions(cmd: Command): Command {
     .option('--session [file]', 'Persist cookies and storage to a session file')
     .option('--model <model>', 'Main model, as provider/model-id')
     .option('--vision-model <model>', 'Model for screenshot analysis, as provider/model-id')
-    .option('--ephemeral', 'Keep no state between runs; applies to config-free runs, where output goes to a temp directory')
-    .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
+    .option('--ephemeral', 'Keep no state; config-free runs use a temp directory')
+    .option('--framework <name>', 'Inactive: reported code targets codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')
     .option('--spec <path>', 'Docbot application spec directory or index.md to read as page knowledge')
     .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')
-    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to')
-    .addHelpText('after', `\n${sessionHelp}`);
+    .option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
+}
+
+function addBrowserOptions(cmd: Command): Command {
+  return addCommonOptions(cmd).addHelpText('after', `\n${sessionHelp}`);
 }
 
 function primaFor(options: any, command?: string): Prima {
@@ -99,48 +102,48 @@ async function runBrowser(options: any, run: (prima: Prima) => Promise<boolean>)
 
 export function createPrimaCommands(name = 'prima'): Command {
   const cmd = new Command(name);
-  cmd.description('Tests and drives a web app through described behaviour instead of locators: one command carries a whole scenario, verifies it, and reports the proof');
+  cmd.description('Drives a web app through described behaviour, not locators');
   cmd.option('--pw-session <title>', 'Title of the playwright-cli session to attach to');
   cmd.option('--url <url>', 'Page to open when the session has no page yet');
   cmd.addHelpText('after', `\n${helpContract}`);
   rootOptions = () => cmd.opts();
 
-  addCommonOptions(cmd.command('pw <fn>').description('Run a Playwright function expression against the open page')).action(async (fn, options) => {
+  addBrowserOptions(cmd.command('pw <fn>').description('Run a Playwright function expression against the open page')).action(async (fn, options) => {
     await runPrima(options, `pw ${fn}`, (prima) => prima.pw(fn));
   });
 
-  addCommonOptions(cmd.command('do <instructions...>').description('Run high-level instructions tester-style, one argument per instruction'))
-    .addHelpText('after', `\n${doHelp}\n\n${pageContextHelp}`)
+  addBrowserOptions(cmd.command('do <instructions...>').description('Run instructions, one argument each'))
+    .addHelpText('after', `\n${doHelp}`)
     .action(async (instructions, options) => {
       await runPrima(options, `do ${instructions.join(' ')}`, (prima) => prima.do(instructions));
     });
 
-  addCommonOptions(cmd.command('check <scenario>').description('Run a scenario end to end as a test, with its own verification, and report the steps it took'))
+  addBrowserOptions(cmd.command('check <scenario>').description('Run a scenario as a test, with verification'))
     .option('--expected <outcome>', 'An outcome the run must reach; repeat the flag for several', (value: string, all: string[]) => [...all, value], [])
-    .addHelpText('after', `\n${checkHelp}\n\n${pageContextHelp}`)
+    .addHelpText('after', `\n${checkHelp}`)
     .action(async (scenario, options) => {
       await runPrima(options, `check ${scenario}`, (prima) => prima.check(scenario, options.expected));
     });
 
-  addCommonOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot'))
+  addBrowserOptions(cmd.command('ask <question>').description('Answer a question about the current page').option('--no-vision', 'Answer from page structure only, without a screenshot'))
     .addHelpText('after', `\n${askHelp}`)
     .action(async (question, options) => {
       await runPrima(options, `ask ${question}`, (prima) => prima.ask(question));
     });
 
-  addCommonOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page'))
+  addBrowserOptions(cmd.command('verify <assertion>').alias('assert').description('Assert a statement about the current page'))
     .addHelpText('after', `\n${verifyHelp}`)
     .action(async (assertion, options) => {
       await runPrima(options, `verify ${assertion}`, (prima) => prima.verify(assertion));
     });
 
-  addCommonOptions(cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again'))
+  addBrowserOptions(cmd.command('research').description('Map the current page and return verified locators').option('--data', 'Include data extraction in the map').option('--deep', 'Expand hidden elements for a deeper map').option('--fresh', 'Ignore the cached map and research the page again'))
     .addHelpText('after', `\n${researchHelp}`)
     .action(async (options) => {
       await runPrima(options, 'research', (prima) => prima.research({ data: options.data, deep: options.deep, fresh: options.fresh }));
     });
 
-  addCommonOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
+  addBrowserOptions(cmd.command('go <target>').description('Navigate to a url, a path, or a page described in plain words')).action(async (target, options) => {
     if (URL.canParse(target)) options.baseUrl = target;
     await runPrima(options, `go ${target}`, (prima) => prima.go(target));
   });
@@ -181,7 +184,7 @@ export function createPrimaCommands(name = 'prima'): Command {
 
   const browser = cmd.command('browser').description('Manage the browsers prima drives');
 
-  addCommonOptions(browser.command('start').description('Start a prima-owned browser and hold it open until Ctrl+C'))
+  addBrowserOptions(browser.command('start').description('Start a prima-owned browser and hold it open until Ctrl+C'))
     .option('-s, --show', 'Launch the browser in a visible window')
     .option('--headless', 'Launch the browser without a window')
     .action(async (options) => {
@@ -192,7 +195,7 @@ export function createPrimaCommands(name = 'prima'): Command {
       });
     });
 
-  addCommonOptions(browser.command('stop').description('Stop the browser of this instance'))
+  addBrowserOptions(browser.command('stop').description('Stop the browser of this instance'))
     .option('--all', 'Stop every running instance')
     .action(async (options) => {
       await runBrowser(options, async (prima) => {
@@ -202,14 +205,14 @@ export function createPrimaCommands(name = 'prima'): Command {
       });
     });
 
-  addCommonOptions(browser.command('status').description('Report the browser of this instance')).action(async (options) => {
+  addBrowserOptions(browser.command('status').description('Report the browser of this instance')).action(async (options) => {
     await runBrowser(options, async (prima) => {
       console.log(await prima.browserStatus());
       return true;
     });
   });
 
-  addCommonOptions(browser.command('list').description('List every browser instance that is running')).action(async (options) => {
+  addBrowserOptions(browser.command('list').description('List every browser instance that is running')).action(async (options) => {
     await runBrowser(options, async (prima) => {
       console.log(await prima.browserList());
       return true;

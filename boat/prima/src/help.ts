@@ -1,7 +1,5 @@
 import dedent from 'dedent';
 
-const researchFirst = 'On large or unclear pages, run prima research first.';
-
 export const helpContract = dedent`
   Prima drives the browser opened by playwright-cli.
 
@@ -15,13 +13,10 @@ export const helpContract = dedent`
     prima do "open the account menu" "choose the settings entry" "switch the theme to dark" "check it took effect"
     prima pw "({ page }) => page.click('[data-test=submit]')"
 
-  Only research maps a page.
-  ${researchFirst}
-`;
-
-export const pageContextHelp = dedent`
-  Reads the accessibility tree, never maps the page. A cached research map joins the context when present.
-  ${researchFirst}
+  Only research maps a page. Other commands read the accessibility tree; a cached
+  research map joins when present. On large or unclear pages, run prima research first.
+  Without a usable AI model only pw works; otherwise use playwright-cli.
+  DEBUG='explorbot:*' in front of a command logs everything it does.
 `;
 
 export const checkHelp = dedent`
@@ -32,9 +27,8 @@ export const checkHelp = dedent`
               ### Expected outcomes as PASSED, FAILED, CONTRADICTION or not verified.
               "not verified" means never checked, not false.
   Proof is a full-page screenshot: what a user sees counts, the log only shows actions.
-  CONTRADICTION means screenshot and log disagree - both are shown, so judge the html,
-  aria and screenshot under ### Artifacts yourself. Missing it in the picture alone
-  is "not verified".
+  CONTRADICTION means screenshot and log disagree; judge the html, aria and
+  screenshot under ### Artifacts yourself.
   ok is false when any outcome FAILED or CONTRADICTED, or the run could not finish,
   reported as such rather than as an app failure.
   Side issues found on the way go under ### Answer, not as step failures.
@@ -48,8 +42,7 @@ export const doHelp = dedent`
 `;
 
 export const askHelp = dedent`
-  Answers from a page screenshot, or from its structure with --no-vision. Never maps the page.
-  ${researchFirst}
+  Answers from a page screenshot, or from its structure with --no-vision.
 `;
 
 export const verifyHelp = dedent`
@@ -73,11 +66,7 @@ export const reportHelp = dedent`
 `;
 
 export const sessionHelp = dedent`
-  --endpoint <ep>    attach to a browser server directly, skipping discovery
-  --instance <name>  which prima-owned browser to drive; use one per parallel job
-  --session [file]   cookies and storage persisted across runs; ignored when
-                     attached, since the attached session keeps its own
-  --framework        parsed but not active yet; reported code is CodeceptJS either way
-  DEBUG='explorbot:*' in front of a command logs everything it does.
-  Without a usable AI model only pw works; otherwise use playwright-cli.
+  Parallel jobs need one --instance each. --session is ignored when attached,
+  since the attached session keeps its own. --framework is parsed but inactive;
+  reported code is CodeceptJS either way.
 `;
