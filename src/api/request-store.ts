@@ -217,9 +217,7 @@ function normalizePathPattern(urlPath: string): string {
 }
 
 function readEndpointKey(result: RequestResult): string {
-  const query = result.fullUrl.split('?')[1] || '';
-  const names = [...new Set(new URLSearchParams(query).keys())].sort().join(',');
-  return `${result.method} ${normalizePathPattern(result.path)}?${names}`;
+  return `${result.method} ${normalizePathPattern(result.path)}?${queryParamNames(result).join(',')}`;
 }
 
 function matchesFamily(result: RequestResult, methods: EndpointFamily): boolean {
@@ -229,11 +227,15 @@ function matchesFamily(result: RequestResult, methods: EndpointFamily): boolean 
 
 function queryParamHint(result: RequestResult): string {
   if (result.isWrite) return '';
-  const query = result.fullUrl.split('?')[1];
-  if (!query) return '';
-  const names = [...new Set(new URLSearchParams(query).keys())].sort();
+  const names = queryParamNames(result);
   if (names.length === 0) return '';
   return ` ?${names.join(',')}`;
+}
+
+function queryParamNames(result: RequestResult): string[] {
+  const query = result.fullUrl.split('?')[1];
+  if (!query) return [];
+  return [...new Set(new URLSearchParams(query).keys())].sort();
 }
 
 export type EndpointFamily = 'read' | 'write';
