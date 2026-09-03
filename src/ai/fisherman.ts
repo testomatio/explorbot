@@ -8,8 +8,8 @@ const debugLog = createDebug('explorbot:fisherman');
 import { loop } from '../utils/loop.ts';
 import type { Agent } from './agent.ts';
 import type { Conversation } from './conversation.ts';
-import { type FishermanResult, createFishermanTools } from './fisherman-tools.ts';
 import { RequestHaul } from './fisherman/request-haul.ts';
+import { type FishermanResult, createFishermanTools } from './fisherman/tools.ts';
 import type { Provider } from './provider.ts';
 import { dataProtectionRules } from './rules.ts';
 

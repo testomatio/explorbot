@@ -11,7 +11,7 @@ function toolCall(id: string, name: string, args: Record<string, any>) {
   return { id, name, arguments: JSON.stringify(args) };
 }
 
-describe('Pilot queryApi', () => {
+describe('Pilot askApi', () => {
   let mock: LLMock;
   let provider: Provider;
   let lookupCalls: Array<{ question: string; scopeUrl?: string }>;
@@ -67,18 +67,18 @@ describe('Pilot queryApi', () => {
     return { task, state };
   }
 
-  it('offers queryApi while planning', async () => {
+  it('offers askApi while planning', async () => {
     const { task, state } = planningTask();
     mock.on({}, { content: 'PROGRESS: ready\nNEXT: open the filter' });
 
     await createPilot(availableFisherman('unused')).planTest(task, state);
 
-    expect(JSON.stringify(mock.getRequests()[0]?.body?.tools)).toContain('queryApi');
+    expect(JSON.stringify(mock.getRequests()[0]?.body?.tools)).toContain('askApi');
   });
 
   it('answers from Fisherman and records the answer as a note, not a step', async () => {
     const { task, state } = planningTask();
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('q1', 'queryApi', { question: 'which labels exist?' })] });
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('q1', 'askApi', { question: 'which labels exist?' })] });
     mock.on({}, { content: 'PROGRESS: labels are available\nNEXT: open the label filter' });
 
     const plan = await createPilot(availableFisherman('Two labels exist: Bug and Urgent')).planTest(task, state);
@@ -91,7 +91,7 @@ describe('Pilot queryApi', () => {
 
   it('tells the model to fall back to the page when there is no API access', async () => {
     const { task, state } = planningTask();
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('q1', 'queryApi', { question: 'which labels exist?' })] });
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('q1', 'askApi', { question: 'which labels exist?' })] });
     mock.on({}, { content: 'PROGRESS: no API\nNEXT: read the labels from the page' });
 
     await createPilot().planTest(task, state);
@@ -101,7 +101,7 @@ describe('Pilot queryApi', () => {
 
   it('passes the failure reason through when the lookup cannot answer', async () => {
     const { task, state } = planningTask();
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('q1', 'queryApi', { question: 'which labels exist?' })] });
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('q1', 'askApi', { question: 'which labels exist?' })] });
     mock.on({}, { content: 'PROGRESS: unanswered\nNEXT: read the labels from the page' });
 
     await createPilot(availableFisherman('No read endpoints are known for this scope', false)).planTest(task, state);

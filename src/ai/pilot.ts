@@ -18,6 +18,7 @@ import { truncateJson } from '../utils/strings.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
+import { createAskApiTool } from './fisherman/tools.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -453,7 +454,7 @@ export class Pilot implements Agent {
         Plan the test execution for this scenario.
 
         FIRST: Decide if precondition() is needed. When the page does not settle whether suitable data
-        already exists, call queryApi() to find out before creating any.
+        already exists, call askApi() to find out before creating any.
 
         Call precondition() WHEN:
         - The scenario edits/deletes/modifies an item, and you want a DISPOSABLE item to act on safely
@@ -782,36 +783,7 @@ export class Pilot implements Agent {
           return { noted: true, prepared: true, created: result.created };
         },
       }),
-      queryApi: tool({
-        description: dedent`
-          Read the API to learn what data already exists, changing nothing.
-          Ask a question about existing records: which ones are there, what they are called, whether a particular one exists.
-          Use it before precondition() to see whether suitable data is already available, and whenever a step needs the exact name or id of a record that is already there.
-          It never creates, edits or deletes anything — precondition() does that.
-        `,
-        inputSchema: z.object({
-          question: z.string().describe('What to find out about data that already exists'),
-        }),
-        execute: async ({ question }) => {
-          tag('info').log(`Query API: ${question}`);
-          debugLog(`queryApi: ${question}, fisherman: ${this.fishermanStatus()}`);
-
-          if (!this.fisherman || !this.fisherman.isAvailable()) {
-            return { answered: false, reason: 'No API access is configured, so existing data cannot be queried. Judge from the page instead.' };
-          }
-
-          const result = await this.fisherman.lookupData(question, task.startUrl, task.sessionName);
-
-          if (!result.success) {
-            tag('warning').log(`Query API unanswered: ${result.summary}`);
-            return { answered: false, reason: result.summary || 'The API could not answer this question' };
-          }
-
-          task.addNote(`Queried API: ${question} — ${result.summary}`);
-          tag('success').log(`Query API: ${result.summary}`);
-          return { answered: true, answer: result.summary };
-        },
-      }),
+      ...createAskApiTool(this.fisherman, task),
     };
   }
 
@@ -1188,7 +1160,7 @@ export class Pilot implements Agent {
       - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
       - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.
       - ariaDiff shows 5+ added/removed → page entered new mode (editor/modal); call context() before guessing selectors.
-      - Empty dropdown/list when items expected → wait explicitly, then check the state changed: ariaDiff and any GET that loaded data. If still nothing loaded, confirm the empty state with verify(), or queryApi() for whether the data exists at all.
+      - Empty dropdown/list when items expected → wait explicitly, then check the state changed: ariaDiff and any GET that loaded data. If still nothing loaded, confirm the empty state with verify(), or askApi() for whether the data exists at all.
       - Search-and-select needs SEQUENCE: focus trigger → type to filter → click option. Tell Tester to split into separate tool calls.
       - Multi-action explanation in one tool call → instruct Tester to split.
 
@@ -1206,7 +1178,7 @@ export class Pilot implements Agent {
 
       YOUR Pilot-only tools, both over the API:
 
-      queryApi(question) — read what data already exists. It changes nothing. Use it to check whether
+      askApi(question) — ask what data already exists. It changes nothing. Use it to check whether
       suitable data is already there before creating any, and to get the exact name or id of an existing
       record a step must act on.
 

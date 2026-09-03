@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { createFishermanTools } from '../../src/ai/fisherman-tools.ts';
 import { RequestHaul } from '../../src/ai/fisherman/request-haul.ts';
+import { createFishermanTools } from '../../src/ai/fisherman/tools.ts';
 
 describe('Fisherman tools', () => {
   it('does not present a rejected capture as a request example', async () => {

@@ -1,13 +1,15 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import type { ApiClient } from '../api/api-client.ts';
-import type { RequestResult } from '../api/request-result.ts';
-import type { RequestStore } from '../api/request-store.ts';
-import { extractEndpointDefinition } from '../api/spec-reader.ts';
-import { tag } from '../utils/logger.ts';
-import { isDynamicSegment } from '../utils/url-matcher.ts';
-import type { RequestHaul } from './fisherman/request-haul.ts';
+import type { ApiClient } from '../../api/api-client.ts';
+import type { RequestResult } from '../../api/request-result.ts';
+import type { RequestStore } from '../../api/request-store.ts';
+import { extractEndpointDefinition } from '../../api/spec-reader.ts';
+import type { Test } from '../../test-plan.ts';
+import { tag } from '../../utils/logger.ts';
+import { isDynamicSegment } from '../../utils/url-matcher.ts';
+import type { Fisherman } from '../fisherman.ts';
+import type { RequestHaul } from './request-haul.ts';
 
 const BODY_PREVIEW_LIMIT = 2000;
 
@@ -211,6 +213,40 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
   }
 
   return { tools, getResult, isFinished, finishFromText };
+}
+
+export function createAskApiTool(fisherman: Fisherman | null, task: Test) {
+  return {
+    askApi: tool({
+      description: dedent`
+        Ask what data already exists, changing nothing.
+        Ask a question about existing records: which ones are there, what they are called, whether a particular one exists.
+        Use it before precondition() to see whether suitable data is already available, and whenever a step needs the exact name or id of a record that is already there.
+        It never creates, edits or deletes anything — precondition() does that.
+      `,
+      inputSchema: z.object({
+        question: z.string().describe('What to find out about data that already exists'),
+      }),
+      execute: async ({ question }) => {
+        tag('info').log(`Ask API: ${question}`);
+
+        if (!fisherman?.isAvailable()) {
+          return { answered: false, reason: 'No API access is configured, so existing data cannot be queried. Judge from the page instead.' };
+        }
+
+        const result = await fisherman.lookupData(question, task.startUrl, task.sessionName);
+
+        if (!result.success) {
+          tag('warning').log(`Ask API unanswered: ${result.summary}`);
+          return { answered: false, reason: result.summary || 'The API could not answer this question' };
+        }
+
+        task.addNote(`Asked API: ${question} — ${result.summary}`);
+        tag('success').log(`Ask API: ${result.summary}`);
+        return { answered: true, answer: result.summary };
+      },
+    }),
+  };
 }
 
 export function verifyFinish(haul: RequestHaul, input: { summary: string; created: FishermanResult['created']; failed?: FishermanResult['failed'] }): { result: FishermanResult | null; error?: string } {
