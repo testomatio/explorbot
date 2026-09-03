@@ -9,7 +9,6 @@ import { Provider } from '../../src/ai/provider.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
 import { clearResearchCache, getCachedResearch, saveResearch } from '../../src/ai/researcher/cache.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { Stats } from '../../src/stats.ts';
 
 const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');
 const taskBoardResearch = readFileSync(join(UI_MAPS_DIR, 'task-board-research.md'), 'utf8');
@@ -146,7 +145,6 @@ describe('Researcher with aimock', () => {
     mock.resetMatchCounts();
     mock.clearFixtures();
     clearResearchCache();
-    Stats.researchDisabled = false;
     ConfigParser.setupTestConfig();
     clearActivity(true);
 

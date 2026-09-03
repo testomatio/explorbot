@@ -637,10 +637,6 @@ export class Tester extends TaskAgent implements Agent {
           <page_ui_map>
           ${research}
           </page_ui_map>
-
-          Use <page_ui_map> to understand the page structure and its main elements.
-          However, <page_ui_map> is not always up to date, use <page_aria> to understand the ACTUAL state of the page
-          Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
         `;
       } else if (alreadySeenUiMap) {
         uiMapSection = `\n\n<page_ui_map>UI map for ${currentUrl} was shown earlier in this session — refer to it above.</page_ui_map>`;
@@ -659,7 +655,10 @@ export class Tester extends TaskAgent implements Agent {
         </page_aria>
         ${uiMapSection}
 
+        Use <page_ui_map> to understand the page structure and its main elements.
+        However, <page_ui_map> is not always up to date, use <page_aria> to understand the ACTUAL state of the page
         Do not interact with elements that are not listed in <page_aria> or in HTML returned by tools
+        Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
       `;
       return context;
     }

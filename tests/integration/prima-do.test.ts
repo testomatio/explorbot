@@ -7,7 +7,6 @@ import { LLMock } from '@copilotkit/aimock';
 import { Prima } from '../../boat/prima/src/prima.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { Stats } from '../../src/stats.ts';
 
 const boardState = {
   url: '/tasks/board',
@@ -101,7 +100,6 @@ describe('Prima.do with aimock', () => {
 
   afterAll(async () => {
     await mock.stop();
-    Stats.researchDisabled = false;
     rmSync(artifacts, { recursive: true, force: true });
     ConfigParser.cleanupAllTestDirectories();
   });
