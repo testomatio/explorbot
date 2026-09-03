@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-03
+
+### Changes
+
+- [Fisherman] Can now answer questions about data that already exists, over read-only GET requests
+  that create or change nothing. It draws on the same endpoints it already knew about — an OpenAPI
+  spec when one is configured, or endpoints learned by watching browser traffic otherwise.
+- [Pilot] Gained a `queryApi(question)` tool alongside `precondition()`, available while planning a
+  test, reviewing a new page, and checking progress mid-run. It asks Fisherman what already exists —
+  whether suitable data is already there, or the exact name or id of an existing record — before
+  deciding whether to create anything.
+- [Explorer] Successful GET requests observed in the browser are now captured alongside write
+  requests, so Fisherman's read-only lookups work without an OpenAPI spec. Each is recorded as a
+  path and its query-parameter names only — never the response body or the parameter values.
+
 ## 2026-09-01
 
 ### Changes
