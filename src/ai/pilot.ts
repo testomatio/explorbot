@@ -734,6 +734,11 @@ export class Pilot implements Agent {
     return planning;
   }
 
+  private fishermanStatus(): string {
+    if (this.fisherman?.isAvailable()) return 'available';
+    return 'none';
+  }
+
   private buildFishermanTools(task: Test) {
     const unavailable = 'Data was not created and cannot be created automatically. Do not call precondition again for this test — continue with what the page already shows.';
     return {
@@ -745,7 +750,7 @@ export class Pilot implements Agent {
         execute: async ({ description }) => {
           task.addNote(`Precondition: ${description}`);
           tag('info').log(`Precondition: ${description}`);
-          debugLog(`precondition: ${description}, fisherman: ${this.fisherman?.isAvailable() ? 'available' : 'none'}`);
+          debugLog(`precondition: ${description}, fisherman: ${this.fishermanStatus()}`);
 
           if (!this.fisherman || !this.fisherman.isAvailable()) {
             const skipReason = await this.checkDataAvailability(task, description, 'Fisherman not available');
@@ -788,7 +793,7 @@ export class Pilot implements Agent {
         }),
         execute: async ({ question }) => {
           tag('info').log(`Query API: ${question}`);
-          debugLog(`queryApi: ${question}, fisherman: ${this.fisherman?.isAvailable() ? 'available' : 'none'}`);
+          debugLog(`queryApi: ${question}, fisherman: ${this.fishermanStatus()}`);
 
           if (!this.fisherman || !this.fisherman.isAvailable()) {
             return { answered: false, reason: 'No API access is configured, so existing data cannot be queried. Judge from the page instead.' };
