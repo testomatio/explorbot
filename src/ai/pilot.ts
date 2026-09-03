@@ -451,7 +451,8 @@ export class Pilot implements Agent {
 
         Plan the test execution for this scenario.
 
-        FIRST: Decide if precondition() is needed.
+        FIRST: Decide if precondition() is needed. When the page does not settle whether suitable data
+        already exists, call queryApi() to find out before creating any.
 
         Call precondition() WHEN:
         - The scenario edits/deletes/modifies an item, and you want a DISPOSABLE item to act on safely
@@ -687,7 +688,7 @@ export class Pilot implements Agent {
     }
     this.conversation!.addUserText(finalUserText);
 
-    const tools = { ...this.pickPlanningTools(), ...this.buildPreconditionTool(opts.task) };
+    const tools = { ...this.pickPlanningTools(), ...this.buildFishermanTools(opts.task) };
 
     const result = await this.provider.invokeConversation(this.conversation!, tools, {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
@@ -733,7 +734,7 @@ export class Pilot implements Agent {
     return planning;
   }
 
-  private buildPreconditionTool(task: Test) {
+  private buildFishermanTools(task: Test) {
     const unavailable = 'Data was not created and cannot be created automatically. Do not call precondition again for this test — continue with what the page already shows.';
     return {
       precondition: tool({
@@ -773,6 +774,36 @@ export class Pilot implements Agent {
           tag('success').log(stepText);
 
           return { noted: true, prepared: true, created: result.created };
+        },
+      }),
+      queryApi: tool({
+        description: dedent`
+          Read the API to learn what data already exists, changing nothing.
+          Ask a question about existing records: which ones are there, what they are called, whether a particular one exists.
+          Use it before precondition() to see whether suitable data is already available, and whenever a step needs the exact name or id of a record that is already there.
+          It never creates, edits or deletes anything — precondition() does that.
+        `,
+        inputSchema: z.object({
+          question: z.string().describe('What to find out about data that already exists'),
+        }),
+        execute: async ({ question }) => {
+          tag('info').log(`Query API: ${question}`);
+          debugLog(`queryApi: ${question}, fisherman: ${this.fisherman?.isAvailable() ? 'available' : 'none'}`);
+
+          if (!this.fisherman || !this.fisherman.isAvailable()) {
+            return { answered: false, reason: 'No API access is configured, so existing data cannot be queried. Judge from the page instead.' };
+          }
+
+          const result = await this.fisherman.lookupData(question, task.startUrl, task.sessionName);
+
+          if (!result.success) {
+            tag('warning').log(`Query API unanswered: ${result.summary}`);
+            return { answered: false, reason: result.summary || 'The API could not answer this question' };
+          }
+
+          task.addNote(`Queried API: ${question} — ${result.summary}`);
+          tag('success').log(`Query API: ${result.summary}`);
+          return { answered: true, answer: result.summary };
         },
       }),
     };
@@ -1147,7 +1178,7 @@ export class Pilot implements Agent {
       - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
       - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.
       - ariaDiff shows 5+ added/removed → page entered new mode (editor/modal); call context() before guessing selectors.
-      - Empty dropdown/list when items expected → missing data; call precondition() to create it.
+      - Empty dropdown/list when items expected → queryApi() to confirm none exist, then precondition() to create them.
       - Search-and-select needs SEQUENCE: focus trigger → type to filter → click option. Tell Tester to split into separate tool calls.
       - Multi-action explanation in one tool call → instruct Tester to split.
 
@@ -1163,8 +1194,13 @@ export class Pilot implements Agent {
 
       ${capabilityGroundingRule}
 
-      YOUR Pilot-only tool: precondition(description) — create FRESH disposable test data via API. Never
-      request users. Use when:
+      YOUR Pilot-only tools, both over the API:
+
+      queryApi(question) — read what data already exists. It changes nothing. Use it to check whether
+      suitable data is already there before creating any, and to get the exact name or id of an existing
+      record a step must act on.
+
+      precondition(description) — create FRESH disposable test data. Never request users. Use when:
 
       - Scenario edits/deletes/modifies an item → create a disposable target ("1 post").
       - Scenario needs auxiliary data (labels, categories, statuses for filtering).
