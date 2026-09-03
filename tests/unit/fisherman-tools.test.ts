@@ -191,3 +191,74 @@ function madeWrite(method: string, path: string, status: number, body: Record<st
     toSummary: () => `${method} ${path} → ${status} (0ms)`,
   };
 }
+
+function madeRead(path: string, status: number, body = '[]'): any {
+  return {
+    method: 'GET',
+    path,
+    status,
+    error: undefined,
+    isWrite: false,
+    rawResponseBody: body,
+    responseBody: JSON.parse(body),
+    statusText: String(status),
+    extractIdAndTitle: () => ({}),
+    toEndpoint: () => `GET ${path}`,
+    toSummary: () => `GET ${path} → ${status} (0ms)`,
+  };
+}
+
+describe('Fisherman read-only tools', () => {
+  it('offers no write method on the request tool', () => {
+    const { tools } = createFishermanTools({} as any, store(), { readOnly: true });
+
+    const methods = tools.request.inputSchema.shape.method.options;
+
+    expect(methods).toEqual(['GET']);
+  });
+
+  it('returns a body preview so the answer can quote real values', async () => {
+    const labels = madeRead('/api/labels', 200, '[{"id":1,"name":"Bug"}]');
+    const apiClient = { request: async () => labels };
+    const { tools } = createFishermanTools(apiClient as any, store(), { readOnly: true });
+
+    const result: any = await tools.request.execute({ method: 'GET', path: '/api/labels' }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.bodyPreview).toBe('[{"id":1,"name":"Bug"}]');
+  });
+
+  it('accepts a finish carrying the answer once a read succeeded', async () => {
+    const made: any[] = [];
+    const apiClient = { request: async () => madeRead('/api/labels', 200) };
+    const { tools, getResult } = createFishermanTools(apiClient as any, store(undefined, made), { readOnly: true });
+
+    await tools.request.execute({ method: 'GET', path: '/api/labels' }, {} as any);
+    const finished: any = await tools.finish.execute({ answer: 'No labels exist yet' }, {} as any);
+
+    expect(finished.finished).toBe(true);
+    expect(getResult()).toEqual({ success: true, summary: 'No labels exist yet', created: [], failed: [] });
+  });
+
+  it('rejects a finish when no read succeeded', async () => {
+    const { tools } = createFishermanTools({} as any, store(), { readOnly: true });
+
+    const finished: any = await tools.finish.execute({ answer: 'Three labels exist' }, {} as any);
+
+    expect(finished.finished).toBe(false);
+  });
+
+  it('reports no created items when a read run ends without finishing', async () => {
+    const made: any[] = [];
+    const apiClient = { request: async () => madeRead('/api/labels', 200) };
+    const { tools, getResult, finishFromText } = createFishermanTools(apiClient as any, store(undefined, made), { readOnly: true });
+
+    await tools.request.execute({ method: 'GET', path: '/api/labels' }, {} as any);
+    finishFromText('One label exists');
+
+    const result = getResult();
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('One label exists');
+    expect(result.created).toEqual([]);
+  });
+});
