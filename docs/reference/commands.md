@@ -53,7 +53,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | List registered sites | `npx explorbot sites` | — | Sites stored in the global installation |
 | Show resolved configuration | `npx explorbot config [url] [--json]` | `/config` | Models, config file, paths and `EXPLORBOT_*` in effect |
 | Show recommended models | `npx explorbot recommended-models [--json]` | `/recommended-models` | Models this version recommends per provider |
-| Describe commands | `npx explorbot help [command...] [--json]` | — | Text help, or the whole command tree as JSON |
+| Describe commands | `npx explorbot help-json [command...]` | — | The command tree as JSON: arguments, options, defaults |
 | Clean generated files | `npx explorbot clean [target]` | `/clean [target]` | Same targets both ways |
 
 ## Common CLI Options

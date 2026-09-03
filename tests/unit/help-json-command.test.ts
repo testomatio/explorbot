@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { Command } from 'commander';
-import { HelpCommand } from '../../src/commands/help-command.js';
+import { HelpJsonCommand } from '../../src/commands/help-json-command.js';
 
 const build = () => {
   const program = new Command();
@@ -10,9 +10,9 @@ const build = () => {
   return program;
 };
 
-describe('HelpCommand.data', () => {
+describe('HelpJsonCommand.data', () => {
   it('describes arguments, options and nested commands', () => {
-    const data = HelpCommand.data(build());
+    const data = HelpJsonCommand.data(build());
     const explore = data.commands.find((command) => command.name === 'explore')!;
 
     expect(explore.aliases).toEqual(['x']);
@@ -27,7 +27,7 @@ describe('HelpCommand.data', () => {
   });
 
   it('adds version and env vars only to the root command', () => {
-    const data = HelpCommand.data(build(), true);
+    const data = HelpJsonCommand.data(build(), true);
 
     expect(data.version).toBe('1.2.3');
     expect(data.env?.length).toBeGreaterThan(0);

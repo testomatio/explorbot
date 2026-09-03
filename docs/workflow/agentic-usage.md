@@ -68,15 +68,15 @@ This table is generated from the registry in `src/config.ts`, which also feeds `
 
 ### Discovering commands
 
-An agent that has to build a command line does not have to scrape help text. `help --json` prints the whole command tree — every command with its description, aliases, arguments, options and defaults, plus the version and the variables above:
+An agent that has to build a command line does not have to scrape help text. `help-json` prints the whole command tree — every command with its description, aliases, arguments, options and defaults, plus the version and the variables above:
 
 ```bash
-npx explorbot help --json | jq -r '.commands[] | "\(.name): \(.description)"'
-npx explorbot help explore --json | jq '.options'      # one command
-npx explorbot help api config --json                   # nested boat commands
+npx explorbot help-json | jq -r '.commands[] | "\(.name): \(.description)"'
+npx explorbot help-json explore | jq '.options'      # one command
+npx explorbot help-json api config                   # nested boat commands
 ```
 
-Any command given `--json` also suppresses the startup banner, so the output pipes straight into `jq`. `npx explorbot config --json` does the same for the resolved configuration.
+It prints nothing but JSON, so the output pipes straight into `jq`. `npx explorbot config --json` does the same for the resolved configuration.
 
 ### Naming models
 
