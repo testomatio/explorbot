@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import dedent from 'dedent';
 import { keepServerRunning } from '../../../src/browser-server.ts';
+import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { isVerboseMode, setQuietMode } from '../../../src/utils/logger.ts';
 import { clearActivityLine, trackActivityLine } from './activity-line.ts';
@@ -138,6 +139,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('--ephemeral', 'Keep no state between runs; applies to config-free runs, where output goes to a temp directory')
     .option('--framework <name>', 'Not active yet: framework the reported code targets, codeceptjs or playwright')
     .option('--url <url>', 'Page to open when the session has no page yet')
+    .option('--spec <path>', 'Docbot application spec directory or index.md to read as page knowledge')
     .option('--endpoint <ep>', 'Websocket endpoint of a browser server to attach to, skipping discovery')
     .option('--pw-session <title>', 'Title of the playwright-cli session to attach to')
     .addHelpText('after', `\n${sessionHelp}`);
@@ -148,6 +150,7 @@ function primaFor(options: any): Prima {
   if (options.ephemeral) process.env.EXPLORBOT_EPHEMERAL = '1';
   if (options.model) process.env.EXPLORBOT_AI_MODEL = options.model;
   if (options.visionModel) process.env.EXPLORBOT_VISION_MODEL = options.visionModel;
+  if (options.spec) process.env.EXPLORBOT_SPEC = options.spec;
   return new Prima(buildOptions(options));
 }
 
@@ -241,6 +244,8 @@ export function createPrimaCommands(name = 'prima'): Command {
       await prima.stop().catch(() => {});
       process.exit(0);
     });
+
+  RecommendedModelsCommand.register(cmd);
 
   addCommonOptions(cmd.command('status <hash>').description('Show the artifacts and page detail recorded for an earlier command'))
     .addHelpText('after', `\n${statusHelp}`)

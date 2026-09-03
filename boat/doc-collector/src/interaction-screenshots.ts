@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import pixelmatch from 'pixelmatch';
 import type { Page } from 'playwright';
 import { PNG } from 'pngjs';
+import { removeVisualAnnotations } from '../../../src/ai/researcher/coordinates.ts';
 
 const REGION_PADDING = 30;
 const SCREENSHOT_OPTIONS = { animations: 'disabled', caret: 'hide' } as const;
@@ -44,7 +45,7 @@ export function findChangedRegion(beforeScreenshot: Buffer, afterScreenshot: Buf
   return changedPixels ? addPadding(changedPixels, before.width, before.height, padding) : null;
 }
 
-function saveRegion(after: PNG, region: ScreenshotRegion, filePath: string): void {
+export function saveRegion(after: PNG, region: ScreenshotRegion, filePath: string): void {
   const cropped = new PNG({ width: region.width, height: region.height });
   PNG.bitblt(after, cropped, region.x, region.y, region.width, region.height, 0, 0);
   writeFileSync(filePath, PNG.sync.write(cropped));
@@ -73,20 +74,28 @@ function findChangedPixelBounds(before: PNG, after: PNG): ScreenshotRegion | nul
   return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
 }
 
-function addPadding(region: ScreenshotRegion, imageWidth: number, imageHeight: number, padding = REGION_PADDING): ScreenshotRegion {
+export function regionAround(png: PNG, box: { x: number; y: number; width: number; height: number }, viewport: { width: number; height: number } | null, padding: number): ScreenshotRegion {
+  let scaleX = 1;
+  let scaleY = 1;
+  if (viewport) {
+    scaleX = png.width / viewport.width;
+    scaleY = png.height / viewport.height;
+  }
+  const scaled: ScreenshotRegion = {
+    x: Math.round(box.x * scaleX),
+    y: Math.round(box.y * scaleY),
+    width: Math.round(box.width * scaleX),
+    height: Math.round(box.height * scaleY),
+  };
+  return addPadding(scaled, png.width, png.height, Math.round(padding * scaleX));
+}
+
+export function addPadding(region: ScreenshotRegion, imageWidth: number, imageHeight: number, padding = REGION_PADDING): ScreenshotRegion {
   const x = Math.max(0, region.x - padding);
   const y = Math.max(0, region.y - padding);
   const maxX = Math.min(imageWidth, region.x + region.width + padding);
   const maxY = Math.min(imageHeight, region.y + region.height + padding);
   return { x, y, width: maxX - x, height: maxY - y };
-}
-
-async function removeVisualAnnotations(page: Page): Promise<void> {
-  try {
-    await page.locator('[data-explorbot-annotation]').evaluateAll((elements) => {
-      for (const element of elements) element.remove();
-    });
-  } catch {}
 }
 
 async function findOverlayRegion(page: Page, image: PNG, detectUnmarkedOverlay: boolean): Promise<ScreenshotRegion | null> {

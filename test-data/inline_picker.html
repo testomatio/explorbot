@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New Plan — Deep Space</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; color: #1b2430; }
+  header { padding: 16px 32px; border-bottom: 1px solid #dfe4ea; }
+  main { padding: 24px 32px; }
+  section.recent { padding: 0 32px 32px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef1f5; }
+  label { display: block; margin-bottom: 4px; }
+  input[type=text] { width: 320px; padding: 8px 10px; border: 1px solid #c7cfd9; border-radius: 6px; }
+  button { padding: 8px 16px; border-radius: 6px; border: 1px solid #c7cfd9; background: #fff; cursor: pointer; }
+  .picker-backdrop { position: fixed; inset: 0; background: rgba(19, 26, 38, 0.55); }
+  .picker-dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 640px; max-height: 80vh; overflow: auto; background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.3); }
+  .picker-dialog h3 { margin: 0 0 12px; font-size: 18px; }
+  .picker-dialog ul { list-style: none; margin: 0 0 16px; padding: 0; }
+  .picker-dialog li { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid #eef1f5; }
+  .picker-actions { display: flex; gap: 10px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+<header><strong>Deep Space</strong></header>
+<main class="plan-form">
+  <h1>New Plan</h1>
+  <label for="title">Title</label>
+  <input id="title" name="title" type="text">
+  <p>
+    <button id="pick" type="button">Select from list</button>
+    <button id="save" type="button" disabled>Save</button>
+  </p>
+</main>
+<section class="recent">
+  <h2>Recent plans</h2>
+  <table>
+    <thead><tr><th>Plan</th><th>Owner</th><th>Tests</th><th>Updated</th><th></th></tr></thead>
+    <tbody id="plans"></tbody>
+  </table>
+</section>
+<script>
+  var plans = document.getElementById('plans');
+  for (var i = 1; i <= 40; i++) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>Release plan ' + i + '</td><td>orbital-team</td><td>' + (i * 7) + '</td><td>2 days ago</td><td><a href="/plans/' + i + '">Open</a></td>';
+    plans.appendChild(tr);
+  }
+
+  var suites = '';
+  for (var s = 1; s <= 12; s++) {
+    suites += '<li><input id="suite-' + s + '" type="checkbox" name="select ' + s + '">' +
+      '<label for="suite-' + s + '">Orbital suite ' + s + '</label><span>' + s + ' tests</span></li>';
+  }
+
+  document.getElementById('pick').addEventListener('click', function () {
+    document.querySelector('main.plan-form').insertAdjacentHTML('beforeend',
+      '<div class="picker-backdrop"></div>' +
+      '<div class="picker-dialog">' +
+        '<h3>Select tests for plan</h3>' +
+        '<label for="picker-search">Search</label>' +
+        '<input id="picker-search" type="search" placeholder="Search by title">' +
+        '<ul>' + suites + '</ul>' +
+        '<div class="picker-actions">' +
+          '<button type="button">Cancel</button>' +
+          '<button type="button" class="primary">Select 0 tests</button>' +
+        '</div>' +
+      '</div>');
+  });
+</script>
+</body>
+</html>

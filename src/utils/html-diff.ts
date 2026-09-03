@@ -1,7 +1,7 @@
 import { parse, serialize } from 'parse5';
 import type * as parse5TreeAdapter from 'parse5/lib/tree-adapters/default';
 import type { HtmlConfig } from '../config.ts';
-import { TAILWIND_CLASS_PATTERNS, TRASH_HTML_CLASSES, minifyHtml } from './html.ts';
+import { isTailwindClass, isTrashClass, minifyHtml } from './html.ts';
 import { isDynamicId, isGenericClass } from './xpath.ts';
 
 export interface HtmlDiffPart {
@@ -11,6 +11,7 @@ export interface HtmlDiffPart {
   added: string[];
   removed: string[];
   appearedSelector?: string;
+  containerWasEmpty?: boolean;
 }
 
 export interface HtmlDiffResult {
@@ -467,15 +468,13 @@ const directTextDiffer = (current: ElementNode, previous: ElementNode): boolean 
   return false;
 };
 
-const trashHtmlClasses = TRASH_HTML_CLASSES;
-
 function filterContainerClasses(classes: string[]): string[] {
   return classes
     .filter((cls) => !/\d/.test(cls))
     .filter((cls) => !isGenericClass(cls))
-    .filter((cls) => !trashHtmlClasses.test(cls))
+    .filter((cls) => !isTrashClass(cls))
     .filter((cls) => !/(:|__)/.test(cls))
-    .filter((cls) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(cls)));
+    .filter((cls) => !isTailwindClass(cls));
 }
 
 function buildContainerSelector(element: ElementNode, allElements: NodeMap): string | null {
@@ -641,7 +640,8 @@ async function buildDiffParts(originalMap: NodeMap, modifiedMap: NodeMap, pageSi
     const addedLines = appearedPaths.map((p) => `ELEMENT:${p}`);
     const removedLines: string[] = [];
 
-    const part: HtmlDiffPart = { container: selector, subtree, rawSize: serialized.length, added: addedLines, removed: removedLines };
+    const heldContentBefore = (originalMap.get(containerPath)?.childNodes ?? []).some((child) => 'tagName' in child && !!child.tagName);
+    const part: HtmlDiffPart = { container: selector, subtree, rawSize: serialized.length, added: addedLines, removed: removedLines, containerWasEmpty: !heldContentBefore };
     const appearedPath = appearedPaths[0];
     if (appearedPath) {
       const appearedElement = modifiedMap.get(appearedPath);

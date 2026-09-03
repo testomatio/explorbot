@@ -31,6 +31,7 @@ const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
 const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
+const PILOT_REQUEST_LIMIT = 5;
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -826,17 +827,17 @@ export class Pilot implements Agent {
     lines.push(`h3: ${state.h3 || ''}`);
     lines.push(`h4: ${state.h4 || ''}`);
 
-    const focusArea = state.overlay;
-    if (focusArea.detected) {
-      let line = `modal: ${focusArea.name || focusArea.type}`;
-      if (focusArea.root) line += ` (root: ${focusArea.root})`;
+    const region = state.overlay;
+    if (region.isModal) {
+      let line = `overlay: ${region.name || region.type}`;
+      if (region.root) line += ` (root: ${region.root})`;
       lines.push(line);
-    } else if (focusArea.present) {
-      let line = `region: ${focusArea.name || 'unnamed'} (inline`;
-      if (focusArea.root) line += `, root: ${focusArea.root}`;
+    } else if (region.isOpen) {
+      let line = `region: ${region.name || 'unnamed'} (inline`;
+      if (region.root) line += `, root: ${region.root}`;
       lines.push(`${line})`);
     } else {
-      lines.push('modal: none');
+      lines.push('overlay: none');
     }
 
     const tabs = this.stateManager.otherTabs;
@@ -1071,9 +1072,13 @@ export class Pilot implements Agent {
 
         if (t.output?.pageDiff?.urlChanged) line += `\n   moved: ${t.output.pageDiff.previousUrl} → ${t.output.pageDiff.currentUrl}`;
 
-        const failedRequests = (t.output?.pageDiff?.requests ?? []).filter((r: any) => r.status >= 400);
-        if (failedRequests.length > 0) {
-          line += `\n   requests: ${failedRequests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
+        const pageRequests = t.output?.pageDiff?.requests ?? [];
+        const requests = pageRequests
+          .filter((r: any) => r.status >= 400)
+          .concat(pageRequests.filter((r: any) => r.status < 400))
+          .slice(0, PILOT_REQUEST_LIMIT);
+        if (requests.length > 0) {
+          line += `\n   requests: ${requests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
         }
 
         const messages = (t.output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
@@ -1139,15 +1144,15 @@ export class Pilot implements Agent {
 
       Diagnostic patterns (use <state>, executed/element/skipped fields, ariaDiff):
       - Click failed + button in "disabled buttons" → required field missing. Instruct fill first.
-      - "modal: none" but Tester targets a modal → modal closed; re-trigger.
+      - "overlay: none" but Tester targets an overlay → overlay closed; re-trigger.
       - "region:" in <state> → a large area appeared in place without navigation (subview, wizard step, panel). Direct Tester to act inside it; the rest of the page is still usable.
       - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
-      - MultipleElementsFound → xpathCheck() to identify the right one, then precise locator or visualClick().
+      - MultipleElementsFound → nothing was clicked. Tell Tester to reuse the same locator with step.opts({ elementIndex: N }) from the numbered elements list.
       - Wrong page (settings vs feature) → getVisitedStates() then back() or reset(). Don't try breadcrumbs (SPA back-nav is unreliable).
       - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
       - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.
       - ariaDiff shows 5+ added/removed → page entered new mode (editor/modal); call context() before guessing selectors.
-      - Empty dropdown/list when items expected → missing data; call precondition() to create it.
+      - Empty dropdown/list when items expected → wait explicitly, then check the state changed: ariaDiff and any GET that loaded data. If still nothing loaded, confirm the empty state with verify().
       - Search-and-select needs SEQUENCE: focus trigger → type to filter → click option. Tell Tester to split into separate tool calls.
       - Multi-action explanation in one tool call → instruct Tester to split.
 

@@ -11,8 +11,9 @@ import { type DocbotConfig, DocbotConfigParser } from './config.ts';
 import { type DocumentedPage, type SkippedPage, renderPageDocumentation, renderSpecIndex } from './docs-renderer.ts';
 import { getDocPageKey, shouldCrawlDocPath } from './path-filter.ts';
 import { extractResearchNavigationTargets } from './research-navigation.ts';
-import { type DocumentationScreenshot, captureBeforeInteraction, captureDocumentationScreenshots, captureInteractionScreenshot } from './screenshots.ts';
+import { type DocumentationScreenshot, captureBeforeInteraction, captureDocumentationScreenshots, captureEvidenceScreenshots, captureInteractionScreenshot } from './screenshots.ts';
 import { renderMermaidBody } from './state-diagram.ts';
+import { type TemplateRecord, buildTemplateRecord, findTemplateMatch } from './template-dedup.ts';
 
 class DocBot {
   private explorBot: ExplorBot;
@@ -24,7 +25,7 @@ class DocBot {
 
   constructor(options: DocbotOptions = {}) {
     this.options = options;
-    const baseUrl = this.extractAbsoluteBaseUrl(options.startUrl || '/');
+    const baseUrl = this.extractAbsoluteBaseUrl(options.startUrl || '/') || options.baseUrl;
     this.explorBot = new ExplorBot({
       baseUrl,
       verbose: options.verbose,
@@ -60,6 +61,7 @@ class DocBot {
     const queue: string[] = [];
     const queued = new Set<string>();
     const documented = new Set<string>();
+    const templates: TemplateRecord[] = [];
     const pages: DocumentedPage[] = [];
     const skipped: SkippedPage[] = [];
     const baseUrl = this.explorBot.getConfig().playwright.url;
@@ -86,15 +88,6 @@ class DocBot {
         tag('info').log(`Collecting docs for ${this.toDisplayUrl(target, baseUrl)}`);
         await this.explorBot.visit(target);
 
-        if (stateManager.isInDeadLoop()) {
-          tag('warning').log('Dead loop detected during docs crawl, stopping collection');
-          skipped.push({
-            url: target,
-            reason: 'dead loop detected during crawl',
-          });
-          break;
-        }
-
         const state = this.explorBot.getCurrentState();
         if (!state) {
           skipped.push({
@@ -107,6 +100,22 @@ class DocBot {
         const pageKey = this.getPageKey(state.url || target);
         if (documented.has(pageKey)) {
           continue;
+        }
+
+        if (this.shouldCollapseTemplates(opts.collapseTemplatePages)) {
+          const templateUrl = findTemplateMatch(state.ariaSnapshot ?? null, templates, this.getTemplateSimilarity(opts.templateSimilarity));
+          if (templateUrl) {
+            skipped.push({
+              url: state.url,
+              reason: `same layout as ${templateUrl} (only content differs)`,
+            });
+            documented.add(pageKey);
+            for (const nextPath of this.extractNextPaths(state, baseUrl, '')) {
+              if (documented.has(this.getPageKey(nextPath)) || stateManager.hasVisitedState(nextPath)) continue;
+              this.enqueuePath(nextPath, queue, queued);
+            }
+            continue;
+          }
         }
 
         const research = await this.explorBot.agentResearcher().research(state, {
@@ -152,6 +161,9 @@ class DocBot {
           filePath,
         });
         documented.add(pageKey);
+
+        const templateRecord = buildTemplateRecord(state.url, state.ariaSnapshot ?? null);
+        if (templateRecord) templates.push(templateRecord);
 
         const nextPaths = this.extractNextPaths(state, baseUrl, research, documentation);
         const interactionPriorityPaths = new Set(this.extractInteractionPaths(baseUrl, documentation));
@@ -207,6 +219,23 @@ class DocBot {
       return false;
     }
     return true;
+  }
+
+  private shouldCollapseTemplates(override?: boolean): boolean {
+    if (override === false) {
+      return false;
+    }
+    if (this.config.docs?.collapseTemplatePages === false) {
+      return false;
+    }
+    return true;
+  }
+
+  private getTemplateSimilarity(override?: number): number | undefined {
+    const value = override ?? this.config.docs?.templateSimilarity;
+    if (value == null) return undefined;
+    if (!Number.isFinite(value) || value <= 0 || value > 100) return undefined;
+    return value;
   }
 
   private extractNextPaths(state: WebPageState, baseUrl: string, research: string, documentation?: PageDocumentation): string[] {
@@ -446,7 +475,8 @@ class DocBot {
   private async savePageDocumentation(state: WebPageState, documentation: PageDocumentation, research: string): Promise<string> {
     const pagePath = this.getPageFilePath(state.url);
     const screenshots = await this.captureScreenshots(state, research, pagePath);
-    writeFileSync(pagePath, renderPageDocumentation(state, documentation, screenshots), 'utf8');
+    const evidence = await this.captureEvidence(state, documentation, research, pagePath);
+    writeFileSync(pagePath, renderPageDocumentation(state, documentation, screenshots, evidence), 'utf8');
     return pagePath;
   }
 
@@ -459,6 +489,19 @@ class DocBot {
       pageFilePath: pagePath,
       screenshotsDir: this.getScreenshotsDir(),
       config: this.config,
+    });
+  }
+
+  private async captureEvidence(state: WebPageState, documentation: PageDocumentation, research: string, pagePath: string): Promise<Array<DocumentationScreenshot | null>> {
+    if (!this.shouldUseScreenshots()) {
+      return documentation.can.map(() => null);
+    }
+
+    return captureEvidenceScreenshots(this.explorBot.getExplorer(), state, documentation, {
+      pageFilePath: pagePath,
+      screenshotsDir: this.getScreenshotsDir(),
+      config: this.config,
+      research,
     });
   }
 
@@ -505,6 +548,8 @@ interface DocbotOptions extends ExplorBotOptions {
 
 interface CollectOptions {
   maxPages?: number;
+  collapseTemplatePages?: boolean;
+  templateSimilarity?: number;
 }
 
 interface CollectionResult {
