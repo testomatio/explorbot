@@ -12,7 +12,7 @@ import { mdq } from '../../utils/markdown-query.ts';
 import { truncate } from '../../utils/strings.ts';
 import type { Provider } from '../provider.js';
 import { getCachedResearch, getPreviousResearch, saveResearch } from './cache.ts';
-import { type Constructor, debugLog, researchEnabled } from './mixin.ts';
+import { type Constructor, debugLog } from './mixin.ts';
 import { type ResearchElement, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
 
@@ -88,7 +88,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     }
 
     async researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null> {
-      if (!researchEnabled(this.config)) return null;
+      if (this.config.ai?.agents?.researcher?.enabled === false) return null;
 
       const region = current.overlay;
       if (!region.isOpen || !region.name) return null;

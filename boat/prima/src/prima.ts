@@ -148,7 +148,6 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
-    this.allowResearch(false);
     const provider = this.bot.getProvider();
     const previousState = await this.baselineState();
     const conversation = provider.startConversation(this.instructionSystemPrompt(), AI_AGENT_NAME);
@@ -347,7 +346,6 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
-    this.allowResearch(false);
     const previousState = await this.baselineState();
     const outcomes = expected.length ? expected : [scenario];
     const test = new Test(scenario, 'normal', outcomes, previousState?.url || this.options.url || '');
@@ -423,7 +421,6 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
-    this.allowResearch(true);
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
     const uiMap = await this.bot.agentResearcher().research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
@@ -585,7 +582,14 @@ export class Prima {
   }
 
   private async loadConfig(): Promise<ExplorbotConfig> {
-    return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path, baseUrl: this.configBaseUrl() });
+    const config = await ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path, baseUrl: this.configBaseUrl() });
+    const ai = config.ai;
+    if (ai) {
+      ai.agents ??= {};
+      ai.agents.researcher ??= {};
+      ai.agents.researcher.enabled ??= this.options.command === 'research';
+    }
+    return config;
   }
 
   private configBaseUrl(): string | undefined {
@@ -1019,14 +1023,6 @@ export class Prima {
     };
   }
 
-  private allowResearch(allowed: boolean): void {
-    const ai = this.bot.getConfig?.()?.ai;
-    if (!ai) return;
-    ai.agents ??= {};
-    ai.agents.researcher ??= {};
-    ai.agents.researcher.enabled = allowed;
-  }
-
   private async capturedResult(previousState: WebPageState | null, opts: { screenshot?: boolean } = {}): Promise<ActionResult> {
     const captured = await this.bot
       .getExplorer()
@@ -1168,4 +1164,5 @@ export interface PrimaOptions {
   headless?: boolean;
   endpoint?: string;
   pwSession?: string;
+  command?: string;
 }

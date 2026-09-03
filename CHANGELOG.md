@@ -42,8 +42,8 @@
 ### Configuration
 
 - **`ai.agents.researcher.enabled`** — set it to `false` and the Researcher answers with the map
-  already recorded for a page and produces none. Prima's `check` and `do` set it for themselves;
-  `prima research` is what turns it back on.
+  already recorded for a page and produces none. Prima resolves it when it loads config: off for
+  every command except `prima research`, and whatever your config file says wins.
 
   ```javascript
   ai: { agents: { researcher: { enabled: false } } }

@@ -23,7 +23,6 @@ import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportRese
 import { type CoordinateMethods, WithCoordinates } from './researcher/coordinates.ts';
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
 import { detectFocusedSection, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
-import { researchEnabled } from './researcher/mixin.ts';
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
 import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
@@ -110,7 +109,7 @@ export class Researcher extends ResearcherBase implements Agent {
       }
     }
 
-    if (!researchEnabled(this.config)) {
+    if (this.config.ai?.agents?.researcher?.enabled === false) {
       debugLog('Researcher is disabled, answering with the recorded map');
       const recorded = getPreviousResearch(stateHash);
       if (recorded) reportResearch(stateHash, recorded);
