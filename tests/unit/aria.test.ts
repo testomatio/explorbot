@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { compactAriaSnapshot, diffAriaSnapshots, parseAriaLocator } from '../../src/utils/aria.ts';
+import { ariaTemplateSignature, compactAriaSnapshot, diffAriaSnapshots, parseAriaLocator } from '../../src/utils/aria.ts';
 
 describe('aria', () => {
   it('returns null diff for identical snapshots', () => {
@@ -261,5 +261,27 @@ describe('aria', () => {
 
   it('rejects a key that carries no accessible name', () => {
     expect(parseAriaLocator("{ role: 'button', aria-label: 'Close' }")).toBeNull();
+  });
+});
+
+describe('ariaTemplateSignature', () => {
+  it('drops chrome landmarks, names and prose from the signature', () => {
+    const snapshot = ['- banner:', '  - link "Acme"', '- navigation "Main":', '  - link "Blog"', '- main:', '  - heading "Title" [level=1]', '  - paragraph: Some prose here.', '  - button "Save"'].join('\n');
+
+    const signature = ariaTemplateSignature(snapshot);
+
+    expect([...signature]).toEqual(['main', 'main/heading', 'main/paragraph', 'main/button']);
+  });
+
+  it('ignores content differences between pages of one template', () => {
+    const first = ['- main:', '  - article:', '    - heading "Shipping velocity" [level=1]', '    - paragraph: First paragraph.', '    - paragraph: Second paragraph.', '    - button "Share"'].join('\n');
+    const second = ['- main:', '  - article:', '    - heading "Release notes" [level=1]', '    - paragraph: One.', '    - paragraph: Two.', '    - paragraph: Three.', '    - paragraph: Four.', '    - button "Share"'].join('\n');
+
+    expect(ariaTemplateSignature(first)).toEqual(ariaTemplateSignature(second));
+  });
+
+  it('returns an empty signature for missing or broken snapshots', () => {
+    expect(ariaTemplateSignature(null).size).toBe(0);
+    expect(ariaTemplateSignature('::not yaml::{').size).toBe(0);
   });
 });

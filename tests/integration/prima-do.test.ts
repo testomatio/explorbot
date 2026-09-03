@@ -90,7 +90,7 @@ describe('Prima.do with aimock', () => {
       getExplorer: () => ({ action: () => action, capture: async () => null }),
       stateManager: () => ({ getCurrentState: () => boardState, getVisitCount: () => 1 }),
       getCurrentState: () => boardState,
-      requestStore: () => ({ getRequests: () => [] }),
+      requestStore: () => ({ getMadeRequests: () => [] }),
       getProvider: () => provider,
       experienceTracker: () => ({ renderExperienceTocFor: () => '' }),
       agentResearcher: () => ({}),

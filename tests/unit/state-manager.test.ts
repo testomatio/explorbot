@@ -394,7 +394,7 @@ describe('StateManager', () => {
       stateManager.updateState(base);
       const historyAfterBase = stateManager.getStateHistory().length;
 
-      const withDrawer = new ActionResult({ url: '/users', html, overlay: { type: 'modal', name: 'Edit User', root: 'aside.panel' } });
+      const withDrawer = new ActionResult({ url: '/users', html, overlay: { type: 'overlay', name: 'Edit User', root: 'aside.panel' } });
       stateManager.updateState(withDrawer);
       expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 1);
 
@@ -403,12 +403,12 @@ describe('StateManager', () => {
       expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 2);
     });
 
-    it('records a transition for an unnamed region via hasRegionAppeared', () => {
+    it('records a transition for an unnamed region via regionOpened', () => {
       const base = new ActionResult({ url: '/users', html });
       stateManager.updateState(base);
       const historyAfterBase = stateManager.getStateHistory().length;
 
-      const unnamed = new ActionResult({ url: '/users', html, overlay: { type: 'modal' } });
+      const unnamed = new ActionResult({ url: '/users', html, overlay: { type: 'overlay' } });
       stateManager.updateState(unnamed);
       expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 1);
     });

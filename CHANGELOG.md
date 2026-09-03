@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-09-03
+## 2026-09-04
 
 ### New CLI Options
 
@@ -16,6 +16,113 @@
 - **`--json`** — Passing it to any command now also suppresses the startup banner, so
   `explorbot config --json | jq` and `explorbot help --json | jq` work without setting
   `EXPLORBOT_NO_BANNER`.
+
+## 2026-09-03
+
+### Changes
+
+- Click tool: A locator that matches several elements is now reported as a failure that clicked nothing,
+  together with the numbered list of what matched. Explorbot no longer guesses which one you meant and
+  clicks it — a guess used to land a real click, so a control that toggles could be switched back by a
+  retry the model thought had failed. The AI now picks a match by its number instead.
+- [Pilot] An empty dropdown or list no longer counts on its own as missing data. Pilot now has the
+  tester wait, checks the page actually changed and that a request went out to load the items, and
+  only calls the list empty once that has been verified. A list that was still loading, or one whose
+  options had not been opened yet, used to be read as "this app has no such data" and the scenario
+  was skipped as impossible.
+- [Pilot] The requests it sees after each action now include the ones that succeeded, not only the
+  failures, so a page that fetched its data is distinguishable from one that never asked for any.
+- State Manager: A dialog that opens inside the panel it covers, rather than in a container of its
+  own, is now scoped to the dialog. Explorbot used to name the form behind it as the area to work
+  in, so clicks were sent with the wrong context and recipes were filed against the wrong scope.
+  Dialogs that do get their own container keep naming that container, which stays stable between
+  runs.
+- Page Diff: The markup shown for a panel that does not fit the size budget now keeps its ending as
+  well as its beginning. A picker with a long list used to be cut off before its buttons, leaving
+  the agent hunting for a Cancel or Confirm it could not see.
+
+## 2026-09-02
+
+### Changes
+
+- Doc Collector: Generated page docs now lead with what a reader needs. User Can and User Might come
+  right after the purpose, followed by screenshots and a new Navigation section; state maps, state
+  transitions and coverage notes move to the end. The site index follows the same logic — the page
+  list comes before the state diagrams.
+- Doc Collector: Links to other pages are listed in their own Navigation section and no longer counted
+  as capabilities. The documentarian is told that going to another page is navigation, not a capability,
+  so "user can open Settings" no longer pads User Can. Capabilities from unrelated embedded support,
+  marketing, consent, and feedback widgets are excluded as well.
+- Doc Collector: Documentation screenshots no longer carry the research markup. The boxes, element
+  numbers and the corner legend drawn for the vision model stayed in the page after research and ended
+  up in every page and section screenshot. They are now removed from the page as soon as the vision
+  analysis is done, before any documentation capture.
+- Doc Collector: Pages that share a documented layout are skipped by default. On template-driven
+  sections like a blog, every post used to get full research and its own page doc while differing
+  only in prose. After a page loads, the crawler compares its structure — the tree of ARIA roles with
+  all text dropped — against the pages already documented; a page whose layout matches is skipped and
+  reported in the index as `same layout as <url> (only content differs)`. URL collapsing already
+  handled `/users/1`-style pages; this catches slug pages like `/blog/my-post` it cannot see. A page
+  counts as a clone at 90% structural similarity — identical templates score near 100, look-alike
+  pages of different purpose score around 80 and stay documented. The bar moves with
+  `docs.templateSimilarity` or `--template-similarity <percent>`, and the whole feature turns off with
+  `docs.collapseTemplatePages: false` or `--no-collapse-template-pages`. Links found on a collapsed page
+  are still added to the crawl queue, so deduplication cannot hide unique downstream pages.
+- Doc Collector: Proven capabilities now carry a picture. Each User Can bullet names the control that
+  proves it, and the collector crops that element from a live screenshot with generous surrounding
+  context (~250px) so the reader sees where on the page it sits — not a bare close-up. Bullets whose
+  proving control cannot be found stay text-only; nothing fails when the element is gone.
+- Doc Collector: Documentation capture dismisses transient overlays before taking page, section, and
+  capability evidence screenshots, preventing a previously opened dialog or embedded widget from
+  covering the control being documented.
+### New CLI Options
+
+- **`recommended-models`** — Prints the model this version recommends for every role of every AI
+  provider, and the two ways to select one. Set `EXPLORBOT_AI_PROVIDER` and every role takes that
+  provider's recommendation; leave it out and pin the roles yourself with `EXPLORBOT_AI_MODEL`,
+  `EXPLORBOT_VISION_MODEL` and `EXPLORBOT_AGENTIC_MODEL`, which it prints filled in, ready to paste.
+  A role a provider does not serve is named as such. It ends with the model variables and provider
+  keys currently exported, and an OpenRouter one-liner. It reads only the bundled recommendations,
+  so it answers before any configuration exists, and every CLI carries it.
+
+  ```bash
+  explorbot recommended-models          # every provider, both ways to select
+  explorbot recommended-models --json   # the bundled recommendations as an object
+  explorbot api recommended-models      # the same for the API boat, also docs and prima
+  ```
+
+### New TUI Commands
+
+- **`/recommended-models`** — The same list, inside the TUI.
+
+  ```
+  /recommended-models
+  ```
+
+### Changes
+
+- The errors raised when no model is configured now name `recommended-models` as the way to pick
+  one; the vision error points at the providers that serve a vision model.
+- Utils: The tailwind/trash class checks are now named predicates (`isTailwindClass`, `isTrashClass`) shared
+  by the HTML snapshots and the diff's container-class filter, replacing three copies of the same inline
+  lambda.
+- Config: `dynamicPageRegex` now extends the built-in dynamic-segment heuristics (numeric, UUID,
+  ULID, hex) instead of replacing them. Previously, setting a custom pattern silently disabled
+  every built-in match on any segment the custom pattern didn't also cover.
+- API Requests: Page-URL generalization and the API endpoint list now share one implementation.
+  The endpoint list used to walk paths with its own copy of the dynamic-segment logic, which could
+  drift from the URL matcher used everywhere else.
+- State Manager: A dialog is now recognised from how much of the screen it blocks and how much
+  there is to do inside it, instead of from how much markup it brings. Small confirmation dialogs —
+  "Delete project?" with two buttons — used to be too small to notice, and the agent now scopes its
+  work to them.
+- State Manager: Bars pinned to an edge of the page — cookie notices, toasts, notification panels —
+  are no longer treated as the area to work in. They leave the rest of the page usable, so testing
+  continues on the page behind them.
+- State Manager: The size floor still applies to panels that appear inside the page, such as an
+  inline drawer or a split-pane form.
+- The area the agent is told to stay inside is called an overlay when it floats above the page and
+  a region when it sits in it. Logs and the supervisor's notes now use that wording throughout.
 
 ## 2026-09-01
 
@@ -43,6 +150,22 @@
 - Experience Tracker: An unnamed panel no longer marks a page's own experience file as
   panel-scoped. When it did, that page's entire experience became invisible whenever no panel was
   open.
+- Test Plan: A plan file passed to `explorbot test` is now resolved once — the pre-config peek and
+  the run itself share the same parsed file, instead of being scanned and parsed twice with two
+  different search orders. Cross-site directory scanning (looking a path up across every registered
+  site, used by plan loading and by prima's `status`) now has a single owner in `global-config.ts`.
+- [Planner] A test now covers one operation instead of a record's whole lifecycle. Creating a
+  record, renaming it and deleting it used to land in a single scenario, because the planner was
+  told to merge any scenarios that depended on each other. Those chains were the longest tests of a
+  run and failed as a whole at the first broken step, so nothing after that step was ever checked.
+  They are three tests now, each verifying one operation.
+- [Planner] Test data is no longer labelled "disposable" in scenario titles. The word leaked in
+  from the rule that forbids destroying pre-existing data, and the planner sometimes read it as a
+  kind of record that already exists — writing a test that acted on "the disposable record created
+  for this scenario" without any step that created it.
+- [Planner] Scenarios are no longer planned for a record the page reports as missing. When a detail
+  page shows a not-found message instead of the record, the list and recovery behavior are planned
+  instead of edit or delete steps that stop immediately.
 
 ## 2026-08-31
 
@@ -104,8 +227,49 @@
 
 ## 2026-08-30
 
+### New CLI Options
+
+- **`--endpoint`** (api) — The base API endpoint an `explorbot api` run tests, so the API boat no longer
+  needs a config file to know where the API is. `api test`, which takes a plan file rather than an
+  endpoint, reads it from here too, and a path prefix is kept: given
+  `https://api.example.com/v1`, a step on `/users` is sent to `https://api.example.com/v1/users`.
+  It sets the same value as `EXPLORBOT_URL`, and wins when both are given.
+  ```bash
+  explorbot api plan /users --endpoint https://api.example.com/v1
+  explorbot api test output/plans/users.md --endpoint https://api.example.com/v1
+  ```
+- **`--spec`** (api) — The OpenAPI spec for the run, as a local file or a URL. Chief plans from it and
+  Curler looks up schemas in it; given here it replaces `api.spec` from the config file. It sets the
+  same value as `EXPLORBOT_API_SPEC`.
+  ```bash
+  explorbot api plan /users --spec ./openapi.yaml
+  explorbot api plan /users --spec https://api.example.com/openapi.json
+  ```
+- **`--spec`** (prima) — The collected documentation a prima run reads as page knowledge: a Docbot
+  application spec directory, or its `index.md`. It is the flag form of the `--spec` that
+  `explorbot start` already takes, and the new `EXPLORBOT_SPEC` variable sets the same thing for
+  every browser command — `PRIMA_CLI_SPEC` for prima, like the other variables it mirrors.
+  ```bash
+  prima check "a project can be archived" --spec output/docs
+  PRIMA_CLI_SPEC=output/docs prima do "open the account menu"
+  ```
+- **`--url`** (docs collect) — The base URL to document when the path argument is relative, so the
+  site can come from the command line rather than only from an absolute path or the environment. An
+  absolute path argument still carries its own. Same value as `EXPLORBOT_URL`.
+  ```bash
+  explorbot docs collect /dashboard --url https://app.example.com
+  ```
+
 ### Changes
 
+- Knowledge from `EXPLORBOT_KNOWLEDGE` and `EXPLORBOT_KNOWLEDGE_FILE` now reaches runs that use the
+  global configuration in `~/.explorbot` — exploration, prima, doc collection and API testing alike.
+  Each run writes what they carry into the site's knowledge directory, where the agents read it like
+  any other knowledge file; the next run rewrites it, and a run that sets neither variable removes
+  it, so `learn` and `know` remain the way to keep a fact. Until now those two variables only had an
+  effect when no configuration file existed at all.
+- `config` no longer prints a directory as the project root with an absolute path glued onto the
+  end. An absolute `dirs` entry, such as an application spec outside the project, is shown as it is.
 - State Manager: An open panel now stays part of the state until it actually closes. Detection used
   to fire only on the single action that opened a drawer — one step later the agent forgot the
   drawer existed, so its scope hints, the Pilot's state line and the panel's own experience file
@@ -182,6 +346,14 @@
 
 ### Changes
 
+- [Planner] A page that reports the thing you asked for does not exist gets no test plan. A missing
+  record, a failed load, or a page with nothing on it still came back with a full set of invented
+  scenarios, every one of them written against a page that had nothing to click. The planner now
+  proposes nothing for such a page.
+- Explore: A sub-page with nothing to test is skipped and exploration moves straight on to the next
+  candidate page. An error page is caught before any research or planning runs on it, and a page the
+  planner proposes no scenarios for is dropped as well, instead of being reported as a planning
+  failure and retried once per planning style.
 - State Manager: Drawers, side panels and swapped-in subviews are now recognised as pages in their
   own right. Until now only a modal that announced itself as a dialog counted as a state; a panel
   built as a plain positioned element, or a wizard step that replaced half the screen without
@@ -406,6 +578,35 @@
 
 ## 2026-08-23
 
+### New CLI Options
+
+- **`--knowledge`** — Facts for one run, passed on the command line instead of stored in `knowledge/`.
+  Nothing is written to disk, so credentials and one-off test data stay out of the repository. Plain
+  text applies everywhere; frontmatter scopes it to a page (`url:`) or an API endpoint (`endpoint:`),
+  with the same patterns knowledge files use. `${env.VAR}` interpolation and page automation fields
+  such as `wait` work as they do in files. Repeat the flag for several facts. Like `--ws`, it is a
+  program-level option: it works on every command of `explorbot`, `explorbot api`, `explorbot docs`
+  and `prima`, and can go anywhere on the line.
+  ```bash
+  explorbot explore /pay --knowledge 'My credit card is 4111 1111 1111 1111'
+  explorbot explore / --knowledge '---
+  url: /login
+  ---
+  Log in as admin@example.com / secret123'
+  explorbot api explore /orders --knowledge 'Send X-Api-Key on every request'
+  prima check "checkout completes" --knowledge 'Use the sandbox card 4111 1111 1111 1111'
+  ```
+- **`--save-knowledge`** (renamed) — `explorbot drill --knowledge <path>` is now
+  `explorbot drill --save-knowledge <path>`, and `/drill --knowledge` is now `/drill --save-knowledge`.
+  It still saves the interactions drilling learned to a knowledge file at that URL path; the rename
+  frees `--knowledge` for the session facts above.
+  ```bash
+  explorbot drill /login --save-knowledge /login
+  ```
+  ```
+  /drill --save-knowledge /login --max-components 10
+  ```
+
 ### Changes
 
 - Prima reads `PRIMA_CLI_*` environment variables. Each one mirrors the `EXPLORBOT_*` variable of the
@@ -433,6 +634,13 @@
   the test.
 - [Pilot] The Pilot no longer pushes a full page of HTML into the Tester mid-test. It can still
   attach the accessibility tree, a page summary, or the UI map when recent actions failed.
+- [Chief] Now reads endpoint knowledge when planning API tests, so auth rules and business
+  constraints written with `explorbot api know` reach the plan.
+- [Curler] Now reads endpoint knowledge when running an API test, so auth headers and payload rules
+  reach the requests themselves rather than only the plan.
+- Knowledge scoped to an API endpoint no longer reaches browser pages. A knowledge file or
+  `--knowledge` entry with `endpoint:` frontmatter is API knowledge, one with `url:` is page
+  knowledge, and one with neither still applies to both.
 - Prima now ships as its own npm package, so `npx prima-cli` runs it without installing explorbot
   first. It is the same tool as the `prima` command that comes with explorbot, built from the same
   source and released alongside it — only the package name and the binary differ.

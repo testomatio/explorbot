@@ -33,7 +33,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Generate test plan | `npx explorbot plan <path>` | `/plan [--focus <feature>]` | Writes plan markdown |
 | List saved plans | `npx explorbot plans [plan]` | `/plans [plan]` | Show plans and their tests |
 | Navigate to a URL | `npx explorbot navigate <url>` | `/navigate <target>` | Reachability probe + session capture |
-| Drill page components | `npx explorbot drill <url>` | `/drill [--knowledge <path>] [--max-components <n>]` | Learn interactions |
+| Drill page components | `npx explorbot drill <url>` | `/drill [--save-knowledge <path>] [--max-components <n>]` | Learn interactions |
 | Execute plan tests | `npx explorbot test <planfile> [index]` | `/test [scenario\|number\|*]` | Run scenarios |
 | Re-run generated tests | `npx explorbot rerun <file> [index]` | `/rerun <file> [index]` | With AI auto-healing |
 | List generated tests | `npx explorbot runs [file]` | `/runs [file]` | Index + dry-run |
@@ -52,6 +52,7 @@ Inside the TUI, use the matching slash command: `/explore`, `/research`, `/plan`
 | Initialize project | `npx explorbot init` | — | Generates `explorbot.config.*`, or `~/.explorbot` with `--global` |
 | List registered sites | `npx explorbot sites` | — | Sites stored in the global installation |
 | Show resolved configuration | `npx explorbot config [url] [--json]` | `/config` | Models, config file, paths and `EXPLORBOT_*` in effect |
+| Show recommended models | `npx explorbot recommended-models [--json]` | `/recommended-models` | Models this version recommends per provider |
 | Describe commands | `npx explorbot help [command...] [--json]` | — | Text help, or the whole command tree as JSON |
 | Clean generated files | `npx explorbot clean [target]` | `/clean [target]` | Same targets both ways |
 
@@ -69,6 +70,16 @@ Every CLI command that drives a browser accepts these options (`start`, `explore
 | `--headless` | Run browser in headless mode |
 | `--incognito` | Run without recording experiences |
 | `--session [file]` | Save/restore browser session (cookies, localStorage) from file |
+
+### `--knowledge`
+
+Passes facts to the run without creating a file in `knowledge/`. Plain text applies everywhere; add frontmatter to scope it to a page or an API endpoint. Repeat the flag for several facts. See [Knowledge](../workflow/knowledge.md#per-session-knowledge).
+
+```bash
+npx explorbot explore /pay --knowledge 'Test card 4111 1111 1111 1111, any future expiry'
+```
+
+Like `--ws`, it is a program-level option rather than a per-command one: it works on every command — including `api`, `docs` and `prima` — and can go anywhere on the line. It is listed under `npx explorbot --help` rather than in each command's own help.
 
 ### `--session`
 
@@ -105,12 +116,15 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_EPHEMERAL` | Keep no state between runs — output goes to a fresh temp directory instead of the site dir |
 | `EXPLORBOT_KNOWLEDGE` | Inline knowledge text, applied to every page |
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
+| `EXPLORBOT_SPEC` | Docbot application spec directory or index.md, used as page knowledge |
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
 | `EXPLORBOT_MAX_DURATION` | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->
 
 `npx explorbot config` prints the values a run actually uses — models per role, the config file behind them, the output, knowledge and experience directories, and every `EXPLORBOT_*` variable currently set. The boats answer for their own configuration the same way: `npx explorbot api config`, `npx explorbot docs config`, `npx explorbot prima config`. Add `--json` on any of them to get the same values as an object a script can read.
+
+`npx explorbot recommended-models` prints, per provider, the model this version recommends for each role, and the two ways to select it. Both need the provider's API key exported. Set `EXPLORBOT_AI_PROVIDER=<name>` and every role takes that provider's recommendation; leave it out and pin the roles yourself with `EXPLORBOT_AI_MODEL`, `EXPLORBOT_VISION_MODEL` and `EXPLORBOT_AGENTIC_MODEL`, each written as `provider/model-id` — the command prints those three lines filled in, ready to paste. A role a provider does not serve is named as such, so you know to pair it with another. It closes with the model variables and provider keys currently exported, and a ready-to-run OpenRouter one-liner. It reads nothing but the bundled recommendations, so it answers before any configuration exists and every CLI carries it: `npx explorbot api recommended-models`, `npx explorbot docs recommended-models`, `npx prima recommended-models`. `--json` prints the bundled recommendations as an object.
 
 Explorbot resolves its configuration in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then the `EXPLORBOT_*` variables, and finally `~/.explorbot/config.*` from the global installation. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
 
@@ -445,18 +459,18 @@ Drill all components on a page to learn interactions.
 # CLI
 npx explorbot drill /components
 npx explorbot drill /components --max-components 10
-npx explorbot drill /login --knowledge /login
+npx explorbot drill /login --save-knowledge /login
 ```
 
 ```
 # TUI
 /drill
-/drill --knowledge /login --max-components 10
+/drill --save-knowledge /login --max-components 10
 ```
 
 | Option | Description |
 |---|---|
-| `--knowledge <path>` | Save learned interactions to a knowledge file at this URL path |
+| `--save-knowledge <path>` | Save learned interactions to a knowledge file at this URL path |
 | `--max-components <count>` | Maximum number of components to drill |
 
 ## Test Rerun
@@ -594,8 +608,14 @@ Crawl pages and generate a documentation spec with `Purpose`, `User Can`, and `U
 ```bash
 npx explorbot docs collect /users/sign_in
 npx explorbot docs collect /docs/openapi#tag/project-analytics-tags --max-pages 20
+npx explorbot docs collect /dashboard --url https://app.example.com
 npx explorbot docs collect https://teleportal.ua/ua/serials/stb/kod --path explorbot-testing --show --session --max-pages 20
 ```
+
+| Option | Description |
+|---|---|
+| `--url <url>` | Base URL of the site, for a relative path argument. Same as `EXPLORBOT_URL`; an absolute path argument carries its own |
+| `--max-pages <count>` | Stop after documenting this many pages |
 
 Output is written to:
 
@@ -719,6 +739,7 @@ Every command takes these:
 | `-i, --instance <name>` | Which prima-owned browser to talk to; parallel work needs one each |
 | `--session [file]` | Cookies and storage persisted across processes; ignored while attached, since the attached session keeps its own |
 | `--url <url>` | Page to open when the session has no page yet |
+| `--spec <path>` | A Docbot application spec directory or its `index.md`, read as page knowledge. Same as `EXPLORBOT_SPEC` / `PRIMA_CLI_SPEC` |
 | `--ephemeral` | Keep no state between runs. Applies to config-free runs only — with a config file the output directory comes from the config |
 | `--framework <name>` | Parsed but not active yet; reported code is CodeceptJS whatever you pass |
 | `-c, --config <path>`, `-p, --path <path>` | As on every other Explorbot command |
@@ -767,6 +788,8 @@ Prima follows the same [configuration ladder](#environment-variables) as every o
 ```bash
 EXPLORBOT_AI_PROVIDER=groq npx explorbot prima go https://app.example.com
 ```
+
+The three inputs a run needs beyond the model come from flags or the environment, so no file has to exist: `--url` / `PRIMA_CLI_URL` for the site, `--spec` / `PRIMA_CLI_SPEC` for collected documentation, and `--knowledge` / `PRIMA_CLI_KNOWLEDGE` for facts such as credentials. Every `EXPLORBOT_*` variable has a `PRIMA_CLI_*` twin that prima reads first.
 
 `pw` still works when no model is usable at all; commands that need one say so and point at the fallback.
 

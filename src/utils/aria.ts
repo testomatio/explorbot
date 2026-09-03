@@ -469,7 +469,6 @@ const formatDiff = (added: string[], removed: string[], toggled: string[], typed
 // ─────────────────────────────────────────────────────────────────
 
 export interface FocusAreaResult {
-  detected: boolean;
   type: 'modal' | null;
   name: string | null;
 }
@@ -478,7 +477,7 @@ const findDialogOrModal = (nodes: AriaNode[]): FocusAreaResult | null => {
   let topmost: FocusAreaResult | null = null;
   for (const node of nodes) {
     if (node.role === 'dialog' || node.role === 'alertdialog' || node.attributes.modal === true || node.attributes.modal === 'true') {
-      topmost = { detected: true, type: 'modal', name: node.name || null };
+      topmost = { type: 'modal', name: node.name || null };
     }
     const child = findDialogOrModal(node.children);
     if (child) topmost = child;
@@ -530,7 +529,7 @@ export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
   tree = unwrapIgnored(tree);
   tree = dropEmpty(tree, { keepNamed: true });
 
-  return findDialogOrModal(tree) ?? { detected: false, type: null, name: null };
+  return findDialogOrModal(tree) ?? { type: null, name: null };
 };
 
 export const collectInteractiveNodes = (snapshot: string | null): Array<Record<string, unknown>> => {
@@ -539,6 +538,30 @@ export const collectInteractiveNodes = (snapshot: string | null): Array<Record<s
   tree = nameIconButtons(tree);
   tree = dropEmpty(tree);
   return flatten(tree).map((e) => e.entry);
+};
+
+const TEMPLATE_CHROME_ROLES = new Set(['banner', 'navigation', 'contentinfo', 'complementary']);
+const TEMPLATE_PROSE_ROLE = 'text';
+
+const dropChrome = (nodes: AriaNode[]): AriaNode[] =>
+  nodes.flatMap((node) => {
+    if (TEMPLATE_CHROME_ROLES.has(node.role)) return [];
+    return [{ ...node, children: dropChrome(node.children) }];
+  });
+
+const collectRolePaths = (nodes: AriaNode[], prefix: string, into: Set<string>): void => {
+  for (const node of nodes) {
+    if (node.role === TEMPLATE_PROSE_ROLE) continue;
+    const path = prefix ? `${prefix}/${node.role}` : node.role;
+    into.add(path);
+    collectRolePaths(node.children, path, into);
+  }
+};
+
+export const ariaTemplateSignature = (snapshot: string | null): Set<string> => {
+  const paths = new Set<string>();
+  collectRolePaths(dropChrome(parseSnapshot(snapshot)), '', paths);
+  return paths;
 };
 
 // ─────────────────────────────────────────────────────────────────
