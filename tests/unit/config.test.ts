@@ -111,6 +111,35 @@ describe('ConfigParser environment mode', () => {
     await expect(parser.loadConfig()).rejects.toThrow(/EXPLORBOT_URL/);
   });
 
+  it('keeps scout and planner documentation options from a config file', async () => {
+    const originalLoadConfigModule = (parser as any).loadConfigModule;
+    const originalFindConfigFile = (parser as any).findConfigFile;
+
+    (parser as any).findConfigFile = () => '/virtual/explorbot.config.ts';
+    (parser as any).loadConfigModule = async () => ({
+      default: {
+        playwright: { url: 'https://file.example.com', browser: 'chromium' },
+        ai: {
+          model: { modelId: 'test-model', provider: 'test' },
+          agents: {
+            scout: { enabled: true, dirs: ['docs', 'output/docs'] },
+            planner: { docsWeight: 30 },
+          },
+        },
+      },
+    });
+
+    try {
+      const config = await parser.loadConfig();
+      expect(config.ai.agents?.scout?.enabled).toBe(true);
+      expect(config.ai.agents?.scout?.dirs).toEqual(['docs', 'output/docs']);
+      expect(config.ai.agents?.planner?.docsWeight).toBe(30);
+    } finally {
+      (parser as any).loadConfigModule = originalLoadConfigModule;
+      (parser as any).findConfigFile = originalFindConfigFile;
+    }
+  });
+
   it('uses the baseUrl argument when EXPLORBOT_URL is unset', async () => {
     process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
     process.env.EXPLORBOT_OUTPUT = scratchDir;

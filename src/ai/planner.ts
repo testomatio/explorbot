@@ -25,6 +25,7 @@ import { POSSIBLE_SECTIONS, type Researcher } from './researcher.ts';
 import { findSimilarStateHash } from './researcher/cache.ts';
 import { hasFocusedSection } from './researcher/focus.ts';
 import { capabilityGroundingRule, dataProtectionRules, fileUploadRule } from './rules.ts';
+import type { Scout } from './scout.ts';
 
 const debugLog = createDebug('explorbot:planner');
 
@@ -63,6 +64,7 @@ export class Planner extends PlannerBase implements Agent {
   private lastSuite: Suite | null = null;
   researcher: Researcher;
   private fisherman: Fisherman | null = null;
+  private scout: Scout | null = null;
 
   constructor(deps: AgentDeps, researcher: Researcher) {
     super();
@@ -78,8 +80,17 @@ export class Planner extends PlannerBase implements Agent {
     this.fisherman = fisherman;
   }
 
+  setScout(scout: Scout): void {
+    this.scout = scout;
+  }
+
   private get sectionOrder(): string[] {
     return ConfigParser.getInstance().getConfig().ai?.agents?.researcher?.sections || Object.keys(POSSIBLE_SECTIONS);
+  }
+
+  private get docsWeight(): number {
+    const value = ConfigParser.getInstance().getConfig().ai?.agents?.planner?.docsWeight ?? 70;
+    return Math.max(0, Math.min(100, value));
   }
 
   private getDefaultStartUrl(state: { url: string; fullUrl?: string }): string {
@@ -328,6 +339,12 @@ export class Planner extends PlannerBase implements Agent {
     const conversation = new Conversation([], model);
     conversation.autoTrimTag('page_research', 20000);
     conversation.autoTrimTag('tested_scenarios', 10000);
+    conversation.autoTrimTag('docs_context', 8000);
+
+    let docsPromise: Promise<string> | null = null;
+    if (this.scout && this.docsWeight > 0) {
+      docsPromise = this.scout.collectDocs({ url: state.url, title: state.title, feature, excludeUrls: this.knowledgeTracker.applicationSpecUrls(state) }).catch(() => '');
+    }
 
     conversation.addUserText(this.getSystemMessage(feature));
 
@@ -417,6 +434,22 @@ export class Planner extends PlannerBase implements Agent {
     const applicationContext = this.knowledgeTracker.renderApplicationSpec(state);
     if (applicationContext) {
       conversation.addUserText(applicationContext);
+    }
+
+    if (docsPromise) {
+      const docs = await docsPromise;
+      if (docs) {
+        conversation.addUserText(dedent`
+          <docs_context>
+          Documentation retrieved from the collected corpus by the Scout agent.
+          Ground scenarios in these documented capabilities where they apply; treat them as supporting context, not a script.
+
+          Aim for roughly ${this.docsWeight}% of the scenarios to exercise behavior documented above; the remainder may explore beyond the documentation.
+
+          ${docs}
+          </docs_context>
+        `);
+      }
     }
 
     conversation.addUserText(dedent`

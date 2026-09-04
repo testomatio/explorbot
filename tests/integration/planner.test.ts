@@ -65,7 +65,7 @@ const fakeState = {
 
 function createMockDeps(state = fakeState) {
   const mockExperienceTracker = { getSuccessfulExperience: () => [] };
-  const mockKnowledgeTracker = { getRelevantKnowledge: () => [], renderApplicationSpec: () => '' };
+  const mockKnowledgeTracker = { getRelevantKnowledge: () => [], renderApplicationSpec: () => '', applicationSpecUrls: () => [] };
   const mockStateManager = {
     getCurrentState: () => state,
     getVisitCount: () => 0,
@@ -317,5 +317,85 @@ describe('Planner with aimock', () => {
     const plan = await planner.plan();
 
     expect(plan.tests.length).toBe(1);
+  });
+
+  it('injects scout documentation with the docs weight guidance', async () => {
+    planner.setScout({ collectDocs: async () => '- /invite: user can invite teammates' } as any);
+
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('<docs_context>');
+    expect(prompt).toContain('- /invite: user can invite teammates');
+    expect(prompt).toContain('roughly 70%');
+  });
+
+  it('passes the already injected spec URLs to the scout', async () => {
+    const captured: any[] = [];
+    const deps = createMockDeps();
+    deps.knowledgeTracker = { ...deps.knowledgeTracker, applicationSpecUrls: () => ['/tasks/board'] };
+    const localPlanner = new Planner({ ...deps, ai: provider } as any, { research: async () => taskBoardUiMap } as any);
+    localPlanner.setScout({
+      collectDocs: async (query: any) => {
+        captured.push(query);
+        return '';
+      },
+    } as any);
+
+    await localPlanner.plan();
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].excludeUrls).toEqual(['/tasks/board']);
+  });
+
+  it('skips the docs block when the scout finds nothing', async () => {
+    planner.setScout({ collectDocs: async () => '' } as any);
+
+    await planner.plan();
+
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('<docs_context>');
+  });
+
+  it('never calls the scout when docsWeight is zero', async () => {
+    const config = ConfigParser.getInstance().getConfig() as any;
+    config.ai ||= {};
+    config.ai.agents ||= {};
+    config.ai.agents.planner ||= {};
+    const originalWeight = config.ai.agents.planner.docsWeight;
+    config.ai.agents.planner.docsWeight = 0;
+    let called = false;
+    planner.setScout({
+      collectDocs: async () => {
+        called = true;
+        return '- /invite: user can invite teammates';
+      },
+    } as any);
+
+    try {
+      await planner.plan();
+    } finally {
+      config.ai.agents.planner.docsWeight = originalWeight;
+    }
+
+    expect(called).toBe(false);
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('<docs_context>');
+  });
+
+  it('clamps docsWeight into the 0-100 range', async () => {
+    const config = ConfigParser.getInstance().getConfig() as any;
+    config.ai ||= {};
+    config.ai.agents ||= {};
+    config.ai.agents.planner ||= {};
+    const originalWeight = config.ai.agents.planner.docsWeight;
+    config.ai.agents.planner.docsWeight = 150;
+    planner.setScout({ collectDocs: async () => '- /invite: user can invite teammates' } as any);
+
+    try {
+      await planner.plan();
+    } finally {
+      config.ai.agents.planner.docsWeight = originalWeight;
+    }
+
+    expect(extractPromptText(mock.getLastRequest())).toContain('roughly 100%');
   });
 });
