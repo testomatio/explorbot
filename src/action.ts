@@ -14,8 +14,8 @@ import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError }
 import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { Overlay, OverlayPage } from './utils/overlay.js';
-import type { Region } from './utils/region.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
+import type { Region } from './utils/region.js';
 import { safeFilename } from './utils/strings.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
 
@@ -182,7 +182,19 @@ class Action {
         focusedElement,
         iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
-      if (!frame) await this.detectRegion(result).catch((err: Error) => debugLog('Region detection failed:', err.message));
+      if (!frame) {
+        await this.detectRegion(result).catch((err: Error) => debugLog('Region detection failed:', err.message));
+        const regionRoot = result.overlay.root;
+        if (result.overlay.isModal && regionRoot) {
+          result.regionAria = await this.playwrightHelper.page
+            .locator(regionRoot)
+            .ariaSnapshot()
+            .catch((err: Error) => {
+              debugLog('Region ARIA snapshot failed:', err.message);
+              return null;
+            });
+        }
+      }
       this.stateManager.updateState(result, codeBlock);
       return result;
     } catch (err) {

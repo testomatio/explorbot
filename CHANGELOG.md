@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-04
+
+### Changes
+
+- [Tester] While a modal is open, the tester is now shown the modal's own list of elements and the
+  selector its content lives in, and is told to build locators scoped to that selector. It used to
+  get one flat list mixing the modal with the page behind it, so a field covered by the modal looked
+  as available as the buttons inside it — the tester kept typing into a form it could not reach and
+  the click that would have submitted it was swallowed by the overlay.
+
 ## 2026-09-03
 
 ### Changes

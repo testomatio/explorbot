@@ -579,16 +579,19 @@ export class Tester extends TaskAgent implements Agent {
 
     if (region.isModal) {
       const areaName = region.name ? ` "${region.name}"` : '';
-      let rootHint = '';
-      if (region.root) rootHint = `\nIts content lives inside \`${region.root}\` — scope locators to it.`;
+      let scoping = 'Use <page_aria> to confirm the element you target is actually inside the overlay.';
+      if (region.root) {
+        scoping = `Its root is \`${region.root}\` — build every locator as ARIA scoped to that root, e.g. I.click({ role: 'button', text: 'Continue' }, '${region.root}')`;
+      }
       context += dedent`
         <overlay>
-        An overlay${areaName} is currently open above the page.${rootHint}
-        Scope all interactions to elements inside this overlay.
-        Page navigation, filters, and tabs that exist outside it are not actionable while it is open and may share names or roles with elements inside it — prefer the locator inside the overlay.
-        Use <page_aria> to confirm the element you target is actually inside the overlay.
-        </overlay>
+        You are inside an overlay${areaName} opened above the page.
+        ${scoping}
+        Elements outside the overlay are behind it and not actionable while it is open — they may share names or roles with the ones inside, so never target them by bare text.
       `;
+      const regionAria = currentState.getRegionARIA();
+      if (regionAria) context += `\nIt holds exactly these elements:\n<overlay_aria>\n${regionAria}\n</overlay_aria>`;
+      context += '\n</overlay>\n';
     }
 
     if (!region.isModal && region.isOpen && isNewState) {
