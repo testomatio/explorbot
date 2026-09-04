@@ -45,7 +45,7 @@ export class ApibotConfigParser {
     Object.assign(process.env, parseEnv(readFileSync(resolved, 'utf8')));
   }
 
-  async loadConfig(options?: { config?: string; path?: string; endpoint?: string }): Promise<ApibotConfig> {
+  async loadConfig(options?: { config?: string; path?: string; endpoint?: string; baseEndpoint?: string; spec?: string }): Promise<ApibotConfig> {
     if (this.config && !options?.config && !options?.path) return this.config;
 
     const originalCwd = process.cwd();
@@ -55,6 +55,7 @@ export class ApibotConfigParser {
 
     ApibotConfigParser.loadEnv(globalEnvPath());
     ApibotConfigParser.loadEnv('.env');
+    this.applyRunOptions(options);
 
     const resolvedPath = options?.config || this.findConfigFile();
     if (!resolvedPath) {
@@ -82,6 +83,8 @@ export class ApibotConfigParser {
       }
 
       this.config = this.mergeWithDefaults(loadedConfig);
+      this.applyEnvSpec(this.config.api);
+      if (options?.baseEndpoint) this.config.api.baseEndpoint = options.baseEndpoint.replace(/\/$/, '');
       await resolveConfigModels(this.config.ai);
       this.configPath = resolvedPath;
       this.site = null;
@@ -126,6 +129,11 @@ export class ApibotConfigParser {
 
     const resolved = resolveSiteTarget(endpoint, this.site.url);
     if (resolved.baseUrl !== this.site.url) return endpoint;
+
+    const basePath = new URL(this.getConfig().api.baseEndpoint).pathname.replace(/\/$/, '');
+    if (!basePath) return resolved.path;
+    if (resolved.path === basePath) return '/';
+    if (resolved.path.startsWith(`${basePath}/`)) return resolved.path.slice(basePath.length);
     return resolved.path;
   }
 
@@ -148,13 +156,27 @@ export class ApibotConfigParser {
     }
   }
 
+  private applyRunOptions(options?: { baseEndpoint?: string; spec?: string }): void {
+    if (options?.baseEndpoint) process.env.EXPLORBOT_URL = options.baseEndpoint;
+    if (options?.spec) process.env.EXPLORBOT_API_SPEC = options.spec;
+  }
+
+  private applyEnvSpec(api: ApiConfig): void {
+    if (!process.env.EXPLORBOT_API_SPEC) return;
+    api.spec = [process.env.EXPLORBOT_API_SPEC];
+  }
+
   private enterGlobalMode(config: ApibotConfig, endpoint?: string): void {
     const site = resolveSiteTarget(endpoint);
     this.site = registerSite(site.baseUrl);
 
+    let baseEndpoint = site.baseUrl;
+    const envUrl = process.env.EXPLORBOT_URL;
+    if (envUrl && URL.parse(envUrl)?.origin === site.baseUrl) baseEndpoint = envUrl.replace(/\/$/, '');
+
     config.dirs = { output: 'output', knowledge: 'knowledge' };
-    config.api = { ...config.api, baseEndpoint: site.baseUrl };
-    if (process.env.EXPLORBOT_API_SPEC) config.api.spec = [process.env.EXPLORBOT_API_SPEC];
+    config.api = { ...config.api, baseEndpoint };
+    materializeKnowledge(this.site.dir);
   }
 
   private async loadEnvConfig(): Promise<ApibotConfig> {
@@ -169,16 +191,14 @@ export class ApibotConfigParser {
 
     const baseEndpoint = process.env.EXPLORBOT_URL;
     if (!baseEndpoint) {
-      throw new Error('No API endpoint to test. Set EXPLORBOT_URL to the API base endpoint');
+      throw new Error('No API endpoint to test. Pass --endpoint or set EXPLORBOT_URL to the API base endpoint');
     }
 
     const outputRoot = resolveOutputRoot();
     materializeKnowledge(outputRoot);
 
     const api: ApiConfig = { baseEndpoint };
-    if (process.env.EXPLORBOT_API_SPEC) {
-      api.spec = [process.env.EXPLORBOT_API_SPEC];
-    }
+    this.applyEnvSpec(api);
 
     let model: any;
     if (provider && modelSpec) model = await createModel(provider, modelSpec);
@@ -246,7 +266,7 @@ export class ApibotConfigParser {
   }
 
   private mergeWithDefaults(config: Partial<ApibotConfig>): ApibotConfig {
-    return this.deepMerge({ dirs: { output: 'output' } }, config);
+    return this.deepMerge({ dirs: { output: 'output' }, api: {} }, config);
   }
 
   private deepMerge(target: any, source: any): any {

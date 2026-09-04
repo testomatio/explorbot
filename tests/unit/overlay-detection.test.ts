@@ -4,13 +4,14 @@ import Action from '../../src/action.ts';
 import { ActionResult } from '../../src/action-result.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { htmlDiff } from '../../src/utils/html-diff.ts';
-import { Overlay, type OverlayData, OverlayPage, type RegionDiff } from '../../src/utils/overlay.ts';
+import { Overlay, OverlayPage } from '../../src/utils/overlay.ts';
+import { Region, type RegionData, type RegionDiff } from '../../src/utils/region.ts';
 
 describe('ActionResult overlay', () => {
   it('falls back to the aria snapshot when no overlay was stored', () => {
     const result = new ActionResult({ url: '/', ariaSnapshot: '- dialog "Delete confirmation"' });
-    expect(result.overlay.detected).toBe(true);
-    expect(result.overlay.type).toBe('modal');
+    expect(result.overlay.isModal).toBe(true);
+    expect(result.overlay.type).toBe('overlay');
     expect(result.overlay.name).toBe('Delete confirmation');
   });
 
@@ -25,8 +26,8 @@ describe('ActionResult overlay', () => {
   });
 
   it('prefers the stored descriptor of a restored state', () => {
-    const result = new ActionResult({ url: '/', overlay: new Overlay({ type: 'modal', name: 'Saved filter' }) });
-    expect(result.overlay.type).toBe('modal');
+    const result = new ActionResult({ url: '/', overlay: new Overlay({ type: 'overlay', name: 'Saved filter' }) });
+    expect(result.overlay.type).toBe('overlay');
     expect(result.overlay.name).toBe('Saved filter');
   });
 
@@ -34,7 +35,7 @@ describe('ActionResult overlay', () => {
     const result = new ActionResult({
       url: '/',
       html: '<html><body><h1>Users</h1></body></html>',
-      overlay: { type: 'modal', name: 'Edit User', root: 'div.editor', xpath: '//body/div[2]', parent: { type: 'modal', name: 'Outer', xpath: '//body/div[1]' } },
+      overlay: { type: 'overlay', name: 'Edit User', root: 'div.editor', xpath: '//body/div[2]', parent: { type: 'overlay', name: 'Outer', xpath: '//body/div[1]' } },
     });
     const restored = ActionResult.fromState(result);
     expect(restored.overlay.xpath).toBe('//body/div[2]');
@@ -48,38 +49,38 @@ describe('ActionResult overlay', () => {
 describe('Overlay', () => {
   it('resolve prefers stored overlay data over aria', () => {
     const aria = '- dialog "From aria"';
-    const overlay = Overlay.resolve({ overlay: { type: 'modal', name: 'Stored' }, ariaSnapshot: aria });
+    const overlay = Overlay.resolve({ overlay: { type: 'overlay', name: 'Stored' }, ariaSnapshot: aria });
     expect(overlay.name).toBe('Stored');
   });
 
   it('resolve falls back to aria detection', () => {
-    expect(Overlay.resolve({ ariaSnapshot: '- dialog "From aria"' }).detected).toBe(true);
+    expect(Overlay.resolve({ ariaSnapshot: '- dialog "From aria"' }).isModal).toBe(true);
   });
 
   it('rehydrates from a plain persisted descriptor', () => {
-    expect(new Overlay({ type: 'modal', name: 'Copy report' }).detected).toBe(true);
-    expect(new Overlay().detected).toBe(false);
+    expect(new Overlay({ type: 'overlay', name: 'Copy report' }).isModal).toBe(true);
+    expect(new Region().isModal).toBe(false);
   });
 
   it('describes an open region with its scope', () => {
-    const overlay = new Overlay({ type: 'modal', name: 'Edit User', root: 'aside.panel' });
-    expect(overlay.describe()).toBe('modal "Edit User" opened, scope: aside.panel');
-    expect(new Overlay().describe()).toBe('');
+    const overlay = new Overlay({ type: 'overlay', name: 'Edit User', root: 'aside.panel' });
+    expect(overlay.describe()).toBe('overlay "Edit User" opened, scope: aside.panel');
+    expect(new Region().describe()).toBe('');
   });
 
   it('withGeometry keeps aria identity and adopts probe geometry', () => {
-    const aria = new Overlay({ type: 'modal', name: 'Select suite for test' });
-    const geometry = new Overlay({ type: 'region', name: 'Fallback', root: 'div.picker', xpath: '//body/div[3]', html: '<div class="picker"></div>' });
+    const aria = new Overlay({ type: 'overlay', name: 'Select suite for test' });
+    const geometry = new Region({ type: 'region', name: 'Fallback', root: 'div.picker', xpath: '//body/div[3]', html: '<div class="picker"></div>' });
     const merged = aria.withGeometry(geometry);
-    expect(merged.type).toBe('modal');
+    expect(merged.type).toBe('overlay');
     expect(merged.name).toBe('Select suite for test');
     expect(merged.root).toBe('div.picker');
     expect(merged.xpath).toBe('//body/div[3]');
   });
 
   it('withParent stores the replaced overlay without its html', () => {
-    const outer = new Overlay({ type: 'modal', name: 'New Plan', root: 'div.plan', xpath: '//body/div[1]', html: '<div>big</div>' });
-    const nested = new Overlay({ type: 'region', name: 'Select tests', xpath: '//body/div[2]' });
+    const outer = new Overlay({ type: 'overlay', name: 'New Plan', root: 'div.plan', xpath: '//body/div[1]', html: '<div>big</div>' });
+    const nested = new Region({ type: 'region', name: 'Select tests', xpath: '//body/div[2]' });
     const stacked = nested.withParent(outer);
     expect(stacked.parent?.name).toBe('New Plan');
     expect(stacked.parent?.xpath).toBe('//body/div[1]');
@@ -97,12 +98,15 @@ const regionDiff = async (before: string, after: string, overrides: Partial<Regi
   return { parts: diff.parts, pageSize: diff.pageSize, similarity: diff.similarity, sameUrl: true, previousHtml: before, ...overrides };
 };
 
-const regionProbe = (overrides: Record<string, unknown> = {}) => ({
-  found: true,
-  onScreen: true,
-  floating: true,
+const regionLayout = (overrides: Record<string, unknown> = {}) => ({
+  rendered: true,
+  inViewport: true,
+  outOfFlow: true,
   centerBelongs: true,
-  coveredByFloating: false,
+  coveredOutOfFlow: false,
+  holdsViewportCenter: false,
+  viewportCoverage: 0.5,
+  controls: 4,
   ...overrides,
 });
 
@@ -111,21 +115,21 @@ const pageProbing = (probe: unknown) => ({ evaluate: async () => probe });
 describe('OverlayPage.detectRegion', () => {
   it('classifies an open floating region as a modal with a semantic root', async () => {
     const diff = await regionDiff(basePage, pageWithDrawer);
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
-    expect(overlay!.type).toBe('modal');
+    expect(overlay!.type).toBe('overlay');
     expect(overlay!.name).toBe('Edit User');
     expect(overlay!.root).toBe('div.drawer');
     expect(overlay!.xpath).toBe('//body/div[2]');
     expect(overlay!.html).toContain('Edit User');
-    expect(overlay!.detected).toBe(true);
+    expect(overlay!.isModal).toBe(true);
   });
 
   it('keeps a stable container selector as root when the region appears inside one', async () => {
     const before = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><aside id="record-editor"></aside></body></html>`;
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><aside id="record-editor"><div><h2>Edit User</h2><form>${bigForm}</form></div></aside></body></html>`;
     const diff = await regionDiff(before, after);
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
     expect(overlay!.root).toBe('#record-editor');
   });
@@ -133,7 +137,7 @@ describe('OverlayPage.detectRegion', () => {
   it('descends through anonymous and utility-class wrappers to a semantic root', async () => {
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div><div class="bg-overlay"><div><div class="editor-modal"><h2>Edit User</h2><form>${bigForm}</form></div></div></div></div></body></html>`;
     const diff = await regionDiff(basePage, after);
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
     expect(overlay!.root).toBe('div.editor-modal');
   });
@@ -141,7 +145,7 @@ describe('OverlayPage.detectRegion', () => {
   it('yields a rootless overlay instead of a positional xpath when nothing is semantic', async () => {
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div><div><div><h2>Edit User</h2>${bigForm}</div></div></div></body></html>`;
     const diff = await regionDiff(basePage, after);
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
     expect(overlay!.root).toBeNull();
     expect(overlay!.xpath).toBe('//body/div[2]');
@@ -152,28 +156,28 @@ describe('OverlayPage.detectRegion', () => {
     const before = `<html><body><div id="app"><h2>New Plan</h2><ul>${bigList}</ul></div></body></html>`;
     const after = `<html><body><div id="app"><h2>New Plan</h2><ul>${bigList}</ul></div><div class="picker"><h2>New Plan</h2><h3>Select tests for plan</h3><form>${bigForm}</form></div></body></html>`;
     const diff = await regionDiff(before, after);
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
     expect(overlay!.name).toBe('Select tests for plan');
   });
 
   it('classifies an open in-flow region as inline', async () => {
     const diff = await regionDiff(basePage, pageWithDrawer);
-    const overlay = await new OverlayPage(pageProbing(regionProbe({ floating: false }))).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout({ outOfFlow: false }))).detectRegion(diff);
     expect(overlay!.type).toBe('region');
-    expect(overlay!.detected).toBe(false);
-    expect(overlay!.present).toBe(true);
+    expect(overlay!.isModal).toBe(false);
+    expect(overlay!.isOpen).toBe(true);
   });
 
   it('discards a region whose center belongs to another element', async () => {
     const diff = await regionDiff(basePage, pageWithDrawer);
-    const overlay = await new OverlayPage(pageProbing(regionProbe({ centerBelongs: false }))).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout({ centerBelongs: false }))).detectRegion(diff);
     expect(overlay).toBeNull();
   });
 
   it('keeps an off-screen region as inline instead of discarding it', async () => {
     const diff = await regionDiff(basePage, pageWithDrawer);
-    const overlay = await new OverlayPage(pageProbing(regionProbe({ onScreen: false, centerBelongs: false }))).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout({ inViewport: false, centerBelongs: false }))).detectRegion(diff);
     expect(overlay!.type).toBe('region');
   });
 
@@ -212,7 +216,7 @@ describe('OverlayPage.detectRegion', () => {
     const midForm = Array.from({ length: 90 }, (_, i) => `<div><label>Field ${i}</label><input name="field-${i}" placeholder="value ${i}"></div>`).join('');
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div class="drawer"><h2>New Plan</h2><form>${midForm}</form></div></body></html>`;
     const diff = await regionDiff(basePage, after);
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
     expect(overlay!.name).toBe('New Plan');
     expect(overlay!.root).toBe('div.drawer');
@@ -221,7 +225,7 @@ describe('OverlayPage.detectRegion', () => {
   it('probes the largest appeared element when an empty guard appears alongside the panel', async () => {
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div class="guard"></div><div class="panel"><h2>Edit User</h2><form>${bigForm}</form></div></body></html>`;
     const diff = await regionDiff(basePage, after);
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
     expect(overlay!.root).toBe('div.panel');
     expect(overlay!.xpath).toBe('//body/div[3]');
@@ -231,7 +235,7 @@ describe('OverlayPage.detectRegion', () => {
     const anonymousRows = Array.from({ length: 150 }, (_, i) => `<div><span>Row content number ${i} without any identity</span></div>`).join('');
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div><div>${anonymousRows}</div></div></body></html>`;
     const diff = await regionDiff(basePage, after);
-    expect(await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff)).toBeNull();
+    expect(await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff)).toBeNull();
   });
 
   it('prefers a fresh-heading candidate over a larger reflowed one, skipping an oversized flood', async () => {
@@ -240,7 +244,7 @@ describe('OverlayPage.detectRegion', () => {
     const midForm = Array.from({ length: 120 }, (_, i) => `<div><label>Field ${i}</label><input name="field-${i}"></div>`).join('');
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div>${flood}<div id="overlays"><div class="dialog"><h2>Pick a suite</h2><form>${midForm}</form></div></div><div class="shell-pane"><div><h1>Users</h1><ul>${bigList}</ul></div></div></body></html>`;
     const diff = await regionDiff(before, after);
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
     expect(overlay!.name).toBe('Pick a suite');
     expect(overlay!.root).toBe('#overlays');
@@ -253,8 +257,8 @@ describe('OverlayPage.detectRegion', () => {
     const diff = await regionDiff(before, after);
     const probing = {
       evaluate: async (_fn: any, arg: any) => {
-        if (arg.config.xpath === '//body/aside[1]/div[1]') return regionProbe({ centerBelongs: false });
-        return regionProbe();
+        if (arg.config.xpath === '//body/aside[1]/div[1]') return regionLayout({ centerBelongs: false });
+        return regionLayout();
       },
     };
     const overlay = await new OverlayPage(probing).detectRegion(diff);
@@ -266,27 +270,27 @@ describe('OverlayPage.detectRegion', () => {
     const smallBase = '<html><body><div id="app"><h1>Users</h1></div></body></html>';
     const takeover = `<html><body><div id="app"><h1>Users</h1></div><div class="drawer"><h2>Edit User</h2><form>${bigForm}</form></div></body></html>`;
     const diff = await regionDiff(smallBase, takeover);
-    expect(await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff)).toBeNull();
+    expect(await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff)).toBeNull();
   });
 
   it('rejects scattered changes with no dominant region', async () => {
     const moreRows = Array.from({ length: 200 }, (_, i) => `<li><a href="/users/new-${i}">Newly Loaded User ${i} entry</a></li>`).join('');
     const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}${moreRows}</ul></div><div class="drawer"><h2>Edit User</h2><form>${bigForm}</form></div></body></html>`;
     const diff = await regionDiff(basePage, after);
-    expect(await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff)).toBeNull();
+    expect(await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff)).toBeNull();
   });
 
   it('detects a route-synced drawer across a URL change when the page survived', async () => {
     const diff = await regionDiff(basePage, pageWithDrawer, { sameUrl: false });
-    const overlay = await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff);
+    const overlay = await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff);
     expect(overlay).not.toBeNull();
-    expect(overlay!.type).toBe('modal');
+    expect(overlay!.type).toBe('overlay');
   });
 
   it('treats a replaced page across navigation as no region', async () => {
     const otherPage = `<html><body><div class="dashboard"><h1>Dashboard</h1><form>${bigForm}</form></div></body></html>`;
     const diff = await regionDiff(basePage, otherPage, { sameUrl: false });
-    expect(await new OverlayPage(pageProbing(regionProbe())).detectRegion(diff)).toBeNull();
+    expect(await new OverlayPage(pageProbing(regionLayout())).detectRegion(diff)).toBeNull();
   });
 
   it('returns null when the appeared content is below the threshold', async () => {
@@ -300,25 +304,82 @@ describe('OverlayPage.detectRegion', () => {
     const diff = await regionDiff(basePage, basePage);
     expect(await new OverlayPage(null).detectRegion(diff)).toBeNull();
   });
+
+  const smallBase = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div id="overlays"></div></body></html>`;
+  const smallDialog = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div id="overlays"><div class="dialog"><h2>Confirm delete</h2><p>This cannot be undone.</p><button>Delete</button><button>Cancel</button></div></div></body></html>`;
+
+  it('classifies a small centred dialog as an overlay', async () => {
+    const diff = await regionDiff(smallBase, smallDialog);
+    const overlay = await new OverlayPage(pageProbing(regionLayout({ holdsViewportCenter: true, viewportCoverage: 0.1, controls: 2 }))).detectRegion(diff);
+    expect(overlay).not.toBeNull();
+    expect(overlay).toBeInstanceOf(Overlay);
+    expect(overlay!.type).toBe('overlay');
+    expect(overlay!.name).toBe('Confirm delete');
+    expect(overlay!.root).toBe('#overlays');
+  });
+
+  it('ignores a popover that leaves the page usable', async () => {
+    const diff = await regionDiff(smallBase, smallDialog);
+    expect(await new OverlayPage(pageProbing(regionLayout({ viewportCoverage: 0.02, controls: 1 }))).detectRegion(diff)).toBeNull();
+  });
+
+  it('ignores small in-flow content under the floor', async () => {
+    const diff = await regionDiff(smallBase, smallDialog);
+    expect(await new OverlayPage(pageProbing(regionLayout({ outOfFlow: false }))).detectRegion(diff)).toBeNull();
+  });
+
+  it('ignores an out-of-flow veil with nothing to do inside it', async () => {
+    const diff = await regionDiff(basePage, pageWithDrawer);
+    expect(await new OverlayPage(pageProbing(regionLayout({ holdsViewportCenter: true, viewportCoverage: 1, controls: 0 }))).detectRegion(diff)).toBeNull();
+  });
+
+  it('ignores a large out-of-flow panel that blocks too little of the screen', async () => {
+    const diff = await regionDiff(basePage, pageWithDrawer);
+    expect(await new OverlayPage(pageProbing(regionLayout({ viewportCoverage: 0.2, controls: 5 }))).detectRegion(diff)).toBeNull();
+  });
+
+  it('does not measure added content that has neither a name nor a scoping root', async () => {
+    const anonymousRows = Array.from({ length: 150 }, (_, i) => `<div><span>Row content number ${i} without any identity</span></div>`).join('');
+    const after = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div><div>${anonymousRows}</div></div></body></html>`;
+    const diff = await regionDiff(basePage, after);
+    let calls = 0;
+    const counting = {
+      evaluate: async () => {
+        calls++;
+        return regionLayout();
+      },
+    };
+    expect(await new OverlayPage(counting).detectRegion(diff)).toBeNull();
+    expect(calls).toBe(0);
+  });
+
+  it('keeps an in-flow region a plain Region', async () => {
+    const diff = await regionDiff(basePage, pageWithDrawer);
+    const region = await new OverlayPage(pageProbing(regionLayout({ outOfFlow: false }))).detectRegion(diff);
+    expect(region).not.toBeNull();
+    expect(region).not.toBeInstanceOf(Overlay);
+    expect(region!.type).toBe('region');
+    expect(region!.isModal).toBe(false);
+  });
 });
 
 describe('OverlayPage.isStillOpen', () => {
-  const overlay = new Overlay({ type: 'modal', name: 'Edit User', xpath: '//body/div[2]' });
+  const overlay = new Overlay({ type: 'overlay', name: 'Edit User', xpath: '//body/div[2]' });
 
   it('stays open while the center belongs to the region', async () => {
-    expect(await new OverlayPage(pageProbing(regionProbe())).isStillOpen(overlay)).toBe(true);
+    expect(await new OverlayPage(pageProbing(regionLayout())).isStillOpen(overlay)).toBe(true);
   });
 
   it('closes when the element is gone', async () => {
-    expect(await new OverlayPage(pageProbing(regionProbe({ found: false }))).isStillOpen(overlay)).toBe(false);
+    expect(await new OverlayPage(pageProbing(regionLayout({ rendered: false }))).isStillOpen(overlay)).toBe(false);
   });
 
   it('closes when the center belongs to in-flow content that replaced it', async () => {
-    expect(await new OverlayPage(pageProbing(regionProbe({ centerBelongs: false }))).isStillOpen(overlay)).toBe(false);
+    expect(await new OverlayPage(pageProbing(regionLayout({ centerBelongs: false }))).isStillOpen(overlay)).toBe(false);
   });
 
   it('stays open while another overlay covers its center', async () => {
-    expect(await new OverlayPage(pageProbing(regionProbe({ centerBelongs: false, coveredByFloating: true }))).isStillOpen(overlay)).toBe(true);
+    expect(await new OverlayPage(pageProbing(regionLayout({ centerBelongs: false, coveredOutOfFlow: true }))).isStillOpen(overlay)).toBe(true);
   });
 
   it('keeps carrying when the probe cannot run', async () => {
@@ -328,14 +389,14 @@ describe('OverlayPage.isStillOpen', () => {
   });
 
   it('keeps carrying an overlay that has no xpath', async () => {
-    expect(await new OverlayPage(pageProbing(regionProbe({ found: false }))).isStillOpen(new Overlay({ type: 'modal', name: 'Aria' }))).toBe(true);
+    expect(await new OverlayPage(pageProbing(regionLayout({ rendered: false }))).isStillOpen(new Overlay({ type: 'overlay', name: 'Aria' }))).toBe(true);
   });
 });
 
 const pageWithConfirm = `<html><body><div id="app"><h1>Users</h1><ul>${bigList}</ul></div><div class="drawer"><h2>Edit User</h2><form>${bigForm}</form></div><div class="confirm"><h2>Confirm delete</h2><form>${bigForm}</form></div></body></html>`;
 
 const pageProbingXPaths = (probes: Record<string, unknown>) => ({
-  evaluate: async (_fn: unknown, arg: any) => probes[arg.config.xpath] ?? regionProbe({ found: false }),
+  evaluate: async (_fn: unknown, arg: any) => probes[arg.config.xpath] ?? regionLayout({ rendered: false }),
 });
 
 describe('Action region replacement', () => {
@@ -346,34 +407,34 @@ describe('Action region replacement', () => {
     ConfigParser.setupTestConfig();
   });
 
-  const closedDrawer = (parent?: OverlayData) => new ActionResult({ url, html: pageWithDrawer, overlay: { type: 'modal', name: 'Edit User', root: 'div.drawer', xpath: '//body/div[2]', parent } });
+  const closedDrawer = (parent?: RegionData) => new ActionResult({ url, html: pageWithDrawer, overlay: { type: 'overlay', name: 'Edit User', root: 'div.drawer', xpath: '//body/div[2]', parent } });
 
   const detect = async (previous: ActionResult, result: ActionResult, probes: Record<string, unknown>) => {
     const action = new Action({} as any, { getCurrentState: () => previous, updateState: () => {} } as any);
-    action.playwrightHelper = { page: pageProbingXPaths({ '//body/div[2]': regionProbe({ found: false }), ...probes }) };
-    await (action as any).detectRegionOfInterest(result);
+    action.playwrightHelper = { page: pageProbingXPaths({ '//body/div[2]': regionLayout({ rendered: false }), ...probes }) };
+    await (action as any).detectRegion(result);
   };
 
   it('enriches the replacement that opened as the previous region closed', async () => {
     const result = new ActionResult({ url, html: pageWithConfirm, ariaSnapshot: '- dialog "Confirm delete"' });
-    await detect(closedDrawer(), result, { '//body/div[3]': regionProbe() });
+    await detect(closedDrawer(), result, { '//body/div[3]': regionLayout() });
     expect(result.overlay.name).toBe('Confirm delete');
-    expect(result.overlay.type).toBe('modal');
+    expect(result.overlay.type).toBe('overlay');
     expect(result.overlay.root).toBe('div.confirm');
     expect(result.overlay.xpath).toBe('//body/div[3]');
   });
 
   it('keeps the replacement instead of restoring the parent of the closed region', async () => {
     const result = new ActionResult({ url, html: pageWithConfirm, ariaSnapshot: '- dialog "Confirm delete"' });
-    const previous = closedDrawer({ type: 'modal', name: 'Outer', root: 'aside.outer', xpath: '//body/aside[1]' });
-    await detect(previous, result, { '//body/div[3]': regionProbe(), '//body/aside[1]': regionProbe() });
+    const previous = closedDrawer({ type: 'overlay', name: 'Outer', root: 'aside.outer', xpath: '//body/aside[1]' });
+    await detect(previous, result, { '//body/div[3]': regionLayout(), '//body/aside[1]': regionLayout() });
     expect(result.overlay.name).toBe('Confirm delete');
   });
 
   it('restores the parent without detecting a region when nothing replaced the closed one', async () => {
     const result = new ActionResult({ url, html: pageWithConfirm });
-    const previous = closedDrawer({ type: 'modal', name: 'Outer', root: 'aside.outer', xpath: '//body/aside[1]' });
-    await detect(previous, result, { '//body/div[3]': regionProbe(), '//body/aside[1]': regionProbe() });
+    const previous = closedDrawer({ type: 'overlay', name: 'Outer', root: 'aside.outer', xpath: '//body/aside[1]' });
+    await detect(previous, result, { '//body/div[3]': regionLayout(), '//body/aside[1]': regionLayout() });
     expect(result.overlay.name).toBe('Outer');
     expect(result.overlay.root).toBe('aside.outer');
   });

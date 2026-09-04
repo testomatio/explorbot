@@ -1,6 +1,6 @@
 import dedent from 'dedent';
 import { ActionResult, type Diff } from '../../action-result.js';
-import type { ExplorbotConfig } from '../../config.ts';
+import { type ExplorbotConfig, agentSettings } from '../../config.ts';
 import { executionController } from '../../execution-controller.ts';
 import type Explorer from '../../explorer.ts';
 import type { StateManager } from '../../state-manager.js';
@@ -31,7 +31,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       tag('info').log('Starting deep analysis of expandable elements');
       await (this as any).navigateTo(state.fullUrl || state.url);
 
-      const maxClicks = (this.config.ai?.agents?.researcher as any)?.maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
+      const maxClicks = agentSettings(this.config, 'researcher').maxExpandableClicks ?? DEFAULT_MAX_EXPANDABLE_CLICKS;
 
       const expandedSections: string[] = [];
       const navigationLinks: Array<{ code: string; url: string }> = [];
@@ -88,22 +88,24 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
     }
 
     async researchOverlay(current: ActionResult, previous: ActionResult, pageStateHash: string): Promise<string | null> {
-      const focusArea = current.overlay;
-      if (!focusArea.present || !focusArea.name) return null;
+      if (!(this as any).isEnabled()) return null;
+
+      const region = current.overlay;
+      if (!region.isOpen || !region.name) return null;
 
       const cached = getCachedResearch(pageStateHash);
       if (!cached) return null;
 
-      const escaped = focusArea.name.replace(/"/g, '\\"');
+      const escaped = region.name.replace(/"/g, '\\"');
       if (mdq(cached).query(`section3(~"${escaped}")`).count() > 0) {
-        debugLog(`Overlay "${focusArea.name}" already in cached research, skipping`);
+        debugLog(`Overlay "${region.name}" already in cached research, skipping`);
         return null;
       }
 
       const diff = await current.diff(previous);
 
       if (!diff.ariaChanged && diff.htmlParts.length === 0) {
-        debugLog(`No diff between current and previous state for overlay "${focusArea.name}"`);
+        debugLog(`No diff between current and previous state for overlay "${region.name}"`);
         return null;
       }
 
@@ -113,10 +115,10 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
           .map((s) => s.rawMarkdown)
       );
 
-      tag('substep').log(`Researching overlay: ${focusArea.name}`);
-      const sectionMarkdown = await this._analyzeExpandedAction('', focusArea.name, diff, alreadyExpanded);
+      tag('substep').log(`Researching overlay: ${region.name}`);
+      const sectionMarkdown = await this._analyzeExpandedAction('', region.name, diff, alreadyExpanded);
       if (!sectionMarkdown) {
-        debugLog(`Overlay "${focusArea.name}" produced no meaningful expansion`);
+        debugLog(`Overlay "${region.name}" produced no meaningful expansion`);
         return null;
       }
 
@@ -130,7 +132,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
 
       saveResearch({ hash: pageStateHash }, updated);
-      tag('substep').log(`Overlay research appended: ${focusArea.name}`);
+      tag('substep').log(`Overlay research appended: ${region.name}`);
       return sectionMarkdown;
     }
 

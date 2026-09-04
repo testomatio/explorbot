@@ -99,7 +99,7 @@ Two tiers. **Data parts** are deterministic memory — they answer "what is true
 | Module | Does | Must never do |
 |---|---|---|
 | **StateManager** | Where am I / where have I been: states, transitions, hashes, loop detection, events | Call AI; interpret semantics ("this is a login page"); execute actions |
-| **KnowledgeTracker** | Load/filter human facts by URL pattern; expose hints verbatim | Judge relevance semantically; act on hints; be written mid-run outside learn/drill flow |
+| **KnowledgeTracker** | Load/filter human facts by URL or endpoint pattern, from `knowledge/` and from the session entries `appendSessionKnowledge()` collects; expose hints verbatim | Judge relevance semantically; act on hints; be written mid-run outside learn/drill flow; declare CLI flags |
 | **ExperienceTracker** | Store/retrieve lessons per state hash; dedup blocks | Rank by meaning; compact itself (ExperienceCompactor's job); change behavior directly |
 | **Config** | Resolve immutable settings once at startup | Change mid-run; hold site-specific values; be read by agents directly (injected instead) |
 
@@ -136,7 +136,7 @@ All persisted formats share one rule: **envelope keys (YAML frontmatter, HTML co
 
 | Format | Location & owner | Envelope | Body grammar |
 |---|---|---|---|
-| Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `wait`, `waitForElement`, `noExperienceReading/Writing` | Free prose facts |
+| Knowledge | `knowledge/*.md`, KnowledgeTracker | `url`/`path`, `endpoint`, `wait`, `waitForElement`, `noExperienceReading/Writing` — `url`/`path` scopes to pages, `endpoint` to API endpoints, neither to both | Free prose facts |
 | Experience | `experience/<stateHash>.md`, ExperienceTracker | sparse frontmatter: `url`, `title`, optional `region` (the open region's name, the same identity the state hash forks on) and `root` (its scoping selector) — a scoped record loads only while that region is open | `## FLOW:` / `## ACTION:` h2 blocks; bullets + ```js``` + `Solution:` line; h3 forbidden under blocks |
 | Test plan | `output/plans/*.md`, test-plan-markdown.ts | `<!-- test ... -->` comment: `priority`, `style`; scenario heading, `url:` line, bullets as steps | Notes/results appended by runner |
 
@@ -539,7 +539,7 @@ There are application commands available in TUI
 * /research [uri] - performs research on a current page or navigate to [uri] if uri is provided
 * /plan <feature> - plan testing feature starting from current page
 * /navigate <uri_or_state> - move to other page. Use AI to complete navigation
-* /drill [--knowledge <path>] [--max-components <n>] - drill all components on page to learn interactions
+* /drill [--save-knowledge <path>] [--max-components <n>] - drill all components on page to learn interactions
 
 There are also CodeceptJS commands available:
 
@@ -563,7 +563,15 @@ Consequently `isInteractive()` (`src/ai/task-agent.ts`) is **`INK_RUNNING || exe
 
 **There are no frame types.** A frame is `{type, ts, ...whatever}`; `send(type, data)` puts data on the wire and the UI renders what it recognises. Neither side validates the other's shape, so either can start sending more at any time. It queues while disconnected, reconnects with backoff, and `remote.close(exitCode)` flushes before exit (called from `showStatsAndExit`).
 
-`remote.registerOption(program)` adds the flag through a Commander `preAction` hook, so it covers every command including the mounted `api`/`docs` subcommands and the standalone `boat/*` bins.
+`--ws` itself is declared outside remote, as a `BaseOption` in `src/commands/options/` — see below — and its hook calls `remote.attach()`.
+
+## Shared CLI options (`src/commands/options/`)
+
+A flag that belongs to a run rather than to one command lives here, one `BaseOption` subclass per flag: `flags`, `description`, an optional `collect` for a repeatable value, and an `apply()` that runs after parsing. `register(program)` declares the flag on the program root and hooks `preAction`, so one registration covers every command, the mounted `api`/`docs` subcommands and the standalone `boat/*` bins alike, and the flag can sit anywhere on the line.
+
+Each bin registers the options it offers — `wsOption.register(program)`, `knowledgeOption.register(program)` — so a boat carries only the flags that mean something for it.
+
+`apply()` hands the value to whoever owns it and nothing else: `--ws` to `remote.attach()`, `--knowledge` to `KnowledgeTracker.appendSessionKnowledge()`, which keeps the run's facts beside the ones it loads from disk. Nothing downstream learns that a command line exists.
 
 ## Command Line Usage
 
@@ -593,7 +601,7 @@ explorbot plan /login authentication  # plan with focus on authentication
 ```bash
 explorbot drill <url>                    # drill all components on page
 explorbot drill /components --max-components 10  # limit to 10 components
-explorbot drill /login --knowledge /login  # save to knowledge file
+explorbot drill /login --save-knowledge /login  # save to knowledge file
 ```
 
 ### Show resolved configuration:

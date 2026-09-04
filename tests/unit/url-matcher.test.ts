@@ -70,12 +70,15 @@ describe('url-matcher', () => {
       expect(isDynamicSegment('8471')).toBe(true);
     });
 
-    it('respects user-provided dynamicPageRegex override', () => {
+    it('user dynamicPageRegex extends the built-in patterns', () => {
       const instance = ConfigParser.getInstance();
       (instance as any).config = { ...(instance as any).config, dynamicPageRegex: '^custom-\\d+$' };
 
       expect(isDynamicSegment('custom-42')).toBe(true);
       expect(isDynamicSegment('custom-X')).toBe(false);
+      expect(isDynamicSegment('123')).toBe(true);
+      expect(isDynamicSegment('550e8400-e29b-41d4-a716-446655440000')).toBe(true);
+      expect(isDynamicSegment('login')).toBe(false);
     });
   });
 

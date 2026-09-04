@@ -21,7 +21,16 @@ endpoint: "/users"
 CRUD for users. Admin role required for writes. IDs are UUIDs.
 ```
 
-Chief loads knowledge matching the endpoint it's planning. Running `know` again on the same endpoint appends to the file. See [knowledge](../workflow/knowledge.md) for how matching and files work.
+Chief loads knowledge matching the endpoint it's planning, and Curler loads it again for the endpoint it's testing, so auth headers and payload rules reach the requests themselves. Running `know` again on the same endpoint appends to the file. See [knowledge](../workflow/knowledge.md) for how matching and files work.
+
+For a fact that should not be stored — a token, a one-off fixture — pass `--knowledge` instead. It applies to the run only:
+
+```bash
+npx explorbot api explore /users --knowledge '---
+endpoint: /users/*
+---
+Send X-Api-Key: ${env.API_KEY} on every request'
+```
 
 ## Choose a planning style
 

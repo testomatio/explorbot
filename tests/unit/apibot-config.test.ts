@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ApibotConfigParser } from '../../boat/api-tester/src/config.ts';
@@ -62,6 +62,16 @@ describe('ApibotConfigParser environment fallback', () => {
 
     const config = await parser.loadConfig();
 
+    expect(config.api.spec).toEqual(['./openapi.yaml']);
+  });
+
+  it('overrides the config file endpoint and spec with the command options', async () => {
+    const configPath = join(outputRoot, 'apibot.config.js');
+    writeFileSync(configPath, "export default { ai: { model: { modelId: 'test-model' } }, api: { baseEndpoint: 'https://staging.example.com/v1', spec: ['./staging.yaml'] } };\n", 'utf8');
+
+    const config = await parser.loadConfig({ config: configPath, baseEndpoint: 'https://api.example.com/v2/', spec: './openapi.yaml' });
+
+    expect(config.api.baseEndpoint).toBe('https://api.example.com/v2');
     expect(config.api.spec).toEqual(['./openapi.yaml']);
   });
 

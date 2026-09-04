@@ -14,6 +14,7 @@ import { browserErrorMessage, isFatalBrowserError, isNavigationTransitionError }
 import { captureHtmlForSnapshot, htmlCombinedSnapshot, minifyHtml } from './utils/html.js';
 import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { Overlay, OverlayPage } from './utils/overlay.js';
+import type { Region } from './utils/region.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import { safeFilename } from './utils/strings.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
@@ -181,7 +182,7 @@ class Action {
         focusedElement,
         iframeURL: frame ? frame.url?.() || 'iframe' : undefined,
       });
-      if (!frame) await this.detectRegionOfInterest(result).catch((err: Error) => debugLog('Region detection failed:', err.message));
+      if (!frame) await this.detectRegion(result).catch((err: Error) => debugLog('Region detection failed:', err.message));
       this.stateManager.updateState(result, codeBlock);
       return result;
     } catch (err) {
@@ -193,36 +194,36 @@ class Action {
     }
   }
 
-  private async detectRegionOfInterest(result: ActionResult): Promise<void> {
+  private async detectRegion(result: ActionResult): Promise<void> {
     const previousState = this.stateManager.getCurrentState();
     if (!previousState) return;
     const previous = ActionResult.fromState(previousState);
-    const previousOverlay = previous.overlay;
+    const previousRegion = previous.overlay;
     const sameUrl = !!previous.url && result.isSameUrl({ url: previous.url });
     const overlayPage = new OverlayPage(this.playwrightHelper.page);
 
-    if (result.overlay.detected && previousOverlay.detected && previousOverlay.root && previousOverlay.type === result.overlay.type && previousOverlay.name === result.overlay.name) {
-      result.overlay = previousOverlay;
+    if (result.overlay.isModal && previousRegion.isModal && previousRegion.root && previousRegion.type === result.overlay.type && previousRegion.name === result.overlay.name) {
+      result.overlay = previousRegion;
       return;
     }
 
     if (!previous.html) return;
 
     if (previous.html === result.html) {
-      if (sameUrl && previousOverlay.present && previousOverlay.xpath && !result.overlay.detected) result.overlay = previousOverlay;
+      if (sameUrl && previousRegion.isOpen && previousRegion.xpath && !result.overlay.isModal) result.overlay = previousRegion;
       return;
     }
 
-    let carried: Overlay | null = null;
-    if (sameUrl && previousOverlay.present && previousOverlay.xpath) {
-      if (await overlayPage.isStillOpen(previousOverlay)) {
-        carried = previousOverlay;
+    let carried: Region | null = null;
+    if (sameUrl && previousRegion.isOpen && previousRegion.xpath) {
+      if (await overlayPage.isStillOpen(previousRegion)) {
+        carried = previousRegion;
       } else {
-        debugLog(`Region closed: ${previousOverlay.name || previousOverlay.type}`);
-        if (!result.overlay.detected) {
-          const parent = previousOverlay.parent;
+        debugLog(`Region closed: ${previousRegion.name || previousRegion.type}`);
+        if (!result.overlay.isModal) {
+          const parent = previousRegion.parent;
           if (parent?.xpath) {
-            const restored = new Overlay(parent);
+            const restored = Overlay.resolve({ overlay: parent });
             if (await overlayPage.isStillOpen(restored)) result.overlay = restored;
           }
           return;
@@ -239,7 +240,7 @@ class Action {
       previousHtml: previous.html,
     });
 
-    if (result.overlay.detected) {
+    if (result.overlay instanceof Overlay) {
       if (detected) result.overlay = result.overlay.withGeometry(detected);
       return;
     }

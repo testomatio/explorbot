@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
-import { remote } from '../../../src/remote.ts';
+import { knowledgeOption, wsOption } from '../../../src/commands/options/index.ts';
 import { createApiCommands } from '../src/cli.ts';
 
 const program = createApiCommands('apibot');
-remote.registerOption(program);
+wsOption.register(program);
+knowledgeOption.register(program);
 program.parse();

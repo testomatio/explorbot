@@ -1,0 +1,419 @@
+<!DOCTYPE html><html lang="en" class="light" style="--sticky-header-height: 116px;"><head><title>Tests - Testomat.io</title><style>
+*, :before, :after { border: 0 solid #e5e7eb; box-sizing: border-box }
+body { font-family: system-ui, sans-serif; margin: 0 }
+
+.ember-modal-overlay { height: 100vh; left: 0; position: fixed; top: 0; width: 100vw; z-index: 50 }
+.ember-modal-overlay.translucent { background-color: hsla(0, 0%, 4%, .5) }
+
+.ember-modal-dialog { position: fixed; z-index: 51 }
+.ember-modal-wrapper.emd-static.emd-wrapper-target-attachment-center .ember-modal-dialog { left: 50%; top: 50%; transform: translate(-50%, -50%) }
+.ember-modal-dialog { background-color: #fff; max-height: 80vh; max-width: 80%; min-width: 40vw; overflow-x: hidden; overflow-y: auto; padding: 2rem }
+.ember-modal-dialog.modal { border-radius: 12px; box-shadow: -1px 8px 20px 0 rgba(34, 34, 34, .3); padding: 1rem 1.5rem 1.25rem }
+body:has(.ember-modal-dialog) { overflow: hidden }
+
+.modal--lg { max-width: calc(100vw - 2rem); min-width: 0; width: 768px }
+.modal-dialog-container.large-height { max-height: 99% }
+.modal-dialog-container.overflowYHidden { overflow-y: hidden }
+
+.modal-header { align-items: center; display: flex; flex-shrink: 0; justify-content: space-between; margin-bottom: 1rem }
+.modal-header-title { flex: 1 1 0%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.modal-main { padding-bottom: 1rem }
+.modal-content, .modal-main { display: flex; flex: 1 1 0%; flex-direction: column; min-height: 0 }
+.modal-footer { align-items: center; border-top-width: 1px; display: flex; flex-shrink: 0; gap: .5rem; justify-content: space-between; margin-left: -1.5rem; margin-right: -1.5rem; padding-left: 1.5rem; padding-right: 1.5rem; padding-top: 1.25rem }
+.modal-footer-actions { align-items: center; display: flex; gap: .75rem; margin-left: auto }
+
+.flex { display: flex }
+.flex-col { flex-direction: column }
+
+</style></head>
+
+  <body class="ember-application enable-motion underline-links hide-scrollbar"><div id="app_info_holder"><b>STAGING SERVER</b></div><div id="modal-overlays"></div><div class="main-app"><nav class="nav-height"><div class="mainnav-menu mainnav-menu-not-expanded"><div class="mainnav-menu-body"><ul><li><a id="ember4" class="ember-view active nav-item group" href="https://beta.testomat.io/projects/testing-scrive/" aria-describedby="ember5-floating"><svg class="md-icon md-icon-check-bold"></svg><div class="ember-attacher" id="ember5-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                Tests
+                <span class="tooltip-text">
+                  Shift + 1
+                </span></div></div></a></li><li><a id="ember6" class="ember-view nav-item group" href="https://beta.testomat.io/projects/testing-scrive/requirements" aria-describedby="ember7-floating"><svg class="md-icon md-icon-briefcase-check-outline"></svg><div class="ember-attacher" id="ember7-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                Requirements
+                <span class="tooltip-text">
+                  Shift + 2
+                </span></div></div></a></li><li><a id="ember8" class="ember-view nav-item group" href="https://beta.testomat.io/projects/testing-scrive/runs" aria-describedby="ember9-floating"><svg class="md-icon md-icon-play-circle-outline"></svg><div class="ember-attacher" id="ember9-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                Runs
+                <span class="tooltip-text">
+                  Shift + 3
+                </span></div></div></a></li><li><a id="ember10" class="ember-view nav-item group" href="https://beta.testomat.io/projects/testing-scrive/plans" aria-describedby="ember11-floating"><svg class="md-icon md-icon-playlist-check"></svg><div class="ember-attacher" id="ember11-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                Plans
+                <span class="tooltip-text">
+                  Shift + 4
+                </span></div></div></a></li><li><a id="ember12" class="ember-view nav-item group" href="https://beta.testomat.io/projects/testing-scrive/steps" aria-describedby="ember13-floating"><svg class="md-icon md-icon-stairs"></svg><div class="ember-attacher" id="ember13-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                Steps
+                <span class="tooltip-text">
+                  Shift + 5
+                </span></div></div></a></li><li><a id="ember14" class="ember-view nav-item group" href="https://beta.testomat.io/projects/testing-scrive/pulse" aria-describedby="ember15-floating"><svg class="md-icon md-icon-pulse"></svg><div class="ember-attacher" id="ember15-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                    Pulse
+                    <span class="tooltip-text">
+                      Shift + 6
+                    </span></div></div></a></li><li><a id="ember16" class="ember-view nav-item group" href="https://beta.testomat.io/projects/testing-scrive/defects" aria-describedby="ember17-floating"><svg class="md-icon md-icon-bug-outline"></svg><div class="ember-attacher" id="ember17-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                  Defects
+                  <span class="tooltip-text">
+                    Shift + 7
+                  </span></div></div></a></li><li><a id="ember18" class="ember-view nav-item group" href="https://beta.testomat.io/projects/testing-scrive/analytics" aria-describedby="ember19-floating"><svg class="md-icon md-icon-chart-box-outline"></svg><div class="ember-attacher" id="ember19-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                  Analytics
+                  <span class="tooltip-text">
+                    Shift + 8
+                  </span></div></div></a></li><li><a id="ember20" class="ember-view nav-item group" href="https://beta.testomat.io/projects/testing-scrive/branches" aria-describedby="ember21-floating"><svg class="md-icon md-icon-source-fork"></svg><div class="ember-attacher" id="ember21-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                    Branches
+                    <span class="tooltip-text">
+                      Shift + 9
+                    </span></div></div></a></li><li><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="nav-item group" aria-describedby="ember22-floating"><div class="relative"><svg class="md-icon md-icon-cog"></svg></div><div class="ember-attacher" id="ember22-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                  Settings
+                
+
+</div></div></a></li></ul></div><div class="mainnav-menu-footer"><ul><li><div><a class="nav-item" aria-describedby="ember56-floating"><svg class="md-icon md-icon-apple-keyboard-command"></svg><div class="ember-attacher" id="ember56-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+              Shortcuts
+            
+
+</div></div></a></div></li><li><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="nav-item group" aria-describedby="ember23-floating"><svg class="md-icon md-icon-help-circle-outline"></svg><div class="ember-attacher" id="ember23-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                Help
+              
+
+</div></div></a></li><li><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="nav-item group" aria-describedby="ember24-floating"><div class="relative"><svg class="md-icon md-icon-bell"></svg></div><div class="ember-attacher" id="ember24-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                  Notifications
+                
+
+</div></div></a></li><li><a href="https://beta.testomat.io/" class="nav-item group" aria-describedby="ember25-floating"><svg class="md-icon md-icon-folder-multiple"></svg><div class="ember-attacher" id="ember25-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                Projects
+              
+
+</div></div></a></li><li><div><a class="nav-item" aria-describedby="ember26-floating"><div class="ember-attacher" id="ember26-floating" role="tooltip"><div class="ember-attacher-shift ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+                    Profile
+                    
+                  
+
+</div></div></a></div></li></ul></div></div></nav><div><div><div class="detail detail-view-resizable"><div class="back" aria-describedby="ember160-floating"><button class="third-btn btn-only-icon btn-lg btn-split-right" type="button"><svg class="md-icon md-icon-close"></svg></button></div><div class="detail-view-header-wrapper"><div class="detail-view-header"><div class="detail-view-pwd"><div><h3>
+          New Test
+        </h3></div></div><div class="detail-view-actions"><button class="secondary-btn btn-text-and-icon btn-md" type="button">      
+  
+          Select suite
+      
+
+</button><span aria-describedby="ember161-floating"><button class="third-btn btn-only-icon btn-lg" type="button"><svg class="md-icon md-icon-close"></svg></button></span></div></div></div><div class="detail-view-content"><div class="flex-wrap"><button class="third-btn btn-text-and-icon btn-sm" type="button"><svg></svg>
+      
+  Set milestone
+
+</button><div><button class="third-btn btn-text-and-icon btn-sm" type="button"><svg></svg>
+      
+  
+              Set labels
+            
+
+</button></div></div><div class="flex-col"><div class="form-title-block"><div><div class="priority-icon priority-button"><div class="ember-basic-dropdown"><div id="ember144-trigger" class="ember-view ember-basic-dropdown-trigger ember-basic-dropdown-trigger--in-place ember-power-select-trigger secondary-btn btn-lg btn-only-icon" tabindex="0" role="combobox" aria-owns="ember-basic-dropdown-content-ember145"><span aria-describedby="ember162-floating"><svg class="md-icon md-icon-circle-outline normal"></svg></span><span class="ember-power-select-status-icon"></span></div></div></div><div><div><div>
+              Add tags with @ char, for example: @smoke @basic etc.
+            </div></div><div class="power-select-custom tag-suggest power-select-lg error"><input placeholder="Title should not be empty" type="text"></div></div><div class="assign-to assign-to-lg options-right"><div class="ember-basic-dropdown"><div id="ember147-trigger" class="ember-view ember-basic-dropdown-trigger ember-basic-dropdown-trigger--in-place ember-power-select-trigger" tabindex="0" role="combobox" aria-owns="ember-basic-dropdown-content-ember148"><div class="assign-to-placeholder assign-to-placeholder-lg" aria-describedby="ember150-floating"><div class="assign-to-placeholder-button"><svg class="assign-to-placeholder-icon"></svg></div><div class="ember-attacher" id="ember150-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+    Assign to
+  
+
+</div></div></div><span class="ember-power-select-status-icon"></span></div></div></div></div></div></div><div id="fullScreenElement"><div class="ember-tabs"><ul class="ember-tabs__tab-list" role="tablist"><li class="ember-tabs__tab ember-tabs__tab--selected" id="ember151" role="tab" tabindex="0"><svg class="md-icon md-icon-language-markdown-outline"></svg><span class="tab-text">
+            Markdown
+          </span></li><li class="ember-tabs__tab" id="ember152" role="tab"><svg class="md-icon md-icon-square-edit-outline"></svg><span class="tab-text">
+            Rich editor
+          </span></li><li class="ember-tabs__tab" id="ember153" role="tab"><svg class="md-icon md-icon-eye-outline"></svg><span class="tab-text">
+            Preview
+          </span></li><div><div class="ember-basic-dropdown"><div id="ember155" class="ember-view ember-basic-dropdown-trigger ember-basic-dropdown-trigger--in-place" tabindex="0" role="button" aria-owns="ember-basic-dropdown-content-ember154"><button class="third-btn btn-text-and-icon btn-md btn-icon-after" type="button" aria-describedby="ember163-floating"><svg class="md-icon md-icon-text-box-plus-outline"></svg><span class="template-btn-full">
+          Template: Test Template
+        </span><span class="template-btn-compact">
+          Template
+        </span><svg class="md-icon md-icon-chevron-down"></svg></button></div></div><div><button class="third-btn btn-only-icon btn-sm" tabindex="-1" type="button"><svg class="md-icon md-icon-cog-outline"></svg></button></div><button class="third-btn btn-only-icon btn-sm" tabindex="-1" type="button"><svg class="md-icon md-icon-arrow-expand"></svg></button></div></ul><div class="ember-tabs__tab-panel ember-tabs__tab-panel--selected" id="ember156" role="tabpanel"><div class="flex-wrap"><ul class="form-test flex-none"><li aria-describedby="ember164-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember164-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Heading level 2
+          <span class="tooltip-text">
+    
+          Alt + 2
+        
+  </span></div></div></li><li aria-describedby="ember165-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember165-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Heading level 3
+          <span class="tooltip-text">
+    
+          Alt + 3
+        
+  </span></div></div></li><li aria-describedby="ember166-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember166-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Heading level 4
+          <span class="tooltip-text">
+    
+          Alt + 4
+        
+  </span></div></div></li><li aria-describedby="ember167-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember167-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Bold
+          <span class="tooltip-text">
+    
+          Ctrl + B
+        
+  </span></div></div></li><li aria-describedby="ember168-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember168-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Italic
+          <span class="tooltip-text">
+    
+          Ctrl + I
+        
+  </span></div></div></li><li aria-describedby="ember169-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember169-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Add link
+          <span class="tooltip-text">
+    
+          Ctrl + U
+        
+  </span></div></div></li><li aria-describedby="ember170-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember170-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Add table
+      
+
+</div></div></li><li aria-describedby="ember171-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember171-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Add ordered list
+          <span class="tooltip-text">
+    
+          Alt + ,
+        
+  </span></div></div></li><li aria-describedby="ember172-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="ember-attacher" id="ember172-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Add unordered list
+          <span class="tooltip-text">
+    
+          Alt + .
+        
+  </span></div></div></li><li aria-describedby="ember173-floating"><button class="third-btn btn-only-icon btn-md" type="button"><svg class="md-icon md-icon-code-tags"></svg></button><div class="ember-attacher" id="ember173-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Add code
+          <span class="tooltip-text">
+    
+          Shift +
+          Ctrl + K
+        
+  </span></div></div></li><li class="relative" aria-describedby="ember174-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="absolute"><svg class="md-icon md-icon-plus"></svg></div><div class="ember-attacher" id="ember174-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Add steps(unordered)
+      
+
+</div></div></li><li class="relative" aria-describedby="ember175-floating"><button class="third-btn btn-only-icon btn-only-icon btn-md" type="button"><svg></svg></button><div class="absolute"><svg class="md-icon md-icon-plus"></svg></div><div class="ember-attacher" id="ember175-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Add steps(ordered)
+      
+
+</div></div></li><li aria-describedby="ember176-floating"><button class="third-btn btn-only-icon btn-md" type="button"><svg class="md-icon md-icon-dots-horizontal"></svg></button><div class="ember-attacher" id="ember176-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Trigger suggestions
+      
+
+</div></div></li></ul><div><button aria-describedby="ember177-floating" class="third-btn btn-only-icon btn-md" tabindex="-1" type="button"><svg class="md-icon md-icon-paperclip"></svg></button><button aria-describedby="ember178-floating" class="third-btn btn-only-icon btn-only-icon btn-md" tabindex="-1" type="button"><svg></svg></button><button aria-describedby="ember179-floating" class="third-btn btn-only-icon btn-only-icon btn-md" tabindex="-1" type="button"><svg></svg></button></div></div><div><div class="relative"><div class="code-editor-container editor-test"><div class="code-editor-frame"><div class="editor-mount"><div class="monaco-editor no-user-select showUnused showDeprecated vs" role="code"><div><div class="margin" role="presentation"><div class="glyph-margin"></div><div class="margin-view-zones" role="presentation"></div><div class="margin-view-overlays" role="presentation"><div></div><div></div><div></div><div></div></div><div class="glyph-margin-widgets"></div></div><div class="monaco-scrollable-element editor-scrollable vs" role="presentation"><div class="lines-content monaco-editor-background"><div class="view-overlays" role="presentation"><div></div><div></div><div></div><div></div></div><div role="presentation" class="view-rulers"></div><div class="view-zones" role="presentation"></div><div class="view-lines monaco-mouse-cursor-text" role="presentation"><div class="view-line"><span><span>###&nbsp;Requirements</span></span></div><div class="view-line"></div><div class="view-line"><span><span>###&nbsp;Steps</span></span></div><div class="view-line"></div></div><div role="presentation" class="cursors-layer"><div class="cursor monaco-mouse-cursor-text"></div></div></div><div role="presentation" class="invisible scrollbar horizontal"><div class="slider"></div></div><canvas class="decorationsOverviewRuler"></canvas><div role="presentation" class="invisible scrollbar vertical"><div class="slider"></div></div></div><div role="presentation"></div><textarea class="inputarea monaco-mouse-cursor-text" aria-label="Editor content" tabindex="0" role="textbox"></textarea><div class="overlayWidgets"><div class="sticky-widget"><div class="sticky-widget-line-numbers" role="none"></div><div class="sticky-widget-lines-scrollable"><div class="sticky-widget-lines" role="list"></div></div></div></div><div class="minimap slider-mouseover" role="presentation"><div class="minimap-shadow-hidden"></div><canvas></canvas><canvas class="minimap-decorations-layer"></canvas><div class="minimap-slider"></div></div><div role="presentation" class="blockDecorations-container"></div></div></div></div></div></div></div></div><div><span><a href="https://www.markdownguide.org/basic-syntax/" class="baseLink primary link-md" tabindex="-1"><span>
+      
+  
+              Markdown format supported
+            
+
+    </span><svg class="md-icon md-icon-arrow-top-right"></svg></a>
+
+
+
+            . Start typing
+            
+            &nbsp;to call list of steps. Press
+            
+            &nbsp;to show All Commands in editor.
+          </span></div></div><div class="ember-tabs__tab-panel" id="ember157" role="tabpanel"></div><div class="ember-tabs__tab-panel" id="ember158" role="tabpanel"></div></div></div></div><div class="detail-view-footer"><div><div class="flex-none"><button class="primary-btn btn-text-and-icon btn-lg btn-split-right" type="button">      
+      Save
+    
+</button><div><button class="primary-btn btn-only-icon btn-lg btn-split-left" type="button"><svg class="md-icon md-icon-chevron-down"></svg></button></div></div><a id="ember159" class="ember-view secondary-btn btn-text-and-icon btn-lg" href="https://beta.testomat.io/projects/testing-scrive/">        
+  
+            Cancel
+          
+
+</a></div></div></div><div class="sticky-header"><div class="first"><div><div><div class="breadcrumbs-page"><a id="ember43" class="ember-view" title="scrive" href="https://beta.testomat.io/projects/testing-scrive/">
+    Scrive
+  </a><span class="breadcrumbs-page-divide"><svg class="md-icon md-icon-chevron-right"></svg></span></div></div><div><datalist id="tags-suggestions"><option value="@critical">
+                    1
+                    tests
+                </option><option value="@security">
+                    1
+                    tests
+                </option></datalist><div class="filterbar-filter-btn-div"><button class="secondary-btn btn-only-icon btn-lg" type="button"><svg class="md-icon md-icon-filter"></svg></button></div><div class="filterbar-search"><div class="relative"><div class="absolute"><svg class="md-icon md-icon-magnify"></svg></div><input id="search" class="ember-text-field ember-view search size-" name="search" placeholder="Search [Ctrl + K]" type="search"></div></div><button aria-describedby="ember53-floating" class="third-btn btn-only-icon btn-lg" type="button"><svg class="md-icon md-icon-tune"></svg></button></div></div><div class="flex-none"><div><button class="primary-btn btn-text-and-icon btn-lg btn-icon-after" type="button"><svg class="md-icon md-icon-plus"></svg>
+
+
+              
+  
+        New
+      
+
+          <svg class="md-icon md-icon-chevron-down"></svg></button></div><div><div class="ember-basic-dropdown"><div id="ember45" class="ember-view ember-basic-dropdown-trigger ember-basic-dropdown-trigger--in-place secondary-btn btn-only-icon btn-lg" tabindex="0" role="button" aria-owns="ember-basic-dropdown-content-ember44"><svg class="md-icon md-icon-dots-horizontal"></svg></div></div></div></div></div><div class="second"><div><div><nav class="static" aria-label="Tabs"><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="filter-tab">
+            Manual
+
+                </a><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="filter-tab">
+            Automated
+
+                </a><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="filter-tab">
+            Out of sync
+</a><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="filter-tab">
+            Detached
+</a><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="filter-tab">
+            Starred
+</a></nav></div><div><div class="width-settings"><div><button class="third-btn btn-text-and-icon btn-md" type="button"><svg class="md-icon md-icon-tune-variant"></svg>
+
+
+              
+  
+      Display
+    
+
+</button></div></div></div></div></div></div><div class="suites-list-content"><div><div><div class="nestedItem mainNestedItem"><div id="ember46" class="dragSortList -draggingEnabled -vertical ember-view relative"><div id="ember47" class="dragSortItem -isTargetNOT ember-view"><div class="nestedItem sort-list-empty"><div class="nested-item-row nested-item-row-suite"><div><div><span class="node-expand"><span class="nested-item-drag over-border drag-icon"><svg class="md-icon md-icon-drag-vertical nested-item-drag-icon"></svg></span><span class="nested-item-checkbox nested-item-hover-checkbox over-border checkbox-over"><input id="ember48" class="ember-checkbox ember-view" name="select 98366646" type="checkbox"></span><span class="node-expand suite"><button aria-describedby="ember54-floating" class="third-btn btn-only-icon btn-md expand-btn" type="button"><svg class="md-icon md-icon-chevron-right"></svg></button></span></span></div><a id="ember49" class="ember-view node-link" href="https://beta.testomat.io/projects/testing-scrive/suite/98366646-tests"><div><span><svg class="folder-icon"></svg></span></div><small>
+                    17
+                    tests
+              </small></a></div></div></div></div><div id="ember50" class="dragSortItem -isTargetNOT ember-view"><div class="nestedItem sort-list-empty"><div class="nested-item-row nested-item-row-suite"><div><div><span class="node-expand"><span class="nested-item-drag over-border drag-icon"><svg class="md-icon md-icon-drag-vertical nested-item-drag-icon"></svg></span><span class="nested-item-checkbox nested-item-hover-checkbox over-border checkbox-over"><input id="ember51" class="ember-checkbox ember-view" name="select 649e10bc" type="checkbox"></span><span class="node-expand suite"><button aria-describedby="ember55-floating" class="third-btn btn-only-icon btn-md expand-btn" type="button"><svg class="md-icon md-icon-chevron-right"></svg></button></span></span></div><a id="ember52" class="ember-view node-link" href="https://beta.testomat.io/projects/testing-scrive/suite/649e10bc-testing-home-page-of-todo-mvc"><div><span><svg class="suite-icon"></svg></span></div><span>
+
+                testing home page of todo mvc
+            </span><small>
+                    13
+                    tests
+              </small></a></div></div></div></div></div><div class="nested-item-row"><div><div><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="baseLink primary link-sm createSuite"><svg class="md-icon md-icon-folder-plus-outline"></svg><span>
+      
+  
+            New folder
+          
+
+    </span></a></div><div><a href="https://beta.testomat.io/projects/testing-scrive/suites/suite/new-test#" class="baseLink primary link-sm createSuite"><svg class="md-icon md-icon-file-plus-outline"></svg><span>
+      
+  
+            New suite
+          
+
+    </span></a></div></div></div></div></div></div></div></div></div></div><div class="ember-attacher" id="ember53-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Query Language Editor
+      
+
+</div></div><div class="ember-attacher" id="ember54-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Expand
+      
+
+</div></div><div class="ember-attacher" id="ember55-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Expand
+      
+
+</div></div><div class="monaco-aria-container"><div class="monaco-alert" role="alert"></div><div class="monaco-alert" role="alert"></div></div><div class="ember-attacher" id="ember160-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+      Close panel
+      </div></div><div class="ember-attacher" id="ember161-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+          Close panel
+          </div></div><div class="ember-attacher" id="ember162-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow"><span>
+        Priority:
+        normal
+      </span></div></div><div class="ember-attacher" id="ember163-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+          Test Template
+        
+
+</div></div><div class="ember-attacher" id="ember177-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Attachments
+      
+
+</div></div><div class="ember-attacher" id="ember178-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Draw
+      
+
+</div></div><div class="ember-attacher" id="ember179-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Dictate. Results are returned in English, regardless of the language you speak. To change it, go to Project Settings → AI settings → Response Language.
+      
+
+</div></div><div class="ember-attacher" id="ember196-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Expand
+      
+
+</div></div><div class="ember-attacher" id="ember197-floating" role="tooltip"><div class="ember-attacher-fade ember-attacher-floating ember-attacher-tooltip ember-attacher-hide ember-attacher-without-arrow">
+        
+  
+        Expand
+      
+
+</div></div><script>
+const MODAL_HTML = "<div class=\"ember-modal-wrapper ember-modal-dialog-target-attachment-center emd-wrapper-target-attachment-center emd-static\n        \">\n        <div class=\"emd-debug  ember-modal-overlay translucent\" tabindex=\"-1\" data-emd-overlay=\"\">\n  \n          <div id=\"ember189\" class=\"ember-modal-dialog ember-modal-dialog-target-attachment-center emd-target-attachment-center modal modal--lg modal-dialog-container large-height overflowYHidden flex flex-col ember-view\">\n            \n  \n    \n\n  <div class=\"modal-header\">\n<!---->      <h3 class=\"modal-header-title\">Select suite for test</h3>\n        <button class=\"third-btn\n      btn-only-icon\n      \n      btn-lg\n      \n      \n      \n      \n      \n      \" type=\"button\">\n            <svg class=\"md-icon md-icon-close \" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" role=\"img\" fill=\"currentColor\">\n<!---->  <path d=\"M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z\"></path>\n</svg>\n\n\n        <!----><!---->  </button>\n\n\n  </div>\n\n  <div class=\"modal-main\">\n<!---->\n    <div class=\"modal-content\">\n      \n        <div class=\"mb-4 flex items-center justify-between pr-0.5\">\n    <span class=\"text-sm font-medium text-grayNeutral-700 dark:text-whiteOpacity-700\">\n      Select\n      file\n    </span>\n<!---->    \n\n\n\n<div class=\"filterbar-search\">\n  <label for=\"search\" class=\"sr-only\">\n    Search\n  </label>\n  <div class=\"relative\">\n    <div class=\"absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none\">\n        <svg class=\"md-icon md-icon-magnify  h-5 w-5 text-grayNeutral-400\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" role=\"img\" fill=\"currentColor\">\n<!---->  <path d=\"M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z\"></path>\n</svg>\n\n\n    </div>\n<!---->\n    <input id=\"search\" class=\"ember-text-field ember-view search size- \" name=\"search\" autocomplete=\"off\" placeholder=\"Search by title\" type=\"search\">\n  </div>\n</div>\n\n</div>\n\n<!---->\n    <div class=\"tree tree-list-item vertical-line vertical mb-2\">\n  <ul class=\"tree-branch\">\n        <li class=\"tree-node list-\" data-model-id=\"\">\n\n  <div class=\"\" role=\"button\">\n    \n    \n          \n    \n<!---->    \n  \n        \n  \n</div>\n\n\n<!----></li>\n\n        <li class=\"tree-node list-98366646\" data-model-id=\"98366646\">\n\n  <div class=\"tree-disabled tree-children\" role=\"button\">\n    \n    \n          \n    \n        </div></li><li class=\"w-full py-1.5 px-2 list-item-border sidebar-border\n    \n     flex items-center space-x-2 text-primary \" style=\"height: 36px\">\n<!---->  \n            <span class=\"p-1\">\n              <input id=\"ember194\" class=\"ember-checkbox ember-view\" name=\"select 98366646\" disabled=\"\" type=\"checkbox\">\n            </span>\n          <span class=\"node-expand inline-flex items-center suite 98366646 cursor-pointer\">\n              <button aria-describedby=\"ember196-floating\" class=\"third-btn\n      btn-only-icon\n      \n      btn-md\n      \n      \n      \n      \n      expand-btn\n      \" type=\"button\">\n            <svg class=\"md-icon md-icon-chevron-right  list-icon\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" role=\"img\" fill=\"currentColor\">\n<!---->  <path d=\"M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z\"></path>\n</svg>\n\n\n        <!---->      <!----><!---->\n  </button>\n\n\n          </span>\n          <div class=\"w-full flex items-center truncate space-x-2\">\n            <span class=\"w-5 flex items-center justify-center\">\n                <svg class=\"folder-icon\" width=\"20\" height=\"20\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M6.797 3h-3.68C1.949 3 1 3.895 1 5v9c0 1.105.948 2 2.118 2h13.764c1.17 0 2.118-.895 2.118-2V7.08c0-1.105-.948-2-2.118-2h-5.861c-.484 0-.954-.157-1.33-.444L8.128 3.444A2.197 2.197 0 0 0 6.798 3z\" fill=\"var(--folder-icon-fill-1, currentColor)\"></path><path d=\"M0 14.22V4.78C0 3.245 1.297 2 2.896 2h3.799c.662 0 1.303.219 1.818.618l1.614 1.25c.262.203.59.314.926.314h6.05c1.6 0 2.897 1.245 2.897 2.78v7.258c0 1.535-1.297 2.78-2.896 2.78H2.896C1.297 17 0 15.755 0 14.22zm1.422 0c0 .782.66 1.416 1.474 1.416h14.207c.815 0 1.475-.634 1.475-1.416V6.962c0-.782-.66-1.416-1.474-1.416h-6.05a2.973 2.973 0 0 1-1.82-.618l-1.613-1.25a1.514 1.514 0 0 0-.926-.314H2.896c-.814 0-1.474.634-1.474 1.416v9.44z\" fill=\"var(--folder-icon-fill-2, currentColor)\"></path></svg>\n            </span>\n            <span>\n              tests\n            </span>\n<!---->            <span class=\"text-xs text-gray-500 dark:text-gray-400\">\n              17 tests\n            </span>\n          </div>\n        \n</li>\n\n    \n  \n        \n  \n</ul></div>\n\n\n<!---->\n\n        <li class=\"tree-node list-649e10bc\" data-model-id=\"649e10bc\">\n\n  <div class=\"\" role=\"button\">\n    \n    \n          \n    \n        </div></li><li class=\"w-full py-1.5 px-2 list-item-border sidebar-border\n    \n    hover:bg-grayNeutral-50 dark:hover:bg-whiteOpacity-50 flex items-center space-x-2 text-primary \" style=\"height: 36px\" role=\"button\">\n<!---->  \n            <span class=\"p-1\">\n              <input id=\"ember195\" class=\"ember-checkbox ember-view\" name=\"select 649e10bc\" type=\"checkbox\">\n            </span>\n          <span class=\"node-expand inline-flex items-center suite 649e10bc cursor-pointer\">\n              <button disabled=\"\" aria-describedby=\"ember197-floating\" class=\"third-btn\n      btn-only-icon\n      \n      btn-md\n      \n      \n      \n      disabled\n      expand-btn\n      \" type=\"button\">\n            <svg class=\"md-icon md-icon-chevron-right  list-icon\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" role=\"img\" fill=\"currentColor\">\n<!---->  <path d=\"M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z\"></path>\n</svg>\n\n\n        <!---->      <!----><!---->\n  </button>\n\n\n          </span>\n          <div class=\"w-full flex items-center truncate space-x-2\">\n            <span class=\"w-5 flex items-center justify-center\">\n                <svg class=\"suite-icon\" width=\"20\" height=\"20\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M10.815 1c.771 0 1.508.313 2.04.865l3.365 3.49c.5.519.78 1.21.78 1.927v8.924C17 17.75 15.737 19 14.179 19H5.82C4.263 19 3 17.748 3 16.206V3.794C3 2.251 4.263 1 5.821 1h4.994zM5.821 2.45c-.75 0-1.358.601-1.358 1.344v12.412c0 .743.608 1.345 1.358 1.345h8.358c.75 0 1.358-.602 1.358-1.345V7.621h-2.142c-1.557 0-2.82-1.25-2.82-2.793V2.45H5.82zm6.316 7.663a.63.63 0 0 1 .883-.066.615.615 0 0 1 .067.874l-3.134 3.621a.63.63 0 0 1-.918.034l-2.09-2.07a.616.616 0 0 1 0-.876.63.63 0 0 1 .886 0l1.61 1.596 2.696-3.113zm-.1-5.285c0 .743.608 1.345 1.358 1.345h1.591l-2.949-3.06v1.715z\" fill=\"currentColor\"></path></svg>\n                          </span>\n            <span>\n              testing home page of todo mvc\n            </span>\n<!---->            <span class=\"text-xs text-gray-500 dark:text-gray-400\">\n              13 tests\n            </span>\n          </div>\n        \n</li>\n\n    \n  \n        \n  \n</div>\n\n\n<!---->\n\n\n\n\n  <div class=\"py-4\"></div>\n</div>\n\n\n      \n    </div>\n\n<!---->  </div>\n\n    <div class=\"modal-footer\">\n      <div class=\"modal-footer-controls\">\n        \n      </div>\n      <div class=\"modal-footer-actions\">\n        \n          <button class=\"secondary-btn\n      btn-text-and-icon\n      \n      btn-lg\n      \n      \n      \n      \n      \n      \" type=\"button\">\n<!---->      \n  \n          Cancel\n        \n\n<!----><!---->  </button>\n\n\n          <button disabled=\"\" class=\"primary-btn\n      btn-text-and-icon\n      \n      btn-lg\n      \n      \n      \n      \n      \n      \" type=\"button\">\n<!---->      \n  \n          Select\n          0 suites\n        \n\n<!----><!---->  </button>\n\n\n      \n      </div>\n    </div>\n\n\n          </div>";
+
+const overlays = document.getElementById('modal-overlays');
+
+function closeModal() {
+  overlays.replaceChildren();
+}
+
+function openModal() {
+  overlays.innerHTML = MODAL_HTML;
+  for (const button of overlays.querySelectorAll('.modal-header button, .modal-footer button')) {
+    if (button.classList.contains('primary-btn')) continue;
+    button.addEventListener('click', closeModal);
+  }
+}
+
+for (const button of document.querySelectorAll('button')) {
+  if (button.textContent.trim() === 'Select suite') button.addEventListener('click', openModal);
+}
+
+</script></body></html>

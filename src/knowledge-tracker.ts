@@ -11,36 +11,54 @@ import { loadMarkdownFiles } from './utils/markdown-files.js';
 import { mdq } from './utils/markdown-query.js';
 import { isSecretName, registerSecret } from './utils/secrets.js';
 import { slugify } from './utils/strings.js';
+import { extractStatePath, matchesUrl } from './utils/url-matcher.js';
 
 const debugLog = createDebug('explorbot:knowledge-tracker');
 
-export interface Knowledge {
-  filePath: string;
-  url: string;
-  content: string;
-  [key: string]: any;
-}
+const sessionEntries: string[] = [];
 
 export class KnowledgeTracker {
   private knowledgeDir: string;
   private knowledgeFiles: Knowledge[] = [];
+  private sessionKnowledge: Knowledge[] = [];
   private isLoaded = false;
   private applicationSpec?: ApplicationSpec;
 
-  constructor(applicationSpecPath?: string) {
-    const configParser = ConfigParser.getInstance();
-    const config = configParser.getConfig();
-    this.knowledgeDir = configParser.resolveProjectDir(config.dirs?.knowledge || 'knowledge');
+  static appendSessionKnowledge(text: string): void {
+    sessionEntries.push(text);
+  }
+
+  static resetSessionKnowledge(): void {
+    sessionEntries.length = 0;
+  }
+
+  constructor(options: KnowledgeTrackerOptions = {}) {
+    let knowledgeDir = options.knowledgeDir;
+    let specPath = options.applicationSpec;
+
+    if (!knowledgeDir) {
+      const configParser = ConfigParser.getInstance();
+      const config = configParser.getConfig();
+      knowledgeDir = configParser.resolveProjectDir(config.dirs?.knowledge || 'knowledge');
+      specPath ||= config.dirs?.spec;
+    }
+
+    this.knowledgeDir = knowledgeDir;
 
     if (!existsSync(this.knowledgeDir)) {
       mkdirSync(this.knowledgeDir, { recursive: true });
     }
 
-    const specPath = applicationSpecPath || config.dirs?.spec;
     if (specPath) {
       this.applicationSpec = new ApplicationSpec(specPath);
       tag('info').log(`Loaded application spec with ${this.applicationSpec.pageCount} documented pages`);
     }
+
+    this.sessionKnowledge = sessionEntries.map((entry, index) => {
+      const parsed = matter(entry);
+      debugLog(`Session knowledge #${index + 1}`);
+      return this.toKnowledge(`--knowledge #${index + 1}`, parsed.data, parsed.content.trim());
+    });
   }
 
   private loadKnowledgeFiles(): void {
@@ -49,12 +67,7 @@ export class KnowledgeTracker {
     this.knowledgeFiles = [];
 
     for (const entry of loadMarkdownFiles(this.knowledgeDir, { recursive: true })) {
-      this.knowledgeFiles.push({
-        filePath: entry.filePath,
-        url: entry.data.url || entry.data.path || '*',
-        content: this.interpolateVars(entry.content),
-        ...entry.data,
-      });
+      this.knowledgeFiles.push(this.toKnowledge(entry.filePath, entry.data, entry.content));
     }
 
     this.isLoaded = true;
@@ -63,28 +76,22 @@ export class KnowledgeTracker {
   getRelevantKnowledge(state: ActionResult): Knowledge[] {
     this.loadKnowledgeFiles();
 
-    return this.knowledgeFiles.filter((knowledge) => {
-      return state.isMatchedBy(knowledge);
-    });
+    return this.allKnowledge().filter((knowledge) => knowledge.url && state.isMatchedBy(knowledge));
+  }
+
+  getEndpointKnowledge(endpoint: string): Knowledge[] {
+    this.loadKnowledgeFiles();
+    const path = extractStatePath(endpoint);
+
+    return this.allKnowledge().filter((knowledge) => knowledge.endpoint && matchesUrl(knowledge.endpoint, path));
   }
 
   renderRelevantKnowledge(state: ActionResult): string {
-    const knowledgeFiles = this.getRelevantKnowledge(state);
-    if (knowledgeFiles.length === 0) return '';
+    return this.renderKnowledge(this.getRelevantKnowledge(state), 'page');
+  }
 
-    const knowledgeContent = knowledgeFiles
-      .map((k) => k.content)
-      .filter((k) => !!k)
-      .join('\n\n');
-
-    tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
-    return dedent`
-      <knowledge>
-      Here is relevant knowledge for this page:
-
-      ${knowledgeContent}
-      </knowledge>
-    `;
+  renderEndpointKnowledge(endpoint: string): string {
+    return this.renderKnowledge(this.getEndpointKnowledge(endpoint), 'endpoint');
   }
 
   renderRelevantContext(state: ActionResult): string {
@@ -188,7 +195,7 @@ export class KnowledgeTracker {
   getExistingUrls(): string[] {
     this.loadKnowledgeFiles();
 
-    return this.knowledgeFiles.map((knowledge) => knowledge.url).filter((url) => url && url !== '*');
+    return this.knowledgeFiles.map((knowledge) => knowledge.url || '').filter((url) => url && url !== '*');
   }
 
   getKnowledgeForUrl(urlPattern: string): string[] {
@@ -205,7 +212,7 @@ export class KnowledgeTracker {
       const content = knowledge.content.trim();
       const firstLine = mdq(content).meta()[0]?.text.split('\n')[0]?.trim() || '';
       return {
-        url: knowledge.url,
+        url: knowledge.url || knowledge.endpoint || '',
         firstLine,
         filePath: knowledge.filePath,
       };
@@ -242,4 +249,55 @@ export class KnowledgeTracker {
 
     return result;
   }
+
+  private allKnowledge(): Knowledge[] {
+    return [...this.knowledgeFiles, ...this.sessionKnowledge];
+  }
+
+  private toKnowledge(filePath: string, data: Record<string, any>, content: string): Knowledge {
+    const knowledge: Knowledge = {
+      ...data,
+      filePath,
+      url: data.url || data.path,
+      content: this.interpolateVars(content),
+    };
+
+    if (!data.url && !data.path && !data.endpoint) {
+      knowledge.url = '*';
+      knowledge.endpoint = '*';
+    }
+
+    return knowledge;
+  }
+
+  private renderKnowledge(knowledgeFiles: Knowledge[], scope: string): string {
+    if (knowledgeFiles.length === 0) return '';
+
+    const knowledgeContent = knowledgeFiles
+      .map((k) => k.content)
+      .filter((k) => !!k)
+      .join('\n\n');
+
+    tag('operation').log(`Found ${knowledgeFiles.length} relevant knowledge ${pluralize(knowledgeFiles.length, 'file')}`);
+    return dedent`
+      <knowledge>
+      Here is relevant knowledge for this ${scope}:
+
+      ${knowledgeContent}
+      </knowledge>
+    `;
+  }
+}
+
+export interface Knowledge {
+  filePath: string;
+  url?: string;
+  endpoint?: string;
+  content: string;
+  [key: string]: any;
+}
+
+export interface KnowledgeTrackerOptions {
+  applicationSpec?: string;
+  knowledgeDir?: string;
 }

@@ -156,6 +156,72 @@ describe('StateManager', () => {
       expect(stateManager.getStateHistory()).toHaveLength(1);
     });
 
+    it('should keep verifications when hash stays the same', () => {
+      const verified = new ActionResult({
+        html: '<html><body><h1>Test Page</h1></body></html>',
+        url: 'https://example.com/test',
+        title: 'Test Page',
+        h1: 'Test Page',
+      });
+      verified.addVerification('New folder is visible in the tree', true);
+
+      stateManager.updateState(verified);
+      stateManager.updateState(
+        new ActionResult({
+          html: '<html><body><h1>Test Page</h1></body></html>',
+          url: 'https://example.com/test',
+          title: 'Test Page',
+          h1: 'Test Page',
+        })
+      );
+
+      expect(stateManager.getCurrentState()?.verifications).toEqual({ 'New folder is visible in the tree': true });
+    });
+
+    it('should drop failed verifications when hash stays the same', () => {
+      const verified = new ActionResult({
+        html: '<html><body><h1>Test Page</h1></body></html>',
+        url: 'https://example.com/test',
+        title: 'Test Page',
+        h1: 'Test Page',
+      });
+      verified.addVerification('Success toast is displayed', false);
+
+      stateManager.updateState(verified);
+      stateManager.updateState(
+        new ActionResult({
+          html: '<html><body><h1>Test Page</h1></body></html>',
+          url: 'https://example.com/test',
+          title: 'Test Page',
+          h1: 'Test Page',
+        })
+      );
+
+      expect(stateManager.getCurrentState()?.verifications).toEqual({});
+    });
+
+    it('should drop verifications when hash changes', () => {
+      const verified = new ActionResult({
+        html: '<html><body><h1>Test Page</h1></body></html>',
+        url: 'https://example.com/test',
+        title: 'Test Page',
+        h1: 'Test Page',
+      });
+      verified.addVerification('New folder is visible in the tree', true);
+
+      stateManager.updateState(verified);
+      stateManager.updateState(
+        new ActionResult({
+          html: '<html><body><h1>Other Page</h1></body></html>',
+          url: 'https://example.com/other',
+          title: 'Other Page',
+          h1: 'Other Page',
+        })
+      );
+
+      expect(stateManager.getCurrentState()?.verifications).toBeUndefined();
+    });
+
     it('should default to empty string when action result lacks url', () => {
       const actionResult = new ActionResult({
         html: '<html></html>',
@@ -394,7 +460,7 @@ describe('StateManager', () => {
       stateManager.updateState(base);
       const historyAfterBase = stateManager.getStateHistory().length;
 
-      const withDrawer = new ActionResult({ url: '/users', html, overlay: { type: 'modal', name: 'Edit User', root: 'aside.panel' } });
+      const withDrawer = new ActionResult({ url: '/users', html, overlay: { type: 'overlay', name: 'Edit User', root: 'aside.panel' } });
       stateManager.updateState(withDrawer);
       expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 1);
 
@@ -403,12 +469,12 @@ describe('StateManager', () => {
       expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 2);
     });
 
-    it('records a transition for an unnamed region via hasRegionAppeared', () => {
+    it('records a transition for an unnamed region via regionOpened', () => {
       const base = new ActionResult({ url: '/users', html });
       stateManager.updateState(base);
       const historyAfterBase = stateManager.getStateHistory().length;
 
-      const unnamed = new ActionResult({ url: '/users', html, overlay: { type: 'modal' } });
+      const unnamed = new ActionResult({ url: '/users', html, overlay: { type: 'overlay' } });
       stateManager.updateState(unnamed);
       expect(stateManager.getStateHistory().length).toBe(historyAfterBase + 1);
     });

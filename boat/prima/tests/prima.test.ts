@@ -97,6 +97,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
     getConfig: () => ({}),
     requestStore: () => ({ getMadeRequests: () => [] }),
     getProvider: () => ({ chat: async () => '' }),
+    agentResearcher: () => ({ enable: () => {}, disable: () => {} }),
   };
   (prima as any).artifactsDir = artifactsRoot;
   return { prima, executed, executeOptions };
@@ -258,7 +259,7 @@ describe('Prima attach ladder', () => {
   function ladderPrima(options: Record<string, unknown> = {}) {
     const prima = new Prima({ instance: 'default', ...options });
     const calls: string[] = [];
-    (prima as any).bot = { start: async () => calls.push('bot.start'), getCurrentState: () => null };
+    (prima as any).bot = { start: async () => calls.push('bot.start'), getCurrentState: () => null, agentResearcher: () => ({ disable: () => {} }) };
     return { prima, calls };
   }
 
@@ -1121,6 +1122,7 @@ describe('Prima.ask, verify, research', () => {
     const { prima } = fakePrima();
     const options: any[] = [];
     (prima as any).bot.agentResearcher = () => ({
+      enable: () => {},
       research: async (_state: unknown, opts: any) => {
         options.push(opts);
         return '## Section: Login Form\n| Element | ARIA | CSS |';
@@ -1132,6 +1134,25 @@ describe('Prima.ask, verify, research', () => {
     expect(envelope.ok).toBe(true);
     expect(envelope.changes).toBeUndefined();
     expect(options[0]).toMatchObject({ screenshot: true, data: true });
+  });
+
+  test('the researcher stays off until the research command turns it on', async () => {
+    const { prima } = fakePrima();
+    const toggles: string[] = [];
+    (prima as any).bot.start = async () => {};
+    (prima as any).bot.agentResearcher = () => ({
+      enable: () => toggles.push('enable'),
+      disable: () => toggles.push('disable'),
+      research: async () => '## Section: Login Form',
+    });
+    (prima as any).discover = () => ({ candidates: [] });
+    (prima as any).connectOwnInstance = async () => true;
+
+    await prima.start();
+    expect(toggles).toEqual(['disable']);
+
+    await prima.research();
+    expect(toggles).toEqual(['disable', 'enable']);
   });
 });
 

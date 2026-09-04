@@ -21,8 +21,7 @@ export class PlansCommand extends BaseCommand {
       return;
     }
 
-    const file = this.resolvePlanFile(target, files);
-    const plan = Plan.fromMarkdown(file.path);
+    const { plan, file } = this.resolvePlanFile(target, files);
     this.printPlanDetails(plan, file);
   }
 
@@ -71,12 +70,12 @@ export class PlansCommand extends BaseCommand {
     tag('info').log(`${getCliName()} test 1 --from-plan ${file.name}`);
   }
 
-  private resolvePlanFile(target: string, files: PlanFile[]): PlanFile {
+  private resolvePlanFile(target: string, files: PlanFile[]): { plan: Plan; file: PlanFile } {
     const index = Number.parseInt(target, 10);
     if (!Number.isNaN(index) && String(index) === target) {
       const file = files[index - 1];
       if (!file) throw new Error(`Plan #${target} not found. Available: 1-${files.length}`);
-      return file;
+      return { plan: Plan.fromMarkdown(file.path), file };
     }
 
     const plan = Plan.loadFromFile(target, this.explorBot.getPlansDir());
@@ -84,11 +83,12 @@ export class PlansCommand extends BaseCommand {
       throw new Error(`Plan file not found: ${target}`);
     }
 
-    return {
+    const file = {
       name: path.basename(plan.filePath),
       path: plan.filePath,
       modifiedAt: statSync(plan.filePath).mtimeMs,
     };
+    return { plan, file };
   }
 }
 

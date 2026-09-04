@@ -42,7 +42,7 @@ describe('Pilot recent_actions evidence', () => {
     expect(line).toContain('moved: /runs → /projects');
   });
 
-  it('drops requests that succeeded', () => {
+  it('names failed requests first, then the loads that succeeded', () => {
     const line = format({
       urlChanged: false,
       currentUrl: '/runs',
@@ -52,8 +52,7 @@ describe('Pilot recent_actions evidence', () => {
       ],
     });
 
-    expect(line).toContain('requests: POST /api/runs → 500');
-    expect(line).not.toContain('/api/runs → 200');
+    expect(line).toContain('requests: POST /api/runs → 500, GET /api/runs → 200');
   });
 
   it('keeps at most two messages and one console error', () => {

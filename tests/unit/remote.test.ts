@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ServerWebSocket } from 'bun';
+import { Command } from 'commander';
 import Action from '../../src/action.ts';
 import { saveResearch } from '../../src/ai/researcher/cache.ts';
 import { SessionAnalyst } from '../../src/ai/session-analyst.ts';
+import { wsOption } from '../../src/commands/options/index.ts';
 import { isInteractive } from '../../src/ai/task-agent.ts';
 import { ConfigParser } from '../../src/config.ts';
 import { executionController } from '../../src/execution-controller.ts';
@@ -61,6 +63,17 @@ afterEach(async () => {
 });
 
 describe('remote', () => {
+  test('the --ws option attaches the run and announces the command it names', async () => {
+    const program = new Command();
+    wsOption.register(program);
+    const boat = program.command('api');
+    boat.command('plan <endpoint>').action(() => {});
+
+    program.parse(['api', 'plan', '/users', '--ws', url()], { from: 'user' });
+
+    expect(await waitFor(frameOf('hello'))).toMatchObject({ command: 'api plan', pid: process.pid });
+  });
+
   test('announces the run, and frames sent before the socket opens are flushed in order', async () => {
     remote.attach(url(), 'explore');
     remote.send('activity', { message: 'first' });

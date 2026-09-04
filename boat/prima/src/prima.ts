@@ -15,7 +15,7 @@ import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../..
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
-import { listSites } from '../../../src/global-config.ts';
+import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
@@ -30,10 +30,9 @@ import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parse
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
 
-const TESTER_ONLY_TOOLS = ['learnExperience', 'askUser'];
+const WITHHELD_TOOLS = ['learnExperience', 'askUser', 'research'];
 const ITERATIONS_PER_INSTRUCTION = 2;
 const MAX_INSTRUCTION_ITERATIONS = 24;
-const DEFAULT_RESEARCH_AFTER_VISITS = 3;
 const CONTEXT_HTML_CAP = 6000;
 const MAX_TOOL_ROUNDTRIPS = 5;
 const AI_AGENT_NAME = 'prima';
@@ -107,6 +106,7 @@ export class Prima {
     const config = await this.loadConfig();
     await this.resolveBrowser(config, discovery);
     await this.bot.start();
+    this.bot.agentResearcher().disable();
 
     if (!this.options.url) return;
     if (this.bot.getCurrentState()) return;
@@ -421,9 +421,12 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
+    const researcher = this.bot.agentResearcher();
+    researcher.enable();
+
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
-    const uiMap = await this.bot.agentResearcher().research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
+    const uiMap = await researcher.research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
     return this.reportEnvelope(command, result, previousState, { research: dropVolatileColumns(uiMap) });
   }
 
@@ -819,7 +822,7 @@ export class Prima {
     if (!researcher || !navigator) return {};
 
     const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
-    for (const name of TESTER_ONLY_TOOLS) delete tools[name];
+    for (const name of WITHHELD_TOOLS) delete tools[name];
     return tools;
   }
 
@@ -877,14 +880,15 @@ export class Prima {
 
   private async pageContext(result: ActionResult): Promise<string> {
     const experience = this.bot.experienceTracker?.()?.renderExperienceTocFor?.(result) || '';
-    const map = this.researchMap(result);
+    const map = getPreviousResearch(result.baseHash);
+    let uiMap = '';
     if (map) {
-      return dedent`
-        <page_ui_map url="${result.url}" title="${result.title}">
+      uiMap = dedent`
+        <page_ui_map>
+        A map of this page recorded by an earlier research run. It names parts the accessibility
+        tree does not, and can be out of date — the tree is what the page holds now.
         ${map}
         </page_ui_map>
-
-        ${experience}
       `;
     }
 
@@ -893,19 +897,10 @@ export class Prima {
       ${compactAriaSnapshot(await this.refAriaSnapshot(result), true, (value) => this.offloadValue(value))}
       </page>
 
+      ${uiMap}
+
       ${experience}
     `;
-  }
-
-  private researchMap(result: ActionResult): string {
-    if (this.bot.stateManager().getVisitCount(result.url) < this.researchAfterVisits()) return '';
-    return getPreviousResearch(result.getStateHash());
-  }
-
-  private researchAfterVisits(): number {
-    const configured = this.bot.getConfig?.()?.ai?.agents?.prima?.researchAfterVisits;
-    if (typeof configured === 'number') return configured;
-    return DEFAULT_RESEARCH_AFTER_VISITS;
   }
 
   private offloadValue(value: string): string | undefined {
@@ -1062,8 +1057,7 @@ export class Prima {
 
   async status(hash: string): Promise<EnvelopeData> {
     if (!this.artifactsDir) {
-      const sites = listSites();
-      const site = sites.find((candidate) => existsSync(path.join(candidate.dir, 'output', 'prima', hash))) || sites[0];
+      const site = findSiteWith(path.join('output', 'prima', hash)) || listSites()[0];
       if (site && !this.configBaseUrl()) this.sessionUrl = site.url;
       await this.loadConfig();
     }

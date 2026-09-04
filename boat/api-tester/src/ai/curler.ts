@@ -2,6 +2,7 @@ import dedent from 'dedent';
 import { z } from 'zod';
 import type { AIProvider } from '../../../../src/ai/provider.ts';
 import type { RequestStore } from '../../../../src/api/request-store.ts';
+import type { KnowledgeTracker } from '../../../../src/knowledge-tracker.ts';
 import type { Reporter } from '../../../../src/reporter.ts';
 import { type Test, TestResult } from '../../../../src/test-plan.ts';
 import { createDebug, tag } from '../../../../src/utils/logger.ts';
@@ -18,12 +19,14 @@ export class Curler {
   private apiClient: ApiClient;
   private requestState: RequestStore;
   private reporter: Reporter;
+  private knowledgeTracker?: KnowledgeTracker;
 
-  constructor(provider: AIProvider, apiClient: ApiClient, requestState: RequestStore, reporter: Reporter) {
+  constructor(provider: AIProvider, apiClient: ApiClient, requestState: RequestStore, reporter: Reporter, knowledgeTracker?: KnowledgeTracker) {
     this.provider = provider;
     this.apiClient = apiClient;
     this.requestState = requestState;
     this.reporter = reporter;
+    this.knowledgeTracker = knowledgeTracker;
   }
 
   async test(test: Test, opts?: { specDefinition?: string; baseEndpoint?: string; searchSpec?: (query: string) => string }): Promise<{ success: boolean }> {
@@ -36,6 +39,9 @@ export class Curler {
 
     const conversation = this.provider.startConversation(this.buildSystemPrompt(), 'curler', this.provider.getAgenticModel('curler'));
     const tools = createCurlerTools(this.apiClient, this.requestState, test, opts?.searchSpec);
+
+    const knowledge = test.startUrl && this.knowledgeTracker?.renderEndpointKnowledge(test.startUrl);
+    if (knowledge) conversation.addUserText(knowledge);
 
     const initialPrompt = this.buildTestPrompt(test, opts?.specDefinition, opts?.baseEndpoint);
     conversation.addUserText(initialPrompt);

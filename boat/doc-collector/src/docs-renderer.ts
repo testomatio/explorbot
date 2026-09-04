@@ -7,7 +7,7 @@ import type { PageDocumentation, StateTransition } from './ai/documentarian.ts';
 import type { DocumentationScreenshot } from './screenshots.ts';
 import { type DocumentedPage, type SkippedPage, buildStateGraph, renderMermaidFromGraph, renderPageStateDiagram, renderStateMapFromGraph } from './state-diagram.ts';
 
-function renderPageDocumentation(state: WebPageState, documentation: PageDocumentation, screenshots: DocumentationScreenshot[] = []): string {
+function renderPageDocumentation(state: WebPageState, documentation: PageDocumentation, screenshots: DocumentationScreenshot[] = [], evidence: Array<DocumentationScreenshot | null> = []): string {
   const lines: string[] = [];
   lines.push(`# ${state.url}`);
   lines.push('');
@@ -22,6 +22,42 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
   lines.push(ensureSentence(documentation.summary));
   lines.push('');
 
+  lines.push('## User Can');
+  lines.push('');
+
+  if (documentation.can.length === 0) {
+    lines.push('- No proven actions were identified from the collected research.');
+    lines.push('');
+  }
+
+  for (const [index, item] of documentation.can.entries()) {
+    lines.push(`- ${normalizeAction(item.action)} -> ${item.scope}`);
+    lines.push(`  Proof: ${ensureSentence(item.evidence)}`);
+    const shot = evidence[index];
+    if (shot) {
+      lines.push('');
+      lines.push(`  ![${normalizeInlineText(item.action)}](${shot.relativePath})`);
+    }
+    lines.push('');
+  }
+
+  lines.push('## User Might');
+  lines.push('');
+
+  if (documentation.might.length === 0) {
+    lines.push('- No assumption-based actions were identified.');
+    lines.push('');
+  }
+
+  for (const item of documentation.might) {
+    lines.push(`- ${normalizeAction(item.action, 'might')} -> ${item.scope}`);
+    lines.push(`  Signal: ${ensureSentence(item.evidence)}`);
+  }
+
+  if (documentation.might.length > 0) {
+    lines.push('');
+  }
+
   if (screenshots.length > 0) {
     lines.push('## Screenshots');
     lines.push('');
@@ -32,6 +68,26 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
       }
       lines.push('');
     }
+  }
+
+  const navigationLinks = renderNavigationLinks(state);
+  if (navigationLinks.length > 0) {
+    lines.push('## Navigation');
+    lines.push('');
+    for (const link of navigationLinks) {
+      lines.push(`- ${link.title}: ${link.url}`);
+    }
+    lines.push('');
+  }
+
+  const qualityNotes = documentation.qualityNotes;
+  if (qualityNotes && qualityNotes.length > 0) {
+    lines.push('## Coverage Notes');
+    lines.push('');
+    for (const note of qualityNotes) {
+      lines.push(`- ${ensureSentence(note)}`);
+    }
+    lines.push('');
   }
 
   const interactions = documentation.interactions;
@@ -66,50 +122,6 @@ function renderPageDocumentation(state: WebPageState, documentation: PageDocumen
     }
   }
 
-  lines.push('## User Can');
-  lines.push('');
-
-  if (documentation.can.length === 0) {
-    lines.push('- No proven actions were identified from the collected research.');
-    lines.push('');
-  }
-
-  for (const item of documentation.can) {
-    lines.push(`- ${normalizeAction(item.action)} -> ${item.scope}`);
-    lines.push(`  Proof: ${ensureSentence(item.evidence)}`);
-  }
-
-  if (documentation.can.length > 0) {
-    lines.push('');
-  }
-
-  lines.push('## User Might');
-  lines.push('');
-
-  if (documentation.might.length === 0) {
-    lines.push('- No assumption-based actions were identified.');
-    lines.push('');
-  }
-
-  for (const item of documentation.might) {
-    lines.push(`- ${normalizeAction(item.action, 'might')} -> ${item.scope}`);
-    lines.push(`  Signal: ${ensureSentence(item.evidence)}`);
-  }
-
-  if (documentation.might.length > 0) {
-    lines.push('');
-  }
-
-  const qualityNotes = documentation.qualityNotes;
-  if (qualityNotes && qualityNotes.length > 0) {
-    lines.push('## Coverage Notes');
-    lines.push('');
-    for (const note of qualityNotes) {
-      lines.push(`- ${ensureSentence(note)}`);
-    }
-    lines.push('');
-  }
-
   return matter.stringify(`${lines.join('\n').trimEnd()}\n`, {
     url: state.url,
     format: APPLICATION_SPEC_FORMAT,
@@ -130,17 +142,7 @@ function renderSpecIndex(outputDir: string, startPath: string, pages: Documented
   lines.push('');
   const graph = buildStateGraph(outputDir, pages);
   const mermaid = renderMermaidFromGraph(graph, true);
-  lines.push('## State Transitions');
-  lines.push('');
-  lines.push(`\`\`\`mermaid\n${mermaid}\n\`\`\``);
-  lines.push('');
   const stateMap = renderStateMapFromGraph(graph);
-  if (stateMap) {
-    lines.push('### State Index');
-    lines.push('');
-    lines.push(stateMap);
-    lines.push('');
-  }
   lines.push('## Pages');
   lines.push('');
 
@@ -208,7 +210,29 @@ function renderSpecIndex(outputDir: string, startPath: string, pages: Documented
     lines.push('');
   }
 
+  lines.push('## State Transitions');
+  lines.push('');
+  lines.push(`\`\`\`mermaid\n${mermaid}\n\`\`\``);
+  lines.push('');
+  if (stateMap) {
+    lines.push('### State Index');
+    lines.push('');
+    lines.push(stateMap);
+    lines.push('');
+  }
+
   return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function renderNavigationLinks(state: WebPageState): Array<{ title: string; url: string }> {
+  const links: Array<{ title: string; url: string }> = [];
+  const seen = new Set<string>();
+  for (const link of state.links || []) {
+    if (!link.url || seen.has(link.url)) continue;
+    seen.add(link.url);
+    links.push({ title: normalizeInlineText(link.title) || link.url, url: link.url });
+  }
+  return links;
 }
 
 function normalizeAction(action: string, kind: 'can' | 'might' = 'can'): string {

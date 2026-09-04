@@ -472,4 +472,42 @@ priority: normal
       expect(Plan.loadFromFile('missing')).toBeNull();
     });
   });
+
+  describe('resolveFile', () => {
+    let home: string;
+    let workDir: string;
+    let originalCwd: string;
+    let homedirSpy: ReturnType<typeof spyOn>;
+
+    const writePlan = (dir: string, name: string): string => {
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, name);
+      writeFileSync(file, '# Plan\n', 'utf-8');
+      return file;
+    };
+
+    beforeEach(() => {
+      home = mkdtempSync(join(tmpdir(), 'explorbot-home-'));
+      workDir = mkdtempSync(join(tmpdir(), 'explorbot-work-'));
+      homedirSpy = spyOn(os, 'homedir').mockReturnValue(home);
+      originalCwd = process.cwd();
+      process.chdir(workDir);
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+      homedirSpy.mockRestore();
+      rmSync(home, { recursive: true, force: true });
+      rmSync(workDir, { recursive: true, force: true });
+    });
+
+    test('returns the path for a name without .md', () => {
+      const file = writePlan(workDir, 'saved.md');
+      expect(Plan.resolveFile('saved')).toBe(file);
+    });
+
+    test('returns null for a missing name', () => {
+      expect(Plan.resolveFile('missing')).toBeNull();
+    });
+  });
 });

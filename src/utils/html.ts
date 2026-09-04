@@ -544,6 +544,9 @@ export const TAILWIND_CLASS_PATTERNS: RegExp[] = [
   /^prose$/i,
 ];
 
+export const isTailwindClass = (cls: string): boolean => TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(cls));
+export const isTrashClass = (cls: string): boolean => TRASH_HTML_CLASSES.test(cls);
+
 const NON_SEMANTIC_TAGS = new Set([
   'style',
   'script',
@@ -758,7 +761,6 @@ export function sanitizeHtmlString(html: string, htmlConfig?: HtmlConfig): strin
  */
 export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['minimal']) {
   const document = parse(html);
-  const trashHtmlClasses = TRASH_HTML_CLASSES;
   const removeElements = ['path', 'script'];
 
   function isFilteredOut(node) {
@@ -867,9 +869,9 @@ export function htmlMinimalUISnapshot(html: string, htmlConfig?: HtmlConfig['min
           attr.value = value
             .split(' ')
             .filter((className) => !/\d/.test(className))
-            .filter((className) => !className.match(trashHtmlClasses))
+            .filter((className) => !isTrashClass(className))
             .filter((className) => !className.match(/(:|__)/))
-            .filter((className) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(className)))
+            .filter((className) => !isTailwindClass(className))
             .join(' ');
           if (attr.value === '') return false;
         }
@@ -1451,7 +1453,7 @@ function cleanElement(element: parse5TreeAdapter.Element): void {
         .filter(Boolean)
         .filter((className) => !/\d/.test(className))
         .filter((className) => !className.includes(':'))
-        .filter((className) => !TAILWIND_CLASS_PATTERNS.some((pattern) => pattern.test(className)))
+        .filter((className) => !isTailwindClass(className))
         .join(' ');
 
       if (!attr.value) {

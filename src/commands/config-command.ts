@@ -5,6 +5,7 @@ import { type AIConfig, ConfigParser, EXPLORBOT_ENV_VARS, type ReporterConfig, c
 import { listSites } from '../global-config.js';
 import { Reporter } from '../reporter.js';
 import { getCliName } from '../utils/cli-name.js';
+import { renderSection } from '../utils/cli-section.js';
 import { tag } from '../utils/logger.js';
 import { BaseCommand } from './base-command.js';
 
@@ -37,7 +38,7 @@ export class ConfigCommand extends BaseCommand {
     const dirs: Record<string, string> = {};
     if (options.root) {
       for (const [name, dir] of Object.entries({ output: 'output', ...config.dirs })) {
-        dirs[name] = path.join(options.root, dir);
+        dirs[name] = path.resolve(options.root, dir);
       }
     }
 
@@ -75,13 +76,7 @@ export class ConfigCommand extends BaseCommand {
     if (options.json) return JSON.stringify(data, null, 2);
 
     const lines: string[] = [];
-    const section = (title: string, entries: [string, string][]) => {
-      if (!entries.length) return;
-      const width = Math.max(...entries.map(([label]) => label.length));
-      lines.push(chalk.bold(title));
-      for (const [label, value] of entries) lines.push(`  ${chalk.dim(label.padEnd(width))}  ${value}`);
-      lines.push('');
-    };
+    const section = (title: string, entries: [string, string][]) => lines.push(...renderSection(title, entries));
 
     const general: [string, string][] = [['config', data.config || 'EXPLORBOT_* environment variables']];
     if (data.url) general.push(['url', data.url]);

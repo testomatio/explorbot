@@ -56,6 +56,10 @@ Lists the application's users.
 
 - user might export the user list
   Signal: An unlabeled download control is present.
+
+## Navigation
+
+- Invite user: /users/invite
 ```
 
 The front matter fields are mandatory:

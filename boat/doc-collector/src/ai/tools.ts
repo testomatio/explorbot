@@ -225,7 +225,7 @@ function buildTransition(candidate: InteractionCandidate, beforeState: WebPageSt
 function describeTargetState(beforeState: WebPageState, afterState: WebPageState, candidate: InteractionCandidate): InteractionState {
   const beforeFocus = detectFocusArea(beforeState.ariaSnapshot || null);
   const afterFocus = detectFocusArea(afterState.ariaSnapshot || null);
-  if (afterFocus.detected && (!beforeFocus.detected || beforeFocus.name !== afterFocus.name)) {
+  if (afterFocus.type && (!beforeFocus.type || beforeFocus.name !== afterFocus.name)) {
     return {
       kind: afterFocus.type || 'dialog',
       label: afterFocus.name || candidate.element.name.trim(),

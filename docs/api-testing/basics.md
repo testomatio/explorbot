@@ -56,6 +56,21 @@ api: {
 
 A matching `teardown` hook runs after all tests finish — use it to clean up data.
 
+### Without a config file
+
+Chief and Curler need three things: where the API is, what its spec says, and how to authenticate. Pass all three on the command line and no config file is needed:
+
+```bash
+npx explorbot api plan /users \
+  --endpoint https://api.example.com/v1 \
+  --spec ./openapi.yaml \
+  --knowledge 'Send X-Api-Key: ${env.API_KEY} on every request'
+```
+
+`--endpoint` and `--spec` each have an environment twin — `EXPLORBOT_URL` and `EXPLORBOT_API_SPEC` — and the flag wins when both are set. `--knowledge` adds to the facts `EXPLORBOT_KNOWLEDGE` and `EXPLORBOT_KNOWLEDGE_FILE` bring in rather than replacing them. Configure your models once with `npx explorbot init --global` and every run stores its plans and requests per host under `~/.explorbot/sites/<host>/`, so a later `api test` against the same API picks up where the last one left off. Knowledge given on the command line lasts for the run; `api know` is what writes it down.
+
+`--endpoint` keeps its path prefix: given `https://api.example.com/v1`, steps stay relative (`/users`) and Curler sends them to `https://api.example.com/v1/users`. `api test`, which takes a plan file rather than an endpoint, reads it from the flag or the variable.
+
 ### A dedicated API project
 
 If you don't have a web `explorbot.config.js`, run `npx explorbot api init`. It asks for your base endpoint, spec, and a one-line description of the API, then writes a standalone `apibot.config.ts` (with an `ai` and `api` section) plus `output/` and `knowledge/` directories. When both files exist, `apibot.config.*` takes precedence over `explorbot.config.*`.

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { isDynamicSegment } from '../utils/url-matcher.ts';
+import { generalizeUrl, isDynamicSegment } from '../utils/url-matcher.ts';
 import { RequestResult } from './request-result.ts';
 
 const AUTH_HEADERS = ['authorization', 'x-api-key', 'x-csrf-token'];
@@ -12,12 +12,21 @@ export class RequestStore {
   private onFailedListeners: Array<(r: RequestResult) => void> = [];
   private outputDir: string;
   private sessionStartedAt = new Date();
+  private readEndpointKeys = new Set<string>();
 
   constructor(outputDir: string) {
     this.outputDir = outputDir;
   }
 
   addCapturedRequest(result: RequestResult): void {
+    this.capturedRequests.push(result);
+    result.save(this.outputDir);
+  }
+
+  addReadRequest(result: RequestResult): void {
+    const key = readEndpointKey(result);
+    if (this.readEndpointKeys.has(key)) return;
+    this.readEndpointKeys.add(key);
     this.capturedRequests.push(result);
     result.save(this.outputDir);
   }
@@ -46,10 +55,6 @@ export class RequestStore {
     result.save(this.outputDir);
   }
 
-  addRequest(result: RequestResult): void {
-    this.addMadeRequest(result);
-  }
-
   getCapturedRequests(): RequestResult[] {
     return this.capturedRequests;
   }
@@ -58,36 +63,19 @@ export class RequestStore {
     return this.madeRequests;
   }
 
-  getRequests(): RequestResult[] {
-    return this.madeRequests;
-  }
-
   getLastRequest(): RequestResult | undefined {
     return this.madeRequests[this.madeRequests.length - 1];
   }
 
-  getRequestsByEndpoint(pathPrefix: string): RequestResult[] {
-    return this.madeRequests.filter((r) => r.path.startsWith(pathPrefix));
-  }
-
-  getRequestsByMethod(method: string): RequestResult[] {
-    const upper = method.toUpperCase();
-    return this.madeRequests.filter((r) => r.method === upper);
-  }
-
-  getRequestsByStatus(status: number): RequestResult[] {
-    return this.madeRequests.filter((r) => r.status === status);
-  }
-
-  toEndpointList(scopePath?: string): string {
-    let requests = this.capturedRequests;
-    if (scopePath) requests = this.getWriteRequestsForScope(scopePath);
+  toEndpointList(scopePath?: string, methods: EndpointFamily = 'write'): string {
+    let requests = this.capturedRequests.filter((r) => matchesFamily(r, methods));
+    if (scopePath) requests = this.getRequestsForScope(scopePath, methods);
 
     const seen = new Set<string>();
     const lines: string[] = [];
 
     for (const req of requests) {
-      const key = `${req.method} ${normalizePathPattern(req.path)}`;
+      const key = `${req.method} ${generalizeUrl(req.path, () => '{id}')}${queryParamHint(req)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       lines.push(key);
@@ -113,14 +101,18 @@ export class RequestStore {
 
   findCapturedRequest(method: string, searchPath: string): RequestResult | undefined {
     const upper = method.toUpperCase();
-    const search = normalizePathPattern(searchPath).split('/').filter(Boolean);
+    const search = generalizeUrl(searchPath, () => '{id}')
+      .split('/')
+      .filter(Boolean);
 
     let best: RequestResult | undefined;
     let bestScore = -1;
 
     for (const req of this.capturedRequests) {
       if (req.method !== upper) continue;
-      const segments = normalizePathPattern(req.path).split('/').filter(Boolean);
+      const segments = generalizeUrl(req.path, () => '{id}')
+        .split('/')
+        .filter(Boolean);
       if (segments.length < search.length) continue;
       if (!search.every((segment, i) => segment === segments[i])) continue;
 
@@ -151,6 +143,11 @@ export class RequestStore {
       try {
         const result = RequestResult.load(path.join(requestsDir, file));
         if (existingIds.has(result.id)) continue;
+        if (!result.isWrite) {
+          const key = readEndpointKey(result);
+          if (this.readEndpointKeys.has(key)) continue;
+          this.readEndpointKeys.add(key);
+        }
         this.capturedRequests.push(result);
       } catch {
         // skip invalid files
@@ -159,17 +156,31 @@ export class RequestStore {
   }
 
   getWriteRequestsForScope(scopePath: string): RequestResult[] {
-    const writeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-    const writes = this.capturedRequests.filter((r) => writeMethods.has(r.method));
+    return this.getRequestsForScope(scopePath, 'write');
+  }
+
+  getReadRequestsForScope(scopePath: string): RequestResult[] {
+    return this.getRequestsForScope(scopePath, 'read');
+  }
+
+  clear(): void {
+    this.capturedRequests = [];
+    this.madeRequests = [];
+    this.failedRequests = [];
+    this.readEndpointKeys.clear();
+  }
+
+  private getRequestsForScope(scopePath: string, methods: EndpointFamily): RequestResult[] {
+    const candidates = this.capturedRequests.filter((r) => matchesFamily(r, methods));
     const scopeSegments = scopePath.split('/').filter(Boolean);
-    if (scopeSegments.length === 0) return writes;
+    if (scopeSegments.length === 0) return candidates;
 
     let scoped: RequestResult[] = [];
     let fewest = Number.POSITIVE_INFINITY;
     let ambiguous = false;
     for (const segment of scopeSegments) {
       if (isDynamicSegment(segment)) continue;
-      const matches = writes.filter((r) => r.path.split('/').includes(segment));
+      const matches = candidates.filter((r) => r.path.split('/').includes(segment));
       if (matches.length === 0 || matches.length > fewest) continue;
       if (matches.length === fewest) {
         if (!scoped.every((r, i) => r.id === matches[i].id)) ambiguous = true;
@@ -183,17 +194,32 @@ export class RequestStore {
 
     return scoped;
   }
-
-  clear(): void {
-    this.capturedRequests = [];
-    this.madeRequests = [];
-    this.failedRequests = [];
-  }
 }
 
-function normalizePathPattern(urlPath: string): string {
-  return urlPath
-    .split('/')
-    .map((segment) => (segment && isDynamicSegment(segment) ? '{id}' : segment))
-    .join('/');
+export function isFailedRequest(request: RequestResult): boolean {
+  return request.status >= 400 || Boolean(request.error);
 }
+
+function readEndpointKey(result: RequestResult): string {
+  return `${result.method} ${generalizeUrl(result.path, () => '{id}')}?${queryParamNames(result).join(',')}`;
+}
+
+function matchesFamily(result: RequestResult, methods: EndpointFamily): boolean {
+  if (methods === 'write') return result.isWrite;
+  return result.method === 'GET';
+}
+
+function queryParamHint(result: RequestResult): string {
+  if (result.isWrite) return '';
+  const names = queryParamNames(result);
+  if (names.length === 0) return '';
+  return ` ?${names.join(',')}`;
+}
+
+function queryParamNames(result: RequestResult): string[] {
+  const query = result.fullUrl.split('?')[1];
+  if (!query) return [];
+  return [...new Set(new URLSearchParams(query).keys())].sort();
+}
+
+export type EndpointFamily = 'read' | 'write';

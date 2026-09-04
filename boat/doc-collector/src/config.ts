@@ -119,6 +119,7 @@ class DocbotConfigParser {
           interactive: false,
           ignoreErrors: true,
           collapseDynamicPages: true,
+          collapseTemplatePages: true,
           scope: 'site',
           includePaths: [],
           excludePaths: [],
@@ -157,6 +158,8 @@ interface DocbotConfig {
     ignoreErrors?: boolean | string[];
     prompt?: string;
     collapseDynamicPages?: boolean;
+    collapseTemplatePages?: boolean;
+    templateSimilarity?: number;
     scope?: 'site' | 'section' | 'subtree';
     includePaths?: string[];
     excludePaths?: string[];

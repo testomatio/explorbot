@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Field notes — Deep Space</title>
+<style>
+  body { font-family: Georgia, serif; margin: 0; color: #22282f; }
+  header { padding: 16px 32px; border-bottom: 1px solid #dfe4ea; font-family: system-ui, sans-serif; }
+  article { max-width: 720px; margin: 0 auto; padding: 24px 32px 80px; line-height: 1.6; }
+  .consent { position: fixed; left: 0; right: 0; bottom: 0; background: #131a26; color: #f2f5f9;
+    font-family: system-ui, sans-serif; padding: 14px 32px; display: flex; align-items: center;
+    justify-content: space-between; gap: 24px; }
+  .consent h2 { font-size: 15px; margin: 0 0 2px; }
+  .consent p { font-size: 13px; margin: 0; color: #c3ccd8; }
+  .consent a { color: #8ab4ff; }
+  .consent-actions { display: flex; gap: 8px; flex: none; }
+  button { padding: 7px 14px; border-radius: 5px; border: 1px solid #3a4658; background: #1f2937; color: #f2f5f9; cursor: pointer; font-family: system-ui, sans-serif; }
+  button.primary { background: #3f7dea; border-color: #3f7dea; }
+</style>
+</head>
+<body>
+<header><strong>Deep Space</strong> — field notes</header>
+<article>
+  <h1>Keeping a probe in the shade</h1>
+  <p><button id="continue-reading">Continue reading</button></p>
+  <div id="body-copy"></div>
+</article>
+<div id="cookie-host"></div>
+<script>
+  var copy = document.getElementById('body-copy');
+  for (var i = 1; i <= 30; i++) {
+    var para = document.createElement('p');
+    para.textContent = 'Paragraph ' + i + ': thermal control on a spinning probe is mostly a bookkeeping problem. ' +
+      'Every watt that enters the bus has to leave it again, and the radiators only work when they are pointed at ' +
+      'something colder than the thing they are cooling. Section ' + i + ' walks through one orbit of that budget.';
+    copy.appendChild(para);
+  }
+
+  document.querySelector('#continue-reading').addEventListener('click', function () {
+    var host = document.getElementById('cookie-host');
+    var bar = document.createElement('div');
+    bar.className = 'consent';
+    var text = document.createElement('div');
+    var title = document.createElement('h2');
+    title.textContent = 'We value your privacy';
+    var body = document.createElement('p');
+    body.innerHTML = 'We use cookies to measure traffic. Read our <a href="/privacy">privacy policy</a>.';
+    text.appendChild(title);
+    text.appendChild(body);
+    var actions = document.createElement('div');
+    actions.className = 'consent-actions';
+    var reject = document.createElement('button');
+    reject.textContent = 'Reject all';
+    var accept = document.createElement('button');
+    accept.className = 'primary';
+    accept.textContent = 'Accept all';
+    accept.addEventListener('click', function () { host.innerHTML = ''; });
+    actions.appendChild(reject);
+    actions.appendChild(accept);
+    bar.appendChild(text);
+    bar.appendChild(actions);
+    host.appendChild(bar);
+  });
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 Study the page and figure out its business purpose. What is this page FOR? What would a user come here to do?
 
 Based on the page type, propose tests for COMPLETE user workflows:
-- If this is a data page (lists, tables): test CRUD operations end-to-end (create item → verify in list, edit item → verify changes saved, delete item → verify removed)
+- If this is a data page (lists, tables): test create, edit and delete as separate tests, each preparing the item it acts on
 - If the page has inputs to fill in: test the full commit flow, not just that the controls render
 - If this has filters and search: test filtering AND verify results change, not just "filter tab clicked"
 - If this has modals/dropdowns: test the ACTION inside them, not just opening/closing them

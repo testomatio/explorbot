@@ -92,44 +92,44 @@ describe('Tester evidence rules', () => {
 });
 
 describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
-  it('emits <focus_scope> when ARIA snapshot contains a dialog', async () => {
+  it('emits <overlay> when ARIA snapshot contains a dialog', async () => {
     const tester = buildTester();
     const state = buildState('- dialog "Create Requirement":\n  - tablist:\n    - tab "Text"\n    - tab "File"');
 
     const context = await (tester as any).reinjectContextIfNeeded(2, state);
 
-    expect(context).toContain('<focus_scope>');
-    expect(context).toContain('A modal "Create Requirement"');
-    expect(context).toContain('Scope all interactions to elements inside this modal');
+    expect(context).toContain('<overlay>');
+    expect(context).toContain('An overlay "Create Requirement"');
+    expect(context).toContain('Scope all interactions to elements inside this overlay');
   });
 
-  it('emits <focus_scope> for alertdialog role', async () => {
+  it('emits <overlay> for alertdialog role', async () => {
     const tester = buildTester();
     const state = buildState('- alertdialog "Confirm Delete":\n  - button "OK"\n  - button "Cancel"');
 
     const context = await (tester as any).reinjectContextIfNeeded(2, state);
 
-    expect(context).toContain('<focus_scope>');
-    expect(context).toContain('A modal "Confirm Delete"');
+    expect(context).toContain('<overlay>');
+    expect(context).toContain('An overlay "Confirm Delete"');
   });
 
-  it('omits <focus_scope> when no dialog or modal is open', async () => {
+  it('omits <overlay> when no dialog or modal is open', async () => {
     const tester = buildTester();
     const state = buildState('- main:\n  - button "Save"\n  - button "Cancel"');
 
     const context = await (tester as any).reinjectContextIfNeeded(2, state);
 
-    expect(context).not.toContain('<focus_scope>');
+    expect(context).not.toContain('<overlay>');
   });
 
-  it('emits <focus_scope> on URL change as well as same-URL state change', async () => {
+  it('emits <overlay> on URL change as well as same-URL state change', async () => {
     const tester = buildTester();
     const newUrlState = buildState('- dialog "New Form":\n  - textbox "Title"', '/new');
 
     const context = await (tester as any).reinjectContextIfNeeded(2, newUrlState);
 
-    expect(context).toContain('<focus_scope>');
-    expect(context).toContain('A modal "New Form"');
+    expect(context).toContain('<overlay>');
+    expect(context).toContain('An overlay "New Form"');
   });
 });
 
@@ -156,7 +156,7 @@ describe('Tester research failures', () => {
 
     const context = await (tester as any).reinjectContextIfNeeded(2, buildState('- dialog "Select folder":\n  - button "OK"', '/page'));
 
-    expect(context).toContain('<focus_scope>');
+    expect(context).toContain('<overlay>');
     expect(context).not.toContain('</page_ui_map_overlay>');
   });
 

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { AIProvider } from '../../../src/ai/provider.ts';
 import { RequestStore } from '../../../src/api/request-store.ts';
 import { extractEndpointDefinition, loadSpec, searchEndpoints, validateSpecs } from '../../../src/api/spec-reader.ts';
+import { KnowledgeTracker } from '../../../src/knowledge-tracker.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import { Plan } from '../../../src/test-plan.ts';
 import { setVerboseMode, tag } from '../../../src/utils/logger.ts';
@@ -20,6 +21,7 @@ export class ApiBot {
   private apiClient!: ApiClient;
   private requestState!: RequestStore;
   private reporter!: Reporter;
+  private knowledgeTracker!: KnowledgeTracker;
   private options: ApibotOptions;
   private apiSpec: any;
 
@@ -33,7 +35,7 @@ export class ApiBot {
   }
 
   async start(): Promise<void> {
-    this.config = await this.configParser.loadConfig({ config: this.options.config, path: this.options.path, endpoint: this.options.endpoint });
+    this.config = await this.configParser.loadConfig(this.options);
     this.provider = new AIProvider(this.config.ai);
     await this.provider.validateConnection();
 
@@ -47,6 +49,7 @@ export class ApiBot {
     this.configParser.ensureDirectory(outputDir);
     this.requestState = new RequestStore(outputDir);
     this.reporter = new Reporter(this.config.reporter);
+    this.knowledgeTracker = new KnowledgeTracker({ knowledgeDir: this.configParser.getKnowledgeDir() });
 
     validateSpecs(this.config.api.spec);
     this.apiSpec = await loadSpec(this.config.api.spec!, outputDir);
@@ -84,21 +87,22 @@ export class ApiBot {
     await this.apiClient?.teardown();
   }
 
-  createAgent<T>(factory: (deps: { ai: AIProvider; config: ApibotConfig; apiClient: ApiClient; requestState: RequestStore }) => T): T {
+  createAgent<T>(factory: (deps: { ai: AIProvider; config: ApibotConfig; apiClient: ApiClient; requestState: RequestStore; knowledge: KnowledgeTracker }) => T): T {
     return factory({
       ai: this.provider,
       config: this.config,
       apiClient: this.apiClient,
       requestState: this.requestState,
+      knowledge: this.knowledgeTracker,
     });
   }
 
   agentChief(): Chief {
-    return (this.agents.chief ||= this.createAgent(({ ai, config, apiClient }) => new Chief(ai, config, apiClient)));
+    return (this.agents.chief ||= this.createAgent(({ ai, config, apiClient, knowledge }) => new Chief(ai, config, apiClient, knowledge)));
   }
 
   agentCurler(): Curler {
-    return (this.agents.curler ||= this.createAgent(({ ai, apiClient, requestState }) => new Curler(ai, apiClient, requestState, this.reporter)));
+    return (this.agents.curler ||= this.createAgent(({ ai, apiClient, requestState, knowledge }) => new Curler(ai, apiClient, requestState, this.reporter, knowledge)));
   }
 
   async plan(target: string, opts: { style?: string; fresh?: boolean } = {}): Promise<Plan> {
@@ -200,6 +204,8 @@ interface ApibotOptions {
   config?: string;
   path?: string;
   endpoint?: string;
+  baseEndpoint?: string;
+  spec?: string;
 }
 
 export type { ApibotOptions };

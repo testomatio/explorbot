@@ -71,6 +71,14 @@ export async function visuallyAnnotateContainers(page: Page, containers: Array<{
   }, containers);
 }
 
+export async function removeVisualAnnotations(page: Page): Promise<void> {
+  try {
+    await page.locator('[data-explorbot-annotation]').evaluateAll((elements) => {
+      for (const element of elements) element.remove();
+    });
+  } catch {}
+}
+
 export function WithCoordinates<T extends Constructor>(Base: T) {
   return class extends Base {
     declare explorer: Explorer;
@@ -85,6 +93,10 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
       return this.explorer.withPage((page) => visuallyAnnotateContainers(page, opts?.containers || []));
     }
 
+    async removeVisualAnnotations(): Promise<void> {
+      await this.explorer.withPage((page) => removeVisualAnnotations(page));
+    }
+
     private async _analyzeScreenshotForVisualProps(): Promise<VisualAnalysisResult> {
       const elements = new Map<string, { coordinates: string | null; color: string | null; icon: string | null }>();
       const emptyResult: VisualAnalysisResult = { elements, pagePurpose: null, primaryActions: null, focusedSection: null };
@@ -96,7 +108,7 @@ export function WithCoordinates<T extends Constructor>(Base: T) {
 
       const prompt = dedent`
         This screenshot has two types of annotations:
-        - **Section containers**: dashed bordered boxes (no labels on them). A legend at the bottom-left maps dashed line colors to section names. Ignore containers for this task.
+        - **Section containers**: dashed bordered boxes (no labels on them). A legend at the bottom-right maps dashed line colors to section names. Ignore containers for this task.
         - **Interactive elements**: solid bordered boxes with eidx numbers in the top-right corner above the box. Adjacent elements use different colors.
 
         For each interactive element (solid border, eidx number), report:

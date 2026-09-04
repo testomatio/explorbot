@@ -4,7 +4,7 @@ import { ConfigParser } from '../config.js';
 export function isDynamicSegment(segment: string): boolean {
   try {
     const configRegex = ConfigParser.getInstance().getConfig().dynamicPageRegex;
-    if (configRegex) return new RegExp(configRegex, 'i').test(segment);
+    if (configRegex && new RegExp(configRegex, 'i').test(segment)) return true;
   } catch {
     /* config not loaded yet */
   }
@@ -52,10 +52,10 @@ export function generalizeSegment(segment: string): string {
   return '[^/]+';
 }
 
-export function generalizeUrl(url: string): string {
+export function generalizeUrl(url: string, replaceSegment: (segment: string) => string = generalizeSegment): string {
   return url
     .split('/')
-    .map((seg) => (seg.length > 0 && isDynamicSegment(seg) ? generalizeSegment(seg) : seg))
+    .map((seg) => (seg.length > 0 && isDynamicSegment(seg) ? replaceSegment(seg) : seg))
     .join('/');
 }
 

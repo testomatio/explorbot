@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
+import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { remote } from '../../../src/remote.ts';
 import { isVerboseMode, setPreserveConsoleLogs, setQuietMode } from '../../../src/utils/logger.ts';
 import { DocBot, type DocbotOptions } from './docbot.ts';
@@ -16,6 +17,7 @@ function buildOptions(options: any): DocbotOptions {
     incognito: options.incognito,
     session: options.session,
     docsConfig: options.docsConfig,
+    baseUrl: options.url,
   };
 }
 
@@ -26,6 +28,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('-c, --config <path>', 'Path to explorbot configuration file')
     .option('--docs-config <path>', 'Path to doc collector configuration file')
     .option('-p, --path <path>', 'Working directory path')
+    .option('--url <url>', 'Base URL of the site, when the path argument is relative (env: EXPLORBOT_URL)')
     .option('-s, --show', 'Show browser window')
     .option('--headless', 'Run browser in headless mode')
     .option('--incognito', 'Run without recording experiences')
@@ -36,7 +39,14 @@ export function createDocsCommands(name = 'docs'): Command {
   const cmd = new Command(name);
   cmd.description('AI-powered website documentation collector');
 
-  addCommonOptions(cmd.command('collect <path>').description('Crawl pages and generate documentation spec').option('--max-pages <count>', 'Maximum number of pages to document')).action(async (startPath, options) => {
+  addCommonOptions(
+    cmd
+      .command('collect <path>')
+      .description('Crawl pages and generate documentation spec')
+      .option('--max-pages <count>', 'Maximum number of pages to document')
+      .option('--no-collapse-template-pages', 'Visit every page even when its layout matches a documented page')
+      .option('--template-similarity <percent>', 'Structural similarity percent that counts pages as the same layout (default 90)')
+  ).action(async (startPath, options) => {
     setPreserveConsoleLogs(true);
 
     try {
@@ -50,8 +60,12 @@ export function createDocsCommands(name = 'docs'): Command {
       if (options.maxPages) {
         maxPages = Number.parseInt(options.maxPages, 10);
       }
+      let templateSimilarity: number | undefined;
+      if (options.templateSimilarity) {
+        templateSimilarity = Number.parseInt(options.templateSimilarity, 10);
+      }
 
-      const result = await bot.collect(startPath, { maxPages });
+      const result = await bot.collect(startPath, { maxPages, collapseTemplatePages: options.collapseTemplatePages, templateSimilarity });
 
       console.log(`\nDocumented ${result.pages.length} page(s)`);
       console.log(`Skipped ${result.skipped.length} page(s)`);
@@ -74,12 +88,14 @@ export function createDocsCommands(name = 'docs'): Command {
     .action(async (url, options) => {
       setQuietMode(!isVerboseMode());
       try {
-        console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url, json: options.json }));
+        console.log(await ConfigCommand.summary({ config: options.config, path: options.path, url: url || options.url, json: options.json }));
       } catch (error) {
         console.error(error instanceof Error ? error.message : 'Unknown error');
         process.exit(1);
       }
     });
+
+  RecommendedModelsCommand.register(cmd);
 
   cmd
     .command('init')
@@ -110,6 +126,8 @@ export function createDocsCommands(name = 'docs'): Command {
             interactive: false,
             ignoreErrors: true,
             collapseDynamicPages: true,
+            collapseTemplatePages: true,
+            templateSimilarity: 90,
             scope: 'site',
             includePaths: [],
             excludePaths: [],

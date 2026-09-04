@@ -114,11 +114,15 @@ export class Planner extends PlannerBase implements Agent {
       Tests must be relevant to the page
       Tests must be achievable from UI
       Tests must be verifiable from UI
-      NEVER split one workflow into multiple tests. Each test must be a complete end-to-end flow.
+      One test verifies ONE business operation: the steps that reach it, the action itself, and its verification.
+      Steps that only reach the action — opening a form, expanding a panel, creating or locating the item to act on — belong to that test. A second operation with its own verification does not.
       Bad: "Open delete dropdown" + "Confirm deletion" — these are ONE test, not two.
       Bad: "Search for X" + "Verify search results" — searching and verifying is ONE test.
       Bad: "Leave field empty" + "Click submit" — that's one negative test, not two.
-      If two scenarios cannot run independently (one requires the other to run first), merge them into one.${featureDirective}${focusExistingDataDirective}
+      Bad: "Create a record, rename it, delete it" — three verified operations, so THREE tests, not one.
+      Good: "Rename existing record and verify the new title" — ONE test; creating is skipped, we assume record already exists, only the rename is verified.
+      You may rely on another test having run first in case we deal with empty state and no relevant data was created yet and we expect another our test creates it
+      When the page reports a record is missing or unavailable, it is not a testable surface — plan list-level or recovery behavior instead of operations on that record.${featureDirective}${focusExistingDataDirective}
     </task>
 
     ${customPrompt || ''}
@@ -192,10 +196,6 @@ export class Planner extends PlannerBase implements Agent {
       const aiResult = await this.provider.generateObject(conversation.messages, TasksSchema, conversation.model);
 
       if (!aiResult?.object?.scenarios) {
-        throw new Error('No tasks were created successfully');
-      }
-
-      if (aiResult.object.scenarios.length === 0 && !this.currentPlan) {
         throw new Error('No tasks were created successfully');
       }
 
@@ -335,6 +335,7 @@ export class Planner extends PlannerBase implements Agent {
       <task>
       Based on the page research, create ${this.MIN_TASKS}-${this.MAX_TASKS} exploratory testing scenarios.
       For each scenario provide specific steps and expected outcomes.
+      Exception: if the page reports the requested resource is missing, shows a failure state, or holds no content and no controls, return an empty scenarios list. Never invent tests for a page with nothing to exercise.
       </task>
 
       <rules>
@@ -348,13 +349,13 @@ export class Planner extends PlannerBase implements Agent {
       Focus on error or success messages as outcome.
       Focus on URL page change or data persistency after page reload.
       If there are subpages (pages with same URL path) plan testing of those subpages as well
-      If you plan to test CRUD operations, plan them in correct order: create, read, update.
+      Plan CRUD operations in order: create, read, update, delete.
       Do not invent specific route names, success messages, validation texts, badge counts, or welcome messages unless they are visible in research, visited pages, or prior observed flows.
       When validation placement or wording was not observed, require feedback associated with the invalid input without inventing a specific location or message.
       If exact wording is unknown, describe the expected result generically, for example "an authentication error is shown" or "the user stays on the login page" instead of guessing the literal text.
       If exact redirect destination is unknown, describe the destination by visible page identity, for example "the dashboard page opens" or "the current workspace home page opens" instead of inventing a URL slug.
       Only propose scenarios whose prerequisites are evident from page research, visited pages, or API data preparation context.
-      If a scenario needs existing records, recipients, results, notifications, or other target data, propose it only when that data is visible or API preconditions can create it.
+      If a scenario needs existing records, recipients, results, notifications, or other target data, propose it only when that data is visible, API preconditions can create it, or the scenario itself creates the record as its setup.
       If the page appears read-only, degraded, demo-limited, maintenance-like, or lacks write controls, prefer read-only scenarios such as opening panels, inspecting visible lists, filtering, searching, or verifying current state.
       Do not assume hidden data exists just because a control is present.
       For scenarios that act on existing items or search/filter by existing values, use only item names or values visible in research, visited pages, or prior observed flows.

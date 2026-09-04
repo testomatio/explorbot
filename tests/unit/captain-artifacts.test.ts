@@ -62,81 +62,80 @@ describe('Captain artifact analysis tools', () => {
     expect(result.success).toBe(false);
   });
 
-  it('reads explicit report artifact paths without shell commands', async () => {
+  it('reads explicit report artifact paths without shell commands', () => {
     ConfigParser.resetForTesting();
     ConfigParser.setupTestConfig();
     const parser = ConfigParser.getInstance();
-    const outputDir = join(dirname(parser.getConfigPath()!), 'output');
-    const reportDir = join(outputDir, 'reports');
+    const projectRoot = dirname(parser.getConfigPath()!);
+    const reportDir = join(projectRoot, 'output', 'reports');
     mkdirSync(reportDir, { recursive: true });
     writeFileSync(join(reportDir, 'session-demo-tests.md'), '# Failed run\n\nExpected button was missing.');
 
-    const captain = buildCaptain();
-    const tools = await (captain as any).idleModeTools({ explorBot: {}, task: task('analyze report') });
-    const result = await tools.readFile.execute({ path: 'output/reports/session-demo-tests.md' });
+    const result = readCaptainFile(projectRoot, { path: 'output/reports/session-demo-tests.md' });
 
     expect(result.success).toBe(true);
-    expect(result.content).toContain('Expected button was missing');
+    if (result.success) {
+      expect(result.content).toContain('Expected button was missing');
+    }
 
-    rmSync(join(outputDir, '..'), { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  it('accepts paths prefixed with the project directory name', async () => {
+  it('accepts paths prefixed with the project directory name', () => {
     ConfigParser.resetForTesting();
     ConfigParser.setupTestConfig();
     const parser = ConfigParser.getInstance();
-    const outputDir = join(dirname(parser.getConfigPath()!), 'output');
-    const reportDir = join(outputDir, 'reports');
+    const projectRoot = dirname(parser.getConfigPath()!);
+    const reportDir = join(projectRoot, 'output', 'reports');
     mkdirSync(reportDir, { recursive: true });
     writeFileSync(join(reportDir, 'session-demo-tests.md'), '# Failed run\n\nWrong expectation.');
 
-    const captain = buildCaptain();
-    const tools = await (captain as any).idleModeTools({ explorBot: {}, task: task('analyze report') });
-    const projectName = basename(dirname(parser.getConfigPath()!));
-    const result = await tools.readFile.execute({ path: `${projectName}/output/reports/session-demo-tests.md` });
+    const result = readCaptainFile(projectRoot, { path: `${basename(projectRoot)}/output/reports/session-demo-tests.md` });
 
     expect(result.success).toBe(true);
-    expect(result.content).toContain('Wrong expectation');
+    if (result.success) {
+      expect(result.content).toContain('Wrong expectation');
+    }
 
-    rmSync(join(outputDir, '..'), { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  it('reads a requested line range from file contents', async () => {
+  it('reads a requested line range from file contents', () => {
     ConfigParser.resetForTesting();
     ConfigParser.setupTestConfig();
     const parser = ConfigParser.getInstance();
-    const outputDir = join(dirname(parser.getConfigPath()!), 'output');
-    const reportDir = join(outputDir, 'reports');
+    const projectRoot = dirname(parser.getConfigPath()!);
+    const reportDir = join(projectRoot, 'output', 'reports');
     mkdirSync(reportDir, { recursive: true });
     writeFileSync(join(reportDir, 'session-demo-tests.md'), ['line 1', 'line 2', 'line 3', 'line 4'].join('\n'));
 
-    const captain = buildCaptain();
-    const tools = await (captain as any).idleModeTools({ explorBot: {}, task: task('analyze report') });
-    const result = await tools.readFile.execute({ path: 'output/reports/session-demo-tests.md', startLine: 2, endLine: 3 });
+    const result = readCaptainFile(projectRoot, { path: 'output/reports/session-demo-tests.md', startLine: 2, endLine: 3 });
 
     expect(result.success).toBe(true);
-    expect(result.content).toBe('line 2\nline 3');
+    if (result.success) {
+      expect(result.content).toBe('line 2\nline 3');
+    }
 
-    rmSync(join(outputDir, '..'), { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
-  it('reads line ranges from the end of file', async () => {
+  it('reads line ranges from the end of file', () => {
     ConfigParser.resetForTesting();
     ConfigParser.setupTestConfig();
     const parser = ConfigParser.getInstance();
-    const outputDir = join(dirname(parser.getConfigPath()!), 'output');
-    const reportDir = join(outputDir, 'reports');
+    const projectRoot = dirname(parser.getConfigPath()!);
+    const reportDir = join(projectRoot, 'output', 'reports');
     mkdirSync(reportDir, { recursive: true });
     writeFileSync(join(reportDir, 'session-demo-tests.md'), ['line 1', 'line 2', 'line 3', 'line 4'].join('\n'));
 
-    const captain = buildCaptain();
-    const tools = await (captain as any).idleModeTools({ explorBot: {}, task: task('analyze report') });
-    const result = await tools.readFile.execute({ path: 'output/reports/session-demo-tests.md', startLine: -2 });
+    const result = readCaptainFile(projectRoot, { path: 'output/reports/session-demo-tests.md', startLine: -2 });
 
     expect(result.success).toBe(true);
-    expect(result.content).toBe('line 3\nline 4');
+    if (result.success) {
+      expect(result.content).toBe('line 3\nline 4');
+    }
 
-    rmSync(join(outputDir, '..'), { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   });
 
   it('uses caller-provided readable directories', () => {

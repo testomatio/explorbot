@@ -18,6 +18,7 @@ import { truncateJson } from '../utils/strings.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
+import { createAskApiTool } from './fisherman/tools.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -31,6 +32,7 @@ const META_TOOLS = ['record', 'reset', 'stop', 'finish'];
 const PILOT_REASONING_LIMIT = 500;
 const PILOT_MESSAGE_LIMIT = 2;
 const PILOT_MESSAGE_MAX_LENGTH = 160;
+const PILOT_REQUEST_LIMIT = 5;
 
 export class Pilot implements Agent {
   emoji = '🧭';
@@ -451,7 +453,8 @@ export class Pilot implements Agent {
 
         Plan the test execution for this scenario.
 
-        FIRST: Decide if precondition() is needed.
+        FIRST: Decide if precondition() is needed. When the page does not settle whether suitable data
+        already exists, call askApi() to find out before creating any.
 
         Call precondition() WHEN:
         - The scenario edits/deletes/modifies an item, and you want a DISPOSABLE item to act on safely
@@ -687,7 +690,7 @@ export class Pilot implements Agent {
     }
     this.conversation!.addUserText(finalUserText);
 
-    const tools = { ...this.pickPlanningTools(), ...this.buildPreconditionTool(opts.task) };
+    const tools = { ...this.pickPlanningTools(), ...this.buildFishermanTools(opts.task) };
 
     const result = await this.provider.invokeConversation(this.conversation!, tools, {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
@@ -733,7 +736,12 @@ export class Pilot implements Agent {
     return planning;
   }
 
-  private buildPreconditionTool(task: Test) {
+  private fishermanStatus(): string {
+    if (this.fisherman?.isAvailable()) return 'available';
+    return 'none';
+  }
+
+  private buildFishermanTools(task: Test) {
     const unavailable = 'Data was not created and cannot be created automatically. Do not call precondition again for this test — continue with what the page already shows.';
     return {
       precondition: tool({
@@ -744,7 +752,7 @@ export class Pilot implements Agent {
         execute: async ({ description }) => {
           task.addNote(`Precondition: ${description}`);
           tag('info').log(`Precondition: ${description}`);
-          debugLog(`precondition: ${description}, fisherman: ${this.fisherman?.isAvailable() ? 'available' : 'none'}`);
+          debugLog(`precondition: ${description}, fisherman: ${this.fishermanStatus()}`);
 
           if (!this.fisherman || !this.fisherman.isAvailable()) {
             const skipReason = await this.checkDataAvailability(task, description, 'Fisherman not available');
@@ -775,6 +783,7 @@ export class Pilot implements Agent {
           return { noted: true, prepared: true, created: result.created };
         },
       }),
+      ...createAskApiTool(this.fisherman, task),
     };
   }
 
@@ -826,17 +835,17 @@ export class Pilot implements Agent {
     lines.push(`h3: ${state.h3 || ''}`);
     lines.push(`h4: ${state.h4 || ''}`);
 
-    const focusArea = state.overlay;
-    if (focusArea.detected) {
-      let line = `modal: ${focusArea.name || focusArea.type}`;
-      if (focusArea.root) line += ` (root: ${focusArea.root})`;
+    const region = state.overlay;
+    if (region.isModal) {
+      let line = `overlay: ${region.name || region.type}`;
+      if (region.root) line += ` (root: ${region.root})`;
       lines.push(line);
-    } else if (focusArea.present) {
-      let line = `region: ${focusArea.name || 'unnamed'} (inline`;
-      if (focusArea.root) line += `, root: ${focusArea.root}`;
+    } else if (region.isOpen) {
+      let line = `region: ${region.name || 'unnamed'} (inline`;
+      if (region.root) line += `, root: ${region.root}`;
       lines.push(`${line})`);
     } else {
-      lines.push('modal: none');
+      lines.push('overlay: none');
     }
 
     const tabs = this.stateManager.otherTabs;
@@ -1071,9 +1080,13 @@ export class Pilot implements Agent {
 
         if (t.output?.pageDiff?.urlChanged) line += `\n   moved: ${t.output.pageDiff.previousUrl} → ${t.output.pageDiff.currentUrl}`;
 
-        const failedRequests = (t.output?.pageDiff?.requests ?? []).filter((r: any) => r.status >= 400);
-        if (failedRequests.length > 0) {
-          line += `\n   requests: ${failedRequests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
+        const pageRequests = t.output?.pageDiff?.requests ?? [];
+        const requests = pageRequests
+          .filter((r: any) => r.status >= 400)
+          .concat(pageRequests.filter((r: any) => r.status < 400))
+          .slice(0, PILOT_REQUEST_LIMIT);
+        if (requests.length > 0) {
+          line += `\n   requests: ${requests.map((r: any) => `${r.method} ${r.path} → ${r.status}`).join(', ')}`;
         }
 
         const messages = (t.output?.pageDiff?.messages ?? []).slice(0, PILOT_MESSAGE_LIMIT);
@@ -1139,15 +1152,15 @@ export class Pilot implements Agent {
 
       Diagnostic patterns (use <state>, executed/element/skipped fields, ariaDiff):
       - Click failed + button in "disabled buttons" → required field missing. Instruct fill first.
-      - "modal: none" but Tester targets a modal → modal closed; re-trigger.
+      - "overlay: none" but Tester targets an overlay → overlay closed; re-trigger.
       - "region:" in <state> → a large area appeared in place without navigation (subview, wizard step, panel). Direct Tester to act inside it; the rest of the page is still usable.
       - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
-      - MultipleElementsFound → xpathCheck() to identify the right one, then precise locator or visualClick().
+      - MultipleElementsFound → nothing was clicked. Tell Tester to reuse the same locator with step.opts({ elementIndex: N }) from the numbered elements list.
       - Wrong page (settings vs feature) → getVisitedStates() then back() or reset(). Don't try breadcrumbs (SPA back-nav is unreliable).
       - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
       - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.
       - ariaDiff shows 5+ added/removed → page entered new mode (editor/modal); call context() before guessing selectors.
-      - Empty dropdown/list when items expected → missing data; call precondition() to create it.
+      - Empty dropdown/list when items expected → wait explicitly, then check the state changed: ariaDiff and any GET that loaded data. If still nothing loaded, confirm the empty state with verify(), or askApi() for whether the data exists at all.
       - Search-and-select needs SEQUENCE: focus trigger → type to filter → click option. Tell Tester to split into separate tool calls.
       - Multi-action explanation in one tool call → instruct Tester to split.
 
@@ -1163,8 +1176,13 @@ export class Pilot implements Agent {
 
       ${capabilityGroundingRule}
 
-      YOUR Pilot-only tool: precondition(description) — create FRESH disposable test data via API. Never
-      request users. Use when:
+      YOUR Pilot-only tools, both over the API:
+
+      askApi(question) — ask what data already exists. It changes nothing. Use it to check whether
+      suitable data is already there before creating any, and to get the exact name or id of an existing
+      record a step must act on.
+
+      precondition(description) — create FRESH disposable test data. Never request users. Use when:
 
       - Scenario edits/deletes/modifies an item → create a disposable target ("1 post").
       - Scenario needs auxiliary data (labels, categories, statuses for filtering).

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import figures from 'figures';
 import type { ActionResult } from './action-result.ts';
-import { listSites } from './global-config.ts';
+import { listSitePlanDirs } from './global-config.ts';
 import { WebPageState } from './state-manager.ts';
 import { tag } from './utils/logger.ts';
 import { parsePlanFromMarkdown, planToAiContext, savePlanToMarkdown, savePlansToMarkdown } from './utils/test-plan-markdown.ts';
@@ -391,8 +391,6 @@ export class Test extends Task {
   }
 }
 
-const SITE_PLANS_DIR = ['output', 'plans'];
-
 type PlanChangeListener = (tests: Test[]) => void;
 
 export class Plan {
@@ -479,23 +477,27 @@ export class Plan {
 
   updateStatus(): void {}
 
-  static loadFromFile(file: string, plansDir?: string): Plan | null {
+  static resolveFile(file: string, plansDir?: string): string | null {
     const names = [file];
     if (!file.endsWith('.md')) names.push(`${file}.md`);
 
     const dirs = [process.cwd()];
     if (plansDir) dirs.push(plansDir);
-    if (!plansDir) dirs.push(...listSites().map((site) => path.join(site.dir, ...SITE_PLANS_DIR)));
+    if (!plansDir) dirs.push(...listSitePlanDirs());
 
     for (const dir of dirs) {
       const filePath = names.map((name) => path.resolve(dir, name)).find(existsSync);
-      if (!filePath) continue;
-      const loaded = parsePlanFromMarkdown(filePath);
-      loaded.filePath = filePath;
-      return loaded;
+      if (filePath) return filePath;
     }
-
     return null;
+  }
+
+  static loadFromFile(file: string, plansDir?: string): Plan | null {
+    const filePath = Plan.resolveFile(file, plansDir);
+    if (!filePath) return null;
+    const loaded = parsePlanFromMarkdown(filePath);
+    loaded.filePath = filePath;
+    return loaded;
   }
 
   static fromMarkdown(filePath: string): Plan {
