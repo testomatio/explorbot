@@ -16,6 +16,11 @@
 
 ### Changes
 
+- **[Pilot] The final verdict now sees the last round of checks** — a `verify()` or `see()` run in
+  the same round as the decision to finish was invisible to Pilot, so a test could be reported as
+  failed on evidence it had already produced. The verdict is now made once the round is complete.
+  When Pilot rejects a finish or a stop, its reasoning arrives as guidance for the next step rather
+  than a bare rejection.
 - **`--json` no longer collides with the banner** — passing it to any command suppresses the
   startup banner, so `explorbot config --json | jq` works without setting `EXPLORBOT_NO_BANNER`.
   `help-json` suppresses it too.
