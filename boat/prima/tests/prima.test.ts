@@ -95,7 +95,7 @@ function fakePrima(options: Record<string, unknown> = {}) {
     }),
     getCurrentState: () => fakeState(),
     getConfig: () => ({}),
-    requestStore: () => ({ getMadeRequests: () => [] }),
+    requestStore: () => ({ getCapturedRequests: () => [] }),
     getProvider: () => ({ chat: async () => '' }),
     agentResearcher: () => ({ enable: () => {}, disable: () => {} }),
   };
@@ -140,6 +140,16 @@ describe('Prima.pw', () => {
     expect(envelope.artifacts?.aria).toBe(path.join(artifactsRoot, envelope.status!, 'aria.yml'));
     expect(envelope.artifacts?.network).toBeUndefined();
     expect(envelope.instance.name).toBe('default');
+  });
+
+  test('the network artifact holds the requests the browser was seen to make', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.requestStore = () => ({ getCapturedRequests: () => [{ method: 'POST', path: '/api/session', status: 201 }] });
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+
+    const lines = readFileSync(envelope.artifacts!.network!, 'utf-8').trim().split('\n');
+    expect(lines.length).toBe(1);
+    expect(JSON.parse(lines[0]).path).toBe('/api/session');
   });
 
   test('status points at the artifacts instead of printing the page tree back', async () => {

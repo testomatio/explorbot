@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-05
+
+### Changes
+
+- [Prima] The `network.jsonl` artifact now holds the requests the browser was seen to make. It was
+  reading the requests an API run sends itself, a list nothing fills during a browser command, so the
+  file was never written and no envelope ever pointed at it — while the page's own traffic was being
+  captured the whole time.
+
 ## 2026-09-04
 
 ### New CLI Commands
