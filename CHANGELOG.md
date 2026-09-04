@@ -33,6 +33,21 @@
 
 ### Changes
 
+- [Prima] `prima research` is the only command that maps a page. `check` used to map every new url
+  it landed on, and map an opening panel on top of that, before it could act; `do` was handed a
+  `research` tool it could spend a full model call on in the middle of an instruction. Both now work
+  from the accessibility tree and the page markup, and their help points at `prima research` for a
+  large or unfamiliar page. Nothing inside a run can talk it into mapping a page — not the agent
+  driving it, not the supervisor asking for a UI map, not the `research` tool. An explorbot run
+  still maps pages as it did.
+- The `research` tool reports "No UI map is available for this page" instead of returning an empty
+  map as a success.
+- A recorded map handed to a run is reported like a freshly produced one, so a host watching over
+  `--ws` sees the map the run is acting on rather than watching it act on something unseen.
+- [Prima] A recorded research map now joins the page context instead of replacing it. `do` used to
+  swap the accessibility tree out for the map once a page had been visited three times, taking the
+  element refs with it, and it looked the map up under the panel-scoped hash, so no map was found
+  while a panel was open. Tree and map are now given together whenever a map exists.
 - [Fisherman] Can now answer questions about data that already exists, over read-only GET requests
   that create or change nothing. It draws on the same endpoints it already knew about — an OpenAPI
   spec when one is configured, or endpoints learned by watching browser traffic otherwise.
@@ -64,6 +79,18 @@
 - Page Diff: The markup shown for a panel that does not fit the size budget now keeps its ending as
   well as its beginning. A picker with a long list used to be cut off before its buttons, leaving
   the agent hunting for a Cancel or Confirm it could not see.
+
+### Configuration
+
+- **`ai.agents.researcher.enabled`** — set it to `false` and the Researcher answers with the map
+  already recorded for a page and produces none. Prima resolves it when it loads config: off for
+  every command except `prima research`, and whatever your config file says wins.
+
+  ```javascript
+  ai: { agents: { researcher: { enabled: false } } }
+  ```
+- **`ai.agents.prima.researchAfterVisits`** is gone. A map recorded by `prima research` is used
+  from the next command onwards, so there is nothing left to wait for.
 
 ## 2026-09-02
 

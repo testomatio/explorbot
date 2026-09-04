@@ -748,6 +748,13 @@ export function outputPath(...segments: string[]): string {
   return path.join(ConfigParser.getInstance().getOutputDir(), ...segments);
 }
 
+export function agentSettings<K extends keyof AgentsConfig>(config: ExplorbotConfig, agent: K): NonNullable<AgentsConfig[K]> {
+  const ai = (config.ai ??= { model: null });
+  const agents = (ai.agents ??= {}) as Record<K, NonNullable<AgentsConfig[K]>>;
+  agents[agent] ??= {} as NonNullable<AgentsConfig[K]>;
+  return agents[agent];
+}
+
 export async function resolveModel(spec: string, role: ModelRole = 'model'): Promise<any> {
   const separator = spec.indexOf('/');
   if (separator > 0) {
