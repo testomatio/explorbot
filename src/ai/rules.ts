@@ -173,6 +173,8 @@ export const dataProtectionRules = dedent`
   Do not use Fisherman or API data preparation to bypass a no-mutation, read-only, search,
   filter, tab, or list-inspection constraint. Use visible existing data when it is available.
   If no suitable data exists, report the missing precondition instead of creating data.
+  Reading through the API to establish what already exists is not a mutation and stays allowed
+  under a read-only constraint.
 
   Destructive actions are allowed only against data created by the current scenario
   or prepared for that scenario by Fisherman/API preconditions. Existing application data must

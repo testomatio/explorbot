@@ -124,7 +124,8 @@ export class RequestResult {
     }
 
     writeFileSync(this.requestFile, yaml, 'utf8');
-    writeFileSync(this.responseFile, this._rawResponseBody || '', 'utf8');
+    if (!this._rawResponseBody) return;
+    writeFileSync(this.responseFile, this._rawResponseBody, 'utf8');
   }
 
   static load(requestFile: string): RequestResult {

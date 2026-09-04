@@ -1,28 +1,36 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import type { ApiClient } from '../api/api-client.ts';
-import type { RequestResult } from '../api/request-result.ts';
-import type { RequestStore } from '../api/request-store.ts';
-import { extractEndpointDefinition } from '../api/spec-reader.ts';
-import { tag } from '../utils/logger.ts';
-import { isDynamicSegment } from '../utils/url-matcher.ts';
-import type { RequestHaul } from './fisherman/request-haul.ts';
+import type { ApiClient } from '../../api/api-client.ts';
+import type { RequestResult } from '../../api/request-result.ts';
+import type { RequestStore } from '../../api/request-store.ts';
+import { extractEndpointDefinition } from '../../api/spec-reader.ts';
+import type { Test } from '../../test-plan.ts';
+import { tag } from '../../utils/logger.ts';
+import { isDynamicSegment } from '../../utils/url-matcher.ts';
+import type { Fisherman } from '../fisherman.ts';
+import type { RequestHaul } from './request-haul.ts';
 
-export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, haul: RequestHaul, opts: { spec?: any; baseEndpoint?: string }) {
+const BODY_PREVIEW_LIMIT = 2000;
+
+export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, haul: RequestHaul, opts: { spec?: any; baseEndpoint?: string; readOnly?: boolean }) {
+  const readOnly = opts.readOnly === true;
   let finished = false;
   let result: FishermanResult | null = null;
 
-  const getResult = () => result ?? synthesizeResult(haul, false);
+  let allowedMethods: string[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+  if (readOnly) allowedMethods = ['GET'];
+
+  const getResult = () => result ?? synthesizeResult(haul, false, readOnly);
   const isFinished = () => finished;
   const finishFromText = (text?: string) => {
     finished = true;
-    const synthesized = synthesizeResult(haul, true);
+    const synthesized = synthesizeResult(haul, true, readOnly);
     if (text && synthesized.success) synthesized.summary = text;
     result = synthesized;
   };
 
-  const tools = {
+  const tools: Record<string, any> = {
     getEndpointSpec: tool({
       description: dedent`
         Get the request specification for an endpoint.
@@ -30,13 +38,14 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
         Call this before making a request to an endpoint you haven't used before.
       `,
       inputSchema: z.object({
-        method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
+        method: z.enum(allowedMethods as [string, ...string[]]).describe('HTTP method'),
         path: z.string().describe('Endpoint path, e.g. /suites'),
       }),
       execute: async ({ method, path }) => {
         tag('step').log(`Fisherman: spec lookup ${method} ${path}`);
 
-        const captured = requestStore.findCapturedRequest(method, path);
+        let captured = requestStore.findCapturedRequest(method, path);
+        if (captured && !captured.requestBody && opts.spec && captured.status < 400) captured = undefined;
         if (captured) {
           if (captured.status >= 400) {
             const rejectedCapture = {
@@ -88,7 +97,7 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
         Returns status, plus IDs and names auto-extracted from the response under 'extracted'.
       `,
       inputSchema: z.object({
-        method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
+        method: z.enum(allowedMethods as [string, ...string[]]).describe('HTTP method'),
         path: z.string().describe('API path (e.g., /suites, /suites/1)'),
         body: z.any().optional().describe('Request body (JSON object)'),
         queryParams: z.record(z.string(), z.string()).optional().describe('Query parameters'),
@@ -125,11 +134,13 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
 
         const extracted = extractKeyFields(reqResult.responseBody);
         tag('success').log(`Fisherman: ${input.method} ${input.path} > ${statusLine}`);
-        return {
+        const output: Record<string, any> = {
           success: true,
           status: reqResult.status,
           extracted,
         };
+        if (readOnly) output.bodyPreview = reqResult.rawResponseBody.substring(0, BODY_PREVIEW_LIMIT);
+        return output;
       },
     }),
 
@@ -181,7 +192,61 @@ export function createFishermanTools(apiClient: ApiClient, requestStore: Request
     }),
   };
 
+  if (readOnly) {
+    tools.finish = tool({
+      description: 'Report the answer to the question. Call when the requests have shown what exists.',
+      inputSchema: z.object({
+        answer: z.string().describe('What the data shows, quoting the concrete names, titles and ids that were returned'),
+      }),
+      execute: async ({ answer }) => {
+        if (haul.successfulReads().length === 0) {
+          tag('warning').log('Fisherman: finish rejected — no successful request in this run');
+          return { finished: false, error: 'No successful request was made in this run, so nothing was read. Keep working, or call stop if the question cannot be answered.' };
+        }
+
+        tag('success').log(`Fisherman answered: ${answer}`);
+        finished = true;
+        result = { success: true, summary: answer, created: [], failed: [] };
+        return { finished: true };
+      },
+    });
+  }
+
   return { tools, getResult, isFinished, finishFromText };
+}
+
+export function createAskApiTool(fisherman: Fisherman | null, task: Test) {
+  return {
+    askApi: tool({
+      description: dedent`
+        Ask what data already exists, changing nothing.
+        Ask a question about existing records: which ones are there, what they are called, whether a particular one exists.
+        Use it before precondition() to see whether suitable data is already available, and whenever a step needs the exact name or id of a record that is already there.
+        It never creates, edits or deletes anything — precondition() does that.
+      `,
+      inputSchema: z.object({
+        question: z.string().describe('What to find out about data that already exists'),
+      }),
+      execute: async ({ question }) => {
+        tag('info').log(`Ask API: ${question}`);
+
+        if (!fisherman?.isAvailable()) {
+          return { answered: false, reason: 'No API access is configured, so existing data cannot be queried. Judge from the page instead.' };
+        }
+
+        const result = await fisherman.lookupData(question, task.startUrl, task.sessionName);
+
+        if (!result.success) {
+          tag('warning').log(`Ask API unanswered: ${result.summary}`);
+          return { answered: false, reason: result.summary || 'The API could not answer this question' };
+        }
+
+        task.addNote(`Asked API: ${question} — ${result.summary}`);
+        tag('success').log(`Ask API: ${result.summary}`);
+        return { answered: true, answer: result.summary };
+      },
+    }),
+  };
 }
 
 export function verifyFinish(haul: RequestHaul, input: { summary: string; created: FishermanResult['created']; failed?: FishermanResult['failed'] }): { result: FishermanResult | null; error?: string } {
@@ -211,14 +276,22 @@ export function verifyFinish(haul: RequestHaul, input: { summary: string; create
   return { result: { success: true, summary: input.summary, created: verified, failed: input.failed || [] } };
 }
 
-function synthesizeResult(haul: RequestHaul, declaredDone: boolean): FishermanResult {
+function synthesizeResult(haul: RequestHaul, declaredDone: boolean, readOnly: boolean): FishermanResult {
   const made = haul.requests();
-  const writes = haul.successfulWrites();
   const failures = haul.failed();
-  let summary = `Stopped before finishing: ${made.length} requests, ${writes.length} successful writes, ${failures.length} failed`;
+  let succeeded = haul.successfulWrites();
+  let successLabel = 'successful writes';
+  if (readOnly) {
+    succeeded = haul.successfulReads();
+    successLabel = 'successful reads';
+  }
+  let summary = `Stopped before finishing: ${made.length} requests, ${succeeded.length} ${successLabel}, ${failures.length} failed`;
   const lastFailure = failures[failures.length - 1];
   if (lastFailure) summary += `; last failure: ${lastFailure.toSummary()}`;
-  return { success: declaredDone && writes.length > 0, summary, created: writes.map(toCreatedItem), failed: [] };
+
+  const result: FishermanResult = { success: declaredDone && succeeded.length > 0, summary, created: [], failed: [] };
+  if (!readOnly) result.created = succeeded.map(toCreatedItem);
+  return result;
 }
 
 function toCreatedItem(write: RequestResult): FishermanResult['created'][number] {

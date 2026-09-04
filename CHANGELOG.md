@@ -24,6 +24,18 @@
 
 ### Changes
 
+- [Fisherman] Can now answer questions about data that already exists, over read-only GET requests
+  that create or change nothing. It draws on the same endpoints it already knew about — an OpenAPI
+  spec when one is configured, or endpoints learned by watching browser traffic otherwise.
+- [Pilot] Gained an `askApi(question)` tool alongside `precondition()`, available while planning a
+  test, reviewing a new page, and checking progress mid-run. It asks Fisherman what already exists —
+  whether suitable data is already there, or the exact name or id of an existing record — before
+  deciding whether to create anything.
+- [Explorer] Successful GET requests observed in the browser are now captured alongside write
+  requests, so Fisherman's read-only lookups work without an OpenAPI spec. The endpoint list
+  shown to the model names only the path and its query-parameter names, never their values; the
+  capture on disk holds the full request URL and headers — what write captures have always held —
+  but no response body.
 - Click tool: A locator that matches several elements is now reported as a failure that clicked nothing,
   together with the numbered list of what matched. Explorbot no longer guesses which one you meant and
   clicks it — a guess used to land a real click, so a control that toggles could be switched back by a
