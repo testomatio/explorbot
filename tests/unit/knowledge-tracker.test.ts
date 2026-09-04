@@ -109,6 +109,31 @@ describe('KnowledgeTracker', () => {
 
       expect(rendered).toContain('Sign in to the application.');
     });
+
+    it('exposes the spec URLs matched by the current state', () => {
+      mkdirSync(`${applicationSpecDir}/pages`, { recursive: true });
+      writeFileSync(`${applicationSpecDir}/index.md`, '# Website Spec', 'utf8');
+      writeFileSync(
+        `${applicationSpecDir}/pages/login.md`,
+        matter.stringify('# /login\n\n## Purpose\n\nSign in to the application.', {
+          url: '/login',
+          format: APPLICATION_SPEC_FORMAT,
+          version: APPLICATION_SPEC_VERSION,
+        }),
+        'utf8'
+      );
+
+      const tracker = new KnowledgeTracker({ applicationSpec: applicationSpecDir });
+
+      expect(tracker.applicationSpecUrls(new ActionResult({ url: '/login' }))).toEqual(['/login']);
+      expect(tracker.applicationSpecUrls(new ActionResult({ url: '/billing' }))).toEqual([]);
+    });
+
+    it('returns no spec URLs without an application spec', () => {
+      const tracker = new KnowledgeTracker({ knowledgeDir: '/tmp/explorbot-test-knowledge-only' });
+
+      expect(tracker.applicationSpecUrls(new ActionResult({ url: '/login' }))).toEqual([]);
+    });
   });
 
   describe('interpolateVars', () => {

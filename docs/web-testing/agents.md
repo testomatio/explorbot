@@ -44,13 +44,21 @@ See [Researcher Agent](./researcher.md) for configuration and usage.
 
 Generates test scenarios from research findings.
 
-The Planner writes business-focused scenarios with priority levels (critical/important/high/normal/low) and expected outcomes for verification. It balances positive and negative cases, skips scenarios you already have, and cycles through planning styles (normal, psycho, curious) to broaden coverage across iterations. You can add your own styles and page-specific rules.
+The Planner writes business-focused scenarios with priority levels (critical/important/high/normal/low) and expected outcomes for verification. It balances positive and negative cases, skips scenarios you already have, and cycles through planning styles (normal, psycho, curious) to broaden coverage across iterations. You can add your own styles and page-specific rules. With the Scout agent enabled, it also plans from collected documentation, weighted by `docsWeight`.
 
 Commands that use Planner:
 - `/plan [--focus <feature>]`
 - `/explore`
 
 See [Planner Agent](./planner.md) for planning styles, customization, and configuration.
+
+## Scout Agent
+
+Retrieves documentation relevant to the page being planned.
+
+Scout searches the collected documentation corpus — the [application spec](../workflow/application-spec.md) from `explorbot docs collect` plus any extra markdown directories you configure — and reports the documented capabilities, states and transitions that matter for the current page and focus. The Planner receives them as a `<docs_context>` block and grounds part of its scenarios in them. Pages already injected as `<application_spec>` for the current URL are not repeated. Scout is opt-in (`ai.agents.scout.enabled`) and searches with ripgrep or grep, falling back to an in-process scan when neither is installed.
+
+See [Configuration: Scout agent](../reference/configuration.md#scout-agent).
 
 ## Tester Agent
 

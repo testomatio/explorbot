@@ -17,7 +17,7 @@ export class ApplicationSpec {
   }
 
   renderFor(state: ActionResult): string {
-    const relevant = this.pages.filter((page) => state.isMatchedBy({ url: page.url }));
+    const relevant = this.relevantPages(state);
     if (relevant.length === 0) return '';
 
     tag('operation').log(`Found application specification for ${state.url}`);
@@ -28,6 +28,10 @@ export class ApplicationSpec {
       ${relevant.map((page) => page.content).join('\n\n')}
       </application_spec>
     `;
+  }
+
+  matchedUrls(state: ActionResult): string[] {
+    return this.relevantPages(state).map((page) => page.url);
   }
 
   get pageCount(): number {
@@ -75,10 +79,24 @@ export class ApplicationSpec {
   }
 
   private resolveSourcePath(sourcePath: string): string {
-    if (path.isAbsolute(sourcePath)) return path.resolve(sourcePath);
-    const configParser = ConfigParser.getInstance();
-    return path.resolve(configParser.resolveProjectDir(sourcePath));
+    return resolveSpecSource(sourcePath);
   }
+
+  private relevantPages(state: ActionResult): ApplicationSpecPage[] {
+    return this.pages.filter((page) => state.isMatchedBy({ url: page.url }));
+  }
+}
+
+export function resolveSpecBundlePath(sourcePath: string): string | null {
+  const resolved = resolveSpecSource(sourcePath);
+  if (!existsSync(resolved)) return null;
+  if (statSync(resolved).isDirectory()) return resolved;
+  return path.dirname(resolved);
+}
+
+function resolveSpecSource(sourcePath: string): string {
+  if (path.isAbsolute(sourcePath)) return path.resolve(sourcePath);
+  return path.resolve(ConfigParser.getInstance().resolveProjectDir(sourcePath));
 }
 
 interface ApplicationSpecPage {

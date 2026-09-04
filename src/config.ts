@@ -129,6 +129,11 @@ interface RerunnerAgentConfig extends AgentConfig {
 interface PlannerAgentConfig extends AgentConfig {
   styles?: string[];
   stylesDir?: string;
+  docsWeight?: number;
+}
+
+interface ScoutAgentConfig extends AgentConfig {
+  dirs?: string[];
 }
 
 interface ScreencastConfig {
@@ -153,6 +158,7 @@ interface AgentsConfig {
   quartermaster?: AgentConfig;
   historian?: HistorianAgentConfig;
   fisherman?: AgentConfig;
+  scout?: ScoutAgentConfig;
   chief?: AgentConfig;
   curler?: AgentConfig;
   rerunner?: RerunnerAgentConfig;
@@ -291,6 +297,7 @@ export type {
   ResearcherAgentConfig,
   NavigatorAgentConfig,
   PlannerAgentConfig,
+  ScoutAgentConfig,
   RerunnerAgentConfig,
   HealRecipe,
   Hook,

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import matter from 'gray-matter';
 import { ActionResult } from '../../src/action-result.ts';
 import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
-import { ApplicationSpec } from '../../src/application-spec.ts';
+import { ApplicationSpec, resolveSpecBundlePath } from '../../src/application-spec.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 const projectDir = '/tmp/explorbot-application-spec-test';
@@ -55,6 +56,24 @@ describe('ApplicationSpec', () => {
     const spec = new ApplicationSpec('output/docs');
 
     expect(spec.renderFor(new ActionResult({ url: '/billing' }))).toBe('');
+  });
+
+  it('lists the URLs matching the current state', () => {
+    writePage('users.md', '/users', 'User list');
+    writePage('settings.md', '/settings', 'Workspace settings');
+
+    const spec = new ApplicationSpec('output/docs');
+
+    expect(spec.matchedUrls(new ActionResult({ url: '/users' }))).toEqual(['/users']);
+    expect(spec.matchedUrls(new ActionResult({ url: '/billing' }))).toEqual([]);
+  });
+
+  it('resolves a bundle path leniently', () => {
+    writePage('users.md', '/users', 'User list');
+
+    expect(resolveSpecBundlePath('output/docs')).toBe(path.resolve(`${projectDir}/output/docs`));
+    expect(resolveSpecBundlePath('output/docs/index.md')).toBe(path.resolve(`${projectDir}/output/docs`));
+    expect(resolveSpecBundlePath('missing/docs')).toBeNull();
   });
 
   it('reports a friendly error for an invalid bundle', () => {

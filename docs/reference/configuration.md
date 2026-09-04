@@ -179,6 +179,7 @@ Each agent takes its own model and system prompt.
 | `rerunner` | Heals failing steps when re-running generated tests |
 | `analyst` | Writes the end-of-session markdown report |
 | `fisherman` | Prepares test data through API requests |
+| `scout` | Retrieves relevant documentation for the Planner |
 | `chief` | API test planning |
 | `curler` | API test execution |
 
@@ -206,7 +207,7 @@ agents: {
 | `beforeHook` | `Hook \| HookPatternMap` | Code to run before agent execution |
 | `afterHook` | `Hook \| HookPatternMap` | Code to run after agent execution |
 
-Some agents take extra options: `pilot` accepts `stepsToReview` (recent steps reviewed per check, default 5); `planner` accepts `styles` (see [Planning styles](#planning-styles)); `rerunner` accepts `healLimit` (max heal attempts, default 3) and `recipes` (custom heal recipes, see [Rerunning Tests](../web-testing/rerun.md)). Researcher and Historian options are documented below.
+Some agents take extra options: `pilot` accepts `stepsToReview` (recent steps reviewed per check, default 5); `planner` accepts `styles` (see [Planning styles](#planning-styles)) and `docsWeight` (share of scenarios grounded in documentation when Scout is enabled, default 70); `scout` accepts `dirs` (see [Scout agent](#scout-agent)); `rerunner` accepts `healLimit` (max heal attempts, default 3) and `recipes` (custom heal recipes, see [Rerunning Tests](../web-testing/rerun.md)). Researcher and Historian options are documented below.
 
 See [Agent hooks](../web-testing/hooks.md) for hook configuration.
 
@@ -256,6 +257,31 @@ See [AI providers](../basics/providers.md) for recommended models and provider s
 ### Fisherman agent
 
 Fisherman prepares test data over the API before a scenario runs, and can also answer questions about data that already exists without creating or changing anything. Pilot reaches this read-only capability through its `askApi(question)` tool, calling it to check whether suitable data is already there — or to get the exact name or id of an existing record — before deciding whether to create anything through `precondition()`. In replicate mode, where Fisherman learns the API by watching browser traffic instead of reading a spec, the read endpoints it can query come from successful GET requests observed in the browser, alongside the write endpoints already captured from XHR traffic. The endpoint list shown to the model names only the path and its query-parameter names, never their values; the underlying capture on disk holds the full request URL and headers — what write captures already hold — but no response body.
+
+### Scout agent
+
+Scout retrieves documentation relevant to the page being planned and hands it to the Planner as a `<docs_context>` block, so scenarios can be grounded in what the application documents say. It is opt-in and needs documentation collected beforehand:
+
+```javascript
+ai: {
+  agents: {
+    scout: {
+      enabled: true,          // Opt in — Scout never runs without this
+      dirs: ['docs'],         // Extra markdown directories to search, beyond the spec bundle
+    },
+    planner: {
+      docsWeight: 70,         // Roughly 70% of scenarios exercise documented behavior, the rest explore beyond it
+    },
+  },
+},
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `enabled` | `boolean` | Turn Scout on. Default: off. |
+| `dirs` | `string[]` | Markdown directories added to the corpus, resolved relative to the project |
+
+The corpus combines the [application spec](../workflow/application-spec.md) bundle (`--spec` / `EXPLORBOT_SPEC` / `dirs.spec`, set by `explorbot docs collect`) with the `dirs` above. Scout searches it with ripgrep, falling back to grep, then to an in-process scan, so it works on machines without either binary. Pages already injected for the current URL as `<application_spec>` are excluded automatically, so the two blocks never duplicate each other. Files under `dirs` that carry no page URL are treated as hand-written notes: their first pages go into the Scout's context directly, so they reach the Planner regardless of what search terms the model picks. Point `dirs` at documentation trees, not a repository root — every search scans them.
 
 ## Playwright settings
 
@@ -512,6 +538,7 @@ export default {
       quartermaster: { /* ... */ },
       historian: { /* ... */ },
       fisherman: { /* ... */ },
+      scout: { enabled: true, dirs: ['docs'] }, // Documentation retrieval for the Planner
       rerunner: { /* ... */ },
       analyst: { /* ... */ },
     },

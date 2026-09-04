@@ -53,6 +53,11 @@ ai: {
 | `styles` | `string[]` | `['normal', 'curious', 'psycho']` | Style names and cycling order |
 | `rules` | `RuleEntry[]` | `[]` | URL-aware rule files from `rules/planner/` |
 | `systemPrompt` | `string` | - | Inline instructions appended to the prompt |
+| `docsWeight` | `number` | `70` | With Scout enabled, the rough share of scenarios exercising documented behavior; the rest explore beyond the documentation |
+
+## Planning from documentation
+
+With the [Scout agent](../reference/configuration.md#scout-agent) enabled, the Planner also receives a `<docs_context>` block — capabilities, states and transitions retrieved from collected documentation that are relevant to the current page and focus. `docsWeight` steers the mix: at `70` roughly seven of ten scenarios exercise documented behavior and three explore what the documentation does not cover. Set it to `100` for documentation-only planning, or lower it to lean on the Planner's own reading of the page. Pages whose documentation is already injected as `<application_spec>` are not repeated in `<docs_context>`.
 
 ## Planning Styles
 

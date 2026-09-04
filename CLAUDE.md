@@ -109,11 +109,11 @@ Shared invariant: matching in the data tier is **structural, never semantic**. I
 
 One verb each; a responsibility that can't be phrased as the verb doesn't belong there:
 
-- Researcher **describes**, Navigator **moves**, Planner **proposes**, Pilot **guides**, Tester **executes**, Driller **drills**, Historian **records sessions**, Analyst **reports**, ExperienceCompactor **compacts**, Quartermaster **audits a11y**, Captain **commands**
+- Researcher **describes**, Navigator **moves**, Planner **proposes**, Pilot **guides**, Tester **executes**, Driller **drills**, Historian **records sessions**, Analyst **reports**, ExperienceCompactor **compacts**, Quartermaster **audits a11y**, Scout **scouts** (retrieves documentation for planning), Captain **commands**
 
 Negative contract (all agents):
 
-- May persist artifacts to disk, but must not **expose filesystem operations as AI tools** — `readFile`/`writeFile`/`bash` tools belong to Captain alone
+- May persist artifacts to disk, but must not **expose filesystem operations as AI tools** — `readFile`/`writeFile`/`bash` tools belong to Captain alone. Scoped corpus retrieval is not filesystem access: Scout's `searchDocs`/`readDoc` stay inside the configured docs corpus.
 - Must not instantiate CodeceptJS/Playwright — all browser interaction through Explorer/Action
 - Must not read config/env — dependencies arrive via `createAgent`
 
@@ -124,7 +124,7 @@ Full page HTML bodies are expensive and noisy — only agents whose verb require
 | Tier | Agents | What they get |
 |---|---|---|
 | Standing full HTML | Researcher, Navigator, Driller | `<page_html>` / `combinedHtml()` in every context injection |
-| No HTML | Planner, Captain, Historian, Analyst, ExperienceCompactor, Quartermaster | ARIA snapshots, UI maps, research summaries; node snippets ≤100 chars allowed |
+| No HTML | Planner, Captain, Historian, Analyst, ExperienceCompactor, Quartermaster, Scout | ARIA snapshots, UI maps, research summaries; node snippets ≤100 chars allowed |
 
 Do not add HTML access to a new agent. If an agent seems to need raw HTML, the real fix is a better derivative (UI map, focused snippet, research note) produced by Researcher — not widening this table.
 
@@ -233,6 +233,7 @@ ExplorBot (DI Container)
             ├── Historian
             ├── Analyst — end-of-session report (markdown)
             ├── ExperienceCompactor
+            ├── Scout (optional) - retrieve documentation for the Planner
             └── Quartermaster (optional)
 ```
 
@@ -376,6 +377,7 @@ All agents implement the `Agent` interface. Task-executing agents (Tester, Capta
 - Researcher — analyze pages, identify UI elements
 - Navigator → ExperienceCompactor — execute navigation, resolve errors
 - Planner — generate test scenarios
+- Scout → Planner* — retrieve relevant documentation from the collected corpus (optional, opt-in via `ai.agents.scout.enabled`)
 - Pilot — supervise test execution, detect stuck patterns, request user help
 - Tester → Researcher, Navigator, Pilot, Historian*, Quartermaster* — execute tests with AI tools
 - Driller -> Navigator - drill page components to learn interactions
