@@ -21,6 +21,10 @@
   failed on evidence it had already produced. The verdict is now made once the round is complete.
   When Pilot rejects a finish or a stop, its reasoning arrives as guidance for the next step rather
   than a bare rejection.
+- **A check that passed no longer disappears before the verdict** — once a check passes, it stays
+  attached to the page for as long as you are still on the same page, instead of being cleared by
+  the next screenshot or page snapshot. Tests that genuinely succeeded could be reported as failed
+  because the proof was gone by the time the final verdict was made.
 - **`--json` no longer collides with the banner** — passing it to any command suppresses the
   startup banner, so `explorbot config --json | jq` works without setting `EXPLORBOT_NO_BANNER`.
   `help-json` suppresses it too.
