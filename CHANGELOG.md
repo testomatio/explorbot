@@ -16,6 +16,11 @@
 
 ### Changes
 
+- **[Pilot] The final verdict now sees the last round of checks** — a `verify()` or `see()` run in
+  the same round as the decision to finish was invisible to Pilot, so a test could be reported as
+  failed on evidence it had already produced. The verdict is now made once the round is complete.
+  When Pilot rejects a finish or a stop, its reasoning arrives as guidance for the next step rather
+  than a bare rejection.
 - **A check that passed no longer disappears before the verdict** — once a check passes, it stays
   attached to the page for as long as you are still on the same page, instead of being cleared by
   the next screenshot or page snapshot. Tests that genuinely succeeded could be reported as failed
