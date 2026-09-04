@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { createFishermanTools } from '../../src/ai/fisherman-tools.ts';
 import { RequestHaul } from '../../src/ai/fisherman/request-haul.ts';
+import { createFishermanTools } from '../../src/ai/fisherman/tools.ts';
 
 describe('Fisherman tools', () => {
   it('does not present a rejected capture as a request example', async () => {
@@ -24,6 +24,27 @@ describe('Fisherman tools', () => {
     expect(result.source).toBe('spec');
     expect(result.definition).toContain('requestBody');
     expect(result.rejectedCapture.status).toBe(422);
+  });
+
+  it('prefers the specification over a bodiless GET capture', async () => {
+    const captured = { method: 'GET', path: '/labels', status: 200, requestBody: undefined };
+    const spec = { paths: { '/labels': { get: { responses: { '200': { description: 'list of labels' } } } } } };
+    const { tools } = fishermanTools({} as any, store(captured), { spec });
+
+    const result: any = await tools.getEndpointSpec.execute({ method: 'GET', path: '/labels' }, {} as any);
+
+    expect(result.source).toBe('spec');
+  });
+
+  it('still surfaces a rejected capture with no body when a spec exists', async () => {
+    const captured = { method: 'POST', path: '/plans', status: 400, requestBody: undefined };
+    const spec = { paths: { '/plans': { post: { requestBody: { required: true } } } } };
+    const { tools } = fishermanTools({} as any, store(captured), { spec });
+
+    const result: any = await tools.getEndpointSpec.execute({ method: 'POST', path: '/plans' }, {} as any);
+
+    expect(result.source).toBe('spec');
+    expect(result.rejectedCapture.status).toBe(400);
   });
 
   it('keeps a successful captured request as a usable example', async () => {
@@ -162,6 +183,61 @@ describe('ledger-derived results', () => {
   });
 });
 
+describe('Fisherman read-only tools', () => {
+  it('offers no write method on the request tool', () => {
+    const { tools } = fishermanTools({} as any, store(), { readOnly: true });
+
+    const methods = tools.request.inputSchema.shape.method.options;
+
+    expect(methods).toEqual(['GET']);
+  });
+
+  it('returns a body preview so the answer can quote real values', async () => {
+    const labels = madeRead('/api/labels', 200, '[{"id":1,"name":"Bug"}]');
+    const apiClient = { request: async () => labels };
+    const { tools } = fishermanTools(apiClient as any, store(), { readOnly: true });
+
+    const result: any = await tools.request.execute({ method: 'GET', path: '/api/labels' }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.bodyPreview).toBe('[{"id":1,"name":"Bug"}]');
+  });
+
+  it('accepts a finish carrying the answer once a read succeeded', async () => {
+    const made: any[] = [];
+    const apiClient = { request: async () => madeRead('/api/labels', 200) };
+    const { tools, getResult } = fishermanTools(apiClient as any, store(undefined, made), { readOnly: true });
+
+    await tools.request.execute({ method: 'GET', path: '/api/labels' }, {} as any);
+    const finished: any = await tools.finish.execute({ answer: 'No labels exist yet' }, {} as any);
+
+    expect(finished.finished).toBe(true);
+    expect(getResult()).toEqual({ success: true, summary: 'No labels exist yet', created: [], failed: [] });
+  });
+
+  it('rejects a finish when no read succeeded', async () => {
+    const { tools } = fishermanTools({} as any, store(), { readOnly: true });
+
+    const finished: any = await tools.finish.execute({ answer: 'Three labels exist' }, {} as any);
+
+    expect(finished.finished).toBe(false);
+  });
+
+  it('reports no created items when a read run ends without finishing', async () => {
+    const made: any[] = [];
+    const apiClient = { request: async () => madeRead('/api/labels', 200) };
+    const { tools, getResult, finishFromText } = fishermanTools(apiClient as any, store(undefined, made), { readOnly: true });
+
+    await tools.request.execute({ method: 'GET', path: '/api/labels' }, {} as any);
+    finishFromText('One label exists');
+
+    const result = getResult();
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('One label exists');
+    expect(result.created).toEqual([]);
+  });
+});
+
 function fishermanTools(apiClient: any, requestStore: any, opts: any): any {
   return createFishermanTools(apiClient, requestStore, new RequestHaul(requestStore), opts);
 }
@@ -184,5 +260,21 @@ function madeWrite(method: string, path: string, status: number, body: Record<st
     extractIdAndTitle: () => body,
     toEndpoint: () => `${method} ${path}`,
     toSummary: () => `${method} ${path} → ${status} (0ms)`,
+  };
+}
+
+function madeRead(path: string, status: number, body = '[]'): any {
+  return {
+    method: 'GET',
+    path,
+    status,
+    error: undefined,
+    isWrite: false,
+    rawResponseBody: body,
+    responseBody: JSON.parse(body),
+    statusText: String(status),
+    extractIdAndTitle: () => ({}),
+    toEndpoint: () => `GET ${path}`,
+    toSummary: () => `GET ${path} → ${status} (0ms)`,
   };
 }

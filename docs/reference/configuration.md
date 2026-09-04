@@ -253,6 +253,10 @@ With `'playwright'`, runs are saved as `@playwright/test` `.spec.ts` files using
 
 See [AI providers](../basics/providers.md) for recommended models and provider setup.
 
+### Fisherman agent
+
+Fisherman prepares test data over the API before a scenario runs, and can also answer questions about data that already exists without creating or changing anything. Pilot reaches this read-only capability through its `askApi(question)` tool, calling it to check whether suitable data is already there — or to get the exact name or id of an existing record — before deciding whether to create anything through `precondition()`. In replicate mode, where Fisherman learns the API by watching browser traffic instead of reading a spec, the read endpoints it can query come from successful GET requests observed in the browser, alongside the write endpoints already captured from XHR traffic. The endpoint list shown to the model names only the path and its query-parameter names, never their values; the underlying capture on disk holds the full request URL and headers — what write captures already hold — but no response body.
+
 ## Playwright settings
 
 ### Browser selection

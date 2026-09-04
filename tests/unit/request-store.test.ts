@@ -245,6 +245,16 @@ describe('RequestStore loadFromDisk', () => {
     expect(fresh.getCapturedRequests()).toHaveLength(1);
     expect(fresh.getCapturedRequests()[0].id).toBe('xhr_001_POST_api_suites');
   });
+
+  it('dedups read captures for the same endpoint across sessions', () => {
+    makeRequest('GET', '/api/alpha-shop/labels', 200, 'xhr_001_GET_api_alpha-shop_labels').save(outputDir);
+    makeRequest('GET', '/api/alpha-shop/labels', 200, 'xhr_002_GET_api_alpha-shop_labels').save(outputDir);
+
+    const fresh = new RequestStore(outputDir);
+    fresh.loadFromDisk();
+
+    expect(fresh.getCapturedRequests()).toHaveLength(1);
+  });
 });
 
 describe('extractAuthHeaders session gating', () => {
@@ -316,6 +326,101 @@ describe('extractAuthHeaders session gating', () => {
     store.loadFromDisk();
 
     expect(store.extractAuthHeaders()).toEqual({});
+  });
+});
+
+describe('read endpoint capture', () => {
+  let outputDir: string;
+
+  beforeEach(() => {
+    outputDir = mkdtempSync(join(tmpdir(), 'reqstore-read-'));
+  });
+
+  afterEach(() => {
+    if (existsSync(outputDir)) rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  function makeGet(urlPath: string, search = '', id?: string): RequestResult {
+    return new RequestResult({
+      id: id || `get_${urlPath}${search}`,
+      method: 'GET',
+      path: urlPath,
+      fullUrl: `${urlPath}${search}`,
+      requestHeaders: {},
+      status: 200,
+      statusText: '200',
+      responseHeaders: {},
+      timing: 0,
+      timestamp: new Date(),
+    });
+  }
+
+  it('keeps one entry when the same read endpoint is fetched repeatedly', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g1'));
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g2'));
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g3'));
+
+    expect(store.getCapturedRequests()).toHaveLength(1);
+  });
+
+  it('collapses dynamic path segments into one entry', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/labels/8471', '', 'g1'));
+    store.addReadRequest(makeGet('/api/labels/9382', '', 'g2'));
+
+    expect(store.getCapturedRequests()).toHaveLength(1);
+  });
+
+  it('keeps variants that differ by query parameter names', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/tests', '', 'g1'));
+    store.addReadRequest(makeGet('/api/alpha-shop/tests', '?label=bug', 'g2'));
+    store.addReadRequest(makeGet('/api/alpha-shop/tests', '?label=urgent', 'g3'));
+
+    expect(store.getCapturedRequests()).toHaveLength(2);
+  });
+
+  it('does not write a response file for a bodiless capture', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g1'));
+
+    expect(existsSync(join(outputDir, 'requests', 'g1.request.yaml'))).toBe(true);
+    expect(existsSync(join(outputDir, 'requests', 'g1.response.json'))).toBe(false);
+  });
+
+  it('lists read endpoints with their query parameter names, not values', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/tests', '?label=bug&page=2', 'g1'));
+
+    expect(store.toEndpointList(undefined, 'read')).toBe('GET /api/alpha-shop/tests ?label,page');
+  });
+
+  it('keeps read endpoints out of the write list and writes out of the read list', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addCapturedRequest(makeRequest('POST', '/api/alpha-shop/suites', 201));
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g1'));
+
+    expect(store.toEndpointList()).toBe('POST /api/alpha-shop/suites');
+    expect(store.toEndpointList(undefined, 'read')).toBe('GET /api/alpha-shop/labels');
+  });
+
+  it('scopes read endpoints the same way write endpoints are scoped', () => {
+    const store = new RequestStore(outputDir);
+
+    store.addReadRequest(makeGet('/api/alpha-shop/labels', '', 'g1'));
+    store.addReadRequest(makeGet('/api/other-shop/labels', '', 'g2'));
+
+    const scoped = store.getReadRequestsForScope('/projects/alpha-shop/tests');
+
+    expect(scoped).toHaveLength(1);
+    expect(scoped[0].path).toBe('/api/alpha-shop/labels');
   });
 });
 

@@ -53,6 +53,7 @@ export class Tester extends TaskAgent implements Agent {
   MAX_ITERATIONS = 30;
   MAX_EXTENSIONS = 2;
   ASSERTION_TOOLS = ['verify'];
+  private pendingReview = '';
   researcher: Researcher;
   navigator: Navigator;
   agentTools: any;
@@ -119,6 +120,7 @@ export class Tester extends TaskAgent implements Agent {
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
     this.stalledIterations = 0;
+    this.pendingReview = '';
     this.previousRegionPresent = null;
     this.regionTransitioned = false;
     this.stateManager.clearHistory();
@@ -333,7 +335,7 @@ export class Tester extends TaskAgent implements Agent {
           const result = await this.provider.invokeConversation(conversation, tools, {
             maxToolRoundtrips: 3,
             toolChoice: 'required',
-            stopWhen: () => task.hasFinished,
+            stopWhen: () => task.hasFinished || !!this.pendingReview,
           });
 
           if (!result) throw new Error('Failed to get response from provider');
@@ -386,6 +388,14 @@ export class Tester extends TaskAgent implements Agent {
                 ${task.expected.map((expectation) => `- ${expectation}`).join('\n')}
             `);
             }
+          }
+
+          if (this.pendingReview && this.pilot) {
+            const reviewed = this.pendingReview;
+            this.pendingReview = '';
+            const reviewState = this.getCurrentState();
+            if (reviewed === 'finish') await this.pilot.reviewFinish(task, reviewState, conversation, this.navigator);
+            if (reviewed === 'stop') await this.pilot.reviewStop(task, reviewState, conversation);
           }
 
           if (task.hasFinished) {
@@ -1006,18 +1016,9 @@ export class Tester extends TaskAgent implements Agent {
         }),
         execute: async ({ reason }) => {
           task.addNote(`Stop requested: ${reason}`);
+          this.pendingReview = 'stop';
 
-          if (this.pilot) {
-            const currentState = this.getCurrentState();
-            await this.pilot.reviewStop(task, currentState, conversation);
-            if (!task.hasFinished) {
-              return {
-                success: false,
-                action: 'stop',
-                message: 'Stop rejected; Continue execution',
-              };
-            }
-          } else {
+          if (!this.pilot) {
             task.addNote(reason, TestResult.FAILED);
             task.finish(TestResult.FAILED);
           }
@@ -1053,18 +1054,9 @@ export class Tester extends TaskAgent implements Agent {
             return { success: true, action: 'finish', message: 'already finished' };
           }
           task.addNote(`Finish requested: ${verify}`);
+          this.pendingReview = 'finish';
 
-          if (this.pilot) {
-            const currentState = this.getCurrentState();
-            await this.pilot.reviewFinish(task, currentState, conversation, this.navigator);
-            if (!task.hasFinished) {
-              return {
-                success: false,
-                action: 'finish',
-                message: 'Finishing rejected; Continue execution',
-              };
-            }
-          } else {
+          if (!this.pilot) {
             task.addNote('Test finished successfully', TestResult.PASSED);
             task.finish(TestResult.PASSED);
           }

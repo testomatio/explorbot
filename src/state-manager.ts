@@ -143,13 +143,18 @@ export class StateManager {
   updateState(actionResult: ActionResult, codeBlock?: string, trigger: 'manual' | 'navigation' | 'automatic' = 'manual'): WebPageState {
     const previousState = this.currentState;
     const previousHash = previousState?.hash;
+    const hashChanged = actionResult.hash !== previousHash;
+
+    if (!hashChanged && previousState?.verifications) {
+      const stillTrue = Object.entries(previousState.verifications).filter(([, passed]) => passed);
+      actionResult.verifications = { ...Object.fromEntries(stillTrue), ...actionResult.verifications };
+    }
 
     const newState = actionResult;
     this.currentState = newState;
     this.currentState.id = this.nextStateId++;
     if (newState.url) this.allVisitedUrls.add(normalizeUrl(newState.url));
 
-    const hashChanged = actionResult.hash !== previousHash;
     const regionOpened = !hashChanged && this.regionOpened(previousState, newState);
 
     if (hashChanged || regionOpened) {

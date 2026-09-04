@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-09-04
+
+### New CLI Commands
+
+- **`explorbot help-json [command...]`** — Prints command definitions as JSON: every command with
+  its description, aliases, arguments, options and defaults, plus the version and the
+  `EXPLORBOT_*` variables. Name a command to get just that one; nested boat commands work too.
+  `explorbot help` lists it, so an agent finds it from plain help.
+  ```bash
+  explorbot help-json                # the whole command tree
+  explorbot help-json explore        # one command
+  explorbot help-json api config     # a nested boat command
+  ```
+
+### Changes
+
+- **[Pilot] The final verdict now sees the last round of checks** — a `verify()` or `see()` run in
+  the same round as the decision to finish was invisible to Pilot, so a test could be reported as
+  failed on evidence it had already produced. The verdict is now made once the round is complete.
+  When Pilot rejects a finish or a stop, its reasoning arrives as guidance for the next step rather
+  than a bare rejection.
+- **A check that passed no longer disappears before the verdict** — once a check passes, it stays
+  attached to the page for as long as you are still on the same page, instead of being cleared by
+  the next screenshot or page snapshot. Tests that genuinely succeeded could be reported as failed
+  because the proof was gone by the time the final verdict was made.
+- **`--json` no longer collides with the banner** — passing it to any command suppresses the
+  startup banner, so `explorbot config --json | jq` works without setting `EXPLORBOT_NO_BANNER`.
+  `help-json` suppresses it too.
+
 ## 2026-09-03
 
 ### Changes
@@ -19,6 +48,18 @@
   swap the accessibility tree out for the map once a page had been visited three times, taking the
   element refs with it, and it looked the map up under the panel-scoped hash, so no map was found
   while a panel was open. Tree and map are now given together whenever a map exists.
+- [Fisherman] Can now answer questions about data that already exists, over read-only GET requests
+  that create or change nothing. It draws on the same endpoints it already knew about — an OpenAPI
+  spec when one is configured, or endpoints learned by watching browser traffic otherwise.
+- [Pilot] Gained an `askApi(question)` tool alongside `precondition()`, available while planning a
+  test, reviewing a new page, and checking progress mid-run. It asks Fisherman what already exists —
+  whether suitable data is already there, or the exact name or id of an existing record — before
+  deciding whether to create anything.
+- [Explorer] Successful GET requests observed in the browser are now captured alongside write
+  requests, so Fisherman's read-only lookups work without an OpenAPI spec. The endpoint list
+  shown to the model names only the path and its query-parameter names, never their values; the
+  capture on disk holds the full request URL and headers — what write captures have always held —
+  but no response body.
 - Click tool: A locator that matches several elements is now reported as a failure that clicked nothing,
   together with the numbered list of what matched. Explorbot no longer guesses which one you meant and
   clicks it — a guess used to land a real click, so a control that toggles could be switched back by a
