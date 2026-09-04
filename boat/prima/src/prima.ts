@@ -13,7 +13,7 @@ import { actionRule, locatorRule } from '../../../src/ai/rules.ts';
 import { createAgentTools, createCodeceptJSTools, createRefTools } from '../../../src/ai/tools.ts';
 import { getAliveEndpoint, launchServer, listInstances, stopServer } from '../../../src/browser-server.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
-import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, agentSettings, outputPath } from '../../../src/config.ts';
+import { ConfigMissingError, ConfigParser, EXPLORBOT_ENV_VARS, type ExplorbotConfig, outputPath } from '../../../src/config.ts';
 import { ExplorBot } from '../../../src/explorbot.ts';
 import { findSiteWith, listSites } from '../../../src/global-config.ts';
 import { Reporter } from '../../../src/reporter.ts';
@@ -107,6 +107,7 @@ export class Prima {
     const config = await this.loadConfig();
     await this.resolveBrowser(config, discovery);
     await this.bot.start();
+    this.bot.agentResearcher().disable();
 
     if (!this.options.url) return;
     if (this.bot.getCurrentState()) return;
@@ -421,9 +422,12 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
+    const researcher = this.bot.agentResearcher();
+    researcher.enable();
+
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
-    const uiMap = await this.bot.agentResearcher().research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
+    const uiMap = await researcher.research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
     return this.reportEnvelope(command, result, previousState, { research: dropVolatileColumns(uiMap) });
   }
 
@@ -582,9 +586,7 @@ export class Prima {
   }
 
   private async loadConfig(): Promise<ExplorbotConfig> {
-    const config = await ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path, baseUrl: this.configBaseUrl() });
-    agentSettings(config, 'researcher').enabled ??= this.options.command === 'research';
-    return config;
+    return ConfigParser.getInstance().loadConfig({ config: this.options.config, path: this.options.path, baseUrl: this.configBaseUrl() });
   }
 
   private configBaseUrl(): string | undefined {
@@ -1159,5 +1161,4 @@ export interface PrimaOptions {
   headless?: boolean;
   endpoint?: string;
   pwSession?: string;
-  command?: string;
 }

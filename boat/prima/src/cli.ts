@@ -58,19 +58,19 @@ function addBrowserOptions(cmd: Command): Command {
   return addCommonOptions(cmd).addHelpText('after', `\n${sessionHelp}`);
 }
 
-function primaFor(options: any, command?: string): Prima {
+function primaFor(options: any): Prima {
   Prima.applyEnv();
   if (options.ephemeral) process.env.EXPLORBOT_EPHEMERAL = '1';
   if (options.model) process.env.EXPLORBOT_AI_MODEL = options.model;
   if (options.visionModel) process.env.EXPLORBOT_VISION_MODEL = options.visionModel;
   if (options.spec) process.env.EXPLORBOT_SPEC = options.spec;
-  return new Prima({ ...buildOptions(options), command: command?.split(' ')[0] });
+  return new Prima(buildOptions(options));
 }
 
 async function runPrima(options: any, command: string, run: (prima: Prima) => Promise<EnvelopeData>): Promise<void> {
   setQuietMode(!isVerboseMode());
   trackActivityLine();
-  const prima = primaFor(options, command);
+  const prima = primaFor(options);
   const startedAt = Date.now();
 
   let envelope: EnvelopeData;

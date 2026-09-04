@@ -73,6 +73,14 @@ export class Researcher extends ResearcherBase implements Agent {
     return this.settings.enabled !== false;
   }
 
+  enable(): void {
+    this.settings.enabled = true;
+  }
+
+  disable(): void {
+    this.settings.enabled = false;
+  }
+
   protected getNavigator(): Navigator {
     throw new Error('not implemented');
   }
