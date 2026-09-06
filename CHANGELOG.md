@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-09-07
+
+### New CLI Options
+
+- **`-H, --header <header>`** — A header sent with every API request, written as `Name: value`. Repeat it
+  for more than one. Headers reach the startup health check too, so a protected API fails on a bad token
+  instead of on the first test, and they merge over any `headers` a config file already sets. This is the
+  last thing that needed a config file, so an API run can now be described entirely on the command line.
+  ```bash
+  explorbot api explore https://api.example.com/v1 --spec ./openapi.yaml -H "Authorization: Bearer $TOKEN"
+  explorbot api plan /users --endpoint https://api.example.com/v1 -H "Authorization: Bearer $TOKEN" -H "X-Tenant: acme"
+  ```
+- **`explorbot api explore <base-endpoint>`** — `api explore` now accepts the base endpoint itself as its
+  argument, not only a path inside the API. Given a full URL it tests the whole API from its root; a path
+  like `/users` still works and takes the base from `--endpoint` or `EXPLORBOT_URL`.
+  ```bash
+  explorbot api explore https://api.example.com/v1 --spec ./openapi.yaml
+  explorbot api explore /users --endpoint https://api.example.com/v1 --spec ./openapi.yaml
+  ```
+
+### Configuration
+
+- **`EXPLORBOT_API_HEADERS`** — Headers sent with every API request, one `Name: value` per line. The
+  environment twin of `-H`; the flag wins when both are set. Shown as `set` rather than printed by
+  `explorbot config`, so a token does not end up in terminal output or CI logs.
+
+### Changes
+
+- API testing now runs without a config file. Passing the API's base endpoint to `explorbot api` used to
+  end in "No API endpoint to test. Pass --endpoint" whenever models came from `EXPLORBOT_AI_PROVIDER`, and
+  with a global config it silently dropped the path prefix — `https://api.example.com/v1` became
+  `https://api.example.com`, so every request went to the wrong path.
+- API testing no longer fails at startup with "Configuration not loaded" when local HTML or markdown
+  reports are switched on. `explorbot init --global` turns both on by default, which made every `api plan`,
+  `api test` and `api explore` run from a global config stop before it began.
+- Plan files from `api explore` are named after the endpoint again. Pointing it at a full URL wrote
+  `https___api_example_com_v1_normal.md`; it now writes `root_normal.md`.
+
 ## 2026-09-04
 
 ### Changes

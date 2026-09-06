@@ -45,7 +45,10 @@ export class ConfigCommand extends BaseCommand {
     const env: Record<string, string> = {};
     for (const variable of EXPLORBOT_ENV_VARS) {
       const value = process.env[variable.name];
-      if (value) env[variable.name] = value;
+      if (!value) continue;
+      let shown = value;
+      if (variable.secret) shown = 'set';
+      env[variable.name] = shown;
     }
 
     const models: Record<string, string> = {};
