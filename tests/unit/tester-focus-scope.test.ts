@@ -3,6 +3,7 @@ import { ActionResult } from '../../src/action-result.ts';
 import { Tester } from '../../src/ai/tester.ts';
 import { renderExperienceToc } from '../../src/experience-tracker.ts';
 import { Test, TestResult } from '../../src/test-plan.ts';
+import { Overlay } from '../../src/utils/overlay.ts';
 
 function buildTester(): Tester {
   const provider: any = {
@@ -99,8 +100,8 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
     const context = await (tester as any).reinjectContextIfNeeded(2, state);
 
     expect(context).toContain('<overlay>');
-    expect(context).toContain('An overlay "Create Requirement"');
-    expect(context).toContain('Scope all interactions to elements inside this overlay');
+    expect(context).toContain('an overlay "Create Requirement"');
+    expect(context).toContain('not actionable while it is open');
   });
 
   it('emits <overlay> for alertdialog role', async () => {
@@ -110,7 +111,7 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
     const context = await (tester as any).reinjectContextIfNeeded(2, state);
 
     expect(context).toContain('<overlay>');
-    expect(context).toContain('An overlay "Confirm Delete"');
+    expect(context).toContain('an overlay "Confirm Delete"');
   });
 
   it('omits <overlay> when no dialog or modal is open', async () => {
@@ -129,7 +130,21 @@ describe('Tester reinjectContextIfNeeded — focus scope hint', () => {
     const context = await (tester as any).reinjectContextIfNeeded(2, newUrlState);
 
     expect(context).toContain('<overlay>');
-    expect(context).toContain('An overlay "New Form"');
+    expect(context).toContain('an overlay "New Form"');
+  });
+
+  it('lists the overlay ARIA scoped to its root and recommends root-scoped locators', async () => {
+    const tester = buildTester();
+    const state = buildState('- dialog "Select suite":\n  - button "Cancel"');
+    state.overlay = new Overlay({ name: 'Select suite', root: '#modal-overlays' });
+    state.regionAria = '- searchbox "Search"\n- list:\n  - listitem:\n    - button "Suite A"\n- button "Cancel"';
+
+    const context = await (tester as any).reinjectContextIfNeeded(2, state);
+
+    expect(context).toContain("I.click({ role: 'button', text: 'Continue' }, '#modal-overlays')");
+    expect(context).toContain('<overlay_aria>');
+    expect(context).toContain('  - listitem:\n    - button "Suite A"');
+    expect(context).not.toContain('Use <page_aria> to confirm');
   });
 });
 

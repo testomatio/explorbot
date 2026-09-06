@@ -53,6 +53,7 @@ export class Tester extends TaskAgent implements Agent {
   MAX_ITERATIONS = 30;
   MAX_EXTENSIONS = 2;
   ASSERTION_TOOLS = ['verify'];
+  private pendingReview = '';
   researcher: Researcher;
   navigator: Navigator;
   agentTools: any;
@@ -119,6 +120,7 @@ export class Tester extends TaskAgent implements Agent {
     this.seenUiMapUrls.clear();
     this.lastAnalyzedStateHash = null;
     this.stalledIterations = 0;
+    this.pendingReview = '';
     this.previousRegionPresent = null;
     this.regionTransitioned = false;
     this.stateManager.clearHistory();
@@ -333,7 +335,7 @@ export class Tester extends TaskAgent implements Agent {
           const result = await this.provider.invokeConversation(conversation, tools, {
             maxToolRoundtrips: 3,
             toolChoice: 'required',
-            stopWhen: () => task.hasFinished,
+            stopWhen: () => task.hasFinished || !!this.pendingReview,
           });
 
           if (!result) throw new Error('Failed to get response from provider');
@@ -386,6 +388,14 @@ export class Tester extends TaskAgent implements Agent {
                 ${task.expected.map((expectation) => `- ${expectation}`).join('\n')}
             `);
             }
+          }
+
+          if (this.pendingReview && this.pilot) {
+            const reviewed = this.pendingReview;
+            this.pendingReview = '';
+            const reviewState = this.getCurrentState();
+            if (reviewed === 'finish') await this.pilot.reviewFinish(task, reviewState, conversation, this.navigator);
+            if (reviewed === 'stop') await this.pilot.reviewStop(task, reviewState, conversation);
           }
 
           if (task.hasFinished) {
@@ -579,16 +589,19 @@ export class Tester extends TaskAgent implements Agent {
 
     if (region.isModal) {
       const areaName = region.name ? ` "${region.name}"` : '';
-      let rootHint = '';
-      if (region.root) rootHint = `\nIts content lives inside \`${region.root}\` — scope locators to it.`;
+      let scoping = 'Use <page_aria> to confirm the element you target is actually inside the overlay.';
+      if (region.root) {
+        scoping = `Its root is \`${region.root}\` — build every locator as ARIA scoped to that root, e.g. I.click({ role: 'button', text: 'Continue' }, '${region.root}')`;
+      }
       context += dedent`
         <overlay>
-        An overlay${areaName} is currently open above the page.${rootHint}
-        Scope all interactions to elements inside this overlay.
-        Page navigation, filters, and tabs that exist outside it are not actionable while it is open and may share names or roles with elements inside it — prefer the locator inside the overlay.
-        Use <page_aria> to confirm the element you target is actually inside the overlay.
-        </overlay>
+        You are inside an overlay${areaName} opened above the page.
+        ${scoping}
+        Elements outside the overlay are behind it and not actionable while it is open — they may share names or roles with the ones inside, so never target them by bare text.
       `;
+      const regionAria = currentState.getRegionARIA();
+      if (regionAria) context += `\nIt holds exactly these elements:\n<overlay_aria>\n${regionAria}\n</overlay_aria>`;
+      context += '\n</overlay>\n';
     }
 
     if (!region.isModal && region.isOpen && isNewState) {
@@ -1006,18 +1019,9 @@ export class Tester extends TaskAgent implements Agent {
         }),
         execute: async ({ reason }) => {
           task.addNote(`Stop requested: ${reason}`);
+          this.pendingReview = 'stop';
 
-          if (this.pilot) {
-            const currentState = this.getCurrentState();
-            await this.pilot.reviewStop(task, currentState, conversation);
-            if (!task.hasFinished) {
-              return {
-                success: false,
-                action: 'stop',
-                message: 'Stop rejected; Continue execution',
-              };
-            }
-          } else {
+          if (!this.pilot) {
             task.addNote(reason, TestResult.FAILED);
             task.finish(TestResult.FAILED);
           }
@@ -1053,18 +1057,9 @@ export class Tester extends TaskAgent implements Agent {
             return { success: true, action: 'finish', message: 'already finished' };
           }
           task.addNote(`Finish requested: ${verify}`);
+          this.pendingReview = 'finish';
 
-          if (this.pilot) {
-            const currentState = this.getCurrentState();
-            await this.pilot.reviewFinish(task, currentState, conversation, this.navigator);
-            if (!task.hasFinished) {
-              return {
-                success: false,
-                action: 'finish',
-                message: 'Finishing rejected; Continue execution',
-              };
-            }
-          } else {
+          if (!this.pilot) {
             task.addNote('Test finished successfully', TestResult.PASSED);
             task.finish(TestResult.PASSED);
           }

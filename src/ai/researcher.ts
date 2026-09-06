@@ -1,7 +1,7 @@
 import dedent from 'dedent';
 import { ActionResult } from '../action-result.js';
 import { setActivity } from '../activity.ts';
-import { ConfigParser, type ExplorbotConfig, outputPath } from '../config.ts';
+import { ConfigParser, type ExplorbotConfig, type ResearcherAgentConfig, agentSettings, outputPath } from '../config.ts';
 import { executionController } from '../execution-controller.ts';
 import type { ExperienceTracker } from '../experience-tracker.ts';
 import type Explorer from '../explorer.ts';
@@ -19,7 +19,7 @@ import { annotatePageElements } from '../utils/web-annotate.ts';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Navigator } from './navigator.ts';
 import { ContextLengthError, type Provider } from './provider.js';
-import { findSimilarResearch, getCachedResearch, reportResearch, saveResearch } from './researcher/cache.ts';
+import { findSimilarResearch, getCachedResearch, getPreviousResearch, reportResearch, saveResearch } from './researcher/cache.ts';
 import { type CoordinateMethods, WithCoordinates } from './researcher/coordinates.ts';
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
 import { detectFocusedSection, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
@@ -62,13 +62,23 @@ export class Researcher extends ResearcherBase implements Agent {
   constructor(deps: AgentDeps) {
     super(deps);
     this.experienceTracker = deps.stateManager.getExperienceTracker();
+    this.settings.reasoning ??= 'low';
+  }
 
-    const ai = deps.config.ai;
-    if (ai) {
-      ai.agents ??= {};
-      ai.agents.researcher ??= {};
-      ai.agents.researcher.reasoning ??= 'low';
-    }
+  get settings(): ResearcherAgentConfig {
+    return agentSettings(this.config, 'researcher');
+  }
+
+  isEnabled(): boolean {
+    return this.settings.enabled !== false;
+  }
+
+  enable(): void {
+    this.settings.enabled = true;
+  }
+
+  disable(): void {
+    this.settings.enabled = false;
   }
 
   protected getNavigator(): Navigator {
@@ -94,7 +104,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
   async research(state: WebPageState, opts: { screenshot?: boolean; force?: boolean; deep?: boolean; data?: boolean; fix?: boolean; _retriesLeft?: number } = {}): Promise<string> {
     const { screenshot = false, force = false, deep = false, data = false, fix = true } = opts;
-    const maxRetries = (this.config.ai?.agents?.researcher as any)?.retries ?? 2;
+    const maxRetries = this.settings.retries ?? 2;
     let retriesLeft = opts._retriesLeft ?? maxRetries;
     this.actionResult = ActionResult.fromState(state);
     const stateHash = this.actionResult.baseHash;
@@ -107,6 +117,13 @@ export class Researcher extends ResearcherBase implements Agent {
         reportResearch(stateHash, cached);
         return cached;
       }
+    }
+
+    if (!this.isEnabled()) {
+      debugLog('Researcher is disabled, answering with the recorded map');
+      const recorded = getPreviousResearch(stateHash);
+      if (recorded) reportResearch(stateHash, recorded);
+      return recorded;
     }
 
     Stats.researches++;
@@ -341,7 +358,7 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   private async waitUntilSettled(screenshot: boolean): Promise<boolean> {
-    const errorPageTimeout = (this.config.ai?.agents?.researcher as any)?.errorPageTimeout ?? 10;
+    const errorPageTimeout = this.settings.errorPageTimeout ?? 10;
     if (errorPageTimeout <= 0) return false;
 
     const includeScreenshot = screenshot && this.provider.hasVision();
@@ -374,7 +391,7 @@ export class Researcher extends ResearcherBase implements Agent {
   }
 
   private getConfiguredSections(): Record<string, string> {
-    const configSections = (this.config.ai?.agents?.researcher as any)?.sections as string[] | undefined;
+    const configSections = this.settings.sections;
     if (!configSections?.length) return POSSIBLE_SECTIONS;
     const filtered: Record<string, string> = {};
     for (const key of configSections) {

@@ -18,6 +18,7 @@ import { truncateJson } from '../utils/strings.ts';
 import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
+import { createAskApiTool } from './fisherman/tools.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -452,7 +453,8 @@ export class Pilot implements Agent {
 
         Plan the test execution for this scenario.
 
-        FIRST: Decide if precondition() is needed.
+        FIRST: Decide if precondition() is needed. When the page does not settle whether suitable data
+        already exists, call askApi() to find out before creating any.
 
         Call precondition() WHEN:
         - The scenario edits/deletes/modifies an item, and you want a DISPOSABLE item to act on safely
@@ -688,7 +690,7 @@ export class Pilot implements Agent {
     }
     this.conversation!.addUserText(finalUserText);
 
-    const tools = { ...this.pickPlanningTools(), ...this.buildPreconditionTool(opts.task) };
+    const tools = { ...this.pickPlanningTools(), ...this.buildFishermanTools(opts.task) };
 
     const result = await this.provider.invokeConversation(this.conversation!, tools, {
       maxToolRoundtrips: opts.maxToolRoundtrips ?? 0,
@@ -734,7 +736,12 @@ export class Pilot implements Agent {
     return planning;
   }
 
-  private buildPreconditionTool(task: Test) {
+  private fishermanStatus(): string {
+    if (this.fisherman?.isAvailable()) return 'available';
+    return 'none';
+  }
+
+  private buildFishermanTools(task: Test) {
     const unavailable = 'Data was not created and cannot be created automatically. Do not call precondition again for this test — continue with what the page already shows.';
     return {
       precondition: tool({
@@ -745,7 +752,7 @@ export class Pilot implements Agent {
         execute: async ({ description }) => {
           task.addNote(`Precondition: ${description}`);
           tag('info').log(`Precondition: ${description}`);
-          debugLog(`precondition: ${description}, fisherman: ${this.fisherman?.isAvailable() ? 'available' : 'none'}`);
+          debugLog(`precondition: ${description}, fisherman: ${this.fishermanStatus()}`);
 
           if (!this.fisherman || !this.fisherman.isAvailable()) {
             const skipReason = await this.checkDataAvailability(task, description, 'Fisherman not available');
@@ -776,6 +783,7 @@ export class Pilot implements Agent {
           return { noted: true, prepared: true, created: result.created };
         },
       }),
+      ...createAskApiTool(this.fisherman, task),
     };
   }
 
@@ -1152,7 +1160,7 @@ export class Pilot implements Agent {
       - Click SUCCESS but executed locator ≠ explanation intent, or "skipped" attempts present → wrong element clicked.
       - form(I.type()) SUCCESS but "element" shows a button/link → keys went to wrong element; click the input first.
       - ariaDiff shows 5+ added/removed → page entered new mode (editor/modal); call context() before guessing selectors.
-      - Empty dropdown/list when items expected → wait explicitly, then check the state changed: ariaDiff and any GET that loaded data. If still nothing loaded, confirm the empty state with verify().
+      - Empty dropdown/list when items expected → wait explicitly, then check the state changed: ariaDiff and any GET that loaded data. If still nothing loaded, confirm the empty state with verify(), or askApi() for whether the data exists at all.
       - Search-and-select needs SEQUENCE: focus trigger → type to filter → click option. Tell Tester to split into separate tool calls.
       - Multi-action explanation in one tool call → instruct Tester to split.
 
@@ -1168,8 +1176,13 @@ export class Pilot implements Agent {
 
       ${capabilityGroundingRule}
 
-      YOUR Pilot-only tool: precondition(description) — create FRESH disposable test data via API. Never
-      request users. Use when:
+      YOUR Pilot-only tools, both over the API:
+
+      askApi(question) — ask what data already exists. It changes nothing. Use it to check whether
+      suitable data is already there before creating any, and to get the exact name or id of an existing
+      record a step must act on.
+
+      precondition(description) — create FRESH disposable test data. Never request users. Use when:
 
       - Scenario edits/deletes/modifies an item → create a disposable target ("1 post").
       - Scenario needs auxiliary data (labels, categories, statuses for filtering).

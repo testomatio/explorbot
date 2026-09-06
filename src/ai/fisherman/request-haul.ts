@@ -20,6 +20,10 @@ export class RequestHaul {
     return this.requests().filter((r) => r.isWrite && !r.error && r.status >= 200 && r.status < 400);
   }
 
+  successfulReads(): RequestResult[] {
+    return this.requests().filter((r) => !r.isWrite && !r.error && r.status >= 200 && r.status < 400);
+  }
+
   byId(): Map<string, RequestResult> {
     const map = new Map<string, RequestResult>();
     for (const request of this.successfulWrites()) {
