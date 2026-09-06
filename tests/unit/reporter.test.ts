@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ReporterConfig } from '../../src/config.ts';
-import { ConfigParser } from '../../src/config.ts';
+import { ConfigParser, setOutputDir } from '../../src/config.ts';
 import { Reporter } from '../../src/reporter.ts';
 import { Stats } from '../../src/stats.ts';
 import { ActiveNote, Plan, Task, Test, TestResult } from '../../src/test-plan.ts';
@@ -498,15 +498,17 @@ describe('Reporter config', () => {
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toContain('reports');
   });
 
-  test('an explicit output directory is used when no config is loaded', () => {
+  test('reports go to the output dir a boat resolved, without the web config parser', () => {
     const configParser = ConfigParser.getInstance();
     (configParser as any).config = null;
     (configParser as any).configPath = null;
+    setOutputDir('/tmp/apibot-output');
 
-    const reporter = new Reporter({ html: true, markdown: true }, undefined, '/tmp/apibot-output');
+    const reporter = new Reporter({ html: true, markdown: true });
 
     expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toBe(join('/tmp/apibot-output', 'reports'));
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toBe(join('/tmp/apibot-output', 'reports'));
+    ConfigParser.resetForTesting();
   });
 
   test('markdown unset does not set markdown env vars', () => {

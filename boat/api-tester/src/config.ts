@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
-import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, envConfigRequested, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
+import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, envConfigRequested, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot, setOutputDir } from '../../../src/config.ts';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
 
 export type { AIConfig };
@@ -109,6 +109,7 @@ export class ApibotConfigParser {
       }
 
       this.validateConfig(this.config);
+      setOutputDir(this.getOutputDir());
 
       return this.config;
     } finally {
@@ -237,6 +238,7 @@ export class ApibotConfigParser {
     };
     this.configPath = path.join(outputRoot, 'apibot.config.js');
     this.validateConfig(this.config);
+    setOutputDir(this.getOutputDir());
 
     return this.config;
   }

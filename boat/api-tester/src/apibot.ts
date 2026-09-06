@@ -48,7 +48,7 @@ export class ApiBot {
     const outputDir = this.configParser.getOutputDir();
     this.configParser.ensureDirectory(outputDir);
     this.requestState = new RequestStore(outputDir);
-    this.reporter = new Reporter(this.config.reporter, undefined, outputDir);
+    this.reporter = new Reporter(this.config.reporter);
     this.knowledgeTracker = new KnowledgeTracker({ knowledgeDir: this.configParser.getKnowledgeDir() });
 
     validateSpecs(this.config.api.spec);

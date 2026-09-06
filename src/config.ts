@@ -22,6 +22,7 @@ export const PROVIDERS: Record<string, ProviderInfo> = {
 export const MODEL_ROLES: ModelRole[] = ['model', 'visionModel', 'agenticModel'];
 
 let cachedOutputRoot: string | null = null;
+let runOutputDir: string | null = null;
 
 interface PlaywrightConfig {
   browser: 'chromium' | 'firefox' | 'webkit';
@@ -497,6 +498,7 @@ export class ConfigParser {
   // For testing purposes only
   public static resetForTesting(): void {
     cachedOutputRoot = null;
+    runOutputDir = null;
     if (ConfigParser.instance) {
       ConfigParser.instance.config = null;
       ConfigParser.instance.configPath = null;
@@ -745,7 +747,12 @@ export class ConfigParser {
   }
 }
 
+export function setOutputDir(dir: string): void {
+  runOutputDir = dir;
+}
+
 export function outputPath(...segments: string[]): string {
+  if (runOutputDir) return path.join(runOutputDir, ...segments);
   return path.join(ConfigParser.getInstance().getOutputDir(), ...segments);
 }
 
