@@ -118,6 +118,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 | `EXPLORBOT_KNOWLEDGE_FILE` | Path to a knowledge markdown file |
 | `EXPLORBOT_SPEC` | Docbot application spec directory or index.md, used as page knowledge |
 | `EXPLORBOT_API_SPEC` | OpenAPI spec path for the API boat |
+| `EXPLORBOT_API_HEADERS` | Headers sent with every API request, one "Name: value" per line |
 | `EXPLORBOT_NO_BANNER` | Suppress the startup banner, for machine-readable output |
 | `EXPLORBOT_MAX_DURATION` | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->

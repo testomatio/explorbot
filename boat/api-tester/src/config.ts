@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
-import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, envConfigRequested, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot } from '../../../src/config.ts';
+import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, envConfigRequested, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot, setOutputDir } from '../../../src/config.ts';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
 
 export type { AIConfig };
@@ -22,6 +22,20 @@ interface ApibotConfig {
     knowledge?: string;
     styles?: string;
   };
+}
+
+function isAbsoluteEndpoint(value?: string): boolean {
+  return !!value && (value.startsWith('http://') || value.startsWith('https://'));
+}
+
+function parseHeaders(raw: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const line of raw.split('\n')) {
+    const separator = line.indexOf(':');
+    if (separator < 1) continue;
+    headers[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+  }
+  return headers;
 }
 
 export class ApibotConfigParser {
@@ -45,7 +59,7 @@ export class ApibotConfigParser {
     Object.assign(process.env, parseEnv(readFileSync(resolved, 'utf8')));
   }
 
-  async loadConfig(options?: { config?: string; path?: string; endpoint?: string; baseEndpoint?: string; spec?: string }): Promise<ApibotConfig> {
+  async loadConfig(options?: ApibotRunOptions): Promise<ApibotConfig> {
     if (this.config && !options?.config && !options?.path) return this.config;
 
     const originalCwd = process.cwd();
@@ -84,6 +98,7 @@ export class ApibotConfigParser {
 
       this.config = this.mergeWithDefaults(loadedConfig);
       this.applyEnvSpec(this.config.api);
+      this.applyEnvHeaders(this.config.api);
       if (options?.baseEndpoint) this.config.api.baseEndpoint = options.baseEndpoint.replace(/\/$/, '');
       await resolveConfigModels(this.config.ai);
       this.configPath = resolvedPath;
@@ -94,6 +109,7 @@ export class ApibotConfigParser {
       }
 
       this.validateConfig(this.config);
+      setOutputDir(this.getOutputDir());
 
       return this.config;
     } finally {
@@ -125,12 +141,15 @@ export class ApibotConfigParser {
   }
 
   resolveEndpointPath(endpoint: string): string {
-    if (!this.site) return endpoint;
+    if (!this.site && !isAbsoluteEndpoint(endpoint)) return endpoint;
 
-    const resolved = resolveSiteTarget(endpoint, this.site.url);
-    if (resolved.baseUrl !== this.site.url) return endpoint;
+    const base = new URL(this.getConfig().api.baseEndpoint);
+    const origin = this.site?.url || base.origin;
 
-    const basePath = new URL(this.getConfig().api.baseEndpoint).pathname.replace(/\/$/, '');
+    const resolved = resolveSiteTarget(endpoint, origin);
+    if (resolved.baseUrl !== origin) return endpoint;
+
+    const basePath = base.pathname.replace(/\/$/, '');
     if (!basePath) return resolved.path;
     if (resolved.path === basePath) return '/';
     if (resolved.path.startsWith(`${basePath}/`)) return resolved.path.slice(basePath.length);
@@ -156,14 +175,20 @@ export class ApibotConfigParser {
     }
   }
 
-  private applyRunOptions(options?: { baseEndpoint?: string; spec?: string }): void {
+  private applyRunOptions(options?: ApibotRunOptions): void {
     if (options?.baseEndpoint) process.env.EXPLORBOT_URL = options.baseEndpoint;
     if (options?.spec) process.env.EXPLORBOT_API_SPEC = options.spec;
+    if (options?.header?.length) process.env.EXPLORBOT_API_HEADERS = options.header.join('\n');
   }
 
   private applyEnvSpec(api: ApiConfig): void {
     if (!process.env.EXPLORBOT_API_SPEC) return;
     api.spec = [process.env.EXPLORBOT_API_SPEC];
+  }
+
+  private applyEnvHeaders(api: ApiConfig): void {
+    if (!process.env.EXPLORBOT_API_HEADERS) return;
+    api.headers = { ...api.headers, ...parseHeaders(process.env.EXPLORBOT_API_HEADERS) };
   }
 
   private enterGlobalMode(config: ApibotConfig, endpoint?: string): void {
@@ -189,7 +214,7 @@ export class ApibotConfigParser {
       throw new Error('EXPLORBOT_AI_MODEL needs a provider — set EXPLORBOT_AI_PROVIDER, or write it as "provider/model-id"');
     }
 
-    const baseEndpoint = process.env.EXPLORBOT_URL;
+    const baseEndpoint = process.env.EXPLORBOT_URL?.replace(/\/$/, '');
     if (!baseEndpoint) {
       throw new Error('No API endpoint to test. Pass --endpoint or set EXPLORBOT_URL to the API base endpoint');
     }
@@ -199,6 +224,7 @@ export class ApibotConfigParser {
 
     const api: ApiConfig = { baseEndpoint };
     this.applyEnvSpec(api);
+    this.applyEnvHeaders(api);
 
     let model: any;
     if (provider && modelSpec) model = await createModel(provider, modelSpec);
@@ -212,6 +238,7 @@ export class ApibotConfigParser {
     };
     this.configPath = path.join(outputRoot, 'apibot.config.js');
     this.validateConfig(this.config);
+    setOutputDir(this.getOutputDir());
 
     return this.config;
   }
@@ -282,4 +309,13 @@ export class ApibotConfigParser {
   }
 }
 
-export type { ApibotConfig, ApiConfig, HookFn };
+interface ApibotRunOptions {
+  config?: string;
+  path?: string;
+  endpoint?: string;
+  baseEndpoint?: string;
+  spec?: string;
+  header?: string[];
+}
+
+export type { ApibotConfig, ApiConfig, HookFn, ApibotRunOptions };

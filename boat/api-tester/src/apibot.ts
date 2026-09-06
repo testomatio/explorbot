@@ -10,7 +10,7 @@ import { setVerboseMode, tag } from '../../../src/utils/logger.ts';
 import { Chief } from './ai/chief.ts';
 import { Curler } from './ai/curler.ts';
 import { ApiClient } from './api-client.ts';
-import { type ApibotConfig, ApibotConfigParser } from './config.ts';
+import { type ApibotConfig, ApibotConfigParser, type ApibotRunOptions } from './config.ts';
 
 export class ApiBot {
   private configParser: ApibotConfigParser;
@@ -141,7 +141,7 @@ export class ApiBot {
     return this.currentPlan;
   }
 
-  savePlan(filename?: string): string | null {
+  savePlan(suffix?: string): string | null {
     if (!this.currentPlan) return null;
 
     const plansDir = this.configParser.getPlansDir();
@@ -149,8 +149,7 @@ export class ApiBot {
       mkdirSync(plansDir, { recursive: true });
     }
 
-    const planFilename = filename || this.generatePlanFilename();
-    const planPath = path.join(plansDir, planFilename);
+    const planPath = path.join(plansDir, this.generatePlanFilename(suffix));
     this.currentPlan.saveToMarkdown(planPath);
     return planPath;
   }
@@ -192,20 +191,16 @@ export class ApiBot {
     }
   }
 
-  private generatePlanFilename(): string {
+  private generatePlanFilename(suffix?: string): string {
     const endpoint = this.currentPlan?.url || '/';
-    const sanitized = endpoint.replace(/^\//, '').replace(/[^a-zA-Z0-9]/g, '_') || 'root';
-    return `${sanitized.slice(0, 200)}.md`;
+    let name = endpoint.replace(/^\//, '').replace(/[^a-zA-Z0-9]/g, '_') || 'root';
+    if (suffix) name = `${name}_${suffix}`;
+    return `${name.slice(0, 200)}.md`;
   }
 }
 
-interface ApibotOptions {
+interface ApibotOptions extends ApibotRunOptions {
   verbose?: boolean;
-  config?: string;
-  path?: string;
-  endpoint?: string;
-  baseEndpoint?: string;
-  spec?: string;
 }
 
 export type { ApibotOptions };
