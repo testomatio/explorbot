@@ -26,6 +26,23 @@ function requestResult(id: string, method: string, urlPath: string, status: numb
   });
 }
 
+function readResult(id: string, urlPath: string, search = ''): RequestResult {
+  const result = new RequestResult({
+    id,
+    method: 'GET',
+    path: urlPath,
+    fullUrl: `${urlPath}${search}`,
+    requestHeaders: {},
+    status: 200,
+    statusText: '200',
+    responseHeaders: {},
+    timing: 0,
+    timestamp: new Date(),
+  });
+  result.rawResponseBodyValue = '';
+  return result;
+}
+
 function toolCall(id: string, name: string, args: Record<string, any>) {
   return { id, name, arguments: JSON.stringify(args) };
 }
@@ -86,7 +103,7 @@ describe('Fisherman with aimock', () => {
     ConfigParser.cleanupAllTestDirectories();
   });
 
-  function createFisherman(browserHeaders: Record<string, string> = {}, configHeaders: Record<string, string> = {}, hasApiConfig = false): Fisherman {
+  function createFisherman(browserHeaders: Record<string, string> = {}, configHeaders: Record<string, string> = {}, hasApiConfig = false, spec: any = null): Fisherman {
     const apiClient = {
       request: async () => apiResponses.shift(),
       setHeaders: (h: Record<string, string>) => Object.assign(apiHeaders, h),
@@ -96,7 +113,7 @@ describe('Fisherman with aimock', () => {
       provider,
       apiClient as any,
       requestStore,
-      async () => null,
+      async () => spec,
       'https://example.test/api',
       async () => browserHeaders,
       configHeaders,
@@ -172,5 +189,77 @@ describe('Fisherman with aimock', () => {
     expect(result.success).toBe(true);
     expect(result.summary).toBe('Created one suite');
     expect(result.created).toEqual([{ type: 'suites', id: 's2', title: 'Suite B', request: 'POST /api/alpha-shop/suites' }]);
+  });
+
+  it('answers a question from a read endpoint and never offers a write method', async () => {
+    const labels = requestResult('made_read_1', 'GET', '/api/alpha-shop/labels', 200);
+    labels.rawResponseBodyValue = JSON.stringify([
+      { id: 1, name: 'Bug' },
+      { id: 2, name: 'Urgent' },
+    ]);
+    apiResponses.push(labels);
+
+    requestStore.addReadRequest(readResult('xhr_100_GET_api_alpha-shop_labels', '/api/alpha-shop/labels'));
+
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('r1', 'request', { method: 'GET', path: '/api/alpha-shop/labels' })] });
+    mock.on({ sequenceIndex: 1 }, { toolCalls: [toolCall('r2', 'finish', { answer: 'Two labels exist: Bug and Urgent' })] });
+    mock.on({}, { content: 'done' });
+
+    const result = await createFisherman().lookupData('which labels exist?', '/projects/alpha-shop/tests');
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toBe('Two labels exist: Bug and Urgent');
+    expect(result.created).toEqual([]);
+
+    const systemPrompt = extractPromptText(mock.getRequests()[0]);
+    expect(systemPrompt).toContain('GET /api/alpha-shop/labels');
+
+    const offeredTools = JSON.stringify(mock.getRequests()[0]?.body?.tools);
+    expect(offeredTools).toContain('GET');
+    expect(offeredTools).not.toContain('DELETE');
+  });
+
+  it("achieve mode lists the spec's read endpoints without exposing its write verbs", async () => {
+    const spec = {
+      paths: {
+        '/api/books': {
+          get: { summary: 'List books' },
+          post: { summary: 'Add a book' },
+        },
+        '/api/books/{id}': {
+          delete: { summary: 'Remove a book' },
+        },
+      },
+    };
+
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('c1', 'stop', { reason: 'no lookup needed' })] });
+    mock.on({}, { content: 'done' });
+
+    await createFisherman({}, {}, true, spec).lookupData('which books exist?', '/projects/alpha-shop/tests');
+
+    const systemPrompt = extractPromptText(mock.getRequests()[0]);
+    expect(systemPrompt).toContain('GET /books');
+    expect(systemPrompt).not.toContain('POST /books');
+    expect(systemPrompt).not.toContain('DELETE /books');
+  });
+
+  it('reports honestly when no read endpoint is known', async () => {
+    const result = await createFisherman().lookupData('which labels exist?', '/projects/alpha-shop/tests');
+
+    expect(result.success).toBe(false);
+    expect(mock.getRequests()).toHaveLength(0);
+  });
+
+  it('stays available after preparing data found no write endpoints', async () => {
+    rmSync(path.join(outputDir, 'requests'), { recursive: true, force: true });
+    requestStore = new RequestStore(outputDir);
+    requestStore.addReadRequest(readResult('xhr_200_GET_api_alpha-shop_labels', '/api/alpha-shop/labels'));
+
+    const fisherman = createFisherman();
+    const result = await fisherman.prepareData('1 label', '/projects/alpha-shop/tests');
+
+    expect(result.success).toBe(false);
+    expect(fisherman.isAvailable()).toBe(true);
+    expect(mock.getRequests()).toHaveLength(0);
   });
 });
