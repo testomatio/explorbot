@@ -33,6 +33,7 @@ interface ActionResultData extends WebPageState {
   iframeSnapshots?: Array<{ src: string; html: string; id?: string }>;
   ariaSnapshot?: string | null;
   ariaSnapshotFile?: string;
+  regionAria?: string | null;
   focusedElement?: FocusedElement | null;
   iframeURL?: string;
   links?: Link[];
@@ -90,6 +91,7 @@ export class ActionResult implements ActionResultData {
   public links: Link[] = [];
   public verifications?: Record<string, boolean>;
   public overlay: Region = new Region();
+  public regionAria: string | null = null;
   private _diffCache: { previousId: number | undefined; diff: Diff } | null = null;
 
   constructor(data: ActionResultData) {
@@ -106,6 +108,7 @@ export class ActionResult implements ActionResultData {
     this.iframeURL = data.iframeURL;
     this.notes = data.notes ?? [];
     this.verifications = data.verifications;
+    this.regionAria = data.regionAria ?? null;
 
     // Set readonly properties
     if (data.screenshotFile !== undefined) {
@@ -302,6 +305,10 @@ export class ActionResult implements ActionResultData {
 
   getInteractiveARIA(): string {
     return compactAriaSnapshot(this.ariaSnapshot, false);
+  }
+
+  getRegionARIA(): string {
+    return compactAriaSnapshot(this.regionAria, false);
   }
 
   getCompactARIA(): string {
