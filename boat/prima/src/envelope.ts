@@ -5,6 +5,8 @@ export const STATUS_FILE = 'status.json';
 
 const ARTIFACT_FILES = { aria: 'aria.yml', html: 'page.html', screenshot: 'page.png', network: 'network.jsonl' };
 
+export const STEP_FILES = { aria: 'aria.yaml', html: 'html', diff: 'diff.yaml' };
+
 const EXPECTATION_LABELS = {
   passed: 'PASSED       ',
   failed: 'FAILED       ',
@@ -117,7 +119,7 @@ function renderSteps(data: EnvelopeData): string | null {
     lines.push(`${index + 1}. ${mark} ${step.label}`);
     for (const line of (step.proof || '').split('\n').filter(Boolean)) lines.push(`      ${line}`);
   });
-  if (data.stepFiles) lines.push('', `page after each step: ${data.stepFiles}/<n>-<step>.{aria.yaml,html,diff.yaml}`);
+  if (data.stepFiles) lines.push('', `page after each step: ${data.stepFiles}/<n>-<step>.{${Object.values(STEP_FILES).join(',')}}`);
   return section('Steps', lines.join('\n'));
 }
 

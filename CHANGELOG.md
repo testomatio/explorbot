@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-05
+
+### Changes
+
+- [Prima] The `network.jsonl` artifact now holds the requests the browser was seen to make. It was
+  reading the requests an API run sends itself, a list nothing fills during a browser command, so the
+  file was never written and no envelope ever pointed at it — while the page's own traffic was being
+  captured the whole time.
 ## 2026-09-07
 
 ### New CLI Options
@@ -219,6 +227,12 @@
   inline drawer or a split-pane form.
 - The area the agent is told to stay inside is called an overlay when it floats above the page and
   a region when it sits in it. Logs and the supervisor's notes now use that wording throughout.
+- Prima: The three envelope builders (`pw`/`do`/`go`, failures, and `check`/`ask`/`verify`/`research`)
+  now share one tail builder instead of each repeating the instance/status/artifacts block. Artifact
+  paths flow back from the write as a return value rather than through a mutable field that had to be
+  read in the right order, so an envelope can no longer come back missing its Artifacts section.
+  Per-step file names (`aria.yaml`/`html`/`diff.yaml`) written during a `do` run now have a single
+  owner shared with the doc line the envelope advertises, so the two can no longer drift apart.
 
 ## 2026-09-01
 
