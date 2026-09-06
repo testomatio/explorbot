@@ -498,6 +498,17 @@ describe('Reporter config', () => {
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toContain('reports');
   });
 
+  test('an explicit output directory is used when no config is loaded', () => {
+    const configParser = ConfigParser.getInstance();
+    (configParser as any).config = null;
+    (configParser as any).configPath = null;
+
+    const reporter = new Reporter({ html: true, markdown: true }, undefined, '/tmp/apibot-output');
+
+    expect(process.env.TESTOMATIO_HTML_REPORT_FOLDER).toBe(join('/tmp/apibot-output', 'reports'));
+    expect(process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER).toBe(join('/tmp/apibot-output', 'reports'));
+  });
+
   test('markdown unset does not set markdown env vars', () => {
     const reporter = new Reporter({ enabled: true });
     expect(process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE).toBeUndefined();

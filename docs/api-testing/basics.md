@@ -30,7 +30,7 @@ export default {
 
 - **`baseEndpoint`** (required) — the base URL prepended to every request. Test steps use relative paths like `/users`; Curler adds the base for you.
 - **`spec`** (required) — one or more OpenAPI specs, given as HTTP(S) URLs or local file paths, in YAML or JSON. Chief uses the spec to plan; Curler uses it to look up schemas. Both agents refuse to run without one.
-- **`headers`** — sent with every request. This is where API keys and auth tokens go.
+- **`headers`** — sent with every request. This is where API keys and auth tokens go. `-H "Name: value"` on the command line and `EXPLORBOT_API_HEADERS` add to them without a config file.
 
 See the [full configuration reference](../reference/configuration.md) for every option and [providers](../basics/providers.md) for choosing an AI model.
 
@@ -61,15 +61,23 @@ A matching `teardown` hook runs after all tests finish — use it to clean up da
 Chief and Curler need three things: where the API is, what its spec says, and how to authenticate. Pass all three on the command line and no config file is needed:
 
 ```bash
+npx explorbot api explore https://api.example.com/v1 \
+  --spec ./openapi.yaml \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+`api explore` takes the base endpoint as its argument, so one line covers the whole run: it plans in every style, executes each plan, and reports the totals. The other commands take a path within the API and read the base from `--endpoint`:
+
+```bash
 npx explorbot api plan /users \
   --endpoint https://api.example.com/v1 \
   --spec ./openapi.yaml \
-  --knowledge 'Send X-Api-Key: ${env.API_KEY} on every request'
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-`--endpoint` and `--spec` each have an environment twin — `EXPLORBOT_URL` and `EXPLORBOT_API_SPEC` — and the flag wins when both are set. `--knowledge` adds to the facts `EXPLORBOT_KNOWLEDGE` and `EXPLORBOT_KNOWLEDGE_FILE` bring in rather than replacing them. Configure your models once with `npx explorbot init --global` and every run stores its plans and requests per host under `~/.explorbot/sites/<host>/`, so a later `api test` against the same API picks up where the last one left off. Knowledge given on the command line lasts for the run; `api know` is what writes it down.
+Each flag has an environment twin — `EXPLORBOT_URL`, `EXPLORBOT_API_SPEC` and `EXPLORBOT_API_HEADERS` — and the flag wins when both are set. `-H` is repeatable and takes one `Name: value` per use; the variable takes one per line. Headers land on every request, the startup health check included, and merge over any `headers` a config file sets. `--knowledge` adds to the facts `EXPLORBOT_KNOWLEDGE` and `EXPLORBOT_KNOWLEDGE_FILE` bring in rather than replacing them. Configure your models once with `npx explorbot init --global` and every run stores its plans and requests per host under `~/.explorbot/sites/<host>/`, so a later `api test` against the same API picks up where the last one left off. Knowledge given on the command line lasts for the run; `api know` is what writes it down.
 
-`--endpoint` keeps its path prefix: given `https://api.example.com/v1`, steps stay relative (`/users`) and Curler sends them to `https://api.example.com/v1/users`. `api test`, which takes a plan file rather than an endpoint, reads it from the flag or the variable.
+The base endpoint keeps its path prefix: given `https://api.example.com/v1`, steps stay relative (`/users`) and Curler sends them to `https://api.example.com/v1/users`. `api test`, which takes a plan file rather than an endpoint, reads the base from the flag or the variable.
 
 ### A dedicated API project
 

@@ -16,6 +16,7 @@ function buildOptions(options: any): ApibotOptions {
     path: options.path,
     baseEndpoint: options.endpoint,
     spec: options.spec,
+    header: options.header,
   };
 }
 
@@ -26,7 +27,8 @@ function addCommonOptions(cmd: Command): Command {
     .option('-c, --config <path>', 'Path to configuration file')
     .option('-p, --path <path>', 'Working directory path')
     .option('--endpoint <url>', 'Base API endpoint to test (env: EXPLORBOT_URL)')
-    .option('--spec <path>', 'OpenAPI spec file or URL (env: EXPLORBOT_API_SPEC)');
+    .option('--spec <path>', 'OpenAPI spec file or URL (env: EXPLORBOT_API_SPEC)')
+    .option('-H, --header <header>', 'Header sent with every request, as "Name: value". Repeatable (env: EXPLORBOT_API_HEADERS)', (value: string, previous: string[] = []) => [...previous, value]);
 }
 
 function selectTests(tests: any[], index?: string): any[] {
@@ -101,6 +103,7 @@ export function createApiCommands(name = 'api'): Command {
       const [site] = listSites();
       const runOptions = buildOptions(options);
       runOptions.endpoint = endpoint || site?.url;
+      if (runOptions.endpoint && URL.canParse(runOptions.endpoint)) runOptions.baseEndpoint ||= runOptions.endpoint;
       try {
         const config = await parser.loadConfig(runOptions);
         console.log(ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot(), json: options.json }));
@@ -149,9 +152,10 @@ export function createApiCommands(name = 'api'): Command {
     }
   });
 
-  addCommonOptions(cmd.command('explore <endpoint>').description('Full cycle: plan all styles, execute tests, re-plan')).action(async (endpoint, options) => {
+  addCommonOptions(cmd.command('explore <endpoint>').description('Full cycle: plan all styles, execute tests, re-plan. The endpoint may be the base endpoint itself')).action(async (endpoint, options) => {
     setPreserveConsoleLogs(true);
     try {
+      if (URL.canParse(endpoint)) options.endpoint ||= endpoint;
       const bot = new ApiBot({ ...buildOptions(options), endpoint });
       await bot.start();
 
@@ -182,7 +186,7 @@ export function createApiCommands(name = 'api'): Command {
           else totalFailed++;
         }
 
-        bot.savePlan(`${endpoint.replace(/^\//, '').replace(/[^a-zA-Z0-9]/g, '_')}_${style}.md`);
+        bot.savePlan(style);
       }
 
       console.log('\n=== Final Results ===');

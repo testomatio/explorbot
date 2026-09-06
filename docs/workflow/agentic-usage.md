@@ -58,6 +58,7 @@ No `init`, no config file, no project directory, no model IDs to look up. These 
 | `EXPLORBOT_KNOWLEDGE_FILE` | no | Path to a knowledge markdown file |
 | `EXPLORBOT_SPEC` | no | Docbot application spec directory or index.md, used as page knowledge |
 | `EXPLORBOT_API_SPEC` | no | OpenAPI spec path for the API boat |
+| `EXPLORBOT_API_HEADERS` | no | Headers sent with every API request, one "Name: value" per line |
 | `EXPLORBOT_NO_BANNER` | no | Suppress the startup banner, for machine-readable output |
 | `EXPLORBOT_MAX_DURATION` | no | Wall-clock budget in minutes for an explore run; same as --max-duration |
 <!-- END env -->
@@ -219,11 +220,12 @@ The same variables drive API testing and doc collection.
 ```bash
 EXPLORBOT_URL=https://api.example.com \
 EXPLORBOT_API_SPEC=./openapi.yaml \
+EXPLORBOT_API_HEADERS="Authorization: Bearer $TOKEN" \
 EXPLORBOT_AI_PROVIDER=openrouter \
   npx explorbot api explore /users
 ```
 
-The API boat also takes those two as flags, so one line carries the whole run: `npx explorbot api explore /users --endpoint https://api.example.com --spec ./openapi.yaml`.
+The API boat also takes those three as flags, so one line carries the whole run: `npx explorbot api explore https://api.example.com --spec ./openapi.yaml -H "Authorization: Bearer $TOKEN"`. Given a full URL, `api explore` reads it as the base endpoint; a path like `/users` needs the base in `--endpoint` or `EXPLORBOT_URL`.
 
 ```bash
 EXPLORBOT_AI_PROVIDER=openrouter \

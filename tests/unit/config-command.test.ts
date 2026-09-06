@@ -1,7 +1,7 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { ConfigCommand } from '../../src/commands/config-command.js';
 
 let tmpPath = '';
@@ -81,6 +81,15 @@ describe('ConfigCommand.data', () => {
 
     expect(data.env.EXPLORBOT_AI_PROVIDER).toBe('openrouter');
     expect(data.env.EXPLORBOT_KNOWLEDGE).toBeUndefined();
+  });
+
+  it('reports a secret variable as set without printing its value', () => {
+    process.env.EXPLORBOT_API_HEADERS = 'Authorization: Bearer token-123';
+    const data = ConfigCommand.data(config, { configPath, root: tmpPath });
+
+    expect(data.env.EXPLORBOT_API_HEADERS).toBe('set');
+    expect(ConfigCommand.render(config, { configPath, root: tmpPath })).not.toContain('token-123');
+    Reflect.deleteProperty(process.env, 'EXPLORBOT_API_HEADERS');
   });
 
   it('falls back to the API base endpoint when there is no page url', () => {

@@ -24,10 +24,12 @@ export class Reporter {
   private isRunStarted = false;
   private reporterEnabled: boolean;
   private stateManager?: StateManager;
+  private outputDir?: string;
 
-  constructor(config?: ReporterConfig, stateManager?: StateManager) {
+  constructor(config?: ReporterConfig, stateManager?: StateManager, outputDir?: string) {
     this.reporterEnabled = Reporter.resolveEnabled(config);
     this.stateManager = stateManager;
+    this.outputDir = outputDir;
 
     if (this.reporterEnabled && config?.html) {
       this.configureHtmlPipe();
@@ -67,9 +69,14 @@ export class Reporter {
     return Boolean(process.env.TESTOMATIO);
   }
 
+  private reportsFolder(): string {
+    if (this.outputDir) return join(this.outputDir, 'reports');
+    return outputPath('reports');
+  }
+
   private configureHtmlPipe(): void {
     process.env.TESTOMATIO_HTML_REPORT_SAVE = '1';
-    process.env.TESTOMATIO_HTML_REPORT_FOLDER = outputPath('reports');
+    process.env.TESTOMATIO_HTML_REPORT_FOLDER = this.reportsFolder();
     process.env.TESTOMATIO_HTML_FILENAME = `${Stats.sessionLabel()}.html`;
     debugLog('HTML report pipe configured', {
       folder: process.env.TESTOMATIO_HTML_REPORT_FOLDER,
@@ -79,7 +86,7 @@ export class Reporter {
 
   private configureMarkdownPipe(): void {
     process.env.TESTOMATIO_MARKDOWN_REPORT_SAVE = '1';
-    process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER = outputPath('reports');
+    process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER = this.reportsFolder();
     process.env.TESTOMATIO_MARKDOWN_FILENAME = `${Stats.sessionLabel()}-tests.md`;
     debugLog('Markdown report pipe configured', {
       folder: process.env.TESTOMATIO_MARKDOWN_REPORT_FOLDER,
