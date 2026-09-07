@@ -219,6 +219,22 @@ describe('Fisherman with aimock', () => {
     expect(offeredTools).not.toContain('DELETE');
   });
 
+  it('answers with what it read when the run ends before the model phrases it', async () => {
+    const suite = requestResult('made_read_2', 'GET', '/api/alpha-shop/suites/s1', 200);
+    suite.rawResponseBodyValue = JSON.stringify({ data: { id: 's1', milestones: [{ id: 'm1', title: 'Release 1' }] } });
+    apiResponses.push(suite);
+
+    requestStore.addReadRequest(readResult('xhr_101_GET_api_alpha-shop_suites', '/api/alpha-shop/suites/s1'));
+
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('r1', 'request', { method: 'GET', path: '/api/alpha-shop/suites/s1' })] });
+
+    const result = await createFisherman().lookupData('is a milestone assigned to s1?', '/projects/alpha-shop/tests');
+
+    expect(result.success).toBe(true);
+    expect(result.summary).toContain('GET /api/alpha-shop/suites/s1');
+    expect(result.summary).toContain('Release 1');
+  });
+
   it("achieve mode lists the spec's read endpoints without exposing its write verbs", async () => {
     const spec = {
       paths: {
