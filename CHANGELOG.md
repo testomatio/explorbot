@@ -45,6 +45,11 @@
   `api test` and `api explore` run from a global config stop before it began.
 - Plan files from `api explore` are named after the endpoint again. Pointing it at a full URL wrote
   `https___api_example_com_v1_normal.md`; it now writes `root_normal.md`.
+- The page diff now lists changed elements in the order they appear on the page. It ranked repeated
+  elements first, so opening a long list — a user picker, a dropdown of seventy options — put whichever
+  entry the page happened to render twice at the very top and hid the rest behind "+ 63 more interactive
+  elements". Agents read that first line as the obvious choice and picked the duplicate over the options
+  a person would actually see.
 
 ## 2026-09-04
 
