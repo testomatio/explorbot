@@ -76,8 +76,8 @@
   ```
 
   Explorbot explores collections rather than raw paths, so `/users/{id}` folds into `/users`. When a
-  pattern matches several collections they share the planning styles, one each, so a wide run costs about
-  what a narrow one does. A parameter no pattern can fill stops the run and is named, rather than requests
+  pattern matches several collections they share the planning styles, one per collection, so covering a
+  whole API stays one plan per collection rather than one per style. A parameter no pattern can fill stops the run and is named, rather than requests
   going out to a literal `{project_id}`.
 - Locators: elements that appear in response to an action — a menu that opens, a panel that slides in —
   can now be clicked using the role reported for them when they appeared, instead of a guessed one.

@@ -113,7 +113,7 @@ The endpoint may be a pattern. `*` stands for one path segment, and a pattern al
 npx explorbot api explore '/projects/acme/*'
 ```
 
-Explorbot explores collections, not raw paths: `/users/{id}` and `/users/{id}/posts` fold into `/users`, whose spec lookup brings them along anyway. When a pattern matches several collections the planning styles spread across them, one style each, so a wide run costs about what a narrow one does.
+Explorbot explores collections, not raw paths: `/users/{id}` and `/users/{id}/posts` fold into `/users`, whose spec lookup brings them along anyway. When a pattern matches several collections the planning styles spread across them, one style per collection, so covering a whole API stays one plan per collection rather than one per style.
 
 Pass `/` to take every collection in the spec. The path parameters have to come from somewhere, so put them in the base endpoint.
 
