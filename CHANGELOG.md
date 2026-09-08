@@ -67,8 +67,27 @@
   explorbot help-json api config     # a nested boat command
   ```
 
+### Configuration
+
+- **`ai.agents.scout.enabled`** — Turns on the Scout agent, which retrieves documentation relevant
+  to the page being planned and hands it to the Planner. Default: off — Scout needs documentation
+  collected beforehand (`explorbot docs collect` and/or `scout.dirs`).
+- **`ai.agents.scout.dirs`** — Extra markdown directories Scout searches in addition to the
+  application spec bundle. Default: none.
+- **`ai.agents.planner.docsWeight`** — With Scout enabled, the rough share of scenarios that
+  exercise documented behavior; the rest explore beyond the documentation. Default: `70`.
+
 ### Changes
 
+- **[Scout] New agent** — explores the collected documentation (application spec pages plus
+  `scout.dirs`) with the same bash and readFile tools Captain uses: the corpus is loaded into an
+  in-memory sandbox and the model scans it with rg or grep itself, then reports the documented
+  capabilities, states and transitions relevant to the current page and focus. One of rg/grep must
+  be on PATH — Scout fails loudly when neither is found. Pages already injected as
+  `<application_spec>` for the current URL are not repeated.
+- **[Planner] Can plan from documentation** — when Scout is enabled, scenarios are grounded in
+  the retrieved documentation according to `docsWeight`; Scout runs after page research and
+  its answer is reused across planning iterations for the same page and focus.
 - **[Pilot] The final verdict now sees the last round of checks** — a `verify()` or `see()` run in
   the same round as the decision to finish was invisible to Pilot, so a test could be reported as
   failed on evidence it had already produced. The verdict is now made once the round is complete.
