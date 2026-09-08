@@ -5,8 +5,8 @@ import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { listSites } from '../../../src/global-config.ts';
 import { setPreserveConsoleLogs } from '../../../src/utils/logger.ts';
-import { getStyles } from './ai/chief/styles.ts';
 import { ApiBot, type ApibotOptions } from './apibot.ts';
+import { ExploreCommand } from './commands/explore-command.ts';
 import { ApibotConfigParser } from './config.ts';
 
 function buildOptions(options: any): ApibotOptions {
@@ -159,47 +159,10 @@ export function createApiCommands(name = 'api'): Command {
       const bot = new ApiBot({ ...buildOptions(options), endpoint });
       await bot.start();
 
-      const styles = Object.keys(getStyles());
-      const endpoints = bot.expandEndpoints(endpoint);
-      let totalPassed = 0;
-      let totalFailed = 0;
-      let totalTests = 0;
+      const { failed } = await new ExploreCommand(bot).execute(endpoint);
 
-      for (const [index, target] of endpoints.entries()) {
-        let runStyles = [styles[index % styles.length]];
-        if (endpoints.length === 1) runStyles = styles;
-        if (endpoints.length > 1) console.log(`\n=== Endpoint ${index + 1}/${endpoints.length}: ${target} ===`);
-
-        for (const style of runStyles) {
-          console.log(`\n=== Style: ${style} ===\n`);
-
-          const plan = await bot.plan(target, { style, fresh: true });
-          if (!plan?.tests.length) {
-            console.log(`No tests generated for style: ${style}`);
-            continue;
-          }
-
-          const pending = plan.getPendingTests();
-          for (const test of pending) {
-            const specDefinition = bot.tryGetEndpointDefinition(test.startUrl);
-            const result = await bot.agentCurler().test(test, {
-              specDefinition,
-              baseEndpoint: bot.getConfig().api.baseEndpoint,
-              searchSpec: (query) => bot.searchSpec(query),
-            });
-            totalTests++;
-            if (result.success) totalPassed++;
-            else totalFailed++;
-          }
-
-          bot.savePlan(style);
-        }
-      }
-
-      console.log('\n=== Final Results ===');
-      console.log(`Total: ${totalTests} tests, ${totalPassed} passed, ${totalFailed} failed`);
       await bot.stop();
-      process.exit(totalFailed > 0 ? 1 : 0);
+      process.exit(failed > 0 ? 1 : 0);
     } catch (error) {
       console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
       process.exit(1);
