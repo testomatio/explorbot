@@ -4,6 +4,11 @@
 
 ### Changes
 
+- [Pilot] A test that creates an item and then deletes it can now pass. Pilot was checking deletions
+  against a list of names carried over from earlier tests in the plan, and the name of the test being
+  run was never on that list — so a "create it, then delete it" scenario was failed at the final
+  verdict even when the item was visibly gone from the page and every check had passed. Pilot now
+  judges the deletion on what the page actually shows.
 - [Tester] Clicking by coordinates is no longer accepted as a locator. A coordinate click always runs,
   even on an empty corner of the page, so offering one at the end of a locator list turned "I could not
   find this element" into a reported success — the test then carried on believing it had pressed a
