@@ -142,6 +142,16 @@ describe('Prima.do with aimock', () => {
     expect(tools).toContain('form');
   });
 
+  it('records the settle turn when the model reports no instruction', async () => {
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [clickCall('call-1', ['I.click("Account")'], 'open the account menu')] });
+    mock.on({}, { content: 'I clicked something.' });
+
+    const envelope = await prima.do(['open the account menu']);
+
+    expect(envelope.steps?.map((step) => step.label)).toContain('settling which instructions were satisfied');
+    expect(envelope.steps?.some((step) => step.unconfirmed)).toBe(true);
+  });
+
   it('reports a failure when the model performs no action', async () => {
     mock.on({}, { content: 'This board has no account menu.' });
 

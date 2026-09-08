@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'bun:test';
 import { formatMatchedElements } from '../../src/ai/tools.ts';
 
-function multipleElementsError(elements: Array<{ xpath: string; html: string; text: string }>): Error {
+function multipleElementsError(elements: Array<{ xpath: string; html: string; text: string; visible?: boolean }>): Error {
   const error = new Error('Multiple elements found');
   error.name = 'MultipleElementsFound';
-  (error as any).webElements = elements.map((el) => ({
-    toAbsoluteXPath: async () => el.xpath,
-    toOuterHTML: async () => el.html,
-    getText: async () => el.text,
-  }));
+  (error as any).webElements = elements.map((el) => {
+    const webElement: Record<string, any> = {
+      toAbsoluteXPath: async () => el.xpath,
+      toOuterHTML: async () => el.html,
+      getText: async () => el.text,
+    };
+    if (el.visible !== undefined) webElement.isVisible = async () => el.visible;
+    return webElement;
+  });
   return error;
 }
 
@@ -56,6 +60,26 @@ describe('formatMatchedElements', () => {
     expect(formatted).not.toContain('items-center');
     expect(formatted).not.toContain('w-full');
     expect(formatted).not.toContain('bg-amber-100');
+  });
+
+  it('says which matches are on screen', async () => {
+    const error = multipleElementsError([
+      { xpath: '//html/body/div[1]/form/input', html: TAILWIND_BUTTON, text: 'Sign In', visible: false },
+      { xpath: '//html/body/div[2]/form/input', html: TAILWIND_BUTTON, text: 'Sign In', visible: true },
+    ]);
+
+    const formatted = await formatMatchedElements(error);
+
+    expect(formatted).toContain('Element 1:\nText: "Sign In"\nVisible: false');
+    expect(formatted).toContain('Element 2:\nText: "Sign In"\nVisible: true');
+  });
+
+  it('leaves visibility out when the elements cannot report it', async () => {
+    const error = multipleElementsError([{ xpath: '//html/body/button', html: TAILWIND_BUTTON, text: 'New test' }]);
+
+    const formatted = await formatMatchedElements(error);
+
+    expect(formatted).not.toContain('Visible:');
   });
 
   it('falls back when the error carries no elements', async () => {

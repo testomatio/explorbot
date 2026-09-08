@@ -20,6 +20,7 @@ import { Reporter } from '../../../src/reporter.ts';
 import type { WebPageState } from '../../../src/state-manager.ts';
 import { Stats } from '../../../src/stats.ts';
 import { Task, Test, TestResult } from '../../../src/test-plan.ts';
+import { ariaRefSnapshot } from '../../../src/utils/aria-ref.ts';
 import { compactAriaSnapshot } from '../../../src/utils/aria.ts';
 import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
@@ -324,11 +325,15 @@ export class Prima {
       return null;
     });
 
-    if (settleError) trace.push({ label: 'settling which instructions were satisfied', ok: false, proof: browserErrorMessage(settleError) });
-
+    const stillOpen = ledger.filter((entry) => entry.status === 'open').length;
     for (const execution of invoked?.toolExecutions || []) {
       this.applyLedgerReport(execution, ledger, trace);
     }
+
+    let unsettled = '';
+    if (settleError) unsettled = browserErrorMessage(settleError);
+    if (invoked && ledger.filter((entry) => entry.status === 'open').length === stillOpen) unsettled = 'the model was asked to report every remaining instruction and reported none';
+    if (unsettled) trace.push({ label: 'settling which instructions were satisfied', ok: false, proof: unsettled });
   }
 
   private ledgerProgress(ledger: LedgerEntry[]): string {
@@ -916,7 +921,7 @@ export class Prima {
   }
 
   private async refAriaSnapshot(result: ActionResult): Promise<string | null> {
-    const snapshot = await Promise.resolve(this.bot.getExplorer()?.withPage?.((page: any) => page.locator('body').ariaSnapshot({ mode: 'ai' }))).catch(() => null);
+    const snapshot = await Promise.resolve(this.bot.getExplorer()?.withPage?.(ariaRefSnapshot)).catch(() => null);
     return snapshot || result.ariaSnapshot;
   }
 

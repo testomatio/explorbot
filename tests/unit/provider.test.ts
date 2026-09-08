@@ -193,6 +193,24 @@ describe('Provider', () => {
       expect(toolNames).toContain('commentary');
     });
 
+    it('should leave commentary out when the caller requires a tool call', async () => {
+      const messages = [{ role: 'user', content: 'Hello' }];
+      let toolNames: string[] = [];
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'tools-list-model',
+        doGenerate: async (params: any) => {
+          toolNames = params.tools.map((t: any) => t.name);
+          return { text: 'ok', finishReason: 'stop', usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'ok' }] };
+        },
+      });
+
+      await provider.generateWithTools(messages, model, { click: tool({ description: 'Click', inputSchema: z.object({}) }) }, { toolChoice: 'required' });
+
+      expect(toolNames).not.toContain('commentary');
+      expect(toolNames).toContain('click');
+    });
+
     it('should repair bare harmony channel tool calls to commentary', async () => {
       const messages = [{ role: 'user', content: 'Use a tool' }];
       const tools = {

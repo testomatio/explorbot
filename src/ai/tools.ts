@@ -12,6 +12,7 @@ import { cleanHtmlSnippet } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { pause } from '../utils/loop.js';
+import { ariaRefSelector, describeRef, refIsGone } from '../utils/aria-ref.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { Navigator } from './navigator.ts';
@@ -481,10 +482,18 @@ export function createRefTools({ explorer, stateManager }: ToolDeps, task: Task)
       }),
       execute: async ({ ref, element }) => {
         const activeNote = task.startNote(`Click ${element}`);
+
+        if (await refIsGone(explorer, ref)) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('clickRef', `Ref ${ref} names no element on the page any more.`, {
+            suggestion: 'The page has been rebuilt since you were given that ref. Call context() and use the ref it gives, or fall back to click() with a locator.',
+          });
+        }
+
         const previousState = ActionResult.fromState(stateManager.getCurrentState()!);
         const action = explorer.action();
         const named = await describeRef(explorer, ref);
-        const run = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(`aria-ref=${ref}`)}).click())`;
+        const run = `I.usePlaywrightTo(${JSON.stringify(`click ${element}`)}, async ({ page }) => page.locator(${JSON.stringify(ariaRefSelector(ref))}).click())`;
 
         if (!(await action.attempt(run, `Click ${element}`))) {
           activeNote.commit(TestResult.FAILED);
@@ -1189,21 +1198,6 @@ export async function commitNote(activeNote: any, result: TestResult, toolResult
   activeNote.commit(result);
 }
 
-async function describeRef(explorer: any, ref: string): Promise<{ role: string; text: string } | null> {
-  return Promise.resolve(
-    explorer?.withPage?.((page: any) =>
-      page.locator(`aria-ref=${ref}`).evaluate((el: any) => {
-        const tag = el.tagName.toLowerCase();
-        const roles: Record<string, string> = { a: 'link', button: 'button', select: 'combobox', textarea: 'textbox' };
-        const role = el.getAttribute('role') || roles[tag] || tag;
-        const text = (el.getAttribute('aria-label') || el.innerText || el.value || '').trim().split('\n')[0];
-        if (!text) return null;
-        return { role, text };
-      })
-    )
-  ).catch(() => null);
-}
-
 async function hasFocusedElement(explorer: any): Promise<boolean> {
   return explorer.withPage((page: any) => page.evaluate(() => !!document.activeElement && document.activeElement !== document.body)).catch(() => true);
 }
@@ -1269,12 +1263,11 @@ export async function failedToolResult(action: string, message: string, data?: R
   }
 
   const errorTexts = [message, ...(data?.attempts?.map((a: any) => a.error || '') || [])];
-  const hasMultipleElements = errorTexts.some((t: string) => t.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN));
-  const multipleElementsSuggestion = hasMultipleElements ? getMultipleElementsSuggestion() : null;
-  if (multipleElementsSuggestion) {
-    result.suggestion = multipleElementsSuggestion;
+  if (errorTexts.some((t: string) => t.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))) {
+    const matched = await extractWebElements(error);
+    result.suggestion = getMultipleElementsSuggestion(matched);
     result.multipleElementsDetected = true;
-    result.elements = await formatMatchedElements(error);
+    result.elements = formatElementList(matched);
     return result;
   }
 
@@ -1287,11 +1280,16 @@ export async function failedToolResult(action: string, message: string, data?: R
   return result;
 }
 
-function getMultipleElementsSuggestion(): string {
+function getMultipleElementsSuggestion(matched: MatchedElement[] | null): string {
+  const visible = (matched || []).filter((element) => element.visible !== false);
+  let onlyVisible = '';
+  if (matched && visible.length === 1) onlyVisible = `\nOnly element ${matched.indexOf(visible[0]) + 1} is on screen, so that is the one to act on.`;
+
   return dedent`
     Multiple elements matched your locator, so that command did nothing — it selected no element and acted on none.
-    Read the numbered elements list and click the one you meant by its number:
+    Read the numbered elements list and act on the one you meant by its number:
     reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
+    A match reported as not visible can never be acted on — pick one that is.${onlyVisible}
     If none of them is the element you want, narrow the locator with a container or its full unique text.
     If the list is missing, call xpathCheck() to see what the locator matches.
   `;
@@ -1315,7 +1313,7 @@ export function clickFailureSuggestion(attempts: Array<{ error?: string }>): str
   }
 
   if (errors.some((e) => e.includes('is not visible'))) {
-    return 'Element is in the DOM but not visible. Reveal it first — scroll to it, expand its section, or open the panel holding it.';
+    return 'Element is in the DOM but not visible. Reveal it — scroll to it, expand its section, open the panel holding it — or, when the page carries several copies of the same control, target the one that is on screen.';
   }
 
   if (errors.some((e) => e.includes('SyntaxError'))) {
@@ -1340,19 +1338,20 @@ const MAX_DISAMBIGUATE_TEXT = 80;
 const MAX_DISAMBIGUATE_HTML = 300;
 const MULTIPLE_ELEMENTS_PATTERN = 'multiple elements';
 
-async function extractWebElements(error: Error | null | undefined): Promise<Array<{ xpath: string; html: string; text: string }> | null> {
+async function extractWebElements(error: Error | null | undefined): Promise<MatchedElement[] | null> {
   if (!error || error.name !== 'MultipleElementsFound') return null;
 
-  const elements = (error as any).webElements as Array<{ toAbsoluteXPath: () => Promise<string>; toOuterHTML: () => Promise<string>; getText: () => Promise<string | null> }> | undefined;
+  const elements = (error as any).webElements as Array<{ toAbsoluteXPath: () => Promise<string>; toOuterHTML: () => Promise<string>; getText: () => Promise<string | null>; isVisible?: () => Promise<boolean> }> | undefined;
   if (!elements?.length) return null;
 
-  const result: Array<{ xpath: string; html: string; text: string }> = [];
+  const result: MatchedElement[] = [];
   for (let i = 0; i < Math.min(elements.length, MAX_DISAMBIGUATE_ELEMENTS); i++) {
     try {
       const xpath = await elements[i].toAbsoluteXPath();
       const html = truncate(cleanHtmlSnippet(await elements[i].toOuterHTML()), MAX_DISAMBIGUATE_HTML);
       const text = truncate(normalizeInlineText((await elements[i].getText()) || ''), MAX_DISAMBIGUATE_TEXT);
-      result.push({ xpath, html, text });
+      const visible = await Promise.resolve(elements[i].isVisible?.()).catch(() => undefined);
+      result.push({ xpath, html, text, visible });
     } catch (e) {
       debugLog('Failed to get details for element %d: %s', i, e);
     }
@@ -1360,14 +1359,20 @@ async function extractWebElements(error: Error | null | undefined): Promise<Arra
   return result.length > 0 ? result : null;
 }
 
-function formatElementList(details: Array<{ xpath: string; html: string; text: string }>): string {
-  return details.map((el, i) => `Element ${i + 1}:\nText: "${el.text}"\nXPath: ${el.xpath}\nHTML: ${el.html}`).join('\n\n');
+function formatElementList(matched: MatchedElement[] | null): string {
+  if (!matched) return 'Could not fetch element details. Repeat the action to get better info.';
+  return matched
+    .map((el, i) => {
+      const lines = [`Element ${i + 1}:`, `Text: "${el.text}"`];
+      if (el.visible !== undefined) lines.push(`Visible: ${el.visible}`);
+      lines.push(`XPath: ${el.xpath}`, `HTML: ${el.html}`);
+      return lines.join('\n');
+    })
+    .join('\n\n');
 }
 
 export async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {
-  const details = await extractWebElements(error);
-  if (!details) return 'Could not fetch element details. Repeat the action to get better info.';
-  return formatElementList(details);
+  return formatElementList(await extractWebElements(error));
 }
 
 function getNotFoundSuggestion(errorMessage: string): string | null {
@@ -1382,4 +1387,11 @@ function getNotFoundSuggestion(errorMessage: string): string | null {
     3. Use ONLY locators from <page_aria> or from HTML returned by context()
     4. Prefer ARIA locators: { "role": "button", "text": "visible text" }
   `;
+}
+
+interface MatchedElement {
+  xpath: string;
+  html: string;
+  text: string;
+  visible?: boolean;
 }

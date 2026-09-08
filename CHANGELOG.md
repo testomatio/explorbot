@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-09
+
+### Changes
+
+- [Prima] Clicking an element by the ref the page context gave it works again after the first action of a
+  run. Capturing the page after every action replaced the browser's index of those refs, so each later ref
+  matched nothing and the click sat waiting until it timed out. Prima now restores the index before
+  clicking, and a ref that really has gone says so at once instead of after a three second wait.
+- [Prima] When a run ends with instructions still unaccounted for, the step log now says whether the model
+  was asked to account for them and answered with none. Those rows used to read as if the run had simply
+  stopped early. The end-of-run question also no longer offers the model a way to answer without reporting.
+- [Tester] A locator matching several elements now reports which of them are on screen, and names the one to
+  act on when only a single match is visible. A page that keeps a second, hidden copy of a form or toolbar
+  no longer sends the run into an element it can never act on.
+- [Tester] An element that is present but not visible now also suggests targeting an on-screen copy of the
+  same control, alongside the existing advice to scroll to it or open the panel holding it.
+
 ## 2026-09-08
 
 ### Changes
