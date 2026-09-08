@@ -14,12 +14,15 @@ import { AIProvider } from './ai/provider.ts';
 import { Quartermaster } from './ai/quartermaster.ts';
 import { Rerunner } from './ai/rerunner.ts';
 import { Researcher } from './ai/researcher.ts';
+import { Scout } from './ai/scout.ts';
+import { loadScoutCorpus } from './ai/scout/tools.ts';
 import { SessionAnalyst } from './ai/session-analyst.ts';
 import { Tester } from './ai/tester.ts';
 import { createAgentTools } from './ai/tools.ts';
 import { ApiClient } from './api/api-client.ts';
 import { RequestStore } from './api/request-store.ts';
 import { loadSpec } from './api/spec-reader.ts';
+import { resolveSpecBundlePath } from './application-spec.ts';
 import type { ExplorbotConfig, ReporterConfig } from './config.js';
 import { ConfigParser } from './config.ts';
 import { ExperienceTracker } from './experience-tracker.ts';
@@ -231,6 +234,8 @@ export class ExplorBot {
       this.agents.planner = this.createAgent((deps) => new Planner(deps, this.agentResearcher()));
       const fisherman = this.agentFisherman();
       if (fisherman) this.agents.planner.setFisherman(fisherman);
+      const scout = this.agentScout();
+      if (scout) this.agents.planner.setScout(scout);
     }
     return this.agents.planner;
   }
@@ -365,6 +370,37 @@ export class ExplorBot {
       });
     }
     return this.agents.fisherman;
+  }
+
+  agentScout(): Scout | null {
+    const scoutConfig = this.config.ai?.agents?.scout;
+    if (scoutConfig?.enabled !== true) return null;
+
+    const dirs = this.scoutCorpusDirs();
+    if (dirs.length === 0) {
+      tag('warning').log('Scout enabled but no documentation found — set --spec or ai.agents.scout.dirs');
+      return null;
+    }
+
+    return (this.agents.scout ||= this.createAgent(({ ai }) => new Scout(ai, loadScoutCorpus(dirs))));
+  }
+
+  private scoutCorpusDirs(): string[] {
+    const dirs: string[] = [];
+
+    const specPath = this.options.applicationSpec || this.config.dirs?.spec;
+    if (specPath) {
+      const bundle = resolveSpecBundlePath(specPath);
+      const pagesDir = bundle && path.join(bundle, 'pages');
+      if (pagesDir && existsSync(pagesDir)) dirs.push(pagesDir);
+    }
+
+    for (const dir of this.config.ai?.agents?.scout?.dirs || []) {
+      const resolved = this.configParser.resolveProjectDir(dir);
+      if (existsSync(resolved)) dirs.push(resolved);
+    }
+
+    return [...new Set(dirs)];
   }
 
   getCurrentPlan(): Plan | undefined {

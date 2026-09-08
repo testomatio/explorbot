@@ -7,11 +7,13 @@ import type { RequestStore } from '../../api/request-store.ts';
 import { extractEndpointDefinition } from '../../api/spec-reader.ts';
 import type { Test } from '../../test-plan.ts';
 import { tag } from '../../utils/logger.ts';
+import { truncate } from '../../utils/strings.ts';
 import { isDynamicSegment } from '../../utils/url-matcher.ts';
 import type { Fisherman } from '../fisherman.ts';
 import type { RequestHaul } from './request-haul.ts';
 
 const BODY_PREVIEW_LIMIT = 2000;
+const READS_IN_ANSWER = 3;
 
 export function createFishermanTools(apiClient: ApiClient, requestStore: RequestStore, haul: RequestHaul, opts: { spec?: any; baseEndpoint?: string; readOnly?: boolean }) {
   const readOnly = opts.readOnly === true;
@@ -242,7 +244,7 @@ export function createAskApiTool(fisherman: Fisherman | null, task: Test) {
         }
 
         task.addNote(`Asked API: ${question} — ${result.summary}`);
-        tag('success').log(`Ask API: ${result.summary}`);
+        tag('success').log(`Ask API: ${truncate(result.summary, 200)}`);
         return { answered: true, answer: result.summary };
       },
     }),
@@ -285,6 +287,11 @@ function synthesizeResult(haul: RequestHaul, declaredDone: boolean, readOnly: bo
     succeeded = haul.successfulReads();
     successLabel = 'successful reads';
   }
+  if (readOnly && succeeded.length > 0) {
+    const bodies = succeeded.slice(-READS_IN_ANSWER).map((read) => `${read.toEndpoint()} → ${read.rawResponseBody.substring(0, BODY_PREVIEW_LIMIT)}`);
+    return { success: true, summary: bodies.join('\n\n'), created: [], failed: [] };
+  }
+
   let summary = `Stopped before finishing: ${made.length} requests, ${succeeded.length} ${successLabel}, ${failures.length} failed`;
   const lastFailure = failures[failures.length - 1];
   if (lastFailure) summary += `; last failure: ${lastFailure.toSummary()}`;

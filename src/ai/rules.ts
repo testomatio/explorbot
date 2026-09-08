@@ -8,8 +8,9 @@ const locatorPriorityRule = dedent`
 
   1. ARIA locators (first choice) - target browser's accessibility tree, most reliable
      Use JSON format: { "role": "button", "text": "Login" }
-     Copy role and text VERBATIM from the ARIA snapshot or UI map — never guess the pair.
-     If the element is absent from the snapshot, do not invent one; use text or CSS instead.
+     Copy role and text VERBATIM from the ARIA snapshot, UI map, or the page diff that
+     reported the element — never guess the pair; a guessed role can silently match a
+     different element with the same text. If named nowhere, use text or CSS instead.
 
   2. Text locators (second choice) - exact visible text, use only when unique on the page
      Example: 'Login', 'Submit', 'Username'

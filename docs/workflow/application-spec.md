@@ -75,3 +75,7 @@ Screenshots and other relative links may be included for readers, but Explorbot 
 ## Validation
 
 Explorbot rejects a bundle when `index.md` or `pages/` is missing, when it contains no page files, or when a page has an unsupported format, version, or missing URL.
+
+## Scout
+
+Beyond the per-URL injection, the same bundle feeds the [Scout agent](../reference/configuration.md#scout-agent): when Scout is enabled, it searches `pages/` (and any extra `ai.agents.scout.dirs`) for documentation relevant to the page being planned and reports it to the Planner. Pages already injected for the current URL are excluded from scouting, so the two channels never duplicate each other.

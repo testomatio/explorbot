@@ -15,6 +15,11 @@
   covered, disabled, or that the locator matched something that does not respond, and to check it with
   `xpathCheck` before retrying. A click the page answers only with an API call still counts as landed,
   so a Save that stores something without redrawing anything is not retried into a duplicate record.
+- Locators: elements that appear in response to an action — a menu that opens, a panel that slides in —
+  can now be clicked using the role reported for them when they appeared, instead of a guessed one.
+  Guessing was silent rather than loud: a control named the same thing elsewhere on the page absorbed
+  the click and reported success, so a run could walk into the wrong part of the app and spend the rest
+  of its time looking for a button that was never there.
 
 ## 2026-09-05
 
@@ -61,6 +66,18 @@
   `api test` and `api explore` run from a global config stop before it began.
 - Plan files from `api explore` are named after the endpoint again. Pointing it at a full URL wrote
   `https___api_example_com_v1_normal.md`; it now writes `root_normal.md`.
+- [Pilot] An API answer is no longer thrown away when the run that read it ends abruptly. Pilot can ask
+  the API whether a record was saved; when the request came back but the model summarising it failed,
+  Pilot was told the lookup failed and lost proof it already had. It now gets the responses that were
+  read, so a change the page cannot show can still be confirmed against the server.
+- [Pilot] Reloading to prove something stuck is no longer refused as a redo. Pilot vetoed the tester's
+  return to the starting page whenever a save had succeeded, so a scenario asking whether a change
+  survives a reload could never take the reload it needed.
+- The page diff now lists changed elements in the order they appear on the page. It ranked repeated
+  elements first, so opening a long list — a user picker, a dropdown of seventy options — put whichever
+  entry the page happened to render twice at the very top and hid the rest behind "+ 63 more interactive
+  elements". Agents read that first line as the obvious choice and picked the duplicate over the options
+  a person would actually see.
 
 ## 2026-09-04
 
@@ -83,8 +100,27 @@
   explorbot help-json api config     # a nested boat command
   ```
 
+### Configuration
+
+- **`ai.agents.scout.enabled`** — Turns on the Scout agent, which retrieves documentation relevant
+  to the page being planned and hands it to the Planner. Default: off — Scout needs documentation
+  collected beforehand (`explorbot docs collect` and/or `scout.dirs`).
+- **`ai.agents.scout.dirs`** — Extra markdown directories Scout searches in addition to the
+  application spec bundle. Default: none.
+- **`ai.agents.planner.docsWeight`** — With Scout enabled, the rough share of scenarios that
+  exercise documented behavior; the rest explore beyond the documentation. Default: `70`.
+
 ### Changes
 
+- **[Scout] New agent** — explores the collected documentation (application spec pages plus
+  `scout.dirs`) with the same bash and readFile tools Captain uses: the corpus is loaded into an
+  in-memory sandbox and the model scans it with rg or grep itself, then reports the documented
+  capabilities, states and transitions relevant to the current page and focus. One of rg/grep must
+  be on PATH — Scout fails loudly when neither is found. Pages already injected as
+  `<application_spec>` for the current URL are not repeated.
+- **[Planner] Can plan from documentation** — when Scout is enabled, scenarios are grounded in
+  the retrieved documentation according to `docsWeight`; Scout runs after page research and
+  its answer is reused across planning iterations for the same page and focus.
 - **[Pilot] The final verdict now sees the last round of checks** — a `verify()` or `see()` run in
   the same round as the decision to finish was invisible to Pilot, so a test could be reported as
   failed on evidence it had already produced. The verdict is now made once the round is complete.
