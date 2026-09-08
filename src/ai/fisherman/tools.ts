@@ -224,7 +224,6 @@ export function createAskApiTool(fisherman: Fisherman | null, task: Test) {
         Ask what data already exists, changing nothing.
         Ask a question about existing records: which ones are there, what they are called, whether a particular one exists.
         Use it before precondition() to see whether suitable data is already available, and whenever a step needs the exact name or id of a record that is already there.
-        Use it after a change the page does not show as well: reading the record back is what settles whether the change was saved.
         It never creates, edits or deletes anything — precondition() does that.
       `,
       inputSchema: z.object({
