@@ -3,6 +3,7 @@ import type { ApiClient } from '../api/api-client.ts';
 import { type EndpointFamily, type RequestStore, isFailedRequest } from '../api/request-store.ts';
 import { listAllEndpoints } from '../api/spec-reader.ts';
 import { createDebug, tag } from '../utils/logger.ts';
+import { truncate } from '../utils/strings.ts';
 
 const debugLog = createDebug('explorbot:fisherman');
 import { loop } from '../utils/loop.ts';
@@ -137,7 +138,7 @@ export class Fisherman implements Agent {
     await this.runSession(conversation, tools, { haul, isFinished, finishFromText, label: `fisherman lookup: ${question.slice(0, 50)}` });
 
     const result = getResult();
-    tag('info').log(`Fisherman answer: ${result.summary}`);
+    tag('info').log(`Fisherman answer: ${truncate(result.summary, 200)}`);
     return result;
   }
 

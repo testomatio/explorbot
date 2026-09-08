@@ -102,6 +102,10 @@ export class KnowledgeTracker {
     return this.applicationSpec?.renderFor(state) || '';
   }
 
+  applicationSpecUrls(state: ActionResult): string[] {
+    return this.applicationSpec?.matchedUrls(state) || [];
+  }
+
   addKnowledge(urlPattern: string, description: string, opts?: { replace?: boolean }): { filename: string; filePath: string; isNewFile: boolean } {
     const configParser = ConfigParser.getInstance();
     const configPath = configParser.getConfigPath();

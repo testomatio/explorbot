@@ -431,9 +431,9 @@ const formatDiffSection = (label: string, items: string[]): string[] => {
   const summary = countBy(items);
   if (summary.size === 0) return [`  ${label}: []`];
 
-  const sorted = Array.from(summary.entries()).sort(([aItem, aCount], [bItem, bCount]) => bCount - aCount || aItem.localeCompare(bItem));
-  const top = sorted.slice(0, TOP_DIFF_ITEMS);
-  const rest = sorted.slice(TOP_DIFF_ITEMS);
+  const ordered = Array.from(summary.entries());
+  const top = ordered.slice(0, TOP_DIFF_ITEMS);
+  const rest = ordered.slice(TOP_DIFF_ITEMS);
 
   const lines = [`  ${label}:`];
   for (const [item, count] of top) {
