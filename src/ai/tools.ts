@@ -1259,6 +1259,7 @@ function hasObservablePageChange(data?: Record<string, any>): boolean {
   if (data.pageDiff.urlChanged === true) return true;
   if (data.pageDiff.ariaChanges) return true;
   if (data.pageDiff.messages?.length) return true;
+  if (data.pageDiff.requests?.length) return true;
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 

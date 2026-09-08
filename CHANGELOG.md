@@ -13,7 +13,8 @@
 - [Tester] A click that runs without error but leaves the page untouched is now reported as failed
   rather than succeeded, the same way a form command already was. The tester is told the element may be
   covered, disabled, or that the locator matched something that does not respond, and to check it with
-  `xpathCheck` before retrying.
+  `xpathCheck` before retrying. A click the page answers only with an API call still counts as landed,
+  so a Save that stores something without redrawing anything is not retried into a duplicate record.
 
 ## 2026-09-05
 

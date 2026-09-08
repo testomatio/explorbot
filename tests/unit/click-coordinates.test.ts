@@ -89,3 +89,35 @@ describe('click that changes nothing', () => {
     expect(result.suggestion).toContain('xpathCheck');
   });
 });
+
+describe('click that only reaches the server', () => {
+  beforeEach(() => {
+    ConfigParser.resetForTesting();
+    ConfigParser.setupTestConfig();
+  });
+
+  it('treats an app request as evidence the click landed', async () => {
+    const state: any = { url: '/runs', html: '<html><body><div>runs</div></body></html>', ariaSnapshot: '- list', id: 'before' };
+    const action: any = {
+      lastError: null,
+      executedSteps: [],
+      saveScreenshot: async () => undefined,
+      attempt: async () => {
+        state.id = 'after';
+        state.networkRequests = [{ method: 'POST', path: '/api/runs', status: 200 }];
+        return true;
+      },
+    };
+    const deps: any = {
+      explorer: { action: () => action },
+      stateManager: { getCurrentState: () => ({ ...state }) },
+      ai: { getModelForAgent: () => ({}), generateObject: async () => ({ object: { position: 1 } }) },
+    };
+    const tools = createCodeceptJSTools(deps, fakeTask());
+
+    const result = await tools.click.execute({ commands: [`I.click('Save')`], explanation: 'Save the run' }, {} as any);
+
+    expect(result.success).toBe(true);
+    expect(result.pageDiff.requests).toHaveLength(1);
+  });
+});
