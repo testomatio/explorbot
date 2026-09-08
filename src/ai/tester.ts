@@ -22,7 +22,7 @@ import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, capabilityGroundingRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
+import { actionRule, capabilityGroundingRule, dataProtectionRules, deletionScopeRule, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createIframeTools, withdrawVisionTools } from './tools.ts';
 
@@ -875,20 +875,12 @@ export class Tester extends TaskAgent implements Agent {
       When creating or editing items via form() or type() you should include ${task.sessionName} in the value (if it is not restricted by the application logic)
       Initial page URL: ${actionResult.url}
 
-      ${this.buildDeletionScope(task)}
+      ${deletionScopeRule(task.sessionName!, task.deletableSessionNames)}
 
       ${this.buildAvailableFiles()}
 
       ${knowledge}
     `;
-  }
-
-  private getDeletableSessionNames(task: Test): string[] {
-    if (!task.plan) return [];
-    return task.plan
-      .listTests()
-      .filter((t) => t.isSuccessful && t.sessionName)
-      .map((t) => t.sessionName!);
   }
 
   private buildAvailableFiles(): string {
@@ -909,18 +901,6 @@ export class Tester extends TaskAgent implements Agent {
       ${lines.join('\n')}
       </available_files>
     `;
-  }
-
-  private buildDeletionScope(task: Test): string {
-    const deletableItems = this.getDeletableSessionNames(task);
-    if (deletableItems.length > 0) {
-      return `When deleting items, ONLY delete items whose title contains one of these session names: ${deletableItems.join(', ')}. These were created by previous tests.`;
-    }
-    const scenarioLower = task.scenario.toLowerCase();
-    if (scenarioLower.includes('delete') || scenarioLower.includes('remove')) {
-      return 'No items from previous tests are available for deletion. You need to create an item first before deleting it.';
-    }
-    return '';
   }
 
   private createTestFlowTools(task: Test, currentState: ActionResult, conversation: Conversation) {

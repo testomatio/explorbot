@@ -4,6 +4,13 @@
 
 ### Changes
 
+- [Pilot] A test that creates an item and then deletes it can now pass. The set of items a run was
+  allowed to delete was built only from tests that had already finished successfully, so it could never
+  contain the item the running test had just created — Pilot failed the run over the item's name even
+  when the deletion had visibly worked and the item was gone after a reload. The current run is now part
+  of that set, and Pilot is told the naming rule while it plans, so the titles it hands the tester carry
+  the session name the deletion check looks for.
+
 - Locators: elements that appear in response to an action — a menu that opens, a panel that slides in —
   can now be clicked using the role reported for them when they appeared, instead of a guessed one.
   Guessing was silent rather than loud: a control named the same thing elsewhere on the page absorbed

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:
 import os, { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerSite } from '../../src/global-config.ts';
-import { Plan, Test } from '../../src/test-plan.ts';
+import { Plan, Test, TestResult, TestStatus } from '../../src/test-plan.ts';
 
 describe('Plan', () => {
   const testFilePath = join('/tmp', 'test-plan.md');
@@ -508,6 +508,50 @@ priority: normal
 
     test('returns null for a missing name', () => {
       expect(Plan.resolveFile('missing')).toBeNull();
+    });
+  });
+
+  describe('deletableSessionNames', () => {
+    const buildPlan = () => {
+      const plan = new Plan('Suite');
+      const passed = new Test('Passed scenario', 'high', [], '/page');
+      passed.status = TestStatus.DONE;
+      passed.result = TestResult.PASSED;
+      const failed = new Test('Failed scenario', 'high', [], '/page');
+      failed.status = TestStatus.DONE;
+      failed.result = TestResult.FAILED;
+      const pending = new Test('Pending scenario', 'high', [], '/page');
+      const current = new Test('Current scenario', 'high', [], '/page');
+      for (const test of [passed, failed, pending, current]) plan.addTest(test);
+      return { passed, failed, pending, current };
+    };
+
+    test('lists the current session first', () => {
+      const { current } = buildPlan();
+      expect(current.deletableSessionNames[0]).toBe(current.sessionName);
+    });
+
+    test('includes session names of passed tests', () => {
+      const { current, passed } = buildPlan();
+      expect(current.deletableSessionNames).toContain(passed.sessionName);
+    });
+
+    test('excludes failed and pending tests', () => {
+      const { current, failed, pending } = buildPlan();
+      expect(current.deletableSessionNames).not.toContain(failed.sessionName);
+      expect(current.deletableSessionNames).not.toContain(pending.sessionName);
+    });
+
+    test('lists the current session once after it passes', () => {
+      const { current } = buildPlan();
+      current.status = TestStatus.DONE;
+      current.result = TestResult.PASSED;
+      expect(current.deletableSessionNames.filter((name) => name === current.sessionName)).toHaveLength(1);
+    });
+
+    test('falls back to the current session without a plan', () => {
+      const orphan = new Test('Orphan scenario', 'high', [], '/page');
+      expect(orphan.deletableSessionNames).toEqual([orphan.sessionName!]);
     });
   });
 });

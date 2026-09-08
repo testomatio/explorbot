@@ -486,3 +486,10 @@ export const actionRule = dedent`
 
   </actions>
   `;
+
+export function deletionScopeRule(sessionName: string, deletableSessionNames: string[]): string {
+  return dedent`
+    Deletable items are only those whose title contains one of these session names: ${deletableSessionNames.join(', ')}.
+    ${sessionName} is the current run — items it creates must carry it in the title to be deletable.
+  `;
+}

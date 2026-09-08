@@ -22,7 +22,7 @@ import { createAskApiTool } from './fisherman/tools.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
-import { capabilityGroundingRule, dataProtectionRules } from './rules.ts';
+import { capabilityGroundingRule, dataProtectionRules, deletionScopeRule } from './rules.ts';
 import { isInteractive } from './task-agent.ts';
 import { withdrawVisionTools } from './tools.ts';
 
@@ -363,7 +363,7 @@ export class Pilot implements Agent {
     return dedent`
       SCENARIO: ${task.scenario}
 
-      ${this.buildDeletionScope(task)}
+      ${deletionScopeRule(task.sessionName!, task.deletableSessionNames)}
 
       EXPECTED RESULTS (milestones):
       ${task.expected.map((e) => `- ${e}`).join('\n')}
@@ -1102,23 +1102,6 @@ export class Pilot implements Agent {
       .join('\n\n');
   }
 
-  private buildDeletionScope(task: Test): string {
-    const deletableItems = task.plan
-      ? task.plan
-          .listTests()
-          .filter((t) => t.isSuccessful && t.sessionName)
-          .map((t) => t.sessionName!)
-      : [];
-    const scenarioLower = task.scenario.toLowerCase();
-    if (deletableItems.length > 0) {
-      return `For deletion scenarios, items can only be deleted if their title contains: ${deletableItems.join(', ')}`;
-    }
-    if (scenarioLower.includes('delete') || scenarioLower.includes('remove')) {
-      return 'No items available for deletion — test should create an item first';
-    }
-    return '';
-  }
-
   private getSystemPrompt(task: Test, initialState: ActionResult): string {
     const interactive = isInteractive();
     const stepsText = task.plannedSteps.length > 0 ? task.plannedSteps.map((s, i) => `${i + 1}. ${s}`).join('\n') : 'No planned steps';
@@ -1194,6 +1177,8 @@ export class Pilot implements Agent {
       - Scenario tests navigation, search UI, or viewing.
 
       ${dataProtectionRules}
+
+      ${deletionScopeRule(task.sessionName!, task.deletableSessionNames)}
 
       Describe WHAT to create, not what exists. RIGHT: precondition("1 post"). WRONG:
       precondition("1 post named Updated Post with existing comments"). Keep descriptions short.

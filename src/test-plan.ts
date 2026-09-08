@@ -295,6 +295,16 @@ export class Test extends Task {
     return this.hasFinished && this.result === TestResult.SKIPPED;
   }
 
+  get deletableSessionNames(): string[] {
+    const previous =
+      this.plan
+        ?.listTests()
+        .filter((t) => t !== this && t.isSuccessful && t.sessionName)
+        .map((t) => t.sessionName!) ?? [];
+    if (!this.sessionName) return previous;
+    return [this.sessionName, ...previous];
+  }
+
   getCheckedNotes(): Note[] {
     return Object.values(this.notes).filter((n) => !!n.status);
   }
