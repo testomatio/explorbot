@@ -45,6 +45,13 @@
   `api test` and `api explore` run from a global config stop before it began.
 - Plan files from `api explore` are named after the endpoint again. Pointing it at a full URL wrote
   `https___api_example_com_v1_normal.md`; it now writes `root_normal.md`.
+- [Pilot] An API answer is no longer thrown away when the run that read it ends abruptly. Pilot can ask
+  the API whether a record was saved; when the request came back but the model summarising it failed,
+  Pilot was told the lookup failed and lost proof it already had. It now gets the responses that were
+  read, so a change the page cannot show can still be confirmed against the server.
+- [Pilot] Reloading to prove something stuck is no longer refused as a redo. Pilot vetoed the tester's
+  return to the starting page whenever a save had succeeded, so a scenario asking whether a change
+  survives a reload could never take the reload it needed.
 - The page diff now lists changed elements in the order they appear on the page. It ranked repeated
   elements first, so opening a long list — a user picker, a dropdown of seventy options — put whichever
   entry the page happened to render twice at the very top and hid the rest behind "+ 63 more interactive
