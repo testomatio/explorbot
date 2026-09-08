@@ -19,8 +19,12 @@ function parseAriaRefs(ariaSnapshot: string): Array<{ role: string; name: string
   return entries;
 }
 
+export function ariaRefSnapshot(page: any): Promise<string> {
+  return page.locator('body').ariaSnapshot({ mode: 'ai' });
+}
+
 export async function annotatePageElements(page: any): Promise<{ ariaSnapshot: string; elements: WebElement[] }> {
-  const ariaSnapshot: string = await page.locator('body').ariaSnapshot({ mode: 'ai' });
+  const ariaSnapshot: string = await ariaRefSnapshot(page);
   const refEntries = parseAriaRefs(ariaSnapshot);
 
   const byRole = new Map<string, Array<{ name: string; ref: string }>>();

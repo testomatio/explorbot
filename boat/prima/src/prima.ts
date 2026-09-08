@@ -25,6 +25,7 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
+import { ariaRefSnapshot } from '../../../src/utils/web-annotate.ts';
 import { type ArtifactPaths, type EnvelopeData, type InstanceInfo, STATUS_FILE, STEP_FILES, readArtifacts, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
@@ -324,11 +325,15 @@ export class Prima {
       return null;
     });
 
-    if (settleError) trace.push({ label: 'settling which instructions were satisfied', ok: false, proof: browserErrorMessage(settleError) });
-
+    const stillOpen = ledger.filter((entry) => entry.status === 'open').length;
     for (const execution of invoked?.toolExecutions || []) {
       this.applyLedgerReport(execution, ledger, trace);
     }
+
+    let unsettled = '';
+    if (settleError) unsettled = browserErrorMessage(settleError);
+    if (invoked && ledger.filter((entry) => entry.status === 'open').length === stillOpen) unsettled = 'the model was asked to report every remaining instruction and reported none';
+    if (unsettled) trace.push({ label: 'settling which instructions were satisfied', ok: false, proof: unsettled });
   }
 
   private ledgerProgress(ledger: LedgerEntry[]): string {
@@ -916,7 +921,7 @@ export class Prima {
   }
 
   private async refAriaSnapshot(result: ActionResult): Promise<string | null> {
-    const snapshot = await Promise.resolve(this.bot.getExplorer()?.withPage?.((page: any) => page.locator('body').ariaSnapshot({ mode: 'ai' }))).catch(() => null);
+    const snapshot = await Promise.resolve(this.bot.getExplorer()?.withPage?.(ariaRefSnapshot)).catch(() => null);
     return snapshot || result.ariaSnapshot;
   }
 

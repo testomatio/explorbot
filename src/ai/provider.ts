@@ -409,7 +409,8 @@ export class Provider {
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
-    const toolsWithCommentary = tools?.commentary ? tools : { ...tools, commentary: createHarmonyChannelFallbackTool() };
+    let toolsWithCommentary = tools;
+    if (!tools?.commentary && options.toolChoice !== 'required') toolsWithCommentary = { ...tools, commentary: createHarmonyChannelFallbackTool() };
     const toolNames = Object.keys(toolsWithCommentary || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
     promptLog('Available tools:', toolNames);
