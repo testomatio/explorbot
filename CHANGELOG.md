@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-08
+
+### Changes
+
+- Locators: elements that appear in response to an action — a menu that opens, a panel that slides in —
+  can now be clicked using the role reported for them when they appeared, instead of a guessed one.
+  Guessing was silent rather than loud: a control named the same thing elsewhere on the page absorbed
+  the click and reported success, so a run could walk into the wrong part of the app and spend the rest
+  of its time looking for a button that was never there.
+
 ## 2026-09-05
 
 ### Changes
