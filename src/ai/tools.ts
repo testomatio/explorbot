@@ -66,7 +66,6 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
           2. I.click(ARIA, container) - e.g. I.click({"role":"button","text":"Save"}, ".modal")
           3. I.click(CSS, container) - e.g. I.click("#btn", ".modal")
           4. I.click(CSS) or I.click(XPath) - when locator already includes context (ID, XPath)
-          Every command must name an element. Coordinates are not a locator — use visualClick() when you can see the target but cannot address it.
           After a result reporting multiple matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
         `),
         explanation: z.string().describe('Why you are clicking this element'),
