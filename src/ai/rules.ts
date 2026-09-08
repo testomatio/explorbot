@@ -241,7 +241,7 @@ export const unexpectedPopupRule = dedent`
   1. I.pressKey('Escape') — press Escape to dismiss
   2. I.click('Cancel') — click Cancel button if present
   3. I.click({ role: 'button', text: 'Close' }) — click X/close button if present
-  4. I.clickXY(x, y) on the backdrop beside the layer — run it through form(), not click(), and avoid page corners, which usually hold their own links
+  4. I.clickXY(0, 0) via form() tool and check if page diff changed
   </unexpected_popup_rule>
 `;
 
