@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-08
+
+### Changes
+
+- [Tester] Clicking by coordinates is no longer accepted as a locator. A coordinate click always runs,
+  even on an empty corner of the page, so offering one at the end of a locator list turned "I could not
+  find this element" into a reported success — the test then carried on believing it had pressed a
+  control that was never there. The click tool now refuses these commands and points at `visualClick`,
+  which finds the target in a screenshot first. Dismissing a layer by clicking beside it still works;
+  it goes through `form()` now, and Escape is tried before it.
+- [Tester] A click that runs without error but leaves the page untouched is now reported as failed
+  rather than succeeded, the same way a form command already was. The tester is told the element may be
+  covered, disabled, or that the locator matched something that does not respond, and to check it with
+  `xpathCheck` before retrying.
+
 ## 2026-09-05
 
 ### Changes
