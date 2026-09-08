@@ -341,11 +341,6 @@ export class Planner extends PlannerBase implements Agent {
     conversation.autoTrimTag('tested_scenarios', 10000);
     conversation.autoTrimTag('docs_context', 8000);
 
-    let docsPromise: Promise<string> | null = null;
-    if (this.scout && this.docsWeight > 0) {
-      docsPromise = this.scout.collectDocs({ url: state.url, title: state.title, feature, excludeUrls: this.knowledgeTracker.applicationSpecUrls(state) }).catch(() => '');
-    }
-
     conversation.addUserText(this.getSystemMessage(feature));
 
     const planningPrompt = dedent`
@@ -402,6 +397,11 @@ export class Planner extends PlannerBase implements Agent {
     const research = await this.researcher.research(currentState || state, {
       deep: true,
     });
+
+    let docsPromise: Promise<string> | null = null;
+    if (this.scout && this.docsWeight > 0) {
+      docsPromise = this.scout.collectDocs({ url: state.url, title: state.title, feature, excludeUrls: this.knowledgeTracker.applicationSpecUrls(state) });
+    }
     let plannerResearch = mdq(research).query('code').replace('');
     plannerResearch = mdq(plannerResearch)
       .query('table')

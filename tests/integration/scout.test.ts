@@ -53,7 +53,7 @@ describe('Scout with aimock', () => {
     corpusDir = mkdtempSync(path.join(tmpdir(), 'scout-corpus-'));
     writePage('invite.md', '/invite', 'User can invite teammates');
     writePage('settings.md', '/settings', 'User can change workspace settings');
-    writeFileSync(path.join(corpusDir, 'notes.md'), '# Notes\nhand-written quality notes without a page URL');
+    writeFileSync(path.join(corpusDir, 'notes.md'), '# Notes\nhand-written quality notes without a page URL', 'utf8');
   });
 
   afterEach(() => {
@@ -65,11 +65,10 @@ describe('Scout with aimock', () => {
     ConfigParser.cleanupAllTestDirectories();
   });
 
-  it('searches, reads and reports documented capabilities', async () => {
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('s1', 'searchDocs', { query: 'invite' })] });
-    mock.on({ sequenceIndex: 1 }, { toolCalls: [toolCall('r1', 'readDoc', { path: path.join(corpusDir, 'invite.md') })] });
-    mock.on({ sequenceIndex: 2 }, { toolCalls: [toolCall('p1', 'report', { findings: '- /invite: user can invite teammates' })] });
-    mock.on({}, { content: 'done' });
+  it('scans with bash, reads a file and reports the digest as text', async () => {
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('b1', 'bash', { command: 'rg invite .' })] });
+    mock.on({ sequenceIndex: 1 }, { toolCalls: [toolCall('r1', 'readFile', { path: path.join(corpusDir, 'invite.md') })] });
+    mock.on({}, { content: '- /invite: user can invite teammates' });
 
     const scout = new Scout(provider, loadScoutCorpus([corpusDir]));
     const result = await scout.collectDocs({ url: '/invite', title: 'Invites', feature: 'invitations', excludeUrls: [] });
@@ -81,16 +80,15 @@ describe('Scout with aimock', () => {
     expect(systemPrompt).toContain('/invite');
     expect(systemPrompt).toContain('/settings');
     expect(systemPrompt).toContain('no page URL');
-    expect(systemPrompt).toContain('HAND-WRITTEN NOTES');
-    expect(systemPrompt).toContain('hand-written quality notes');
+    expect(systemPrompt).not.toContain('hand-written quality notes');
+    expect(systemPrompt).toMatch(/SCANNER:\s+(rg|grep)/);
     expect(extractPromptText(mock.getRequests()[0])).toContain('Focus: invitations');
 
     const offeredTools = JSON.stringify(mock.getRequests()[0]?.body?.tools);
-    expect(offeredTools).toContain('searchDocs');
-    expect(offeredTools).toContain('readDoc');
-    expect(offeredTools).toContain('report');
-    expect(offeredTools).not.toContain('readFile');
-    expect(offeredTools).not.toContain('bash');
+    expect(offeredTools).toContain('bash');
+    expect(offeredTools).toContain('readFile');
+    expect(offeredTools).not.toContain('searchDocs');
+    expect(offeredTools).not.toContain('writeFile');
   });
 
   it('returns an empty string without any AI call when the corpus is empty', async () => {
@@ -102,31 +100,19 @@ describe('Scout with aimock', () => {
     expect(mock.getRequests()).toHaveLength(0);
   });
 
-  it('refuses to read a page excluded because it is already injected', async () => {
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('r1', 'readDoc', { path: path.join(corpusDir, 'invite.md') })] });
-    mock.on({ sequenceIndex: 1 }, { toolCalls: [toolCall('s1', 'searchDocs', { query: 'invite' })] });
-    mock.on({ sequenceIndex: 2 }, { toolCalls: [toolCall('p1', 'report', { findings: '- /settings: documented settings' })] });
-    mock.on({}, { content: 'done' });
+  it('names the already-injected pages so the model does not re-report them', async () => {
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('b1', 'bash', { command: 'rg settings .' })] });
+    mock.on({}, { content: '- /settings: documented settings' });
 
     const scout = new Scout(provider, loadScoutCorpus([corpusDir]));
     const result = await scout.collectDocs({ url: '/invite', excludeUrls: ['/invite'] });
 
     expect(result).toBe('- /settings: documented settings');
-    expect(JSON.stringify(mock.getRequests())).toContain('already provided to the planner');
+    expect(extractPromptText(mock.getRequests()[0])).toContain('already provided to the planner');
+    expect(extractPromptText(mock.getRequests()[0])).toContain('- /invite');
   });
 
-  it('treats a no-tool-call response after searching as the report', async () => {
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('s1', 'searchDocs', { query: 'invite' })] });
-    mock.on({}, { content: 'No relevant documentation exists' });
-
-    const scout = new Scout(provider, loadScoutCorpus([corpusDir]));
-
-    const result = await scout.collectDocs({ url: '/invite', excludeUrls: [] });
-
-    expect(result).toBe('No relevant documentation exists');
-  });
-
-  it('discards an answer that searched or read nothing', async () => {
+  it('discards an answer that scanned or read nothing', async () => {
     mock.on({}, { content: 'The documentation describes invites and settings' });
 
     const scout = new Scout(provider, loadScoutCorpus([corpusDir]));
@@ -137,9 +123,8 @@ describe('Scout with aimock', () => {
   });
 
   it('reuses a cached answer for the same page and focus', async () => {
-    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('s1', 'searchDocs', { query: 'invite' })] });
-    mock.on({ sequenceIndex: 1 }, { toolCalls: [toolCall('p1', 'report', { findings: '- /invite: cached findings' })] });
-    mock.on({}, { content: 'done' });
+    mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('b1', 'bash', { command: 'rg invite .' })] });
+    mock.on({}, { content: '- /invite: cached findings' });
 
     const scout = new Scout(provider, loadScoutCorpus([corpusDir]));
     const first = await scout.collectDocs({ url: '/invite', feature: 'invitations', excludeUrls: [] });

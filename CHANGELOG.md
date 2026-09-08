@@ -26,12 +26,14 @@
 
 ### Changes
 
-- **[Scout] New agent** — searches the collected documentation (application spec pages plus
-  `scout.dirs`) with ripgrep or grep, falling back to a built-in scan when neither is installed,
-  and reports the documented capabilities, states and transitions relevant to the current page
-  and focus. Pages already injected as `<application_spec>` for the current URL are not repeated.
+- **[Scout] New agent** — explores the collected documentation (application spec pages plus
+  `scout.dirs`) with the same bash and readFile tools Captain uses: the corpus is loaded into an
+  in-memory sandbox and the model scans it with rg or grep itself, then reports the documented
+  capabilities, states and transitions relevant to the current page and focus. One of rg/grep must
+  be on PATH — Scout fails loudly when neither is found. Pages already injected as
+  `<application_spec>` for the current URL are not repeated.
 - **[Planner] Can plan from documentation** — when Scout is enabled, scenarios are grounded in
-  the retrieved documentation according to `docsWeight`; Scout runs alongside page research and
+  the retrieved documentation according to `docsWeight`; Scout runs after page research and
   its answer is reused across planning iterations for the same page and focus.
 - **`--json` no longer collides with the banner** — passing it to any command suppresses the
   startup banner, so `explorbot config --json | jq` works without setting `EXPLORBOT_NO_BANNER`.

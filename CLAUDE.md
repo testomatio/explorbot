@@ -113,7 +113,7 @@ One verb each; a responsibility that can't be phrased as the verb doesn't belong
 
 Negative contract (all agents):
 
-- May persist artifacts to disk, but must not **expose filesystem operations as AI tools** — `readFile`/`writeFile`/`bash` tools belong to Captain alone. Scoped corpus retrieval is not filesystem access: Scout's `searchDocs`/`readDoc` stay inside the configured docs corpus.
+- May persist artifacts to disk, but must not **expose filesystem operations as AI tools** — `readFile`/`writeFile`/`bash` tools belong to Captain alone (Scout shares Captain's `bash` + `readFile` over an in-memory copy of the docs corpus — nothing outside the corpus is reachable)
 - Must not instantiate CodeceptJS/Playwright — all browser interaction through Explorer/Action
 - Must not read config/env — dependencies arrive via `createAgent`
 

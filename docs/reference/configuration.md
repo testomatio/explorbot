@@ -281,7 +281,7 @@ ai: {
 | `enabled` | `boolean` | Turn Scout on. Default: off. |
 | `dirs` | `string[]` | Markdown directories added to the corpus, resolved relative to the project |
 
-The corpus combines the [application spec](../workflow/application-spec.md) bundle (`--spec` / `EXPLORBOT_SPEC` / `dirs.spec`, set by `explorbot docs collect`) with the `dirs` above. Scout searches it with ripgrep, falling back to grep, then to an in-process scan, so it works on machines without either binary. Pages already injected for the current URL as `<application_spec>` are excluded automatically, so the two blocks never duplicate each other. Files under `dirs` that carry no page URL are treated as hand-written notes: their first pages go into the Scout's context directly, so they reach the Planner regardless of what search terms the model picks. Point `dirs` at documentation trees, not a repository root — every search scans them.
+The corpus combines the [application spec](../workflow/application-spec.md) bundle (`--spec` / `EXPLORBOT_SPEC` / `dirs.spec`, set by `explorbot docs collect`) with the `dirs` above. Scout scans it with the same `bash` + `readFile` tools Captain uses: the corpus is loaded into an in-memory sandbox and the model itself runs `rg` (or `grep` — whichever is installed) to explore it. One of the two must be on PATH — Scout fails loudly when neither is found. Pages already injected for the current URL as `<application_spec>` are excluded from the Scout corpus, so the two blocks never duplicate each other. Files under `dirs` that carry no page URL are listed as hand-written notes for Scout to inspect when they are relevant.
 
 ## Playwright settings
 

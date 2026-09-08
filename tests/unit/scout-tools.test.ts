@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import matter from 'gray-matter';
 import { createScoutTools, excludeCorpusUrls, loadScoutCorpus } from '../../src/ai/scout/tools.ts';
 import { APPLICATION_SPEC_FORMAT, APPLICATION_SPEC_VERSION } from '../../src/application-spec-contract.ts';
@@ -53,101 +53,88 @@ describe('scout corpus', () => {
 });
 
 describe('scout tools', () => {
-  it('searches the corpus and filters excluded paths', async () => {
+  it('detects a scanner and exposes bash with readFile', async () => {
     const dir = mkdtempSync(join(process.cwd(), '.scout-corpus-'));
     try {
-      writePage(dir, 'invite.md', '/invite', 'teammate invitations flow');
-      writePage(dir, 'settings.md', '/settings', 'teammate settings flow');
+      writePage(dir, 'invite.md', '/invite', 'User can invite teammates');
 
-      const corpus = excludeCorpusUrls(loadScoutCorpus([dir]), ['/settings']);
-      const { tools } = createScoutTools(corpus);
+      const { tools, scanner } = await createScoutTools(loadScoutCorpus([dir]));
 
-      const result = await tools.searchDocs.execute({ query: 'teammate' });
-
-      expect(result.success).toBe(true);
-      expect(result.count).toBeGreaterThan(0);
-      expect(result.hits.every((hit: any) => !hit.path.endsWith('settings.md'))).toBe(true);
+      expect(['rg', 'grep']).toContain(scanner);
+      expect(Object.keys(tools).sort()).toEqual(['bash', 'readFile']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('reads corpus files and rejects paths outside the corpus or excluded', async () => {
+  it('reads corpus files through readFile and rejects excluded or outside paths', async () => {
     const dir = mkdtempSync(join(process.cwd(), '.scout-corpus-'));
     try {
       writePage(dir, 'invite.md', '/invite', 'User can invite teammates');
       writePage(dir, 'settings.md', '/settings', 'User can change settings');
 
       const corpus = excludeCorpusUrls(loadScoutCorpus([dir]), ['/settings']);
-      const { tools } = createScoutTools(corpus);
-      const settingsPath = join(dir, 'settings.md');
+      const { tools } = await createScoutTools(corpus);
 
-      const inside = await tools.readDoc.execute({ path: join(dir, 'invite.md') });
+      const inside = await tools.readFile.execute({ path: join(dir, 'invite.md') });
       expect(inside.success).toBe(true);
       expect(inside.content).toContain('invite teammates');
 
-      const excluded = await tools.readDoc.execute({ path: settingsPath });
+      const excluded = await tools.readFile.execute({ path: join(dir, 'settings.md') });
       expect(excluded.success).toBe(false);
 
-      const excludedRelative = await tools.readDoc.execute({ path: relative(process.cwd(), settingsPath) });
-      expect(excludedRelative.success).toBe(false);
-
-      const outside = await tools.readDoc.execute({ path: join(process.cwd(), 'package.json') });
+      const outside = await tools.readFile.execute({ path: join(process.cwd(), 'package.json') });
       expect(outside.success).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('rejects a report before anything was searched or read', async () => {
+  it('runs commands over the corpus files through bash', async () => {
     const dir = mkdtempSync(join(process.cwd(), '.scout-corpus-'));
     try {
       writePage(dir, 'invite.md', '/invite', 'User can invite teammates');
 
-      const { tools, getResult, isFinished } = createScoutTools(loadScoutCorpus([dir]));
+      const { tools, scanner } = await createScoutTools(loadScoutCorpus([dir]));
+      const scan = scanner === 'rg' ? `${scanner} -l invite ${dir}` : `${scanner} -rl invite ${dir}`;
+      const output = await tools.bash.execute({ command: scan.split('\\').join('/') });
 
-      const rejected = await tools.report.execute({ findings: 'made up findings' });
-      expect(rejected.finished).toBe(false);
-      expect(isFinished()).toBe(false);
-
-      await tools.searchDocs.execute({ query: 'invite' });
-      const accepted = await tools.report.execute({ findings: '- /invite: user can invite teammates' });
-      expect(accepted.finished).toBe(true);
-      expect(isFinished()).toBe(true);
-      expect(getResult()).toBe('- /invite: user can invite teammates');
+      expect(output.exitCode).toBe(0);
+      expect(output.stdout).toContain('invite.md');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('clamps reported findings', async () => {
+  it('accepts a text digest only after bash or readFile ran', async () => {
     const dir = mkdtempSync(join(process.cwd(), '.scout-corpus-'));
     try {
       writePage(dir, 'invite.md', '/invite', 'User can invite teammates');
 
-      const { tools, getResult } = createScoutTools(loadScoutCorpus([dir]));
+      const { tools, getResult, finishFromText } = await createScoutTools(loadScoutCorpus([dir]));
 
-      await tools.searchDocs.execute({ query: 'invite' });
-      await tools.report.execute({ findings: 'x'.repeat(10000) });
+      finishFromText('made up digest');
+      expect(getResult()).toBe('');
+
+      await tools.readFile.execute({ path: join(dir, 'invite.md') });
+      finishFromText('grounded digest');
+      expect(getResult()).toBe('grounded digest');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('clamps the text digest', async () => {
+    const dir = mkdtempSync(join(process.cwd(), '.scout-corpus-'));
+    try {
+      writePage(dir, 'invite.md', '/invite', 'User can invite teammates');
+
+      const { tools, getResult, finishFromText } = await createScoutTools(loadScoutCorpus([dir]));
+
+      await tools.readFile.execute({ path: join(dir, 'invite.md') });
+      finishFromText('x'.repeat(10000));
 
       expect(getResult().length).toBe(6000);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('warns the model when search results were capped', async () => {
-    const dir = mkdtempSync(join(process.cwd(), '.scout-corpus-'));
-    try {
-      const lines = Array.from({ length: 80 }, (_, i) => `repeated marker line ${i}`);
-      writeFileSync(join(dir, 'big.md'), lines.join('\n'));
-
-      const { tools } = createScoutTools(loadScoutCorpus([dir]));
-
-      const result = await tools.searchDocs.execute({ query: 'marker' });
-
-      expect(result.count).toBe(50);
-      expect(result.note).toContain('capped');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

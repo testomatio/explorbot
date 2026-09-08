@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { relative } from 'node:path';
 import dedent from 'dedent';
 import { tag } from '../utils/logger.ts';
 import { loop } from '../utils/loop.ts';
@@ -11,8 +9,6 @@ const MAX_ITERATIONS = 3;
 const MAX_TOOL_ROUNDTRIPS = 5;
 const CACHE_LIMIT = 40;
 const URL_LISTING_LIMIT = 40;
-const NOTES_INJECT_LIMIT = 5;
-const NOTES_INJECT_CHARS = 2000;
 
 export class Scout implements Agent {
   emoji = '🔎';
@@ -46,8 +42,8 @@ export class Scout implements Agent {
   }
 
   private async runSession(corpus: ScoutCorpus, query: ScoutQuery): Promise<string | null> {
-    const { tools, getResult, isFinished, finishFromText } = createScoutTools(corpus);
-    const conversation = this.provider.startConversation(this.buildSystemPrompt(Object.keys(tools), corpus), 'scout', this.provider.getAgenticModel('scout'));
+    const { tools, scanner, getResult, finishFromText } = await createScoutTools(corpus);
+    const conversation = this.provider.startConversation(this.buildSystemPrompt(Object.keys(tools), corpus, query, scanner), 'scout', this.provider.getAgenticModel('scout'));
     conversation.addUserText(this.buildTaskPrompt(query));
 
     tag('info').log(`Scout: collecting documentation for ${query.feature || query.url || 'the current page'}`);
@@ -60,18 +56,17 @@ export class Scout implements Agent {
           agentName: 'scout',
         });
 
-        if (isFinished()) {
-          stop();
-          return;
-        }
-
         if (!invokeResult?.toolExecutions?.length) {
           finishFromText(invokeResult?.response?.text);
           stop();
           return;
         }
 
-        if (iteration >= MAX_ITERATIONS) stop();
+        if (iteration >= MAX_ITERATIONS) {
+          const final = await this.provider.invokeConversation(conversation, undefined, { agentName: 'scout' });
+          finishFromText(final?.response?.text);
+          stop();
+        }
       },
       {
         maxAttempts: MAX_ITERATIONS,
@@ -95,7 +90,7 @@ export class Scout implements Agent {
     return digest;
   }
 
-  private buildSystemPrompt(toolNames: string[], corpus: ScoutCorpus): string {
+  private buildSystemPrompt(toolNames: string[], corpus: ScoutCorpus, query: ScoutQuery, scanner: 'rg' | 'grep'): string {
     const urls = corpus.files.map((file) => file.url).filter(Boolean) as string[];
     const urlless = corpus.files.filter((file) => !file.url);
     let pagesListing = '';
@@ -106,21 +101,14 @@ export class Scout implements Agent {
         .join('\n');
       pagesListing = `Documented pages:\n${listing}`;
       const remaining = urls.length - URL_LISTING_LIMIT;
-      if (remaining > 0) pagesListing += `\n…and ${remaining} more — find them with searchDocs`;
+      if (remaining > 0) pagesListing += `\n…and ${remaining} more — find them with ${scanner}`;
     }
-    let notesBlock = '';
     if (urlless.length > 0) {
       const listing = urlless
         .slice(0, URL_LISTING_LIMIT)
-        .map((file) => `- ${relative(process.cwd(), file.path)}`)
+        .map((file) => `- ${toPosix(file.path)}`)
         .join('\n');
       pagesListing += `\nFiles with no page URL (hand-written docs):\n${listing}`;
-
-      const notes = urlless
-        .slice(0, NOTES_INJECT_LIMIT)
-        .map((file) => `--- ${relative(process.cwd(), file.path)}\n${readFileSync(file.path, 'utf8').slice(0, NOTES_INJECT_CHARS)}`)
-        .join('\n\n');
-      notesBlock = `HAND-WRITTEN NOTES (placed in the corpus deliberately):\n${notes}`;
     }
 
     const prompt = dedent`
@@ -130,26 +118,30 @@ export class Scout implements Agent {
 
       CORPUS:
       ${corpus.files.length} markdown files under:
-      - ${corpus.dirs.join('\n- ')}
+      - ${corpus.dirs.map(toPosix).join('\n- ')}
       ${pagesListing}
 
-      ${notesBlock}
+      These pages are already provided to the planner in full — do not re-report them:
+      ${query.excludeUrls.map((url) => `- ${url}`).join('\n') || '- none'}
 
       AVAILABLE TOOLS:
       ${toolNames.join(', ')}.
       Use tool names exactly as listed. Do not invent aliases or combined names.
       Match each tool input schema exactly. Do not invent parameter names or pass extra fields.
 
+      SCANNER:
+      ${scanner} is the search command. Scan the working directory through bash() — explore freely, pipelines, globs and repeated searches are fine. Read files with readFile().
+
       WORKFLOW:
-      1. Search several times with different words from the focus — feature names, page purposes, capabilities. Documents are written in prose, so plain words match where a URL does not
+      1. Scan with ${scanner} using plain prose words from the focus — feature names, page purposes, capabilities
       2. Read the files whose hits look most relevant
-      3. Call report with a digest of what the documentation says
+      3. Report the digest as your final message — no tool call is needed to finish
 
       RULES:
       - Report only what the documentation states. Never fill gaps with assumptions about the application
       - Keep verified capabilities and unverified possibilities distinguishable, the way the documentation marks them
       - Name the page URL each item belongs to, so scenarios anchor to real routes
-      - Files with no page URL were placed in the corpus on purpose — read the ones relevant to the focus before reporting
+      - Explore briefly: a few scans and reads are enough, then report
       - A short accurate digest beats a long loose one; reporting that nothing relevant exists is a valid answer
     `;
 
@@ -167,6 +159,10 @@ export class Scout implements Agent {
       Report the documented capabilities, states and transitions a test planner could turn into scenarios.
     `;
   }
+}
+
+function toPosix(path: string): string {
+  return path.split('\\').join('/');
 }
 
 export interface ScoutQuery {

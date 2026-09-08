@@ -330,6 +330,39 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('roughly 70%');
   });
 
+  it('starts scout after browser research completes', async () => {
+    const order: string[] = [];
+    const localPlanner = new Planner(
+      { ...createMockDeps(), ai: provider } as any,
+      {
+        research: async () => {
+          order.push('research');
+          return taskBoardUiMap;
+        },
+      } as any
+    );
+    localPlanner.setScout({
+      collectDocs: async () => {
+        order.push('scout');
+        return '';
+      },
+    } as any);
+
+    await localPlanner.plan();
+
+    expect(order).toEqual(['research', 'scout']);
+  });
+
+  it('propagates scout setup errors', async () => {
+    planner.setScout({
+      collectDocs: async () => {
+        throw new Error('Scout requires ripgrep or grep on PATH — neither was found');
+      },
+    } as any);
+
+    await expect(planner.plan()).rejects.toThrow('Scout requires ripgrep or grep on PATH');
+  });
+
   it('passes the already injected spec URLs to the scout', async () => {
     const captured: any[] = [];
     const deps = createMockDeps();
