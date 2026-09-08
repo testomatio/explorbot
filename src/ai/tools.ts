@@ -67,7 +67,6 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
           2. I.click(ARIA, container) - e.g. I.click({"role":"button","text":"Save"}, ".modal")
           3. I.click(CSS, container) - e.g. I.click("#btn", ".modal")
           4. I.click(CSS) or I.click(XPath) - when locator already includes context (ID, XPath)
-          5. I.clickXY(x, y) - coordinates fallback
           After a result reporting multiple matches, reuse that locator with step.opts({ elementIndex: N }) as the last argument.
         `),
         explanation: z.string().describe('Why you are clicking this element'),
@@ -80,11 +79,21 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
           return failedToolResult('click', 'No commands provided');
         }
 
-        const invalidCommands = rawCommands.map((cmd) => cmd.trim()).filter((cmd) => cmd.startsWith('I.') && !cmd.startsWith('I.click'));
+        const trimmedCommands = rawCommands.map((cmd) => cmd.trim());
+        const coordinateCommands = trimmedCommands.filter((cmd) => cmd.startsWith('I.clickXY'));
+
+        if (coordinateCommands.length > 0) {
+          activeNote.commit(TestResult.FAILED);
+          return failedToolResult('click', `Coordinate commands are not locators: ${coordinateCommands.join(', ')}. A coordinate click always runs, so it cannot tell you whether the element was there.`, {
+            suggestion: 'Name the element instead. Use visualClick() when you can see the target but cannot address it, or form() for a deliberate coordinate click such as dismissing a layer.',
+          });
+        }
+
+        const invalidCommands = trimmedCommands.filter((cmd) => cmd.startsWith('I.') && !cmd.startsWith('I.click'));
 
         if (invalidCommands.length > 0) {
           activeNote.commit(TestResult.FAILED);
-          return failedToolResult('click', `Invalid commands: ${invalidCommands.join(', ')}. Click tool only accepts I.click() or I.clickXY() commands.`, {
+          return failedToolResult('click', `Invalid commands: ${invalidCommands.join(', ')}. Click tool only accepts I.click() commands.`, {
             suggestion: 'Use form() tool for typing text or multiple actions, or exitIframe() to leave iframe context.',
           });
         }
@@ -112,6 +121,17 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
 
           if (success) {
             const toolResult = await ActionResult.fromState(stateManager.getCurrentState()!).toToolResult(previousState, command);
+
+            if (!hasObservablePageChange(toolResult)) {
+              activeNote.commit(TestResult.FAILED);
+              return failedToolResult('click', 'Click executed, but no observable page change was captured.', {
+                ...toolResult,
+                attempts,
+                code: command,
+                suggestion: 'Treat the element as not clicked. It may be covered by another layer, disabled, or the locator may have matched a non-interactive ancestor. Re-locate via xpathCheck(), which reports whether the element is covered or offscreen, before retrying.',
+              });
+            }
+
             await commitNote(activeNote, TestResult.PASSED, toolResult, action);
             return successToolResult('click', { ...toolResult, attempts, code: command }, action);
           }
@@ -1259,6 +1279,7 @@ function hasObservablePageChange(data?: Record<string, any>): boolean {
   if (data.pageDiff.urlChanged === true) return true;
   if (data.pageDiff.ariaChanges) return true;
   if (data.pageDiff.messages?.length) return true;
+  if (data.pageDiff.requests?.length) return true;
   return Array.isArray(data.pageDiff.htmlParts) && data.pageDiff.htmlParts.length > 0;
 }
 

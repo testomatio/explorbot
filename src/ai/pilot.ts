@@ -363,8 +363,6 @@ export class Pilot implements Agent {
     return dedent`
       SCENARIO: ${task.scenario}
 
-      ${this.buildDeletionScope(task)}
-
       EXPECTED RESULTS (milestones):
       ${task.expected.map((e) => `- ${e}`).join('\n')}
     `;
@@ -372,20 +370,22 @@ export class Pilot implements Agent {
 
   private buildResetSystemPrompt(task: Test): string {
     return dedent`
-      You are Pilot — decide whether a reset is legitimate. Reset is DESTRUCTIVE: it abandons this
-      iteration's work, but server-side side effects (records created, forms submitted) persist.
-      Unnecessary resets create duplicate data and infinite loops.
+      You are Pilot — decide whether a reset is legitimate. Reset only re-navigates to the start URL:
+      it writes nothing, though it abandons this iteration's work and server-side side effects persist.
+      The hazard is the tester REDOING a completed flow afterwards — duplicate data and infinite loops.
 
       ${this.buildSharedEvidenceRules()}
 
       DECISION:
-      - "allow": current page cannot host the scenario, irrecoverable error, or no path back.
-      - "continue": prior action already succeeded (URL changed, record visible, confirmation shown) — verify/finish instead. Or scenario goal may already be met; instruct tester to verify the actual outcome rather than redo. Provide guidance.
+      - "allow": current page cannot host the scenario, irrecoverable error, no path back, or an
+        expectation requires the outcome to survive a reload or a return to the start page and no
+        reset has been taken yet this run — there the reset IS the check, not a redo.
+      - "continue": the outcome the scenario needs is already observable on the CURRENT page — verify/finish instead. Provide guidance.
       - "fail": resetCount >= 2 and underlying situation hasn't changed; same flow tried twice with same failure mode.
       - "skipped": feature doesn't exist on this app or prerequisites can't be met.
 
       PRIORITY:
-      1) Successful side effects in session_log → almost never allow reset.
+      1) Successful side effects in session_log → allow reset only to re-observe them, never to repeat them.
       2) resetCount — each prior reset raises the bar.
       3) Tester's stated reason — weigh against evidence, don't trust blindly.
 
@@ -1100,23 +1100,6 @@ export class Pilot implements Agent {
         return line;
       })
       .join('\n\n');
-  }
-
-  private buildDeletionScope(task: Test): string {
-    const deletableItems = task.plan
-      ? task.plan
-          .listTests()
-          .filter((t) => t.isSuccessful && t.sessionName)
-          .map((t) => t.sessionName!)
-      : [];
-    const scenarioLower = task.scenario.toLowerCase();
-    if (deletableItems.length > 0) {
-      return `For deletion scenarios, items can only be deleted if their title contains: ${deletableItems.join(', ')}`;
-    }
-    if (scenarioLower.includes('delete') || scenarioLower.includes('remove')) {
-      return 'No items available for deletion — test should create an item first';
-    }
-    return '';
   }
 
   private getSystemPrompt(task: Test, initialState: ActionResult): string {
