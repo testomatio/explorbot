@@ -1,31 +1,15 @@
+import { ariaRefSnapshot, parseAriaRefs } from './aria-ref.ts';
 import { ELEMENT_EXTRACTION_CONFIG, getElementDataExtractorSource } from './html.ts';
 import { createDebug } from './logger.js';
 import { WebElement } from './web-element.ts';
 
 const debugLog = createDebug('explorbot:web-annotate');
 
-const REF_LINE_PATTERN = /^(\s*)-\s+(\w+)\s*(?:"([^"]*)")?.*?\[ref=(e\d+)\]/;
-
 const ANNOTATABLE_ROLES = new Set(['button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio', 'switch', 'combobox', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'slider', 'spinbutton', 'treeitem']);
-
-function parseAriaRefs(ariaSnapshot: string): Array<{ role: string; name: string; ref: string }> {
-  const entries: Array<{ role: string; name: string; ref: string }> = [];
-  for (const line of ariaSnapshot.split('\n')) {
-    const match = line.match(REF_LINE_PATTERN);
-    if (!match) continue;
-    if (!ANNOTATABLE_ROLES.has(match[2])) continue;
-    entries.push({ role: match[2], name: match[3] || '', ref: match[4] });
-  }
-  return entries;
-}
-
-export function ariaRefSnapshot(page: any): Promise<string> {
-  return page.locator('body').ariaSnapshot({ mode: 'ai' });
-}
 
 export async function annotatePageElements(page: any): Promise<{ ariaSnapshot: string; elements: WebElement[] }> {
   const ariaSnapshot: string = await ariaRefSnapshot(page);
-  const refEntries = parseAriaRefs(ariaSnapshot);
+  const refEntries = parseAriaRefs(ariaSnapshot).filter((entry) => ANNOTATABLE_ROLES.has(entry.role));
 
   const byRole = new Map<string, Array<{ name: string; ref: string }>>();
   for (const { role, name, ref } of refEntries) {

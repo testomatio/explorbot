@@ -12,7 +12,7 @@ import { cleanHtmlSnippet } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
 import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { pause } from '../utils/loop.js';
-import { ariaRefSnapshot } from '../utils/web-annotate.ts';
+import { ariaRefSelector, describeRef, refIsGone } from '../utils/aria-ref.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { Navigator } from './navigator.ts';
@@ -1196,33 +1196,6 @@ export async function commitNote(activeNote: any, result: TestResult, toolResult
     activeNote.screenshot = await action.saveScreenshot();
   }
   activeNote.commit(result);
-}
-
-function ariaRefSelector(ref: string): string {
-  return `aria-ref=${ref}`;
-}
-
-async function refIsGone(explorer: any, ref: string): Promise<boolean> {
-  const count = () => Promise.resolve(explorer?.withPage?.((page: any) => page.locator(ariaRefSelector(ref)).count())).catch(() => undefined);
-  if ((await count()) !== 0) return false;
-  await Promise.resolve(explorer?.withPage?.(ariaRefSnapshot)).catch(() => null);
-  return (await count()) === 0;
-}
-
-async function describeRef(explorer: any, ref: string): Promise<{ role: string; text: string } | null> {
-  return Promise.resolve(
-    explorer?.withPage?.((page: any) =>
-      page.locator(ariaRefSelector(ref)).evaluate((el: any) => {
-        const tag = el.tagName.toLowerCase();
-        const roles: Record<string, string> = { a: 'link', button: 'button', select: 'combobox', textarea: 'textbox' };
-        const role = el.getAttribute('role') || roles[tag];
-        if (!role) return null;
-        const text = (el.getAttribute('aria-label') || el.innerText || el.value || '').trim().split('\n')[0];
-        if (!text) return null;
-        return { role, text };
-      })
-    )
-  ).catch(() => null);
 }
 
 async function hasFocusedElement(explorer: any): Promise<boolean> {
