@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-08
+
+### Changes
+
+- [Pilot] A test that creates an item and then deletes it can now pass. Pilot was checking deletions
+  against a list of names carried over from earlier tests in the plan, and the name of the test being
+  run was never on that list — so a "create it, then delete it" scenario was failed at the final
+  verdict even when the item was visibly gone from the page and every check had passed. Pilot now
+  judges the deletion on what the page actually shows.
+
 ## 2026-09-05
 
 ### Changes

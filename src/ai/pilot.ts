@@ -363,8 +363,6 @@ export class Pilot implements Agent {
     return dedent`
       SCENARIO: ${task.scenario}
 
-      ${this.buildDeletionScope(task)}
-
       EXPECTED RESULTS (milestones):
       ${task.expected.map((e) => `- ${e}`).join('\n')}
     `;
@@ -1100,23 +1098,6 @@ export class Pilot implements Agent {
         return line;
       })
       .join('\n\n');
-  }
-
-  private buildDeletionScope(task: Test): string {
-    const deletableItems = task.plan
-      ? task.plan
-          .listTests()
-          .filter((t) => t.isSuccessful && t.sessionName)
-          .map((t) => t.sessionName!)
-      : [];
-    const scenarioLower = task.scenario.toLowerCase();
-    if (deletableItems.length > 0) {
-      return `For deletion scenarios, items can only be deleted if their title contains: ${deletableItems.join(', ')}`;
-    }
-    if (scenarioLower.includes('delete') || scenarioLower.includes('remove')) {
-      return 'No items available for deletion — test should create an item first';
-    }
-    return '';
   }
 
   private getSystemPrompt(task: Test, initialState: ActionResult): string {
