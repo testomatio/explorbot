@@ -152,7 +152,7 @@ export function createApiCommands(name = 'api'): Command {
     }
   });
 
-  addCommonOptions(cmd.command('explore <endpoint>').description('Full cycle: plan all styles, execute tests, re-plan. The endpoint may be the base endpoint itself')).action(async (endpoint, options) => {
+  addCommonOptions(cmd.command('explore <endpoint>').description('Full cycle: plan, execute tests, re-plan. Use * to cover many endpoints, or the base endpoint for all of them')).action(async (endpoint, options) => {
     setPreserveConsoleLogs(true);
     try {
       if (URL.canParse(endpoint)) options.endpoint ||= endpoint;
@@ -160,33 +160,40 @@ export function createApiCommands(name = 'api'): Command {
       await bot.start();
 
       const styles = Object.keys(getStyles());
+      const endpoints = bot.expandEndpoints(endpoint);
       let totalPassed = 0;
       let totalFailed = 0;
       let totalTests = 0;
 
-      for (const style of styles) {
-        console.log(`\n=== Style: ${style} ===\n`);
+      for (const [index, target] of endpoints.entries()) {
+        let runStyles = [styles[index % styles.length]];
+        if (endpoints.length === 1) runStyles = styles;
+        if (endpoints.length > 1) console.log(`\n=== Endpoint ${index + 1}/${endpoints.length}: ${target} ===`);
 
-        const plan = await bot.plan(endpoint, { style, fresh: true });
-        if (!plan?.tests.length) {
-          console.log(`No tests generated for style: ${style}`);
-          continue;
+        for (const style of runStyles) {
+          console.log(`\n=== Style: ${style} ===\n`);
+
+          const plan = await bot.plan(target, { style, fresh: true });
+          if (!plan?.tests.length) {
+            console.log(`No tests generated for style: ${style}`);
+            continue;
+          }
+
+          const pending = plan.getPendingTests();
+          for (const test of pending) {
+            const specDefinition = bot.tryGetEndpointDefinition(test.startUrl);
+            const result = await bot.agentCurler().test(test, {
+              specDefinition,
+              baseEndpoint: bot.getConfig().api.baseEndpoint,
+              searchSpec: (query) => bot.searchSpec(query),
+            });
+            totalTests++;
+            if (result.success) totalPassed++;
+            else totalFailed++;
+          }
+
+          bot.savePlan(style);
         }
-
-        const pending = plan.getPendingTests();
-        for (const test of pending) {
-          const specDefinition = bot.tryGetEndpointDefinition(test.startUrl);
-          const result = await bot.agentCurler().test(test, {
-            specDefinition,
-            baseEndpoint: bot.getConfig().api.baseEndpoint,
-            searchSpec: (query) => bot.searchSpec(query),
-          });
-          totalTests++;
-          if (result.success) totalPassed++;
-          else totalFailed++;
-        }
-
-        bot.savePlan(style);
       }
 
       console.log('\n=== Final Results ===');

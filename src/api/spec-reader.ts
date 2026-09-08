@@ -51,7 +51,7 @@ export function extractEndpointDefinition(schema: any, endpoint: string, baseEnd
   }
 
   const basePath = toBasePath(baseEndpoint);
-  const matched = collectMatchingPaths(schema, basePath, (normalized) => matchesEndpoint(normalized, endpoint));
+  const matched = collectEndpointPaths(schema, basePath, endpoint);
 
   if (!Object.keys(matched).length) {
     const available = listNormalizedPaths(schema, basePath);
@@ -59,6 +59,35 @@ export function extractEndpointDefinition(schema: any, endpoint: string, baseEnd
   }
 
   return safeStringify(matched);
+}
+
+export function resolveEndpoints(schema: any, pattern: string, baseEndpoint?: string): string[] {
+  if (!schema?.paths) {
+    throw new Error('OpenAPI spec has no paths defined');
+  }
+
+  const basePath = toBasePath(baseEndpoint);
+  const normalized = Object.keys(schema.paths).map((specPath) => stripBasePath(specPath, basePath));
+  const matched = normalized.filter((specPath) => matchesPattern(specPath, pattern));
+
+  if (!matched.length) {
+    throw new Error(`Endpoint "${pattern}" not found in spec. Available: ${listNormalizedPaths(schema, basePath)}`);
+  }
+
+  const roots = [...new Set(matched.map((specPath) => toCollection(specPath, normalized)))];
+  const resolved = roots.map((root) => fillParameters(root, pattern));
+  const endpoints = resolved.filter((specPath) => !specPath.includes('{'));
+
+  if (!endpoints.length) {
+    throw new Error(`Endpoint "${pattern}" leaves ${listParameters(resolved)} unresolved. Give the value in the endpoint or in the base endpoint.`);
+  }
+
+  const skipped = resolved.filter((specPath) => specPath.includes('{'));
+  if (skipped.length) {
+    tag('warning').log(`Skipped, no value for their parameters: ${skipped.join(', ')}`);
+  }
+
+  return endpoints;
 }
 
 export function searchEndpoints(schema: any, query: string, baseEndpoint?: string): string {
@@ -164,6 +193,75 @@ function stripBasePath(specPath: string, basePath: string): string {
   }
 
   return `/${specSegments.slice(i).join('/')}`;
+}
+
+function collectEndpointPaths(schema: any, basePath: string, endpoint: string): Record<string, any> {
+  const normalized = Object.keys(schema.paths).map((specPath) => stripBasePath(specPath, basePath));
+  const roots = resolveEndpoint(normalized, endpoint);
+
+  if (!roots.length) return collectMatchingPaths(schema, basePath, (path) => matchesEndpoint(path, endpoint));
+
+  return collectMatchingPaths(schema, basePath, (path) => roots.some((root) => path === root || path.startsWith(`${root}/`)));
+}
+
+function resolveEndpoint(specPaths: string[], endpoint: string): string[] {
+  const wanted = toSegments(endpoint);
+  if (!wanted.length) return [];
+
+  const matched = specPaths.filter((specPath) => {
+    const segments = toSegments(specPath);
+    if (segments.length !== wanted.length) return false;
+    return segmentsMatch(segments, wanted);
+  });
+
+  const literals = matched.map((specPath) => toSegments(specPath).filter((segment, i) => segment === wanted[i]).length);
+  const best = Math.max(0, ...literals);
+  return matched.filter((_, i) => literals[i] === best);
+}
+
+function matchesPattern(specPath: string, pattern: string): boolean {
+  const wanted = toSegments(pattern);
+  const segments = toSegments(specPath);
+  if (segments.length < wanted.length) return false;
+  return segmentsMatch(segments, wanted);
+}
+
+function segmentsMatch(segments: string[], wanted: string[]): boolean {
+  return wanted.every((want, i) => want === '*' || segments[i] === want || segments[i].startsWith('{'));
+}
+
+function toCollection(specPath: string, specPaths: string[]): string {
+  const segments = toSegments(specPath);
+  for (let i = 1; i < segments.length; i++) {
+    const prefix = `/${segments.slice(0, i).join('/')}`;
+    if (specPaths.includes(prefix)) return prefix;
+  }
+  return specPath;
+}
+
+function fillParameters(specPath: string, pattern: string): string {
+  const wanted = toSegments(pattern);
+  const segments = toSegments(specPath);
+  for (let i = 0; i < wanted.length && i < segments.length; i++) {
+    if (wanted[i] === '*') continue;
+    if (!segments[i].startsWith('{')) continue;
+    segments[i] = wanted[i];
+  }
+  return `/${segments.join('/')}`;
+}
+
+function listParameters(specPaths: string[]): string {
+  const found = new Set<string>();
+  for (const specPath of specPaths) {
+    for (const segment of toSegments(specPath)) {
+      if (segment.startsWith('{')) found.add(segment);
+    }
+  }
+  return [...found].join(', ');
+}
+
+function toSegments(path: string): string[] {
+  return path.split('/').filter(Boolean);
 }
 
 function matchesEndpoint(specPath: string, endpoint: string): boolean {

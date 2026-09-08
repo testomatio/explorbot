@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { AIProvider } from '../../../src/ai/provider.ts';
 import { RequestStore } from '../../../src/api/request-store.ts';
-import { extractEndpointDefinition, loadSpec, searchEndpoints, validateSpecs } from '../../../src/api/spec-reader.ts';
+import { extractEndpointDefinition, loadSpec, resolveEndpoints, searchEndpoints, validateSpecs } from '../../../src/api/spec-reader.ts';
 import { KnowledgeTracker } from '../../../src/knowledge-tracker.ts';
 import { Reporter } from '../../../src/reporter.ts';
 import { Plan } from '../../../src/test-plan.ts';
@@ -176,6 +176,10 @@ export class ApiBot {
 
   getEndpointDefinition(endpoint: string): string {
     return extractEndpointDefinition(this.apiSpec, endpoint, this.config.api.baseEndpoint);
+  }
+
+  expandEndpoints(pattern: string): string[] {
+    return resolveEndpoints(this.apiSpec, this.configParser.resolveEndpointPath(pattern), this.config.api.baseEndpoint);
   }
 
   searchSpec(query: string): string {

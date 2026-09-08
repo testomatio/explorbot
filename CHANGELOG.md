@@ -60,6 +60,25 @@
   covered, disabled, or that the locator matched something that does not respond, and to check it with
   `xpathCheck` before retrying. A click the page answers only with an API call still counts as landed,
   so a Save that stores something without redrawing anything is not retried into a duplicate record.
+- API testing: an endpoint with real values in it now finds its spec. Specs write paths as templates, so
+  asking for `/api/v2/acme/tests` when the spec says `/api/v2/{project_id}/tests` matched nothing and the
+  run stopped before it planned anything. The endpoint is matched against the templates now, and the paths
+  under it come along, so planning a collection also sees the create, read, update and delete beneath it.
+
+- `api explore` takes a pattern instead of a single endpoint. `*` stands for one path segment, and a
+  pattern covers the paths below it, so `'/users/*'` and `/users` both reach `/users/{id}`. Pass `/` to
+  take every collection the spec describes, with the path parameters coming from the base endpoint.
+
+  ```bash
+  npx explorbot api explore /users                  # one endpoint, planned in every style
+  npx explorbot api explore '/projects/acme/*'      # every collection of one project
+  npx explorbot api explore / --endpoint https://api.example.com/v2/acme   # the whole API
+  ```
+
+  Explorbot explores collections rather than raw paths, so `/users/{id}` folds into `/users`. When a
+  pattern matches several collections they share the planning styles, one each, so a wide run costs about
+  what a narrow one does. A parameter no pattern can fill stops the run and is named, rather than requests
+  going out to a literal `{project_id}`.
 - Locators: elements that appear in response to an action — a menu that opens, a panel that slides in —
   can now be clicked using the role reported for them when they appeared, instead of a guessed one.
   Guessing was silent rather than loud: a control named the same thing elsewhere on the page absorbed

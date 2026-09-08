@@ -66,7 +66,7 @@ npx explorbot api explore https://api.example.com/v1 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-`api explore` takes the base endpoint as its argument, so one line covers the whole run: it plans in every style, executes each plan, and reports the totals. The other commands take a path within the API and read the base from `--endpoint`:
+`api explore` takes an endpoint or a pattern as its argument, so one line covers the whole run: it plans, executes each plan, and reports the totals. Passing the base endpoint covers every collection the spec describes. The other commands take a path within the API and read the base from `--endpoint`:
 
 ```bash
 npx explorbot api plan /users \
@@ -98,6 +98,30 @@ npx explorbot api test output/plans/users.md
 ```
 
 Curler runs the scenarios and prints how many passed and failed.
+
+### Covering many endpoints
+
+`api explore` runs the whole loop for you: plan, test, re-plan. Given one endpoint it plans in every style.
+
+```bash
+npx explorbot api explore /users
+```
+
+The endpoint may be a pattern. `*` stands for one path segment, and a pattern also covers the paths below it, so `/users` and `/users/*` both cover `/users/{id}`. Quote it, or your shell will try to expand it first.
+
+```bash
+npx explorbot api explore '/projects/acme/*'
+```
+
+Explorbot explores collections, not raw paths: `/users/{id}` and `/users/{id}/posts` fold into `/users`, whose spec lookup brings them along anyway. When a pattern matches several collections the planning styles spread across them, one style each, so a wide run costs about what a narrow one does.
+
+Pass `/` to take every collection in the spec. The path parameters have to come from somewhere, so put them in the base endpoint.
+
+```bash
+npx explorbot api explore / --endpoint https://api.example.com/v2/acme
+```
+
+If a parameter is left with no value the run stops and names it, rather than sending requests to a literal `{project_id}`. Collections whose own parameters no pattern can fill, like `/analytics/stats/{kind}`, are listed and skipped.
 
 ## Output files
 
