@@ -1,7 +1,60 @@
 # Changelog
 
+## 2026-09-05
+
+### Changes
+
+- [Prima] The `network.jsonl` artifact now holds the requests the browser was seen to make. It was
+  reading the requests an API run sends itself, a list nothing fills during a browser command, so the
+  file was never written and no envelope ever pointed at it — while the page's own traffic was being
+  captured the whole time.
+## 2026-09-07
+
+### New CLI Options
+
+- **`-H, --header <header>`** — A header sent with every API request, written as `Name: value`. Repeat it
+  for more than one. Headers reach the startup health check too, so a protected API fails on a bad token
+  instead of on the first test, and they merge over any `headers` a config file already sets. This is the
+  last thing that needed a config file, so an API run can now be described entirely on the command line.
+  ```bash
+  explorbot api explore https://api.example.com/v1 --spec ./openapi.yaml -H "Authorization: Bearer $TOKEN"
+  explorbot api plan /users --endpoint https://api.example.com/v1 -H "Authorization: Bearer $TOKEN" -H "X-Tenant: acme"
+  ```
+- **`explorbot api explore <base-endpoint>`** — `api explore` now accepts the base endpoint itself as its
+  argument, not only a path inside the API. Given a full URL it tests the whole API from its root; a path
+  like `/users` still works and takes the base from `--endpoint` or `EXPLORBOT_URL`.
+  ```bash
+  explorbot api explore https://api.example.com/v1 --spec ./openapi.yaml
+  explorbot api explore /users --endpoint https://api.example.com/v1 --spec ./openapi.yaml
+  ```
+
+### Configuration
+
+- **`EXPLORBOT_API_HEADERS`** — Headers sent with every API request, one `Name: value` per line. The
+  environment twin of `-H`; the flag wins when both are set. Shown as `set` rather than printed by
+  `explorbot config`, so a token does not end up in terminal output or CI logs.
+
+### Changes
+
+- API testing now runs without a config file. Passing the API's base endpoint to `explorbot api` used to
+  end in "No API endpoint to test. Pass --endpoint" whenever models came from `EXPLORBOT_AI_PROVIDER`, and
+  with a global config it silently dropped the path prefix — `https://api.example.com/v1` became
+  `https://api.example.com`, so every request went to the wrong path.
+- API testing no longer fails at startup with "Configuration not loaded" when local HTML or markdown
+  reports are switched on. `explorbot init --global` turns both on by default, which made every `api plan`,
+  `api test` and `api explore` run from a global config stop before it began.
+- Plan files from `api explore` are named after the endpoint again. Pointing it at a full URL wrote
+  `https___api_example_com_v1_normal.md`; it now writes `root_normal.md`.
+
 ## 2026-09-04
 
+### Changes
+
+- [Tester] While a modal is open, the tester is now shown the modal's own list of elements and the
+  selector its content lives in, and is told to build locators scoped to that selector. It used to
+  get one flat list mixing the modal with the page behind it, so a field covered by the modal looked
+  as available as the buttons inside it — the tester kept typing into a form it could not reach and
+  the click that would have submitted it was swallowed by the overlay.
 ### New CLI Commands
 
 - **`explorbot help-json [command...]`** — Prints command definitions as JSON: every command with
@@ -35,6 +88,15 @@
 - **[Planner] Can plan from documentation** — when Scout is enabled, scenarios are grounded in
   the retrieved documentation according to `docsWeight`; Scout runs after page research and
   its answer is reused across planning iterations for the same page and focus.
+- **[Pilot] The final verdict now sees the last round of checks** — a `verify()` or `see()` run in
+  the same round as the decision to finish was invisible to Pilot, so a test could be reported as
+  failed on evidence it had already produced. The verdict is now made once the round is complete.
+  When Pilot rejects a finish or a stop, its reasoning arrives as guidance for the next step rather
+  than a bare rejection.
+- **A check that passed no longer disappears before the verdict** — once a check passes, it stays
+  attached to the page for as long as you are still on the same page, instead of being cleared by
+  the next screenshot or page snapshot. Tests that genuinely succeeded could be reported as failed
+  because the proof was gone by the time the final verdict was made.
 - **`--json` no longer collides with the banner** — passing it to any command suppresses the
   startup banner, so `explorbot config --json | jq` works without setting `EXPLORBOT_NO_BANNER`.
   `help-json` suppresses it too.
@@ -43,6 +105,21 @@
 
 ### Changes
 
+- [Prima] `prima research` is the only command that maps a page. `check` used to map every new url
+  it landed on, and map an opening panel on top of that, before it could act; `do` was handed a
+  `research` tool it could spend a full model call on in the middle of an instruction. Both now work
+  from the accessibility tree and the page markup, and their help points at `prima research` for a
+  large or unfamiliar page. Nothing inside a run can talk it into mapping a page — not the agent
+  driving it, not the supervisor asking for a UI map, not the `research` tool. An explorbot run
+  still maps pages as it did.
+- The `research` tool reports "No UI map is available for this page" instead of returning an empty
+  map as a success.
+- A recorded map handed to a run is reported like a freshly produced one, so a host watching over
+  `--ws` sees the map the run is acting on rather than watching it act on something unseen.
+- [Prima] A recorded research map now joins the page context instead of replacing it. `do` used to
+  swap the accessibility tree out for the map once a page had been visited three times, taking the
+  element refs with it, and it looked the map up under the panel-scoped hash, so no map was found
+  while a panel was open. Tree and map are now given together whenever a map exists.
 - [Fisherman] Can now answer questions about data that already exists, over read-only GET requests
   that create or change nothing. It draws on the same endpoints it already knew about — an OpenAPI
   spec when one is configured, or endpoints learned by watching browser traffic otherwise.
@@ -74,6 +151,18 @@
 - Page Diff: The markup shown for a panel that does not fit the size budget now keeps its ending as
   well as its beginning. A picker with a long list used to be cut off before its buttons, leaving
   the agent hunting for a Cancel or Confirm it could not see.
+
+### Configuration
+
+- **`ai.agents.researcher.enabled`** — set it to `false` and the Researcher answers with the map
+  already recorded for a page and produces none. Prima resolves it when it loads config: off for
+  every command except `prima research`, and whatever your config file says wins.
+
+  ```javascript
+  ai: { agents: { researcher: { enabled: false } } }
+  ```
+- **`ai.agents.prima.researchAfterVisits`** is gone. A map recorded by `prima research` is used
+  from the next command onwards, so there is nothing left to wait for.
 
 ## 2026-09-02
 
@@ -157,6 +246,12 @@
   inline drawer or a split-pane form.
 - The area the agent is told to stay inside is called an overlay when it floats above the page and
   a region when it sits in it. Logs and the supervisor's notes now use that wording throughout.
+- Prima: The three envelope builders (`pw`/`do`/`go`, failures, and `check`/`ask`/`verify`/`research`)
+  now share one tail builder instead of each repeating the instance/status/artifacts block. Artifact
+  paths flow back from the write as a return value rather than through a mutable field that had to be
+  read in the right order, so an envelope can no longer come back missing its Artifacts section.
+  Per-step file names (`aria.yaml`/`html`/`diff.yaml`) written during a `do` run now have a single
+  owner shared with the doc line the envelope advertises, so the two can no longer drift apart.
 
 ## 2026-09-01
 

@@ -25,15 +25,14 @@ import { browserErrorMessage } from '../../../src/utils/browser-errors.ts';
 import { pluralize } from '../../../src/utils/logger.ts';
 import { mdq } from '../../../src/utils/markdown-query.ts';
 import { safeFilename } from '../../../src/utils/strings.ts';
-import { type EnvelopeData, type InstanceInfo, STATUS_FILE, readArtifacts, writeArtifacts } from './envelope.ts';
+import { type ArtifactPaths, type EnvelopeData, type InstanceInfo, STATUS_FILE, STEP_FILES, readArtifacts, writeArtifacts } from './envelope.ts';
 import { isFunctionExpression, takePwValue, toCodeceptWrapper } from './pw-parser.ts';
 import { type PwServerDescriptor, readDescriptors, selectDescriptor } from './pw-registry.ts';
 import { type SessionRun, latestSessionFile, readSession, recordCommand, sessionFile, sessionsDir } from './session-log.ts';
 
-const TESTER_ONLY_TOOLS = ['learnExperience', 'askUser'];
+const WITHHELD_TOOLS = ['learnExperience', 'askUser', 'research'];
 const ITERATIONS_PER_INSTRUCTION = 2;
 const MAX_INSTRUCTION_ITERATIONS = 24;
-const DEFAULT_RESEARCH_AFTER_VISITS = 3;
 const CONTEXT_HTML_CAP = 6000;
 const MAX_TOOL_ROUNDTRIPS = 5;
 const AI_AGENT_NAME = 'prima';
@@ -74,7 +73,6 @@ export class Prima {
   private server: { close: () => Promise<void> } | null = null;
   private attached: string | null = null;
   private session: SessionRun | null = null;
-  private artifacts?: EnvelopeData['artifacts'];
 
   constructor(options: PrimaOptions = {}) {
     this.options = options;
@@ -108,6 +106,7 @@ export class Prima {
     const config = await this.loadConfig();
     await this.resolveBrowser(config, discovery);
     await this.bot.start();
+    this.bot.agentResearcher().disable();
 
     if (!this.options.url) return;
     if (this.bot.getCurrentState()) return;
@@ -422,9 +421,12 @@ export class Prima {
     const guard = await this.aiGuard(command);
     if (guard) return guard;
 
+    const researcher = this.bot.agentResearcher();
+    researcher.enable();
+
     const previousState = this.bot.stateManager().getCurrentState();
     const result = await this.capturedResult(previousState);
-    const uiMap = await this.bot.agentResearcher().research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
+    const uiMap = await researcher.research(result, { screenshot: true, data: opts.data, deep: opts.deep, force: opts.fresh });
     return this.reportEnvelope(command, result, previousState, { research: dropVolatileColumns(uiMap) });
   }
 
@@ -820,7 +822,7 @@ export class Prima {
     if (!researcher || !navigator) return {};
 
     const tools = createAgentTools({ ...deps, researcher, navigator, withExperience: false });
-    for (const name of TESTER_ONLY_TOOLS) delete tools[name];
+    for (const name of WITHHELD_TOOLS) delete tools[name];
     return tools;
   }
 
@@ -878,14 +880,15 @@ export class Prima {
 
   private async pageContext(result: ActionResult): Promise<string> {
     const experience = this.bot.experienceTracker?.()?.renderExperienceTocFor?.(result) || '';
-    const map = this.researchMap(result);
+    const map = getPreviousResearch(result.baseHash);
+    let uiMap = '';
     if (map) {
-      return dedent`
-        <page_ui_map url="${result.url}" title="${result.title}">
+      uiMap = dedent`
+        <page_ui_map>
+        A map of this page recorded by an earlier research run. It names parts the accessibility
+        tree does not, and can be out of date — the tree is what the page holds now.
         ${map}
         </page_ui_map>
-
-        ${experience}
       `;
     }
 
@@ -894,19 +897,10 @@ export class Prima {
       ${compactAriaSnapshot(await this.refAriaSnapshot(result), true, (value) => this.offloadValue(value))}
       </page>
 
+      ${uiMap}
+
       ${experience}
     `;
-  }
-
-  private researchMap(result: ActionResult): string {
-    if (this.bot.stateManager().getVisitCount(result.url) < this.researchAfterVisits()) return '';
-    return getPreviousResearch(result.getStateHash());
-  }
-
-  private researchAfterVisits(): number {
-    const configured = this.bot.getConfig?.()?.ai?.agents?.prima?.researchAfterVisits;
-    if (typeof configured === 'number') return configured;
-    return DEFAULT_RESEARCH_AFTER_VISITS;
   }
 
   private offloadValue(value: string): string | undefined {
@@ -982,16 +976,13 @@ export class Prima {
 
   private async successEnvelope(command: string, used: string[], result: ActionResult, previousState: WebPageState | null): Promise<EnvelopeData> {
     const changes = await this.pageChanges(result, previousState, used[0]);
-    const status = await this.saveStatus(result);
     return {
       ok: true,
       command,
       used,
       page: this.pageBlock(result, previousState),
       changes,
-      instance: await this.instanceInfo(),
-      status,
-      artifacts: this.artifacts,
+      ...(await this.envelopeTail(result)),
     };
   }
 
@@ -1000,29 +991,28 @@ export class Prima {
     const failure: EnvelopeData['failure'] = { error: browserErrorMessage(error) };
     if (result.ariaSnapshot) failure.compactAria = compactAriaSnapshot(result.ariaSnapshot, true);
 
-    const status = await this.saveStatus(result);
     return {
       ok: false,
       command,
       page: this.pageBlock(result, previousState),
       failure,
-      instance: await this.instanceInfo(),
-      status,
-      artifacts: this.artifacts,
+      ...(await this.envelopeTail(result)),
     };
   }
 
   private async reportEnvelope(command: string, result: ActionResult, previousState: WebPageState | null, outcome: Partial<EnvelopeData>): Promise<EnvelopeData> {
-    const status = await this.saveStatus(result);
     return {
       ok: true,
       command,
       page: this.pageBlock(result, previousState),
       ...outcome,
-      instance: await this.instanceInfo(),
-      status,
-      artifacts: this.artifacts,
+      ...(await this.envelopeTail(result)),
     };
+  }
+
+  private async envelopeTail(result: ActionResult): Promise<Pick<EnvelopeData, 'instance' | 'status' | 'artifacts'>> {
+    const { hash, artifacts } = await this.saveStatus(result);
+    return { instance: await this.instanceInfo(), status: hash, artifacts };
   }
 
   private async capturedResult(previousState: WebPageState | null, opts: { screenshot?: boolean } = {}): Promise<ActionResult> {
@@ -1086,11 +1076,11 @@ export class Prima {
     };
   }
 
-  private async saveStatus(result: ActionResult): Promise<string> {
+  private async saveStatus(result: ActionResult): Promise<{ hash: string; artifacts: ArtifactPaths }> {
     const hash = this.statusHash();
-    await this.writeSnapshot(result);
+    const artifacts = await this.writeSnapshot(result);
     writeFileSync(path.join(this.statusDir(hash), STATUS_FILE), JSON.stringify({ page: this.pageBlock(result, null) }), 'utf-8');
-    return hash;
+    return { hash, artifacts };
   }
 
   private async writeStepFiles(index: number, label: string, diff: string): Promise<void> {
@@ -1102,17 +1092,17 @@ export class Prima {
     const stem = path.join(dir, `${index}-${safeFilename(label.slice(0, 60))}`);
     const result = ActionResult.fromState(state);
 
-    writeFileSync(`${stem}.aria.yaml`, result.ariaSnapshot ?? '', 'utf-8');
-    writeFileSync(`${stem}.html`, await result.combinedHtml(), 'utf-8');
-    if (diff) writeFileSync(`${stem}.diff.yaml`, diff, 'utf-8');
+    writeFileSync(`${stem}.${STEP_FILES.aria}`, result.ariaSnapshot ?? '', 'utf-8');
+    writeFileSync(`${stem}.${STEP_FILES.html}`, await result.combinedHtml(), 'utf-8');
+    if (diff) writeFileSync(`${stem}.${STEP_FILES.diff}`, diff, 'utf-8');
   }
 
-  private async writeSnapshot(result: ActionResult): Promise<void> {
-    this.artifacts = writeArtifacts(this.statusDir(), {
+  private async writeSnapshot(result: ActionResult): Promise<ArtifactPaths> {
+    return writeArtifacts(this.statusDir(), {
       aria: result.ariaSnapshot,
       html: await result.combinedHtml(),
       screenshot: result.screenshot,
-      requests: this.bot.requestStore().getMadeRequests(),
+      requests: this.bot.requestStore().getCapturedRequests(),
     });
   }
 

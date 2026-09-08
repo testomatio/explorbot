@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { type EnvelopeData, readArtifacts, renderEnvelope, writeArtifacts } from '../src/envelope.ts';
+import { type EnvelopeData, STEP_FILES, readArtifacts, renderEnvelope, writeArtifacts } from '../src/envelope.ts';
 
 const base: EnvelopeData = {
   ok: true,
@@ -178,6 +178,12 @@ describe('renderEnvelope', () => {
   test('step captures name the files written for each step, not just their directory', () => {
     const out = renderEnvelope({ ...base, steps: [{ label: "I.click('Add')", ok: true, proof: '' }], stepFiles: '/tmp/x' });
     expect(out).toContain('page after each step: /tmp/x/<n>-<step>.{aria.yaml,html,diff.yaml}');
+  });
+
+  test('the advertised step-file line names every STEP_FILES extension', () => {
+    const out = renderEnvelope({ ...base, steps: [{ label: "I.click('Add')", ok: true, proof: '' }], stepFiles: '/tmp/x' });
+    const line = out.split('\n').find((entry) => entry.includes('page after each step'))!;
+    for (const extension of Object.values(STEP_FILES)) expect(line).toContain(extension);
   });
 
   test('open tabs alone are evidence enough for a running browser', () => {

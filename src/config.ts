@@ -22,6 +22,7 @@ export const PROVIDERS: Record<string, ProviderInfo> = {
 export const MODEL_ROLES: ModelRole[] = ['model', 'visionModel', 'agenticModel'];
 
 let cachedOutputRoot: string | null = null;
+let runOutputDir: string | null = null;
 
 interface PlaywrightConfig {
   browser: 'chromium' | 'firefox' | 'webkit';
@@ -281,6 +282,7 @@ export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_KNOWLEDGE_FILE', description: 'Path to a knowledge markdown file' },
   { name: 'EXPLORBOT_SPEC', description: 'Docbot application spec directory or index.md, used as page knowledge' },
   { name: 'EXPLORBOT_API_SPEC', description: 'OpenAPI spec path for the API boat' },
+  { name: 'EXPLORBOT_API_HEADERS', description: 'Headers sent with every API request, one "Name: value" per line', secret: true },
   { name: 'EXPLORBOT_NO_BANNER', description: 'Suppress the startup banner, for machine-readable output' },
   { name: 'EXPLORBOT_MAX_DURATION', description: 'Wall-clock budget in minutes for an explore run; same as --max-duration' },
 ];
@@ -503,6 +505,7 @@ export class ConfigParser {
   // For testing purposes only
   public static resetForTesting(): void {
     cachedOutputRoot = null;
+    runOutputDir = null;
     if (ConfigParser.instance) {
       ConfigParser.instance.config = null;
       ConfigParser.instance.configPath = null;
@@ -751,8 +754,20 @@ export class ConfigParser {
   }
 }
 
+export function setOutputDir(dir: string): void {
+  runOutputDir = dir;
+}
+
 export function outputPath(...segments: string[]): string {
+  if (runOutputDir) return path.join(runOutputDir, ...segments);
   return path.join(ConfigParser.getInstance().getOutputDir(), ...segments);
+}
+
+export function agentSettings<K extends keyof AgentsConfig>(config: ExplorbotConfig, agent: K): NonNullable<AgentsConfig[K]> {
+  const ai = (config.ai ??= { model: null });
+  const agents = (ai.agents ??= {}) as Record<K, NonNullable<AgentsConfig[K]>>;
+  agents[agent] ??= {} as NonNullable<AgentsConfig[K]>;
+  return agents[agent];
 }
 
 export async function resolveModel(spec: string, role: ModelRole = 'model'): Promise<any> {
@@ -919,6 +934,7 @@ interface EnvVar {
   name: string;
   description: string;
   required?: boolean;
+  secret?: boolean;
 }
 
 export type { ModelRole, EnvVar, ProviderInfo, ConfiguredModel };

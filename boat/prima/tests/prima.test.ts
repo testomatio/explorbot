@@ -95,8 +95,9 @@ function fakePrima(options: Record<string, unknown> = {}) {
     }),
     getCurrentState: () => fakeState(),
     getConfig: () => ({}),
-    requestStore: () => ({ getMadeRequests: () => [] }),
+    requestStore: () => ({ getCapturedRequests: () => [] }),
     getProvider: () => ({ chat: async () => '' }),
+    agentResearcher: () => ({ enable: () => {}, disable: () => {} }),
   };
   (prima as any).artifactsDir = artifactsRoot;
   return { prima, executed, executeOptions };
@@ -139,6 +140,16 @@ describe('Prima.pw', () => {
     expect(envelope.artifacts?.aria).toBe(path.join(artifactsRoot, envelope.status!, 'aria.yml'));
     expect(envelope.artifacts?.network).toBeUndefined();
     expect(envelope.instance.name).toBe('default');
+  });
+
+  test('the network artifact holds the requests the browser was seen to make', async () => {
+    const { prima } = fakePrima();
+    (prima as any).bot.requestStore = () => ({ getCapturedRequests: () => [{ method: 'POST', path: '/api/session', status: 201 }] });
+    const envelope = await prima.pw("({ page }) => page.click('text=Login')");
+
+    const lines = readFileSync(envelope.artifacts!.network!, 'utf-8').trim().split('\n');
+    expect(lines.length).toBe(1);
+    expect(JSON.parse(lines[0]).path).toBe('/api/session');
   });
 
   test('status points at the artifacts instead of printing the page tree back', async () => {
@@ -258,7 +269,7 @@ describe('Prima attach ladder', () => {
   function ladderPrima(options: Record<string, unknown> = {}) {
     const prima = new Prima({ instance: 'default', ...options });
     const calls: string[] = [];
-    (prima as any).bot = { start: async () => calls.push('bot.start'), getCurrentState: () => null };
+    (prima as any).bot = { start: async () => calls.push('bot.start'), getCurrentState: () => null, agentResearcher: () => ({ disable: () => {} }) };
     return { prima, calls };
   }
 
@@ -1121,6 +1132,7 @@ describe('Prima.ask, verify, research', () => {
     const { prima } = fakePrima();
     const options: any[] = [];
     (prima as any).bot.agentResearcher = () => ({
+      enable: () => {},
       research: async (_state: unknown, opts: any) => {
         options.push(opts);
         return '## Section: Login Form\n| Element | ARIA | CSS |';
@@ -1132,6 +1144,25 @@ describe('Prima.ask, verify, research', () => {
     expect(envelope.ok).toBe(true);
     expect(envelope.changes).toBeUndefined();
     expect(options[0]).toMatchObject({ screenshot: true, data: true });
+  });
+
+  test('the researcher stays off until the research command turns it on', async () => {
+    const { prima } = fakePrima();
+    const toggles: string[] = [];
+    (prima as any).bot.start = async () => {};
+    (prima as any).bot.agentResearcher = () => ({
+      enable: () => toggles.push('enable'),
+      disable: () => toggles.push('disable'),
+      research: async () => '## Section: Login Form',
+    });
+    (prima as any).discover = () => ({ candidates: [] });
+    (prima as any).connectOwnInstance = async () => true;
+
+    await prima.start();
+    expect(toggles).toEqual(['disable']);
+
+    await prima.research();
+    expect(toggles).toEqual(['disable', 'enable']);
   });
 });
 
