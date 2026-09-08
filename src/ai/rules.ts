@@ -239,10 +239,10 @@ export const unexpectedPopupRule = dedent`
   If buttons are disabled unexpectedly, check if a popup is blocking interaction or if required form fields are empty.
 
   Dismiss strategy (try in order):
-  1. I.clickXY(0, 0) — click outside the popup to close it
-  2. I.pressKey('Escape') — press Escape to dismiss
-  3. I.click('Cancel') — click Cancel button if present
-  4. I.click({ role: 'button', text: 'Close' }) — click X/close button if present
+  1. I.pressKey('Escape') — press Escape to dismiss
+  2. I.click('Cancel') — click Cancel button if present
+  3. I.click({ role: 'button', text: 'Close' }) — click X/close button if present
+  4. I.clickXY(0, 0) via form() tool and check if page diff changed
   </unexpected_popup_rule>
 `;
 
@@ -336,7 +336,7 @@ export const actionRule = dedent`
   Prefer text/ARIA locators with context over complex CSS/XPath selectors.
   For inline create/edit flows, after filling a field verify it contains the value, then confirm using the nearest explicit button/link, an adjacent icon-only confirm control in the same row/form, or Enter if the field remains focused.
   If locator doesn't work, try CSS or XPath locators.
-  If nothing works, use I.clickXY(x, y) as last resort.
+  If nothing works, use visualClick() — it locates the target in a screenshot before clicking it.
 
   When a click result reports several matches, pick one from its numbered list by position rather than guessing a new locator.
   Reuse the same locator with step.opts({ elementIndex: N }) as the LAST argument. N is the "Element N" number.
