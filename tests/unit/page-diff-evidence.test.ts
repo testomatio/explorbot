@@ -24,6 +24,13 @@ describe('html diff messages', () => {
     expect((await htmlDiff(after, after)).messages).toEqual([]);
   });
 
+  test('reports a refusal the app explains in a tooltip', async () => {
+    const before = page('<button>Copy</button>');
+    const after = page('<button>Copy</button><div role="tooltip">You cannot copy into a suite</div>');
+
+    expect((await htmlDiff(before, after)).messages).toEqual(['You cannot copy into a suite']);
+  });
+
   test('reads aria-live regions and output elements', async () => {
     const before = page('<div aria-live="polite"></div><output></output>');
     const after = page('<div aria-live="polite">Saved</div><output>3 results</output>');

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-10
+
+### Changes
+
+- [Pilot] Text an app shows in a tooltip now reaches Pilot along with alerts and status messages. When a
+  page refuses an action and explains why in a hover bubble, that sentence used to stay in the page HTML,
+  which Pilot never sees — so a run could be judged, and reported, on a reason the app had already
+  contradicted on screen.
+- [Tester] After one locator in a click succeeds, the ones that were not tried are now listed as skipped.
+  The list is fallbacks for a single element, so a batch written as "click this, then click that" only
+  ever clicked the first — and reported success, giving no sign the second half never ran.
+- [Tester] When a locator matches both an element and the container wrapping it, the match list now marks
+  which one wraps the other. Those are one control listed at two depths rather than two candidates, so
+  neither is worth retrying after the other has been clicked.
+
 ## 2026-09-09
 
 ### Changes
