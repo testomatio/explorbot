@@ -549,6 +549,8 @@ function semanticSelectorFor(element: ElementNode, allElements: NodeMap): string
   while (current) {
     const selector = buildContainerSelector(current, allElements);
     if (selector) return selector;
+    const classAttr = (current.attrs ?? []).find((a) => a.name === 'class')?.value;
+    if (classAttr && filterContainerClasses(classAttr.split(/\s+/).filter(Boolean)).length > 0) return undefined;
     current = dominantChild(current);
   }
   return undefined;
