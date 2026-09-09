@@ -5,7 +5,7 @@ import { RequestStore } from '../../../src/api/request-store.ts';
 import { extractEndpointDefinition, loadSpec, resolveEndpoints, searchEndpoints, validateSpecs } from '../../../src/api/spec-reader.ts';
 import { KnowledgeTracker } from '../../../src/knowledge-tracker.ts';
 import { Reporter } from '../../../src/reporter.ts';
-import { Plan } from '../../../src/test-plan.ts';
+import { Plan, type Test } from '../../../src/test-plan.ts';
 import { setVerboseMode, tag } from '../../../src/utils/logger.ts';
 import { Chief } from './ai/chief.ts';
 import { Curler } from './ai/curler.ts';
@@ -168,6 +168,18 @@ export class ApiBot {
 
   getConfigParser(): ApibotConfigParser {
     return this.configParser;
+  }
+
+  getOptions(): ApibotOptions {
+    return this.options;
+  }
+
+  async runTest(test: Test): Promise<{ success: boolean }> {
+    return this.agentCurler().test(test, {
+      specDefinition: this.tryGetEndpointDefinition(test.startUrl!),
+      baseEndpoint: this.config.api.baseEndpoint,
+      searchSpec: (query: string) => this.searchSpec(query),
+    });
   }
 
   getRequestState(): RequestStore {

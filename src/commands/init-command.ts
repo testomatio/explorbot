@@ -39,7 +39,7 @@ ${moduleExport}
 `;
 }
 
-function envTemplate(provider: string): string {
+export function envTemplate(provider: string): string {
   const keyLines = Object.entries(PROVIDERS).map(([name, { envKey }]) => {
     if (name === provider) return `${envKey}=`;
     return `# ${envKey}=`;
@@ -253,7 +253,7 @@ async function renderLocalProviderWizard(): Promise<string | null> {
   });
 }
 
-function modelLines(provider: string): string {
+export function modelLines(provider: string, only?: ModelRole[]): string {
   const recommended = ConfigParser.recommendedModels()[provider] || {};
   const roles: Array<[ModelRole, string]> = [
     ['model', 'fast model with tool calling capabilities'],
@@ -261,7 +261,10 @@ function modelLines(provider: string): string {
     ['agenticModel', 'agentic model for decision making'],
   ];
 
-  return roles.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`).join('\n');
+  let selected = roles;
+  if (only) selected = roles.filter(([role]) => only.includes(role));
+
+  return selected.map(([role, comment]) => `    // ${comment}\n    ${role}: '${provider}/${recommended[role] || '<model-id>'}',`).join('\n');
 }
 
 function globalConfigTemplate(provider: string): string {

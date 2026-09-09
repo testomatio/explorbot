@@ -19,17 +19,12 @@ function fakeBot(endpoints: string[], planned: Planned[], results: boolean[] = [
       plan.addTest(new Test(`check ${endpoint}`, 'normal', ['200 OK'], endpoint, []));
       return plan;
     },
-    agentCurler: () => ({
-      test: async () => {
-        const success = results[attempt % results.length];
-        attempt++;
-        return { success };
-      },
-    }),
-    tryGetEndpointDefinition: () => undefined,
-    searchSpec: () => '',
+    runTest: async () => {
+      const success = results[attempt % results.length];
+      attempt++;
+      return { success };
+    },
     savePlan: () => null,
-    getConfig: () => ({ api: { baseEndpoint: 'https://api.example.com' } }),
   } as unknown as ApiBot;
 }
 
@@ -61,8 +56,9 @@ describe('ExploreCommand', () => {
   });
 
   it('counts every test it ran', async () => {
-    const result = await new ExploreCommand(fakeBot(['/a', '/b'], [], [true, false])).execute('/*');
+    const command = new ExploreCommand(fakeBot(['/a', '/b'], [], [true, false]));
+    await command.execute('/*');
 
-    expect(result).toEqual({ tests: 2, passed: 1, failed: 1 });
+    expect(command.result).toEqual({ tests: 2, passed: 1, failed: 1 });
   });
 });

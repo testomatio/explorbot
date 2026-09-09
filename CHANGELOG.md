@@ -39,6 +39,22 @@
   no longer sends the run into an element it can never act on.
 - [Tester] An element that is present but not visible now also suggests targeting an on-screen copy of the
   same control, alongside the existing advice to scroll to it or open the panel holding it.
+- `apibot init` writes a config you can run. It used to hardcode `openai('gpt-4o')` and an
+  `@ai-sdk/openai` import, so a fresh project pointed at a model nobody here uses and failed unless
+  that package happened to be installed. Models now come from the recommendations for your provider,
+  written as `provider/model-id` strings that need no import. The commented-out `bootstrap` and
+  `teardown` blocks, the empty `headers` block and the `dirs` block that only restated the defaults
+  are gone. A `.env` with the provider keys is written alongside, as `explorbot init` does.
+
+  ```bash
+  apibot init                                            # asks for the endpoint and spec
+  apibot init --endpoint https://api.example.com/v1 --spec openapi.yaml   # no questions
+  apibot init --provider openai                          # models for another provider
+  ```
+
+- The generated config is `apibot.config.js`. It was written as `apibot.config.ts`, which is third in
+  the list of files apibot looks for and is not the name its own "config missing" error tells you to
+  create.
 
 ## 2026-09-08
 

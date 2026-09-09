@@ -1,17 +1,14 @@
 import { getStyles } from '../ai/chief/styles.ts';
-import type { ApiBot } from '../apibot.ts';
+import { ApiCommand } from './api-command.ts';
 
-export class ExploreCommand {
-  private bot: ApiBot;
+export class ExploreCommand extends ApiCommand {
+  name = 'explore';
+  description = 'Full cycle: plan, execute tests, re-plan. Use * to cover many endpoints, or the base endpoint for all of them';
+  result: ExploreResult = { tests: 0, passed: 0, failed: 0 };
 
-  constructor(bot: ApiBot) {
-    this.bot = bot;
-  }
-
-  async execute(endpoint: string): Promise<ExploreResult> {
+  async execute(endpoint: string): Promise<void> {
     const styles = Object.keys(getStyles());
     const endpoints = this.bot.expandEndpoints(endpoint);
-    const result: ExploreResult = { tests: 0, passed: 0, failed: 0 };
 
     for (const [index, target] of endpoints.entries()) {
       let runStyles = [styles[index % styles.length]];
@@ -19,17 +16,15 @@ export class ExploreCommand {
       if (endpoints.length > 1) console.log(`\n=== Endpoint ${index + 1}/${endpoints.length}: ${target} ===`);
 
       for (const style of runStyles) {
-        await this.runStyle(target, style, result);
+        await this.runStyle(target, style);
       }
     }
 
     console.log('\n=== Final Results ===');
-    console.log(`Total: ${result.tests} tests, ${result.passed} passed, ${result.failed} failed`);
-
-    return result;
+    console.log(`Total: ${this.result.tests} tests, ${this.result.passed} passed, ${this.result.failed} failed`);
   }
 
-  private async runStyle(endpoint: string, style: string, result: ExploreResult): Promise<void> {
+  private async runStyle(endpoint: string, style: string): Promise<void> {
     console.log(`\n=== Style: ${style} ===\n`);
 
     const plan = await this.bot.plan(endpoint, { style, fresh: true });
@@ -39,15 +34,10 @@ export class ExploreCommand {
     }
 
     for (const test of plan.getPendingTests()) {
-      const specDefinition = this.bot.tryGetEndpointDefinition(test.startUrl!);
-      const outcome = await this.bot.agentCurler().test(test, {
-        specDefinition,
-        baseEndpoint: this.bot.getConfig().api.baseEndpoint,
-        searchSpec: (query: string) => this.bot.searchSpec(query),
-      });
-      result.tests++;
-      if (outcome.success) result.passed++;
-      else result.failed++;
+      const outcome = await this.bot.runTest(test);
+      this.result.tests++;
+      if (outcome.success) this.result.passed++;
+      else this.result.failed++;
     }
 
     this.bot.savePlan(style);

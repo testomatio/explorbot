@@ -15,7 +15,7 @@ export interface Suggestion {
   hint: string;
 }
 
-export abstract class BaseCommand {
+export abstract class BaseCommand<T = ExplorBot> {
   abstract name: string;
   abstract description: string;
   aliases: string[] = [];
@@ -23,9 +23,9 @@ export abstract class BaseCommand {
   tuiEnabled = true;
   suggestions: Suggestion[] = [];
 
-  protected explorBot: ExplorBot;
+  protected explorBot: T;
 
-  constructor(explorBot: ExplorBot) {
+  constructor(explorBot: T) {
     this.explorBot = explorBot;
   }
 
