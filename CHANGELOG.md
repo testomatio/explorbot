@@ -14,6 +14,14 @@
 - [Tester] When a locator matches both an element and the container wrapping it, the match list now marks
   which one wraps the other. Those are one control listed at two depths rather than two candidates, so
   neither is worth retrying after the other has been clicked.
+- [Researcher] A dialog or panel that opens is now described with the container that bounds it, taken from
+  the area the page capture already worked out. Those sections used to arrive with no container at all, so
+  every step aimed at something inside the dialog had to be written without one, and matched the page
+  behind it just as readily.
+- Region detection: when a dialog cannot be told apart from a similar panel behind it because both carry
+  the same class, no container is reported instead of the largest thing inside the dialog. Naming an inner
+  list as the dialog's edge left its Cancel and confirm buttons outside the very scope meant to hold them.
+  Dialogs wrapped only in unnamed or utility-class layers resolve as before.
 
 ## 2026-09-09
 

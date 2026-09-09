@@ -116,7 +116,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       );
 
       tag('substep').log(`Researching overlay: ${region.name}`);
-      const sectionMarkdown = await this._analyzeExpandedAction('', region.name, diff, alreadyExpanded);
+      const sectionMarkdown = await this._analyzeExpandedAction('', region.name, diff, alreadyExpanded, region.root);
       if (!sectionMarkdown) {
         debugLog(`Overlay "${region.name}" produced no meaningful expansion`);
         return null;
@@ -421,9 +421,9 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       await new Promise((r) => setTimeout(r, 500));
 
       let diff: Diff;
+      let currAR: ActionResult;
       try {
-        await this.explorer.capture();
-        const currAR = ActionResult.fromState(this.stateManager.getCurrentState()!);
+        currAR = await this.explorer.capture();
         diff = await currAR.diff(previousState);
       } catch (err) {
         tag('warning').log(`State capture failed after click: ${err instanceof Error ? err.message : err}`);
@@ -444,7 +444,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
         return { status: 'none', code: clickCode };
       }
 
-      const sectionMarkdown = await this._analyzeExpandedAction(clickCode, description, diff, alreadyExpanded);
+      const sectionMarkdown = await this._analyzeExpandedAction(clickCode, description, diff, alreadyExpanded, currAR.overlay.root);
       await this._restorePageState(state.url, originalAria);
       if (!sectionMarkdown) return { status: 'none', code: clickCode };
       return { status: 'revealed', code: clickCode, sectionMarkdown };
@@ -467,7 +467,7 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       }
     }
 
-    private async _analyzeExpandedAction(code: string, description: string, diff: Diff, alreadyExpanded: string[]): Promise<string | null> {
+    private async _analyzeExpandedAction(code: string, description: string, diff: Diff, alreadyExpanded: string[], containerCss: string | null = null): Promise<string | null> {
       const alreadyHint = alreadyExpanded.length > 0 ? `\nAlready expanded sections:\n${alreadyExpanded.join('\n')}` : '';
 
       let intro: string;
@@ -532,7 +532,14 @@ export function WithDeepAnalysis<T extends Constructor>(Base: T) {
       const sections = parseResearchSections(text);
       if (sections.length === 0) return null;
 
-      return sections[0].rawMarkdown;
+      const sectionMarkdown = sections[0].rawMarkdown;
+      if (!containerCss) return sectionMarkdown;
+
+      let heading = mdq(sectionMarkdown).query('h3[0]');
+      if (heading.count() === 0) heading = mdq(sectionMarkdown).query('h2[0]');
+      if (heading.count() === 0) return sectionMarkdown;
+
+      return heading.replace(`${heading.text().trimEnd()}\n\n> Container: '${containerCss}'\n\n`);
     }
 
     private _deduplicateExpandedSections(sections: string[]): string[] {

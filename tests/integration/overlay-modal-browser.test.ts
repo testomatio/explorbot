@@ -181,3 +181,39 @@ describe('picker mounted inside the panel it covers, with no host of its own', (
     expect(region!.root).toBe('div.picker-dialog');
   });
 });
+
+describe('dialog whose wrapper class is shared with the panel behind it', () => {
+  let page: Page;
+  let diff: RegionDiff;
+
+  beforeAll(async () => {
+    page = await openFixture('nested_app_modal.html');
+    const before = await page.evaluate(captureHtmlForSnapshot);
+    await page.locator('#open').click();
+    await page.waitForSelector('.test-list');
+    const after = await page.evaluate(captureHtmlForSnapshot);
+    diff = await diffOf(before, after);
+  });
+
+  afterAll(async () => {
+    await page?.close();
+  });
+
+  it('cannot name the dialog by its own class, because the panel behind it shares one', async () => {
+    expect(diff.parts).toHaveLength(1);
+    expect(await page.locator('div.panel-wrapper').count()).toBe(2);
+  });
+
+  it('is still detected as an overlay, and named', async () => {
+    const region = await new OverlayPage(page).detectRegion(diff);
+    expect(region).not.toBeNull();
+    expect(region!.type).toBe('overlay');
+    expect(region!.name).toBe('Select tests for plan');
+  });
+
+  it('reports no root at all rather than one that misses the dialog controls', async () => {
+    const region = await new OverlayPage(page).detectRegion(diff);
+    expect(region!.root).toBeNull();
+    expect(await page.locator('ul.test-list').count()).toBe(1);
+  });
+});
