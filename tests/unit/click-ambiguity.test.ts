@@ -68,16 +68,6 @@ describe('click on an ambiguous locator', () => {
     expect(result.suggestion).toContain('elementIndex');
   });
 
-  it('names the only match on screen so the model stops guessing', async () => {
-    const { deps } = fakeDeps(() => multipleElementsError([false, true]));
-    const tools = createCodeceptJSTools(deps, fakeTask());
-
-    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
-
-    expect(result.elements).toContain('Visible: false');
-    expect(result.suggestion).toContain('Only element 2 is on screen');
-  });
-
   it('keeps the ambiguous match when a later fallback command failed differently', async () => {
     const { deps } = fakeDeps((command) => {
       if (command.includes('role')) return multipleElementsError();

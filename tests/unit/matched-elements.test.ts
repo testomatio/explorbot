@@ -82,6 +82,20 @@ describe('formatMatchedElements', () => {
     expect(formatted).not.toContain('Visible:');
   });
 
+  it('marks a match that wraps another match', async () => {
+    const error = multipleElementsError([
+      { xpath: '//html/body/div/ul/li/div', html: '<div role="button"><li role="button">Root</li></div>', text: 'Root' },
+      { xpath: '//html/body/div/ul/li/div/li', html: '<li role="button">Root</li>', text: 'Root' },
+      { xpath: '//html/body/div/ul/li[165]/div', html: '<div role="button">Test Suite Root</div>', text: 'Test Suite Root' },
+    ]);
+
+    const formatted = await formatMatchedElements(error);
+
+    expect(formatted).toContain('Element 1:\nText: "Root"\nWraps: element 2');
+    expect(formatted).not.toContain('Element 2:\nText: "Root"\nWraps:');
+    expect(formatted).not.toContain('Element 3:\nText: "Test Suite Root"\nWraps:');
+  });
+
   it('falls back when the error carries no elements', async () => {
     const formatted = await formatMatchedElements(new Error('boom'));
 
