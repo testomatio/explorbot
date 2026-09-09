@@ -16,7 +16,7 @@ describe('apibot init', () => {
   });
 
   const init = async (extra: Record<string, unknown> = {}) => {
-    await runInit({ path: dir, baseEndpoint: 'https://api.example.com/v1', prefix: 'apibot', ...extra });
+    await runInit({ path: dir, baseEndpoint: 'https://api.example.com/v1', spec: 'openapi.yaml', prefix: 'apibot', ...extra });
     return readFileSync(join(dir, 'apibot.config.js'), 'utf8');
   };
 
@@ -44,8 +44,8 @@ describe('apibot init', () => {
     expect(config).not.toContain('headers');
   });
 
-  it('writes the spec when there is one', async () => {
-    const config = await init({ spec: 'openapi.yaml' });
+  it('writes the spec the run cannot start without', async () => {
+    const config = await init();
 
     expect(config).toContain("spec: ['openapi.yaml']");
   });

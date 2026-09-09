@@ -73,7 +73,7 @@ export function createApiCommands(name = 'api'): Command {
     .option('-f, --force', 'Overwrite existing config file')
     .option('-p, --path <path>', 'Working directory for initialization')
     .option('--provider <name>', 'AI provider written into the config')
-    .option('--endpoint <url>', 'Base API endpoint, skips the questions')
+    .option('--endpoint <url>', 'Base API endpoint, with --spec skips the questions')
     .option('--spec <path>', 'OpenAPI spec file or URL')
     .action(async (options) => {
       await runInit({ ...options, baseEndpoint: options.endpoint, prefix: name });

@@ -29,6 +29,11 @@ export async function runInit(options: InitOptions): Promise<void> {
     process.exit(1);
   }
 
+  if (!answers.spec) {
+    tag('error').log('OpenAPI spec is required. Chief plans from it and Curler looks up schemas in it.');
+    process.exit(1);
+  }
+
   writeFileSync(configPath, configTemplate(provider, answers.baseEndpoint, answers.spec), 'utf8');
   log(`Created config file: ${configPath}`);
 
@@ -64,9 +69,6 @@ export async function runInit(options: InitOptions): Promise<void> {
 }
 
 function configTemplate(provider: string, baseEndpoint: string, spec: string): string {
-  let specLine = '';
-  if (spec) specLine = `\n    spec: ['${spec}'],`;
-
   return `// Models are written as 'provider/model-id' so they resolve without a local node_modules.
 // https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
 
@@ -76,7 +78,8 @@ ${modelLines(provider, ['model', 'agenticModel'])}
   },
 
   api: {
-    baseEndpoint: '${baseEndpoint}',${specLine}
+    baseEndpoint: '${baseEndpoint}',
+    spec: ['${spec}'],
   },
 };
 `;
@@ -93,7 +96,7 @@ async function ask(options: InitOptions): Promise<Answers> {
 
   log('Apibot — API Testing Tool Setup\n');
   const baseEndpoint = await question('Base API endpoint (e.g. https://api.example.com/v1): ');
-  const spec = await question('OpenAPI spec file or URL (Enter to skip): ');
+  const spec = await question('OpenAPI spec file or URL: ');
   const knowledge = await question('Describe your API, its auth and its rules (Enter to skip): ');
   iface.close();
 

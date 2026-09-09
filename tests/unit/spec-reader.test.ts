@@ -15,6 +15,17 @@ const schema = {
   },
 };
 
+const nested = {
+  paths: {
+    '/projects': { get: { summary: 'List projects' } },
+    '/projects/{id}': { get: { summary: 'Get project' } },
+    '/projects/{id}/tests': { get: { summary: 'List tests' } },
+    '/projects/{id}/tests/latest': { get: { summary: 'Latest test' } },
+    '/projects/{id}/tests/{test_id}': { get: { summary: 'Get test' } },
+    '/projects/{id}/suites': { get: { summary: 'List suites' } },
+  },
+};
+
 const matchedPaths = (endpoint: string, baseEndpoint?: string) => Object.keys(JSON.parse(extractEndpointDefinition(schema, endpoint, baseEndpoint)));
 
 describe('extractEndpointDefinition', () => {
@@ -80,5 +91,13 @@ describe('resolveEndpoints', () => {
 
   it('throws for an unknown endpoint', () => {
     expect(() => resolveEndpoints(schema, '/api/v2/zyntra/nope')).toThrow('not found in spec');
+  });
+
+  it('keeps nested collections apart when their parent is an endpoint of its own', () => {
+    expect(resolveEndpoints(nested, '/projects/acme/*')).toEqual(['/projects/acme/tests', '/projects/acme/suites']);
+  });
+
+  it('returns one endpoint when a literal path and a templated one fill in the same', () => {
+    expect(resolveEndpoints(nested, '/projects/acme/tests/latest')).toEqual(['/projects/acme/tests/latest']);
   });
 });

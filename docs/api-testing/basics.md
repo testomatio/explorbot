@@ -81,7 +81,7 @@ The base endpoint keeps its path prefix: given `https://api.example.com/v1`, ste
 
 ### A dedicated API project
 
-If you don't have a web `explorbot.config.js`, run `npx explorbot api init`. It asks for your base endpoint, spec, and a one-line description of the API, then writes a standalone `apibot.config.ts` (with an `ai` and `api` section) plus `output/` and `knowledge/` directories. When both files exist, `apibot.config.*` takes precedence over `explorbot.config.*`.
+If you don't have a web `explorbot.config.js`, run `npx explorbot api init`. It asks for your base endpoint, spec, and a one-line description of the API, then writes a standalone `apibot.config.js` (with an `ai` and `api` section) plus `output/` and `knowledge/` directories. When both files exist, `apibot.config.*` takes precedence over `explorbot.config.*`.
 
 ## Your first run
 

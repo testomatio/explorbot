@@ -74,8 +74,8 @@ export function resolveEndpoints(schema: any, pattern: string, baseEndpoint?: st
     throw new Error(`Endpoint "${pattern}" not found in spec. Available: ${listNormalizedPaths(schema, basePath)}`);
   }
 
-  const roots = [...new Set(matched.map((specPath) => toCollection(specPath, normalized)))];
-  const resolved = roots.map((root) => fillParameters(root, pattern));
+  const roots = matched.map((specPath) => toCollection(specPath, normalized, pattern));
+  const resolved = [...new Set(roots.map((root) => fillParameters(root, pattern)))];
   const endpoints = resolved.filter((specPath) => !specPath.includes('{'));
 
   if (!endpoints.length) {
@@ -230,12 +230,19 @@ function segmentsMatch(segments: string[], wanted: string[]): boolean {
   return wanted.every((want, i) => want === '*' || segments[i] === want || segments[i].startsWith('{'));
 }
 
-function toCollection(specPath: string, specPaths: string[]): string {
+function toCollection(specPath: string, specPaths: string[], pattern: string): string {
   const segments = toSegments(specPath);
-  for (let i = 1; i < segments.length; i++) {
+  const filled = toSegments(fillParameters(specPath, pattern));
+
+  let deepest = segments.length;
+  const unfilled = filled.findIndex((segment) => segment.startsWith('{'));
+  if (unfilled >= 0) deepest = unfilled;
+
+  for (let i = Math.max(1, Math.min(toSegments(pattern).length, deepest)); i <= deepest; i++) {
     const prefix = `/${segments.slice(0, i).join('/')}`;
     if (specPaths.includes(prefix)) return prefix;
   }
+
   return specPath;
 }
 
