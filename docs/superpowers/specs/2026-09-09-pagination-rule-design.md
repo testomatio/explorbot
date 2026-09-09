@@ -60,9 +60,15 @@ The gesture is a single line beginning with `I.`, so it passes the `form` tool's
 
 ### A. Researcher measures container scrollability
 
-Researcher resolves a `> Container:` selector per section and already calls
-`explorer.withPage(...)` to verify containers (`src/ai/researcher/sections.ts:73`). One
-`page.evaluate` over those containers at the same point records, per container:
+The `> Container:` line is written by the AI in the section response, so the measurement has to
+run on the parsed result, not before the prompt. The seam is `validateContainers`
+(`src/ai/researcher/locators.ts:268`): it walks `parseResearchSections(result.text)`, already
+calls `explorer.withPage((page) => page.locator(section.containerCss).count())` on each, and
+already rewrites the blockquote through mdq in `updateSectionContainer`
+(`src/ai/researcher/locators.ts:300`).
+
+One `page.evaluate` in that same loop, over containers that survived validation, records per
+container:
 
 - `el.scrollHeight > el.clientHeight` → the container has its own scroller.
 - `el.getBoundingClientRect().bottom > innerHeight` → the list continues below the fold,
@@ -72,14 +78,22 @@ Researcher resolves a `> Container:` selector per section and already calls
 This is a hint, not a gate. A false negative falls through to the probe, which is the rule's
 normal path anyway.
 
-Emitted as one line in the section block, whose grammar Researcher owns:
+Emitted as a second line inside the container blockquote, whose content
+`updateSectionContainer` already owns end to end:
 
 ```
 > Container: '.semantic-container'
 > Scrolls: own
 ```
 
-`own` or `page`; the line is omitted when neither holds.
+`own` or `page`; the line is omitted when neither holds. `updateSectionContainer` stays the
+single writer — its `blockquote[0]` replace grows from `Container: '…'` to
+`Container: '…'\nScrolls: …`, so nothing else touches that blockquote.
+
+**No reader.** Only the rule consumes this, and the rule is prompt text, so the line rides
+along as free text in the UI map the model already reads. No `extractScrollsFromBlockquote`
+counterpart to `extractContainerFromBlockquote` (`src/ai/researcher/parser.ts:86`) is added —
+if code ever needs to branch on it, that is when a parser is justified.
 
 The evaluate function goes in a new `src/utils/scrollable.ts`, self-contained with no
 outer-scope references. `measureLayout` in `overlay.ts` is not reused: it is xpath-based and
@@ -117,11 +131,12 @@ Two strategies, in this order:
    scrollable ancestor of that item scrolls, so this reaches a list that has its
    own scrollbar.
 
-After each attempt read the diff: new rows in the aria changes, or a call in
-requests, means more arrived. Neither means the collection ended — that is an
-answer, not a failed action.
+After each attempt read the diff. New rows in the aria changes mean more arrived.
+A call in requests with no new rows means the list asked and got nothing back.
+Neither appearing means the scroll never reached the list's own scroller.
 
-Repeat a bounded number of times. Stop on the first attempt that adds nothing.
+Stop on the first attempt that adds no rows. Reaching the end of a collection is
+an answer, not a failed action — report what it holds.
 </pagination_rule>
 ```
 
@@ -147,8 +162,9 @@ field/form action as not completed. Re-locate the editable control…" and commi
 `TestResult.FAILED` into the note. That note is read by final review and by Historian, so a
 correct end-of-list check is recorded as a failed test step.
 
-Fix: count `pageDiff.requests` as an observable change, and make the no-change message state
-what was observed rather than prescribing a form-specific recovery.
+Fix: one line in `hasObservablePageChange` — `if (data.pageDiff.requests?.length) return true;`
+— and a no-change message that states what was observed rather than prescribing a
+form-specific recovery.
 
 **`src/ai/tools.ts:1208`** — `isMajorPageChange` (`src/ai/tools.ts:1220`) fires at
 `ariaChangeCount >= 50` with no URL change (`LARGE_ARIA_CHANGE_THRESHOLD`,
@@ -160,6 +176,17 @@ changed.
 Fix: a diff consisting of additions with no corresponding removals is growth, not a mode
 change. Mode changes churn — they remove as well as add.
 
+The added/removed split exists inside `diffAriaSnapshots` but is flattened into a single
+`count` before it reaches the check, so it has to be threaded through:
+
+1. `AriaDiff` (`src/utils/aria.ts:587`) gains `added: number; removed: number` — both arrays
+   are already computed at `src/utils/aria.ts:522`.
+2. `Diff` (`src/action-result.ts:650`) stores them alongside `_ariaChangeCount`, set where
+   `diffAriaSnapshots` is called (`src/action-result.ts:740`), and exposes them.
+3. `PageDiff` (`src/action-result.ts:46`) gains `ariaAdded` / `ariaRemoved`, populated next to
+   `ariaChanges` / `ariaChangeCount` (`src/action-result.ts:552`).
+4. `isMajorPageChange` then reads the split instead of the total.
+
 ## Risks
 
 - **Region misclassification.** `OverlayPage.detectRegion` (`src/utils/overlay.ts:41`) accepts
@@ -170,9 +197,13 @@ change. Mode changes churn — they remove as well as add.
 - **Virtualized lists.** Recycled nodes keep counts flat, so the aria diff shows renames
   (`src/utils/aria.ts:325`) rather than additions. Such a list will read as "nothing arrived"
   and the rule will stop. Out of scope.
-- **Bounded repeats live only in the prompt.** No tool enforces the stop condition, so a model
-  that ignores the bound can scroll further than intended. Accepted: the tester's own iteration
-  cap remains the backstop.
+- **The stop condition lives only in the prompt.** No tool enforces it, so a model that keeps
+  scrolling past an attempt which added no rows will keep scrolling. Accepted: the tester's own
+  iteration cap is the only backstop.
+- **A REST call alone no longer stops the loop, by design.** After the D fix an empty-payload
+  200 counts as an observable change, so the tool reports success. The rule makes rows, not
+  calls, the evidence that more arrived — otherwise a list that answers every scroll with an
+  empty page would loop.
 
 ## Testing
 
