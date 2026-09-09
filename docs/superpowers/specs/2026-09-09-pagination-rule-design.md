@@ -22,9 +22,11 @@ untouched.
 
 ## Approach
 
-Rules, not a new tool. The gesture already exists in CodeceptJS; what is missing is that the
-model is never told about it, has no hint about which container scrolls, and receives tool
-output that contradicts what the rule would tell it.
+Research finds out which strategy a list uses; a rule tells the tester what to do about it.
+No new tool: the gesture already exists in CodeceptJS and is reachable through `form`.
+
+Splitting it that way is what keeps the rule short. The tester never has to discover anything
+at run time, because the UI map already names the strategy.
 
 ### Why `I.scrollTo` is sufficient
 
@@ -54,53 +56,83 @@ The gesture is a single line beginning with `I.`, so it passes the `form` tool's
   counts node summaries, so appended rows surface as counted additions.
 - **`pageDiff.requests`** — `Action.recordNetworkCall` (`src/action.ts:314`) captures same-origin
   xhr/fetch as `{method, path, status}`, deduped. It stores `url.pathname` only, so the query
-  string is dropped: the rule reads *presence of a call*, never a page number.
+  string is dropped: presence of a call, never a page number.
 
 ## Design
 
-### A. Researcher measures container scrollability
+### A. Researcher determines each list's pagination strategy
 
-The `> Container:` line is written by the AI in the section response, so the measurement has to
-run on the parsed result, not before the prompt. The seam is `validateContainers`
-(`src/ai/researcher/locators.ts:268`): it walks `parseResearchSections(result.text)`, already
-calls `explorer.withPage((page) => page.locator(section.containerCss).count())` on each, and
-already rewrites the blockquote through mdq in `updateSectionContainer`
-(`src/ai/researcher/locators.ts:300`).
+Three steps per section, cheapest first, stopping as soon as one answers. This is the
+escalation ladder from CLAUDE.md: deterministic gate, AI judgment, then a probe whose result
+converts judgment back into a recorded fact.
 
-One `page.evaluate` in that same loop, over containers that survived validation, records per
-container:
+**1. Are there pagination controls? (AI, free)**
+
+Controls are named in open-ended ways — words, arrows, bare numbers — so this is AI judgment,
+not a pattern match. Researcher is already describing the section, so it costs nothing extra:
+a new `rules/researcher/pagination.md`, loaded alongside the existing three at
+`src/ai/researcher/sections.ts:81`, asks it to note when a section contains controls that move
+between pages of the same collection.
+
+If found, the section records `> Pagination: controls` and the remaining steps are skipped.
+
+**2. Can the section scroll at all? (deterministic gate)**
+
+Only asked when no controls were found. One `page.evaluate` per container:
 
 - `el.scrollHeight > el.clientHeight` → the container has its own scroller.
-- `el.getBoundingClientRect().bottom > innerHeight` → the list continues below the fold,
-  page scroller.
-- Neither → nothing recorded.
+- `el.getBoundingClientRect().bottom > innerHeight` → the list continues below the fold.
+- Neither → nothing more to do; no line recorded.
 
-This is a hint, not a gate. A false negative falls through to the probe, which is the rule's
-normal path anyway.
+This gate exists to keep step 3 from running on every short list.
 
-Emitted as a second line inside the container blockquote, whose content
-`updateSectionContainer` already owns end to end:
+**3. Probe: does scrolling load more? (deterministic measurement)**
+
+Scroll the container to its end, wait for readiness (`waitForPageReadiness`,
+`src/utils/page-readiness.ts`), and compare. More descendant rows than before, or a same-origin
+xhr/fetch fired during the scroll, means the list appends. Record `> Pagination: infinite`.
+
+Then restore `scrollTop` to what it was, so screenshots, coordinates and later research see the
+page as they found it. Scroll position is not app state, so this needs none of the modal
+cleanup `_restorePageState` does in `deep-analysis.ts:453` — there is nothing to reuse there.
+
+**Recorded vocabulary:** `controls` or `infinite`, as a line in the section's container
+blockquote. Nothing is written when a list neither paginates nor grows, which is the common
+case and should stay silent.
 
 ```
 > Container: '.semantic-container'
-> Scrolls: own
+> Pagination: infinite
 ```
 
-`own` or `page`; the line is omitted when neither holds. `updateSectionContainer` stays the
-single writer — its `blockquote[0]` replace grows from `Container: '…'` to
-`Container: '…'\nScrolls: …`, so nothing else touches that blockquote.
-
 **No reader.** Only the rule consumes this, and the rule is prompt text, so the line rides
-along as free text in the UI map the model already reads. No `extractScrollsFromBlockquote`
-counterpart to `extractContainerFromBlockquote` (`src/ai/researcher/parser.ts:86`) is added —
-if code ever needs to branch on it, that is when a parser is justified.
+along as free text in the UI map the model already reads. No `extractPaginationFromBlockquote`
+counterpart to `extractContainerFromBlockquote` (`src/ai/researcher/parser.ts:86`) — if code
+ever needs to branch on it, that is when a parser is justified.
 
-The evaluate function goes in a new `src/utils/scrollable.ts`, self-contained with no
+### A2. Where the code goes
+
+New `src/ai/researcher/pagination.ts` mixin, composed into `ResearcherBase`
+(`src/ai/researcher.ts:47`), owning steps 2 and 3. Step 1 is prompt text in
+`rules/researcher/pagination.md` and needs no code.
+
+It runs after `validateContainers` (`src/ai/researcher/locators.ts:268`), on containers that
+survived validation, so a probe never targets a selector already known to be broken.
+
+Not `deep-analysis.ts`: that mixin owns the same interact-measure-restore shape, but it is
+gated behind `deep` (`src/ai/researcher.ts:287`), and infinite scroll has to be detected on
+ordinary research runs too. It is also already 26k.
+
+Not `locators.ts`: that mixin owns locator validity, not list behaviour.
+
+**One writer for the blockquote.** `updateSectionContainer`
+(`src/ai/researcher/locators.ts:300`) currently owns that `blockquote[0]` replace. The
+pagination mixin must not write it independently. Extract the blockquote composition into one
+helper both call, so `Container:` and `Pagination:` are always emitted by the same code.
+
+The in-page evaluate functions go in a new `src/utils/scrollable.ts`, self-contained with no
 outer-scope references. `measureLayout` in `overlay.ts` is not reused: it is xpath-based and
 returns a modal-scoring `RegionLayout`, while sections carry CSS selectors and need neither.
-
-**No persistence.** The fact is recomputed for free on every research pass. The research cache
-is session-scoped and must stay that way.
 
 ### B. The pagination rule
 
@@ -114,29 +146,23 @@ all four agents that act on pages — Tester (`src/ai/tester.ts:838`), Navigator
 (`src/ai/captain/web-mode.ts:148`). Navigator does not import `sectionContextRule`
 (`src/ai/navigator.ts:26`), so composing there would miss it. One edit, no duplication.
 
-Not a `rules/*.md` file: those are loaded per agent, so this would need four copies.
+Not a `rules/*.md` file: those are loaded per agent, so this would need four copies. (The
+researcher-side rule in step A1 *is* a `rules/*.md` file, because it has exactly one consumer.)
 
 Draft text:
 
 ```
 <pagination_rule>
-A list shows a window onto a larger collection. When what you need is not in the
-window, widen it before concluding it is absent.
+A list shows a window onto a larger collection. If what you need is not in it,
+widen it before concluding it is absent. The UI map names the strategy.
 
-Two strategies, in this order:
-1. Controls that replace the window — next, previous, page numbers, load more.
-   If the UI map lists one, click it. It is reversible and it names the position.
-2. Appending on scroll — when no such control exists and the list continues past
-   what is visible, scroll to the last item currently in the list. Every
-   scrollable ancestor of that item scrolls, so this reaches a list that has its
-   own scrollbar.
+- Pagination controls: click next, or the page number you need.
+- Infinite scroll: scroll to the last item in the list. Every scrollable
+  ancestor of that item scrolls, reaching a list with its own scrollbar.
 
-After each attempt read the diff. New rows in the aria changes mean more arrived.
-A call in requests with no new rows means the list asked and got nothing back.
-Neither appearing means the scroll never reached the list's own scroller.
-
-Stop on the first attempt that adds no rows. Reaching the end of a collection is
-an answer, not a failed action — report what it holds.
+New rows in the aria changes mean more arrived; a request with none means nothing
+was left. Stop on the first attempt that adds no rows: the end of a
+collection is an answer, not a failure.
 </pagination_rule>
 ```
 
@@ -189,14 +215,18 @@ The added/removed split exists inside `diffAriaSnapshots` but is flattened into 
 
 ## Risks
 
+- **The probe costs a scroll per candidate section.** Steps 1 and 2 narrow it to sections that
+  have no pagination controls and can actually scroll, which on most pages is zero or one. If
+  it still proves too slow, the gate to tighten is step 2, not the probe itself.
 - **Region misclassification.** `OverlayPage.detectRegion` (`src/utils/overlay.ts:41`) accepts
   in-flow added content that is `sizable` (≥5,000 chars, `src/utils/region.ts:99`), dominant
   (≥70% of added raw size) and carries a name or root. A large appended batch in one list
   container fits all three, which would fork the state hash with `region_<name>` and record a
-  transition. Watch for it on the first real run; not changed here.
-- **Virtualized lists.** Recycled nodes keep counts flat, so the aria diff shows renames
-  (`src/utils/aria.ts:325`) rather than additions. Such a list will read as "nothing arrived"
-  and the rule will stop. Out of scope.
+  transition. The probe can trigger this during research as well as the tester during a run.
+  Watch for it on the first real run; not changed here.
+- **Virtualized lists.** Recycled nodes keep counts flat, so the probe sees no growth and the
+  aria diff shows renames (`src/utils/aria.ts:325`) rather than additions. Such a list records
+  nothing and the rule will not know to scroll it. Out of scope.
 - **The stop condition lives only in the prompt.** No tool enforces it, so a model that keeps
   scrolling past an attempt which added no rows will keep scrolling. Accepted: the tester's own
   iteration cap is the only backstop.
@@ -207,10 +237,12 @@ The added/removed split exists inside `diffAriaSnapshots` but is flattened into 
 
 ## Testing
 
-- `tests/integration/researcher-sections.test.ts` — the `> Scrolls:` line appears for a
-  scrollable container and is absent otherwise.
-- A browser test for the measurement, following `tests/integration/overlay-modal-browser.test.ts`:
-  a container with its own scroller, a list below the fold, and a short list that needs neither.
+- `tests/integration/researcher-sections.test.ts` — `> Pagination: controls` appears for a
+  section whose UI map holds next/prev controls.
+- A browser test for steps 2 and 3, following `tests/integration/overlay-modal-browser.test.ts`:
+  a container with its own scroller that appends on scroll (`infinite`), one that does not
+  (silent), a list with pagination controls (`controls`, no probe runs), and confirmation that
+  `scrollTop` is restored afterwards.
 - An aimock prompt-inspection test that `paginationRule` reaches the tester's system message,
   per `docs/contributing/ai-integration-tests.md`.
 - Unit coverage for the two `tools.ts` corrections: requests-only diff counts as observable;
@@ -219,7 +251,7 @@ The added/removed split exists inside `diffAriaSnapshots` but is flattened into 
 ## Out of scope
 
 - Any new tool. The gesture is reachable through `form` today.
-- Storing a per-state pagination strategy. The structural hint is free to recompute and the
-  probe is the authority.
+- Persisting the strategy across runs. Research recomputes it, and the research cache is
+  session-scoped.
 - Virtualized list support.
 - Changing `detectRegion` thresholds.
