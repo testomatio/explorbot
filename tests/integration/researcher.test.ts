@@ -183,6 +183,13 @@ describe('Researcher with aimock', () => {
     expect(prompt).toContain('textbox "Search tasks"');
   });
 
+  it('carries the pagination rule into the research prompt', async () => {
+    await researcher.research(fakeState, { fix: false });
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('pagination_controls');
+  });
+
   it('includes senior QA role in system message', async () => {
     await researcher.research(fakeState, { fix: false });
 

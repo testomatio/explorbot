@@ -164,6 +164,16 @@ describe('Researcher researchBySections', () => {
     expect(prompt).toContain('[role="dialog"]');
   });
 
+  it('carries the pagination rule into each section prompt', async () => {
+    const researcher = makeResearcher({ sections: ['content'] }, async () => 0);
+    mock.on({ sequenceIndex: 0 }, { content: "## Content\n\n> Container: '.main'\n\n| Element | ARIA | CSS | eidx |\n| 'Row' | - | '.row' | 1 |" });
+
+    await researcher.researchBySections();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('pagination_controls');
+  });
+
   it('skips focusSections when no Playwright match', async () => {
     const researcher = makeResearcher({ sections: ['navigation', 'content'], focusSections: ['[role="dialog"]'] }, async () => 0);
     mock.on({ sequenceIndex: 0 }, { content: "## Navigation\n\n> Container: '.nav'\n\n| Element | ARIA | CSS | eidx |\n| 'Home' | - | 'a.home' | 1 |" });

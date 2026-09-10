@@ -431,7 +431,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       ${generalLocatorRuleText}
 
-      ${RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules'], currentUrl)}
+      ${RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules', 'pagination'], currentUrl)}
 
       <section_identification>
       Identify page sections in this priority order:
@@ -507,6 +507,7 @@ export class Researcher extends ResearcherBase implements Agent {
       - When a section contains a list of similar data items (records, entities, rows — content that varies by data, not by app UI), output it as a Data section with NO table.
       - Data section heading MUST be a level-2 heading (##) that starts exactly with "Data:" — for example: "## Data: Suites List". Do NOT use ### or add section numbers.
       - Data sections must NOT include a UI map table. Only include the container and a brief summary line.
+      - When the data list has controls that move between pages of the collection, add "> Pagination: controls" under its container.
       - Example data section:
 
       ## Data: Suites List
