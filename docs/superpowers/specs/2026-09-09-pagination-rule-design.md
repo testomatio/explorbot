@@ -74,26 +74,30 @@ tier is a lookup, not a guess — and it is the only step that works when resear
 
 | Marker | Means | Available in |
 |---|---|---|
-| `[aria-current="page"]` | current page of a pagination set | HTML only |
 | `a[rel="next"]`, `a[rel="prev"]` | sequential document relations | HTML only |
 | `[role="feed"]` | scrollable list that grows as it is scrolled | HTML and ARIA snapshot |
 | `[aria-setsize="-1"]` | total count unknown, so the set loads lazily | HTML only |
 
-The first two mean `controls`, the last two mean `infinite`.
+The first means `controls`, the other two mean `infinite`.
 
-Verified against Chromium: `ariaSnapshot()` does **not** emit `aria-current`, so a link marked
-as the current page is indistinguishable from its neighbours in the ARIA path. Explorbot also
-dissolves `navigation` wrappers (`src/utils/aria.ts:46`, `:147`) and treats the role as
-template chrome (`src/utils/aria.ts:543`), so a `nav` labelled "Pagination" never reaches the
-model either. **These markers must be read from HTML.** `role="feed"` is the one exception —
-it survives as `- feed "…"` in the snapshot.
+Verified against Chromium: Explorbot dissolves `navigation` wrappers
+(`src/utils/aria.ts:46`, `:147`) and treats the role as template chrome
+(`src/utils/aria.ts:543`), so a `nav` labelled "Pagination" never reaches the model.
+**These markers must be read from HTML.** `role="feed"` is the one exception — it survives as
+`- feed "…"` in the snapshot.
 
-Two constraints that keep this a lookup rather than a heuristic:
+Three constraints that keep this a lookup rather than a heuristic:
 
-- The value must be `aria-current="page"` exactly. `aria-current="true"` is what tabs and
-  breadcrumbs use and would over-match — confirmed in the same probe.
+- **`aria-current` is excluded, in every value.** Its primary spec use is a site-navigation
+  link marking the page you are on, which is not pagination at all, and `aria-current="true"`
+  is what tabs and breadcrumbs use. It also does not survive `ariaSnapshot()` — confirmed in
+  the probe — so it would be HTML-only *and* ambiguous. `rel="next"`/`rel="prev"` carry the
+  sequential meaning unambiguously.
 - A `nav` whose `aria-label` reads "Pagination" is author prose, not closed grammar. It is not
   part of this tier.
+- `aria-setsize="-1"` counts only when the element sits inside a container that scrolls
+  (step 2). Alone it says the count is unknown, which a tree or a live-filtered list can also
+  claim.
 
 **Absence proves nothing.** A pager built from plain buttons, and an infinite feed built from
 plain divs, carry none of these. That is what steps 1–3 are for.
@@ -125,9 +129,41 @@ Scroll the container to its end, wait for readiness (`waitForPageReadiness`,
 `src/utils/page-readiness.ts`), and compare. More descendant rows than before, or a same-origin
 xhr/fetch fired during the scroll, means the list appends. Record `> Pagination: infinite`.
 
+**The scroll goes through `Action`, not through `page.evaluate`.** `deep-analysis.ts` sets the
+precedent at `:405` — `this.explorer.action()`, then `action.attempt(cmd)` per command. Action
+is the only thing that moves the browser (CLAUDE.md glue tiers), and going around it would
+bypass network capture, the recorder and state updates — including the very `networkRequests`
+this step reads. Measurement (row counts, scroll offsets) still uses `withPage`, which reads
+without moving.
+
 Then restore `scrollTop` to what it was, so screenshots, coordinates and later research see the
 page as they found it. Scroll position is not app state, so this needs none of the modal
 cleanup `_restorePageState` does in `deep-analysis.ts:453` — there is nothing to reuse there.
+
+**Which sections get probed — `Data:` sections are the point.**
+
+Researcher is instructed to emit a list of similar data items as a `## Data: <name>` section
+holding a container and a summary line, no table (`src/ai/researcher.ts:502-509`). That is
+precisely where a paginated list lands.
+
+But `parseResearchSections` (`src/ai/researcher/parser.ts:100`) filters those out:
+
+```js
+.filter((s) => !SKIP_SECTIONS.has(s.name.toLowerCase()) && !s.name.toLowerCase().includes('data:'))
+```
+
+`SKIP_SECTIONS` (`:27`) also drops a section literally named `data`. So iterating
+`parseResearchSections` — as `validateContainers` does — would probe every section **except**
+the lists. Nothing else in the codebase parses `Data:` sections today.
+
+A new `parseDataSections(markdown): ResearchSection[]` in `parser.ts` returns them: the same
+`parseSections` call, filtered to names beginning with `data:`, reusing
+`extractContainerFromBlockquote` and yielding an empty `elements` array (Data sections carry no
+table by construction). Both parsers stay single-purpose.
+
+Steps 1–3 then run over `[...parseResearchSections(text), ...parseDataSections(text)]`. A
+non-Data section can hold a list too, and it costs nothing to include it: step 2 gates it out
+when it does not scroll.
 
 **Recorded vocabulary:** `controls` or `infinite`, as a line in the section's container
 blockquote. Nothing is written when a list neither paginates nor grows, which is the common
@@ -139,9 +175,9 @@ case and should stay silent.
 ```
 
 **This line has a reader**, because section B injects the rule only when pagination was
-detected, and that decision is code. `extractPaginationFromBlockquote` joins
-`extractContainerFromBlockquote` (`src/ai/researcher/parser.ts:86`) and returns the recorded
-value or null.
+detected, and that decision is code. `extractPaginationFromBlockquote(sectionMarkdown)` joins
+`extractContainerFromBlockquote` (`src/ai/researcher/parser.ts:86`) and returns `'controls'`,
+`'infinite'`, or null — anything else in the line is ignored, keeping the vocabulary closed.
 
 That makes `Pagination:` a closed vocabulary read deterministically by code, so the envelope
 checklist from CLAUDE.md applies and holds: read by code, scoped to a section of a state,
@@ -184,8 +220,17 @@ when a region is open. A `<pagination>` block joins them. Navigator gets the sam
 it builds its own per-state context (`src/ai/navigator.ts:414`).
 
 **Condition:** the state shows pagination if step 0's markers are present in the current HTML,
-or `extractPaginationFromBlockquote` finds a recorded value for a section. Markers win when
-both are available, since they describe the page as it is now rather than as research left it.
+or a section of the research text records a value. Markers win when both are available, since
+they describe the page as it is now rather than as research left it.
+
+The research text is already in hand at that seam — `reinjectContextIfNeeded` holds it in the
+local `research` variable it injects as `<page_ui_map>` (`src/ai/tester.ts:639-651`), so
+reading the recorded strategy needs no second fetch and no cache lookup.
+
+Research runs only on a new URL, and only when the UI map has not been seen this session
+(`src/ai/tester.ts:635-638`). So the parsed strategy is remembered per URL for the states that
+follow, the way `seenUiMapUrls` already remembers what was shown. The marker scan needs no
+memory: it reads the current HTML every state.
 
 **Which text:** the strategy selects the fragment, so the model is never shown the other one.
 
@@ -292,9 +337,12 @@ The added/removed split exists inside `diffAriaSnapshots` but is flattened into 
 
 ## Testing
 
-- Unit coverage for step 0's marker scan: `aria-current="page"` and `rel=next/prev` yield
-  `controls`; `role="feed"` and `aria-setsize="-1"` yield `infinite`; `aria-current="true"` on a
-  tab list yields nothing.
+- Unit coverage for step 0's marker scan: `rel=next/prev` yields `controls`; `role="feed"` and
+  `aria-setsize="-1"` yield `infinite`; `aria-current` in any value yields nothing.
+- Unit coverage for `parseDataSections`: a `## Data: Suites List` section with a container is
+  returned with its `containerCss`, and `parseResearchSections` still excludes it.
+- Unit coverage for `extractPaginationFromBlockquote`: reads `controls` and `infinite`, returns
+  null for an absent line and for any other value.
 - `tests/integration/researcher-sections.test.ts` — `> Pagination: controls` appears for a
   section whose UI map holds next/prev controls, and step 1 is not asked when step 0 already
   answered.
