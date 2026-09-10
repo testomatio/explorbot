@@ -2,6 +2,7 @@ import { parseAriaLocator } from '../../utils/aria.ts';
 import { pluralize } from '../../utils/logger.ts';
 import { jsonToTable, parseSections, tableToJson } from '../../utils/markdown-parser.ts';
 import { mdq } from '../../utils/markdown-query.ts';
+import type { PaginationStrategy } from '../../utils/pagination.ts';
 import { FOCUSED_MARKER } from './focus.ts';
 
 export interface ResearchElement {
@@ -106,6 +107,29 @@ export function parseResearchSections(markdown: string): ResearchSection[] {
 
       return { name: section.name, containerCss, elements, rawMarkdown: section.rawMarkdown, isExtended };
     });
+}
+
+export function parseDataSections(markdown: string): ResearchSection[] {
+  return parseSections(markdown)
+    .filter((s) => s.name.toLowerCase().startsWith('data:'))
+    .map((section) => ({
+      name: section.name,
+      containerCss: extractContainerFromBlockquote(section.rawMarkdown),
+      elements: [],
+      rawMarkdown: section.rawMarkdown,
+      isExtended: false,
+    }));
+}
+
+export function extractPaginationFromBlockquote(sectionMarkdown: string): PaginationStrategy | null {
+  const bq = mdq(sectionMarkdown).query('blockquote[0]').text().trim();
+  if (!bq) return null;
+  const match = bq.match(/Pagination:\s*(\w+)/i);
+  if (!match) return null;
+  const value = match[1].toLowerCase();
+  if (value === 'controls') return 'controls';
+  if (value === 'infinite') return 'infinite';
+  return null;
 }
 
 export function extractValidContainers(researchText: string, opts?: { exclude?: string[] }): Array<{ css: string; label: string }> {
