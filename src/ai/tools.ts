@@ -1,18 +1,18 @@
 import { tool } from 'ai';
 import dedent from 'dedent';
 import { z } from 'zod';
-import type { ExecutedStep } from '../action.ts';
 import { ActionResult, type PageDiff, type ToolResultMetadata } from '../action-result.ts';
+import type { ExecutedStep } from '../action.ts';
 import { type ExperienceTracker, renderExperienceRecipes } from '../experience-tracker.ts';
 import { Stats } from '../stats.ts';
 import { type Task, TestResult } from '../test-plan.js';
+import { ariaRefSelector, describeRef, refIsGone } from '../utils/aria-ref.ts';
 import { LARGE_ARIA_CHANGE_THRESHOLD } from '../utils/aria.ts';
 import { isFatalBrowserError } from '../utils/browser-errors.ts';
 import { cleanHtmlSnippet } from '../utils/html.ts';
 import { createDebug, tag } from '../utils/logger.js';
-import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { pause } from '../utils/loop.js';
-import { ariaRefSelector, describeRef, refIsGone } from '../utils/aria-ref.ts';
+import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
 import { Navigator } from './navigator.ts';
@@ -133,7 +133,13 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
             }
 
             await commitNote(activeNote, TestResult.PASSED, toolResult, action);
-            return successToolResult('click', { ...toolResult, attempts, code: command }, action);
+            const data: Record<string, any> = { ...toolResult, attempts, code: command };
+            const notExecuted = commands.slice(i + 1);
+            if (notExecuted.length) {
+              data.notExecuted = notExecuted;
+              data.suggestion = `SKIPPED: ${notExecuted.join('; ')}`;
+            }
+            return successToolResult('click', data, action);
           }
         }
 
@@ -1265,7 +1271,7 @@ export async function failedToolResult(action: string, message: string, data?: R
   const errorTexts = [message, ...(data?.attempts?.map((a: any) => a.error || '') || [])];
   if (errorTexts.some((t: string) => t.toLowerCase().includes(MULTIPLE_ELEMENTS_PATTERN))) {
     const matched = await extractWebElements(error);
-    result.suggestion = getMultipleElementsSuggestion(matched);
+    result.suggestion = getMultipleElementsSuggestion();
     result.multipleElementsDetected = true;
     result.elements = formatElementList(matched);
     return result;
@@ -1280,16 +1286,12 @@ export async function failedToolResult(action: string, message: string, data?: R
   return result;
 }
 
-function getMultipleElementsSuggestion(matched: MatchedElement[] | null): string {
-  const visible = (matched || []).filter((element) => element.visible !== false);
-  let onlyVisible = '';
-  if (matched && visible.length === 1) onlyVisible = `\nOnly element ${matched.indexOf(visible[0]) + 1} is on screen, so that is the one to act on.`;
-
+function getMultipleElementsSuggestion(): string {
   return dedent`
     Multiple elements matched your locator, so that command did nothing — it selected no element and acted on none.
     Read the numbered elements list and act on the one you meant by its number:
     reuse the same locator with step.opts({ elementIndex: N }) as the last argument.
-    A match reported as not visible can never be acted on — pick one that is.${onlyVisible}
+    A match reported as not visible can never be acted on — pick one that is.
     If none of them is the element you want, narrow the locator with a container or its full unique text.
     If the list is missing, call xpathCheck() to see what the locator matches.
   `;
@@ -1365,6 +1367,8 @@ function formatElementList(matched: MatchedElement[] | null): string {
     .map((el, i) => {
       const lines = [`Element ${i + 1}:`, `Text: "${el.text}"`];
       if (el.visible !== undefined) lines.push(`Visible: ${el.visible}`);
+      const wrapped = matched.map((_, j) => j).filter((j) => j !== i && matched[j].xpath.startsWith(`${el.xpath}/`));
+      if (wrapped.length) lines.push(`Wraps: element ${wrapped.map((j) => j + 1).join(', ')}`);
       lines.push(`XPath: ${el.xpath}`, `HTML: ${el.html}`);
       return lines.join('\n');
     })

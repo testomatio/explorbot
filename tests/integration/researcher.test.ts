@@ -8,6 +8,7 @@ import { clearActivity } from '../../src/activity.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { Researcher } from '../../src/ai/researcher.ts';
 import { clearResearchCache, getCachedResearch, saveResearch } from '../../src/ai/researcher/cache.ts';
+import { parseResearchSections } from '../../src/ai/researcher/parser.ts';
 import { ConfigParser } from '../../src/config.ts';
 
 const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');
@@ -246,5 +247,29 @@ describe('Researcher with aimock', () => {
     expect(htmlChanges).not.toContain('space-x-2');
     expect(htmlChanges).toContain('tree-node');
     expect(htmlChanges).toContain('Folder');
+  });
+
+  const EXPANSION_RESPONSE = "### Select tests for plan\n\nAn overlay appeared.\n\n| Element | ARIA | CSS |\n|---|---|---|\n| 'Cancel' | - | '.cancel' |\n";
+
+  it('stamps the detected region root as the expansion section container', async () => {
+    mock.clearFixtures();
+    mock.on({}, { content: EXPANSION_RESPONSE });
+
+    const section = await (researcher as any)._analyzeExpandedAction('', 'Select tests for plan', await buildExpansionDiff(2), [], '.panel');
+
+    const [parsed] = parseResearchSections(`# Extended Research\n\n${section}`);
+    expect(parsed.containerCss).toBe('.panel');
+    expect(parsed.elements).toHaveLength(1);
+  });
+
+  it('leaves the expansion section without a container when the region has no root', async () => {
+    mock.clearFixtures();
+    mock.on({}, { content: EXPANSION_RESPONSE });
+
+    const section = await (researcher as any)._analyzeExpandedAction('', 'Select tests for plan', await buildExpansionDiff(2), [], null);
+
+    const [parsed] = parseResearchSections(`# Extended Research\n\n${section}`);
+    expect(parsed.containerCss).toBeNull();
+    expect(parsed.elements).toHaveLength(1);
   });
 });

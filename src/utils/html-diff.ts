@@ -37,7 +37,7 @@ const IGNORED_PATHS = new Set(['html[1]', 'html[1]/head[1]', 'html[1]/body[1]'])
 const SHELL_RATIO = 0.8;
 const ROOT_CONTENT_RATIO = 0.8;
 
-const LIVE_REGION_ROLES = new Set(['alert', 'alertdialog', 'status', 'log']);
+const LIVE_REGION_ROLES = new Set(['alert', 'alertdialog', 'status', 'log', 'tooltip']);
 const TEXT_LINE_PREFIX = 'TEXT:';
 const MESSAGE_MAX_LENGTH = 200;
 const MESSAGE_LIMIT = 8;
@@ -549,6 +549,8 @@ function semanticSelectorFor(element: ElementNode, allElements: NodeMap): string
   while (current) {
     const selector = buildContainerSelector(current, allElements);
     if (selector) return selector;
+    const classAttr = (current.attrs ?? []).find((a) => a.name === 'class')?.value;
+    if (classAttr && filterContainerClasses(classAttr.split(/\s+/).filter(Boolean)).length > 0) return undefined;
     current = dominantChild(current);
   }
   return undefined;

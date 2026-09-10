@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-10
+
+### Changes
+
+- [Pilot] Text an app shows in a tooltip now reaches Pilot along with alerts and status messages. When a
+  page refuses an action and explains why in a hover bubble, that sentence used to stay in the page HTML,
+  which Pilot never sees — so a run could be judged, and reported, on a reason the app had already
+  contradicted on screen.
+- [Tester] After one locator in a click succeeds, the ones that were not tried are now listed as skipped.
+  The list is fallbacks for a single element, so a batch written as "click this, then click that" only
+  ever clicked the first — and reported success, giving no sign the second half never ran.
+- [Tester] When a locator matches both an element and the container wrapping it, the match list now marks
+  which one wraps the other. Those are one control listed at two depths rather than two candidates, so
+  neither is worth retrying after the other has been clicked.
+- [Researcher] A dialog or panel that opens is now described with the container that bounds it, taken from
+  the area the page capture already worked out. Those sections used to arrive with no container at all, so
+  every step aimed at something inside the dialog had to be written without one, and matched the page
+  behind it just as readily.
+- Region detection: when a dialog cannot be told apart from a similar panel behind it because both carry
+  the same class, no container is reported instead of the largest thing inside the dialog. Naming an inner
+  list as the dialog's edge left its Cancel and confirm buttons outside the very scope meant to hold them.
+  Dialogs wrapped only in unnamed or utility-class layers resolve as before.
+
 ## 2026-09-09
 
 ### Changes
@@ -16,6 +39,22 @@
   no longer sends the run into an element it can never act on.
 - [Tester] An element that is present but not visible now also suggests targeting an on-screen copy of the
   same control, alongside the existing advice to scroll to it or open the panel holding it.
+- `apibot init` writes a config you can run. It used to hardcode `openai('gpt-4o')` and an
+  `@ai-sdk/openai` import, so a fresh project pointed at a model nobody here uses and failed unless
+  that package happened to be installed. Models now come from the recommendations for your provider,
+  written as `provider/model-id` strings that need no import. The commented-out `bootstrap` and
+  `teardown` blocks, the empty `headers` block and the `dirs` block that only restated the defaults
+  are gone. A `.env` with the provider keys is written alongside, as `explorbot init` does.
+
+  ```bash
+  apibot init                                            # asks for the endpoint and spec
+  apibot init --endpoint https://api.example.com/v1 --spec openapi.yaml   # no questions
+  apibot init --provider openai                          # models for another provider
+  ```
+
+- The generated config is `apibot.config.js`. It was written as `apibot.config.ts`, which is third in
+  the list of files apibot looks for and is not the name its own "config missing" error tells you to
+  create.
 
 ## 2026-09-08
 
@@ -37,6 +76,25 @@
   covered, disabled, or that the locator matched something that does not respond, and to check it with
   `xpathCheck` before retrying. A click the page answers only with an API call still counts as landed,
   so a Save that stores something without redrawing anything is not retried into a duplicate record.
+- API testing: an endpoint with real values in it now finds its spec. Specs write paths as templates, so
+  asking for `/api/v2/acme/tests` when the spec says `/api/v2/{project_id}/tests` matched nothing and the
+  run stopped before it planned anything. The endpoint is matched against the templates now, and the paths
+  under it come along, so planning a collection also sees the create, read, update and delete beneath it.
+
+- `api explore` takes a pattern instead of a single endpoint. `*` stands for one path segment, and a
+  pattern covers the paths below it, so `'/users/*'` and `/users` both reach `/users/{id}`. Pass `/` to
+  take every collection the spec describes, with the path parameters coming from the base endpoint.
+
+  ```bash
+  npx explorbot api explore /users                  # one endpoint, planned in every style
+  npx explorbot api explore '/projects/acme/*'      # every collection of one project
+  npx explorbot api explore / --endpoint https://api.example.com/v2/acme   # the whole API
+  ```
+
+  Explorbot explores collections rather than raw paths, so `/users/{id}` folds into `/users`. When a
+  pattern matches several collections they share the planning styles, one per collection, so covering a
+  whole API stays one plan per collection rather than one per style. A parameter no pattern can fill stops the run and is named, rather than requests
+  going out to a literal `{project_id}`.
 - Locators: elements that appear in response to an action — a menu that opens, a panel that slides in —
   can now be clicked using the role reported for them when they appeared, instead of a guessed one.
   Guessing was silent rather than loud: a control named the same thing elsewhere on the page absorbed
