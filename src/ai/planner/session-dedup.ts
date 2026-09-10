@@ -1,4 +1,4 @@
-import type { Plan } from '../../test-plan.ts';
+import { type Plan, TestResult } from '../../test-plan.ts';
 import type { Constructor } from '../researcher/mixin.ts';
 
 const previousPlans: Plan[] = [];
@@ -18,7 +18,15 @@ export function WithSessionDedup<T extends Constructor>(Base: T) {
       for (const plan of previousPlans) {
         if (plan === this.currentPlan) continue;
         for (const test of plan.tests) {
-          lines.push(`${plan.url || '/'} | ${test.style || 'default'} | ${test.scenario}`);
+          const lastNote = Object.values(test.notes)
+            .filter((note) => note.message)
+            .pop();
+          const outcome = test.result || (lastNote ? 'unfinished' : 'pending');
+          let line = `${plan.url || '/'} | ${test.style || 'default'} | ${outcome} | ${test.scenario}`;
+          if ((outcome === TestResult.FAILED || outcome === 'unfinished') && lastNote) {
+            line += ` — ${lastNote.message.slice(0, 140)}`;
+          }
+          lines.push(line);
         }
       }
       return lines.join('\n');

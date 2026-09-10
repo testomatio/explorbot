@@ -4,6 +4,19 @@
 
 ### Changes
 
+- [Planner] The session test list now says how each test ended, and a failed or unfinished test carries the
+  last thing it observed, with a warning not to re-propose the behavior it attempted on another page. The
+  planner used to see only scenario titles, so a pattern that failed on one page — verifying a state the
+  interface never shows — was planned again on every page that had a similar control, all night long. Tests
+  that were started but never finished are named as unfinished rather than left looking unrun.
+- [Planner] Expected outcomes must now name what the page displays when they happen. "Data persistency
+  after page reload" is no longer offered as an outcome in its own right: a persistence check counts
+  only when the scenario names the on-screen evidence that will show it, and outcomes the page cannot
+  display at all — a clipboard write, "the operation succeeds" with nothing shown — are rejected at
+  planning time instead of failing at run time.
+- [Planner] A scenario that edits, deletes, reassigns or reconfigures a record must now act on a record
+  it creates as its own setup. Records the application already had are protected from mutation, so
+  "edit a visible record" scenarios were refused at run time no matter how visible the record was.
 - [Pilot] Text an app shows in a tooltip now reaches Pilot along with alerts and status messages. When a
   page refuses an action and explains why in a hover bubble, that sentence used to stay in the page HTML,
   which Pilot never sees — so a run could be judged, and reported, on a reason the app had already
