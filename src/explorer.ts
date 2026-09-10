@@ -263,7 +263,7 @@ class Explorer {
   }
 
   private convertToCodeceptConfig(config: ExplorbotConfig): any {
-    const playwrightConfig = { ...config.playwright };
+    const playwrightConfig = { visibleLocator: true, ...config.playwright };
 
     if (this.options?.show !== undefined) {
       playwrightConfig.show = this.options.show;

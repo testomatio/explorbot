@@ -8,6 +8,7 @@ bun.lockb
 
 # Regression harness run artifacts
 tests/regression/.runs/
+tests/regression/.bench/
 
 # Improvement plans written for other agents to pick up
 /plans/

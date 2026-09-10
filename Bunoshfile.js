@@ -1,13 +1,14 @@
 // Bunosh CLI required to execute tasks from this file
 // Get it here => https://buno.sh
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 const highlight = require('cli-highlight').highlight;
 import matter from 'gray-matter';
 import yaml from 'js-yaml';
 import { chromium } from 'playwright';
-import { assertBasicRun, assertControlRun, assertSeededRun } from './tests/regression/lib/assertions.ts';
+import { assertBasicRun, assertControlRun, assertSeededRun, status } from './tests/regression/lib/assertions.ts';
 import { readSessionAnalysis } from './tests/regression/lib/artifacts.ts';
 import { DISCUSSION_CATEGORY, DISCUSSION_MUTATION, DISCUSSION_QUERY, prNumberFromEvent, repoOwnerAndName } from './tests/regression/lib/github.ts';
 import { REPORT_MARKER, buildReport } from './tests/regression/lib/report.ts';
@@ -22,6 +23,8 @@ const { shell, writeToFile, task, stopOnFail, ai } = global.bunosh;
 const CLI = resolve('bin/explorbot-cli.ts');
 const REG_ROOT = resolve('tests/regression');
 const RUNS = join(REG_ROOT, '.runs');
+const BENCH = join(REG_ROOT, '.bench');
+const SLOT_ENV = { base: 'BENCH_MODEL', agentic: 'BENCH_AGENTIC_MODEL', vision: 'BENCH_VISION_MODEL' };
 const SEEDS = join(REG_ROOT, 'seeds');
 const CONFIG_TEMPLATE = join(REG_ROOT, 'fixture', 'explorbot.config.js');
 const VAULT_PLAN = join(SEEDS, 'vault-plan.md');
@@ -470,6 +473,99 @@ export async function regressionSmoke() {
   await checkVariants();
 }
 
+/**
+ * Benchmark an AI model in one slot against the regression scenario.
+ * Records per-request cost, tokens and latency; archives each run under tests/regression/.bench.
+ * @param {string} [model] - OpenRouter model slug, e.g. inception/mercury-2.5
+ * @param {object} options
+ * @param {number} [options.runs=2] - Runs per model (no retries: every run counts)
+ * @param {string} [options.slot=base] - Slot to swap: base|agentic|vision
+ * @param {string} [options.variant=native] - Widget variant: native|aria|plain|random
+ * @param {number} [options.seed=42] - RNG seed for the random variant
+ */
+export async function benchModel(model = '', options = { runs: 2, slot: 'base', variant: 'native', seed: 42 }) {
+  if (!(await requireKey())) return;
+  const slug = model || (await ask('Which OpenRouter model slug?'));
+  const variant = validateVariant(options.variant);
+  if (!variant) return;
+  const slotVar = SLOT_ENV[options.slot || 'base'];
+  if (!slotVar) {
+    yell(`Invalid slot "${options.slot}". Use one of: ${Object.keys(SLOT_ENV).join(', ')}`);
+    return;
+  }
+  const seed = Number(options.seed) || 42;
+  const runs = Number(options.runs) || 2;
+  const label = `${slug} (${options.slot || 'base'})`;
+  mkdirSync(BENCH, { recursive: true });
+
+  for (let run = 1; run <= runs; run++) {
+    const dir = join(BENCH, `${benchSlug(label)}-${run}`);
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    process.env[slotVar] = slug;
+    process.env.USAGE_FILE = join(dir, 'usage.jsonl');
+    say(`Benchmarking ${label} — run ${run}/${runs} (${variant})`);
+
+    const index = records.length;
+    const treeBefore = srcFingerprint();
+    await runBasicScenario(variant, seed, 0);
+    const treeAfter = srcFingerprint();
+    if (treeBefore !== treeAfter) yell(`src/ changed during run ${run} — this run is not comparable to the others`);
+    const record = records[index] || {};
+
+    const runDir = join(RUNS, `${dirName('basic', variant, seed)}-a1`);
+    if (existsSync(runDir)) cpSync(runDir, join(dir, 'run'), { recursive: true });
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({ model: slug, label, slot: options.slot || 'base', run, variant, seed, tree: treeAfter, treeStable: treeBefore === treeAfter, passed: record.passed, durationSec: record.durationSec, details: record.details }, null, 2));
+  }
+
+  delete process.env[slotVar];
+  delete process.env.USAGE_FILE;
+  await benchReport();
+}
+
+/**
+ * Aggregate archived benchmark runs into a comparison table.
+ */
+export async function benchReport() {
+  if (!existsSync(BENCH)) {
+    say('No benchmark runs found. Run bench:model first.');
+    return;
+  }
+  const byModel = new Map();
+  for (const entry of fs.readdirSync(BENCH).sort()) {
+    const metaPath = join(BENCH, entry, 'meta.json');
+    if (!existsSync(metaPath)) continue;
+    const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+    const key = meta.label || meta.model;
+    if (!byModel.has(key)) byModel.set(key, []);
+    byModel.get(key).push({ ...meta, usage: readUsage(join(BENCH, entry, 'usage.jsonl'), meta.model) });
+  }
+
+  const lines = ['<!-- explorbot-bench-report -->', '# Explorbot Model Benchmark', '', 'Scenario: regression basic (explore /issues, --max-tests 5) on the Trackly fixture.', 'All figures are per run unless noted; only the base (reading) slot is swapped.', 'Compare $/test when run counts or planned-test counts differ — $/run scales with how much work a model chose to do.', 'Gen tok/s counts reasoning tokens; Content tok/s excludes them — a model that reasons heavily looks fast on the first and ordinary on the second.', '', '| Model | Gates | Tests passed | Tests run | Duration | Slot calls | Mean call | Gen tok/s | Content tok/s | Input | Cached | Output | Reasoning | Slot $/run | Slot $/test | Session $/run |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|'];
+  for (const [model, runList] of byModel) {
+    const gates = runList.filter((r) => r.passed).length;
+    const avg = Math.round(runList.reduce((sum, r) => sum + (r.durationSec || 0), 0) / runList.length);
+    const perRun = (key, scope) => runList.reduce((total, r) => total + r.usage[scope][key], 0) / runList.length;
+    const executed = testsRun(runList);
+    const costPerTest = (perRun('cost', 'slot') * runList.length) / Math.max(executed, 1);
+    lines.push(`| \`${model}\` | ${gates}/${runList.length} | ${testsPassed(runList)} | ${executed} | ${formatDuration(avg)} | ${Math.round(perRun('calls', 'slot'))} | ${meanCallMs(runList)}ms | ${throughput(runList)} | ${contentThroughput(runList)} | ${Math.round(perRun('prompt', 'slot'))} | ${cachePercent(perRun('cached', 'slot'), perRun('prompt', 'slot'))} | ${Math.round(perRun('completion', 'slot'))} | ${Math.round(perRun('reasoning', 'slot'))} | $${perRun('cost', 'slot').toFixed(4)} | $${costPerTest.toFixed(4)} | $${perRun('cost', 'session').toFixed(4)} |`);
+  }
+
+  lines.push('', '## Gate details');
+  for (const [model, runList] of byModel) {
+    lines.push('', `### \`${model}\``);
+    for (const run of runList) {
+      lines.push(`- run ${run.run} — ${status(run.passed)} (${formatDuration(run.durationSec)}, mean latency ${run.usage.slot.meanMs}ms)`);
+      for (const detail of run.details || []) lines.push(`  - ${detail}`);
+    }
+  }
+
+  const markdown = `${lines.join('\n')}\n`;
+  writeFileSync(join(BENCH, 'report.md'), markdown);
+  console.log(markdown);
+  say(`Benchmark report written to ${join(BENCH, 'report.md')}`);
+}
+
 async function runBasicScenario(variant, seed, retries) {
   const label = `basic (${variant})`;
   const maxAttempts = retries + 1;
@@ -517,6 +613,99 @@ async function runExperienceScenario(variant, seed, retries) {
     seededPassed = outcome.passed;
   }
   return { controlPassed: control.passed, seededPassed };
+}
+
+
+function srcFingerprint() {
+  const files = fs.readdirSync('src', { recursive: true }).filter((f) => String(f).endsWith('.ts'));
+  const stamps = files.map((f) => `${f}:${fs.statSync(join('src', String(f))).mtimeMs}`);
+  return createHash('sha1').update(stamps.sort().join('\n')).digest('hex').slice(0, 12);
+}
+
+function benchSlug(model) {
+  return model
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+}
+
+function readUsage(file, model) {
+  const empty = { calls: 0, prompt: 0, cached: 0, completion: 0, reasoning: 0, cost: 0, ms: 0, meanMs: 0 };
+  const result = { slot: { ...empty }, session: { ...empty } };
+  if (!existsSync(file)) return result;
+  const needle = model.split('/').pop().split(':')[0];
+  let slotMs = 0;
+  for (const line of readFileSync(file, 'utf-8').split('\n')) {
+    if (!line.trim()) continue;
+    const row = JSON.parse(line);
+    accumulate(result.session, row);
+    if (!String(row.model || '').includes(needle)) continue;
+    accumulate(result.slot, row);
+    slotMs += row.ms || 0;
+  }
+  if (result.slot.calls) result.slot.meanMs = Math.round(slotMs / result.slot.calls);
+  return result;
+}
+
+function accumulate(bucket, row) {
+  bucket.calls += 1;
+  bucket.prompt += row.prompt || 0;
+  bucket.cached += row.cached || 0;
+  bucket.completion += row.completion || 0;
+  bucket.reasoning += row.reasoning || 0;
+  bucket.cost += row.cost || 0;
+  bucket.ms += row.ms || 0;
+}
+
+function testsRun(runList) {
+  return runList.reduce((total, run) => total + testCounts(run).total, 0);
+}
+
+function testCounts(run) {
+  const line = (run.details || []).find((d) => d.startsWith('tests passed:')) || '';
+  const match = line.match(/\((\d+) passed, (\d+) failed/);
+  if (!match) return { passed: 0, total: 0 };
+  return { passed: Number(match[1]), total: Number(match[1]) + Number(match[2]) };
+}
+
+function testsPassed(runList) {
+  const totals = runList.map((run) => {
+    const counts = testCounts(run);
+    if (!counts.total) return '?';
+    return `${counts.passed}/${counts.total}`;
+  });
+  return totals.join(', ');
+}
+
+function meanCallMs(runList) {
+  const totalMs = runList.reduce((sum, r) => sum + r.usage.slot.ms, 0);
+  const calls = runList.reduce((sum, r) => sum + r.usage.slot.calls, 0);
+  if (!calls) return 0;
+  return Math.round(totalMs / calls);
+}
+
+function throughput(runList) {
+  const totalMs = runList.reduce((sum, r) => sum + r.usage.slot.ms, 0);
+  const out = runList.reduce((sum, r) => sum + r.usage.slot.completion, 0);
+  if (!totalMs) return 0;
+  return Math.round(out / (totalMs / 1000));
+}
+
+function contentThroughput(runList) {
+  const totalMs = runList.reduce((sum, r) => sum + r.usage.slot.ms, 0);
+  const content = runList.reduce((sum, r) => sum + r.usage.slot.completion - r.usage.slot.reasoning, 0);
+  if (!totalMs) return 0;
+  return Math.round(content / (totalMs / 1000));
+}
+
+function cachePercent(cached, prompt) {
+  if (!prompt) return '0%';
+  return `${Math.round((cached / prompt) * 100)}%`;
+}
+
+function formatDuration(seconds) {
+  const mins = Math.floor(seconds / 60);
+  return `${mins}m ${seconds % 60}s`;
 }
 
 function prepareRunDir(name, attempt) {
