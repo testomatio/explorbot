@@ -272,11 +272,15 @@ git commit -m "Parse Data sections and the Pagination line"
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: three in-page functions passed to `page.evaluate`, plus their result types:
-  - `measureScroll(css: string): ScrollMeasure | null` — `{ ownScroller, belowFold, scrollTop, rowCount }`
-  - `restoreScroll({ css, scrollTop }: { css: string; scrollTop: number }): void`
+- Produces: two in-page functions passed to `page.evaluate`, plus their result types:
+  - `measureScroll(css: string): ScrollMeasure | null` — `{ ownScroller, belowFold, scrollTop, windowScrollY, rowCount }`
+  - `restoreScroll({ css, scrollTop, windowScrollY }: ScrollRestore): void`
 
   Task 4 calls both through `explorer.withPage`.
+
+**`scrollIntoViewIfNeeded` moves the window too.** Measured during design on a page with both a scrollable `div` and a scrollable window: `before {box:0, win:0}` → `after {box:2200, win:1821}`. Restoring only the container's `scrollTop` would leave the page scrolled 1821px down for every screenshot, coordinate lookup and research pass that follows. Both offsets must be captured and both restored.
+
+**Rows are direct children, not all descendants.** `querySelectorAll('*')` counts nested markup, so a row that expands or an unrelated widget rendering inside the list registers as growth. `:scope > *` counts the list's own items.
 
 Both must be **self-contained** — passed to `page.evaluate`, so no outer-scope references, no imports used inside the body.
 
@@ -349,16 +353,28 @@ describe('measureScroll', () => {
 describe('restoreScroll', () => {
   it('puts a container scroller back where it was', async () => {
     const page = await pageWith(`<div id="box" style="height:200px;overflow-y:auto">${rows(60)}</div>`);
-    await page.evaluate(() => {
-      document.getElementById('box')!.scrollTop = 0;
-    });
 
     await page.evaluate(() => {
       document.getElementById('box')!.scrollTop = 900;
     });
-    await page.evaluate(restoreScroll, { css: '#box', scrollTop: 0 });
+    await page.evaluate(restoreScroll, { css: '#box', scrollTop: 0, windowScrollY: 0 });
 
     expect((await page.evaluate(measureScroll, '#box'))?.scrollTop).toBe(0);
+    await page.close();
+  });
+
+  it('puts the window back too, since scrollIntoViewIfNeeded moves both', async () => {
+    const page = await pageWith(`<div style="height:2000px">filler</div><div id="box" style="height:200px;overflow-y:auto">${rows(60)}</div><div style="height:2000px">filler</div>`);
+    const before = await page.evaluate(measureScroll, '#box');
+
+    await page.locator('#box > *:last-child').scrollIntoViewIfNeeded();
+    const moved = await page.evaluate(measureScroll, '#box');
+    await page.evaluate(restoreScroll, { css: '#box', scrollTop: before!.scrollTop, windowScrollY: before!.windowScrollY });
+    const restored = await page.evaluate(measureScroll, '#box');
+
+    expect(moved!.windowScrollY).toBeGreaterThan(0);
+    expect(restored!.windowScrollY).toBe(before!.windowScrollY);
+    expect(restored!.scrollTop).toBe(before!.scrollTop);
     await page.close();
   });
 });
@@ -382,14 +398,15 @@ export function measureScroll(css: string): ScrollMeasure | null {
     ownScroller: element.scrollHeight > element.clientHeight + 1,
     belowFold: rect.bottom > window.innerHeight,
     scrollTop: element.scrollTop,
-    rowCount: element.querySelectorAll('*').length,
+    windowScrollY: window.scrollY,
+    rowCount: element.querySelectorAll(':scope > *').length,
   };
 }
 
-export function restoreScroll({ css, scrollTop }: { css: string; scrollTop: number }): void {
+export function restoreScroll({ css, scrollTop, windowScrollY }: ScrollRestore): void {
   const element = document.querySelector(css);
-  if (!element) return;
-  element.scrollTop = scrollTop;
+  if (element) element.scrollTop = scrollTop;
+  window.scrollTo(0, windowScrollY);
 }
 ```
 
@@ -400,7 +417,14 @@ export interface ScrollMeasure {
   ownScroller: boolean;
   belowFold: boolean;
   scrollTop: number;
+  windowScrollY: number;
   rowCount: number;
+}
+
+export interface ScrollRestore {
+  css: string;
+  scrollTop: number;
+  windowScrollY: number;
 }
 ```
 
@@ -566,7 +590,7 @@ const agentWith = (measures: Record<string, any>, afterScrollRows: number) => {
 describe('detectPagination', () => {
   it('records infinite when scrolling adds rows', async () => {
     const result = new ResearchResult(RESEARCH, '/suites');
-    const agent = agentWith({ '.suites-list-content': { ownScroller: true, belowFold: false, scrollTop: 0, rowCount: 20 } }, 40);
+    const agent = agentWith({ '.suites-list-content': { ownScroller: true, belowFold: false, scrollTop: 0, windowScrollY: 0, rowCount: 20 } }, 40);
 
     await agent.detectPagination(result);
 
@@ -575,7 +599,7 @@ describe('detectPagination', () => {
 
   it('records nothing when scrolling adds no rows', async () => {
     const result = new ResearchResult(RESEARCH, '/suites');
-    const agent = agentWith({ '.suites-list-content': { ownScroller: true, belowFold: false, scrollTop: 0, rowCount: 20 } }, 20);
+    const agent = agentWith({ '.suites-list-content': { ownScroller: true, belowFold: false, scrollTop: 0, windowScrollY: 0, rowCount: 20 } }, 20);
 
     await agent.detectPagination(result);
 
@@ -584,7 +608,7 @@ describe('detectPagination', () => {
 
   it('does not probe a section that cannot scroll', async () => {
     const result = new ResearchResult(RESEARCH, '/suites');
-    const agent = agentWith({ '.suites-list-content': { ownScroller: false, belowFold: false, scrollTop: 0, rowCount: 5 } }, 99);
+    const agent = agentWith({ '.suites-list-content': { ownScroller: false, belowFold: false, scrollTop: 0, windowScrollY: 0, rowCount: 5 } }, 99);
 
     await agent.detectPagination(result);
 
@@ -594,7 +618,7 @@ describe('detectPagination', () => {
   it('leaves an already recorded strategy alone', async () => {
     const recorded = RESEARCH.replace("> Container: '.suites-list-content'", "> Container: '.suites-list-content'\n> Pagination: controls");
     const result = new ResearchResult(recorded, '/suites');
-    const agent = agentWith({ '.suites-list-content': { ownScroller: true, belowFold: false, scrollTop: 0, rowCount: 20 } }, 40);
+    const agent = agentWith({ '.suites-list-content': { ownScroller: true, belowFold: false, scrollTop: 0, windowScrollY: 0, rowCount: 20 } }, 40);
 
     await agent.detectPagination(result);
 
@@ -652,7 +676,7 @@ export function WithPagination<T extends Constructor>(Base: T) {
       if (!scrolled) return null;
 
       const after = await this.explorer.withPage((page) => page.evaluate(measureScroll, css));
-      await this.explorer.withPage((page) => page.evaluate(restoreScroll, { css, scrollTop: before.scrollTop }));
+      await this.explorer.withPage((page) => page.evaluate(restoreScroll, { css, scrollTop: before.scrollTop, windowScrollY: before.windowScrollY }));
 
       if (!after) return null;
       if (after.rowCount > before.rowCount) return 'infinite';
@@ -737,8 +761,11 @@ git commit -m "Probe list containers for infinite scroll during research"
 
 **Files:**
 - Create: `rules/researcher/pagination.md`
-- Modify: `src/ai/researcher/sections.ts:81`
+- Modify: `src/ai/researcher.ts:429` (the **primary** research prompt)
+- Modify: `src/ai/researcher/sections.ts:81` (the per-section fallback)
 - Modify: `src/ai/researcher.ts` (the `<output_rules>` Data-section instructions, near line 502)
+
+**Both rule-loading sites, or this step almost never runs.** `researchBySections()` is reached only from the `ContextLengthError` catch (`src/ai/researcher.ts:193`) — it is the fallback for an over-long response. Ordinary research goes through `researchRules()`, which loads its rules at `src/ai/researcher.ts:429`. Adding `'pagination'` to only the fallback would leave step 1 dead on almost every run.
 
 **Interfaces:**
 - Consumes: the `> Pagination:` vocabulary from Task 2.
@@ -762,9 +789,15 @@ Omit the line when the section has no such control.
 </pagination_controls>
 ```
 
-- [ ] **Step 2: Load it in per-section research**
+- [ ] **Step 2: Load it in both research paths**
 
-In `src/ai/researcher/sections.ts:81`, add `'pagination'` to the rules list:
+In `src/ai/researcher.ts:429` — the primary path:
+
+```ts
+      ${RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules', 'pagination'], currentUrl)}
+```
+
+And in `src/ai/researcher/sections.ts:81` — the fallback:
 
 ```ts
       const rules = RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules', 'pagination'], currentUrl);
@@ -779,10 +812,10 @@ In `src/ai/researcher.ts`, in `<output_rules>` after the line reading
       - When the data list has controls that move between pages of the collection, add "> Pagination: controls" under its container.
 ```
 
-- [ ] **Step 4: Verify the rule reaches the prompt**
+- [ ] **Step 4: Verify the rule reaches both prompts**
 
-Run: `bun test tests/integration/researcher-sections.test.ts`
-Expected: PASS. If the suite inspects the prompt, confirm `pagination_controls` appears; if it does not inspect prompts, add an assertion that the loaded rules string contains `pagination_controls`.
+Run: `bun test tests/integration/researcher-sections.test.ts tests/integration/researcher.test.ts`
+Expected: PASS. Add an assertion in each that the prompt sent to the model contains `pagination_controls`, using aimock's Journal (`mock.getLastRequest()`) the way `tests/integration/planner.test.ts` does.
 
 - [ ] **Step 5: Format and commit**
 
@@ -1333,12 +1366,13 @@ describe('scrolling a container that appends', () => {
     await page.locator('#feed > *:last-child').scrollIntoViewIfNeeded();
     await page.waitForTimeout(200);
     const after = await page.evaluate(measureScroll, '#feed');
-    await page.evaluate(restoreScroll, { css: '#feed', scrollTop: before!.scrollTop });
+    await page.evaluate(restoreScroll, { css: '#feed', scrollTop: before!.scrollTop, windowScrollY: before!.windowScrollY });
     const restored = await page.evaluate(measureScroll, '#feed');
 
     expect(before?.ownScroller).toBe(true);
     expect(after!.rowCount).toBeGreaterThan(before!.rowCount);
     expect(restored?.scrollTop).toBe(before!.scrollTop);
+    expect(restored?.windowScrollY).toBe(before!.windowScrollY);
     await page.close();
   });
 });
