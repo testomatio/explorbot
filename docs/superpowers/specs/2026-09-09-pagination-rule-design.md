@@ -126,15 +126,19 @@ This gate exists to keep step 3 from running on every short list.
 **3. Probe: does scrolling load more? (deterministic measurement)**
 
 Scroll the container to its end, wait for readiness (`waitForPageReadiness`,
-`src/utils/page-readiness.ts`), and compare. More descendant rows than before, or a same-origin
-xhr/fetch fired during the scroll, means the list appends. Record `> Pagination: infinite`.
+`src/utils/page-readiness.ts`), and compare descendant counts. More than before means the list
+appends. Record `> Pagination: infinite`.
+
+**Rows are the evidence, not requests.** The same rule the tester follows: a request that
+brings no rows tells you nothing arrived. A page also fires telemetry and prefetches while
+scrolling, so a bare request count would report growth where there is none. `networkRequests`
+is private to `Action` (`src/action.ts:46`) and stays that way — nothing here needs widening.
 
 **The scroll goes through `Action`, not through `page.evaluate`.** `deep-analysis.ts` sets the
 precedent at `:405` — `this.explorer.action()`, then `action.attempt(cmd)` per command. Action
 is the only thing that moves the browser (CLAUDE.md glue tiers), and going around it would
-bypass network capture, the recorder and state updates — including the very `networkRequests`
-this step reads. Measurement (row counts, scroll offsets) still uses `withPage`, which reads
-without moving.
+bypass the recorder and state updates. Measurement (row counts, scroll offsets) still uses
+`withPage`, which reads without moving.
 
 Then restore `scrollTop` to what it was, so screenshots, coordinates and later research see the
 page as they found it. Scroll position is not app state, so this needs none of the modal
