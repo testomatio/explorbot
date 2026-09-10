@@ -448,8 +448,8 @@ describe('Planner with aimock', () => {
 
     const prompt = extractPromptText(mock.getLastRequest());
     expect(prompt).toContain('with how each one ended');
-    expect(prompt).toContain(`failed | Pin a visible task and verify the pinned state persists — Pin action failed, no pinned indicator`);
-    expect(prompt).toContain(`unfinished | Assign an assignee and verify the assignment persists — Could not find the record in the current list`);
+    expect(prompt).toContain('failed | Pin a visible task and verify the pinned state persists — Pin action failed, no pinned indicator');
+    expect(prompt).toContain('unfinished | Assign an assignee and verify the assignment persists — Could not find the record in the current list');
     expect(prompt).toContain('do not re-propose the same behavior');
     expect(prompt).toContain('read it before deciding');
   });
