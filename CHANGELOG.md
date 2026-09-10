@@ -4,6 +4,21 @@
 
 ### Changes
 
+- [Researcher] A list is now checked for how it continues past what is on screen, and the answer is
+  recorded beside the list: either it has controls that move between pages, or it grows when scrolled.
+  Lists that scroll inside their own box are covered, not just the page.
+- [Tester] When a page holds a list that continues, the tester is now told how to reach the rest of it —
+  click through the pages, or scroll to the last item — and only ever sees the advice for the way that
+  list actually works. A page with no list is told nothing. Previously nothing scrolled at all, and an
+  item further down a list was reported as absent.
+- [Navigator] Recognises the same conventions while resolving a step, so a target further down a list can
+  be reached instead of reported missing.
+- [Tester] Loading more of a list no longer reports "MAJOR PAGE CHANGE. Page entered a different mode."
+  A batch of new rows is the same page with more in it; only a page that replaces what was there is a
+  change of mode.
+- [Tester] Reaching the end of a list is no longer recorded as a failed step. The message now says what
+  was actually observed, and names an exhausted collection as one reading of it, instead of telling the
+  tester to re-locate an editable control whatever it had just run.
 - [Pilot] Text an app shows in a tooltip now reaches Pilot along with alerts and status messages. When a
   page refuses an action and explains why in a hover bubble, that sentence used to stay in the page HTML,
   which Pilot never sees — so a run could be judged, and reported, on a reason the app had already
