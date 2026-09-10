@@ -24,6 +24,7 @@ import { type CoordinateMethods, WithCoordinates } from './researcher/coordinate
 import { type DeepAnalysisMethods, WithDeepAnalysis } from './researcher/deep-analysis.ts';
 import { detectFocusedSection, hasFocusedSection, markSectionAsFocused, pickDefaultFocusedSection } from './researcher/focus.ts';
 import { type LocatorMethods, WithLocators } from './researcher/locators.ts';
+import { type PaginationMethods, WithPagination } from './researcher/pagination.ts';
 import { extractValidContainers, formatResearchSummary, parseResearchSections } from './researcher/parser.ts';
 import { ResearchResult } from './researcher/research-result.ts';
 import { type SectionMethods, WithSections } from './researcher/sections.ts';
@@ -44,9 +45,9 @@ export const POSSIBLE_SECTIONS = {
   navigation: 'main navigation (top bar, sidebar, breadcrumbs)',
 };
 
-const ResearcherBase = WithSections(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent))));
+const ResearcherBase = WithSections(WithPagination(WithDeepAnalysis(WithCoordinates(WithLocators(TaskAgent as unknown as new (...args: any[]) => TaskAgent)))));
 
-export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods {}
+export interface Researcher extends LocatorMethods, CoordinateMethods, DeepAnalysisMethods, SectionMethods, PaginationMethods {}
 
 export class Researcher extends ResearcherBase implements Agent {
   protected readonly ACTION_TOOLS = ['click'];
@@ -277,6 +278,10 @@ export class Researcher extends ResearcherBase implements Agent {
         await this.backfillBrokenLocators(result);
       }
 
+      if (!interrupted()) {
+        await this.detectPagination(result);
+      }
+
       // Focused section: final fallback (vision-only — without a screenshot we don't infer focus)
       if (this.hasScreenshotToAnalyze && !hasFocusedSection(result.text)) {
         const sections = parseResearchSections(result.text);
@@ -426,7 +431,7 @@ export class Researcher extends ResearcherBase implements Agent {
 
       ${generalLocatorRuleText}
 
-      ${RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules'], currentUrl)}
+      ${RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules', 'pagination'], currentUrl)}
 
       <section_identification>
       Identify page sections in this priority order:
@@ -502,6 +507,7 @@ export class Researcher extends ResearcherBase implements Agent {
       - When a section contains a list of similar data items (records, entities, rows — content that varies by data, not by app UI), output it as a Data section with NO table.
       - Data section heading MUST be a level-2 heading (##) that starts exactly with "Data:" — for example: "## Data: Suites List". Do NOT use ### or add section numbers.
       - Data sections must NOT include a UI map table. Only include the container and a brief summary line.
+      - When the data list has controls that move between pages of the collection, add "> Pagination: controls" under its container.
       - Example data section:
 
       ## Data: Suites List

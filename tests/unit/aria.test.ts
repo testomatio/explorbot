@@ -11,6 +11,26 @@ describe('aria', () => {
     expect(diff.count).toBe(0);
   });
 
+  it('counts additions and removals separately', () => {
+    const before = `- list:\n  - listitem "One"`;
+    const after = `- list:\n  - listitem "One"\n  - listitem "Two"\n  - listitem "Three"`;
+
+    const diff = diffAriaSnapshots(before, after);
+
+    expect(diff.added).toBe(2);
+    expect(diff.removed).toBe(0);
+  });
+
+  it('counts a replacement as both', () => {
+    const before = `- list:\n  - listitem "One"`;
+    const after = `- list:\n  - listitem "Two"`;
+
+    const diff = diffAriaSnapshots(before, after);
+
+    expect(diff.added).toBe(1);
+    expect(diff.removed).toBe(1);
+  });
+
   it('produces YAML diff with counts', () => {
     const before = `- listbox:\n  - option "One"\n  - option "Two"\n  - option "Two"`;
     const after = `- listbox:\n  - option "Two"\n  - option "Three"\n  - option "Three"`;

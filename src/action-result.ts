@@ -45,6 +45,8 @@ export interface PageDiff {
   currentUrl: string;
   ariaChanges?: string | null;
   ariaChangeCount?: number;
+  ariaAdded?: number;
+  ariaRemoved?: number;
   messages?: string[];
   requests?: NetworkCall[];
   consoleErrors?: string[];
@@ -551,6 +553,8 @@ export class ActionResult implements ActionResultData {
     if (diff.ariaChanged) {
       pageDiff.ariaChanges = diff.ariaChanged;
       pageDiff.ariaChangeCount = diff.ariaChangeCount;
+      pageDiff.ariaAdded = diff.ariaAdded;
+      pageDiff.ariaRemoved = diff.ariaRemoved;
     }
 
     if (this.overlay.isOpen && (!previousState.overlay.isOpen || previousState.overlay.name !== this.overlay.name)) {
@@ -652,6 +656,8 @@ export class Diff {
   private _messages: string[] = [];
   private _ariaDiffResult: string | null = null;
   private _ariaChangeCount = 0;
+  private _ariaAdded = 0;
+  private _ariaRemoved = 0;
   private _isSameUrl: boolean;
 
   constructor(
@@ -709,6 +715,14 @@ export class Diff {
     return this._ariaChangeCount;
   }
 
+  get ariaAdded(): number {
+    return this._ariaAdded;
+  }
+
+  get ariaRemoved(): number {
+    return this._ariaRemoved;
+  }
+
   get htmlDiff(): HtmlDiffResult | null {
     return this._htmlDiffResult;
   }
@@ -740,6 +754,8 @@ export class Diff {
     const ariaDiff = diffAriaSnapshots(this.previous.ariaSnapshot, this.current.ariaSnapshot);
     this._ariaDiffResult = ariaDiff.text;
     this._ariaChangeCount = ariaDiff.count;
+    this._ariaAdded = ariaDiff.added;
+    this._ariaRemoved = ariaDiff.removed;
   }
 }
 

@@ -374,6 +374,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
         - Working with iframes (switch context with I.switchTo)
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
+        - Reaching items further down a list (I.scrollTo)
 
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')
@@ -441,10 +442,10 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
 
           if (!hasObservablePageChange(toolResult)) {
             activeNote.commit(TestResult.FAILED);
-            return failedToolResult('form', 'Form command executed, but no observable page or form-state change was captured.', {
+            return failedToolResult('form', 'Command executed, but nothing on the page changed: no navigation, no ARIA change, no HTML change and no request.', {
               ...toolResult,
               code: codeBlock,
-              suggestion: 'Treat the field/form action as not completed. Re-locate the editable control, check whether another UI layer is active, then retry and verify the field value before submitting.',
+              suggestion: 'The command ran without reaching anything. Re-locate the target, check whether another UI layer is active, then retry. If the goal was to load more of a list, no change means the collection has ended.',
             });
           }
           await commitNote(activeNote, TestResult.PASSED, toolResult, action);
@@ -1238,7 +1239,10 @@ export function successToolResult(action: string, data?: Record<string, any>, so
 }
 
 export function isMajorPageChange(pageDiff: PageDiff): boolean {
-  return pageDiff.urlChanged !== true && (pageDiff.ariaChangeCount ?? 0) >= LARGE_ARIA_CHANGE_THRESHOLD;
+  if (pageDiff.urlChanged === true) return false;
+  if ((pageDiff.ariaChangeCount ?? 0) < LARGE_ARIA_CHANGE_THRESHOLD) return false;
+  if (pageDiff.ariaRemoved === 0 && (pageDiff.ariaAdded ?? 0) > 0) return false;
+  return true;
 }
 
 export function hasFailedRequest(pageDiff: PageDiff): boolean {

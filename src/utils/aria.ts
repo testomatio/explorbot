@@ -521,7 +521,12 @@ export const diffAriaSnapshots = (previous: string | null, current: string | nul
   const renames = detectRenames(prev, curr, prevTotals, currTotals);
   const added = [...byCount.added, ...renames.added];
   const removed = [...byCount.removed, ...renames.removed];
-  return { text: formatDiff(added, removed, toggled, typed), count: added.length + removed.length + toggled.length + typed.length };
+  return {
+    text: formatDiff(added, removed, toggled, typed),
+    count: added.length + removed.length + toggled.length + typed.length,
+    added: added.length,
+    removed: removed.length,
+  };
 };
 
 export const detectFocusArea = (snapshot: string | null): FocusAreaResult => {
@@ -587,6 +592,8 @@ export const LARGE_ARIA_CHANGE_THRESHOLD = 50;
 export interface AriaDiff {
   text: string | null;
   count: number;
+  added: number;
+  removed: number;
 }
 
 type AriaNode = {

@@ -6,13 +6,14 @@ import { parseAriaLocator } from '../../utils/aria.ts';
 import { tag } from '../../utils/logger.js';
 import { mdq } from '../../utils/markdown-query.ts';
 import { WebElement } from '../../utils/web-element.ts';
+import { type PaginationStrategy } from '../../utils/pagination.ts';
 import { isDynamicId } from '../../utils/xpath.ts';
 import type { Conversation } from '../conversation.ts';
 import type { Provider } from '../provider.js';
 import { locatorRule as generalLocatorRuleText } from '../rules.js';
 import { FOCUSED_MARKER } from './focus.ts';
 import { type Constructor, debugLog } from './mixin.ts';
-import { parseResearchSections } from './parser.ts';
+import { extractPaginationFromBlockquote, parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
 
 function firstCssSegment(css: string): string | null {
@@ -31,6 +32,12 @@ function buildPwLocatorString(loc: Locator): string {
     return `${base}.getByRole('${parsed.role}', { name: '${parsed.text}' })`;
   }
   return `${base}.locator('${loc.locator}')`;
+}
+
+export function composeContainerBlockquote(css: string, pagination: PaginationStrategy | null): string {
+  let text = `> Container: '${css}'`;
+  if (pagination) text += `\n> Pagination: ${pagination}`;
+  return text;
 }
 
 export function WithLocators<T extends Constructor>(Base: T) {
@@ -304,7 +311,8 @@ export function WithLocators<T extends Constructor>(Base: T) {
       if (sectionQuery.count() === 0) sectionQuery = mdq(result.text).query(`section3(~"${escaped}")`);
 
       if (newCss) {
-        result.text = sectionQuery.query('blockquote[0]').replace(`Container: '${newCss}'`);
+        const pagination = extractPaginationFromBlockquote(section.rawMarkdown);
+        result.text = sectionQuery.query('blockquote[0]').replace(composeContainerBlockquote(newCss, pagination));
       } else {
         result.text = sectionQuery.query('blockquote[0]').replace('');
         result.text = result.text.replace(`${FOCUSED_MARKER}\n`, '');
