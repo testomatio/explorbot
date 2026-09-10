@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { tag } from '../../../../src/utils/logger.ts';
 import { ApiCommand } from './api-command.ts';
 
 export class KnowCommand extends ApiCommand {
@@ -21,12 +22,12 @@ export class KnowCommand extends ApiCommand {
 
     if (fs.existsSync(filePath)) {
       fs.appendFileSync(filePath, `\n---\n${this.knowledge}\n`, 'utf8');
-      console.log(`Updated: ${filePath}`);
+      tag('success').log(`Updated: ${filePath}`);
       return;
     }
 
     fs.writeFileSync(filePath, `---\nendpoint: "${endpoint}"\n---\n${this.knowledge}\n`, 'utf8');
-    console.log(`Created: ${filePath}`);
+    tag('success').log(`Created: ${filePath}`);
   }
 
   private async resolveKnowledgeDir(): Promise<string> {

@@ -1,4 +1,6 @@
+import figureSet from 'figures';
 import type { Test } from '../../../../src/test-plan.ts';
+import { tag } from '../../../../src/utils/logger.ts';
 import { ApiCommand } from './api-command.ts';
 
 export class TestCommand extends ApiCommand {
@@ -9,10 +11,10 @@ export class TestCommand extends ApiCommand {
 
   async execute(planfile: string): Promise<void> {
     const plan = this.bot.loadPlan(planfile);
-    console.log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests)`);
+    tag('info').log(`Plan loaded: "${plan.title}" (${plan.tests.length} tests)`);
 
     const tests = selectTests(plan.tests, this.index);
-    console.log(`Running ${tests.length} test(s)\n`);
+    tag('info').log(`Running ${tests.length} test(s)`);
 
     let passed = 0;
     for (const test of tests) {
@@ -22,7 +24,7 @@ export class TestCommand extends ApiCommand {
     }
 
     this.bot.savePlan();
-    console.log(`\nResults: ${passed} passed, ${this.failed} failed out of ${tests.length}`);
+    tag('info').log(`${figureSet.tick} ${tests.length} tests completed: ${passed} passed, ${this.failed} failed`);
   }
 }
 

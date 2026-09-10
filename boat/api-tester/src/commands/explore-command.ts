@@ -1,3 +1,5 @@
+import figureSet from 'figures';
+import { tag } from '../../../../src/utils/logger.ts';
 import { getStyles } from '../ai/chief/styles.ts';
 import { ApiCommand } from './api-command.ts';
 
@@ -13,23 +15,22 @@ export class ExploreCommand extends ApiCommand {
     for (const [index, target] of endpoints.entries()) {
       let runStyles = [styles[index % styles.length]];
       if (endpoints.length === 1) runStyles = styles;
-      if (endpoints.length > 1) console.log(`\n=== Endpoint ${index + 1}/${endpoints.length}: ${target} ===`);
+      if (endpoints.length > 1) tag('info').log(`Endpoint ${index + 1}/${endpoints.length}: ${target}`);
 
       for (const style of runStyles) {
         await this.runStyle(target, style);
       }
     }
 
-    console.log('\n=== Final Results ===');
-    console.log(`Total: ${this.result.tests} tests, ${this.result.passed} passed, ${this.result.failed} failed`);
+    tag('info').log(`${figureSet.tick} ${this.result.tests} tests completed: ${this.result.passed} passed, ${this.result.failed} failed`);
   }
 
   private async runStyle(endpoint: string, style: string): Promise<void> {
-    console.log(`\n=== Style: ${style} ===\n`);
+    tag('info').log(`Planning style: ${style}`);
 
     const plan = await this.bot.plan(endpoint, { style, fresh: true });
     if (!plan?.tests.length) {
-      console.log(`No tests generated for style: ${style}`);
+      tag('warning').log(`No tests generated for style: ${style}`);
       return;
     }
 
