@@ -374,6 +374,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
         - Working with iframes (switch context with I.switchTo)
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
+        - Reaching items further down a list (I.scrollTo)
 
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')

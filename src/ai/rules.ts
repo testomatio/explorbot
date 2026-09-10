@@ -351,6 +351,22 @@ export const actionRule = dedent`
   For checkboxes, prefer I.checkOption/I.uncheckOption over I.click.
 
 
+  ### I.scrollTo
+
+  scrolls until the element is in view
+
+  I.scrollTo(<locator>)
+
+  Scrolls every scrollable ancestor of the target, so it reaches an element inside a container
+  that has its own scrollbar. I.scrollPageToBottom() moves only the page itself.
+
+  <example>
+    I.scrollTo('.rows > *:last-child');
+    I.scrollTo({ role: 'listitem', text: 'Last entry' });
+    I.scrollPageToBottom();
+  </example>
+
+
   ### I.fillField
 
   fills the field with the given value
