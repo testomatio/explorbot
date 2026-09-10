@@ -22,7 +22,8 @@ import { Navigator } from './navigator.ts';
 import type { Pilot } from './pilot.ts';
 import { Provider } from './provider.ts';
 import { Researcher } from './researcher.ts';
-import { actionRule, capabilityGroundingRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, sectionContextRule } from './rules.ts';
+import { actionRule, capabilityGroundingRule, dataProtectionRules, focusedElementRule, formRequirementsRule, locatorRule, multipleTabsRule, paginationFromResearch, paginationRuleFor, sectionContextRule } from './rules.ts';
+import { type PaginationStrategy, detectPaginationMarkers } from '../utils/pagination.ts';
 import { TaskAgent } from './task-agent.ts';
 import { createCodeceptJSTools, createIframeTools, withdrawVisionTools } from './tools.ts';
 
@@ -62,6 +63,7 @@ export class Tester extends TaskAgent implements Agent {
   private pageStateHash: string | null = null;
   private pageActionResult: ActionResult | null = null;
   private seenUiMapUrls = new Set<string>();
+  private paginationByUrl = new Map<string, PaginationStrategy>();
   private lastAnalyzedStateHash: string | null = null;
   private stalledIterations = 0;
   private previousRegionPresent: boolean | null = null;
@@ -643,6 +645,8 @@ export class Tester extends TaskAgent implements Agent {
       let uiMapSection = '';
       if (research) {
         this.seenUiMapUrls.add(currentUrl);
+        const recorded = paginationFromResearch(research);
+        if (recorded) this.paginationByUrl.set(currentUrl, recorded);
         uiMapSection = dedent`
 
           Page UI Map
@@ -673,6 +677,7 @@ export class Tester extends TaskAgent implements Agent {
         Do not interact with elements that are not listed in <page_aria> or in HTML returned by tools
         Refer to information on page sections in <page_ui_map> and use container CSS locators to interact with elements inside sections
       `;
+      context += this.paginationContext(currentState, currentUrl);
       return context;
     }
 
@@ -688,6 +693,7 @@ export class Tester extends TaskAgent implements Agent {
       }
     }
 
+    context += this.paginationContext(currentState, currentUrl);
     if (context) return context;
 
     if (iteration % 5) return '';
@@ -704,6 +710,13 @@ export class Tester extends TaskAgent implements Agent {
       ${currentState.getInteractiveARIA()}
       </page_aria>
     `;
+  }
+
+  private paginationContext(currentState: ActionResult, currentUrl: string): string {
+    let strategy = detectPaginationMarkers(currentState.html);
+    if (!strategy) strategy = this.paginationByUrl.get(currentUrl) ?? null;
+    if (!strategy) return '';
+    return `\n${paginationRuleFor(strategy)}\n`;
   }
 
   private finishTest(task: Test): void {

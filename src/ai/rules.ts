@@ -1,4 +1,6 @@
 import dedent from 'dedent';
+import { extractPaginationFromBlockquote, parseDataSections, parseResearchSections } from './researcher/parser.ts';
+import type { PaginationStrategy } from '../utils/pagination.ts';
 
 export const recommendedCodeceptCommands = ['I.click', 'I.type', 'I.fillField', 'I.see', 'I.seeElement'] as const;
 
@@ -486,3 +488,37 @@ export const actionRule = dedent`
 
   </actions>
   `;
+
+const paginationControlsRule = dedent`
+  <pagination>
+  This list pages through a larger collection. If what you need is not on screen,
+  click next or the page number you need before concluding it is absent.
+  </pagination>
+`;
+
+const infiniteScrollRule = dedent`
+  <pagination>
+  This list grows as it is scrolled. If what you need is not on screen, scroll to
+  the last item in the list — every scrollable ancestor of that item scrolls, so
+  this reaches a list with its own scrollbar.
+
+  New rows in the aria changes mean more arrived; a request with none means nothing
+  was left. Stop on the first attempt that adds no rows: the end of a collection is
+  an answer, not a failure.
+  </pagination>
+`;
+
+export function paginationRuleFor(strategy: PaginationStrategy): string {
+  if (strategy === 'controls') return paginationControlsRule;
+  return infiniteScrollRule;
+}
+
+export function paginationFromResearch(researchText: string): PaginationStrategy | null {
+  if (!researchText) return null;
+  const sections = [...parseResearchSections(researchText), ...parseDataSections(researchText)];
+  for (const section of sections) {
+    const strategy = extractPaginationFromBlockquote(section.rawMarkdown);
+    if (strategy) return strategy;
+  }
+  return null;
+}
