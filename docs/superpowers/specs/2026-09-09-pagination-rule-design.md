@@ -367,3 +367,42 @@ The added/removed split exists inside `diffAriaSnapshots` but is flattened into 
   session-scoped.
 - Virtualized list support.
 - Changing `detectRegion` thresholds.
+- The API signal below — a follow-up branch, not this one.
+
+## Follow-up: pagination from the API
+
+The DOM says a list continues; the API says **how far**. That number decides whether paging on
+is worth it or the item is not in the collection at all, and nothing in this design can supply
+it. Deferred to its own branch because it depends on the API boat being configured and lands on
+Pilot rather than on Researcher or Tester.
+
+**Already in place, verified:**
+
+- `XhrCapture.captureReadEndpoint` (`src/api/xhr-capture.ts`) stores GETs as
+  `fullUrl = pathname + search`, so the **query string is already captured**.
+- `queryParamNames()` extracts the names and `queryParamHint()` renders them into
+  `toEndpointList()` (`src/api/request-store.ts:78`), so fisherman already sees
+  `GET /api/items ?page,per_page` in its endpoint list.
+- `askApi` (`src/ai/fisherman/tools.ts:220`) is wired to **Pilot alone**
+  (`src/ai/pilot.ts:786`), and `fisherman.lookupData()` issues live read-only requests, reading
+  full responses. Totals are reachable today without touching capture.
+
+**The gap:** GET response bodies are deliberately dropped (`rawResponseBodyValue = ''`,
+`responseHeaders: {}`), so `total`, `X-Total-Count` and `Link: rel="next"` are not passively
+available. `askApi` re-requests instead, which is why that gap does not block this.
+
+**Shape of the follow-up:**
+
+1. A Pilot rule saying **when** asking is worth it — after repeated paging or scrolling has not
+   produced the target — never "ask about every list". Pilot *guides* while Tester *executes*,
+   and judging whether to keep paging is guidance; Pilot's conversation is also the light one,
+   so API reasoning belongs there rather than in Tester's ARIA-heavy loop.
+2. A deterministic signal from captured read requests whose query params name a pagination
+   scheme (`page`, `offset`, `cursor`, `limit`, `per_page`). Free — the data is already stored,
+   and `queryParamNames` already isolates it.
+
+**Rejected:** capturing GET response bodies to read totals passively. Bodies are large, reads
+are discarded on purpose, and `askApi` already obtains them on demand.
+
+Both must stay optional: `fisherman?.isAvailable()` already returns a clean "no API access,
+judge from the page instead", and a run without an API boat must behave exactly as it does now.
