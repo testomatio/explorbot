@@ -95,6 +95,8 @@ export function WithSubPages<T extends Constructor>(Base: T) {
           Higher visit count means the page was encountered more during testing — likely more important.
           Detect template pages: /users/1 and /users/2 are the same template — if one was planned, skip all others.
           Compare page titles, headings, and URL structure to detect templates.
+          Prefer stable pages over transient ones: a page that edits, creates, or configures one specific record is a step inside a feature, not a feature's planning base — pick the page that lists or holds the collection instead.
+          A URL that addresses one particular record can also name a record the run has already deleted.
           Skip help/docs/about pages if core feature pages remain.
           Return null for url when no more relevant pages remain.
         `,

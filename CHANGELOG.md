@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-11
+
+### Changes
+
+- [Planner] The sub-page picker now prefers stable pages over record forms. A page that edits or
+  configures one specific record is a step inside a feature, not a feature's planning base, and the
+  record it addresses may already have been deleted by another test — so the picker is told to take
+  the page that lists or holds the collection instead. In the last night run the picker visited edit
+  URLs of records earlier tests had deleted, and every scenario planned there died on a 404.
+- [Planner] Scenarios must anchor to the stable page that holds a collection, never to the URL or ID
+  of one specific record; the steps locate the record from the stable page instead. Scenarios pinned
+  to single records kept failing once sibling tests removed those records.
+
 ## 2026-09-10
 
 ### Changes
