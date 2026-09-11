@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-11
+
+### Changes
+
+- [Apibot] Runs now send traces to Langfuse when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set in
+  the environment, the same way explorbot runs do. Apibot used to read Langfuse settings only from
+  `ai.langfuse` in its config file, so a run started by a host that passes its environment along produced
+  no traces at all.
+- [Apibot] Traces are sent before the process exits, also when a run fails. The last planning or test trace
+  of a run used to be lost on exit.
+- [Apibot] Each API test is now one trace that includes its final review. The review used to arrive as a
+  separate trace with no link to the test it judged, and its tokens were counted under `unknown`. Settings
+  under `ai.agents.curler` (`providerOptions`, `reasoning`) now apply to the review as well.
+
 ## 2026-09-10
 
 ### Changes

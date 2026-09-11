@@ -85,6 +85,7 @@ export class ApiBot {
   async stop(): Promise<void> {
     await this.reporter?.finishRun();
     await this.apiClient?.teardown();
+    await this.provider?.stop();
   }
 
   createAgent<T>(factory: (deps: { ai: AIProvider; config: ApibotConfig; apiClient: ApiClient; requestState: RequestStore; knowledge: KnowledgeTracker }) => T): T {
