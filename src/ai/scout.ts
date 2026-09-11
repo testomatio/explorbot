@@ -56,13 +56,20 @@ export class Scout implements Agent {
           agentName: 'scout',
         });
 
-        if (!invokeResult?.toolExecutions?.length) {
-          finishFromText(invokeResult?.response?.text);
+        const responseText = invokeResult?.response?.text;
+        if (responseText?.trim()) {
+          finishFromText(responseText);
           stop();
           return;
         }
 
-        if (iteration >= MAX_ITERATIONS) {
+        if (!invokeResult?.toolExecutions?.length) {
+          stop();
+          return;
+        }
+
+        if (iteration >= MAX_ITERATIONS - 1) {
+          conversation.addUserText('Exploration time is over. Report your findings now as your final message.');
           const final = await this.provider.invokeConversation(conversation, undefined, { agentName: 'scout' });
           finishFromText(final?.response?.text);
           stop();
