@@ -56,8 +56,14 @@ export class Scout implements Agent {
           agentName: 'scout',
         });
 
+        const responseText = invokeResult?.response?.text;
+        if (responseText?.trim()) {
+          finishFromText(responseText);
+          stop();
+          return;
+        }
+
         if (!invokeResult?.toolExecutions?.length) {
-          finishFromText(invokeResult?.response?.text);
           stop();
           return;
         }

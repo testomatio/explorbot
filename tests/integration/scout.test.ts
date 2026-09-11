@@ -75,6 +75,7 @@ describe('Scout with aimock', () => {
     const result = await scout.collectDocs({ url: '/invite', title: 'Invites', feature: 'invitations', excludeUrls: [] });
 
     expect(result).toBe('- /invite: user can invite teammates');
+    expect(mock.getRequests()).toHaveLength(3);
 
     const systemPrompt = extractPromptText(mock.getRequests()[0]);
     expect(systemPrompt).toContain('documentation retrieval agent');
