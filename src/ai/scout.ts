@@ -62,7 +62,8 @@ export class Scout implements Agent {
           return;
         }
 
-        if (iteration >= MAX_ITERATIONS) {
+        if (iteration >= MAX_ITERATIONS - 1) {
+          conversation.addUserText('Exploration time is over. Report your findings now as your final message.');
           const final = await this.provider.invokeConversation(conversation, undefined, { agentName: 'scout' });
           finishFromText(final?.response?.text);
           stop();

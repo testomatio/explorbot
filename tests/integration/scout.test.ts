@@ -123,6 +123,21 @@ describe('Scout with aimock', () => {
     expect(result).toBe('');
   });
 
+  it('forces a wrap-up answer when exploration fills every iteration', async () => {
+    for (let i = 0; i < 12; i++) {
+      mock.on({ sequenceIndex: i }, { toolCalls: [toolCall(`b${i}`, 'bash', { command: `rg attempt${i} .` })] });
+    }
+    mock.on({}, { content: '- /invite: digest produced on the forced final turn' });
+
+    const scout = new Scout(provider, loadScoutCorpus([corpusDir]));
+
+    const result = await scout.collectDocs({ url: '/invite', excludeUrls: [] });
+
+    expect(result).toBe('- /invite: digest produced on the forced final turn');
+    const requests = mock.getRequests();
+    expect(requests[requests.length - 1]?.body?.messages?.some((m: any) => typeof m.content === 'string' && m.content.includes('Report your findings'))).toBe(true);
+  });
+
   it('reuses a cached answer for the same page and focus', async () => {
     mock.on({ sequenceIndex: 0 }, { toolCalls: [toolCall('b1', 'bash', { command: 'rg invite .' })] });
     mock.on({}, { content: '- /invite: cached findings' });

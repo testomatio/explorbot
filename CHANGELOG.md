@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-11
+
+### Changes
+
+- [Scout] A Scout that kept exploring until its iteration limit now produces its digest instead of
+  silently returning nothing. The forced wrap-up turn was guarded by a condition the loop counter
+  could never reach, so a thorough scan ended with the findings discarded — the planner got no
+  documentation and nobody was told why.
+
 ## 2026-09-10
 
 ### Changes
