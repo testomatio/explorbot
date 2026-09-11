@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { ApibotConfigParser } from '../../boat/api-tester/src/config.ts';
 import { ConfigParser } from '../../src/config.ts';
 
-const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_API_SPEC', 'EXPLORBOT_API_HEADERS'];
+const ENV_KEYS = ['EXPLORBOT_AI_PROVIDER', 'EXPLORBOT_AI_MODEL', 'EXPLORBOT_URL', 'EXPLORBOT_OUTPUT', 'EXPLORBOT_API_SPEC', 'EXPLORBOT_API_HEADERS', 'LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_BASE_URL', 'LANGFUSE_HOST'];
 
 describe('ApibotConfigParser environment fallback', () => {
   let savedEnv: Record<string, string | undefined> = {};
@@ -113,6 +113,41 @@ describe('ApibotConfigParser environment fallback', () => {
     const config = await parser.loadConfig({ config: configPath });
 
     expect(config.api.headers).toEqual({ Accept: 'application/json', 'X-Tenant': 'acme', Authorization: 'Bearer token-123' });
+  });
+
+  it('enables Langfuse from LANGFUSE_* env vars without a config file', async () => {
+    process.env.EXPLORBOT_AI_MODEL = 'openrouter/openai/gpt-oss-120b';
+    process.env.EXPLORBOT_URL = 'https://api.example.com';
+    process.env.EXPLORBOT_OUTPUT = outputRoot;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-lf-test';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-lf-test';
+    process.env.LANGFUSE_BASE_URL = 'http://localhost:3001';
+
+    const config = await parser.loadConfig({ path: outputRoot });
+
+    expect(config.ai.langfuse).toEqual({ enabled: true, publicKey: 'pk-lf-test', secretKey: 'sk-lf-test', baseUrl: 'http://localhost:3001' });
+  });
+
+  it('enables Langfuse from LANGFUSE_* env vars for a config file without ai.langfuse', async () => {
+    const configPath = join(outputRoot, 'apibot.config.js');
+    writeFileSync(configPath, "export default { ai: { model: { modelId: 'test-model' } }, api: { baseEndpoint: 'https://api.example.com' } };\n", 'utf8');
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-lf-test';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-lf-test';
+
+    const config = await parser.loadConfig({ config: configPath, path: outputRoot });
+
+    expect(config.ai.langfuse?.enabled).toBe(true);
+  });
+
+  it('keeps Langfuse off when the config file disables it', async () => {
+    const configPath = join(outputRoot, 'apibot.config.js');
+    writeFileSync(configPath, "export default { ai: { model: { modelId: 'test-model' }, langfuse: { enabled: false } }, api: { baseEndpoint: 'https://api.example.com' } };\n", 'utf8');
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-lf-test';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-lf-test';
+
+    const config = await parser.loadConfig({ config: configPath, path: outputRoot });
+
+    expect(config.ai.langfuse?.enabled).toBe(false);
   });
 
   it('throws when EXPLORBOT_URL is unset', async () => {

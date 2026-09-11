@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { flushTelemetry } from '../../../src/ai/provider.ts';
 import { ConfigCommand } from '../../../src/commands/config-command.ts';
 import { RecommendedModelsCommand } from '../../../src/commands/recommended-models-command.ts';
 import { listSites } from '../../../src/global-config.ts';
@@ -111,6 +112,7 @@ async function run(name: string, options: any, endpoint: string | undefined, bod
     process.exit(code);
   } catch (error) {
     console.error('Failed:', error instanceof Error ? error.message : 'Unknown error');
+    await flushTelemetry();
     process.exit(1);
   }
 }
