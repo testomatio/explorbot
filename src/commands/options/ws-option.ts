@@ -6,6 +6,20 @@ export class WsOption extends BaseOption {
   flags = '--ws <url>';
   description = 'Stream this run to a remote UI over WebSocket';
 
+  /**
+   * An open socket holds the event loop, and `WebSocket` has no `unref` on
+   * either runtime — so a command that ends by returning rather than through
+   * `showStatsAndExit` would never exit once it is attached. The option that
+   * opened the connection is what closes it.
+   */
+  override register(command: Command): void {
+    super.register(command);
+    command.hook('postAction', async () => {
+      if (!remote.isAttached()) return;
+      await remote.close(0);
+    });
+  }
+
   protected apply(options: Record<string, any>, command: Command): void {
     const url = options.ws || process.env.EXPLORBOT_WS_URL;
     if (!url) return;

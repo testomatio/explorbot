@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-11
+
+### Changes
+
+- `--ws` no longer hangs a command that ends by returning instead of exiting. The open socket held the
+  process alive, so `explorbot config`, `plans`, `runs` and `sites` never came back once a UI was
+  attached; they now close the connection and exit as they always did without the flag.
+
 ## 2026-09-10
 
 ### Changes

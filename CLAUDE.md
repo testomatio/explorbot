@@ -563,7 +563,7 @@ One class in one file, and nothing in explorbot knows about it. `remote` (the si
 
 Consequently `isInteractive()` (`src/ai/task-agent.ts`) is **`INK_RUNNING || executionController.hasInputCallback()`** — "somebody can answer", asked of the controller rather than of any particular front end.
 
-**There are no frame types.** A frame is `{type, ts, ...whatever}`; `send(type, data)` puts data on the wire and the UI renders what it recognises. Neither side validates the other's shape, so either can start sending more at any time. It queues while disconnected, reconnects with backoff, and `remote.close(exitCode)` flushes before exit (called from `showStatsAndExit`).
+**There are no frame types.** A frame is `{type, ts, ...whatever}`; `send(type, data)` puts data on the wire and the UI renders what it recognises. Neither side validates the other's shape, so either can start sending more at any time. It queues while disconnected, reconnects with backoff, and `remote.close(exitCode)` flushes before exit — called from `showStatsAndExit`, and from `WsOption`'s `postAction` for a command that ends by returning instead, since an open socket holds the event loop and `WebSocket` has no `unref` on either runtime.
 
 `--ws` itself is declared outside remote, as a `BaseOption` in `src/commands/options/` — see below — and its hook calls `remote.attach()`.
 
