@@ -227,6 +227,29 @@ describe('Planner with aimock', () => {
     expect(prompt).not.toContain('merge them into one');
   });
 
+  it('anchors scenarios to a stable page, never a single record', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('never to the URL or ID of one specific record');
+    expect(prompt).toContain('another test may have deleted');
+  });
+
+  it('tells the sub-page picker to prefer stable pages over record forms', async () => {
+    mock.clearFixtures();
+    mock.on({}, { content: JSON.stringify({ url: '/tasks/board', reason: 'Stable list page' }) });
+
+    const pick = await planner.pickNextSubPage([
+      { url: '/tasks/board', title: 'Task Board', h1: 'Tasks', visitCount: 3 },
+      { url: '/tasks/42/edit', title: 'Edit task', h1: 'Edit', visitCount: 1 },
+    ]);
+
+    const prompt = extractPromptText(mock.getRequests()[0]);
+    expect(prompt).toContain("not a feature's planning base");
+    expect(prompt).toContain('pick the page that lists or holds the collection instead');
+    expect(pick?.url).toBe('/tasks/board');
+  });
+
   it('does not label test data as disposable', async () => {
     await planner.plan();
 
