@@ -162,6 +162,12 @@ function matchText(text: string, matcher: TextMatcher): boolean {
   return matcher.negated ? !result : result;
 }
 
+function entryKey(line: string): string | null {
+  const separator = line.indexOf(':');
+  if (separator < 1) return null;
+  return line.slice(0, separator).trim().toLowerCase();
+}
+
 function getTokenText(token: Token): string {
   const t = token as any;
   switch (token.type) {
@@ -405,6 +411,39 @@ export class MarkdownQuery {
     }
 
     return results;
+  }
+
+  keyValue(): Record<string, string> {
+    const entries: Record<string, string> = {};
+
+    for (const range of this.matches) {
+      for (const line of getTokenText(range.token).split('\n')) {
+        const key = entryKey(line);
+        if (!key) continue;
+        const value = line.slice(line.indexOf(':') + 1).trim();
+        if (value) entries[key] = value;
+      }
+    }
+
+    return entries;
+  }
+
+  setKeyValue(key: string, value: string | null): string {
+    return this.replaceEach((match) => {
+      const token = match.matches[0].token;
+      const lines = getTokenText(token)
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      const index = lines.findIndex((line) => entryKey(line) === key.toLowerCase());
+      if (index < 0 && value) lines.push(`${key}: ${value}`);
+      if (index >= 0 && value) lines[index] = `${key}: ${value}`;
+      if (index >= 0 && !value) lines.splice(index, 1);
+
+      if (token.type !== 'blockquote') return lines.join('\n');
+      return lines.map((line) => `> ${line}`).join('\n');
+    });
   }
 
   replace(content: string): string {

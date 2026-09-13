@@ -2,6 +2,7 @@ import { parseAriaLocator } from '../../utils/aria.ts';
 import { pluralize } from '../../utils/logger.ts';
 import { jsonToTable, parseSections, tableToJson } from '../../utils/markdown-parser.ts';
 import { mdq } from '../../utils/markdown-query.ts';
+import type { PaginationStrategy } from '../../utils/pagination.ts';
 import { FOCUSED_MARKER } from './focus.ts';
 
 export interface ResearchElement {
@@ -84,11 +85,9 @@ export function mapRowToElement(row: Record<string, string>): ResearchElement | 
 }
 
 export function extractContainerFromBlockquote(sectionMarkdown: string): string | null {
-  const bq = mdq(sectionMarkdown).query('blockquote[0]').text().trim();
-  if (!bq) return null;
-  const match = bq.match(/Container:\s*(.+)/i);
-  if (!match) return null;
-  const css = normalizeLocatorValue(match[1]);
+  const entry = mdq(sectionMarkdown).query('blockquote[0]').keyValue().container;
+  if (!entry) return null;
+  const css = normalizeLocatorValue(entry);
   if (!css || !/^[.#\[\w]/.test(css)) return null;
   return css;
 }
@@ -106,6 +105,25 @@ export function parseResearchSections(markdown: string): ResearchSection[] {
 
       return { name: section.name, containerCss, elements, rawMarkdown: section.rawMarkdown, isExtended };
     });
+}
+
+export function parseDataSections(markdown: string): ResearchSection[] {
+  return parseSections(markdown)
+    .filter((s) => s.name.toLowerCase().startsWith('data:'))
+    .map((section) => ({
+      name: section.name,
+      containerCss: extractContainerFromBlockquote(section.rawMarkdown),
+      elements: [],
+      rawMarkdown: section.rawMarkdown,
+      isExtended: false,
+    }));
+}
+
+export function extractPaginationFromBlockquote(sectionMarkdown: string): PaginationStrategy | null {
+  const value = mdq(sectionMarkdown).query('blockquote[0]').keyValue().pagination?.toLowerCase();
+  if (value === 'controls') return 'controls';
+  if (value === 'infinite') return 'infinite';
+  return null;
 }
 
 export function extractValidContainers(researchText: string, opts?: { exclude?: string[] }): Array<{ css: string; label: string }> {

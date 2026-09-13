@@ -22,6 +22,21 @@
 
 ### Changes
 
+- [Researcher] A list is now checked for how it continues past what is on screen, and the answer is
+  recorded beside that list in the UI map: either it has controls that move between pages, or it grows
+  when scrolled. Lists that scroll inside their own box are covered, not just the page.
+- [Tester] Can now scroll to reach items further down a list, including a list that scrolls inside its
+  own box rather than the page. Previously nothing scrolled at all, so an item below the fold was
+  reported as absent.
+- [Tester] Loading more of a list no longer reports "MAJOR PAGE CHANGE. Page entered a different mode."
+  A batch of new rows is the same page with more in it; only a page that replaces what was there is a
+  change of mode.
+- [Tester] Reaching the end of a list is no longer recorded as a failed step. The message now says what
+  was actually observed, and names an exhausted collection as one reading of it, instead of telling the
+  tester to re-locate an editable control whatever it had just run.
+- [Researcher] A section container that gets corrected during research is no longer lost. The correction
+  used to leave the line unreadable, so everything relying on that container silently fell back to having
+  none.
 - [Planner] When a dialog or detail panel is open on the page being planned, the planner is now told which
   one it is and plans tests for it first. It used to see every section of the page with nothing marking
   the one on screen, and could fill a plan with controls that panel covers.
