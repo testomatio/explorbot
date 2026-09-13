@@ -4,6 +4,9 @@
 
 ### Changes
 
+- `--ws` no longer hangs a command that ends by returning instead of exiting. The open socket held the
+  process alive, so `explorbot config`, `plans`, `runs` and `sites` never came back once a UI was
+  attached; they now close the connection and exit as they always did without the flag.
 - [Scout] A Scout that kept exploring until its iteration limit now produces its digest instead of
   silently returning nothing. The forced wrap-up turn was guarded by a condition the loop counter
   could never reach, so a thorough scan ended with the findings discarded — the planner got no
