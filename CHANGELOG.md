@@ -8,11 +8,23 @@
   silently returning nothing. The forced wrap-up turn was guarded by a condition the loop counter
   could never reach, so a thorough scan ended with the findings discarded — the planner got no
   documentation and nobody was told why.
+- [Apibot] Runs now send traces to Langfuse when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set in
+  the environment, the same way explorbot runs do. Apibot used to read Langfuse settings only from
+  `ai.langfuse` in its config file, so a run started by a host that passes its environment along produced
+  no traces at all.
+- [Apibot] Traces are sent before the process exits, also when a run fails. The last planning or test trace
+  of a run used to be lost on exit.
+- [Apibot] Each API test is now one trace that includes its final review. The review used to arrive as a
+  separate trace with no link to the test it judged, and its tokens were counted under `unknown`. Settings
+  under `ai.agents.curler` (`providerOptions`, `reasoning`) now apply to the review as well.
 
 ## 2026-09-10
 
 ### Changes
 
+- [Planner] When a dialog or detail panel is open on the page being planned, the planner is now told which
+  one it is and plans tests for it first. It used to see every section of the page with nothing marking
+  the one on screen, and could fill a plan with controls that panel covers.
 - [Pilot] Text an app shows in a tooltip now reaches Pilot along with alerts and status messages. When a
   page refuses an action and explains why in a hover bubble, that sentence used to stay in the page HTML,
   which Pilot never sees — so a run could be judged, and reported, on a reason the app had already
