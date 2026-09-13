@@ -187,7 +187,7 @@ describe('Researcher with aimock', () => {
     await researcher.research(fakeState, { fix: false });
 
     const prompt = extractPromptText(mock.getLastRequest());
-    expect(prompt).toContain('pagination_controls');
+    expect(prompt).toContain('> Pagination: controls');
   });
 
   it('includes senior QA role in system message', async () => {

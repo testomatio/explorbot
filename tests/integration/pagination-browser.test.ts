@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 import { type Browser, chromium } from 'playwright';
-import { measureScroll, restoreScroll } from '../../src/utils/pagination.ts';
+import { inspectList, restoreScroll } from '../../src/utils/pagination.ts';
 
 let browser: Browser;
 
@@ -21,50 +21,69 @@ const pageWith = async (body: string) => {
   return page;
 };
 
-describe('measureScroll', () => {
+describe('inspectList', () => {
   it('reports a container that scrolls inside itself', async () => {
     const page = await pageWith(`<div id="box" style="height:200px;overflow-y:auto">${rows(60)}</div>`);
 
-    const measure = await page.evaluate(measureScroll, '#box');
+    const measure = await page.evaluate(inspectList, '#box');
 
-    expect(measure?.ownScroller).toBe(true);
-    expect(measure?.rowCount).toBe(60);
+    expect(measure?.scrolls).toBe(true);
+    expect(measure?.items).toBe(60);
     await page.close();
   });
 
   it('reports a list that continues below the fold', async () => {
     const page = await pageWith(`<div id="box">${rows(400)}</div>`);
 
-    const measure = await page.evaluate(measureScroll, '#box');
+    const measure = await page.evaluate(inspectList, '#box');
 
-    expect(measure?.ownScroller).toBe(false);
-    expect(measure?.belowFold).toBe(true);
+    expect(measure?.scrolls).toBe(true);
     await page.close();
   });
 
   it('reports neither for a short list', async () => {
     const page = await pageWith('<div id="box"><div class="row">only</div></div>');
 
-    const measure = await page.evaluate(measureScroll, '#box');
+    const measure = await page.evaluate(inspectList, '#box');
 
-    expect(measure?.ownScroller).toBe(false);
-    expect(measure?.belowFold).toBe(false);
+    expect(measure?.scrolls).toBe(false);
     await page.close();
   });
 
   it('counts direct children, not every descendant', async () => {
     const page = await pageWith('<div id="box"><div class="row"><span>a</span><span>b</span></div><div class="row">two</div></div>');
 
-    const measure = await page.evaluate(measureScroll, '#box');
+    const measure = await page.evaluate(inspectList, '#box');
 
-    expect(measure?.rowCount).toBe(2);
+    expect(measure?.items).toBe(2);
+    await page.close();
+  });
+
+  it('sees paging controls inside the container only', async () => {
+    const page = await pageWith('<a href="?p=2" rel="next">outside</a><div id="box"><div class="row">one</div></div>');
+
+    expect((await page.evaluate(inspectList, '#box'))?.hasPagingControls).toBe(false);
+    await page.close();
+  });
+
+  it('sees paging controls when they belong to the container', async () => {
+    const page = await pageWith('<div id="box"><div class="row">one</div><a href="?p=2" rel="next">on</a></div>');
+
+    expect((await page.evaluate(inspectList, '#box'))?.hasPagingControls).toBe(true);
+    await page.close();
+  });
+
+  it('recognises a feed', async () => {
+    const page = await pageWith('<div id="box" role="feed"><article>one</article></div>');
+
+    expect((await page.evaluate(inspectList, '#box'))?.isFeed).toBe(true);
     await page.close();
   });
 
   it('returns null for a selector that matches nothing', async () => {
     const page = await pageWith('<div id="box"></div>');
 
-    expect(await page.evaluate(measureScroll, '#missing')).toBeNull();
+    expect(await page.evaluate(inspectList, '#missing')).toBeNull();
     await page.close();
   });
 });
@@ -76,24 +95,24 @@ describe('restoreScroll', () => {
     await page.evaluate(() => {
       document.getElementById('box')!.scrollTop = 900;
     });
-    await page.evaluate(restoreScroll, { css: '#box', scrollTop: 0, windowScrollY: 0 });
+    await page.evaluate(restoreScroll, { css: '#box', scrollTop: 0, pageScrollY: 0 });
 
-    expect((await page.evaluate(measureScroll, '#box'))?.scrollTop).toBe(0);
+    expect((await page.evaluate(inspectList, '#box'))?.scrollTop).toBe(0);
     await page.close();
   });
 
   it('puts the window back too, since scrollIntoViewIfNeeded moves both', async () => {
     const page = await pageWith(`<div style="height:2000px">filler</div><div id="box" style="height:200px;overflow-y:auto">${rows(60)}</div><div style="height:2000px">filler</div>`);
-    const before = await page.evaluate(measureScroll, '#box');
+    const before = await page.evaluate(inspectList, '#box');
 
     await page.locator('#box > *:last-child').scrollIntoViewIfNeeded();
-    const moved = await page.evaluate(measureScroll, '#box');
-    await page.evaluate(restoreScroll, { css: '#box', scrollTop: before!.scrollTop, windowScrollY: before!.windowScrollY });
-    const restored = await page.evaluate(measureScroll, '#box');
+    const moved = await page.evaluate(inspectList, '#box');
+    await page.evaluate(restoreScroll, { css: '#box', scrollTop: before!.scrollTop, pageScrollY: before!.pageScrollY });
+    const restored = await page.evaluate(inspectList, '#box');
 
-    expect(moved!.windowScrollY).toBeGreaterThan(0);
+    expect(moved!.pageScrollY).toBeGreaterThan(0);
     expect(moved!.scrollTop).toBeGreaterThan(0);
-    expect(restored!.windowScrollY).toBe(before!.windowScrollY);
+    expect(restored!.pageScrollY).toBe(before!.pageScrollY);
     expect(restored!.scrollTop).toBe(before!.scrollTop);
     await page.close();
   });
@@ -104,17 +123,17 @@ describe('scrolling a container that appends', () => {
     const page = await browser.newPage();
     await page.goto(`file://${join(process.cwd(), 'test-data', 'infinite-list.html')}`, { waitUntil: 'domcontentloaded' });
 
-    const before = await page.evaluate(measureScroll, '#feed');
+    const before = await page.evaluate(inspectList, '#feed');
     await page.locator('#feed > *:last-child').scrollIntoViewIfNeeded();
     await page.waitForTimeout(200);
-    const after = await page.evaluate(measureScroll, '#feed');
-    await page.evaluate(restoreScroll, { css: '#feed', scrollTop: before!.scrollTop, windowScrollY: before!.windowScrollY });
-    const restored = await page.evaluate(measureScroll, '#feed');
+    const after = await page.evaluate(inspectList, '#feed');
+    await page.evaluate(restoreScroll, { css: '#feed', scrollTop: before!.scrollTop, pageScrollY: before!.pageScrollY });
+    const restored = await page.evaluate(inspectList, '#feed');
 
-    expect(before?.ownScroller).toBe(true);
-    expect(after!.rowCount).toBeGreaterThan(before!.rowCount);
+    expect(before?.scrolls).toBe(true);
+    expect(after!.items).toBeGreaterThan(before!.items);
     expect(restored?.scrollTop).toBe(before!.scrollTop);
-    expect(restored?.windowScrollY).toBe(before!.windowScrollY);
+    expect(restored?.pageScrollY).toBe(before!.pageScrollY);
     await page.close();
   });
 });

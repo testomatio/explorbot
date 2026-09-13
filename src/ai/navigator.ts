@@ -23,8 +23,7 @@ import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
-import { actionRule, locatorRule, paginationRuleFor, unexpectedPopupRule } from './rules.js';
-import { detectPaginationMarkers } from '../utils/pagination.ts';
+import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
 import { isInteractive } from './task-agent.js';
 import { createLearnExperienceTool } from './tools.ts';
 
@@ -389,10 +388,6 @@ class Navigator implements Agent {
       experience = this.experienceTracker.renderExperienceFor(actionResult);
     }
 
-    let paginationHint = '';
-    const strategy = detectPaginationMarkers(actionResult.html);
-    if (strategy) paginationHint = paginationRuleFor(strategy);
-
     return dedent`
       <message>
         ${message}
@@ -417,8 +412,6 @@ class Navigator implements Agent {
       </task>
 
       ${actionRule}
-
-      ${paginationHint}
 
       ${unexpectedPopupRule}
 

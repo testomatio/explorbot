@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { composeContainerBlockquote } from '../../src/ai/researcher/locators.ts';
-import { extractPaginationFromBlockquote, parseDataSections, parseResearchSections } from '../../src/ai/researcher/parser.ts';
+import { extractPaginationFromBlockquote, parseDataSections, parseResearchSections, withBlockquoteEntry } from '../../src/ai/researcher/parser.ts';
 import { mdq } from '../../src/utils/markdown-query.ts';
 
 const RESEARCH = `## Menu
@@ -62,21 +61,34 @@ describe('pagination line', () => {
   });
 });
 
-describe('rewriting a container', () => {
+describe('withBlockquoteEntry', () => {
+  const rewrite = (markdown: string, key: string, value: string) =>
+    mdq(markdown)
+      .query('section2(~"Menu")')
+      .query('blockquote[0]')
+      .replace(withBlockquoteEntry(markdown, key, value));
+
   it('leaves the blockquote readable', () => {
     const markdown = `## Menu\n\n> Container: '.old'\n\n| Element | ARIA | CSS | eidx |\n`;
 
-    const rewritten = mdq(markdown).query('section2(~"Menu")').query('blockquote[0]').replace(composeContainerBlockquote('.new', null));
-
-    expect(parseResearchSections(rewritten)[0].containerCss).toBe('.new');
+    expect(parseResearchSections(rewrite(markdown, 'Container', "'.new'"))[0].containerCss).toBe('.new');
   });
 
-  it('keeps a recorded strategy through a rewrite', () => {
+  it('replaces only its own entry and keeps the others', () => {
     const markdown = `## Menu\n\n> Container: '.old'\n> Pagination: controls\n\n| Element | ARIA | CSS | eidx |\n`;
 
-    const rewritten = mdq(markdown).query('section2(~"Menu")').query('blockquote[0]').replace(composeContainerBlockquote('.new', 'controls'));
+    const rewritten = rewrite(markdown, 'Container', "'.new'");
 
-    expect(extractPaginationFromBlockquote(rewritten)).toBe('controls');
     expect(parseResearchSections(rewritten)[0].containerCss).toBe('.new');
+    expect(extractPaginationFromBlockquote(rewritten)).toBe('controls');
+  });
+
+  it('adds an entry that was not there', () => {
+    const markdown = `## Menu\n\n> Container: '.rows'\n\n| Element | ARIA | CSS | eidx |\n`;
+
+    const rewritten = rewrite(markdown, 'Pagination', 'infinite');
+
+    expect(extractPaginationFromBlockquote(rewritten)).toBe('infinite');
+    expect(parseResearchSections(rewritten)[0].containerCss).toBe('.rows');
   });
 });

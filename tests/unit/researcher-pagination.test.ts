@@ -33,7 +33,7 @@ const agentWith = (measures: Record<string, any>, afterScrollRows: number) => {
           const css = typeof arg === 'string' ? arg : arg?.css;
           const measure = measures[css];
           if (!measure) return null;
-          if (scrolled.has(css)) return { ...measure, rowCount: afterScrollRows };
+          if (scrolled.has(css)) return { ...measure, items: afterScrollRows };
           return measure;
         },
       }),
@@ -51,7 +51,7 @@ const agentWith = (measures: Record<string, any>, afterScrollRows: number) => {
   return { agent, attempts };
 };
 
-const scrollable = { ownScroller: true, belowFold: false, scrollTop: 0, windowScrollY: 0, rowCount: 20 };
+const scrollable = { hasPagingControls: false, isFeed: false, scrolls: true, items: 20, scrollTop: 0, pageScrollY: 0 };
 
 describe('detectPagination', () => {
   it('records infinite when scrolling adds rows', async () => {
@@ -83,7 +83,7 @@ describe('detectPagination', () => {
 
   it('does not probe a section that cannot scroll', async () => {
     const result = new ResearchResult(RESEARCH, '/suites');
-    const { agent, attempts } = agentWith({ '.suites-list-content': { ...scrollable, ownScroller: false, rowCount: 5 } }, 99);
+    const { agent, attempts } = agentWith({ '.suites-list-content': { ...scrollable, scrolls: false, items: 5 } }, 99);
 
     await agent.detectPagination(result);
 
@@ -94,13 +94,13 @@ describe('detectPagination', () => {
   it('restores both scroll offsets after probing', async () => {
     const result = new ResearchResult(RESEARCH, '/suites');
     const restores: any[] = [];
-    const { agent } = agentWith({ '.suites-list-content': { ...scrollable, scrollTop: 120, windowScrollY: 300 } }, 40);
+    const { agent } = agentWith({ '.suites-list-content': { ...scrollable, scrollTop: 120, pageScrollY: 300 } }, 40);
     const originalWithPage = agent.explorer.withPage;
     agent.explorer.withPage = async (fn: any) =>
       originalWithPage(async (page: any) => {
         const wrapped = {
           evaluate: async (evaluated: any, arg: any) => {
-            if (arg && typeof arg === 'object' && 'windowScrollY' in arg) restores.push(arg);
+            if (arg && typeof arg === 'object' && 'pageScrollY' in arg) restores.push(arg);
             return page.evaluate(evaluated, arg);
           },
         };
@@ -110,7 +110,7 @@ describe('detectPagination', () => {
     await agent.detectPagination(result);
 
     expect(restores).toHaveLength(1);
-    expect(restores[0]).toMatchObject({ css: '.suites-list-content', scrollTop: 120, windowScrollY: 300 });
+    expect(restores[0]).toMatchObject({ css: '.suites-list-content', scrollTop: 120, pageScrollY: 300 });
   });
 
   it('records nothing when the page cannot be measured', async () => {
@@ -123,6 +123,26 @@ describe('detectPagination', () => {
     await agent.detectPagination(result);
 
     expect(result.text).not.toContain('Pagination:');
+  });
+
+  it('records controls from paging markers without scrolling', async () => {
+    const result = new ResearchResult(RESEARCH, '/suites');
+    const { agent, attempts } = agentWith({ '.suites-list-content': { ...scrollable, hasPagingControls: true } }, 99);
+
+    await agent.detectPagination(result);
+
+    expect(result.text).toContain('Pagination: controls');
+    expect(attempts).toEqual([]);
+  });
+
+  it('records infinite for a feed without scrolling', async () => {
+    const result = new ResearchResult(RESEARCH, '/suites');
+    const { agent, attempts } = agentWith({ '.suites-list-content': { ...scrollable, isFeed: true } }, 99);
+
+    await agent.detectPagination(result);
+
+    expect(result.text).toContain('Pagination: infinite');
+    expect(attempts).toEqual([]);
   });
 
   it('leaves an already recorded strategy alone', async () => {

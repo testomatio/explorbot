@@ -1,9 +1,8 @@
 import type Explorer from '../../explorer.ts';
 import { mdq } from '../../utils/markdown-query.ts';
-import { type PaginationStrategy, type ScrollMeasure, measureScroll, restoreScroll } from '../../utils/pagination.ts';
-import { composeContainerBlockquote } from './locators.ts';
+import { type ListMeasure, type PaginationStrategy, inspectList, restoreScroll } from '../../utils/pagination.ts';
 import { type Constructor, debugLog } from './mixin.ts';
-import { extractPaginationFromBlockquote, parseDataSections, parseResearchSections } from './parser.ts';
+import { extractPaginationFromBlockquote, parseDataSections, parseResearchSections, withBlockquoteEntry } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
 
 export function WithPagination<T extends Constructor>(Base: T) {
@@ -21,7 +20,7 @@ export function WithPagination<T extends Constructor>(Base: T) {
         const strategy = await this.probeSection(css);
         if (!strategy) continue;
 
-        this.recordPagination(result, section.name, css, strategy);
+        this.recordPagination(result, section, css, strategy);
         debugLog(`Pagination in "${section.name}": ${strategy}`);
       }
     }
@@ -29,35 +28,37 @@ export function WithPagination<T extends Constructor>(Base: T) {
     private async probeSection(css: string): Promise<PaginationStrategy | null> {
       const before = await this.measure(css);
       if (!before) return null;
-      if (!before.ownScroller && !before.belowFold) return null;
+      if (before.hasPagingControls) return 'controls';
+      if (before.isFeed) return 'infinite';
+      if (!before.scrolls) return null;
 
       const action = this.explorer.action();
       const scrolled = await action.attempt(`I.scrollTo('${css} > *:last-child')`).catch(() => false);
       if (!scrolled) return null;
 
       const after = await this.measure(css);
-      await this.explorer.withPage((page) => page.evaluate(restoreScroll, { css, scrollTop: before.scrollTop, windowScrollY: before.windowScrollY })).catch(() => {});
+      await this.explorer.withPage((page) => page.evaluate(restoreScroll, { css, scrollTop: before.scrollTop, pageScrollY: before.pageScrollY })).catch(() => {});
 
       if (!after) return null;
-      if (after.rowCount > before.rowCount) return 'infinite';
+      if (after.items > before.items) return 'infinite';
       return null;
     }
 
-    private measure(css: string): Promise<ScrollMeasure | null> {
+    private measure(css: string): Promise<ListMeasure | null> {
       return this.explorer
-        .withPage((page) => page.evaluate(measureScroll, css))
+        .withPage((page) => page.evaluate(inspectList, css))
         .catch((err: Error) => {
-          debugLog(`Scroll measurement failed for '${css}': ${err.message}`);
+          debugLog(`List measurement failed for '${css}': ${err.message}`);
           return null;
         });
     }
 
-    private recordPagination(result: ResearchResult, name: string, css: string, strategy: PaginationStrategy): void {
-      const escaped = name.replace(/"/g, '\\"');
+    private recordPagination(result: ResearchResult, section: { name: string; rawMarkdown: string }, css: string, strategy: PaginationStrategy): void {
+      const escaped = section.name.replace(/"/g, '\\"');
       let sectionQuery = mdq(result.text).query(`section2(~"${escaped}")`);
       if (sectionQuery.count() === 0) sectionQuery = mdq(result.text).query(`section3(~"${escaped}")`);
       if (sectionQuery.count() === 0) return;
-      result.text = sectionQuery.query('blockquote[0]').replace(composeContainerBlockquote(css, strategy));
+      result.text = sectionQuery.query('blockquote[0]').replace(withBlockquoteEntry(section.rawMarkdown, 'Pagination', strategy));
     }
   };
 }

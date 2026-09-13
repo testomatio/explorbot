@@ -132,6 +132,16 @@ export function extractPaginationFromBlockquote(sectionMarkdown: string): Pagina
   return null;
 }
 
+export function withBlockquoteEntry(sectionMarkdown: string, key: string, value: string | null): string {
+  const existing = mdq(sectionMarkdown).query('blockquote[0]').text().trim();
+  const entries = existing
+    .split('\n')
+    .map((line) => line.replace(/^>\s*/, '').trim())
+    .filter((line) => line && !new RegExp(`^${key}:`, 'i').test(line));
+  if (value) entries.push(`${key}: ${value}`);
+  return entries.map((entry) => `> ${entry}`).join('\n');
+}
+
 export function extractValidContainers(researchText: string, opts?: { exclude?: string[] }): Array<{ css: string; label: string }> {
   const exclude = opts?.exclude || [];
   return parseResearchSections(researchText)

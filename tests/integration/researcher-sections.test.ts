@@ -171,7 +171,7 @@ describe('Researcher researchBySections', () => {
     await researcher.researchBySections();
 
     const prompt = extractPromptText(mock.getLastRequest());
-    expect(prompt).toContain('pagination_controls');
+    expect(prompt).toContain('> Pagination: controls');
   });
 
   it('skips focusSections when no Playwright match', async () => {
