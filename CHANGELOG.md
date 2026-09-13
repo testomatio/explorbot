@@ -4,6 +4,10 @@
 
 ### Changes
 
+- [Scout] A Scout that kept exploring until its iteration limit now produces its digest instead of
+  silently returning nothing. The forced wrap-up turn was guarded by a condition the loop counter
+  could never reach, so a thorough scan ended with the findings discarded — the planner got no
+  documentation and nobody was told why.
 - [Apibot] Runs now send traces to Langfuse when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set in
   the environment, the same way explorbot runs do. Apibot used to read Langfuse settings only from
   `ai.langfuse` in its config file, so a run started by a host that passes its environment along produced
