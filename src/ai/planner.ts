@@ -452,12 +452,16 @@ export class Planner extends PlannerBase implements Agent {
       }
     }
 
+    let activeRegion = '';
+    if (state.overlay.isOpen) activeRegion = `Active region: ${state.overlay.describe()} — the user's current focus area. Plan tests for the controls inside it first.`;
+
     conversation.addUserText(dedent`
       ${this.buildApproach(style)}
 
       <context>
       URL: ${state.url || 'Unknown'}
       Title: ${state.title || 'Unknown'}
+      ${activeRegion}
       </context>
     `);
 

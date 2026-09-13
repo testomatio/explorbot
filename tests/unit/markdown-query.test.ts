@@ -740,4 +740,62 @@ Not a section.
       expect(json).toEqual([]);
     });
   });
+
+  describe('keyValue', () => {
+    const block = "## S\n\n> Container: '.rows'\n> Pagination: infinite\n\ntext\n";
+
+    it('reads every entry of a blockquote, without its markers', () => {
+      expect(mdq(block).query('blockquote[0]').keyValue()).toEqual({ container: "'.rows'", pagination: 'infinite' });
+    });
+
+    it('lowercases keys so lookups do not depend on casing', () => {
+      expect(mdq('> PAGINATION: controls').query('blockquote[0]').keyValue().pagination).toBe('controls');
+    });
+
+    it('splits on the first colon so a value may contain more', () => {
+      expect(mdq("> Container: 'a:has(svg)'").query('blockquote[0]').keyValue().container).toBe("'a:has(svg)'");
+    });
+
+    it('ignores lines that are not entries', () => {
+      expect(mdq('> just prose').query('blockquote[0]').keyValue()).toEqual({});
+    });
+
+    it('returns nothing when the block is absent', () => {
+      expect(mdq('## S\n\ntext\n').query('blockquote[0]').keyValue()).toEqual({});
+    });
+  });
+
+  describe('setKeyValue', () => {
+    const block = "## S\n\n> Container: '.old'\n> Pagination: controls\n\ntext\n";
+
+    it('replaces an entry in place and keeps the others', () => {
+      const updated = mdq(block).query('blockquote[0]').setKeyValue('Container', "'.new'");
+      expect(updated).toBe("## S\n\n> Container: '.new'\n> Pagination: controls\n\ntext\n");
+    });
+
+    it('appends an entry that was not there', () => {
+      const updated = mdq("## S\n\n> Container: '.rows'\n\ntext\n").query('blockquote[0]').setKeyValue('Pagination', 'infinite');
+      expect(mdq(updated).query('blockquote[0]').keyValue()).toEqual({ container: "'.rows'", pagination: 'infinite' });
+    });
+
+    it('removes an entry when the value is null', () => {
+      const updated = mdq(block).query('blockquote[0]').setKeyValue('Pagination', null);
+      expect(mdq(updated).query('blockquote[0]').keyValue()).toEqual({ container: "'.old'" });
+    });
+
+    it('matches the key regardless of casing', () => {
+      const updated = mdq(block).query('blockquote[0]').setKeyValue('CONTAINER', "'.z'");
+      expect(mdq(updated).query('blockquote[0]').keyValue().container).toBe("'.z'");
+    });
+
+    it('keeps the blockquote readable', () => {
+      const updated = mdq(block).query('blockquote[0]').setKeyValue('Pagination', 'infinite');
+      expect(mdq(updated).query('blockquote').count()).toBe(1);
+    });
+
+    it('leaves a plain paragraph unprefixed', () => {
+      const updated = mdq('Container: .old\n').query('paragraph[0]').setKeyValue('Container', '.new');
+      expect(updated).toBe('Container: .new');
+    });
+  });
 });

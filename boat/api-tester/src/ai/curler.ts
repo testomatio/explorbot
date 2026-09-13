@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AIProvider } from '../../../../src/ai/provider.ts';
 import type { RequestStore } from '../../../../src/api/request-store.ts';
 import type { KnowledgeTracker } from '../../../../src/knowledge-tracker.ts';
+import { Observability } from '../../../../src/observability.ts';
 import type { Reporter } from '../../../../src/reporter.ts';
 import { type Test, TestResult } from '../../../../src/test-plan.ts';
 import { createDebug, tag } from '../../../../src/utils/logger.ts';
@@ -46,75 +47,77 @@ export class Curler {
     const initialPrompt = this.buildTestPrompt(test, opts?.specDefinition, opts?.baseEndpoint);
     conversation.addUserText(initialPrompt);
 
-    await loop(
-      async ({ stop, iteration }) => {
-        debugLog(`Iteration ${iteration}`);
-
-        if (iteration > 1) {
-          const requestLog = this.requestState.toLog();
-          const nextStep = dedent`
-            <request_log>
-            ${requestLog || 'No requests made yet'}
-            </request_log>
-
-            <task>
-            Continue testing. Review the request log above and proceed with the next step.
-            </task>
-
-            <notes>
-            ${test.notesToString() || 'No notes yet'}
-            </notes>
-          `;
-          conversation.addUserText(nextStep);
-        }
-
-        const result = await this.provider.invokeConversation(conversation, tools, {
-          maxToolRoundtrips: 5,
-          toolChoice: 'required',
-          agentName: 'curler',
-        });
-
-        if (!result) throw new Error('Failed to get response from provider');
-
-        const toolNames = result.toolExecutions?.map((e: any) => e.toolName) || [];
-        debugLog('Tool calls:', toolNames.join(', '));
-
-        if (test.hasFinished) {
-          stop();
-          return;
-        }
-
-        if (iteration >= MAX_ITERATIONS) {
-          tag('warning').log('Max iterations reached, running final review...');
-          stop();
-        }
-      },
+    await Observability.run(
+      `curler: ${test.scenario}`,
       {
-        maxAttempts: MAX_ITERATIONS,
-        observability: {
-          name: `curler: ${test.scenario}`,
-          agent: 'curler',
-          sessionId: test.sessionName,
-          metadata: {
-            input: {
-              scenario: test.scenario,
-              startUrl: test.startUrl,
-              expected: test.expected,
-            },
+        sessionId: test.sessionName,
+        tags: ['curler'],
+        input: {
+          scenario: test.scenario,
+          startUrl: test.startUrl,
+          expected: test.expected,
+        },
+      },
+      async () => {
+        await loop(
+          async ({ stop, iteration }) => {
+            debugLog(`Iteration ${iteration}`);
+
+            if (iteration > 1) {
+              const requestLog = this.requestState.toLog();
+              const nextStep = dedent`
+                <request_log>
+                ${requestLog || 'No requests made yet'}
+                </request_log>
+
+                <task>
+                Continue testing. Review the request log above and proceed with the next step.
+                </task>
+
+                <notes>
+                ${test.notesToString() || 'No notes yet'}
+                </notes>
+              `;
+              conversation.addUserText(nextStep);
+            }
+
+            const result = await this.provider.invokeConversation(conversation, tools, {
+              maxToolRoundtrips: 5,
+              toolChoice: 'required',
+              agentName: 'curler',
+            });
+
+            if (!result) throw new Error('Failed to get response from provider');
+
+            const toolNames = result.toolExecutions?.map((e: any) => e.toolName) || [];
+            debugLog('Tool calls:', toolNames.join(', '));
+
+            if (test.hasFinished) {
+              stop();
+              return;
+            }
+
+            if (iteration >= MAX_ITERATIONS) {
+              tag('warning').log('Max iterations reached, running final review...');
+              stop();
+            }
           },
-        },
-        catch: async ({ error, stop }) => {
-          tag('error').log(`Test execution error: ${error}`);
-          stop();
-        },
+          {
+            maxAttempts: MAX_ITERATIONS,
+            catch: async ({ error, stop }) => {
+              tag('error').log(`Test execution error: ${error}`);
+              stop();
+            },
+          }
+        );
+
+        try {
+          await this.finalReview(test);
+        } catch (error) {
+          tag('error').log(`Final review failed: ${error}`);
+        }
       }
     );
-
-    try {
-      await this.finalReview(test);
-    } catch (error) {
-      tag('error').log(`Final review failed: ${error}`);
-    }
     this.finishTest(test);
     const meta: Record<string, string | undefined> = {
       endpoint: test.startUrl,
@@ -190,7 +193,8 @@ export class Curler {
         },
       ],
       schema,
-      model
+      model,
+      { agentName: 'curler', telemetryFunctionId: 'curler.finalReview' }
     );
 
     const result = response?.object;
