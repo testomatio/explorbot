@@ -22,12 +22,12 @@ untouched.
 
 ## Approach
 
-Detection finds out which strategy a list uses; a rule tells the tester what to do about it,
-and is injected only when there is something to say. No new tool: the gesture already exists in
-CodeceptJS and is reachable through `form`.
+Research finds out which strategy each list uses and records it in the UI map, beside that
+list's own container. The tester already reads the UI map, so the fact arrives attached to the
+list it describes. No new tool: the gesture already exists in CodeceptJS and is reachable
+through `form`.
 
-Splitting it that way is what keeps the rule short. The tester never has to discover anything
-at run time, and never carries guidance for a strategy this page does not use.
+Nothing is injected per page — see section B for why the first attempt at that was wrong.
 
 ### Why `I.scrollTo` is sufficient
 
@@ -67,45 +67,10 @@ Four steps, cheapest first, stopping as soon as one answers. This is the escalat
 CLAUDE.md end to end: a table lookup, then AI judgment, then a probe whose result converts
 judgment back into a recorded fact.
 
-**0. Do the ARIA/HTML conventions name it? (deterministic, no research, no AI)**
-
-Some markup states the answer outright. These are spec-defined attributes and values, so this
-tier is a lookup, not a guess — and it is the only step that works when research has not run.
-
-| Marker | Means | Available in |
-|---|---|---|
-| `a[rel="next"]`, `a[rel="prev"]` | sequential document relations | HTML only |
-| `[role="feed"]` | scrollable list that grows as it is scrolled | HTML and ARIA snapshot |
-| `[aria-setsize="-1"]` | total count unknown, so the set loads lazily | HTML only |
-
-The first means `controls`, the other two mean `infinite`.
-
-Verified against Chromium: Explorbot dissolves `navigation` wrappers
-(`src/utils/aria.ts:46`, `:147`) and treats the role as template chrome
-(`src/utils/aria.ts:543`), so a `nav` labelled "Pagination" never reaches the model.
-**These markers must be read from HTML.** `role="feed"` is the one exception — it survives as
-`- feed "…"` in the snapshot.
-
-Three constraints that keep this a lookup rather than a heuristic:
-
-- **`aria-current` is excluded, in every value.** Its primary spec use is a site-navigation
-  link marking the page you are on, which is not pagination at all, and `aria-current="true"`
-  is what tabs and breadcrumbs use. It also does not survive `ariaSnapshot()` — confirmed in
-  the probe — so it would be HTML-only *and* ambiguous. `rel="next"`/`rel="prev"` carry the
-  sequential meaning unambiguously.
-- A `nav` whose `aria-label` reads "Pagination" is author prose, not closed grammar. It is not
-  part of this tier.
-- `aria-setsize="-1"` counts only when the element sits inside a container that scrolls
-  (step 2). Alone it says the count is unknown, which a tree or a live-filtered list can also
-  claim.
-
-**Absence proves nothing.** A pager built from plain buttons, and an infinite feed built from
-plain divs, carry none of these. That is what steps 1–3 are for.
-
 **1. Are there pagination controls? (AI, free)**
 
-Only asked when step 0 found nothing. Controls are named in open-ended ways — words, arrows,
-bare numbers — so this is AI judgment, not a pattern match. Researcher is already describing
+Controls are named in open-ended ways — words, arrows, bare numbers — so this is AI judgment,
+not a pattern match. Researcher is already describing
 the section, so it costs nothing extra:
 a new `rules/researcher/pagination.md`, loaded alongside the existing three at
 `src/ai/researcher/sections.ts:81`, asks it to note when a section contains controls that move
@@ -113,15 +78,22 @@ between pages of the same collection.
 
 If found, the section records `> Pagination: controls` and the remaining steps are skipped.
 
-**2. Can the section scroll at all? (deterministic gate)**
+**2. Markers and the scroll gate — one `page.evaluate` per container (`inspectList`)**
 
-Only asked when no controls were found. One `page.evaluate` per container:
+Only reached when research recorded nothing. Everything the probe needs comes back in one call,
+**scoped to the container**, never to the page:
 
-- `el.scrollHeight > el.clientHeight` → the container has its own scroller.
-- `el.getBoundingClientRect().bottom > innerHeight` → the list continues below the fold.
-- Neither → nothing more to do; no line recorded.
+- `a[rel="next"]`/`a[rel="prev"]` inside it → `controls`, recorded without scrolling.
+- `[role="feed"]` → `infinite`, recorded without scrolling. These are spec-defined relations, so
+  this tier is a lookup, not a heuristic.
+- `scrollHeight > clientHeight`, or the container's bottom below the fold → it can scroll, so
+  step 3 may run. Neither → nothing recorded.
 
-This gate exists to keep step 3 from running on every short list.
+`aria-current` is excluded in every value: its primary spec use is a site-navigation link
+marking the page you are on, and `aria-current="true"` is what tabs and breadcrumbs use.
+`rel="next"`/`rel="prev"` carry the sequential meaning unambiguously.
+
+The scoping is the point. Asking the same question of the whole page is what section B removed.
 
 **3. Probe: does scrolling load more? (deterministic measurement)**
 
@@ -213,65 +185,30 @@ references. One concern: how a list continues. `measureLayout` in `overlay.ts` i
 it is xpath-based and returns a modal-scoring `RegionLayout`, while sections carry CSS
 selectors and need neither.
 
-### B. The pagination rule, injected only when pagination was detected
+### B. The UI map carries it — nothing is injected per page
 
-Not part of the static system message. A page with no list should not carry list guidance, and
-a page with page numbers should not be told how to scroll.
+**Superseded during implementation.** The original design injected a `<pagination>` block into
+Tester and Navigator whenever a strategy was detected. That was wrong and is removed.
 
-**Seam:** `reinjectContextIfNeeded` (`src/ai/tester.ts:554`), which already injects per-state
-blocks conditionally — `focusedElementRule` when something is focused, an `<overlay>` block
-when a region is open. A `<pagination>` block joins them. Navigator gets the same block where
-it builds its own per-state context (`src/ai/navigator.ts:414`).
+The condition was computed from the whole page's HTML, which carries no context. A pager
+anywhere on the page — a sidebar list, a widget behind an open modal, a drawer — told the
+tester "this list pages through a larger collection" whatever it was actually looking at. A
+page-level answer cannot address a question about one list among several.
 
-**Condition:** the state shows pagination if step 0's markers are present in the current HTML,
-or a section of the research text records a value. Markers win when both are available, since
-they describe the page as it is now rather than as research left it.
+The UI map already solves this. Research records `> Pagination:` under the section's own
+container, and the tester already reads the UI map. The fact arrives attached to the list it
+describes, and says nothing about any other list on the page. `actionRule` documents
+`I.scrollTo` for the capability itself (section C), which is genuinely page-independent.
 
-The research text is already in hand at that seam — `reinjectContextIfNeeded` holds it in the
-local `research` variable it injects as `<page_ui_map>` (`src/ai/tester.ts:639-651`), so
-reading the recorded strategy needs no second fetch and no cache lookup.
+Consequences:
 
-Research runs only on a new URL, and only when the UI map has not been seen this session
-(`src/ai/tester.ts:635-638`). So the parsed strategy is remembered per URL for the states that
-follow, the way `seenUiMapUrls` already remembers what was shown. The marker scan needs no
-memory: it reads the current HTML every state.
-
-**Which text:** the strategy selects the fragment, so the model is never shown the other one.
-
-`paginationControlsRule`:
-
-```
-<pagination>
-This list pages through a larger collection. If what you need is not on screen,
-click next or the page number you need before concluding it is absent.
-</pagination>
-```
-
-`infiniteScrollRule`:
-
-```
-<pagination>
-This list grows as it is scrolled. If what you need is not on screen, scroll to
-the last item in the list — every scrollable ancestor of that item scrolls, so
-this reaches a list with its own scrollbar.
-
-New rows in the aria changes mean more arrived; a request with none means nothing
-was left. Stop on the first attempt that adds no rows: the end of a collection is
-an answer, not a failure.
-</pagination>
-```
-
-Both live in `src/ai/rules.ts` as exports. Not `rules/*.md`: those load per agent, and these
-have two consumers.
-
-**Reach narrows from the earlier draft.** Composing into `actionRule` would have reached
-Rerunner (`src/ai/rerunner.ts:450`) and Captain web-mode (`src/ai/captain/web-mode.ts:148`) too;
-conditional injection reaches only agents that build per-state context, which is Tester and
-Navigator. That is the cost of making it conditional, and it is the right trade: Rerunner heals
-known steps rather than traversing lists.
-
-Constraints both fragments keep: general phrasing, no selectors, no site names, no example
-taken from a debug session, one to three lines per bullet.
+- `paginationRuleFor` and `paginationFromResearch` are gone; `src/ai/rules.ts` gains only the
+  scroll commands in section C.
+- `Pagination:` has no code reader, so the envelope checklist does not apply to it — it is
+  prompt context, like every other line in the UI map.
+- Marker detection moves in-page, scoped to the container, inside `inspectList`. jsdom is no
+  longer used: it was pulled in only to parse whole-page HTML for the injection, and eagerly at
+  that, while the single existing use in `src/utils/xpath.ts:94` imports it lazily.
 
 ### C. `actionRule` documents the gesture
 
