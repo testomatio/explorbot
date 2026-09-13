@@ -2,7 +2,22 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path, { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
-import { type AIConfig, type ApiHookFn, type ApiConfig as BaseApiConfig, ConfigMissingError, EXPLORBOT_CONFIG_PATHS, createModel, envConfigRequested, materializeKnowledge, missingConfigMessage, resolveConfigModels, resolveModel, resolveOutputRoot, setOutputDir } from '../../../src/config.ts';
+import {
+  type AIConfig,
+  type ApiHookFn,
+  type ApiConfig as BaseApiConfig,
+  ConfigMissingError,
+  EXPLORBOT_CONFIG_PATHS,
+  createModel,
+  envConfigRequested,
+  materializeKnowledge,
+  missingConfigMessage,
+  resolveConfigModels,
+  resolveLangfuse,
+  resolveModel,
+  resolveOutputRoot,
+  setOutputDir,
+} from '../../../src/config.ts';
 import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
 
 export type { AIConfig };
@@ -101,6 +116,7 @@ export class ApibotConfigParser {
       this.applyEnvHeaders(this.config.api);
       if (options?.baseEndpoint) this.config.api.baseEndpoint = options.baseEndpoint.replace(/\/$/, '');
       await resolveConfigModels(this.config.ai);
+      resolveLangfuse(this.config.ai);
       this.configPath = resolvedPath;
       this.site = null;
 
@@ -236,6 +252,7 @@ export class ApibotConfigParser {
       api,
       dirs: { output: '.', knowledge: 'knowledge' },
     };
+    resolveLangfuse(this.config.ai);
     this.configPath = path.join(outputRoot, 'apibot.config.js');
     this.validateConfig(this.config);
     setOutputDir(this.getOutputDir());

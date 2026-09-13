@@ -677,17 +677,7 @@ export class ConfigParser {
       config.playwright.url = options.baseUrl;
     }
 
-    if (config.ai) {
-      const langfuse = config.ai.langfuse;
-      const publicKey = langfuse?.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
-      const secretKey = langfuse?.secretKey || process.env.LANGFUSE_SECRET_KEY;
-      config.ai.langfuse = {
-        enabled: langfuse?.enabled ?? Boolean(publicKey && secretKey),
-        publicKey,
-        secretKey,
-        baseUrl: langfuse?.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST,
-      };
-    }
+    resolveLangfuse(config.ai);
 
     return config;
   }
@@ -855,6 +845,20 @@ export async function resolveConfigModels(ai?: AIConfig): Promise<void> {
   for (const agent of Object.values(ai.agents || {})) {
     if (typeof agent?.model === 'string') agent.model = await resolveModel(agent.model);
   }
+}
+
+export function resolveLangfuse(ai?: AIConfig): void {
+  if (!ai) return;
+
+  const langfuse = ai.langfuse;
+  const publicKey = langfuse?.publicKey || process.env.LANGFUSE_PUBLIC_KEY;
+  const secretKey = langfuse?.secretKey || process.env.LANGFUSE_SECRET_KEY;
+  ai.langfuse = {
+    enabled: langfuse?.enabled ?? Boolean(publicKey && secretKey),
+    publicKey,
+    secretKey,
+    baseUrl: langfuse?.baseUrl || process.env.LANGFUSE_BASE_URL || process.env.LANGFUSE_HOST,
+  };
 }
 
 export function resolveOutputRoot(baseUrl?: string): string {
