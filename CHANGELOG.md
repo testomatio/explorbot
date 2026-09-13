@@ -4,6 +4,9 @@
 
 ### Changes
 
+- [Planner] When a dialog or detail panel is open on the page being planned, the planner is now told which
+  one it is and plans tests for it first. It used to see every section of the page with nothing marking
+  the one on screen, and could fill a plan with controls that panel covers.
 - [Pilot] Text an app shows in a tooltip now reaches Pilot along with alerts and status messages. When a
   page refuses an action and explains why in a hover bubble, that sentence used to stay in the page HTML,
   which Pilot never sees — so a run could be judged, and reported, on a reason the app had already
