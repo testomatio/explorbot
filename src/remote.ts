@@ -28,6 +28,7 @@ export class Remote implements LogDestination {
   private asks = new Map<string, (value: string | null) => void>();
   private askCounter = 0;
   private lastActivity: string | null = null;
+  private closing: Promise<void> | null = null;
 
   attach(url: string, command: string): void {
     if (this.url) return;
@@ -73,21 +74,10 @@ export class Remote implements LogDestination {
     });
   }
 
-  async close(exitCode: number): Promise<void> {
-    if (!this.url) return;
-    this.send('result', { ok: exitCode === 0, exitCode });
-    await this.flush();
-
-    this.url = null;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    // Whoever asks next has nobody to ask — leaving the callback installed would
-    // route them into a closed socket and park them until the ask times out.
-    executionController.clearInputCallback();
-    for (const resolve of this.asks.values()) resolve(null);
-    this.asks.clear();
-    this.queue = [];
-    this.socket?.close();
-    this.socket = null;
+  close(exitCode: number): Promise<void> {
+    if (!this.url) return Promise.resolve();
+    if (!this.closing) this.closing = this.shutdown(exitCode);
+    return this.closing;
   }
 
   isEnabled(): boolean {
@@ -114,6 +104,23 @@ export class Remote implements LogDestination {
       namespace: entry.namespace,
       error: this.errorOf(entry.originalArgs),
     });
+  }
+
+  private async shutdown(exitCode: number): Promise<void> {
+    this.send('result', { ok: exitCode === 0, exitCode });
+    await this.flush();
+
+    this.url = null;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    // Whoever asks next has nobody to ask — leaving the callback installed would
+    // route them into a closed socket and park them until the ask times out.
+    executionController.clearInputCallback();
+    for (const resolve of this.asks.values()) resolve(null);
+    this.asks.clear();
+    this.queue = [];
+    this.socket?.close();
+    this.socket = null;
+    this.closing = null;
   }
 
   private connect(): void {
