@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { extractPaginationFromBlockquote, parseDataSections, parseResearchSections, withBlockquoteEntry } from '../../src/ai/researcher/parser.ts';
+import { extractPaginationFromBlockquote, parseDataSections, parseResearchSections } from '../../src/ai/researcher/parser.ts';
 import { mdq } from '../../src/utils/markdown-query.ts';
 
 const RESEARCH = `## Menu
@@ -61,12 +61,8 @@ describe('pagination line', () => {
   });
 });
 
-describe('withBlockquoteEntry', () => {
-  const rewrite = (markdown: string, key: string, value: string) =>
-    mdq(markdown)
-      .query('section2(~"Menu")')
-      .query('blockquote[0]')
-      .replace(withBlockquoteEntry(markdown, key, value));
+describe('rewriting an entry', () => {
+  const rewrite = (markdown: string, key: string, value: string) => mdq(markdown).query('section2(~"Menu")').query('blockquote[0]').setKeyValue(key, value);
 
   it('leaves the blockquote readable', () => {
     const markdown = `## Menu\n\n> Container: '.old'\n\n| Element | ARIA | CSS | eidx |\n`;

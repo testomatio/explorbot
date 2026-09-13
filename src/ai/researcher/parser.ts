@@ -85,11 +85,9 @@ export function mapRowToElement(row: Record<string, string>): ResearchElement | 
 }
 
 export function extractContainerFromBlockquote(sectionMarkdown: string): string | null {
-  const bq = mdq(sectionMarkdown).query('blockquote[0]').text().trim();
-  if (!bq) return null;
-  const match = bq.match(/Container:\s*(.+)/i);
-  if (!match) return null;
-  const css = normalizeLocatorValue(match[1]);
+  const entry = mdq(sectionMarkdown).query('blockquote[0]').keyValue().container;
+  if (!entry) return null;
+  const css = normalizeLocatorValue(entry);
   if (!css || !/^[.#\[\w]/.test(css)) return null;
   return css;
 }
@@ -122,24 +120,10 @@ export function parseDataSections(markdown: string): ResearchSection[] {
 }
 
 export function extractPaginationFromBlockquote(sectionMarkdown: string): PaginationStrategy | null {
-  const bq = mdq(sectionMarkdown).query('blockquote[0]').text().trim();
-  if (!bq) return null;
-  const match = bq.match(/Pagination:\s*(\w+)/i);
-  if (!match) return null;
-  const value = match[1].toLowerCase();
+  const value = mdq(sectionMarkdown).query('blockquote[0]').keyValue().pagination?.toLowerCase();
   if (value === 'controls') return 'controls';
   if (value === 'infinite') return 'infinite';
   return null;
-}
-
-export function withBlockquoteEntry(sectionMarkdown: string, key: string, value: string | null): string {
-  const existing = mdq(sectionMarkdown).query('blockquote[0]').text().trim();
-  const entries = existing
-    .split('\n')
-    .map((line) => line.replace(/^>\s*/, '').trim())
-    .filter((line) => line && !new RegExp(`^${key}:`, 'i').test(line));
-  if (value) entries.push(`${key}: ${value}`);
-  return entries.map((entry) => `> ${entry}`).join('\n');
 }
 
 export function extractValidContainers(researchText: string, opts?: { exclude?: string[] }): Array<{ css: string; label: string }> {

@@ -12,7 +12,7 @@ import type { Provider } from '../provider.js';
 import { locatorRule as generalLocatorRuleText } from '../rules.js';
 import { FOCUSED_MARKER } from './focus.ts';
 import { type Constructor, debugLog } from './mixin.ts';
-import { parseResearchSections, withBlockquoteEntry } from './parser.ts';
+import { parseResearchSections } from './parser.ts';
 import type { ResearchResult } from './research-result.ts';
 
 function firstCssSegment(css: string): string | null {
@@ -304,7 +304,7 @@ export function WithLocators<T extends Constructor>(Base: T) {
       if (sectionQuery.count() === 0) sectionQuery = mdq(result.text).query(`section3(~"${escaped}")`);
 
       if (newCss) {
-        result.text = sectionQuery.query('blockquote[0]').replace(withBlockquoteEntry(section.rawMarkdown, 'Container', `'${newCss}'`));
+        result.text = sectionQuery.query('blockquote[0]').setKeyValue('Container', `'${newCss}'`);
       } else {
         result.text = sectionQuery.query('blockquote[0]').replace('');
         result.text = result.text.replace(`${FOCUSED_MARKER}\n`, '');
