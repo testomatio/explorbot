@@ -284,6 +284,10 @@ export class Curler {
       - Record important findings as you go
       - Be precise about what you expect vs what you observe
       - If a test requires data from another endpoint, use schemaFor to look it up before guessing
+      - Treat existing records, sample data, and IDs supplied by the plan as read-only
+      - Before PUT, PATCH, DELETE, archive, or another destructive request, create the target inside the current scenario and mutate only that target
+      - This also applies when testing an unsupported method: the server may unexpectedly accept it, so never probe destructively against pre-existing data
+      - If a scenario-owned target cannot be created, use stop rather than risking existing data
       </rules>
     `;
   }
