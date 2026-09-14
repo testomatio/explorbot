@@ -4,6 +4,9 @@
 
 ### Changes
 
+- [Planner] Edit and reconfiguration scenarios no longer include record creation as part of every plan;
+  Pilot can select suitable data or prepare it when execution starts. Expected outcomes remain verifiable
+  through the interface without inventing details for pages and subpages that have not been visited yet.
 - [Planner] Test plans now describe which record a scenario needs without fixing its ID or unique name;
   Pilot chooses the record when execution starts. A plan names a specific record only when the page shows
   a small, complete list of available records.
@@ -40,6 +43,11 @@
 
 ### Changes
 
+- [Planner] The session test list now says how each test ended, and a failed or unfinished test carries the
+  last thing it observed, with a warning not to re-propose the behavior it attempted on another page. The
+  planner used to see only scenario titles, so a pattern that failed on one page — verifying a state the
+  interface never shows — was planned again on every page that had a similar control, all night long. Tests
+  that were started but never finished are named as unfinished rather than left looking unrun.
 - [Researcher] A list is now checked for how it continues past what is on screen, and the answer is
   recorded beside that list in the UI map: either it has controls that move between pages, or it grows
   when scrolled. Lists that scroll inside their own box are covered, not just the page.
