@@ -7,6 +7,9 @@
 - [Planner] Edit and reconfiguration scenarios no longer include record creation as part of every plan;
   Pilot can select suitable data or prepare it when execution starts. Expected outcomes remain verifiable
   through the interface without inventing details for pages and subpages that have not been visited yet.
+- [Planner] Test plans now describe which record a scenario needs without fixing its ID or unique name;
+  Pilot chooses the record when execution starts. A plan names a specific record only when the page shows
+  a small, complete list of available records.
 ### Fixes
 
 - [AI] When a provider rejects required tool choice, the retry now uses automatic tool choice with the
