@@ -78,7 +78,7 @@ export function WithSections<T extends Constructor>(Base: T) {
 
     private async _researchSingleSection(name: string, description: string, ariaSnapshot: string, focusCss: string | null): Promise<string> {
       const currentUrl = this.stateManager.getCurrentState()?.url || '';
-      const rules = RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules'], currentUrl);
+      const rules = RulesLoader.loadRules('researcher', ['ui-map-table', 'list-element', 'container-rules', 'pagination'], currentUrl);
       const url = this.actionResult?.url || 'Unknown';
       const title = this.actionResult?.title || 'Unknown';
 
