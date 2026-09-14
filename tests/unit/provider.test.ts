@@ -228,12 +228,7 @@ describe('Provider', () => {
       });
       aiConfig.retryDelay = 1;
 
-      const response = await provider.generateWithTools(
-        [{ role: 'user', content: 'Use a tool' }],
-        model,
-        { click: tool({ description: 'Click', inputSchema: z.object({}) }) },
-        { toolChoice: 'required', maxRetries: 2 }
-      );
+      const response = await provider.generateWithTools([{ role: 'user', content: 'Use a tool' }], model, { click: tool({ description: 'Click', inputSchema: z.object({}) }) }, { toolChoice: 'required', maxRetries: 2 });
 
       expect(response.text).toBe('I need another turn');
       expect(requests[0].toolChoice).toEqual({ type: 'required' });
