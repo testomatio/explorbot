@@ -470,19 +470,12 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('read it before deciding');
   });
 
-  it('requires outcomes the page can show', async () => {
+  it('requires UI-verifiable outcomes without inventing unseen page details', async () => {
     await planner.plan();
 
     const prompt = extractPromptText(mock.getLastRequest());
-    expect(prompt).toContain('must name what the page shows when it happens');
-    expect(prompt).toContain('not verifiable and must not be an expected outcome');
-  });
-
-  it('forbids mutating records the app already had', async () => {
-    await planner.plan();
-
-    const prompt = extractPromptText(mock.getLastRequest());
-    expect(prompt).toContain('records the app already had are protected from mutation');
-    expect(prompt).toContain('Acting on a pre-existing record makes the scenario unrunnable');
+    expect(prompt).toContain('must be verifiable through the web interface');
+    expect(prompt).toContain('page or subpage has not been observed');
+    expect(prompt).toContain('describe the expected visible result generically');
   });
 });

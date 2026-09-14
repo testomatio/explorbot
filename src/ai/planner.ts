@@ -358,11 +358,10 @@ export class Planner extends PlannerBase implements Agent {
       You can suggest scenarios that can be tested only through web interface.
       You can't test emails, database, SMS, or any external services.
       Suggest scenarios that can be potentially verified by UI.
-      Focus on error or success messages as outcome.
-      Focus on URL page change as outcome.
-      Every expected outcome must name what the page shows when it happens: a message, a list change, a control state, or a URL change.
-      Persistency after a reload counts only when the scenario names the on-screen evidence that will show it — a visible marker, a list entry, a stored setting shown in the interface.
-      An outcome the page cannot display — a clipboard write, an internal state with no visible trace, "the operation succeeds" with nothing shown — is not verifiable and must not be an expected outcome.
+      Prefer outcomes grounded in observed interface behavior.
+      Every expected outcome must be verifiable through the web interface.
+      If a page or subpage has not been observed, describe the expected visible result generically instead of inventing interface details.
+      Persistency after a reload counts only when the persisted state can be confirmed through the interface.
       If there are subpages (pages with same URL path) plan testing of those subpages as well
       Plan CRUD operations in order: create, read, update, delete.
       Do not invent specific route names, success messages, validation texts, badge counts, or welcome messages unless they are visible in research, visited pages, or prior observed flows.
@@ -377,7 +376,6 @@ export class Planner extends PlannerBase implements Agent {
       If the list is empty or no concrete item names are visible, do not invent "known" or "existing" items. Prefer empty-state, no-match search, clear-search, or read-only list behavior scenarios.
       Search, filter, sorting, tab, and list scenarios must start from a stable page where those controls are visible; avoid transient create/edit/new URLs unless the scenario tests that form.
       For option values and list items, use only visible or previously observed data; do not add create/update/delete setup unless the user explicitly requests that workflow.
-      A scenario that edits, deletes, reassigns, or reconfigures a record must act on a record the scenario itself creates as its setup — that setup is required, not optional, because records the app already had are protected from mutation. Acting on a pre-existing record makes the scenario unrunnable, however visible the record is.
       Detail-view scenarios must target visible data entities from list rows, cards, tree nodes, or detail links; do not use filter tabs, counters, status tabs, breadcrumbs, or navigation controls as detail targets.
       DO NOT propose "verification-only" tests that merely open a UI element (modal, dropdown, panel) and check it exists.
       Every test must complete a meaningful action that changes application state or produces a business outcome.
