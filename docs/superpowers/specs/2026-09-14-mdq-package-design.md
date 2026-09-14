@@ -14,8 +14,8 @@ makes the package publish-ready but adds no `package.json` or build script.
 
 ## Constraints
 
-- **Zero explorbot imports.** `marked` is the only dependency. Frontmatter is parsed
-  in-package rather than pulling in `gray-matter`.
+- **Zero explorbot imports.** Two dependencies only: `marked` for markdown, `yaml` for
+  frontmatter. Both are already repo deps (`marked` ^16.2.0, `yaml` ^2.8.3).
 - **Two files**, per the module split below.
 - 54 in-repo call sites must keep working; a re-export shim carries them.
 
@@ -24,15 +24,16 @@ makes the package publish-ready but adds no `package.json` or build script.
 ```
 src/utils/mdq/
   query.ts   selector grammar - token index - MarkdownDoc - Selection (reads)
-  edit.ts    pure string -> string: splicing - whitespace - renderers - frontmatter
+  edit.ts    pure edits over (source, ranges): splicing - whitespace - renderers
   README.md  public documentation
 src/utils/markdown-query.ts   re-export shim
 tests/unit/mdq/*.test.ts
 ```
 
-`edit.ts` exports only pure `string -> string` functions and never references a class.
-`query.ts` owns both classes and delegates each write verb to exactly one `edit.ts` call.
-This makes the split acyclic by construction.
+`edit.ts` exports pure functions taking source text plus ranges or tokens, and returning
+new source text. It imports types from `query.ts` type-only and never references a class
+value. `query.ts` owns both classes and delegates each write verb to exactly one `edit.ts`
+call. This keeps the split acyclic by construction.
 
 Two types:
 
@@ -56,9 +57,16 @@ Accepting a `MarkdownDoc` makes re-wrapping free.
 | `query(selector, matcher?)` | `Selection` | |
 | `frontmatter()` | `Record<string, unknown>` | `{}` when absent |
 | `setFrontmatter(key, value)` | `MarkdownDoc` | `null` value deletes the key |
+| `append(md)` | `MarkdownDoc` | add a block at end of document |
+| `prepend(md)` | `MarkdownDoc` | add a block at start of body, after frontmatter |
 | `toString()` / `valueOf()` | `string` | full document, frontmatter included |
 
 Plus the shared sugar layer.
+
+`append`/`prepend` exist because "add a section to the end of the document" otherwise has
+no clean path — only the `section().last().insertAfter(...)` workaround. There is a real
+call site: `deep-analysis.ts:131` builds it by hand today as
+`` `${cached.trimEnd()}\n\n# Extended Research\n\n...` ``.
 
 ### `Selection` — reads
 
@@ -93,8 +101,8 @@ Every write returns `MarkdownDoc`, so edits chain in one expression.
 | `remove()` | `() => MarkdownDoc` | node **plus its adjacent `space` token** |
 | `insertBefore(md)` | `(Markdown) => MarkdownDoc` | sibling |
 | `insertAfter(md)` | `(Markdown) => MarkdownDoc` | sibling |
-| `prepend(md)` | `(Markdown) => MarkdownDoc` | inside a section or list |
-| `append(md)` | `(Markdown) => MarkdownDoc` | inside a section or list |
+| `prepend(md)` | `(Markdown) => MarkdownDoc` | inside a section or list; `MdqOperationError` on a leaf node |
+| `append(md)` | `(Markdown) => MarkdownDoc` | inside a section or list; `MdqOperationError` on a leaf node |
 | `addRow(row)` | `(Record<string,string>) => MarkdownDoc` | table only; re-aligns columns |
 | `addItem(text)` | `(string) => MarkdownDoc` | list only; matches marker + indent |
 | `setEntry(key, value)` | `(string, string \| null) => MarkdownDoc` | `null` deletes |
@@ -146,6 +154,12 @@ interface SelectorOptions {
 - `string` — exact match (mirrors DSL `"x"`)
 - `RegExp` — pattern, honoring its own flags
 - function — predicate; needs no escaping at all
+
+Note the consequence for `comment`: a `string` matcher is **exact**, and this repo's own
+test-plan comments are multi-line (`<!-- test\n  priority=critical\n-->`). So
+`comment('test')` matches only a bare `<!-- test -->`; reaching the multi-line ones needs
+`comment(/^test/)` or a predicate. Exactness is the consistent rule and is kept, but it is
+the one place the sugar is likely to surprise.
 
 This removes an existing wart. Today the repo hand-escapes to build selector strings:
 
@@ -226,11 +240,30 @@ Every `knowledge/` and `experience/` file opens with `---\nurl: /login\n---`, wh
 `marked` lexes as a setext h2 titled `url: /login`.
 
 mdq detects leading frontmatter, excludes it from the token index with offsets preserved
-so edits splice correctly, and exposes it as data:
+so edits splice correctly, and exposes it as data.
+
+Reading and writing both go through `yaml`'s **Document API** (`YAML.parseDocument`), not
+`parse`/`stringify`. That buys two things a hand-rolled parser cannot: correctness on
+nested maps, lists and block scalars — the Jekyll/Astro/Obsidian files that justify the
+feature — and **comment preservation through a write**, verified:
+
+```yaml
+# a leading comment          <- survives setFrontmatter('wait', 2000)
+url: /login
+wait: 2000
+tags:
+  - auth
+  - smoke
+nested:
+  key: value # trailing note  <- also survives
+```
+
+`gray-matter` is deliberately not used: `knowledge-tracker.ts` keeps it for its own
+purposes, but a published package should not carry it to do what `yaml` already does.
 
 ```js
 const doc = mdq(knowledgeFile);
-doc.frontmatter();                  // { url: '/login', wait: 1000 }
+doc.frontmatter();                  // { url: '/login', wait: 1000, tags: ['auth'] }
 doc.query('h2').count();            // 0 — the --- block is not a heading
 doc.setFrontmatter('wait', 2000).toString();
 ```
@@ -250,8 +283,12 @@ test.
 
 The selector is the program, the file or stdin is the input, markdown is the default output.
 
+A leading `.` is accepted and ignored, so muscle memory from jq (`mdq '.h2'`) works. It is
+sugar in the grammar, not a separate syntax — without it the new "unknown selectors throw"
+rule would reject the most natural thing a jq user types first.
+
 ```bash
-mdq '.h2' README.md                          # raw markdown of matches
+mdq 'h2' README.md                           # raw markdown of matches
 cat plan.md | mdq 'section("API") table' -j  # rows() as JSON
 mdq 'comment(~"test")' plan.md --count
 mdq 'section("FAQ")' doc.md --remove -i      # edit in place
@@ -289,8 +326,8 @@ Two steps. Only the second carries risk.
 2. A sweep updates imports, then fixes the call sites the return-type change breaks.
 
 Deprecated read aliases mean **no read call site changes**. Writes are not shielded: a
-verb that returned `string` now returns `MarkdownDoc`. That breaks three classes of site,
-nine in total.
+verb that returned `string` now returns `MarkdownDoc`. That breaks four classes of site,
+at least eleven in total.
 
 **(a) Assignment into a `string`-typed target** — 7 sites, each needs `.toString()`:
 
@@ -303,6 +340,7 @@ nine in total.
 | `researcher/locators.ts:309` | `result.text` |
 | `researcher/pagination.ts:61` | `result.text` |
 | `researcher/research-result.ts:57` | `section.rawMarkdown` |
+| `researcher/research-result.ts:58` | `this.text` |
 
 **(b) A string method called on the result** — 2 sites:
 
@@ -313,11 +351,23 @@ nine in total.
 design**, not by migration: callbacks accept `Markdown`, so returning a `MarkdownDoc` is
 valid. No edit needed.
 
+**(d) Compared against a string — the dangerous one.** `research-result.ts:56`:
+
+```js
+const updated = sectionQuery.query('table').replace(`${newTable.trimEnd()}\n`);
+if (updated === this.text) return;     // MarkdownDoc === string is always false
+```
+
+This does not crash. The guard silently stops firing and the method starts doing work it
+used to skip. `tsc` does flag it — comparing types with no overlap is an error — which is
+precisely why the manual type-check below is not optional. Every `replace`/`setEntry`
+result used in an equality or truthiness test must be audited, not just the ones that fail
+to compile.
+
 Sites that flow the result straight back into `mdq()` — `planner.ts:303`, `planner.ts:405`
 — keep working unchanged, because `mdq()` accepts a `MarkdownDoc`.
 
-`tsc` is the complete detector for this class of break: every one of the nine surfaces as
-a type error. The migration step is therefore *run `tsc` over the changed files and fix
+`tsc` is the complete detector for these breaks: every one surfaces as a type error. The migration step is therefore *run `tsc` over the changed files and fix
 what it reports*, with the table above as the expected result rather than the whole story.
 
 Also in the sweep: `researcher.ts:316` gains its `i` flag (`section2(/^summary/i)`).
@@ -339,6 +389,8 @@ and the `switch` in `matchText` should be early returns.
 ## Deliberately out of scope
 
 - Publishing: no `package.json`, no build script, no npm release in this change.
+- Frontmatter formats other than YAML (TOML `+++`, JSON) — detected and skipped from the
+  token index, but not parsed.
 - Row-level and item-level *selectors* (`addRow` has no `removeRow` partner). A future
   `row(...)` selector is the right shape for that; guessing at it now is premature.
 - Inline HTML comments.
