@@ -592,10 +592,11 @@ export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Arra
     }
     tag('step').log(step);
   };
-  codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, listener);
+  const onPassed: StepListener = (step) => listener(step);
+  codeceptjs.event.dispatcher.on(codeceptjs.event.step.passed, onPassed);
   codeceptjs.event.dispatcher.on(codeceptjs.event.step.failed, listener);
   return () => {
-    codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, listener);
+    codeceptjs.event.dispatcher.off(codeceptjs.event.step.passed, onPassed);
     codeceptjs.event.dispatcher.off(codeceptjs.event.step.failed, listener);
   };
 };
