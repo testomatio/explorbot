@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-14
+
+### Changes
+
+- [Navigator] A verification is no longer reported as impossible to express when the answer shows a
+  snippet of page markup before its assertions. A code block written in any language other than
+  JavaScript used to shift the reading of every later block, so all the assertions the model had
+  written were dropped and a claim it had answered correctly came back as one no assertion could
+  express.
+
 ## 2026-09-11
 
 ### Changes
