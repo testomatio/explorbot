@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-11
+
+### Changes
+
+- `--ws` no longer hangs a command that ends by returning instead of exiting. The open socket held the
+  process alive, so `explorbot config`, `plans`, `runs` and `sites` never came back once a UI was
+  attached; they now close the connection and exit as they always did without the flag.
+- [Scout] A Scout that kept exploring until its iteration limit now produces its digest instead of
+  silently returning nothing. The forced wrap-up turn was guarded by a condition the loop counter
+  could never reach, so a thorough scan ended with the findings discarded — the planner got no
+  documentation and nobody was told why.
+- [Apibot] Runs now send traces to Langfuse when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are set in
+  the environment, the same way explorbot runs do. Apibot used to read Langfuse settings only from
+  `ai.langfuse` in its config file, so a run started by a host that passes its environment along produced
+  no traces at all.
+- [Apibot] Traces are sent before the process exits, also when a run fails. The last planning or test trace
+  of a run used to be lost on exit.
+- [Apibot] Each API test is now one trace that includes its final review. The review used to arrive as a
+  separate trace with no link to the test it judged, and its tokens were counted under `unknown`. Settings
+  under `ai.agents.curler` (`providerOptions`, `reasoning`) now apply to the review as well.
+
 ## 2026-09-10
 
 ### Changes
@@ -17,6 +38,24 @@
 - [Planner] A scenario that edits, deletes, reassigns or reconfigures a record must now act on a record
   it creates as its own setup. Records the application already had are protected from mutation, so
   "edit a visible record" scenarios were refused at run time no matter how visible the record was.
+- [Researcher] A list is now checked for how it continues past what is on screen, and the answer is
+  recorded beside that list in the UI map: either it has controls that move between pages, or it grows
+  when scrolled. Lists that scroll inside their own box are covered, not just the page.
+- [Tester] Can now scroll to reach items further down a list, including a list that scrolls inside its
+  own box rather than the page. Previously nothing scrolled at all, so an item below the fold was
+  reported as absent.
+- [Tester] Loading more of a list no longer reports "MAJOR PAGE CHANGE. Page entered a different mode."
+  A batch of new rows is the same page with more in it; only a page that replaces what was there is a
+  change of mode.
+- [Tester] Reaching the end of a list is no longer recorded as a failed step. The message now says what
+  was actually observed, and names an exhausted collection as one reading of it, instead of telling the
+  tester to re-locate an editable control whatever it had just run.
+- [Researcher] A section container that gets corrected during research is no longer lost. The correction
+  used to leave the line unreadable, so everything relying on that container silently fell back to having
+  none.
+- [Planner] When a dialog or detail panel is open on the page being planned, the planner is now told which
+  one it is and plans tests for it first. It used to see every section of the page with nothing marking
+  the one on screen, and could fill a plan with controls that panel covers.
 - [Pilot] Text an app shows in a tooltip now reaches Pilot along with alerts and status messages. When a
   page refuses an action and explains why in a hover bubble, that sentence used to stay in the page HTML,
   which Pilot never sees — so a run could be judged, and reported, on a reason the app had already

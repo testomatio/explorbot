@@ -145,6 +145,21 @@ describe('remote', () => {
     expect(await waitFor(frameOf('result'))).toMatchObject({ ok: false, exitCode: 1 });
   });
 
+  test('a close that is still flushing never tears down the next attachment', async () => {
+    remote.attach(url(), 'explore');
+    const first = remote.close(0);
+    await waitFor(frameOf('hello'));
+    await remote.close(0);
+    expect(remote.isAttached()).toBe(false);
+
+    remote.attach(url(), 'explore');
+    await first;
+    await waitFor(() => (received.filter((f) => f.type === 'hello').length >= 2 ? true : undefined));
+
+    expect(remote.isAttached()).toBe(true);
+    expect(received.filter((f) => f.type === 'result')).toHaveLength(1);
+  });
+
   test('run state logged as data reaches the UI as its own frame, never as a log line', async () => {
     ConfigParser.resetForTesting();
     ConfigParser.setupTestConfig();

@@ -22,12 +22,12 @@ untouched.
 
 ## Approach
 
-Detection finds out which strategy a list uses; a rule tells the tester what to do about it,
-and is injected only when there is something to say. No new tool: the gesture already exists in
-CodeceptJS and is reachable through `form`.
+Research finds out which strategy each list uses and records it in the UI map, beside that
+list's own container. The tester already reads the UI map, so the fact arrives attached to the
+list it describes. No new tool: the gesture already exists in CodeceptJS and is reachable
+through `form`.
 
-Splitting it that way is what keeps the rule short. The tester never has to discover anything
-at run time, and never carries guidance for a strategy this page does not use.
+Nothing is injected per page — see section B for why the first attempt at that was wrong.
 
 ### Why `I.scrollTo` is sufficient
 
@@ -67,41 +67,10 @@ Four steps, cheapest first, stopping as soon as one answers. This is the escalat
 CLAUDE.md end to end: a table lookup, then AI judgment, then a probe whose result converts
 judgment back into a recorded fact.
 
-**0. Do the ARIA/HTML conventions name it? (deterministic, no research, no AI)**
-
-Some markup states the answer outright. These are spec-defined attributes and values, so this
-tier is a lookup, not a guess — and it is the only step that works when research has not run.
-
-| Marker | Means | Available in |
-|---|---|---|
-| `[aria-current="page"]` | current page of a pagination set | HTML only |
-| `a[rel="next"]`, `a[rel="prev"]` | sequential document relations | HTML only |
-| `[role="feed"]` | scrollable list that grows as it is scrolled | HTML and ARIA snapshot |
-| `[aria-setsize="-1"]` | total count unknown, so the set loads lazily | HTML only |
-
-The first two mean `controls`, the last two mean `infinite`.
-
-Verified against Chromium: `ariaSnapshot()` does **not** emit `aria-current`, so a link marked
-as the current page is indistinguishable from its neighbours in the ARIA path. Explorbot also
-dissolves `navigation` wrappers (`src/utils/aria.ts:46`, `:147`) and treats the role as
-template chrome (`src/utils/aria.ts:543`), so a `nav` labelled "Pagination" never reaches the
-model either. **These markers must be read from HTML.** `role="feed"` is the one exception —
-it survives as `- feed "…"` in the snapshot.
-
-Two constraints that keep this a lookup rather than a heuristic:
-
-- The value must be `aria-current="page"` exactly. `aria-current="true"` is what tabs and
-  breadcrumbs use and would over-match — confirmed in the same probe.
-- A `nav` whose `aria-label` reads "Pagination" is author prose, not closed grammar. It is not
-  part of this tier.
-
-**Absence proves nothing.** A pager built from plain buttons, and an infinite feed built from
-plain divs, carry none of these. That is what steps 1–3 are for.
-
 **1. Are there pagination controls? (AI, free)**
 
-Only asked when step 0 found nothing. Controls are named in open-ended ways — words, arrows,
-bare numbers — so this is AI judgment, not a pattern match. Researcher is already describing
+Controls are named in open-ended ways — words, arrows, bare numbers — so this is AI judgment,
+not a pattern match. Researcher is already describing
 the section, so it costs nothing extra:
 a new `rules/researcher/pagination.md`, loaded alongside the existing three at
 `src/ai/researcher/sections.ts:81`, asks it to note when a section contains controls that move
@@ -109,25 +78,68 @@ between pages of the same collection.
 
 If found, the section records `> Pagination: controls` and the remaining steps are skipped.
 
-**2. Can the section scroll at all? (deterministic gate)**
+**2. Markers and the scroll gate — one `page.evaluate` per container (`inspectList`)**
 
-Only asked when no controls were found. One `page.evaluate` per container:
+Only reached when research recorded nothing. Everything the probe needs comes back in one call,
+**scoped to the container**, never to the page:
 
-- `el.scrollHeight > el.clientHeight` → the container has its own scroller.
-- `el.getBoundingClientRect().bottom > innerHeight` → the list continues below the fold.
-- Neither → nothing more to do; no line recorded.
+- `a[rel="next"]`/`a[rel="prev"]` inside it → `controls`, recorded without scrolling.
+- `[role="feed"]` → `infinite`, recorded without scrolling. These are spec-defined relations, so
+  this tier is a lookup, not a heuristic.
+- `scrollHeight > clientHeight`, or the container's bottom below the fold → it can scroll, so
+  step 3 may run. Neither → nothing recorded.
 
-This gate exists to keep step 3 from running on every short list.
+`aria-current` is excluded in every value: its primary spec use is a site-navigation link
+marking the page you are on, and `aria-current="true"` is what tabs and breadcrumbs use.
+`rel="next"`/`rel="prev"` carry the sequential meaning unambiguously.
+
+The scoping is the point. Asking the same question of the whole page is what section B removed.
 
 **3. Probe: does scrolling load more? (deterministic measurement)**
 
 Scroll the container to its end, wait for readiness (`waitForPageReadiness`,
-`src/utils/page-readiness.ts`), and compare. More descendant rows than before, or a same-origin
-xhr/fetch fired during the scroll, means the list appends. Record `> Pagination: infinite`.
+`src/utils/page-readiness.ts`), and compare descendant counts. More than before means the list
+appends. Record `> Pagination: infinite`.
+
+**Rows are the evidence, not requests.** The same rule the tester follows: a request that
+brings no rows tells you nothing arrived. A page also fires telemetry and prefetches while
+scrolling, so a bare request count would report growth where there is none. `networkRequests`
+is private to `Action` (`src/action.ts:46`) and stays that way — nothing here needs widening.
+
+**The scroll goes through `Action`, not through `page.evaluate`.** `deep-analysis.ts` sets the
+precedent at `:405` — `this.explorer.action()`, then `action.attempt(cmd)` per command. Action
+is the only thing that moves the browser (CLAUDE.md glue tiers), and going around it would
+bypass the recorder and state updates. Measurement (row counts, scroll offsets) still uses
+`withPage`, which reads without moving.
 
 Then restore `scrollTop` to what it was, so screenshots, coordinates and later research see the
 page as they found it. Scroll position is not app state, so this needs none of the modal
 cleanup `_restorePageState` does in `deep-analysis.ts:453` — there is nothing to reuse there.
+
+**Which sections get probed — `Data:` sections are the point.**
+
+Researcher is instructed to emit a list of similar data items as a `## Data: <name>` section
+holding a container and a summary line, no table (`src/ai/researcher.ts:502-509`). That is
+precisely where a paginated list lands.
+
+But `parseResearchSections` (`src/ai/researcher/parser.ts:100`) filters those out:
+
+```js
+.filter((s) => !SKIP_SECTIONS.has(s.name.toLowerCase()) && !s.name.toLowerCase().includes('data:'))
+```
+
+`SKIP_SECTIONS` (`:27`) also drops a section literally named `data`. So iterating
+`parseResearchSections` — as `validateContainers` does — would probe every section **except**
+the lists. Nothing else in the codebase parses `Data:` sections today.
+
+A new `parseDataSections(markdown): ResearchSection[]` in `parser.ts` returns them: the same
+`parseSections` call, filtered to names beginning with `data:`, reusing
+`extractContainerFromBlockquote` and yielding an empty `elements` array (Data sections carry no
+table by construction). Both parsers stay single-purpose.
+
+Steps 1–3 then run over `[...parseResearchSections(text), ...parseDataSections(text)]`. A
+non-Data section can hold a list too, and it costs nothing to include it: step 2 gates it out
+when it does not scroll.
 
 **Recorded vocabulary:** `controls` or `infinite`, as a line in the section's container
 blockquote. Nothing is written when a list neither paginates nor grows, which is the common
@@ -139,9 +151,9 @@ case and should stay silent.
 ```
 
 **This line has a reader**, because section B injects the rule only when pagination was
-detected, and that decision is code. `extractPaginationFromBlockquote` joins
-`extractContainerFromBlockquote` (`src/ai/researcher/parser.ts:86`) and returns the recorded
-value or null.
+detected, and that decision is code. `extractPaginationFromBlockquote(sectionMarkdown)` joins
+`extractContainerFromBlockquote` (`src/ai/researcher/parser.ts:86`) and returns `'controls'`,
+`'infinite'`, or null — anything else in the line is ignored, keeping the vocabulary closed.
 
 That makes `Pagination:` a closed vocabulary read deterministically by code, so the envelope
 checklist from CLAUDE.md applies and holds: read by code, scoped to a section of a state,
@@ -173,56 +185,30 @@ references. One concern: how a list continues. `measureLayout` in `overlay.ts` i
 it is xpath-based and returns a modal-scoring `RegionLayout`, while sections carry CSS
 selectors and need neither.
 
-### B. The pagination rule, injected only when pagination was detected
+### B. The UI map carries it — nothing is injected per page
 
-Not part of the static system message. A page with no list should not carry list guidance, and
-a page with page numbers should not be told how to scroll.
+**Superseded during implementation.** The original design injected a `<pagination>` block into
+Tester and Navigator whenever a strategy was detected. That was wrong and is removed.
 
-**Seam:** `reinjectContextIfNeeded` (`src/ai/tester.ts:554`), which already injects per-state
-blocks conditionally — `focusedElementRule` when something is focused, an `<overlay>` block
-when a region is open. A `<pagination>` block joins them. Navigator gets the same block where
-it builds its own per-state context (`src/ai/navigator.ts:414`).
+The condition was computed from the whole page's HTML, which carries no context. A pager
+anywhere on the page — a sidebar list, a widget behind an open modal, a drawer — told the
+tester "this list pages through a larger collection" whatever it was actually looking at. A
+page-level answer cannot address a question about one list among several.
 
-**Condition:** the state shows pagination if step 0's markers are present in the current HTML,
-or `extractPaginationFromBlockquote` finds a recorded value for a section. Markers win when
-both are available, since they describe the page as it is now rather than as research left it.
+The UI map already solves this. Research records `> Pagination:` under the section's own
+container, and the tester already reads the UI map. The fact arrives attached to the list it
+describes, and says nothing about any other list on the page. `actionRule` documents
+`I.scrollTo` for the capability itself (section C), which is genuinely page-independent.
 
-**Which text:** the strategy selects the fragment, so the model is never shown the other one.
+Consequences:
 
-`paginationControlsRule`:
-
-```
-<pagination>
-This list pages through a larger collection. If what you need is not on screen,
-click next or the page number you need before concluding it is absent.
-</pagination>
-```
-
-`infiniteScrollRule`:
-
-```
-<pagination>
-This list grows as it is scrolled. If what you need is not on screen, scroll to
-the last item in the list — every scrollable ancestor of that item scrolls, so
-this reaches a list with its own scrollbar.
-
-New rows in the aria changes mean more arrived; a request with none means nothing
-was left. Stop on the first attempt that adds no rows: the end of a collection is
-an answer, not a failure.
-</pagination>
-```
-
-Both live in `src/ai/rules.ts` as exports. Not `rules/*.md`: those load per agent, and these
-have two consumers.
-
-**Reach narrows from the earlier draft.** Composing into `actionRule` would have reached
-Rerunner (`src/ai/rerunner.ts:450`) and Captain web-mode (`src/ai/captain/web-mode.ts:148`) too;
-conditional injection reaches only agents that build per-state context, which is Tester and
-Navigator. That is the cost of making it conditional, and it is the right trade: Rerunner heals
-known steps rather than traversing lists.
-
-Constraints both fragments keep: general phrasing, no selectors, no site names, no example
-taken from a debug session, one to three lines per bullet.
+- `paginationRuleFor` and `paginationFromResearch` are gone; `src/ai/rules.ts` gains only the
+  scroll commands in section C.
+- `Pagination:` has no code reader, so the envelope checklist does not apply to it — it is
+  prompt context, like every other line in the UI map.
+- Marker detection moves in-page, scoped to the container, inside `inspectList`. jsdom is no
+  longer used: it was pulled in only to parse whole-page HTML for the injection, and eagerly at
+  that, while the single existing use in `src/utils/xpath.ts:94` imports it lazily.
 
 ### C. `actionRule` documents the gesture
 
@@ -292,9 +278,12 @@ The added/removed split exists inside `diffAriaSnapshots` but is flattened into 
 
 ## Testing
 
-- Unit coverage for step 0's marker scan: `aria-current="page"` and `rel=next/prev` yield
-  `controls`; `role="feed"` and `aria-setsize="-1"` yield `infinite`; `aria-current="true"` on a
-  tab list yields nothing.
+- Unit coverage for step 0's marker scan: `rel=next/prev` yields `controls`; `role="feed"` and
+  `aria-setsize="-1"` yield `infinite`; `aria-current` in any value yields nothing.
+- Unit coverage for `parseDataSections`: a `## Data: Suites List` section with a container is
+  returned with its `containerCss`, and `parseResearchSections` still excludes it.
+- Unit coverage for `extractPaginationFromBlockquote`: reads `controls` and `infinite`, returns
+  null for an absent line and for any other value.
 - `tests/integration/researcher-sections.test.ts` — `> Pagination: controls` appears for a
   section whose UI map holds next/prev controls, and step 1 is not asked when step 0 already
   answered.
@@ -315,3 +304,42 @@ The added/removed split exists inside `diffAriaSnapshots` but is flattened into 
   session-scoped.
 - Virtualized list support.
 - Changing `detectRegion` thresholds.
+- The API signal below — a follow-up branch, not this one.
+
+## Follow-up: pagination from the API
+
+The DOM says a list continues; the API says **how far**. That number decides whether paging on
+is worth it or the item is not in the collection at all, and nothing in this design can supply
+it. Deferred to its own branch because it depends on the API boat being configured and lands on
+Pilot rather than on Researcher or Tester.
+
+**Already in place, verified:**
+
+- `XhrCapture.captureReadEndpoint` (`src/api/xhr-capture.ts`) stores GETs as
+  `fullUrl = pathname + search`, so the **query string is already captured**.
+- `queryParamNames()` extracts the names and `queryParamHint()` renders them into
+  `toEndpointList()` (`src/api/request-store.ts:78`), so fisherman already sees
+  `GET /api/items ?page,per_page` in its endpoint list.
+- `askApi` (`src/ai/fisherman/tools.ts:220`) is wired to **Pilot alone**
+  (`src/ai/pilot.ts:786`), and `fisherman.lookupData()` issues live read-only requests, reading
+  full responses. Totals are reachable today without touching capture.
+
+**The gap:** GET response bodies are deliberately dropped (`rawResponseBodyValue = ''`,
+`responseHeaders: {}`), so `total`, `X-Total-Count` and `Link: rel="next"` are not passively
+available. `askApi` re-requests instead, which is why that gap does not block this.
+
+**Shape of the follow-up:**
+
+1. A Pilot rule saying **when** asking is worth it — after repeated paging or scrolling has not
+   produced the target — never "ask about every list". Pilot *guides* while Tester *executes*,
+   and judging whether to keep paging is guidance; Pilot's conversation is also the light one,
+   so API reasoning belongs there rather than in Tester's ARIA-heavy loop.
+2. A deterministic signal from captured read requests whose query params name a pagination
+   scheme (`page`, `offset`, `cursor`, `limit`, `per_page`). Free — the data is already stored,
+   and `queryParamNames` already isolates it.
+
+**Rejected:** capturing GET response bodies to read totals passively. Bodies are large, reads
+are discarded on purpose, and `askApi` already obtains them on demand.
+
+Both must stay optional: `fisherman?.isAvailable()` already returns a clean "no API access,
+judge from the page instead", and a run without an API boat must behave exactly as it does now.

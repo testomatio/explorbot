@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <body style="margin: 0">
+    <div id="feed" style="height: 240px; overflow-y: auto"></div>
+    <script>
+      const feed = document.getElementById('feed');
+      let next = 0;
+      const addBatch = () => {
+        for (let i = 0; i < 20; i++) {
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.style.height = '40px';
+          row.textContent = `row ${next++}`;
+          feed.appendChild(row);
+        }
+      };
+      addBatch();
+      feed.addEventListener('scroll', () => {
+        if (feed.scrollTop + feed.clientHeight < feed.scrollHeight - 20) return;
+        if (next >= 100) return;
+        addBatch();
+      });
+    </script>
+  </body>
+</html>

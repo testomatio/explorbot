@@ -219,6 +219,22 @@ describe('Planner with aimock', () => {
     expect(prompt).toContain('One section is marked as **Focused**');
   });
 
+  it('names the active region in the planning context', async () => {
+    const state = { ...fakeState, overlay: { type: 'region', name: 'Task details', root: '.task-detail' } };
+    planner = new Planner({ ...createMockDeps(state), ai: provider } as any, { research: async () => taskBoardUiMap } as any);
+
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('Active region: region "Task details" opened, scope: .task-detail');
+  });
+
+  it('leaves the active region out when none is open', async () => {
+    await planner.plan();
+
+    expect(extractPromptText(mock.getLastRequest())).not.toContain('Active region');
+  });
+
   it('scopes one test to one verified operation', async () => {
     await planner.plan();
 
