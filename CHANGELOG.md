@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-14
+
+### Changes
+
+- [Navigator] A verification that could not run because the model call itself failed is now reported as
+  a failure, naming the error. It used to be swallowed and reported as a claim no assertion could
+  express, so a rate limit or a timed-out request reached Tester as a verdict about the page, and
+  Tester rewrote a correct assertion and asked again. Each such claim also retried the model up to
+  three more times on top of the retries the request already does, which made a rate limit worse
+  rather than passing it on.
+
 ## 2026-09-11
 
 ### Changes
