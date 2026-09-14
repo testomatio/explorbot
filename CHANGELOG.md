@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-14
+
+### Fixes
+
+- [AI] When a provider rejects required tool choice, the retry now uses automatic tool choice with the
+  Harmony channel fallback. This lets tool-driven agents recover from `gpt-oss` channel output instead of
+  repeating the same rejected request.
+- [Apibot] API test scenarios no longer mutate or delete records discovered as sample data. Chief plans a
+  scenario-owned target for destructive checks, and Curler stops when it cannot create one safely.
+
 ## 2026-09-11
 
 ### Changes
