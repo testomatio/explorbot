@@ -7,6 +7,13 @@
 - [Planner] Edit and reconfiguration scenarios no longer include record creation as part of every plan;
   Pilot can select suitable data or prepare it when execution starts. Expected outcomes remain verifiable
   through the interface without inventing details for pages and subpages that have not been visited yet.
+### Fixes
+
+- [AI] When a provider rejects required tool choice, the retry now uses automatic tool choice with the
+  Harmony channel fallback. This lets tool-driven agents recover from `gpt-oss` channel output instead of
+  repeating the same rejected request.
+- [Apibot] API test scenarios no longer mutate or delete records discovered as sample data. Chief plans a
+  scenario-owned target for destructive checks, and Curler stops when it cannot create one safely.
 
 ## 2026-09-11
 
