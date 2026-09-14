@@ -2,6 +2,11 @@
 
 ## 2026-09-14
 
+### Changes
+
+- [Planner] Test plans now describe which record a scenario needs without fixing its ID or unique name;
+  Pilot chooses the record when execution starts. A plan names a specific record only when the page shows
+  a small, complete list of available records.
 ### Fixes
 
 - [AI] When a provider rejects required tool choice, the retry now uses automatic tool choice with the

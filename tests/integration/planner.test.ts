@@ -243,6 +243,15 @@ describe('Planner with aimock', () => {
     expect(prompt).not.toContain('merge them into one');
   });
 
+  it('leaves record selection to Pilot unless the available list is limited', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('Do not put record IDs or unique record names in test plans');
+    expect(prompt).toContain('let Pilot choose it during execution');
+    expect(prompt).toContain('only when research shows a small, complete list');
+  });
+
   it('does not label test data as disposable', async () => {
     await planner.plan();
 
