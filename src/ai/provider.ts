@@ -38,6 +38,11 @@ function createHarmonyChannelFallbackTool() {
   });
 }
 
+function withHarmonyChannelFallback(tools: any): any {
+  if (tools?.commentary) return tools;
+  return { ...tools, commentary: createHarmonyChannelFallbackTool() };
+}
+
 let telemetryRegistered = false;
 let beforeExitFlushHooked = false;
 let activeOtelSdk: NodeSDK | null = null;
@@ -410,7 +415,7 @@ export class Provider {
     promptLog(`Using model: ${modelName}`);
 
     let toolsWithCommentary = tools;
-    if (!tools?.commentary && options.toolChoice !== 'required') toolsWithCommentary = { ...tools, commentary: createHarmonyChannelFallbackTool() };
+    if (options.toolChoice !== 'required') toolsWithCommentary = withHarmonyChannelFallback(tools);
     const toolNames = Object.keys(toolsWithCommentary || {});
     tag('debug').log(`Tools enabled: [${toolNames.join(', ')}]`);
     promptLog('Available tools:', toolNames);
@@ -420,9 +425,10 @@ export class Provider {
     const extraStop = options.stopWhen;
     const stopConditions: any[] = [isStepCount(maxRoundtrips)];
     if (extraStop) stopConditions.push(extraStop);
-    const config = this.buildGenerateConfig({ tools: toolsWithCommentary, maxOutputTokens: 16384, toolChoice: 'auto', experimental_repairToolCall: repairToolCall }, { stopWhen: stopConditions, model }, options);
+    let config = this.buildGenerateConfig({ tools: toolsWithCommentary, maxOutputTokens: 16384, toolChoice: 'auto', experimental_repairToolCall: repairToolCall }, { stopWhen: stopConditions, model }, options);
     let attemptMessages = messages;
     let invalidRequestFeedbackAdded = false;
+    let requiredToolChoiceRelaxed = false;
     const executedStepMessages: ModelMessage[] = [];
     try {
       let response = await this.withModelRequestSlot(() =>
@@ -441,6 +447,11 @@ export class Provider {
               const amended = withInvalidRequestFeedback(attemptMessages, error);
               invalidRequestFeedbackAdded = amended !== attemptMessages;
               attemptMessages = amended;
+            }
+            if (!requiredToolChoiceRelaxed && isRequiredToolChoiceError(error)) {
+              requiredToolChoiceRelaxed = true;
+              config = { ...config, tools: withHarmonyChannelFallback(tools), toolChoice: 'auto' };
+              tag('warning').log('Provider rejected required tool choice — retrying with automatic tool choice and channel fallback');
             }
             throw error;
           })) as any;
@@ -470,7 +481,7 @@ export class Provider {
       return response;
     } catch (error: any) {
       clearActivity();
-      if (error?.message?.includes('Tool choice is required')) {
+      if (isRequiredToolChoiceError(error)) {
         return { text: '', toolCalls: [], toolResults: [], responseMessages: executedStepMessages, usage: null };
       }
       if (error?.name === 'AbortError') throw error;
@@ -732,6 +743,10 @@ function withInvalidRequestFeedback(messages: ModelMessage[], error: unknown): M
       `,
     },
   ];
+}
+
+function isRequiredToolChoiceError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Tool choice is required');
 }
 
 function repairChannelMarker({ toolCall, tools }: ToolCallRepairOptions): any | null {

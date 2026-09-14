@@ -9,7 +9,7 @@ import { clearStyleCache } from '../../src/ai/planner/styles.ts';
 import { clearPlanRegistry, registerPlan } from '../../src/ai/planner/subpages.ts';
 import { Provider } from '../../src/ai/provider.ts';
 import { ConfigParser } from '../../src/config.ts';
-import { Plan, Test } from '../../src/test-plan.ts';
+import { Plan, Test, TestResult } from '../../src/test-plan.ts';
 
 const UI_MAPS_DIR = join(process.cwd(), 'test-data', 'ui-maps');
 
@@ -243,6 +243,15 @@ describe('Planner with aimock', () => {
     expect(prompt).not.toContain('merge them into one');
   });
 
+  it('leaves record selection to Pilot unless the available list is limited', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('Do not put record IDs or unique record names in test plans');
+    expect(prompt).toContain('let Pilot choose it during execution');
+    expect(prompt).toContain('only when research shows a small, complete list');
+  });
+
   it('does not label test data as disposable', async () => {
     await planner.plan();
 
@@ -446,5 +455,36 @@ describe('Planner with aimock', () => {
     }
 
     expect(extractPromptText(mock.getLastRequest())).toContain('roughly 100%');
+  });
+
+  it('tells the planner how session tests ended', async () => {
+    const finished = new Plan('Pin Testing');
+    finished.url = '/tasks/board';
+    const failed = new Test('Pin a visible task and verify the pinned state persists', 'normal', ['Pinned state shown'], '/tasks/board', ['Click Pin']);
+    failed.addNote('Pin action failed, no pinned indicator');
+    failed.finish(TestResult.FAILED);
+    finished.addTest(failed);
+    const aborted = new Test('Assign an assignee and verify the assignment persists', 'normal', ['Assignee shown'], '/tasks/board', ['Open assignee menu']);
+    aborted.addNote('Could not find the record in the current list');
+    finished.addTest(aborted);
+    planner.registerPlanInSession(finished);
+
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('with how each one ended');
+    expect(prompt).toContain('failed | Pin a visible task and verify the pinned state persists — Pin action failed, no pinned indicator');
+    expect(prompt).toContain('unfinished | Assign an assignee and verify the assignment persists — Could not find the record in the current list');
+    expect(prompt).toContain('do not re-propose the same behavior');
+    expect(prompt).toContain('read it before deciding');
+  });
+
+  it('requires UI-verifiable outcomes without inventing unseen page details', async () => {
+    await planner.plan();
+
+    const prompt = extractPromptText(mock.getLastRequest());
+    expect(prompt).toContain('must be verifiable through the web interface');
+    expect(prompt).toContain('page or subpage has not been observed');
+    expect(prompt).toContain('describe the expected visible result generically');
   });
 });
