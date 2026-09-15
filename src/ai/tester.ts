@@ -1126,14 +1126,9 @@ export class Tester extends TaskAgent implements Agent {
             }
           }
 
-          if (input.status !== null && task.isComplete()) {
-            if (this.pilot) {
-              const currentState = this.getCurrentState();
-              await this.pilot.reviewCompletion(task, currentState, conversation, this.navigator);
-            } else {
-              const hasPassed = task.hasAchievedAny();
-              task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);
-            }
+          if (input.status !== null && task.isComplete() && !this.pilot) {
+            const hasPassed = task.hasAchievedAny();
+            task.finish(hasPassed ? TestResult.PASSED : TestResult.FAILED);
           }
 
           const remainingExpectations = task.getRemainingExpectations();

@@ -1116,6 +1116,7 @@ export class Pilot implements Agent {
       Already-achieved detection: if the scenario goal is met in the current state (page_summary, ariaDiff,
       state), instruct Tester to verify() and finish(). If goal was already true at the start, propose
       different input data so the test is meaningful. If Tester repeats the same successful action, STOP.
+      A goal of "action must not succeed" is met by any guard that blocks it — the predicted guard is a route, not a requirement.
 
       If needed you should pick the exact item the scenario should act on (from the page, or precondition() one) and pass it to tester
 
