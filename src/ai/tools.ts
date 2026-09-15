@@ -375,6 +375,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
         - Reaching items further down a list (I.scrollTo)
+        - Reloading the page to prove a change outlived it (I.reloadPage)
 
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')
@@ -387,7 +388,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
         I.selectOption({"role":"combobox","text":"Category"}, 'Technology')
 
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
-        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot        
+        Do not use: wait functions, amOnPage, saveScreenshot        
       `,
       inputSchema: z.object({
         codeBlock: z.string().describe('Valid CodeceptJS code starting with I. Can contain multiple commands separated by newlines.'),
