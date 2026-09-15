@@ -50,6 +50,18 @@ Checks that page title contains expected text.
   I.seeInTitle('Dashboard');
 </example>
 
+### I.seeInCurrentUrl
+
+I.seeInCurrentUrl(<path>)
+
+Checks that the current URL contains the expected path. Substring match — pass the path, not the full URL.
+This is the ONLY way to assert the URL — page text and source are not evidence of it.
+
+<example>
+  I.seeInCurrentUrl('/dashboard');
+  I.seeInCurrentUrl('/users/42/edit');
+</example>
+
 ### I.seeInSource
 
 I.seeInSource(<text>)
@@ -93,6 +105,16 @@ Checks that an input field does NOT contain the specified value.
   I.dontSeeInField('Password', '', '.login-form');
   I.dontSeeInField('Search', 'old query');
   I.dontSeeInField('Email', '');
+</example>
+
+### I.dontSeeInCurrentUrl
+
+I.dontSeeInCurrentUrl(<path>)
+
+Checks that the current URL does NOT contain the given path.
+
+<example>
+  I.dontSeeInCurrentUrl('/login');
 </example>
 
 ### I.dontSeeInSource

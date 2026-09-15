@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-15
+
+### Fixes
+
+- [Pilot] A scenario whose goal is that an invalid action must not succeed is no longer failed because the
+  app blocks it differently than the plan predicted. The plan names one guard — a validation message, say —
+  but the app may block by disabling the control or refusing the submit, and any of those met the goal.
+  Pilot told Tester to record such a run as failed, so tests that found the app working correctly were
+  reported as failures.
+- [Navigator] `verify()` can now assert which page is open. There was no URL check among the assertions
+  Navigator is allowed to write, so every claim about the current URL failed even when the page was on
+  exactly that address, and Tester was left without evidence that a navigation had worked.
+
 ## 2026-09-14
 
 ### Changes
