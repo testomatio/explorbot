@@ -33,6 +33,16 @@ mdq(source)
   .toString();
 ```
 
+The two stringify differently, and the difference is deliberate: a `MarkdownDoc` gives the
+whole document, a `Selection` gives only the markdown it matched. So a selection can be
+passed straight back in as a fragment.
+
+```js
+const fragment = mdq(other).query('section("Setup")');
+mdq(doc).query('h2').insertAfter(fragment);   // inserts that section
+String(mdq(doc).query('paragraph'));          // the paragraphs, not the document
+```
+
 ## Selectors
 
 | Selector | Matches |

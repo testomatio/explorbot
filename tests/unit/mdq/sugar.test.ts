@@ -120,3 +120,25 @@ describe('canonical read names', () => {
     expect(block.entries()).toEqual(block.keyValue());
   });
 });
+
+describe('stringification', () => {
+  const src = '# A\n\ntext\n';
+
+  it('stringifies a document to the whole document', () => {
+    expect(String(mdq(src))).toBe(src);
+  });
+
+  it('stringifies a selection to its matched markdown, not the document', () => {
+    expect(String(mdq(src).query('paragraph'))).toBe('text\n');
+    expect(`${mdq(src).query('paragraph')}`).toBe('text\n');
+  });
+
+  it('treats a selection passed as markdown as the fragment it matched', () => {
+    const fragment = mdq('### F\n\nfrag\n').query('h3');
+    expect(mdq('## A\n\nbody\n').query('h2').insertAfter(fragment).toString()).toBe('## A\n\n### F\n\nbody\n');
+  });
+
+  it('re-opens a selection as a document containing only the match', () => {
+    expect(mdq(mdq(src).query('paragraph')).toString()).toBe('text\n');
+  });
+});

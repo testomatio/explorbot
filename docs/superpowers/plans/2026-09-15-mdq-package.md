@@ -1,6 +1,6 @@
 # mdq Package Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Extract `src/utils/markdown-query.ts` into `src/utils/mdq/` as a publish-ready package that can both query and update markdown, then add a jq-like CLI.
 
@@ -68,7 +68,7 @@ Move the parser to its new home and teach it the one thing it gets wrong today: 
 
 The `trailing` field is new and load-bearing: `marked` emits `space` tokens as siblings (a `paragraph` raw is `"para"` with no newline, followed by a separate `space` raw of `"\n\n"`), so every write verb needs to know where a node's separator lives.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/unit/mdq/frontmatter.test.ts
@@ -127,12 +127,12 @@ describe('buildTokenIndex', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/unit/mdq/frontmatter.test.ts`
 Expected: FAIL — cannot resolve `src/utils/mdq/query.ts`
 
-- [ ] **Step 3: Create query.ts with the index**
+- [x] **Step 3: Create query.ts with the index**
 
 Copy `src/utils/markdown-query.ts` to `src/utils/mdq/query.ts` verbatim first, then apply these three changes.
 
@@ -207,12 +207,12 @@ export interface MatchedRange {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/unit/mdq/frontmatter.test.ts`
 Expected: PASS (8 tests)
 
-- [ ] **Step 5: Format, lint and commit**
+- [x] **Step 5: Format, lint and commit**
 
 ```bash
 bun run format && bun run lint:fix
@@ -236,7 +236,7 @@ Get every existing call site running against the new file with **zero behaviour 
 - Consumes: `buildTokenIndex`, `splitFrontmatter`, `MatchedRange` from Task 1
 - Produces: `mdq(source: string): MarkdownQuery`, class `MarkdownQuery`, `parseQuery`, all existing methods unchanged
 
-- [ ] **Step 1: Move the test file and repoint its import**
+- [x] **Step 1: Move the test file and repoint its import**
 
 ```bash
 git mv tests/unit/markdown-query.test.ts tests/unit/mdq/query.test.ts
@@ -254,12 +254,12 @@ to:
 import { mdq, parseQuery } from '../../../src/utils/mdq/query.ts';
 ```
 
-- [ ] **Step 2: Run the suite to verify it fails**
+- [x] **Step 2: Run the suite to verify it fails**
 
 Run: `bun test tests/unit/mdq/query.test.ts`
 Expected: FAIL — `mdq` / `parseQuery` are not yet exported from `query.ts`, or section tests fail because `expandSectionRanges` still assumes `space` tokens are present
 
-- [ ] **Step 3: Restore the full API in query.ts**
+- [x] **Step 3: Restore the full API in query.ts**
 
 Everything from the original `markdown-query.ts` below `buildTokenIndex` — `matchText`, `entryKey`, `getTokenText`, `getHeadingDepth`, `isSectionSelector`, `getSectionDepth`, `selectorToTokenType`, `computeSections`, `extractListItems`, `applyIndexSlice`, `expandSectionRanges`, `executeSegments`, `class MarkdownQuery`, `mdq` — carries over unchanged, except:
 
@@ -277,23 +277,23 @@ for (let j = i + 1; j < candidates.length; j++) {
 
 Move every `export interface` / `export type` to the end of the file, and replace the ternaries at the original lines 30, 34, 129-130 and 295 with early returns.
 
-- [ ] **Step 4: Run the suite to verify it passes**
+- [x] **Step 4: Run the suite to verify it passes**
 
 Run: `bun test tests/unit/mdq/query.test.ts`
 Expected: PASS — **110 tests**, the same count as before the move
 
-- [ ] **Step 5: Replace markdown-query.ts with a shim**
+- [x] **Step 5: Replace markdown-query.ts with a shim**
 
 ```ts
 export * from './mdq/query.ts';
 ```
 
-- [ ] **Step 6: Verify every existing call site still works**
+- [x] **Step 6: Verify every existing call site still works**
 
 Run: `bun test tests/unit/`
 Expected: PASS, no new failures versus the pre-task run
 
-- [ ] **Step 7: Format, lint and commit**
+- [x] **Step 7: Format, lint and commit**
 
 ```bash
 bun run format && bun run lint:fix
@@ -327,7 +327,7 @@ The one risky task. It ends with the repo green and every break fixed.
   - `mdq(source: Markdown): MarkdownDoc`
   - Deprecated alias `MarkdownQuery = Selection`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // append to tests/unit/mdq/query.test.ts
@@ -359,12 +359,12 @@ describe('MarkdownDoc chaining', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/unit/mdq/query.test.ts -t 'MarkdownDoc chaining'`
 Expected: FAIL — `.query is not a function` on the string returned by `replace`
 
-- [ ] **Step 3: Split MarkdownQuery into MarkdownDoc and Selection**
+- [x] **Step 3: Split MarkdownQuery into MarkdownDoc and Selection**
 
 `MarkdownDoc` holds the source. `Selection` holds source plus matches. Every write on `Selection` ends by wrapping its result:
 
@@ -431,12 +431,12 @@ git grep -ln "MarkdownQuery" -- src bin boat tests
 
 Expected: only `src/utils/mdq/query.ts`. Any other file needs its import checked.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/unit/mdq/query.test.ts -t 'MarkdownDoc chaining'`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Fix the write assertions in the ported suite**
+- [x] **Step 5: Fix the write assertions in the ported suite**
 
 The existing `replace` tests assert against a string. Wrap each in `String(...)`, for example:
 
@@ -453,7 +453,7 @@ Apply the same to every assertion in the `replace`, `setKeyValue` and `edge case
 Run: `bun test tests/unit/mdq/query.test.ts`
 Expected: PASS — 114 tests
 
-- [ ] **Step 6: Migrate the four breakage classes**
+- [x] **Step 6: Migrate the four breakage classes**
 
 **(a) Assignment into a `string`-typed target** — append `.toString()`:
 
@@ -501,7 +501,7 @@ Expected: PASS — 114 tests
 
 **Leave alone** — these already work because `mdq()` accepts a `MarkdownDoc`: `planner.ts:303`, `planner.ts:405`.
 
-- [ ] **Step 7: Fix the one regex call site**
+- [x] **Step 7: Fix the one regex call site**
 
 `src/ai/researcher.ts:316` relies on regex matching being implicitly case-insensitive. Task 4 removes that. Make the flag explicit now so the two changes never overlap:
 
@@ -509,7 +509,7 @@ Expected: PASS — 114 tests
       const summaryText = mdq(result.text).query('section2(/^summary/i)').query('paragraph[0]').text().trim();
 ```
 
-- [ ] **Step 8: Verify with the scoped type check**
+- [x] **Step 8: Verify with the scoped type check**
 
 Grep by **type name, repo-wide** — not by file path. A path-scoped grep misses test
 helpers and bin scripts, and those break too:
@@ -530,12 +530,12 @@ the same shape — a function whose declared return type is `string` now returns
 which does **not** coerce and throws `e.replace is not a function` at runtime. Trust the
 grep, not the list.
 
-- [ ] **Step 9: Run the full unit suite**
+- [x] **Step 9: Run the full unit suite**
 
 Run: `bun test tests/unit/`
 Expected: PASS, no new failures
 
-- [ ] **Step 10: Format, lint and commit**
+- [x] **Step 10: Format, lint and commit**
 
 ```bash
 bun run format && bun run lint:fix
@@ -557,7 +557,7 @@ Four grammar changes, all additive now that Task 3 pre-fixed the one regex call 
 - Consumes: `parseQuery`, `getTokenText`, `selectorToTokenType`, `matchText` from Task 2
 - Produces: `class MdqError extends Error`, `class MdqSelectorError extends MdqError` (with `index: number`), selectors `comment` and `html`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/unit/mdq/selectors.test.ts
@@ -656,12 +656,12 @@ describe('selector errors', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/unit/mdq/selectors.test.ts`
 Expected: FAIL — `MdqSelectorError` is not exported
 
-- [ ] **Step 3: Implement the four changes**
+- [x] **Step 3: Implement the four changes**
 
 Error classes, at the top of the class section:
 
@@ -786,17 +786,17 @@ export interface NodeInfo {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/unit/mdq/selectors.test.ts`
 Expected: PASS (13 tests)
 
-- [ ] **Step 5: Verify nothing regressed**
+- [x] **Step 5: Verify nothing regressed**
 
 Run: `bun test tests/unit/`
 Expected: PASS — in particular `query.test.ts` still at 114, since Task 3 already fixed `researcher.ts:316`
 
-- [ ] **Step 6: Format, lint and commit**
+- [x] **Step 6: Format, lint and commit**
 
 ```bash
 bun run format && bun run lint:fix
@@ -823,7 +823,7 @@ Removes the hand-escaping wart: `section.name.replace(/"/g, '\\"')` at `research
   - Sugar on both classes: `section` `heading` `paragraph` `table` `list` `item` `code` `blockquote` `comment` `html` `hr`
   - `at(n: number): Selection` and `slice(from?: number, to?: number): Selection` on `Selection`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/unit/mdq/sugar.test.ts
@@ -935,12 +935,12 @@ describe('canonical read names', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/unit/mdq/sugar.test.ts`
 Expected: FAIL — `mdq(...).heading is not a function`
 
-- [ ] **Step 3: Implement matchers and the shared sugar base**
+- [x] **Step 3: Implement matchers and the shared sugar base**
 
 A value matcher bypasses the grammar entirely, so it needs its own `TextMatcher` mode:
 
@@ -1044,7 +1044,7 @@ On `Selection`, add:
 
 At the end of the file add `Matcher`, `SelectorOptions`, `predicate?: (text: string) => boolean` on `TextMatcher`, and widen its `mode` to include `'predicate'`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/unit/mdq/sugar.test.ts`
 Expected: PASS (21 tests)
@@ -1052,7 +1052,7 @@ Expected: PASS (21 tests)
 The `canonical read names` block fails until Step 5 adds the renames — that is expected.
 Run Step 5 before treating those four as real failures.
 
-- [ ] **Step 5: Add the read renames and their deprecated aliases**
+- [x] **Step 5: Add the read renames and their deprecated aliases**
 
 Canonical names, with the old ones kept and marked:
 
@@ -1077,7 +1077,7 @@ Each alias is one line, for example:
 Run: `bun test tests/unit/`
 Expected: PASS — the ported suite still calls the deprecated names and must keep working
 
-- [ ] **Step 6: Format, lint and commit**
+- [x] **Step 6: Format, lint and commit**
 
 ```bash
 bun run format && bun run lint:fix
@@ -1110,7 +1110,7 @@ This matters because `marked` separators are uneven: a `heading` raw is `"# A\n\
 - Produces, on `Selection`: `remove()`, `insertBefore(md)`, `insertAfter(md)`, `prepend(md)`, `append(md)`
 - Produces, on `MarkdownDoc`: `append(md)`, `prepend(md)`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/unit/mdq/edit.test.ts
@@ -1216,12 +1216,12 @@ describe('chained edits', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/unit/mdq/edit.test.ts`
 Expected: FAIL — `.remove is not a function`
 
-- [ ] **Step 3: Write edit.ts**
+- [x] **Step 3: Write edit.ts**
 
 ```ts
 import type { MatchedRange } from './query.ts';
@@ -1310,7 +1310,7 @@ raw carries its own `"\n\n"`. So "no trailing space, therefore trim backwards" i
 `[start, blockEnd)` is already correct whenever anything follows; only a node removed from
 the very end needs repair.
 
-- [ ] **Step 4: Wire the verbs onto Selection and MarkdownDoc**
+- [x] **Step 4: Wire the verbs onto Selection and MarkdownDoc**
 
 On `Selection`, four public verbs delegating to one private helper:
 
@@ -1389,14 +1389,14 @@ export class MdqOperationError extends MdqError {
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `bun test tests/unit/mdq/edit.test.ts`
 Expected: PASS (19 tests)
 
 If a whitespace assertion fails, print the actual output with `JSON.stringify` before changing anything — the difference is almost always one newline, and guessing at it will break a different case.
 
-- [ ] **Step 6: Run the whole suite and commit**
+- [x] **Step 6: Run the whole suite and commit**
 
 ```bash
 bun test tests/unit/
@@ -1419,7 +1419,7 @@ git commit -m "feat(mdq): remove and insert verbs with whitespace normalization"
 - Produces in `edit.ts`: `renderTable(headers: string[], rows: string[][], align: (string | null)[]): string`, `renderItem(listRaw: string, text: string): string`
 - Produces on `Selection`: `addRow(row: Record<string, string>): MarkdownDoc`, `addItem(text: string): MarkdownDoc`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/unit/mdq/structural.test.ts
@@ -1485,12 +1485,12 @@ describe('addItem', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/unit/mdq/structural.test.ts`
 Expected: FAIL — `.addRow is not a function`
 
-- [ ] **Step 3: Add the renderers to edit.ts**
+- [x] **Step 3: Add the renderers to edit.ts**
 
 ```ts
 export function renderTable(headers: string[], rows: string[][], align: (string | null)[]): string {
@@ -1518,7 +1518,7 @@ function dashes(alignment: string | null, width: number): string {
 }
 ```
 
-- [ ] **Step 4: Wire the verbs onto Selection**
+- [x] **Step 4: Wire the verbs onto Selection**
 
 ```ts
   addRow(row: Record<string, string>): MarkdownDoc {
@@ -1544,12 +1544,12 @@ function dashes(alignment: string | null, width: number): string {
   }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `bun test tests/unit/mdq/structural.test.ts`
 Expected: PASS (10 tests)
 
-- [ ] **Step 6: Run the whole suite and commit**
+- [x] **Step 6: Run the whole suite and commit**
 
 ```bash
 bun test tests/unit/
@@ -1575,7 +1575,7 @@ git commit -m "feat(mdq): addRow and addItem structural inserts"
 
 Reading and writing both go through `yaml`'s **Document API** (`YAML.parseDocument`), never `parse`/`stringify`. That is what preserves comments through a write — verified behaviour, not an assumption.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // append to tests/unit/mdq/frontmatter.test.ts
@@ -1646,12 +1646,12 @@ describe('entries and setEntry', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/unit/mdq/frontmatter.test.ts`
 Expected: FAIL — `.frontmatter is not a function`
 
-- [ ] **Step 3: Implement in edit.ts**
+- [x] **Step 3: Implement in edit.ts**
 
 ```ts
 import YAML from 'yaml';
@@ -1696,7 +1696,7 @@ export function rewriteEntries(tokenText: string, isBlockquote: boolean, key: st
 
 `entryKey` moves to `edit.ts` alongside it.
 
-- [ ] **Step 4: Wire onto the classes**
+- [x] **Step 4: Wire onto the classes**
 
 ```ts
   frontmatter(): Record<string, unknown> {
@@ -1719,12 +1719,12 @@ export function rewriteEntries(tokenText: string, isBlockquote: boolean, key: st
   }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `bun test tests/unit/mdq/frontmatter.test.ts`
 Expected: PASS (21 tests)
 
-- [ ] **Step 6: Confirm knowledge and experience files now parse correctly**
+- [x] **Step 6: Confirm knowledge and experience files now parse correctly**
 
 This is the real-world check that motivated the feature:
 
@@ -1744,7 +1744,7 @@ Expected: frontmatter parsed as an object on each file, and **no heading whose t
 
 If either directory is empty, skip this step and note it.
 
-- [ ] **Step 7: Run the whole suite and commit**
+- [x] **Step 7: Run the whole suite and commit**
 
 ```bash
 bun test tests/unit/
@@ -1766,7 +1766,7 @@ The package is publish-ready only if someone can use it without reading the sour
 - Consumes: the complete API from Tasks 3-8
 - Produces: nothing code depends on
 
-- [ ] **Step 1: Write the README**
+- [x] **Step 1: Write the README**
 
 Cover, in this order:
 
@@ -1784,7 +1784,7 @@ Do **not** document the deprecated aliases (`get` `toJson` `keyValue` `setKeyVal
 
 Follow the repo docs style: show each format example once, and do not close with a "Why this matters" section.
 
-- [ ] **Step 2: Verify every example in the README actually runs**
+- [x] **Step 2: Verify every example in the README actually runs**
 
 Extract each fenced `js` block and execute it. Any example that throws or prints something other than what the README claims is a documentation bug — fix the README, not the test.
 
@@ -1795,7 +1795,7 @@ import { mdq } from "./src/utils/mdq/query.ts";
 '
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/utils/mdq/README.md
@@ -1820,7 +1820,7 @@ git commit -m "docs(mdq): package README"
 
 Note a deliberate deviation from `CLAUDE.md`: command logic normally lives in `src/commands/`, but mdq must not import from anywhere in explorbot. Its CLI ships with the package.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // tests/unit/mdq/cli.test.ts
@@ -1910,12 +1910,12 @@ describe('exit codes', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/unit/mdq/cli.test.ts`
 Expected: FAIL — cannot resolve `cli.ts`
 
-- [ ] **Step 3: Implement cli.ts**
+- [x] **Step 3: Implement cli.ts**
 
 Use Commander with `exitOverride()` and `.configureOutput()` so a parse failure surfaces as a return value rather than killing the process. Shape:
 
@@ -1962,12 +1962,12 @@ export interface CliResult {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/unit/mdq/cli.test.ts`
 Expected: PASS (13 tests)
 
-- [ ] **Step 5: Add the thin bin entry**
+- [x] **Step 5: Add the thin bin entry**
 
 ```ts
 #!/usr/bin/env bun
@@ -1986,7 +1986,7 @@ Add to `package.json` `bin`:
     "mdq": "./dist/bin/mdq.js"
 ```
 
-- [ ] **Step 6: Smoke-test the real binary**
+- [x] **Step 6: Smoke-test the real binary**
 
 ```bash
 echo '# A
@@ -2007,7 +2007,7 @@ bun run bin/mdq.ts 'nonsense' CLAUDE.md; echo "exit=$?"
 ```
 Expected: `Unknown selector "nonsense"` and `exit=2`
 
-- [ ] **Step 7: Run the whole suite and commit**
+- [x] **Step 7: Run the whole suite and commit**
 
 ```bash
 bun test tests/unit/
@@ -2023,12 +2023,12 @@ git commit -m "feat(mdq): jq-like CLI"
 **Files:**
 - Modify: `CHANGELOG.md`
 
-- [ ] **Step 1: Run the full unit suite**
+- [x] **Step 1: Run the full unit suite**
 
 Run: `bun test tests/unit/`
 Expected: PASS, no failures
 
-- [ ] **Step 2: Re-run the scoped type check**
+- [x] **Step 2: Re-run the scoped type check**
 
 ```bash
 bunx tsc -p tsconfig.json --noEmit 2>&1 | grep -E "^(src/utils/mdq/|src/utils/markdown-query|src/experience-tracker|src/ai/planner|src/ai/researcher|bin/mdq)"
@@ -2036,7 +2036,7 @@ bunx tsc -p tsconfig.json --noEmit 2>&1 | grep -E "^(src/utils/mdq/|src/utils/ma
 
 Expected: **exactly the two known `locators.ts(247,...)` lines.** Anything else is a real defect that CI will not catch.
 
-- [ ] **Step 3: Confirm the package has no explorbot imports**
+- [x] **Step 3: Confirm the package has no explorbot imports**
 
 ```bash
 grep -rn "^import\|from '" src/utils/mdq/*.ts | grep -v "'marked'" | grep -v "'yaml'" | grep -v "'commander'" | grep -v "'./"
@@ -2044,11 +2044,11 @@ grep -rn "^import\|from '" src/utils/mdq/*.ts | grep -v "'marked'" | grep -v "'y
 
 Expected: **no output.** Any line here breaks extractability, which is the whole point of the package.
 
-- [ ] **Step 4: Update the changelog**
+- [x] **Step 4: Update the changelog**
 
 Use the `/changelog` skill, per `CLAUDE.md`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add CHANGELOG.md
