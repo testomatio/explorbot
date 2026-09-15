@@ -1,5 +1,5 @@
 import { type Token, type Tokens, marked } from 'marked';
-import { blockEnd, dedupeRanges, insertAt, removeRanges, renderItem, renderTable, spliceRanges, splitFrontmatter } from './edit.ts';
+import { blockEnd, dedupeRanges, insertAt, readFrontmatter, removeRanges, renderItem, renderTable, spliceRanges, splitFrontmatter, writeFrontmatter } from './edit.ts';
 
 export { splitFrontmatter };
 
@@ -444,6 +444,14 @@ export class MarkdownDoc {
     const segments = applyMatcher(parseQuery(selector), matcher);
     const candidates = expandSectionRanges(buildTokenIndex(this.source));
     return new Selection(this.source, executeSegments(candidates, segments));
+  }
+
+  frontmatter(): Record<string, unknown> {
+    return readFrontmatter(this.source);
+  }
+
+  setFrontmatter(key: string, value: unknown): MarkdownDoc {
+    return new MarkdownDoc(writeFrontmatter(this.source, key, value));
   }
 
   blocks(): Selection {

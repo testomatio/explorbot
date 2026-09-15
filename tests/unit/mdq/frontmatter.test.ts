@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { splitFrontmatter } from '../../../src/utils/mdq/edit.ts';
-import { buildTokenIndex } from '../../../src/utils/mdq/query.ts';
+import { buildTokenIndex, mdq } from '../../../src/utils/mdq/query.ts';
 
 describe('splitFrontmatter', () => {
   it('splits a leading yaml block from the body', () => {
@@ -58,5 +58,69 @@ describe('buildTokenIndex', () => {
 
   it('never yields a space token as a match', () => {
     expect(buildTokenIndex('a\n\nb\n\nc\n').some((r) => r.token.type === 'space')).toBe(false);
+  });
+});
+
+describe('frontmatter API', () => {
+  const src = '---\n# a leading comment\nurl: /login\nwait: 1000\ntags:\n  - auth\n  - smoke\n---\n\n# Title\n';
+
+  it('reads typed scalars, lists and nested maps', () => {
+    expect(mdq(src).frontmatter()).toEqual({ url: '/login', wait: 1000, tags: ['auth', 'smoke'] });
+  });
+
+  it('returns an empty object when there is no frontmatter', () => {
+    expect(mdq('# Title\n').frontmatter()).toEqual({});
+  });
+
+  it('updates a key in place', () => {
+    expect(mdq(src).setFrontmatter('wait', 2000).frontmatter().wait).toBe(2000);
+  });
+
+  it('preserves comments through a write', () => {
+    expect(mdq(src).setFrontmatter('wait', 2000).toString()).toContain('# a leading comment');
+  });
+
+  it('preserves the body exactly', () => {
+    expect(mdq(src).setFrontmatter('wait', 2000).toString()).toContain('# Title');
+  });
+
+  it('adds a key that was not there', () => {
+    expect(mdq(src).setFrontmatter('region', 'sidebar').frontmatter().region).toBe('sidebar');
+  });
+
+  it('deletes a key when the value is null', () => {
+    expect(mdq(src).setFrontmatter('wait', null).frontmatter().wait).toBeUndefined();
+  });
+
+  it('creates a frontmatter block on a document that has none', () => {
+    const out = mdq('# Title\n').setFrontmatter('url', '/x');
+    expect(out.frontmatter()).toEqual({ url: '/x' });
+    expect(out.toString()).toContain('# Title');
+  });
+
+  it('keeps body queries blind to frontmatter after a write', () => {
+    expect(mdq(src).setFrontmatter('wait', 2000).query('h2').count()).toBe(0);
+  });
+});
+
+describe('entries and setEntry', () => {
+  const block = "## S\n\n> Container: '.old'\n> Pagination: controls\n\ntext\n";
+
+  it('reads every entry of a blockquote without its markers', () => {
+    expect(mdq(block).query('blockquote[0]').entries()).toEqual({ container: "'.old'", pagination: 'controls' });
+  });
+
+  it('replaces an entry in place and keeps the others', () => {
+    expect(mdq(block).query('blockquote[0]').setEntry('Container', "'.new'").toString()).toBe("## S\n\n> Container: '.new'\n> Pagination: controls\n\ntext\n");
+  });
+
+  it('appends an entry that was not there', () => {
+    const out = mdq(block).query('blockquote[0]').setEntry('Region', 'sidebar');
+    expect(mdq(out).query('blockquote[0]').entries().region).toBe('sidebar');
+  });
+
+  it('removes an entry when the value is null', () => {
+    const out = mdq(block).query('blockquote[0]').setEntry('Pagination', null);
+    expect(mdq(out).query('blockquote[0]').entries()).toEqual({ container: "'.old'" });
   });
 });

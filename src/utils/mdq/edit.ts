@@ -1,3 +1,4 @@
+import YAML from 'yaml';
 import type { MatchedRange } from './query.ts';
 
 export function splitFrontmatter(source: string): FrontmatterSplit {
@@ -90,6 +91,22 @@ function dashes(alignment: string | null, width: number): string {
   if (alignment === 'left') return `:${'-'.repeat(Math.max(width - 1, 1))}`;
   if (alignment === 'right') return `${'-'.repeat(Math.max(width - 1, 1))}:`;
   return '-'.repeat(width);
+}
+
+export function readFrontmatter(source: string): Record<string, unknown> {
+  const { raw } = splitFrontmatter(source);
+  if (!raw) return {};
+  return (YAML.parseDocument(raw).toJS() as Record<string, unknown>) || {};
+}
+
+export function writeFrontmatter(source: string, key: string, value: unknown): string {
+  const { raw, body, offset } = splitFrontmatter(source);
+  const document = raw ? YAML.parseDocument(raw) : new YAML.Document({});
+  if (value === null) document.delete(key);
+  if (value !== null) document.set(key, value);
+  const rendered = document.toString().replace(/\s+$/, '');
+  if (!offset) return `---\n${rendered}\n---\n\n${source}`;
+  return `---\n${rendered}\n---\n${body}`;
 }
 
 export interface FrontmatterSplit {
