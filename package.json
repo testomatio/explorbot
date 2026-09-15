@@ -15,7 +15,8 @@
   },
   "bin": {
     "explorbot": "./dist/bin/explorbot-cli.js",
-    "prima": "./dist/boat/prima/bin/prima-cli.js"
+    "prima": "./dist/boat/prima/bin/prima-cli.js",
+    "mdq": "./dist/bin/mdq.js"
   },
   "files": [
     "dist/",
