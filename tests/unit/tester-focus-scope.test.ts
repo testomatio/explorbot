@@ -217,6 +217,21 @@ describe('Tester stalled execution', () => {
     expect(task.getPrintableNotes()).toContain('No further browser progress on unchanged page; requesting final review');
   });
 
+  it('counts a successful visualClick as browser progress, instead of stalling while the page keeps changing', () => {
+    const tester = buildTester();
+    const task = new Test('turn the option off', 'normal', 'the option is off', '/page');
+    const state = buildState('- main:', '/page');
+    (tester as any).stateManager.getCurrentState = () => state;
+    const visualClick = [{ toolName: 'visualClick', wasSuccessful: true }];
+
+    expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
+    expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
+    expect((tester as any).shouldStopForStalledExecution(task, state, visualClick)).toBe(false);
+    expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
+    expect((tester as any).shouldStopForStalledExecution(task, state, [])).toBe(false);
+    expect(task.getPrintableNotes()).not.toContain('No further browser progress on unchanged page; requesting final review');
+  });
+
   it('hands repeated execution errors to final review without marking the test failed', () => {
     const tester = buildTester();
     const task = new Test('filter items', 'normal', 'filtered items appear', '/page');

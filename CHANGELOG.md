@@ -4,6 +4,10 @@
 
 ### Fixes
 
+- [Tester] A test that falls back to clicking an element by sight is no longer cut short as stuck. Clicks
+  placed from a screenshot did not count as progress, so a page whose control carries no accessible name —
+  where every locator-based click misses by design — ran out of patience after a few turns and was sent to
+  final review, often before the form had been submitted at all.
 - [Pilot] [Tester] A test no longer stops when the button or menu label a planned step predicted is absent
   from the page. When another control on the page reaches the same outcome for the same item, it is used and
   the difference is recorded; a feature counts as missing only when no control reaches the outcome at all.
