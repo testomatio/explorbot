@@ -1134,7 +1134,9 @@ export class Pilot implements Agent {
       ${interactive ? '- Use askUser() only as last resort.' : ''}
 
       Diagnostic patterns (use <state>, executed/element/skipped fields, ariaDiff):
-      - Click failed + button in "disabled buttons" → required field missing. Instruct fill first.
+      - Scenario's target control in "disabled buttons" → a precondition is unmet; identify which before acting.
+        Other disabled controls often name the unsatisfied constraint; "active form" marks [required] fields.
+        Aim Tester at the constraint the page names, not the one the scenario assumed — note the difference in PROGRESS.
       - "overlay: none" but Tester targets an overlay → overlay closed; re-trigger.
       - "region:" in <state> → a large area appeared in place without navigation (subview, wizard step, panel). Direct Tester to act inside it; the rest of the page is still usable.
       - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
