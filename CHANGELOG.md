@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-15
+
+### Fixes
+
+- [Tester] A test that falls back to clicking an element by sight is no longer cut short as stuck. Clicks
+  placed from a screenshot did not count as progress, so a page whose control carries no accessible name —
+  where every locator-based click misses by design — ran out of patience after a few turns and was sent to
+  final review, often before the form had been submitted at all.
+
 ## 2026-09-14
 
 ### Changes
