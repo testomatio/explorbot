@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-15
+
+### Fixes
+
+- [Researcher] A list that already shows everything it holds is no longer described as paginated. The page
+  map could claim a "load more" or next-page control for such a list, and Planner then proposed a test to
+  load further entries — a test that could never pass, because there was nothing left to load.
+
 ## 2026-09-14
 
 ### Changes
