@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-09-15
+
+### New CLI Options
+
+- **`mdq`** — A new command for reading and editing markdown from the shell, the way `jq` reads JSON.
+  The first argument is a selector, the second an optional file (stdin is used when it is omitted).
+  Matched markdown is printed by default. Exit codes compose like `grep`: `0` when something matched,
+  `1` when nothing did, `2` for a bad selector or bad usage.
+
+  ```bash
+  mdq 'h2' README.md                             # print every h2
+  cat plan.md | mdq 'section("API") table'       # read from stdin
+  mdq 'comment(~"test")' plan.md --count         # how many test comments
+  ```
+
+- **`--json`, `--count`, `--text`, `--frontmatter`** — Change what is printed: table rows as JSON,
+  the number of matches, the text with its markdown stripped, or the file's frontmatter as JSON.
+
+  ```bash
+  mdq 'section("API") table' --json README.md
+  mdq 'h2' --count README.md
+  mdq --frontmatter knowledge/login.md
+  ```
+
+- **`--remove`, `--replace`, `--insert-before`, `--insert-after`, `--prepend`, `--append`, `--add-row`, `--add-item`, `--set`** —
+  Edit the file instead of reading it. The whole document is printed with the edit applied; one edit at a
+  time. `--add-row` takes a JSON object and lines the table's columns back up; `--add-item` copies the
+  list's existing bullet or numbering; `--set` takes `Key=value` and drops the entry when the value is empty.
+
+  ```bash
+  mdq 'section("FAQ")' doc.md --remove
+  mdq 'table[0]' api.md --add-row '{"Method":"GET","Path":"/users"}'
+  mdq 'list' plan.md --add-item 'check the dashboard'
+  ```
+
+- **`-i`, `--in-place`** — Write the edit back to the file instead of printing it.
+
+  ```bash
+  mdq 'section("Draft")' notes.md --remove -i
+  ```
+
+### Changes
+
+- Knowledge and experience files are now read correctly when they start with a `---` block. The
+  frontmatter used to be read as a heading titled `url: /login`, so the first fact in every such file
+  could be mistaken for a section title.
+- Blank lines are no longer lost or doubled when a block is deleted or inserted, and blank lines inside
+  fenced code blocks are left exactly as they were.
+- A mistyped selector now fails with a message naming the unknown word, instead of quietly matching
+  nothing and looking like an empty file.
+- A search written as `/pattern/` is now case-sensitive unless it ends with `i`, matching how quoted
+  searches already behaved. Previously every `/pattern/` ignored case whether it said so or not.
+- Searching a table now looks at its cells, not only its column titles.
+
 ## 2026-09-11
 
 ### Changes
