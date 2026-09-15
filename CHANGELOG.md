@@ -23,6 +23,16 @@
   Tester rewrote a correct assertion and asked again. Each such claim also retried the model up to
   three more times on top of the retries the request already does, which made a rate limit worse
   rather than passing it on.
+- [Navigator] A verification is no longer reported as impossible to express when the answer shows a
+  snippet of page markup before its assertions. A code block written in any language other than
+  JavaScript used to shift the reading of every later block, so all the assertions the model had
+  written were dropped and a claim it had answered correctly came back as one no assertion could
+  express.
+- A batch of browser commands now reports every command it ran. CodeceptJS hands a passing step its own
+  return value, which was read as an error, so the first command of every successful batch was reported
+  as failed with `[object Promise]` and the commands after it were left out of the report entirely. A
+  batch that worked came back looking part-failed and part-missing, which is what the AI reads before
+  deciding what to do next, and only the first assertion of a check reached the generated test.
 
 ## 2026-09-11
 
