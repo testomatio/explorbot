@@ -4,6 +4,12 @@
 
 ### Changes
 
+- [Tester] A page can now be reloaded during a test, with `I.reloadPage()` in a `form` batch. Reloading
+  was on the tool's do-not-use list, leaving no way to re-read a page from the server, so a scenario
+  asking whether a change survives a reload could not be answered — the run would press F5 instead,
+  which a browser ignores when the key comes from the page.
+- [Pilot] Told that reloading is not a tool of its own, so it instructs Tester to run `I.reloadPage()`
+  through `form` rather than naming a tool that does not exist.
 - [Planner] Edit and reconfiguration scenarios no longer include record creation as part of every plan;
   Pilot can select suitable data or prepare it when execution starts. Expected outcomes remain verifiable
   through the interface without inventing details for pages and subpages that have not been visited yet.
