@@ -1,5 +1,5 @@
 import { type Token, type Tokens, marked } from 'marked';
-import { dedupeRanges, splitFrontmatter } from './edit.ts';
+import { blockEnd, dedupeRanges, insertAt, removeRanges, splitFrontmatter } from './edit.ts';
 
 export { splitFrontmatter };
 
@@ -446,6 +446,10 @@ export class MarkdownDoc {
     return new Selection(this.source, executeSegments(candidates, segments));
   }
 
+  blocks(): Selection {
+    return new Selection(this.source);
+  }
+
   section(matcher?: Matcher, options?: SelectorOptions): Selection {
     return this.query(`section${options?.depth || ''}`, matcher);
   }
@@ -489,6 +493,14 @@ export class MarkdownDoc {
 
   hr(): Selection {
     return this.query('hr');
+  }
+
+  append(markdown: Markdown): MarkdownDoc {
+    return new MarkdownDoc(insertAt(this.source, this.source.length, String(markdown)));
+  }
+
+  prepend(markdown: Markdown): MarkdownDoc {
+    return new MarkdownDoc(insertAt(this.source, splitFrontmatter(this.source).offset, String(markdown)));
   }
 
   toString(): string {
@@ -595,6 +607,26 @@ export class Selection extends MarkdownDoc {
     return this.setEntry(key, value);
   }
 
+  remove(): MarkdownDoc {
+    return new MarkdownDoc(removeRanges(this.source, this.matches));
+  }
+
+  insertBefore(markdown: Markdown): MarkdownDoc {
+    return this.insertEach((range) => range.start, markdown);
+  }
+
+  insertAfter(markdown: Markdown): MarkdownDoc {
+    return this.insertEach((range) => blockEnd(range), markdown);
+  }
+
+  prepend(markdown: Markdown): MarkdownDoc {
+    return this.insertEach((range) => this.containerStart(range), markdown);
+  }
+
+  append(markdown: Markdown): MarkdownDoc {
+    return this.insertEach((range) => this.containerEnd(range), markdown);
+  }
+
   replace(content: Markdown): MarkdownDoc {
     return this.replaceEach(() => content);
   }
@@ -683,13 +715,34 @@ export class Selection extends MarkdownDoc {
   meta(): NodeInfo[] {
     return this.nodes();
   }
+
+  private insertEach(offsetOf: (range: MatchedRange) => number, markdown: Markdown): MarkdownDoc {
+    const offsets = this.matches.map(offsetOf).sort((a, b) => a - b);
+    let result = this.source;
+    for (let i = offsets.length - 1; i >= 0; i--) {
+      result = insertAt(result, offsets[i], String(markdown));
+    }
+    return new MarkdownDoc(result);
+  }
+
+  private containerStart(range: MatchedRange): number {
+    if (!range.innerTokens) throw new MdqOperationError(`prepend needs a section or list, got ${range.token.type}`);
+    return range.start + (((range.token as any).raw as string) || '').length;
+  }
+
+  private containerEnd(range: MatchedRange): number {
+    if (!range.innerTokens) throw new MdqOperationError(`append needs a section or list, got ${range.token.type}`);
+    const last = range.innerTokens[range.innerTokens.length - 1];
+    if (!last) return this.containerStart(range);
+    return blockEnd(last);
+  }
 }
 
 /** @deprecated Use Selection. */
 export const MarkdownQuery = Selection;
 
-export function mdq(source: Markdown): Selection {
-  return new Selection(String(source));
+export function mdq(source: Markdown): MarkdownDoc {
+  return new MarkdownDoc(String(source));
 }
 
 export type SelectorType = 'comment' | 'html' | 'section' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'table' | 'heading' | 'paragraph' | 'list' | 'item' | 'code' | 'blockquote' | 'hr' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
