@@ -17,6 +17,12 @@
   repeating the same rejected request.
 - [Apibot] API test scenarios no longer mutate or delete records discovered as sample data. Chief plans a
   scenario-owned target for destructive checks, and Curler stops when it cannot create one safely.
+- [Navigator] A verification that could not run because the model call itself failed is now reported as
+  a failure, naming the error. It used to be swallowed and reported as a claim no assertion could
+  express, so a rate limit or a timed-out request reached Tester as a verdict about the page, and
+  Tester rewrote a correct assertion and asked again. Each such claim also retried the model up to
+  three more times on top of the retries the request already does, which made a rate limit worse
+  rather than passing it on.
 - [Navigator] A verification is no longer reported as impossible to express when the answer shows a
   snippet of page markup before its assertions. A code block written in any language other than
   JavaScript used to shift the reading of every later block, so all the assertions the model had
