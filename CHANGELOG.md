@@ -17,6 +17,11 @@
   repeating the same rejected request.
 - [Apibot] API test scenarios no longer mutate or delete records discovered as sample data. Chief plans a
   scenario-owned target for destructive checks, and Curler stops when it cannot create one safely.
+- [Navigator] A verification is no longer reported as impossible to express when the answer shows a
+  snippet of page markup before its assertions. A code block written in any language other than
+  JavaScript used to shift the reading of every later block, so all the assertions the model had
+  written were dropped and a claim it had answered correctly came back as one no assertion could
+  express.
 - A batch of browser commands now reports every command it ran. CodeceptJS hands a passing step its own
   return value, which was read as an error, so the first command of every successful batch was reported
   as failed with `[object Promise]` and the commands after it were left out of the report entirely. A
