@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-15
+
+### Fixes
+
+- [Pilot] [Tester] A test no longer stops when the button or menu label a planned step predicted is absent
+  from the page. When another control on the page reaches the same outcome for the same item, it is used and
+  the difference is recorded; a feature counts as missing only when no control reaches the outcome at all.
+
 ## 2026-09-14
 
 ### Changes
