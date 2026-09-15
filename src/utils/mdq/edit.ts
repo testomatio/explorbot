@@ -8,7 +8,7 @@ export function splitFrontmatter(source: string): FrontmatterSplit {
   return { raw: match[1], body: source.slice(match[0].length), offset: match[0].length };
 }
 
-export function dedupeRanges(ranges: MatchedRange[]): MatchedRange[] {
+function dedupeRanges(ranges: MatchedRange[]): MatchedRange[] {
   const sorted = [...ranges].sort((a, b) => a.start - b.start);
   const kept: MatchedRange[] = [];
   let lastEnd = -1;
@@ -26,7 +26,7 @@ export function blockEnd(range: MatchedRange): number {
 }
 
 export function normalizeBlock(markdown: string): string {
-  return `${markdown.replace(/\s+$/, '')}\n`;
+  return `${markdown.trimEnd()}\n`;
 }
 
 export function removeRanges(source: string, ranges: MatchedRange[]): string {
@@ -44,7 +44,7 @@ export function removeRanges(source: string, ranges: MatchedRange[]): string {
       result = '';
       continue;
     }
-    result = `${head.replace(/\n+$/, '')}\n`;
+    result = `${head.trimEnd()}\n`;
   }
   return result;
 }
@@ -93,6 +93,27 @@ function dashes(alignment: string | null, width: number): string {
   return '-'.repeat(width);
 }
 
+export function entryKey(line: string): string | null {
+  const separator = line.indexOf(':');
+  if (separator < 1) return null;
+  return line.slice(0, separator).trim().toLowerCase();
+}
+
+export function rewriteEntries(text: string, key: string, value: string | null, isBlockquote: boolean): string {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const index = lines.findIndex((line) => entryKey(line) === key.toLowerCase());
+  if (index < 0 && value) lines.push(`${key}: ${value}`);
+  if (index >= 0 && value) lines[index] = `${key}: ${value}`;
+  if (index >= 0 && !value) lines.splice(index, 1);
+
+  if (!isBlockquote) return lines.join('\n');
+  return lines.map((line) => `> ${line}`).join('\n');
+}
+
 export function readFrontmatter(source: string): Record<string, unknown> {
   const { raw } = splitFrontmatter(source);
   if (!raw) return {};
@@ -101,10 +122,11 @@ export function readFrontmatter(source: string): Record<string, unknown> {
 
 export function writeFrontmatter(source: string, key: string, value: unknown): string {
   const { raw, body, offset } = splitFrontmatter(source);
-  const document = raw ? YAML.parseDocument(raw) : new YAML.Document({});
+  let document = new YAML.Document({});
+  if (raw) document = YAML.parseDocument(raw);
   if (value === null) document.delete(key);
   if (value !== null) document.set(key, value);
-  const rendered = document.toString().replace(/\s+$/, '');
+  const rendered = document.toString().trimEnd();
   if (!offset) return `---\n${rendered}\n---\n\n${source}`;
   return `---\n${rendered}\n---\n${body}`;
 }

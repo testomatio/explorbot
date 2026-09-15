@@ -1,6 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Command } from 'commander';
-import { insertAt } from './edit.ts';
 import { MdqError, type MarkdownDoc, type Selection, mdq } from './query.ts';
 
 const EDIT_FLAGS = ['remove', 'replace', 'insertBefore', 'insertAfter', 'prepend', 'append', 'addRow', 'addItem', 'set'] as const;
@@ -74,7 +73,8 @@ async function apply(doc: MarkdownDoc, selector: string, options: Record<string,
 }
 
 function read(selection: Selection, options: Record<string, any>): CliResult {
-  const code = selection.exists() ? 0 : 1;
+  let code = 1;
+  if (selection.exists()) code = 0;
   if (options.count) return { output: `${selection.count()}\n`, code: 0 };
   if (options.json) return { output: `${JSON.stringify(selection.rows(), null, 2)}\n`, code };
   if (options.text)

@@ -1,5 +1,5 @@
 import { type Token, type Tokens, marked } from 'marked';
-import { blockEnd, dedupeRanges, insertAt, readFrontmatter, removeRanges, renderItem, renderTable, spliceRanges, splitFrontmatter, writeFrontmatter } from './edit.ts';
+import { blockEnd, entryKey, insertAt, readFrontmatter, removeRanges, renderItem, renderTable, rewriteEntries, spliceRanges, splitFrontmatter, writeFrontmatter } from './edit.ts';
 
 export { splitFrontmatter };
 
@@ -204,12 +204,6 @@ function matchText(text: string, matcher: TextMatcher): boolean {
   return result;
 }
 
-function entryKey(line: string): string | null {
-  const separator = line.indexOf(':');
-  if (separator < 1) return null;
-  return line.slice(0, separator).trim().toLowerCase();
-}
-
 function getTokenText(token: Token): string {
   const t = token as any;
   switch (token.type) {
@@ -236,7 +230,7 @@ function getHeadingDepth(selector: string): number | null {
 }
 
 function isSectionSelector(selector: string): boolean {
-  return /^section\d?$/.test(selector);
+  return /^section[1-6]?$/.test(selector);
 }
 
 function getSectionDepth(selector: string): number | null {
@@ -595,18 +589,7 @@ export class Selection extends MarkdownDoc {
   setEntry(key: string, value: string | null): MarkdownDoc {
     return this.replaceEach((match) => {
       const token = match.matches[0].token;
-      const lines = getTokenText(token)
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
-
-      const index = lines.findIndex((line) => entryKey(line) === key.toLowerCase());
-      if (index < 0 && value) lines.push(`${key}: ${value}`);
-      if (index >= 0 && value) lines[index] = `${key}: ${value}`;
-      if (index >= 0 && !value) lines.splice(index, 1);
-
-      if (token.type !== 'blockquote') return lines.join('\n');
-      return lines.map((line) => `> ${line}`).join('\n');
+      return rewriteEntries(getTokenText(token), key, value, token.type === 'blockquote');
     });
   }
 
@@ -662,15 +645,7 @@ export class Selection extends MarkdownDoc {
   }
 
   replaceEach(replacer: (match: Selection, index: number) => Markdown): MarkdownDoc {
-    const kept = dedupeRanges(this.matches);
-    const replacements = kept.map((range, index) => String(replacer(new Selection(this.source, [range]), index)));
-    let result = this.source;
-    for (let i = kept.length - 1; i >= 0; i--) {
-      const range = kept[i];
-      result = result.slice(0, range.start) + replacements[i] + result.slice(range.start + range.length);
-    }
-
-    return new MarkdownDoc(result);
+    return new MarkdownDoc(spliceRanges(this.source, this.matches, (range, index) => String(replacer(new Selection(this.source, [range]), index))));
   }
 
   count(): number {
