@@ -3,6 +3,43 @@ import { dedupeRanges, splitFrontmatter } from './edit.ts';
 
 export { splitFrontmatter };
 
+export class MdqError extends Error {}
+
+export class MdqSelectorError extends MdqError {
+  index: number;
+
+  constructor(message: string, index: number) {
+    super(message);
+    this.name = 'MdqSelectorError';
+    this.index = index;
+  }
+}
+
+export class MdqOperationError extends MdqError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MdqOperationError';
+  }
+}
+
+const SELECTORS = new Set(['section', 'heading', 'paragraph', 'table', 'list', 'item', 'code', 'blockquote', 'hr', 'html', 'comment']);
+
+function isKnownSelector(selector: string): boolean {
+  if (/^h[1-6]$/.test(selector)) return true;
+  if (/^section[1-6]?$/.test(selector)) return true;
+  return SELECTORS.has(selector);
+}
+
+function isCommentToken(token: Token): boolean {
+  if (token.type !== 'html') return false;
+  return (((token as any).raw as string) || '').trimStart().startsWith('<!--');
+}
+
+function commentBody(token: Token): string {
+  const raw = (((token as any).raw as string) || '').trim();
+  return raw.replace(/^<!--/, '').replace(/-->$/, '').trim();
+}
+
 export function parseQuery(input: string): QuerySegment[] {
   const segments: QuerySegment[] = [];
   let pos = 0;
@@ -69,8 +106,9 @@ export function parseQuery(input: string): QuerySegment[] {
         pos++;
       }
       if (pos < input.length) pos++;
+      const flagStart = pos;
       while (pos < input.length && /[gimsuy]/.test(input[pos])) pos++;
-      return { mode: 'regex', value, negated };
+      return { mode: 'regex', value, negated, flags: input.slice(flagStart, pos) };
     }
 
     const value = readQuotedString();
@@ -81,11 +119,11 @@ export function parseQuery(input: string): QuerySegment[] {
     skipWhitespace();
     if (pos >= input.length) break;
 
+    if (peek() === '.') advance();
+    const selectorStart = pos;
     const selector = readIdentifier();
-    if (!selector) {
-      pos++;
-      continue;
-    }
+    if (!selector) throw new MdqSelectorError(`Unexpected character "${input[pos]}" in selector`, pos);
+    if (!isKnownSelector(selector)) throw new MdqSelectorError(`Unknown selector "${selector}"`, selectorStart);
 
     const segment: QuerySegment = {
       selector: selector as SelectorType,
@@ -140,7 +178,7 @@ function matchText(text: string, matcher: TextMatcher): boolean {
       result = text.includes(matcher.value);
       break;
     case 'regex':
-      result = new RegExp(matcher.value, 'i').test(text);
+      result = new RegExp(matcher.value, matcher.flags || '').test(text);
       break;
     default:
       result = false;
@@ -165,8 +203,11 @@ function getTokenText(token: Token): string {
     case 'blockquote':
     case 'list_item':
       return t.text || '';
+    case 'html':
+      if (isCommentToken(token)) return commentBody(token);
+      return t.raw || '';
     case 'table':
-      return (t.header || []).map((h: any) => h.text).join(', ');
+      return [...(t.header || []).map((h: any) => h.text), ...(t.rows || []).flatMap((row: any) => row.map((cell: any) => cell.text))].join(', ');
     default:
       return '';
   }
@@ -198,6 +239,7 @@ function selectorToTokenType(selector: string): string | null {
     list: 'list',
     blockquote: 'blockquote',
     hr: 'hr',
+    html: 'html',
     item: 'list_item',
   };
   return map[selector] || null;
@@ -342,6 +384,12 @@ function executeSegments(candidates: MatchedRange[], segments: QuerySegment[]): 
       results.push(...executeSegments(section.innerTokens || [], remaining));
     }
     return results;
+  }
+
+  if (segment.selector === 'comment') {
+    let comments = candidates.filter((r) => isCommentToken(r.token));
+    if (segment.textMatch) comments = comments.filter((r) => matchText(commentBody(r.token), segment.textMatch!));
+    return executeSegments(applyIndexSlice(comments, segment), remaining);
   }
 
   if (segment.selector === 'item') {
@@ -572,12 +620,13 @@ export function mdq(source: Markdown): Selection {
   return new Selection(String(source));
 }
 
-export type SelectorType = 'section' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'table' | 'heading' | 'paragraph' | 'list' | 'item' | 'code' | 'blockquote' | 'hr' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+export type SelectorType = 'comment' | 'html' | 'section' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'table' | 'heading' | 'paragraph' | 'list' | 'item' | 'code' | 'blockquote' | 'hr' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
 
 export interface TextMatcher {
   mode: 'exact' | 'contains' | 'regex';
   value: string;
   negated: boolean;
+  flags?: string;
 }
 
 export interface QuerySegment {

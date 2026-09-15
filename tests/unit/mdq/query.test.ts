@@ -90,12 +90,12 @@ describe('Markdown Query (mdq)', () => {
 
     it('should parse regex text matcher', () => {
       const segments = parseQuery('heading(/api/)');
-      expect(segments[0].textMatch).toEqual({ mode: 'regex', value: 'api', negated: false });
+      expect(segments[0].textMatch).toEqual({ mode: 'regex', value: 'api', negated: false, flags: '' });
     });
 
-    it('should skip regex flags', () => {
+    it('should keep regex flags', () => {
       const segments = parseQuery('section(/^api$/i)');
-      expect(segments[0].textMatch).toEqual({ mode: 'regex', value: '^api$', negated: false });
+      expect(segments[0].textMatch).toEqual({ mode: 'regex', value: '^api$', negated: false, flags: 'i' });
     });
 
     it('should parse negated text matcher', () => {
@@ -110,7 +110,7 @@ describe('Markdown Query (mdq)', () => {
 
     it('should parse negated regex matcher', () => {
       const segments = parseQuery('heading(!/api/)');
-      expect(segments[0].textMatch).toEqual({ mode: 'regex', value: 'api', negated: true });
+      expect(segments[0].textMatch).toEqual({ mode: 'regex', value: 'api', negated: true, flags: '' });
     });
 
     it('should parse numeric index', () => {
