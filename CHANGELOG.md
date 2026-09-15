@@ -8,11 +8,20 @@
   placed from a screenshot did not count as progress, so a page whose control carries no accessible name —
   where every locator-based click misses by design — ran out of patience after a few turns and was sent to
   final review, often before the form had been submitted at all.
+- [Pilot] [Tester] A test no longer stops when the button or menu label a planned step predicted is absent
+  from the page. When another control on the page reaches the same outcome for the same item, it is used and
+  the difference is recorded; a feature counts as missing only when no control reaches the outcome at all.
 
 ## 2026-09-14
 
 ### Changes
 
+- [Tester] A page can now be reloaded during a test, with `I.reloadPage()` in a `form` batch. Reloading
+  was on the tool's do-not-use list, leaving no way to re-read a page from the server, so a scenario
+  asking whether a change survives a reload could not be answered — the run would press F5 instead,
+  which a browser ignores when the key comes from the page.
+- [Pilot] Told that reloading is not a tool of its own, so it instructs Tester to run `I.reloadPage()`
+  through `form` rather than naming a tool that does not exist.
 - [Planner] Edit and reconfiguration scenarios no longer include record creation as part of every plan;
   Pilot can select suitable data or prepare it when execution starts. Expected outcomes remain verifiable
   through the interface without inventing details for pages and subpages that have not been visited yet.
@@ -26,6 +35,22 @@
   repeating the same rejected request.
 - [Apibot] API test scenarios no longer mutate or delete records discovered as sample data. Chief plans a
   scenario-owned target for destructive checks, and Curler stops when it cannot create one safely.
+- [Navigator] A verification that could not run because the model call itself failed is now reported as
+  a failure, naming the error. It used to be swallowed and reported as a claim no assertion could
+  express, so a rate limit or a timed-out request reached Tester as a verdict about the page, and
+  Tester rewrote a correct assertion and asked again. Each such claim also retried the model up to
+  three more times on top of the retries the request already does, which made a rate limit worse
+  rather than passing it on.
+- [Navigator] A verification is no longer reported as impossible to express when the answer shows a
+  snippet of page markup before its assertions. A code block written in any language other than
+  JavaScript used to shift the reading of every later block, so all the assertions the model had
+  written were dropped and a claim it had answered correctly came back as one no assertion could
+  express.
+- A batch of browser commands now reports every command it ran. CodeceptJS hands a passing step its own
+  return value, which was read as an error, so the first command of every successful batch was reported
+  as failed with `[object Promise]` and the commands after it were left out of the report entirely. A
+  batch that worked came back looking part-failed and part-missing, which is what the AI reads before
+  deciding what to do next, and only the first assertion of a check reached the generated test.
 
 ## 2026-09-11
 

@@ -68,6 +68,27 @@ describe('executed steps', () => {
     expect(report).toContain('NOT RUN 1 more');
   });
 
+  it('records a passed step even though codeceptjs emits the step result alongside it', () => {
+    const steps: ExecutedStep[] = [];
+    const assertions: Array<{ name: string; args: any[] }> = [];
+    const detachSteps = attachStepLogger(steps, assertions);
+
+    const clear = step("I.pressKey(['Meta','a'])");
+    const type = step("I.type('New title')");
+    const seen = { ...step("I.see('New title')"), name: 'see', args: ['New title'] };
+
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, clear, Promise.resolve());
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, type, Promise.resolve());
+    codeceptjs.event.dispatcher.emit(codeceptjs.event.step.passed, seen, Promise.resolve());
+
+    detachSteps();
+
+    expect(steps).toHaveLength(3);
+    expect(steps.every((entry) => entry.success)).toBe(true);
+    expect(steps.every((entry) => entry.error === undefined)).toBe(true);
+    expect(assertions).toHaveLength(1);
+  });
+
   it('lets a retried step upgrade from failed to passed', () => {
     const steps: ExecutedStep[] = [];
     const detachSteps = attachStepLogger(steps);
