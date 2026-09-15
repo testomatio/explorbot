@@ -68,6 +68,30 @@ export function spliceRanges(source: string, ranges: MatchedRange[], render: (ra
   return result;
 }
 
+export function renderTable(headers: string[], rows: string[][], align: (string | null)[]): string {
+  const widths = headers.map((header, index) => Math.max(header.length, 3, ...rows.map((row) => (row[index] || '').length)));
+  const line = (cells: string[]) => `| ${cells.map((cell, index) => (cell || '').padEnd(widths[index])).join(' | ')} |`;
+  const divider = `| ${widths.map((width, index) => dashes(align[index], width)).join(' | ')} |`;
+  return `${[line(headers), divider, ...rows.map(line)].join('\n')}\n`;
+}
+
+export function renderItem(listRaw: string, text: string): string {
+  const lines = listRaw.split('\n').filter((line) => line.trim());
+  const last = lines[lines.length - 1] || '- x';
+  const ordered = last.match(/^(\s*)(\d+)([.)])\s/);
+  if (ordered) return `${ordered[1]}${Number.parseInt(ordered[2], 10) + 1}${ordered[3]} ${text}`;
+  const bullet = last.match(/^(\s*)([-*+])\s/);
+  if (!bullet) return `- ${text}`;
+  return `${bullet[1]}${bullet[2]} ${text}`;
+}
+
+function dashes(alignment: string | null, width: number): string {
+  if (alignment === 'center') return `:${'-'.repeat(Math.max(width - 2, 1))}:`;
+  if (alignment === 'left') return `:${'-'.repeat(Math.max(width - 1, 1))}`;
+  if (alignment === 'right') return `${'-'.repeat(Math.max(width - 1, 1))}:`;
+  return '-'.repeat(width);
+}
+
 export interface FrontmatterSplit {
   raw: string;
   body: string;

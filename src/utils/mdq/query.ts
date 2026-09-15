@@ -1,5 +1,5 @@
 import { type Token, type Tokens, marked } from 'marked';
-import { blockEnd, dedupeRanges, insertAt, removeRanges, splitFrontmatter } from './edit.ts';
+import { blockEnd, dedupeRanges, insertAt, removeRanges, renderItem, renderTable, spliceRanges, splitFrontmatter } from './edit.ts';
 
 export { splitFrontmatter };
 
@@ -625,6 +625,28 @@ export class Selection extends MarkdownDoc {
 
   append(markdown: Markdown): MarkdownDoc {
     return this.insertEach((range) => this.containerEnd(range), markdown);
+  }
+
+  addRow(row: Record<string, string>): MarkdownDoc {
+    return new MarkdownDoc(
+      spliceRanges(this.source, this.matches, (range) => {
+        if (range.token.type !== 'table') throw new MdqOperationError(`addRow needs a table, got ${range.token.type}`);
+        const table = range.token as Tokens.Table;
+        const headers = table.header.map((cell) => cell.text);
+        const existing = table.rows.map((cells) => headers.map((_, index) => cells[index]?.text || ''));
+        return renderTable(headers, [...existing, headers.map((header) => row[header] || '')], table.align);
+      })
+    );
+  }
+
+  addItem(text: string): MarkdownDoc {
+    return new MarkdownDoc(
+      spliceRanges(this.source, this.matches, (range) => {
+        if (range.token.type !== 'list') throw new MdqOperationError(`addItem needs a list, got ${range.token.type}`);
+        const raw = (((range.token as any).raw as string) || '').replace(/\s+$/, '');
+        return `${raw}\n${renderItem(raw, text)}\n`;
+      })
+    );
   }
 
   replace(content: Markdown): MarkdownDoc {
