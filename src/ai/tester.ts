@@ -41,7 +41,7 @@ const SAMPLE_FILES: Record<string, string> = {
 
 export class Tester extends TaskAgent implements Agent {
   protected readonly ACTION_TOOLS = ['click', 'hover', 'pressKey', 'form'];
-  protected readonly DELEGATED_ACTION_TOOLS = ['interact'];
+  protected readonly DELEGATED_ACTION_TOOLS = ['interact', 'visualClick'];
   protected readonly SPECIAL_CONTEXT_ACTION_TOOLS = ['exitIframe'];
   emoji = '🧪';
   private requestStore: RequestStore;

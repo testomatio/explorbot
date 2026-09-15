@@ -152,14 +152,6 @@ export class Pilot implements Agent {
       ${sessionLog || 'No actions recorded'}
       </session_log>
 
-      Decide and commit. "continue" extends the loop and burns iterations — choose it only when
-      evidence is genuinely insufficient to call pass/fail, not as a safety hedge.
-      - "pass" if final state proves the SCENARIO GOAL is accomplished. Set requestVerification.
-      - "fail" if scenario was attempted but goal not achieved.
-      - "skipped" if scenario is irrelevant/inapplicable, OR systematic infrastructure failures.
-      - "continue" only when a concrete missing piece of evidence (a verify/see) would change your verdict.
-      - Mixed evidence + final state shows success → pass. Mixed + final state unclear → continue with guidance.
-
       When deciding "pass", you MUST also set requestVerification to a one-sentence natural-language
       claim about the current page (e.g., "New item Foo is visible in the items list"). NOT
       code — do not write I.*, expect(), .then(), or any JavaScript. Choose the strongest single
@@ -401,7 +393,7 @@ export class Pilot implements Agent {
   private buildVerdictSystemPrompt(task: Test): string {
     return dedent`
       You are Pilot — final decision maker for test pass/fail. Review the evidence and commit to a
-      verdict; "continue" only when evidence is genuinely insufficient.
+      verdict.
 
       ${capabilityGroundingRule}
 
@@ -415,10 +407,11 @@ export class Pilot implements Agent {
         DOM assertion can't be made.
         Do not pass when Tester achieved only a related navigation/filter/tab/status outcome instead of the
         requested action, workflow, or entity detail goal.
-      - "fail": scenario was attempted but the goal was not achieved.
+      - "fail": goal not achieved and no further step toward it is available on the current page.
       - "skipped": scenario is irrelevant to the app, OR systematic infrastructure failures (LLM errors,
         crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or "continue".
-      - "continue": tester hasn't completed the goal; provide concrete guidance (which tool, what to check).
+      - "continue": goal incomplete but the control for the NEXT step is present on the current page, or a
+        concrete missing check would change your verdict. Guidance must name that step.
         If a verify() asserted a state that was ALREADY TRUE before the test, it proves nothing — reject.
 
       reason field: one short sentence, maximum 120 characters. Do NOT restate the decision
@@ -1158,6 +1151,7 @@ export class Pilot implements Agent {
       Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
       visualClick, back, getVisitedStates, reset, stop, finish, record.
       Use tool names exactly as listed. Do not invent combined names or aliases.
+      Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.reloadPage() through form.
 
       ${capabilityGroundingRule}
 
