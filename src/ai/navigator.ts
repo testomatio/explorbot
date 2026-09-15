@@ -703,7 +703,7 @@ class Navigator implements Agent {
     const cachedVerification = actionResult.getVerification(message);
     if (cachedVerification !== null) {
       tag('operation').log(`Reusing cached verification: ${cachedVerification ? 'PASS' : 'FAIL'}`);
-      return { verified: cachedVerification, successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
+      return { verified: cachedVerification, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
     const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
@@ -831,9 +831,6 @@ class Navigator implements Agent {
           maxAttempts: this.verifyAttempts,
           observability: {
             agent: 'navigator',
-          },
-          catch: async (error) => {
-            debugLog(error);
           },
         }
       );

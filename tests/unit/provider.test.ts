@@ -211,6 +211,33 @@ describe('Provider', () => {
       expect(toolNames).toContain('click');
     });
 
+    it('should relax required tool choice after the provider rejects it', async () => {
+      const requests: Array<{ toolChoice: any; toolNames: string[]; prompt: unknown }> = [];
+      let calls = 0;
+      const model = new MockLanguageModelV3({
+        provider: 'test',
+        modelId: 'required-tool-fallback-model',
+        doGenerate: (async (params: any) => {
+          calls++;
+          requests.push({ toolChoice: params.toolChoice, toolNames: params.tools.map((t: any) => t.name), prompt: params.prompt });
+          if (calls === 1) {
+            throw new APICallError({ url: 'http://test.local/v1/chat', requestBodyValues: {}, statusCode: 400, message: 'Tool choice is required, but model did not call a tool' });
+          }
+          return { text: 'I need another turn', finishReason: 'stop' as const, usage: { inputTokens: 1, outputTokens: 1 }, content: [{ type: 'text' as const, text: 'I need another turn' }], warnings: [] };
+        }) as any,
+      });
+      aiConfig.retryDelay = 1;
+
+      const response = await provider.generateWithTools([{ role: 'user', content: 'Use a tool' }], model, { click: tool({ description: 'Click', inputSchema: z.object({}) }) }, { toolChoice: 'required', maxRetries: 2 });
+
+      expect(response.text).toBe('I need another turn');
+      expect(requests[0].toolChoice).toEqual({ type: 'required' });
+      expect(requests[0].toolNames).not.toContain('commentary');
+      expect(requests[1].toolChoice).toEqual({ type: 'auto' });
+      expect(requests[1].toolNames).toContain('commentary');
+      expect(JSON.stringify(requests[1].prompt)).toContain('Tool choice is required');
+    });
+
     it('should repair bare harmony channel tool calls to commentary', async () => {
       const messages = [{ role: 'user', content: 'Use a tool' }];
       const tools = {

@@ -10,6 +10,35 @@
   which a browser ignores when the key comes from the page.
 - [Pilot] Told that reloading is not a tool of its own, so it instructs Tester to run `I.reloadPage()`
   through `form` rather than naming a tool that does not exist.
+- [Planner] Edit and reconfiguration scenarios no longer include record creation as part of every plan;
+  Pilot can select suitable data or prepare it when execution starts. Expected outcomes remain verifiable
+  through the interface without inventing details for pages and subpages that have not been visited yet.
+- [Planner] Test plans now describe which record a scenario needs without fixing its ID or unique name;
+  Pilot chooses the record when execution starts. A plan names a specific record only when the page shows
+  a small, complete list of available records.
+### Fixes
+
+- [AI] When a provider rejects required tool choice, the retry now uses automatic tool choice with the
+  Harmony channel fallback. This lets tool-driven agents recover from `gpt-oss` channel output instead of
+  repeating the same rejected request.
+- [Apibot] API test scenarios no longer mutate or delete records discovered as sample data. Chief plans a
+  scenario-owned target for destructive checks, and Curler stops when it cannot create one safely.
+- [Navigator] A verification that could not run because the model call itself failed is now reported as
+  a failure, naming the error. It used to be swallowed and reported as a claim no assertion could
+  express, so a rate limit or a timed-out request reached Tester as a verdict about the page, and
+  Tester rewrote a correct assertion and asked again. Each such claim also retried the model up to
+  three more times on top of the retries the request already does, which made a rate limit worse
+  rather than passing it on.
+- [Navigator] A verification is no longer reported as impossible to express when the answer shows a
+  snippet of page markup before its assertions. A code block written in any language other than
+  JavaScript used to shift the reading of every later block, so all the assertions the model had
+  written were dropped and a claim it had answered correctly came back as one no assertion could
+  express.
+- A batch of browser commands now reports every command it ran. CodeceptJS hands a passing step its own
+  return value, which was read as an error, so the first command of every successful batch was reported
+  as failed with `[object Promise]` and the commands after it were left out of the report entirely. A
+  batch that worked came back looking part-failed and part-missing, which is what the AI reads before
+  deciding what to do next, and only the first assertion of a check reached the generated test.
 
 ## 2026-09-11
 
@@ -36,6 +65,11 @@
 
 ### Changes
 
+- [Planner] The session test list now says how each test ended, and a failed or unfinished test carries the
+  last thing it observed, with a warning not to re-propose the behavior it attempted on another page. The
+  planner used to see only scenario titles, so a pattern that failed on one page — verifying a state the
+  interface never shows — was planned again on every page that had a similar control, all night long. Tests
+  that were started but never finished are named as unfinished rather than left looking unrun.
 - [Researcher] A list is now checked for how it continues past what is on screen, and the answer is
   recorded beside that list in the UI map: either it has controls that move between pages, or it grows
   when scrolled. Lists that scroll inside their own box are covered, not just the page.
