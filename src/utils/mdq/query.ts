@@ -1,5 +1,5 @@
 import { type Token, type Tokens, marked } from 'marked';
-import { splitFrontmatter } from './edit.ts';
+import { dedupeRanges, splitFrontmatter } from './edit.ts';
 
 export { splitFrontmatter };
 
@@ -369,31 +369,56 @@ function executeSegments(candidates: MatchedRange[], segments: QuerySegment[]): 
   return executeSegments(applyIndexSlice(matches, segment), remaining);
 }
 
-export class MarkdownQuery {
-  private source: string;
+export class MarkdownDoc {
+  protected source: string;
+
+  constructor(source: string) {
+    this.source = source;
+  }
+
+  query(selector: string): Selection {
+    const segments = parseQuery(selector);
+    const candidates = expandSectionRanges(buildTokenIndex(this.source));
+    return new Selection(this.source, executeSegments(candidates, segments));
+  }
+
+  toString(): string {
+    return this.source;
+  }
+
+  valueOf(): string {
+    return this.source;
+  }
+}
+
+export class Selection extends MarkdownDoc {
   private matches: MatchedRange[];
 
   constructor(source: string, matches?: MatchedRange[]) {
-    this.source = source;
+    super(source);
     this.matches = matches || buildTokenIndex(source);
   }
 
-  query(selector: string): MarkdownQuery {
+  query(selector: string): Selection {
     const segments = parseQuery(selector);
     const candidates = expandSectionRanges(this.matches);
-    const results = executeSegments(candidates, segments);
-    return new MarkdownQuery(this.source, results);
+    return new Selection(this.source, executeSegments(candidates, segments));
   }
 
   text(): string {
     return this.matches.map((r) => this.source.slice(r.start, r.start + r.length)).join('');
   }
 
+  toString(): string {
+    return this.text();
+  }
+
+  /** @deprecated Use text(). */
   get(): string {
     return this.text();
   }
 
-  toJson(): Record<string, string>[] {
+  rows(): Record<string, string>[] {
     const results: Record<string, string>[] = [];
 
     for (const range of this.matches) {
@@ -413,7 +438,12 @@ export class MarkdownQuery {
     return results;
   }
 
-  keyValue(): Record<string, string> {
+  /** @deprecated Use rows(). */
+  toJson(): Record<string, string>[] {
+    return this.rows();
+  }
+
+  entries(): Record<string, string> {
     const entries: Record<string, string> = {};
 
     for (const range of this.matches) {
@@ -428,7 +458,12 @@ export class MarkdownQuery {
     return entries;
   }
 
-  setKeyValue(key: string, value: string | null): string {
+  /** @deprecated Use entries(). */
+  keyValue(): Record<string, string> {
+    return this.entries();
+  }
+
+  setEntry(key: string, value: string | null): MarkdownDoc {
     return this.replaceEach((match) => {
       const token = match.matches[0].token;
       const lines = getTokenText(token)
@@ -446,76 +481,95 @@ export class MarkdownQuery {
     });
   }
 
-  replace(content: string): string {
+  /** @deprecated Use setEntry(). */
+  setKeyValue(key: string, value: string | null): MarkdownDoc {
+    return this.setEntry(key, value);
+  }
+
+  replace(content: Markdown): MarkdownDoc {
     return this.replaceEach(() => content);
   }
 
-  replaceEach(replacer: (match: MarkdownQuery, index: number) => string): string {
-    const sorted = [...this.matches].sort((a, b) => a.start - b.start);
-
-    const kept: MatchedRange[] = [];
-    let lastEnd = -1;
-    for (const range of sorted) {
-      if (range.start < lastEnd) continue;
-      kept.push(range);
-      lastEnd = range.start + range.length;
-    }
-
-    const replacements = kept.map((range, index) => replacer(new MarkdownQuery(this.source, [range]), index));
+  replaceEach(replacer: (match: Selection, index: number) => Markdown): MarkdownDoc {
+    const kept = dedupeRanges(this.matches);
+    const replacements = kept.map((range, index) => String(replacer(new Selection(this.source, [range]), index)));
     let result = this.source;
     for (let i = kept.length - 1; i >= 0; i--) {
       const range = kept[i];
       result = result.slice(0, range.start) + replacements[i] + result.slice(range.start + range.length);
     }
 
-    return result;
+    return new MarkdownDoc(result);
   }
 
   count(): number {
     return this.matches.length;
   }
 
-  first(): MarkdownQuery {
-    return new MarkdownQuery(this.source, this.matches.slice(0, 1));
+  exists(): boolean {
+    return this.matches.length > 0;
   }
 
-  last(): MarkdownQuery {
-    return new MarkdownQuery(this.source, this.matches.slice(-1));
+  first(): Selection {
+    return new Selection(this.source, this.matches.slice(0, 1));
   }
 
-  before(): MarkdownQuery {
-    if (this.matches.length === 0) return new MarkdownQuery(this.source, []);
+  last(): Selection {
+    return new Selection(this.source, this.matches.slice(-1));
+  }
+
+  preceding(): Selection {
+    if (this.matches.length === 0) return new Selection(this.source, []);
     const cutoff = this.matches[0].start;
-    const allTokens = buildTokenIndex(this.source);
-    const beforeTokens = allTokens.filter((r) => r.start + r.length <= cutoff);
-    return new MarkdownQuery(this.source, beforeTokens);
+    return new Selection(
+      this.source,
+      buildTokenIndex(this.source).filter((r) => r.start + r.length <= cutoff)
+    );
   }
 
-  after(): MarkdownQuery {
-    if (this.matches.length === 0) return new MarkdownQuery(this.source, []);
+  /** @deprecated Use preceding(). */
+  before(): Selection {
+    return this.preceding();
+  }
+
+  following(): Selection {
+    if (this.matches.length === 0) return new Selection(this.source, []);
     const lastMatch = this.matches[this.matches.length - 1];
     const cutoff = lastMatch.start + lastMatch.length;
-    const allTokens = buildTokenIndex(this.source);
-    const afterTokens = allTokens.filter((r) => r.start >= cutoff);
-    return new MarkdownQuery(this.source, afterTokens);
+    return new Selection(
+      this.source,
+      buildTokenIndex(this.source).filter((r) => r.start >= cutoff)
+    );
   }
 
-  each(): MarkdownQuery[] {
-    return this.matches.map((m) => new MarkdownQuery(this.source, [m]));
+  /** @deprecated Use following(). */
+  after(): Selection {
+    return this.following();
   }
 
-  meta(): Array<{ type: string; depth: number | null; text: string }> {
+  each(): Selection[] {
+    return this.matches.map((m) => new Selection(this.source, [m]));
+  }
+
+  nodes(): NodeInfo[] {
     return this.matches.map((range) => {
       const token = range.token as any;
-      let depth: number | null = null;
-      if (token.type === 'heading') depth = token.depth;
-      return { type: token.type, depth, text: getTokenText(range.token) };
+      if (token.type !== 'heading') return { type: token.type, depth: null, text: getTokenText(range.token) };
+      return { type: token.type, depth: token.depth, text: getTokenText(range.token) };
     });
+  }
+
+  /** @deprecated Use nodes(). */
+  meta(): NodeInfo[] {
+    return this.nodes();
   }
 }
 
-export function mdq(source: string): MarkdownQuery {
-  return new MarkdownQuery(source);
+/** @deprecated Use Selection. */
+export const MarkdownQuery = Selection;
+
+export function mdq(source: Markdown): Selection {
+  return new Selection(String(source));
 }
 
 export type SelectorType = 'section' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'table' | 'heading' | 'paragraph' | 'list' | 'item' | 'code' | 'blockquote' | 'hr' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
@@ -539,4 +593,12 @@ export interface MatchedRange {
   length: number;
   trailing?: { start: number; length: number };
   innerTokens?: MatchedRange[];
+}
+
+export type Markdown = string | MarkdownDoc;
+
+export interface NodeInfo {
+  type: string;
+  depth: number | null;
+  text: string;
 }

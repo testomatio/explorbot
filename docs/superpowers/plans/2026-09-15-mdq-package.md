@@ -511,18 +511,24 @@ Expected: PASS — 114 tests
 
 - [ ] **Step 8: Verify with the scoped type check**
 
+Grep by **type name, repo-wide** — not by file path. A path-scoped grep misses test
+helpers and bin scripts, and those break too:
+
 ```bash
-bunx tsc -p tsconfig.json --noEmit 2>&1 | grep -E "^(src/utils/mdq/|src/utils/markdown-query|src/experience-tracker|src/ai/planner|src/ai/researcher)"
+bunx tsc -p tsconfig.json --noEmit 2>&1 | grep -E "MarkdownDoc|MarkdownQuery|Selection"
 ```
 
-Expected: **exactly these two lines and nothing else.**
+Expected: **no output at all.**
 
-```
-src/ai/researcher/locators.ts(247,41): error TS2339: Property 'playwrightLocatorCount' does not exist on type 'Explorer'.
-src/ai/researcher/locators.ts(247,65): error TS7006: Parameter 'page' implicitly has an 'any' type.
-```
+Any line is an unmigrated call site. CI will not catch it, because CI runs `tsc --noCheck`.
 
-Any third line is an unmigrated call site. Fix it before continuing — CI will not catch it, because CI runs `tsc --noCheck`.
+The audit in Step 6 lists eleven sites; the real count is **seventeen**. The extras are all
+the same shape — a function whose declared return type is `string` now returns a
+`MarkdownDoc` — in `boat/prima/src/prima.ts`, `planner.ts` (three chains),
+`deep-analysis.ts:542` and `experience-tracker.ts:511`, plus a test helper in
+`tests/unit/research-parser-pagination.test.ts` that feeds the result to `marked.lexer`,
+which does **not** coerce and throws `e.replace is not a function` at runtime. Trust the
+grep, not the list.
 
 - [ ] **Step 9: Run the full unit suite**
 

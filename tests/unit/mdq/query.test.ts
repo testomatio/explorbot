@@ -639,40 +639,42 @@ Not a section.
 
   describe('replace', () => {
     it('should replace matched content', () => {
-      const result = mdq(sampleMarkdown).query('heading("FAQ")').replace('## Questions\n');
+      const result = String(mdq(sampleMarkdown).query('heading("FAQ")').replace('## Questions\n'));
       expect(result).toContain('## Questions');
       expect(result).not.toContain('## FAQ');
     });
 
     it('should replace table', () => {
-      const result = mdq(sampleMarkdown).query('section("Rate Limiting") table').replace('No limits!\n');
+      const result = String(mdq(sampleMarkdown).query('section("Rate Limiting") table').replace('No limits!\n'));
       expect(result).toContain('No limits!');
       expect(result).not.toContain('1 hour');
       expect(result).toContain('/users');
     });
 
     it('should replace section', () => {
-      const result = mdq(sampleMarkdown).query('section("FAQ")').replace('## FAQ\n\nNo questions.\n');
+      const result = String(mdq(sampleMarkdown).query('section("FAQ")').replace('## FAQ\n\nNo questions.\n'));
       expect(result).toContain('No questions');
       expect(result).not.toContain('blockquote');
     });
 
     it('should return source unchanged when no matches', () => {
-      const result = mdq(sampleMarkdown).query('heading("Nonexistent")').replace('replaced');
+      const result = String(mdq(sampleMarkdown).query('heading("Nonexistent")').replace('replaced'));
       expect(result).toBe(sampleMarkdown);
     });
 
     it('should handle overlapping ranges (keep outermost)', () => {
       const md = '## Parent\n\n### Child\n\nContent\n';
-      const result = mdq(md).query('section').replace('REPLACED\n');
+      const result = String(mdq(md).query('section').replace('REPLACED\n'));
       expect(result).toBe('REPLACED\n');
     });
 
     it('should replace each match without stale offsets', () => {
       const md = '## Short\n\nText\n\n## Much Longer Heading\n\nMore\n';
-      const result = mdq(md)
-        .query('h2')
-        .replaceEach((heading, index) => `## ${index + 1}: ${heading.meta()[0].text}\n\n`);
+      const result = String(
+        mdq(md)
+          .query('h2')
+          .replaceEach((heading, index) => `## ${index + 1}: ${heading.meta()[0].text}\n\n`)
+      );
 
       expect(result).toBe('## 1: Short\n\nText\n\n## 2: Much Longer Heading\n\nMore\n');
     });
@@ -714,7 +716,7 @@ Not a section.
     });
 
     it('should handle empty replace', () => {
-      const result = mdq('').query('heading').replace('x');
+      const result = String(mdq('').query('heading').replace('x'));
       expect(result).toBe('');
     });
 
@@ -769,7 +771,7 @@ Not a section.
     const block = "## S\n\n> Container: '.old'\n> Pagination: controls\n\ntext\n";
 
     it('replaces an entry in place and keeps the others', () => {
-      const updated = mdq(block).query('blockquote[0]').setKeyValue('Container', "'.new'");
+      const updated = String(mdq(block).query('blockquote[0]').setKeyValue('Container', "'.new'"));
       expect(updated).toBe("## S\n\n> Container: '.new'\n> Pagination: controls\n\ntext\n");
     });
 
@@ -794,8 +796,34 @@ Not a section.
     });
 
     it('leaves a plain paragraph unprefixed', () => {
-      const updated = mdq('Container: .old\n').query('paragraph[0]').setKeyValue('Container', '.new');
+      const updated = String(mdq('Container: .old\n').query('paragraph[0]').setKeyValue('Container', '.new'));
       expect(updated).toBe('Container: .new');
     });
+  });
+});
+
+describe('MarkdownDoc chaining', () => {
+  const md = '# T\n\n## A\n\npara\n\n## B\n\nother\n';
+
+  it('returns a MarkdownDoc from a write so edits chain', () => {
+    expect(mdq(md).query('h2("A")').replace('## Z\n\n').query('h2').count()).toBe(2);
+  });
+
+  it('stringifies to the full document', () => {
+    expect(mdq(md).query('h2("A")').replace('## Z\n\n').toString()).toContain('## Z');
+  });
+
+  it('accepts a MarkdownDoc as a source', () => {
+    const doc = mdq(md).query('h2("A")').replace('## Z\n\n');
+    expect(mdq(doc).query('h2').count()).toBe(2);
+  });
+
+  it('accepts a MarkdownDoc returned from a replaceEach callback', () => {
+    const out = mdq(md)
+      .query('h2')
+      .replaceEach((section) => mdq(section.text()).query('h2').replace('### x\n\n'))
+      .toString();
+    expect(out).toContain('### x');
+    expect(out).not.toContain('## A');
   });
 });
