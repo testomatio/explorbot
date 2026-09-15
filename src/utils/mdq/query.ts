@@ -167,6 +167,19 @@ function parseBound(value: string): number | undefined {
   return Number.parseInt(value, 10);
 }
 
+function toTextMatcher(matcher: Matcher): TextMatcher {
+  if (typeof matcher === 'function') return { mode: 'predicate', value: '', negated: false, predicate: matcher };
+  if (matcher instanceof RegExp) return { mode: 'regex', value: matcher.source, negated: false, flags: matcher.flags };
+  return { mode: 'exact', value: matcher, negated: false };
+}
+
+function applyMatcher(segments: QuerySegment[], matcher?: Matcher): QuerySegment[] {
+  if (matcher === undefined) return segments;
+  if (segments.length === 0) return segments;
+  segments[segments.length - 1].textMatch = toTextMatcher(matcher);
+  return segments;
+}
+
 function matchText(text: string, matcher: TextMatcher): boolean {
   let result: boolean;
 
@@ -179,6 +192,9 @@ function matchText(text: string, matcher: TextMatcher): boolean {
       break;
     case 'regex':
       result = new RegExp(matcher.value, matcher.flags || '').test(text);
+      break;
+    case 'predicate':
+      result = matcher.predicate!(text);
       break;
     default:
       result = false;
@@ -424,10 +440,55 @@ export class MarkdownDoc {
     this.source = source;
   }
 
-  query(selector: string): Selection {
-    const segments = parseQuery(selector);
+  query(selector: string, matcher?: Matcher): Selection {
+    const segments = applyMatcher(parseQuery(selector), matcher);
     const candidates = expandSectionRanges(buildTokenIndex(this.source));
     return new Selection(this.source, executeSegments(candidates, segments));
+  }
+
+  section(matcher?: Matcher, options?: SelectorOptions): Selection {
+    return this.query(`section${options?.depth || ''}`, matcher);
+  }
+
+  heading(matcher?: Matcher, options?: SelectorOptions): Selection {
+    if (options?.depth) return this.query(`h${options.depth}`, matcher);
+    return this.query('heading', matcher);
+  }
+
+  paragraph(matcher?: Matcher): Selection {
+    return this.query('paragraph', matcher);
+  }
+
+  table(matcher?: Matcher): Selection {
+    return this.query('table', matcher);
+  }
+
+  list(matcher?: Matcher): Selection {
+    return this.query('list', matcher);
+  }
+
+  item(matcher?: Matcher): Selection {
+    return this.query('item', matcher);
+  }
+
+  code(matcher?: Matcher): Selection {
+    return this.query('code', matcher);
+  }
+
+  blockquote(matcher?: Matcher): Selection {
+    return this.query('blockquote', matcher);
+  }
+
+  comment(matcher?: Matcher): Selection {
+    return this.query('comment', matcher);
+  }
+
+  html(matcher?: Matcher): Selection {
+    return this.query('html', matcher);
+  }
+
+  hr(): Selection {
+    return this.query('hr');
   }
 
   toString(): string {
@@ -447,8 +508,8 @@ export class Selection extends MarkdownDoc {
     this.matches = matches || buildTokenIndex(source);
   }
 
-  query(selector: string): Selection {
-    const segments = parseQuery(selector);
+  query(selector: string, matcher?: Matcher): Selection {
+    const segments = applyMatcher(parseQuery(selector), matcher);
     const candidates = expandSectionRanges(this.matches);
     return new Selection(this.source, executeSegments(candidates, segments));
   }
@@ -558,6 +619,17 @@ export class Selection extends MarkdownDoc {
     return this.matches.length > 0;
   }
 
+  at(index: number): Selection {
+    let resolved = index;
+    if (resolved < 0) resolved = this.matches.length + resolved;
+    if (resolved < 0 || resolved >= this.matches.length) return new Selection(this.source, []);
+    return new Selection(this.source, [this.matches[resolved]]);
+  }
+
+  slice(from?: number, to?: number): Selection {
+    return new Selection(this.source, this.matches.slice(from, to));
+  }
+
   first(): Selection {
     return new Selection(this.source, this.matches.slice(0, 1));
   }
@@ -623,10 +695,17 @@ export function mdq(source: Markdown): Selection {
 export type SelectorType = 'comment' | 'html' | 'section' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'table' | 'heading' | 'paragraph' | 'list' | 'item' | 'code' | 'blockquote' | 'hr' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
 
 export interface TextMatcher {
-  mode: 'exact' | 'contains' | 'regex';
+  mode: 'exact' | 'contains' | 'regex' | 'predicate';
   value: string;
   negated: boolean;
   flags?: string;
+  predicate?: (text: string) => boolean;
+}
+
+export type Matcher = string | RegExp | ((text: string) => boolean);
+
+export interface SelectorOptions {
+  depth?: 1 | 2 | 3 | 4 | 5 | 6;
 }
 
 export interface QuerySegment {
