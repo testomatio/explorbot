@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mdq, parseQuery } from '../../src/utils/markdown-query.ts';
+import { mdq, parseQuery } from '../../../src/utils/mdq/query.ts';
 
 const sampleMarkdown = `# Main Title
 

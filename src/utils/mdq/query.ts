@@ -3,35 +3,13 @@ import { splitFrontmatter } from './edit.ts';
 
 export { splitFrontmatter };
 
-export type SelectorType = 'section' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'table' | 'heading' | 'paragraph' | 'list' | 'item' | 'code' | 'blockquote' | 'hr' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
-
-export interface TextMatcher {
-  mode: 'exact' | 'contains' | 'regex';
-  value: string;
-  negated: boolean;
-}
-
-export interface QuerySegment {
-  selector: SelectorType;
-  textMatch?: TextMatcher;
-  index: number | null;
-  slice: { from?: number; to?: number } | null;
-}
-
-export interface MatchedRange {
-  token: Token;
-  start: number;
-  length: number;
-  trailing?: { start: number; length: number };
-  innerTokens?: MatchedRange[];
-}
-
 export function parseQuery(input: string): QuerySegment[] {
   const segments: QuerySegment[] = [];
   let pos = 0;
 
   function peek(): string {
-    return pos < input.length ? input[pos] : '';
+    if (pos >= input.length) return '';
+    return input[pos];
   }
 
   function advance(): string {
@@ -130,8 +108,8 @@ export function parseQuery(input: string): QuerySegment[] {
           const fromStr = content.slice(0, colonIdx);
           const toStr = content.slice(colonIdx + 1);
           segment.slice = {
-            from: fromStr ? Number.parseInt(fromStr, 10) : undefined,
-            to: toStr ? Number.parseInt(toStr, 10) : undefined,
+            from: parseBound(fromStr),
+            to: parseBound(toStr),
           };
         } else {
           segment.index = Number.parseInt(content, 10);
@@ -144,6 +122,11 @@ export function parseQuery(input: string): QuerySegment[] {
   }
 
   return segments;
+}
+
+function parseBound(value: string): number | undefined {
+  if (!value) return undefined;
+  return Number.parseInt(value, 10);
 }
 
 function matchText(text: string, matcher: TextMatcher): boolean {
@@ -163,7 +146,8 @@ function matchText(text: string, matcher: TextMatcher): boolean {
       result = false;
   }
 
-  return matcher.negated ? !result : result;
+  if (matcher.negated) return !result;
+  return result;
 }
 
 function entryKey(line: string): string | null {
@@ -190,7 +174,8 @@ function getTokenText(token: Token): string {
 
 function getHeadingDepth(selector: string): number | null {
   const match = selector.match(/^h([1-6])$/);
-  return match ? Number.parseInt(match[1], 10) : null;
+  if (!match) return null;
+  return Number.parseInt(match[1], 10);
 }
 
 function isSectionSelector(selector: string): boolean {
@@ -199,7 +184,8 @@ function isSectionSelector(selector: string): boolean {
 
 function getSectionDepth(selector: string): number | null {
   const match = selector.match(/^section([1-6])$/);
-  return match ? Number.parseInt(match[1], 10) : null;
+  if (!match) return null;
+  return Number.parseInt(match[1], 10);
 }
 
 function selectorToTokenType(selector: string): string | null {
@@ -303,8 +289,10 @@ function extractListItems(candidates: MatchedRange[]): MatchedRange[] {
 
 function applyIndexSlice(matches: MatchedRange[], segment: QuerySegment): MatchedRange[] {
   if (segment.index !== null) {
-    const idx = segment.index < 0 ? matches.length + segment.index : segment.index;
-    return idx >= 0 && idx < matches.length ? [matches[idx]] : [];
+    let idx = segment.index;
+    if (idx < 0) idx = matches.length + idx;
+    if (idx < 0 || idx >= matches.length) return [];
+    return [matches[idx]];
   }
 
   if (segment.slice) {
@@ -528,4 +516,27 @@ export class MarkdownQuery {
 
 export function mdq(source: string): MarkdownQuery {
   return new MarkdownQuery(source);
+}
+
+export type SelectorType = 'section' | 'section1' | 'section2' | 'section3' | 'section4' | 'section5' | 'section6' | 'table' | 'heading' | 'paragraph' | 'list' | 'item' | 'code' | 'blockquote' | 'hr' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+
+export interface TextMatcher {
+  mode: 'exact' | 'contains' | 'regex';
+  value: string;
+  negated: boolean;
+}
+
+export interface QuerySegment {
+  selector: SelectorType;
+  textMatch?: TextMatcher;
+  index: number | null;
+  slice: { from?: number; to?: number } | null;
+}
+
+export interface MatchedRange {
+  token: Token;
+  start: number;
+  length: number;
+  trailing?: { start: number; length: number };
+  innerTokens?: MatchedRange[];
 }
