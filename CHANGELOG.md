@@ -4,6 +4,9 @@
 
 ### Fixes
 
+- [Researcher] A list that already shows everything it holds is no longer described as paginated. The page
+  map could claim a "load more" or next-page control for such a list, and Planner then proposed a test to
+  load further entries — a test that could never pass, because there was nothing left to load.
 - [Tester] A test that falls back to clicking an element by sight is no longer cut short as stuck. Clicks
   placed from a screenshot did not count as progress, so a page whose control carries no accessible name —
   where every locator-based click misses by design — ran out of patience after a few turns and was sent to
