@@ -2,6 +2,13 @@
 
 ## 2026-09-15
 
+### Changes
+
+- [Pilot] A test that stops part-way through a multi-step flow is no longer failed outright when the
+  control for the next step is still on the page. Pilot now tells the tester which step is missing and
+  lets it continue, so flows that pass through a dialog, confirmation, or wizard step reach their goal
+  instead of ending at the intermediate screen. A test is still failed when nothing on the page can take
+  it further.
 ### Fixes
 
 - [Researcher] A list that already shows everything it holds is no longer described as paginated. The page
