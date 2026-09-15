@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-15
+
+### Fixes
+
+- [Pilot] A control the page has disabled is no longer read as one missing required field. Pilot had a
+  single explanation for a disabled control, so it attributed the block to whichever field the scenario
+  happened to be about and steered the whole test at that field — hunting validation feedback that the
+  app never had a reason to show. It now identifies which precondition is unmet from what the page
+  states: other disabled controls name the unsatisfied constraint, and the form marks its required
+  fields. Where the page names a constraint the scenario did not predict, Pilot reports the difference
+  instead of testing a premise the app contradicts.
+
 ## 2026-09-14
 
 ### Changes
