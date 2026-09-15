@@ -411,6 +411,9 @@ export function mdq(source: Markdown): MarkdownDoc {
 }
 ```
 
+`query` takes only a selector here. The optional second `matcher` argument arrives in
+Task 5 — it is not missing.
+
 At the end of the file:
 
 ```ts
@@ -419,6 +422,14 @@ export type Markdown = string | MarkdownDoc;
 /** @deprecated Use Selection. */
 export const MarkdownQuery = Selection;
 ```
+
+Before relying on that alias, confirm nothing imports the class by name:
+
+```bash
+git grep -ln "MarkdownQuery" -- src bin boat tests
+```
+
+Expected: only `src/utils/mdq/query.ts`. Any other file needs its import checked.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -629,7 +640,7 @@ describe('selector errors', () => {
       mdq(doc).query('h2("A") secton("B")');
       expect.unreachable();
     } catch (error) {
-      expect(error.index).toBe(7);
+      expect(error.index).toBe(8);
     }
   });
 
@@ -1238,20 +1249,28 @@ export function removeRanges(source: string, ranges: MatchedRange[]): string {
   let result = source;
   for (let i = ordered.length - 1; i >= 0; i--) {
     const range = ordered[i];
-    const end = blockEnd(range);
-    let start = range.start;
-    if (!range.trailing) start = trimPrecedingBlankLine(result, start);
-    result = result.slice(0, start) + result.slice(end);
+    const head = result.slice(0, range.start);
+    const tail = result.slice(blockEnd(range));
+    if (tail) {
+      result = head + tail;
+      continue;
+    }
+    if (!head) {
+      result = '';
+      continue;
+    }
+    result = `${head.replace(/\n+$/, '')}\n`;
   }
   return result;
 }
 
 export function insertAt(source: string, offset: number, markdown: string): string {
   const block = normalizeBlock(markdown);
-  const before = source.slice(0, offset);
-  const after = source.slice(offset);
-  if (!after) return `${before}${before.endsWith('\n') ? '' : '\n'}\n${block}`.replace(/\n{3,}/g, '\n\n');
-  return `${before}${block}\n${after}`.replace(/\n{3,}/g, '\n\n');
+  const before = source.slice(0, offset).replace(/\n+$/, '');
+  const after = source.slice(offset).replace(/^\n+/, '');
+  if (!before) return `${block}\n${after}`;
+  if (!after) return `${before}\n\n${block}`;
+  return `${before}\n\n${block}\n${after}`;
 }
 
 function dedupeRanges(ranges: MatchedRange[]): MatchedRange[] {
@@ -1266,15 +1285,24 @@ function dedupeRanges(ranges: MatchedRange[]): MatchedRange[] {
   return kept;
 }
 
-function trimPrecedingBlankLine(source: string, start: number): number {
-  let cursor = start;
-  while (cursor > 0 && source[cursor - 1] === '\n') cursor--;
-  if (cursor === 0) return 0;
-  return cursor + 1;
-}
 ```
 
-Note `insertAt` collapses any run of three or more newlines to exactly two. That single rule is what enforces the invariant across every insert path, rather than each verb reasoning about separators itself.
+Both rules below were derived from real `marked` output, not assumed. **Do not "simplify"
+either one.**
+
+**`insertAt` normalizes only the seam.** It strips newlines from the end of `before` and
+the start of `after`, then rebuilds the join. The tempting alternative — a global
+`.replace(/\n{3,}/g, '\n\n')` over the document — is wrong: a fenced code block's raw really
+does contain runs of blank lines (`marked` lexes a ```js block holding `a\n\n\nb` as one
+`code` token whose raw carries `\n\n\n`), so a global collapse silently rewrites user code.
+
+**`removeRanges` collapses only at end-of-document.** `marked` bakes the separator into
+some raws and not others: a mid-document `paragraph` raw is `"para"` with a sibling `space`
+token, a document-final `paragraph` raw is `"last\n"` with no sibling, and every `heading`
+raw carries its own `"\n\n"`. So "no trailing space, therefore trim backwards" is wrong — on
+`'# A\n\n## B\n\ntext\n'` it eats a blank line and yields `'# A\ntext\n'`. Deleting
+`[start, blockEnd)` is already correct whenever anything follows; only a node removed from
+the very end needs repair.
 
 - [ ] **Step 4: Wire the verbs onto Selection and MarkdownDoc**
 
@@ -1624,7 +1652,7 @@ import YAML from 'yaml';
 
 export function writeFrontmatter(source: string, key: string, value: unknown): string {
   const { raw, body, offset } = splitFrontmatter(source);
-  const document = YAML.parseDocument(raw || '');
+  const document = raw ? YAML.parseDocument(raw) : new YAML.Document({});
   if (value === null) document.delete(key);
   if (value !== null) document.set(key, value);
   const rendered = document.toString().replace(/\s+$/, '');
@@ -1853,7 +1881,9 @@ describe('edits', () => {
   });
 
   it('sets an entry', async () => {
-    expect((await runMdq(['blockquote', '--set', 'Container=.x'], '> Container: .old\n')).output).toContain('.x');
+    const result = await runMdq(['blockquote', '--set', 'Container=.x'], '> Container: .old\n');
+    expect(result.output).toContain('.x');
+    expect(result.output).not.toContain('.old');
   });
 });
 
