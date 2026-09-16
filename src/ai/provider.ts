@@ -43,9 +43,7 @@ function withHarmonyChannelFallback(tools: any): any {
   return { ...tools, commentary: createHarmonyChannelFallbackTool() };
 }
 
-let toolsRunning = 0;
-
-function withIdleExemption(tools: any): any {
+function withIdleExemption(tools: any, busy: { tools: number }): any {
   if (!tools) return tools;
   const wrapped: any = {};
   for (const [name, definition] of Object.entries<any>(tools)) {
@@ -56,11 +54,11 @@ function withIdleExemption(tools: any): any {
     wrapped[name] = {
       ...definition,
       execute: async (...args: any[]) => {
-        toolsRunning++;
+        busy.tools++;
         try {
           return await definition.execute(...args);
         } finally {
-          toolsRunning--;
+          busy.tools--;
         }
       },
     };
@@ -85,11 +83,11 @@ function extractCachedTokens(usage: any): number {
   return usage?.inputTokenDetails?.cacheReadTokens ?? 0;
 }
 
-function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: AbortController): Promise<never> {
+function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: AbortController, busy: { tools: number }): Promise<never> {
   return new Promise((_, reject) => {
     const tick = () => {
       if (cancel.cancelled) return;
-      if (executionController.isAwaitingInput() || toolsRunning > 0) {
+      if (executionController.isAwaitingInput() || busy.tools > 0) {
         setTimeout(tick, ms);
         return;
       }
@@ -276,12 +274,12 @@ export class Provider {
     });
   }
 
-  private async raceWithIdleTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  private async raceWithIdleTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, timeoutMs: number, busy: { tools: number } = { tools: 0 }): Promise<T> {
     const cancel = { cancelled: false };
     const controller = new AbortController();
     const combinedSignal = combinedAbortSignal(controller);
     try {
-      return await Promise.race([fn(combinedSignal), abortAfterIdle(timeoutMs, cancel, controller)]);
+      return await Promise.race([fn(combinedSignal), abortAfterIdle(timeoutMs, cancel, controller, busy)]);
     } finally {
       cancel.cancelled = true;
     }
@@ -436,7 +434,8 @@ export class Provider {
 
   async generateWithTools(messages: ModelMessage[], model: any, tools: any, options: any = {}): Promise<any> {
     const modelName = getModelName(model);
-    tools = withIdleExemption(tools);
+    const busy = { tools: 0 };
+    tools = withIdleExemption(tools, busy);
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
@@ -463,7 +462,7 @@ export class Provider {
           const onStepEnd = (step: any) => {
             stepMessages.push(...(step.response?.messages || []));
           };
-          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages: attemptMessages, ...config, abortSignal: signal, onStepEnd }), config.timeout || 30000).catch((error) => {
+          const result = (await this.raceWithIdleTimeout((signal) => generateText({ messages: attemptMessages, ...config, abortSignal: signal, onStepEnd }), config.timeout || 30000, busy).catch((error) => {
             if (stepMessages.length > 0) {
               tag('warning').log(`Keeping ${stepMessages.length} messages from tool steps that already ran before the failure`);
               executedStepMessages.push(...stepMessages);
