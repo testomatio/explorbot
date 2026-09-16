@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import { createCodeceptJSTools } from '../../src/ai/tools.ts';
 import { ConfigParser } from '../../src/config.ts';
 
-function multipleElementsError(visibility: boolean[] = []): Error {
+function multipleElementsError(visibility: boolean[] = [], texts: string[] = ['First control', 'Second control']): Error {
   const element = (xpath: string, text: string, visible?: boolean) => {
     const webElement: Record<string, any> = {
       toAbsoluteXPath: async () => xpath,
@@ -14,7 +14,7 @@ function multipleElementsError(visibility: boolean[] = []): Error {
   };
   return Object.assign(new Error('Multiple elements (2) found for "{role: switch}" in strict mode'), {
     name: 'MultipleElementsFound',
-    webElements: [element('/html/body/div/button[1]', 'First control', visibility[0]), element('/html/body/div/button[2]', 'Second control', visibility[1])],
+    webElements: [element('/html/body/div/button[1]', texts[0], visibility[0]), element('/html/body/div/button[2]', texts[1], visibility[1])],
   });
 }
 
@@ -66,6 +66,18 @@ describe('click on an ambiguous locator', () => {
     expect(result.elements).toContain('Element 1:');
     expect(result.elements).toContain('Element 2:');
     expect(result.suggestion).toContain('elementIndex');
+    expect(result.elements).not.toContain('Identical to element');
+  });
+
+  it('sends the model to visualClick when the matches are indistinguishable', async () => {
+    const { deps } = fakeDeps(() => multipleElementsError([], ['', '']));
+    const tools = createCodeceptJSTools(deps, fakeTask());
+
+    const result = await tools.click.execute({ commands: [`I.click({"role":"switch"})`], explanation: 'Toggle the control' }, {} as any);
+
+    expect(result.elements).toContain('Identical to element 2');
+    expect(result.elements).toContain('Identical to element 1');
+    expect(result.elements).toContain('visualClick()');
   });
 
   it('keeps the ambiguous match when a later fallback command failed differently', async () => {

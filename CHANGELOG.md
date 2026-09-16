@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-16
+
+### Fixes
+
+- [Tester] A click that matches several elements the page renders identically no longer turns into a
+  guessing game. When a locator matched more than one element, the list handed back to the tester numbered
+  them and asked it to pick one by number — but where the matches carry the same text, the same markup and
+  the same visible state, that number means nothing. A row of bare toggles would be clicked at random, one
+  after another, every click reported as a success while the setting under test never moved. The list now
+  marks which matches are identical to one another and points to clicking by sight, which is the only thing
+  that tells them apart.
+- Page snapshots: the HTML given to agents now carries the state of the control it describes — whether a
+  switch is on, a section expanded, a tab selected, a button pressed, or a control disabled. That state was
+  being stripped along with the framework noise, so two toggles set to opposite values looked like the same
+  element, and no agent could read from the markup whether its click had changed anything.
+
 ## 2026-09-15
 
 ### Fixes
