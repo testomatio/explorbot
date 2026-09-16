@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-17
+
+### Changes
+
+- [Pilot] When the app reports an action succeeded but the record is not visible on the page, Pilot now asks
+  the API whether it was stored instead of failing on what the screenshot shows. A record the API cannot find
+  is still a failure. Needs API access configured; without it, Pilot judges from the page as before.
+
 ## 2026-09-16
 
 ### Configuration
