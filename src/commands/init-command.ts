@@ -7,10 +7,7 @@ import { getCliName } from '../utils/cli-name.ts';
 import { log, tag } from '../utils/logger.js';
 import { relativeToCwd } from '../utils/next-steps.ts';
 
-function defaultConfigTemplate(provider: string, esm: boolean): string {
-  let moduleExport = 'module.exports = config;';
-  if (esm) moduleExport = 'export default config;';
-
+function defaultConfigTemplate(provider: string): string {
   return `// 'provider/model-id' uses a bundled provider.
 // It is also possible to import provider as a module from Vercel AI SDK.
 // https://github.com/testomatio/explorbot/blob/main/docs/basics/providers.md
@@ -35,7 +32,7 @@ ${modelLines(provider)}
   },
 };
 
-${moduleExport}
+export default config;
 `;
 }
 
@@ -144,8 +141,7 @@ export function runInitCommand(options: InitCommandOptions): void {
       process.exit(1);
     }
 
-    const esm = extname(outPath) !== '.js' || isModuleProject(dirname(outPath));
-    writeFileSync(outPath, defaultConfigTemplate(provider, esm), 'utf8');
+    writeFileSync(outPath, defaultConfigTemplate(provider), 'utf8');
     log(`Created config file: ${relativeToCwd(outPath)}`);
 
     const envPath = resolve(process.cwd(), '.env');
@@ -271,6 +267,8 @@ function globalConfigTemplate(provider: string): string {
   const { envKey } = PROVIDERS[provider];
 
   return `// Global Explorbot configuration — used by every directory without its own explorbot.config.js.
+// Settings shared by every site. Each site extends them in
+// ~/.explorbot/sites/<host>/explorbot.config.js, written on its first run.
 // Models are written as 'provider/model-id' so they resolve without a local node_modules.
 // The key is read from ${envKey} in ~/.explorbot/.env
 // Model ids are snapshotted from the recommendations of this Explorbot version.
@@ -288,27 +286,8 @@ ${modelLines(provider)}
   },
 };
 
-module.exports = config;
+export default config;
 `;
-}
-
-function isModuleProject(configDir: string): boolean {
-  let currentDir = resolve(configDir);
-
-  while (true) {
-    const packagePath = join(currentDir, 'package.json');
-    if (existsSync(packagePath)) {
-      try {
-        return JSON.parse(readFileSync(packagePath, 'utf8')).type === 'module';
-      } catch {
-        return false;
-      }
-    }
-
-    const parentDir = dirname(currentDir);
-    if (parentDir === currentDir) return false;
-    currentDir = parentDir;
-  }
 }
 
 function writeEnvKey(key: string, value: string): void {

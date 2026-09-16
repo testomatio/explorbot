@@ -18,7 +18,8 @@ import {
   resolveOutputRoot,
   setOutputDir,
 } from '../../../src/config.ts';
-import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
+import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, loadSiteConfig, registerSite, resolveSiteTarget } from '../../../src/global-config.ts';
+import { deepMerge } from '../../../src/utils/merge.ts';
 
 export type { AIConfig };
 
@@ -58,6 +59,7 @@ export class ApibotConfigParser {
   private config: ApibotConfig | null = null;
   private configPath: string | null = null;
   private site: SiteRecord | null = null;
+  private siteConfigPath: string | null = null;
 
   private constructor() {}
 
@@ -111,20 +113,22 @@ export class ApibotConfigParser {
         };
       }
 
-      this.config = this.mergeWithDefaults(loadedConfig);
-      this.applyEnvSpec(this.config.api);
-      this.applyEnvHeaders(this.config.api);
-      if (options?.baseEndpoint) this.config.api.baseEndpoint = options.baseEndpoint.replace(/\/$/, '');
-      await resolveConfigModels(this.config.ai);
-      resolveLangfuse(this.config.ai);
-      this.configPath = resolvedPath;
+      let config = this.mergeWithDefaults(loadedConfig);
+      this.applyEnvSpec(config.api);
+      this.applyEnvHeaders(config.api);
+      if (options?.baseEndpoint) config.api.baseEndpoint = options.baseEndpoint.replace(/\/$/, '');
+      await resolveConfigModels(config.ai);
+      resolveLangfuse(config.ai);
       this.site = null;
+      this.siteConfigPath = null;
 
       if (isGlobalConfigPath(resolvedPath)) {
-        this.enterGlobalMode(this.config, options?.endpoint);
+        config = await this.enterGlobalMode(config, options?.endpoint);
       }
 
-      this.validateConfig(this.config);
+      this.validateConfig(config);
+      this.config = config;
+      this.configPath = resolvedPath;
       setOutputDir(this.getOutputDir());
 
       return this.config;
@@ -142,6 +146,10 @@ export class ApibotConfigParser {
 
   getConfigPath(): string | null {
     return this.configPath;
+  }
+
+  getSiteConfigPath(): string | null {
+    return this.siteConfigPath;
   }
 
   getOutputDir(): string {
@@ -207,17 +215,29 @@ export class ApibotConfigParser {
     api.headers = { ...api.headers, ...parseHeaders(process.env.EXPLORBOT_API_HEADERS) };
   }
 
-  private enterGlobalMode(config: ApibotConfig, endpoint?: string): void {
+  private async enterGlobalMode(config: ApibotConfig, endpoint?: string): Promise<ApibotConfig> {
     const site = resolveSiteTarget(endpoint);
     this.site = registerSite(site.baseUrl);
+
+    const { path, config: siteConfig } = await loadSiteConfig(this.site.dir, site.baseUrl);
+    this.siteConfigPath = path;
+
+    const overrides: Partial<ApibotConfig> = {};
+    if (siteConfig.ai) overrides.ai = siteConfig.ai;
+    if (siteConfig.api) overrides.api = siteConfig.api;
+
+    const merged = deepMerge(config, overrides);
+    await resolveConfigModels(merged.ai);
+    resolveLangfuse(merged.ai);
 
     let baseEndpoint = site.baseUrl;
     const envUrl = process.env.EXPLORBOT_URL;
     if (envUrl && URL.parse(envUrl)?.origin === site.baseUrl) baseEndpoint = envUrl.replace(/\/$/, '');
 
-    config.dirs = { output: 'output', knowledge: 'knowledge' };
-    config.api = { ...config.api, baseEndpoint };
+    merged.dirs = { output: 'output', knowledge: 'knowledge' };
+    merged.api = { ...merged.api, baseEndpoint };
     materializeKnowledge(this.site.dir);
+    return merged;
   }
 
   private async loadEnvConfig(): Promise<ApibotConfig> {
@@ -310,19 +330,7 @@ export class ApibotConfigParser {
   }
 
   private mergeWithDefaults(config: Partial<ApibotConfig>): ApibotConfig {
-    return this.deepMerge({ dirs: { output: 'output' }, api: {} }, config);
-  }
-
-  private deepMerge(target: any, source: any): any {
-    const result = { ...target };
-    for (const key in source) {
-      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && source[key].constructor === Object) {
-        result[key] = this.deepMerge(result[key] || {}, source[key]);
-      } else {
-        result[key] = source[key];
-      }
-    }
-    return result;
+    return deepMerge({ dirs: { output: 'output' }, api: {} }, config);
   }
 }
 

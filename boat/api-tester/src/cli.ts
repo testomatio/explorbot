@@ -40,7 +40,7 @@ export function createApiCommands(name = 'api'): Command {
       if (runOptions.endpoint && URL.canParse(runOptions.endpoint)) runOptions.baseEndpoint ||= runOptions.endpoint;
       try {
         const config = await parser.loadConfig(runOptions);
-        console.log(ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot(), json: options.json }));
+        console.log(ConfigCommand.render(config, { configPath: parser.getConfigPath(), siteConfigPath: parser.getSiteConfigPath(), root: parser.getProjectRoot(), json: options.json }));
       } catch (error) {
         console.error(error instanceof Error ? error.message : 'Unknown error');
         process.exit(1);

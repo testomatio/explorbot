@@ -127,7 +127,7 @@ EXPLORBOT_AI_PROVIDER=openrouter \
 
 `npx explorbot recommended-models` prints, per provider, the model this version recommends for each role, and the two ways to select it. Both need the provider's API key exported. Set `EXPLORBOT_AI_PROVIDER=<name>` and every role takes that provider's recommendation; leave it out and pin the roles yourself with `EXPLORBOT_AI_MODEL`, `EXPLORBOT_VISION_MODEL` and `EXPLORBOT_AGENTIC_MODEL`, each written as `provider/model-id` — the command prints those three lines filled in, ready to paste. A role a provider does not serve is named as such, so you know to pair it with another. It closes with the model variables and provider keys currently exported, and a ready-to-run OpenRouter one-liner. It reads nothing but the bundled recommendations, so it answers before any configuration exists and every CLI carries it: `npx explorbot api recommended-models`, `npx explorbot docs recommended-models`, `npx prima recommended-models`. `--json` prints the bundled recommendations as an object.
 
-Explorbot resolves its configuration in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then the `EXPLORBOT_*` variables, and finally `~/.explorbot/config.*` from the global installation. A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
+Explorbot resolves its configuration in this order: the path given to `--config`, then `explorbot.config.*` in the working directory, then the `EXPLORBOT_*` variables, and finally `~/.explorbot/config.*` from the global installation, which each site then extends with its own [per-site config](configuration.md#per-site-configuration). A bare provider name fills every model role from the recommendations in [Providers](../basics/providers.md); a `provider/model-id` spec pins one model and splits on the first slash, so `openrouter/openai/gpt-oss-120b:nitro` selects OpenRouter with model `openai/gpt-oss-120b:nitro`. Supported providers: `openai`, `anthropic`, `google`, `groq`, `mistral`, `openrouter`, `sambanova`.
 
 In this mode output goes to `~/.explorbot/sites/<host>/output/` (or `EXPLORBOT_OUTPUT`, or a temp directory with `EXPLORBOT_EPHEMERAL=1`), experience is kept beside it unless the run is ephemeral, and the Historian is off, so no generated test files appear. See [Agentic Usage](../workflow/agentic-usage.md) for the full picture.
 
@@ -934,10 +934,18 @@ See [Configuration](configuration.md#running-from-anywhere-the-global-installati
 
 ### `npx explorbot sites`
 
-List the sites registered in the global installation — folder name, base URL, and last run. Sites register themselves the first time you explore them by URL.
+List the sites registered in the global installation — folder name, base URL, last run, and the [per-site config](configuration.md#per-site-configuration) each one uses. Sites register themselves the first time you explore them by URL.
 
 ```bash
 npx explorbot sites
+```
+
+```
+Registered sites (2):
+  app.example.com    https://app.example.com    last run 2026-09-16 09:57
+                     /home/you/.explorbot/sites/app.example.com/explorbot.config.js
+  other.example.com  https://other.example.com  last run 2026-09-01 10:00
+                     inherits global config
 ```
 
 ### `npx explorbot clean [target]`
