@@ -188,6 +188,7 @@ export const capabilityGroundingRule = dedent`
   When a scenario depends on a named action, menu item, status, option, workflow, or feature,
   that capability must be visible or explicitly confirmed in the current research/page context
   for the same target entity type.
+  Ground on the scenario's outcome, not a planned step's control label — a missing label is not a missing capability.
 
   Do not transfer capabilities between similar entities, rows, lists, detail pages, or menus.
   Do not replace a requested action with a synonym or related action unless the UI explicitly
