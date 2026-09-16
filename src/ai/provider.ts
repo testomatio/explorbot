@@ -43,29 +43,6 @@ function withHarmonyChannelFallback(tools: any): any {
   return { ...tools, commentary: createHarmonyChannelFallbackTool() };
 }
 
-function withIdleExemption(tools: any, busy: { tools: number }): any {
-  if (!tools) return tools;
-  const wrapped: any = {};
-  for (const [name, definition] of Object.entries<any>(tools)) {
-    if (typeof definition?.execute !== 'function') {
-      wrapped[name] = definition;
-      continue;
-    }
-    wrapped[name] = {
-      ...definition,
-      execute: async (...args: any[]) => {
-        busy.tools++;
-        try {
-          return await definition.execute(...args);
-        } finally {
-          busy.tools--;
-        }
-      },
-    };
-  }
-  return wrapped;
-}
-
 let telemetryRegistered = false;
 let beforeExitFlushHooked = false;
 let activeOtelSdk: NodeSDK | null = null;
@@ -792,6 +769,29 @@ function repairHarmonyChannel({ toolCall, tools }: ToolCallRepairOptions): any |
   }
   tag('warning').log(`Repaired tool name '${toolCall.toolName}' → 'commentary'`);
   return { ...toolCall, toolName: NARRATION_TOOL, input };
+}
+
+function withIdleExemption(tools: any, busy: { tools: number }): any {
+  if (!tools) return tools;
+  const wrapped: any = {};
+  for (const [name, definition] of Object.entries<any>(tools)) {
+    if (typeof definition?.execute !== 'function') {
+      wrapped[name] = definition;
+      continue;
+    }
+    wrapped[name] = {
+      ...definition,
+      execute: async (...args: any[]) => {
+        busy.tools++;
+        try {
+          return await definition.execute(...args);
+        } finally {
+          busy.tools--;
+        }
+      },
+    };
+  }
+  return wrapped;
 }
 
 export { AiError, Provider as AIProvider };
