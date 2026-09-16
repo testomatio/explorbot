@@ -2,6 +2,29 @@
 
 ## 2026-09-16
 
+### Configuration
+
+- **`~/.explorbot/sites/<host>/explorbot.config.js`** — Every site in a global installation now has its own config
+  that extends `~/.explorbot/config.js`. Keep the models, browser, and reporter settings every site shares in the
+  global file, and put anything one site needs differently in its own. The two are merged section by section and the
+  site wins, so a site that overrides `ai.model` still uses the global `ai.visionModel`. The file is written the first
+  time a site is explored and is never rewritten afterwards; a site without one runs on the global config unchanged.
+- **`web.url`** — Required in a per-site config, and must name the site whose folder holds it. Explorbot stops and
+  names the file when it is missing or points at a different site, instead of running against a site the config does
+  not describe. The site's directories and base URL stay owned by the site folder and cannot be overridden.
+
+### Changes
+
+- `explorbot sites` now shows which config each site uses, or says it inherits the global one.
+- `explorbot config` and `explorbot api config` print the per-site config file alongside the global one.
+- `explorbot init` now always writes configs as ES modules. A project without `"type": "module"` in its
+  `package.json` previously got a CommonJS config, and `init --global` always wrote one.
+
+### Fixes
+
+- A configuration error is now reported instead of being swallowed. `explorbot config` could print a configuration
+  that had in fact failed to load, because a failed load left its half-resolved settings behind for the retry to
+  pick up.
 ### Fixes
 
 - [Tester] A click that matches several elements the page renders identically no longer turns into a
