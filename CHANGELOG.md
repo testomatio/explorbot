@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-16
+
+### Fixes
+
+- A slow browser action no longer causes the step running it to be abandoned and repeated. The AI
+  request timeout measured the whole turn, time spent in the browser included, so a field that took
+  longer than the timeout to fill looked like a model that had stopped responding: the turn was dropped
+  and retried while its commands were still running on the page. Up to three copies of the same step
+  then interleaved in one browser session and each reported the other's error, so work that had gone
+  through — a record created and saved — came back as a failed step and the test was reported as failed.
+  The timeout now counts only time spent waiting on the model.
+
 ## 2026-09-15
 
 ### Fixes

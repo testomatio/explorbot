@@ -43,6 +43,31 @@ function withHarmonyChannelFallback(tools: any): any {
   return { ...tools, commentary: createHarmonyChannelFallbackTool() };
 }
 
+let toolsRunning = 0;
+
+function withIdleExemption(tools: any): any {
+  if (!tools) return tools;
+  const wrapped: any = {};
+  for (const [name, definition] of Object.entries<any>(tools)) {
+    if (typeof definition?.execute !== 'function') {
+      wrapped[name] = definition;
+      continue;
+    }
+    wrapped[name] = {
+      ...definition,
+      execute: async (...args: any[]) => {
+        toolsRunning++;
+        try {
+          return await definition.execute(...args);
+        } finally {
+          toolsRunning--;
+        }
+      },
+    };
+  }
+  return wrapped;
+}
+
 let telemetryRegistered = false;
 let beforeExitFlushHooked = false;
 let activeOtelSdk: NodeSDK | null = null;
@@ -64,7 +89,7 @@ function abortAfterIdle(ms: number, cancel: { cancelled: boolean }, controller: 
   return new Promise((_, reject) => {
     const tick = () => {
       if (cancel.cancelled) return;
-      if (executionController.isAwaitingInput()) {
+      if (executionController.isAwaitingInput() || toolsRunning > 0) {
         setTimeout(tick, ms);
         return;
       }
@@ -411,6 +436,7 @@ export class Provider {
 
   async generateWithTools(messages: ModelMessage[], model: any, tools: any, options: any = {}): Promise<any> {
     const modelName = getModelName(model);
+    tools = withIdleExemption(tools);
     setActivity(`🤖 Asking ${modelName} with dynamic tools`, 'ai');
     promptLog(`Using model: ${modelName}`);
 
