@@ -32,28 +32,20 @@ mdq 'section("API") table' --json README.md
 
 **Reads narrow, writes return the document.**
 
-`mdq(source)` gives a `MarkdownDoc`. `query()` and the sugar methods narrow it to a
-`Selection`. Every write returns a `MarkdownDoc` again, so edits chain and end with
+`mdq(source)` gives a `MarkdownQuery` — one class, holding the document and the set of
+blocks currently selected. `query()` and the sugar methods narrow that set. Every write
+returns a fresh `MarkdownQuery` over the edited document, so edits chain and end with
 `toString()`:
 
 ```js
 mdq(source)
-  .query('section("API")')
-  .append('## Notes\n')
-  .query('blockquote[0]')
-  .remove()
+  .query('section("API")').append('## Notes\n')
+  .query('blockquote[0]').remove()
   .toString();
 ```
 
-The two stringify differently, and the difference is deliberate: a `MarkdownDoc` gives the
-whole document, a `Selection` gives only the markdown it matched. So a selection can be
-passed straight back in as a fragment.
-
-```js
-const fragment = mdq(other).query('section("Setup")');
-mdq(doc).query('h2').insertAfter(fragment);   // inserts that section
-String(mdq(doc).query('paragraph'));          // the paragraphs, not the document
-```
+`toString()` is always the whole document; `text()` is the markdown of the current
+selection.
 
 ## Selectors
 
@@ -121,12 +113,12 @@ over the node's text. Every sugar method takes one: `section` `heading` `paragra
 | `entries()` | `Key: value` lines of a block, keys lowercased |
 | `count()` / `exists()` | how many matched / whether any did |
 | `first()` / `last()` / `at(n)` / `slice(from, to)` | narrow the selection |
-| `each()` | one single-match `Selection` per match |
+| `each()` | one single-match query per match |
 | `preceding()` / `following()` | everything before the first / after the last match |
 
 ## Writing
 
-Every one returns a `MarkdownDoc`.
+Every one returns a `MarkdownQuery` over the edited document.
 
 | Method | Effect |
 | --- | --- |
@@ -139,11 +131,10 @@ Every one returns a `MarkdownDoc`.
 | `addItem(text)` | append a list item, copying the existing marker |
 | `setEntry(key, value)` | set a `Key: value` line; `null` deletes it |
 
-`MarkdownDoc` itself has `append` and `prepend`, which act on the whole document.
-
-Anything that takes markdown also takes a `MarkdownDoc`, so fragments compose without a
-`toString()` hop. Writes never leave zero blank lines between blocks, and never more than
-one — including inside fenced code blocks, which are left exactly as they are.
+`prepend` and `append` need a section or list; on any other block they raise
+`MdqOperationError`. Anything that takes markdown also takes a `MarkdownQuery`. Writes
+never leave zero blank lines between blocks, and never more than one — including inside
+fenced code blocks, which are left exactly as they are.
 
 ## Frontmatter
 

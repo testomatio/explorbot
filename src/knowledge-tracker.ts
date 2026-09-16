@@ -214,7 +214,7 @@ export class KnowledgeTracker {
 
     return this.knowledgeFiles.map((knowledge) => {
       const content = knowledge.content.trim();
-      const firstLine = mdq(content).blocks().nodes()[0]?.text.split('\n')[0]?.trim() || '';
+      const firstLine = mdq(content).nodes()[0]?.text.split('\n')[0]?.trim() || '';
       return {
         url: knowledge.url || knowledge.endpoint || '',
         firstLine,

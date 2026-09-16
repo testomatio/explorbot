@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Command } from 'commander';
-import { MdqError, type MarkdownDoc, type Selection, mdq } from './query.ts';
+import { type MarkdownQuery, MdqError, mdq } from './query.ts';
 
 const EDIT_FLAGS = ['remove', 'replace', 'insertBefore', 'insertAfter', 'prepend', 'append', 'addRow', 'addItem', 'set'] as const;
 
@@ -59,7 +59,7 @@ export async function runMdq(argv: string[], readStdin: StdinReader): Promise<Cl
   }
 }
 
-async function apply(doc: MarkdownDoc, selector: string, options: Record<string, any>, file?: string): Promise<CliResult> {
+async function apply(doc: MarkdownQuery, selector: string, options: Record<string, any>, file?: string): Promise<CliResult> {
   if (options.frontmatter) return { output: `${JSON.stringify(doc.frontmatter(), null, 2)}\n`, code: 0 };
   if (!selector) return { output: 'A selector is required', code: 2 };
 
@@ -73,7 +73,7 @@ async function apply(doc: MarkdownDoc, selector: string, options: Record<string,
   return finish(String(edit(selection, chosen[0], options)), 0, options, file);
 }
 
-function read(selection: Selection, options: Record<string, any>): CliResult {
+function read(selection: MarkdownQuery, options: Record<string, any>): CliResult {
   let code = 1;
   if (selection.exists()) code = 0;
   if (options.count) return { output: `${selection.count()}\n`, code: 0 };
@@ -89,7 +89,7 @@ function read(selection: Selection, options: Record<string, any>): CliResult {
   return { output: selection.text(), code };
 }
 
-function edit(selection: Selection, flag: string, options: Record<string, any>): MarkdownDoc {
+function edit(selection: MarkdownQuery, flag: string, options: Record<string, any>): MarkdownQuery {
   if (flag === 'remove') return selection.remove();
   if (flag === 'replace') return selection.replace(options.replace);
   if (flag === 'insertBefore') return selection.insertBefore(options.insertBefore);

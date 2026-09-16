@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -10,30 +11,28 @@ const EXTERNAL = ['marked', 'yaml', 'commander'];
 rmSync(STAGE, { recursive: true, force: true });
 mkdirSync(path.join(STAGE, 'bin'), { recursive: true });
 
-async function bundle(entry: string, outfile: string) {
-  const result = await Bun.build({
-    entrypoints: [entry],
-    target: 'node',
-    format: 'esm',
-    external: EXTERNAL,
-    outdir: path.dirname(outfile),
-    naming: path.basename(outfile),
-  });
-  if (result.success) return;
-  for (const log of result.logs) console.error(log);
+function run(command: string, args: string[]) {
+  const result = spawnSync(command, args, { encoding: 'utf8' });
+  if (result.status === 0) return;
+  console.error(result.stderr || result.stdout);
   process.exit(1);
 }
 
-await bundle(path.join(PACKAGE, 'query.ts'), path.join(STAGE, 'index.js'));
-await bundle(path.join(ROOT, 'bin', 'mdq.ts'), path.join(STAGE, 'bin', 'mdq.js'));
+function bundle(entry: string, outfile: string) {
+  const args = [entry, '--target', 'node', '--format', 'esm', '--outfile', outfile];
+  for (const name of EXTERNAL) args.push('--external', name);
+  run('bun', ['build', ...args]);
+}
+
+bundle(path.join(PACKAGE, 'query.ts'), path.join(STAGE, 'index.js'));
+bundle(path.join(ROOT, 'bin', 'mdq.ts'), path.join(STAGE, 'bin', 'mdq.js'));
 
 const cli = path.join(STAGE, 'bin', 'mdq.js');
 const shebanged = readFileSync(cli, 'utf8').replace(/^#!.*\n/, '');
 writeFileSync(cli, `#!/usr/bin/env node\n${shebanged}`, { mode: 0o755 });
 
 const types = path.join(STAGE, 'types');
-const declarations = Bun.spawnSync([
-  'bunx',
+run('bunx', [
   'tsc',
   path.join(PACKAGE, 'query.ts'),
   path.join(PACKAGE, 'edit.ts'),
@@ -52,10 +51,6 @@ const declarations = Bun.spawnSync([
   '--outDir',
   types,
 ]);
-if (declarations.exitCode !== 0) {
-  console.error(declarations.stderr.toString());
-  process.exit(1);
-}
 
 for (const file of readdirSync(types)) {
   const target = path.join(types, file);

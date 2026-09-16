@@ -80,22 +80,6 @@ describe('prepend and append on a section', () => {
   });
 });
 
-describe('document-level append and prepend', () => {
-  it('appends a block at the end', () => {
-    expect(mdq('# A\n\ntext\n').append('## New\n').toString()).toBe('# A\n\ntext\n\n## New\n');
-  });
-
-  it('prepends a block at the start', () => {
-    expect(mdq('# A\n\ntext\n').prepend('> note\n').toString()).toBe('> note\n\n# A\n\ntext\n');
-  });
-
-  it('prepends after frontmatter, never before it', () => {
-    const out = mdq('---\nurl: /x\n---\n\n# A\n').prepend('> note\n').toString();
-    expect(out.startsWith('---\nurl: /x\n---\n')).toBe(true);
-    expect(out).toContain('> note');
-  });
-});
-
 describe('chained edits', () => {
   it('composes several writes in one expression', () => {
     const out = mdq('## A\n\nfirst\n\n## B\n\nother\n').query('section("A")').append('added\n').query('paragraph("other")').remove().toString();
