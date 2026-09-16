@@ -2,6 +2,18 @@
 
 Query and edit markdown with a selector language — jq, for markdown.
 
+## Install
+
+```bash
+npx mdq 'h2' README.md     # no install
+npm install mdq            # as a library
+npm install -g mdq         # as a command
+```
+
+Node 18 or newer. Two dependencies: `marked` and `yaml`.
+
+## Use
+
 ```js
 import { mdq } from 'mdq';
 
@@ -153,7 +165,3 @@ doc.setFrontmatter('wait', 2000);    // comments and formatting survive
   because there is nothing to select.
 - **YAML frontmatter only.** TOML (`+++`) and JSON blocks are skipped from the token index
   but not parsed.
-
-## Dependencies
-
-`marked` and `yaml`. Nothing else.

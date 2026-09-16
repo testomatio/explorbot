@@ -4,7 +4,7 @@ import { MdqError, type MarkdownDoc, type Selection, mdq } from './query.ts';
 
 const EDIT_FLAGS = ['remove', 'replace', 'insertBefore', 'insertAfter', 'prepend', 'append', 'addRow', 'addItem', 'set'] as const;
 
-export async function runMdq(argv: string[], stdin: string): Promise<CliResult> {
+export async function runMdq(argv: string[], readStdin: StdinReader): Promise<CliResult> {
   const program = new Command();
   program
     .name('mdq')
@@ -41,7 +41,8 @@ export async function runMdq(argv: string[], stdin: string): Promise<CliResult> 
     selector = '';
   }
 
-  let source = stdin;
+  let source = '';
+  if (!file) source = await readStdin();
   if (file) {
     try {
       source = readFileSync(file, 'utf8');
@@ -108,6 +109,8 @@ function finish(output: string, code: number, options: Record<string, any>, file
   writeFileSync(file, output);
   return { output: '', code };
 }
+
+export type StdinReader = () => Promise<string>;
 
 export interface CliResult {
   output: string;

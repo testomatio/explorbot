@@ -5,6 +5,8 @@
 ### New CLI Options
 
 - **`mdq`** — A new command for reading and editing markdown from the shell, the way `jq` reads JSON.
+  It ships as its own npm package, so it runs without installing anything: `npx mdq 'h2' README.md`.
+  It also works as a library — `import { mdq } from 'mdq'` — on Node 18 or newer.
   The first argument is a selector, the second an optional file (stdin is used when it is omitted).
   Matched markdown is printed by default. Exit codes compose like `grep`: `0` when something matched,
   `1` when nothing did, `2` for a bad selector or bad usage.
@@ -53,6 +55,9 @@
 - A search written as `/pattern/` is now case-sensitive unless it ends with `i`, matching how quoted
   searches already behaved. Previously every `/pattern/` ignored case whether it said so or not.
 - Searching a table now looks at its cells, not only its column titles.
+- Reading a file no longer waits on standard input. Passing a filename while standard input was an
+  open pipe used to abort with an `EAGAIN` error on Node; input is now read only when no filename
+  is given.
 
 ## 2026-09-11
 
