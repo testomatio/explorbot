@@ -4,6 +4,23 @@
 
 ### Fixes
 
+- [Tester] A click that matches several elements the page renders identically no longer turns into a
+  guessing game. When a locator matched more than one element, the list handed back to the tester numbered
+  them and asked it to pick one by number — but where the matches carry the same text, the same markup and
+  the same visible state, that number means nothing. A row of bare toggles would be clicked at random, one
+  after another, every click reported as a success while the setting under test never moved. The list now
+  marks which matches are identical to one another and points to clicking by sight, which is the only thing
+  that tells them apart.
+- Page snapshots: the HTML given to agents now carries the state of the control it describes — whether a
+  switch is on, a section expanded, a tab selected, a button pressed, or a control disabled. That state was
+  being stripped along with the framework noise, so two toggles set to opposite values looked like the same
+  element, and no agent could read from the markup whether its click had changed anything.
+- [Pilot] The evidence Pilot weighs when deciding pass or fail now says what each check found, rather than
+  only that it ran. A visual check was listed back as a restatement of the question it had been asked, so
+  its answer reached the final review buried at the end of the session log — and a test that had already
+  established the outcome on screen could still be failed with a vague "could not be confirmed" in place of
+  the result it observed. Verdicts now cite what was seen, and the evidence takes less room for it, because
+  a passed assertion is no longer repeated back several times over.
 - A slow browser action no longer causes the step running it to be abandoned and repeated. The AI
   request timeout measured the whole turn, time spent in the browser included, so a field that took
   longer than the timeout to fill looked like a model that had stopped responding: the turn was dropped

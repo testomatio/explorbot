@@ -1016,14 +1016,14 @@ export class Pilot implements Agent {
   private formatSuccessfulAssertions(currentState: ActionResult, testerConversation: Conversation): string {
     const lines: string[] = [];
     for (const [assertion, passed] of Object.entries(currentState.verifications ?? {})) {
-      if (passed) lines.push(`state verification (passed): ${assertion}`);
+      if (passed) lines.push(`verify: ${assertion}`);
     }
 
     for (const exec of testerConversation.getToolExecutions()) {
       if (!EVIDENCE_TOOLS.includes(exec.toolName) || !exec.wasSuccessful) continue;
       const description = exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
-      const result = exec.output?.message || exec.output?.analysis || exec.output?.result;
-      lines.push(`CHECK ${exec.toolName} (executed successfully): ${description}${result ? ` -> ${result}` : ''}`);
+      const analysis = exec.output?.analysis;
+      lines.push(`${exec.toolName}: ${description}${analysis ? ` -> ${analysis}` : ''}`);
     }
 
     return [...new Set(lines)].join('\n');
