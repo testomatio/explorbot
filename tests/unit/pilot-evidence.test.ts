@@ -12,7 +12,7 @@ describe('Pilot evidence', () => {
     const conversation = { getToolExecutions: () => [] };
 
     expect((pilot as any).hasSuccessfulCheckEvidence(state, conversation)).toBe(true);
-    expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('state verification (passed)');
+    expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('verify: Heading is visible');
   });
 
   it('treats successful check tools as assertion evidence', () => {
@@ -30,7 +30,26 @@ describe('Pilot evidence', () => {
     };
 
     expect((pilot as any).hasSuccessfulCheckEvidence(state, conversation)).toBe(true);
-    expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('CHECK verify (executed successfully)');
+    expect((pilot as any).formatSuccessfulAssertions(state, conversation)).toContain('verify: Heading is visible');
+  });
+
+  it('reports what a visual check found, not that it ran', () => {
+    const pilot = buildPilot();
+    const state = {};
+    const conversation = {
+      getToolExecutions: () => [
+        {
+          toolName: 'see',
+          wasSuccessful: true,
+          input: { request: 'Check the title field value' },
+          output: { analysis: 'The title field is empty.', message: 'Successfully analyzed screenshot for: Check the title field value' },
+        },
+      ],
+    };
+
+    const formatted = (pilot as any).formatSuccessfulAssertions(state, conversation);
+    expect(formatted).toContain('see: Check the title field value -> The title field is empty.');
+    expect(formatted).not.toContain('Successfully analyzed screenshot');
   });
 
   it('does not treat context reads as completion evidence', () => {

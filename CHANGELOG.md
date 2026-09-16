@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-16
+
+### Fixes
+
+- [Pilot] The evidence Pilot weighs when deciding pass or fail now says what each check found, rather than
+  only that it ran. A visual check was listed back as a restatement of the question it had been asked, so
+  its answer reached the final review buried at the end of the session log — and a test that had already
+  established the outcome on screen could still be failed with a vague "could not be confirmed" in place of
+  the result it observed. Verdicts now cite what was seen, and the evidence takes less room for it, because
+  a passed assertion is no longer repeated back several times over.
+
 ## 2026-09-15
 
 ### Fixes
