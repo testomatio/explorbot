@@ -16,6 +16,7 @@ import { createDebug, setStepSpanParent, tag } from './utils/logger.js';
 import { Overlay, OverlayPage } from './utils/overlay.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import type { Region } from './utils/region.js';
+import { isInternalStep } from './utils/step-analyzer.ts';
 import { safeFilename } from './utils/strings.ts';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
 
@@ -563,7 +564,7 @@ export const attachStepLogger = (target: ExecutedStep[], assertionsTarget?: Arra
   let batchFailed = false;
   const listener: StepListener = (step, error) => {
     if (!step?.toCode) return;
-    if (step.name?.startsWith('grab')) return;
+    if (isInternalStep(step)) return;
 
     const existing = recorded.get(step);
     if (existing) {

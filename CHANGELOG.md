@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-09-18
+
+### Changes
+
+- Reporter: internal page-inspection calls Explorbot makes on its own — `I.grabBrowserLogs()`, `I.grabSource()`,
+  `I.saveScreenshot()` and the like — no longer appear among a test's steps or in its log on Testomat.io. Reported
+  tests now list only the actions the test actually performed.
+- Reporter: browser console errors and failed network requests are no longer reported as failed steps. They are
+  collected in the test log instead, so a page that logs errors in the background no longer makes a passing test
+  read as broken. Pilot and the session report still receive them as before.
+- Reporter: a console or network error arriving at the very end of a test no longer replaces the test's summary
+  message in the report.
+- [Rerunner] `explorbot rerun` no longer prints or records Explorbot's own page-inspection calls between the steps
+  of the test being re-run.
+- Observability: each step in a Langfuse trace is now named after the command it ran (`I.click`, `I.fillField`)
+  instead of a generic `I.step`.
+
 ## 2026-09-17
 
 ### Changes

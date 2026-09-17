@@ -202,6 +202,24 @@ describe('Reporter', () => {
       expect(steps[0].steps).toBeUndefined();
     });
 
+    test('should keep console and network observations out of report steps', async () => {
+      const reporter = new TestableReporter();
+      const test = new Test('Test Scenario', 'high', ['Expected outcome'], 'https://example.com');
+
+      const note = test.startNote('Open dashboard');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      test.addStep('I.click("Dashboard")', 40, 'passed');
+      note.commit(TestResult.PASSED);
+
+      test.addObservation('Console error: Uncaught TypeError');
+      test.addObservation('Network error: GET /api/items → 500');
+
+      const steps = reporter.combineStepsAndNotes(test);
+
+      expect(steps.length).toBe(1);
+      expect(steps[0].title).toBe('Open dashboard');
+    });
+
     test('should handle empty test', () => {
       const reporter = new TestableReporter();
       const test = new Test('Test Scenario', 'high', ['Expected outcome'], 'https://example.com');

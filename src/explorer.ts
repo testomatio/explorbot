@@ -21,6 +21,7 @@ import { Test, TestResult } from './test-plan.ts';
 import { BrowserRecoveryError, browserErrorMessage, isFatalBrowserError, isNavigationTransitionError } from './utils/browser-errors.ts';
 import { createDebug, log, tag } from './utils/logger.js';
 import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
+import { isInternalStep } from './utils/step-analyzer.ts';
 
 declare global {
   namespace NodeJS {
@@ -206,8 +207,7 @@ class Explorer {
 
     const stepHandler = (step: any, status?: string, error?: string, log?: string) => {
       if (!step.toCode) return;
-      if (step?.name?.startsWith('grab')) return;
-      if (step?.name?.startsWith('save')) return;
+      if (isInternalStep(step)) return;
 
       test.addStep(step.toCode(), step.duration, status, error, log);
 
