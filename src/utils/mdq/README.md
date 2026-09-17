@@ -148,6 +148,35 @@ doc.query('h2').count();             // 0 — the --- block is not a heading
 doc.setFrontmatter('wait', 2000);    // comments and formatting survive
 ```
 
+## Prior art
+
+The selector grammar here is **bespoke**. It is not a standard, and there is no upstream
+parser for it — element names and descendant-by-space come from CSS, `[2:5]` slices from
+Python, and a tolerated leading `.` from jq.
+
+The established alternative is the **unified/remark** stack: parse to
+[mdast](https://github.com/syntax-tree/mdast), then select with
+[`unist-util-select`](https://github.com/syntax-tree/unist-util-select), which implements
+real CSS selectors on top of `css-selector-parser`. If you want a standards-based tool,
+use that.
+
+mdq exists because three things do not fall out of that stack:
+
+- **Sections.** mdast is flat: a heading and the blocks beneath it are siblings, so the CSS
+  descendant combinator cannot express "this heading and everything under it until the next
+  heading of the same depth". [`remark-sectionize`](https://github.com/jake-low/remark-sectionize)
+  adds the nesting, but its synthetic `section` nodes carry no `position`, so their source
+  range has to be derived from their children before anything can be edited in place.
+- **Editing by byte range.** mdq records each block's offset in the original source and
+  splices text, so anything it does not touch stays byte-identical. mdast nodes do carry
+  offsets, so this is achievable there too — it is a thing to build, not a thing you get.
+- **Text and pattern matching.** mdast headings have no flat text field (the text is a child
+  node), CSS dropped `:contains()`, and `unist-util-select` parses the attribute `i` flag
+  but does not apply it — so `/^summary/i` has no selector form at all.
+
+GFM tables are not in core remark either; they need `remark-gfm`.
+
+
 ## Limitations
 
 - **Block-level comments only.** A comment inside a paragraph (`text <!-- x --> more`) is
