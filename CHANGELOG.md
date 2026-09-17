@@ -4,6 +4,11 @@
 
 ### Changes
 
+- [Tester] When picking an item from a list, Explorbot no longer settles on whatever sits at the top. It weighs
+  what each row actually holds and favours ones with real content over empty or nearly empty ones, and when it
+  adds a second item to the same selection it picks one it has not already selected.
+- [Tester] The name of an item Explorbot selects is now written into its notes, so Pilot can confirm which one
+  was picked.
 - [Pilot] When the app reports an action succeeded but the record is not visible on the page, Pilot now asks
   the API whether it was stored instead of failing on what the screenshot shows. A record the API cannot find
   is still a failure. Needs API access configured; without it, Pilot judges from the page as before.

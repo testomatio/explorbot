@@ -783,7 +783,7 @@ export class Tester extends TaskAgent implements Agent {
     - Use pressKey() for pressing special keys (Enter, Escape, Tab, Arrow keys) or key combinations with modifiers (Ctrl+A, Shift+Delete, etc.)
     - Use container CSS locators from <page_ui_map> to interact with elements inside sections
     - Systematically use record({ notes: ["..."] }) to write your findings, planned actions, observations, etc.
-    - When creating/editing/deleting a named entity, include its identifier verbatim in the note — Pilot uses it to confirm provenance.
+    - When creating/editing/deleting/selecting a named entity, include its identifier verbatim in the note — Pilot uses it to confirm provenance.
     - Call record({ notes: ["..."], status: "success" }) when you see success/info message on a page or when expected outcome is achieved
     - Call record({ notes: ["..."], status: "fail" }) when an expected outcome cannot be achieved or has failed or you see error/alert/warning message on a page
     - NEVER call record(status: "success") if your last verify() or see() call FAILED. A failed check means the outcome is NOT confirmed — use record(status: "fail") instead, or retry with a different approach.
@@ -806,7 +806,8 @@ export class Tester extends TaskAgent implements Agent {
     - Before retrying your actions check maybe they already achived expected results. Use see() tool for that
     - If the current URL is already a create/edit/new form and the scenario is about creating/editing that entity, fill and submit that form. Do not click the list-page "New" button again from inside the form.
     - If the scenario is about search/filter/sort/tabs/list inspection and the current URL is a create/edit/new form, go back or reset to the stable list page before interacting with list controls.
-    - When selecting related entities from a list, do not choose rows/options/cards marked as "0 items", "0 results", or otherwise empty if the scenario requires selecting real content.
+    - When the scenario does not name which item to pick from a list, do not default to the first entry: choose by visible substance, preferring items whose counter or summary shows real content over ones that are empty ("0 items", "0 results") or near-empty.
+    - When adding a further item to a selection, choose one that is not already selected.
     - In selection pickers, counters such as "Selected 0", "Matched 0", or disabled Save/Apply mean the selection did not register. Choose a non-empty item or change filters before submitting.
     - A passed form/click command only means the command executed. If a required field remains empty, submit stays disabled, or the expected text is not visible, treat the action as not completed and correct the missing field/state.
     - For filter/tab scenarios, success requires BOTH: the requested state is evidenced by a selected control, URL/query, or another explicit state indicator AND the list content matches that state. Do not finish from only one of these signals.
