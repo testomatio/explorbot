@@ -138,6 +138,7 @@ export class Reporter {
 
   protected combineStepsAndNotes(test: Test, lastScreenshotFile?: string): Step[] {
     const noteEntries = Object.entries(test.notes)
+      .filter(([, note]) => !note.observation)
       .map(([timestampKey, note]) => ({
         startTime: note.startTime,
         endTime: note.endTime,
@@ -272,9 +273,12 @@ export class Reporter {
         description: test.description,
         code: test.generatedCode || '',
         steps,
-        logs: Object.values(test.steps)
-          .map((stepData) => stepData.text)
-          .join('\n'),
+        logs: [
+          ...Object.values(test.steps).map((stepData) => stepData.text),
+          ...Object.values(test.notes)
+            .filter((note) => note.observation)
+            .map((note) => note.message),
+        ].join('\n'),
         files: Object.values(test.artifacts) || [],
         message: test.summary || this.extractLastNoteMessage(test) || '',
         meta,
@@ -341,7 +345,7 @@ export class Reporter {
   }
 
   private extractLastNoteMessage(test: Test): string {
-    const notes = Object.values(test.notes);
+    const notes = Object.values(test.notes).filter((note) => !note.observation);
     if (notes.length === 0) return '';
     return notes[notes.length - 1].message;
   }

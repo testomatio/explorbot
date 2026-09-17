@@ -5,6 +5,8 @@ import { isDynamicId } from './xpath.ts';
 export const CODECEPT_TOOLS = ['click', 'hover', 'pressKey', 'form'] as const;
 export type CodeceptToolName = (typeof CODECEPT_TOOLS)[number];
 
+const INTERNAL_STEP_PREFIXES = ['grab', 'save'];
+
 const CODECEPT_FORM_COMMANDS: readonly string[] = ['I.fillField', 'I.type', 'I.selectOption', 'I.attachFile', 'I.checkOption', 'I.uncheckOption'];
 
 export function isCodeceptToolName(toolName: string): toolName is CodeceptToolName {
@@ -70,4 +72,10 @@ export function mergeUniqueStepsByCode(primary: SessionStep[], secondary: Sessio
     merged.push(step);
   }
   return merged;
+}
+
+export function isInternalStep(step: { title?: string }): boolean {
+  const title = step?.title;
+  if (!title) return false;
+  return INTERNAL_STEP_PREFIXES.some((prefix) => title.startsWith(prefix));
 }
