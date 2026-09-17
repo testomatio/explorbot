@@ -325,6 +325,7 @@ export class ConfigParser {
   private site: SiteRecord | null = null;
   private siteStartPath = '/';
   private siteConfigPath: string | null = null;
+  private runBase: RunBase | null = null;
 
   private constructor() {}
 
@@ -366,6 +367,7 @@ export class ConfigParser {
     if (this.config && !options?.config && !options?.path && this.runtimeTarget === target) {
       return this.config;
     }
+    this.runBase = parseRunBase(options?.baseUrl);
 
     // Store the initial working directory for reference
     if (!process.env.INITIAL_CWD) {
@@ -409,7 +411,7 @@ export class ConfigParser {
         log(`Configuration built from EXPLORBOT_* environment variables. Output: ${outputRoot}`);
       }
 
-      let config = this.resolveConfig(loadedConfig as ExplorbotConfig, options);
+      let config = this.resolveConfig(loadedConfig as ExplorbotConfig);
       await resolveConfigModels(config.ai);
       this.site = null;
       this.siteConfigPath = null;
@@ -481,6 +483,18 @@ export class ConfigParser {
     return this.siteConfigPath;
   }
 
+  public applyBasePath(target: string): string {
+    const base = this.runBase?.path;
+    if (!base) return target;
+    if (!target.startsWith('/')) return target;
+    if (target === base || target.startsWith(`${base}/`) || target.startsWith(`${base}?`)) return target;
+    return `${base}${target}`;
+  }
+
+  public getBaseQuery(): string {
+    return this.runBase?.query || '';
+  }
+
   public resolveTargetPath(target?: string): string {
     if (!this.site) {
       const configured = this.config?.playwright?.url || this.config?.web?.url;
@@ -489,12 +503,13 @@ export class ConfigParser {
       if (targetOrigin && baseOrigin && targetOrigin !== baseOrigin) {
         tag('warning').log(`Exploring ${targetOrigin} but base URL is ${baseOrigin}. Relative navigation resolves against the base URL — set web.url to ${targetOrigin} to avoid it.`);
       }
-      return target || '/';
+      return this.applyBasePath(target || '/');
     }
     if (!target) return this.siteStartPath;
 
     const resolved = resolveSiteTarget(target, this.site.url);
     if (resolved.baseUrl !== this.site.url) return target;
+    if (target.startsWith('/')) return this.applyBasePath(resolved.path);
     return resolved.path;
   }
 
@@ -521,6 +536,7 @@ export class ConfigParser {
       ConfigParser.instance.site = null;
       ConfigParser.instance.siteStartPath = '/';
       ConfigParser.instance.siteConfigPath = null;
+      ConfigParser.instance.runBase = null;
     }
   }
 
@@ -683,15 +699,15 @@ export class ConfigParser {
     }
   }
 
-  private resolveConfig(config: ExplorbotConfig, options?: { baseUrl?: string }): ExplorbotConfig {
+  private resolveConfig(config: ExplorbotConfig): ExplorbotConfig {
     if (config.web?.url && !config.playwright?.url) {
       config.playwright = config.playwright || { browser: 'chromium', url: '' };
       config.playwright.url = config.web.url;
     }
 
-    if (options?.baseUrl) {
+    if (this.runBase) {
       config.playwright = config.playwright || { browser: 'chromium', url: '' };
-      config.playwright.url = options.baseUrl;
+      config.playwright.url = this.runBase.origin;
     }
 
     resolveLangfuse(config.ai);
@@ -925,7 +941,22 @@ export async function createModel(provider: string, modelId: string): Promise<an
   return (await info.load())(modelId);
 }
 
+function parseRunBase(baseUrl?: string): RunBase | null {
+  if (!baseUrl) return null;
+
+  const url = URL.parse(baseUrl);
+  if (!url) throw new Error(`Base URL must be a full URL like https://app.example.com/team/acme, got "${baseUrl}"`);
+
+  return { origin: url.origin, path: url.pathname.replace(/\/+$/, ''), query: url.search };
+}
+
 type ModelRole = 'model' | 'visionModel' | 'agenticModel';
+
+interface RunBase {
+  origin: string;
+  path: string;
+  query: string;
+}
 
 interface ConfiguredModel {
   name: string;

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-09-18
+
+### New CLI Options
+
+- **`--base-url <url>`** — Point one run at one area of a site without editing any config file. The origin selects the
+  site, so the knowledge and experience already stored for that host still apply. The path is prepended to relative
+  paths coming from plans and commands, so a plan written against `/runs` runs inside the area you name. The query
+  parameters are added to every page load, which keeps a preview deployment selected for the whole run. Absolute URLs
+  are left alone, so a login page outside the area still works.
+
+  ```bash
+  explorbot test plans/runs.md '*' --base-url 'https://app.example.com/teams/acme/'
+  explorbot test plans/runs.md '*' --base-url 'https://app.example.com/teams/acme/?preview=pr-42'
+  explorbot explore /settings --base-url 'https://app.example.com/teams/acme/'
+  ```
+
 ## 2026-09-17
 
 ### Changes
