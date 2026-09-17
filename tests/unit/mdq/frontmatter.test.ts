@@ -1,24 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { splitFrontmatter } from '../../../src/utils/mdq/edit.ts';
+import { MarkdownEditor } from '../../../src/utils/mdq/edit.ts';
 import { buildTokenIndex, mdq } from '../../../src/utils/mdq/query.ts';
 
 describe('splitFrontmatter', () => {
   it('splits a leading yaml block from the body', () => {
     const src = '---\nurl: /login\nwait: 1000\n---\n\n# Title\n';
-    const fm = splitFrontmatter(src);
+    const fm = MarkdownEditor.splitFrontmatter(src);
     expect(fm.raw).toBe('url: /login\nwait: 1000');
     expect(fm.body).toBe('\n# Title\n');
     expect(fm.offset).toBe(src.length - fm.body.length);
   });
 
   it('returns no frontmatter when the document does not open with ---', () => {
-    const fm = splitFrontmatter('# Title\n\n---\n');
+    const fm = MarkdownEditor.splitFrontmatter('# Title\n\n---\n');
     expect(fm.raw).toBe('');
     expect(fm.offset).toBe(0);
   });
 
   it('treats an unterminated --- as body, not frontmatter', () => {
-    const fm = splitFrontmatter('---\nnot closed\n');
+    const fm = MarkdownEditor.splitFrontmatter('---\nnot closed\n');
     expect(fm.raw).toBe('');
     expect(fm.offset).toBe(0);
   });

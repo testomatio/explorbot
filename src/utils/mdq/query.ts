@@ -1,25 +1,7 @@
 import { type Token, type Tokens, marked } from 'marked';
-import { blockEnd, insertAt, readFrontmatter, removeRanges, renderItem, renderTable, rewriteEntries, spliceRanges, splitFrontmatter, writeFrontmatter } from './edit.ts';
+import { MarkdownEditor } from './edit.ts';
 
-export { splitFrontmatter };
-
-const SELECTOR_NAMES = new Set(['section', 'heading', 'paragraph', 'table', 'list', 'item', 'code', 'blockquote', 'hr', 'html', 'comment']);
-
-const TOKEN_TYPES: Record<string, string> = {
-  heading: 'heading',
-  paragraph: 'paragraph',
-  table: 'table',
-  code: 'code',
-  list: 'list',
-  blockquote: 'blockquote',
-  hr: 'hr',
-  html: 'html',
-  item: 'list_item',
-};
-
-const TEXT_TOKENS = new Set(['heading', 'paragraph', 'code', 'blockquote', 'list_item']);
-
-const SEGMENT = /(\s*\.?)([A-Za-z]\w*)(?:\((!?)(~?)(?:"((?:[^"\\]|\\.)*)"|\/((?:[^/\\]|\\.)*)\/([a-z]*))\))?((?:\[[^\]]*\])*)\s*/y;
+export { MarkdownEditor };
 
 export class MarkdownQuery {
   private source: string;
@@ -129,7 +111,7 @@ export class MarkdownQuery {
   }
 
   frontmatter(): Record<string, unknown> {
-    return readFrontmatter(this.source);
+    return this.editor().frontmatter();
   }
 
   count(): number {
@@ -187,11 +169,11 @@ export class MarkdownQuery {
   }
 
   replaceEach(replacer: (match: MarkdownQuery, index: number) => Markdown): MarkdownQuery {
-    return new MarkdownQuery(spliceRanges(this.source, this.matches, (range, index) => String(replacer(new MarkdownQuery(this.source, [range]), index))));
+    return new MarkdownQuery(this.editor().replace(this.matches, (range, index) => String(replacer(new MarkdownQuery(this.source, [range]), index))));
   }
 
   remove(): MarkdownQuery {
-    return new MarkdownQuery(removeRanges(this.source, this.matches));
+    return new MarkdownQuery(this.editor().remove(this.matches));
   }
 
   insertBefore(markdown: Markdown): MarkdownQuery {
@@ -199,7 +181,7 @@ export class MarkdownQuery {
   }
 
   insertAfter(markdown: Markdown): MarkdownQuery {
-    return this.insertAll((range) => blockEnd(range), markdown);
+    return this.insertAll((range) => MarkdownEditor.blockEnd(range), markdown);
   }
 
   prepend(markdown: Markdown): MarkdownQuery {
@@ -212,22 +194,22 @@ export class MarkdownQuery {
 
   addRow(row: Record<string, string>): MarkdownQuery {
     return new MarkdownQuery(
-      spliceRanges(this.source, this.matches, (range) => {
+      this.editor().replace(this.matches, (range) => {
         if (range.token.type !== 'table') throw new MdqOperationError(`addRow needs a table, got ${range.token.type}`);
         const table = range.token as Tokens.Table;
         const headers = table.header.map((cell) => cell.text);
         const existing = table.rows.map((cells) => headers.map((_, index) => cells[index]?.text || ''));
-        return renderTable(headers, [...existing, headers.map((header) => row[header] || '')], table.align);
+        return MarkdownEditor.table(headers, [...existing, headers.map((header) => row[header] || '')], table.align);
       })
     );
   }
 
   addItem(text: string): MarkdownQuery {
     return new MarkdownQuery(
-      spliceRanges(this.source, this.matches, (range) => {
+      this.editor().replace(this.matches, (range) => {
         if (range.token.type !== 'list') throw new MdqOperationError(`addItem needs a list, got ${range.token.type}`);
         const raw = (((range.token as any).raw as string) || '').trimEnd();
-        return `${raw}\n${renderItem(raw, text)}\n`;
+        return `${raw}\n${MarkdownEditor.item(raw, text)}\n`;
       })
     );
   }
@@ -235,12 +217,12 @@ export class MarkdownQuery {
   setEntry(key: string, value: string | null): MarkdownQuery {
     return this.replaceEach((match) => {
       const token = match.matches[0].token;
-      return rewriteEntries(this.tokenText(token), key, value, token.type === 'blockquote');
+      return MarkdownEditor.entries(this.tokenText(token), key, value, token.type === 'blockquote');
     });
   }
 
   setFrontmatter(key: string, value: unknown): MarkdownQuery {
-    return new MarkdownQuery(writeFrontmatter(this.source, key, value));
+    return new MarkdownQuery(this.editor().setFrontmatter(key, value));
   }
 
   toString(): string {
@@ -251,39 +233,37 @@ export class MarkdownQuery {
     return this.source;
   }
 
-  /** @deprecated Use text(). */
+  /** Compatibility aliases. Each delegates to the canonical name above; prefer those. */
   get(): string {
     return this.text();
   }
 
-  /** @deprecated Use nodes(). */
   meta(): NodeInfo[] {
     return this.nodes();
   }
 
-  /** @deprecated Use rows(). */
   toJson(): Record<string, string>[] {
     return this.rows();
   }
 
-  /** @deprecated Use entries(). */
   keyValue(): Record<string, string> {
     return this.entries();
   }
 
-  /** @deprecated Use setEntry(). */
   setKeyValue(key: string, value: string | null): MarkdownQuery {
     return this.setEntry(key, value);
   }
 
-  /** @deprecated Use preceding(). */
   before(): MarkdownQuery {
     return this.preceding();
   }
 
-  /** @deprecated Use following(). */
   after(): MarkdownQuery {
     return this.following();
+  }
+
+  private editor(): MarkdownEditor {
+    return new MarkdownEditor(this.source);
   }
 
   private run(candidates: MatchedRange[], segments: QuerySegment[]): MatchedRange[] {
@@ -311,9 +291,8 @@ export class MarkdownQuery {
     }
 
     const depth = segment.selector.match(/^h([1-6])$/);
-    let type = TOKEN_TYPES[segment.selector];
+    let type = TOKEN_ALIASES[segment.selector] || segment.selector;
     if (depth) type = 'heading';
-    if (!type) return [];
 
     let matches = candidates.filter((range) => range.token.type === type);
     if (depth) matches = matches.filter((range) => (range.token as any).depth === Number.parseInt(depth[1], 10));
@@ -340,7 +319,7 @@ export class MarkdownQuery {
         const next = candidates[j];
         if (next.token.type === 'heading' && (next.token as Tokens.Heading).depth <= heading.depth) break;
         innerTokens.push(next);
-        end = blockEnd(next);
+        end = MarkdownEditor.blockEnd(next);
       }
 
       sections.push({ token: range.token, start: range.start, length: end - range.start, innerTokens });
@@ -422,8 +401,7 @@ export class MarkdownQuery {
     if (this.isComment(token)) return (value.raw as string).trim().replace(/^<!--/, '').replace(/-->$/, '').trim();
     if (token.type === 'html') return value.raw || '';
     if (token.type === 'table') return [...(value.header || []).map((cell: any) => cell.text), ...(value.rows || []).flatMap((row: any) => row.map((cell: any) => cell.text))].join(', ');
-    if (TEXT_TOKENS.has(token.type)) return value.text || '';
-    return '';
+    return value.text || '';
   }
 
   private isComment(token: Token): boolean {
@@ -432,12 +410,7 @@ export class MarkdownQuery {
   }
 
   private insertAll(offsetOf: (range: MatchedRange) => number, markdown: Markdown): MarkdownQuery {
-    const offsets = this.matches.map(offsetOf).sort((a, b) => a - b);
-    let result = this.source;
-    for (let i = offsets.length - 1; i >= 0; i--) {
-      result = insertAt(result, offsets[i], String(markdown));
-    }
-    return new MarkdownQuery(result);
+    return new MarkdownQuery(this.editor().insert(this.matches.map(offsetOf), String(markdown)));
   }
 
   private containerStart(range: MatchedRange): number {
@@ -449,7 +422,7 @@ export class MarkdownQuery {
     if (!range.innerTokens) throw new MdqOperationError(`append needs a section or list, got ${range.token.type}`);
     const last = range.innerTokens[range.innerTokens.length - 1];
     if (!last) return this.containerStart(range);
-    return blockEnd(last);
+    return MarkdownEditor.blockEnd(last);
   }
 }
 
@@ -518,7 +491,7 @@ export function parseQuery(input: string): QuerySegment[] {
 }
 
 export function buildTokenIndex(source: string): MatchedRange[] {
-  const { body, offset } = splitFrontmatter(source);
+  const { body, offset } = MarkdownEditor.splitFrontmatter(source);
   const ranges: MatchedRange[] = [];
   let cursor = offset;
 
@@ -536,6 +509,12 @@ export function buildTokenIndex(source: string): MatchedRange[] {
 
   return ranges;
 }
+
+const SELECTOR_NAMES = new Set(['section', 'heading', 'paragraph', 'table', 'list', 'item', 'code', 'blockquote', 'hr', 'html', 'comment']);
+
+const TOKEN_ALIASES: Record<string, string> = { item: 'list_item' };
+
+const SEGMENT = /(\s*\.?)([A-Za-z]\w*)(?:\((!?)(~?)(?:"((?:[^"\\]|\\.)*)"|\/((?:[^/\\]|\\.)*)\/([a-z]*))\))?((?:\[[^\]]*\])*)\s*/y;
 
 export type Markdown = string | MarkdownQuery;
 
