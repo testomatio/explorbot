@@ -1,3 +1,4 @@
+import { isSameHostFamily } from '../utils/url-matcher.js';
 import { RequestResult, generateRequestId } from './request-result.ts';
 import type { RequestStore } from './request-store.ts';
 
@@ -39,7 +40,7 @@ export class XhrCapture {
 
     const method = request.method();
     const url = request.url();
-    if (!url.startsWith(this.baseOrigin)) return;
+    if (!isSameHostFamily(url, this.baseOrigin)) return;
 
     const status = response.status();
 

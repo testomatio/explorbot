@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { ConfigParser } from '../../src/config';
 import { normalizeUrl } from '../../src/state-manager';
-import { extractStatePath, generalizeSegment, generalizeUrl, hasDynamicUrlSegment, isDynamicSegment, isSamePageFamily, matchesNavigationUrl, matchesUrl } from '../../src/utils/url-matcher';
+import { extractStatePath, generalizeSegment, generalizeUrl, hasDynamicUrlSegment, isDynamicSegment, isSameHostFamily, isSamePageFamily, matchesNavigationUrl, matchesUrl } from '../../src/utils/url-matcher';
 
 describe('url-matcher', () => {
   beforeEach(() => {
@@ -280,6 +280,39 @@ describe('url-matcher', () => {
 
     it('does not match a static route with a dynamic detail route', () => {
       expect(isSamePageFamily('/plans/new', '/plans/a57eab1a')).toBe(false);
+    });
+  });
+  describe('isSameHostFamily', () => {
+    it('matches a host with its www redirect target', () => {
+      expect(isSameHostFamily('https://www.example.com/', 'https://example.com')).toBe(true);
+      expect(isSameHostFamily('https://example.com/', 'https://www.example.com')).toBe(true);
+    });
+
+    it('matches a subdomain with its parent domain', () => {
+      expect(isSameHostFamily('https://app.example.com/dashboard', 'https://example.com')).toBe(true);
+    });
+
+    it('matches across schemes', () => {
+      expect(isSameHostFamily('https://example.com/', 'http://example.com')).toBe(true);
+    });
+
+    it('rejects sibling subdomains', () => {
+      expect(isSameHostFamily('https://app.example.com/', 'https://auth.example.com')).toBe(false);
+    });
+
+    it('rejects a host that only shares a suffix without a dot boundary', () => {
+      expect(isSameHostFamily('https://example.com.evil.test/', 'https://example.com')).toBe(false);
+      expect(isSameHostFamily('https://notexample.com/', 'https://example.com')).toBe(false);
+    });
+
+    it('keeps ports significant', () => {
+      expect(isSameHostFamily('http://localhost:3000/', 'http://localhost:3001')).toBe(false);
+      expect(isSameHostFamily('http://localhost:3000/', 'http://localhost:3000')).toBe(true);
+    });
+
+    it('rejects urls without a host', () => {
+      expect(isSameHostFamily('/login', 'https://example.com')).toBe(false);
+      expect(isSameHostFamily('https://example.com/', '')).toBe(false);
     });
   });
 });
