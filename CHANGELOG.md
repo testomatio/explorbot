@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-18
+
+### Changes
+
+- [Navigator] A site that redirects to another host under the same domain — a bare domain sending the browser to
+  its `www.` host, for example — no longer fails every navigation. Explorbot used to compare the landing host to the
+  configured one exactly, so it rejected the page it had just loaded and reported `expected /, got /`. A host now
+  counts as the same site when it is the configured one or a subdomain of it; the port still has to match, the
+  scheme no longer does.
+- [Navigator] When a navigation does land on a different site, the failure now names the full URL it reached
+  instead of just the path, so the mismatch is visible in the log.
+- Network calls and API requests recorded during a run are matched against the site the same way, so calls made
+  from a redirected host are captured instead of silently dropped.
+
 ## 2026-09-17
 
 ### Changes
