@@ -24,6 +24,18 @@ describe('Navigator origin guard', () => {
     expect((navigator as any).isOnExpectedPage('/', stateManager)).toBe(false);
   });
 
+  it('accepts the host the configured origin redirects to', () => {
+    const navigator = createNavigator('https://example.com');
+    const stateManager = {
+      getCurrentState: () => ({
+        url: '/',
+        fullUrl: 'https://www.example.com/',
+      }),
+    };
+
+    expect((navigator as any).isOnExpectedPage('/', stateManager)).toBe(true);
+  });
+
   it('accepts the configured origin for relative expected URLs', () => {
     const navigator = createNavigator();
     const stateManager = {

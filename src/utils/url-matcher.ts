@@ -132,3 +132,10 @@ export function matchesNavigationUrl(expected: string, current: string): boolean
     .filter(Boolean);
   return recordSegments.length > 0 && recordSegments.every(isDynamicSegment);
 }
+
+export function isSameHostFamily(urlA: string, urlB: string): boolean {
+  const hostA = URL.parse(urlA)?.host.toLowerCase();
+  const hostB = URL.parse(urlB)?.host.toLowerCase();
+  if (!hostA || !hostB) return false;
+  return hostA === hostB || hostA.endsWith(`.${hostB}`) || hostB.endsWith(`.${hostA}`);
+}
