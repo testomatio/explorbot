@@ -15,7 +15,7 @@ export class ConfigCommand extends BaseCommand {
 
   async execute(): Promise<void> {
     const parser = ConfigParser.getInstance();
-    tag('info').log(ConfigCommand.render(this.explorBot.getConfig(), { configPath: parser.getConfigPath(), root: parser.getProjectRoot() }));
+    tag('info').log(ConfigCommand.render(this.explorBot.getConfig(), { configPath: parser.getConfigPath(), siteConfigPath: parser.getSiteConfigPath(), root: parser.getProjectRoot() }));
   }
 
   static async summary(options: { config?: string; path?: string; url?: string; json?: boolean } = {}): Promise<string> {
@@ -28,12 +28,15 @@ export class ConfigCommand extends BaseCommand {
       return load(site.url);
     });
 
-    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), root: parser.getProjectRoot(), json: options.json });
+    return ConfigCommand.render(config, { configPath: parser.getConfigPath(), siteConfigPath: parser.getSiteConfigPath(), root: parser.getProjectRoot(), json: options.json });
   }
 
   static data(config: SummarizedConfig, options: ConfigSummaryOptions = {}): ConfigData {
     let configPath = '';
     if (options.configPath && existsSync(options.configPath)) configPath = options.configPath;
+
+    let siteConfigPath = '';
+    if (options.siteConfigPath && existsSync(options.siteConfigPath)) siteConfigPath = options.siteConfigPath;
 
     const dirs: Record<string, string> = {};
     if (options.root) {
@@ -60,6 +63,7 @@ export class ConfigCommand extends BaseCommand {
 
     return {
       config: configPath,
+      siteConfig: siteConfigPath,
       url: config.playwright?.url || config.web?.url || config.api?.baseEndpoint || '',
       browser: config.playwright?.browser || '',
       headless: !config.playwright?.show,
@@ -82,6 +86,7 @@ export class ConfigCommand extends BaseCommand {
     const section = (title: string, entries: [string, string][]) => lines.push(...renderSection(title, entries));
 
     const general: [string, string][] = [['config', data.config || 'EXPLORBOT_* environment variables']];
+    if (data.siteConfig) general.push(['site config', data.siteConfig]);
     if (data.url) general.push(['url', data.url]);
     if (data.browser) {
       let window = 'visible';
@@ -118,12 +123,14 @@ export class ConfigCommand extends BaseCommand {
 
 interface ConfigSummaryOptions {
   configPath?: string | null;
+  siteConfigPath?: string | null;
   root?: string;
   json?: boolean;
 }
 
 export interface ConfigData {
   config: string;
+  siteConfig: string;
   url: string;
   browser: string;
   headless: boolean;

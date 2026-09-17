@@ -375,6 +375,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
         - Performing multiple form actions in a single batch
         - Complex interactions requiring sequential commands
         - Reaching items further down a list (I.scrollTo)
+        - Reloading the page to prove a change outlived it (I.reloadPage)
 
         Example - filling a form with context (PREFERRED):
         I.fillField('Username', 'John', '.login-form')
@@ -387,7 +388,7 @@ export function createCodeceptJSTools({ explorer, stateManager }: ToolDeps, task
         I.selectOption({"role":"combobox","text":"Category"}, 'Technology')
 
         Do not submit form - use verify() first to check fields were filled correctly, then click() to submit.
-        Do not use: wait functions, amOnPage, reloadPage, saveScreenshot        
+        Do not use: wait functions, amOnPage, saveScreenshot        
       `,
       inputSchema: z.object({
         codeBlock: z.string().describe('Valid CodeceptJS code starting with I. Can contain multiple commands separated by newlines.'),
@@ -1367,16 +1368,22 @@ async function extractWebElements(error: Error | null | undefined): Promise<Matc
 
 function formatElementList(matched: MatchedElement[] | null): string {
   if (!matched) return 'Could not fetch element details. Repeat the action to get better info.';
-  return matched
+  const keys = matched.map((el) => `${el.text}::${el.visible}::${el.html}`);
+  const list = matched
     .map((el, i) => {
       const lines = [`Element ${i + 1}:`, `Text: "${el.text}"`];
       if (el.visible !== undefined) lines.push(`Visible: ${el.visible}`);
       const wrapped = matched.map((_, j) => j).filter((j) => j !== i && matched[j].xpath.startsWith(`${el.xpath}/`));
       if (wrapped.length) lines.push(`Wraps: element ${wrapped.map((j) => j + 1).join(', ')}`);
+      const same = keys.map((_, j) => j).filter((j) => j !== i && keys[j] === keys[i]);
+      if (same.length) lines.push(`Identical to element ${same.map((j) => j + 1).join(', ')}`);
       lines.push(`XPath: ${el.xpath}`, `HTML: ${el.html}`);
       return lines.join('\n');
     })
     .join('\n\n');
+
+  if (new Set(keys).size === matched.length) return list;
+  return `${list}\n\nIdentical matches are not told apart by their number — picking one is a guess. Click the one you mean by appearance with visualClick().`;
 }
 
 export async function formatMatchedElements(error: Error | null | undefined): Promise<string | null> {

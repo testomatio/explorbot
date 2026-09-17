@@ -360,8 +360,10 @@ export class Planner extends PlannerBase implements Agent {
       You can suggest scenarios that can be tested only through web interface.
       You can't test emails, database, SMS, or any external services.
       Suggest scenarios that can be potentially verified by UI.
-      Focus on error or success messages as outcome.
-      Focus on URL page change or data persistency after page reload.
+      Prefer outcomes grounded in observed interface behavior.
+      Every expected outcome must be verifiable through the web interface.
+      If a page or subpage has not been observed, describe the expected visible result generically instead of inventing interface details.
+      Persistency after a reload counts only when the persisted state can be confirmed through the interface.
       If there are subpages (pages with same URL path) plan testing of those subpages as well
       Plan CRUD operations in order: create, read, update, delete.
       Do not invent specific route names, success messages, validation texts, badge counts, or welcome messages unless they are visible in research, visited pages, or prior observed flows.
@@ -372,7 +374,7 @@ export class Planner extends PlannerBase implements Agent {
       If a scenario needs existing records, recipients, results, notifications, or other target data, propose it only when that data is visible, API preconditions can create it, or the scenario itself creates the record as its setup.
       If the page appears read-only, degraded, demo-limited, maintenance-like, or lacks write controls, prefer read-only scenarios such as opening panels, inspecting visible lists, filtering, searching, or verifying current state.
       Do not assume hidden data exists just because a control is present.
-      For scenarios that act on existing items or search/filter by existing values, use only item names or values visible in research, visited pages, or prior observed flows.
+      Do not put record IDs or unique record names in test plans. Describe which record is needed and let Pilot choose it during execution; name a specific record only when research shows a small, complete list of available records.
       If the list is empty or no concrete item names are visible, do not invent "known" or "existing" items. Prefer empty-state, no-match search, clear-search, or read-only list behavior scenarios.
       Search, filter, sorting, tab, and list scenarios must start from a stable page where those controls are visible; avoid transient create/edit/new URLs unless the scenario tests that form.
       For option values and list items, use only visible or previously observed data; do not add create/update/delete setup unless the user explicitly requests that workflow.
@@ -598,7 +600,9 @@ export class Planner extends PlannerBase implements Agent {
     const sessionTests = this.getSessionTestsSummary();
     if (sessionTests) {
       conversation.addUserText(dedent`
-        Tests already planned in this session across all pages. DO NOT duplicate any of these:
+        Tests already planned in this session across all pages, with how each one ended. DO NOT duplicate any of these.
+        A failed test means the app or the harness could not do what it tried: do not re-propose the same behavior on another page unless you can name what makes it work this time.
+        A failed or unfinished test carries the last thing it observed after the dash — read it before deciding that the behavior is worth trying again.
 
         <session_tests>
         ${sessionTests}

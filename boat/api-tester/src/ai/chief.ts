@@ -261,7 +261,9 @@ export class Chief extends ChiefBase {
         - Use real enum values discovered in the data
         - Each test MUST use DIFFERENT data — never reuse the same field values across tests
         - For "create" tests: base payload on a real record but change field values to create new unique data
-        - For "update" tests: pick a real existing ID and modify specific fields
+        - Treat records and IDs from sample_data as read-only. Never update, patch, delete, archive, or otherwise mutate them
+        - For update/delete tests: the same scenario must first create its own target, then mutate only that target
+        - For negative or unsupported-method tests that could mutate data if accepted: create a scenario-owned target first; if that setup is impossible, do not send the destructive request
         - For tests needing parent references: use real _id field values from sample_data
       `);
     }

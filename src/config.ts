@@ -5,8 +5,9 @@ import { pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
 import dedent from 'dedent';
 import matter from 'gray-matter';
-import { type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, registerSite, resolveSiteTarget } from './global-config.js';
+import { EXPLORBOT_CONFIG_PATHS, type SiteRecord, findGlobalConfig, globalEnvPath, isGlobalConfigPath, loadSiteConfig, registerSite, resolveSiteTarget } from './global-config.js';
 import { getCliName } from './utils/cli-name.js';
+import { deepMerge } from './utils/merge.js';
 import { log, tag } from './utils/logger.js';
 
 export const PROVIDERS: Record<string, ProviderInfo> = {
@@ -268,7 +269,7 @@ const config: ExplorbotConfig = {
 
 type RuleEntry = string | Record<string, string>;
 
-export const EXPLORBOT_CONFIG_PATHS = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts'];
+export { EXPLORBOT_CONFIG_PATHS };
 
 export const EXPLORBOT_ENV_VARS: EnvVar[] = [
   { name: 'EXPLORBOT_AI_PROVIDER', required: true, description: 'Provider name; fills every model role from its recommended models. Turns on config-free mode' },
@@ -323,6 +324,7 @@ export class ConfigParser {
   private runtimeTarget: string | null = null;
   private site: SiteRecord | null = null;
   private siteStartPath = '/';
+  private siteConfigPath: string | null = null;
 
   private constructor() {}
 
@@ -407,16 +409,18 @@ export class ConfigParser {
         log(`Configuration built from EXPLORBOT_* environment variables. Output: ${outputRoot}`);
       }
 
-      this.config = this.resolveConfig(loadedConfig as ExplorbotConfig, options);
-      await resolveConfigModels(this.config.ai);
-      this.runtimeTarget = target;
-      this.configPath = sourcePath;
+      let config = this.resolveConfig(loadedConfig as ExplorbotConfig, options);
+      await resolveConfigModels(config.ai);
       this.site = null;
+      this.siteConfigPath = null;
 
       if (resolvedPath && isGlobalConfigPath(resolvedPath)) {
-        this.enterGlobalMode(this.config, target);
+        config = await this.enterGlobalMode(config, target);
       }
 
+      this.config = config;
+      this.runtimeTarget = target;
+      this.configPath = sourcePath;
       this.applyEnvSpec(this.config);
 
       // Restore original directory after successful config load
@@ -473,6 +477,10 @@ export class ConfigParser {
     return this.site;
   }
 
+  public getSiteConfigPath(): string | null {
+    return this.siteConfigPath;
+  }
+
   public resolveTargetPath(target?: string): string {
     if (!this.site) {
       const configured = this.config?.playwright?.url || this.config?.web?.url;
@@ -512,6 +520,7 @@ export class ConfigParser {
       ConfigParser.instance.runtimeTarget = null;
       ConfigParser.instance.site = null;
       ConfigParser.instance.siteStartPath = '/';
+      ConfigParser.instance.siteConfigPath = null;
     }
   }
 
@@ -563,16 +572,24 @@ export class ConfigParser {
     }
   }
 
-  private enterGlobalMode(config: ExplorbotConfig, target: string | null): void {
+  private async enterGlobalMode(config: ExplorbotConfig, target: string | null): Promise<ExplorbotConfig> {
     const site = resolveSiteTarget(target || undefined, config.web?.url || config.playwright?.url);
     this.site = registerSite(site.baseUrl);
     this.siteStartPath = site.path;
 
-    config.dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
-    config.playwright = { ...config.playwright, browser: config.playwright?.browser || 'chromium', url: site.baseUrl };
+    const { path: sitePath, config: siteConfig } = await loadSiteConfig(this.site.dir, site.baseUrl);
+    this.siteConfigPath = sitePath;
+
+    const merged = deepMerge(config, siteConfig);
+    await resolveConfigModels(merged.ai);
+    resolveLangfuse(merged.ai);
+
+    merged.dirs = { knowledge: 'knowledge', experience: 'experience', output: 'output' };
+    merged.playwright = { ...merged.playwright, browser: merged.playwright?.browser || 'chromium', url: site.baseUrl };
     materializeKnowledge(this.site.dir);
 
     log(`Global mode: ${site.baseUrl} stored in ${this.site.dir}`);
+    return merged;
   }
 
   private applyEnvSpec(config: ExplorbotConfig): void {
@@ -720,21 +737,7 @@ export class ConfigParser {
       },
     };
 
-    return this.deepMerge(defaults, config);
-  }
-
-  private deepMerge(target: any, source: any): any {
-    const result = { ...target };
-
-    for (const key in source) {
-      if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && source[key].constructor === Object) {
-        result[key] = this.deepMerge(result[key] || {}, source[key]);
-      } else {
-        result[key] = source[key];
-      }
-    }
-
-    return result;
+    return deepMerge(defaults, config);
   }
 
   public ensureDirectory(path: string): void {

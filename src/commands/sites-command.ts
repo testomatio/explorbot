@@ -1,4 +1,4 @@
-import { listSites, sitesDir } from '../global-config.js';
+import { findSiteConfig, listSites, sitesDir } from '../global-config.js';
 import { getCliName } from '../utils/cli-name.js';
 import { tag } from '../utils/logger.js';
 import { BaseCommand } from './base-command.js';
@@ -20,6 +20,11 @@ export class SitesCommand extends BaseCommand {
     tag('info').log(`Registered sites (${sites.length}):`);
     for (const site of sites) {
       tag('info').log(`  ${site.folder.padEnd(width)}  ${site.url}  last run ${site.lastRunAt.slice(0, 16).replace('T', ' ')}`);
+
+      let config = 'inherits global config';
+      const sitePath = findSiteConfig(site.dir);
+      if (sitePath) config = sitePath;
+      tag('info').log(`  ${' '.repeat(width)}  ${config}`);
     }
     tag('info').log('');
     tag('info').log(`Stored in ${sitesDir()}`);

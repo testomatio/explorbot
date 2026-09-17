@@ -152,14 +152,6 @@ export class Pilot implements Agent {
       ${sessionLog || 'No actions recorded'}
       </session_log>
 
-      Decide and commit. "continue" extends the loop and burns iterations — choose it only when
-      evidence is genuinely insufficient to call pass/fail, not as a safety hedge.
-      - "pass" if final state proves the SCENARIO GOAL is accomplished. Set requestVerification.
-      - "fail" if scenario was attempted but goal not achieved.
-      - "skipped" if scenario is irrelevant/inapplicable, OR systematic infrastructure failures.
-      - "continue" only when a concrete missing piece of evidence (a verify/see) would change your verdict.
-      - Mixed evidence + final state shows success → pass. Mixed + final state unclear → continue with guidance.
-
       When deciding "pass", you MUST also set requestVerification to a one-sentence natural-language
       claim about the current page (e.g., "New item Foo is visible in the items list"). NOT
       code — do not write I.*, expect(), .then(), or any JavaScript. Choose the strongest single
@@ -401,7 +393,7 @@ export class Pilot implements Agent {
   private buildVerdictSystemPrompt(task: Test): string {
     return dedent`
       You are Pilot — final decision maker for test pass/fail. Review the evidence and commit to a
-      verdict; "continue" only when evidence is genuinely insufficient.
+      verdict.
 
       ${capabilityGroundingRule}
 
@@ -415,10 +407,11 @@ export class Pilot implements Agent {
         DOM assertion can't be made.
         Do not pass when Tester achieved only a related navigation/filter/tab/status outcome instead of the
         requested action, workflow, or entity detail goal.
-      - "fail": scenario was attempted but the goal was not achieved.
+      - "fail": goal not achieved and no further step toward it is available on the current page.
       - "skipped": scenario is irrelevant to the app, OR systematic infrastructure failures (LLM errors,
         crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or "continue".
-      - "continue": tester hasn't completed the goal; provide concrete guidance (which tool, what to check).
+      - "continue": goal incomplete but the control for the NEXT step is present on the current page, or a
+        concrete missing check would change your verdict. Guidance must name that step.
         If a verify() asserted a state that was ALREADY TRUE before the test, it proves nothing — reject.
 
       reason field: one short sentence, maximum 120 characters. Do NOT restate the decision
@@ -1023,14 +1016,14 @@ export class Pilot implements Agent {
   private formatSuccessfulAssertions(currentState: ActionResult, testerConversation: Conversation): string {
     const lines: string[] = [];
     for (const [assertion, passed] of Object.entries(currentState.verifications ?? {})) {
-      if (passed) lines.push(`state verification (passed): ${assertion}`);
+      if (passed) lines.push(`verify: ${assertion}`);
     }
 
     for (const exec of testerConversation.getToolExecutions()) {
       if (!EVIDENCE_TOOLS.includes(exec.toolName) || !exec.wasSuccessful) continue;
       const description = exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
-      const result = exec.output?.message || exec.output?.analysis || exec.output?.result;
-      lines.push(`CHECK ${exec.toolName} (executed successfully): ${description}${result ? ` -> ${result}` : ''}`);
+      const analysis = exec.output?.analysis;
+      lines.push(`${exec.toolName}: ${description}${analysis ? ` -> ${analysis}` : ''}`);
     }
 
     return [...new Set(lines)].join('\n');
@@ -1134,7 +1127,9 @@ export class Pilot implements Agent {
       ${interactive ? '- Use askUser() only as last resort.' : ''}
 
       Diagnostic patterns (use <state>, executed/element/skipped fields, ariaDiff):
-      - Click failed + button in "disabled buttons" → required field missing. Instruct fill first.
+      - Scenario's target control in "disabled buttons" → a precondition is unmet; identify which before acting.
+        Other disabled controls often name the unsatisfied constraint; "active form" marks [required] fields.
+        Aim Tester at the constraint the page names, not the one the scenario assumed — note the difference in PROGRESS.
       - "overlay: none" but Tester targets an overlay → overlay closed; re-trigger.
       - "region:" in <state> → a large area appeared in place without navigation (subview, wizard step, panel). Direct Tester to act inside it; the rest of the page is still usable.
       - Action SUCCESS but ariaDiff empty → may have worked without visible DOM change; check result message.
@@ -1156,14 +1151,20 @@ export class Pilot implements Agent {
       Tester tools: click, pressKey, form, see, verify, interact, context, research, xpathCheck,
       visualClick, back, getVisitedStates, reset, stop, finish, record.
       Use tool names exactly as listed. Do not invent combined names or aliases.
+      Reloading is not a tool: to re-read a page from the server, instruct Tester to run I.reloadPage() through form.
 
       ${capabilityGroundingRule}
 
       YOUR Pilot-only tools, both over the API:
 
-      askApi(question) — ask what data already exists. It changes nothing. Use it to check whether
-      suitable data is already there before creating any, and to get the exact name or id of an existing
-      record a step must act on.
+      askApi(question) — read the app's data over the API. It changes nothing. Use when:
+
+      - Before precondition() — check whether suitable data already exists.
+      - A step needs the exact name or id of an existing record.
+      - The app reported success but the page does not show the result — ask whether it was stored.
+      - A list or dropdown is empty — ask whether the data exists at all.
+
+      The page is not the only witness. A record missing from the page may still exist.
 
       precondition(description) — create FRESH disposable test data. Never request users. Use when:
 
