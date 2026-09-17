@@ -7,6 +7,9 @@
 - [Pilot] When the app reports an action succeeded but the record is not visible on the page, Pilot now asks
   the API whether it was stored instead of failing on what the screenshot shows. A record the API cannot find
   is still a failure. Needs API access configured; without it, Pilot judges from the page as before.
+- [Pilot] A test is now marked failed only when the app itself misbehaved. When the page shows the app was
+  never built the way the scenario assumed — the field is optional, the constraint does not exist, the feature
+  belongs to a different part of the app — the test is reported as skipped instead of as a defect.
 
 ## 2026-09-16
 
