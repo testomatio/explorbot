@@ -1,0 +1,97 @@
+name: Publish mdq to npm
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    if: startsWith(github.event.release.tag_name, 'mdq-')
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout the released commit
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.release.tag_name }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        registry-url: https://registry.npmjs.org
+
+    - name: Upgrade npm for tokenless (OIDC) publishing
+      run: npm install -g npm@latest
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: latest
+
+    - name: Install dependencies
+      run: bun install
+
+    - name: Run mdq tests
+      run: bun test tests/unit/mdq/
+
+    - name: Set version from release
+      id: release
+      env:
+        TAG: ${{ github.event.release.tag_name }}
+        PRERELEASE: ${{ github.event.release.prerelease }}
+      run: |
+        VERSION="${TAG#mdq-}"
+        VERSION="${VERSION#v}"
+        echo "Publishing mdq $VERSION from release $TAG"
+        npm version "$VERSION" --no-git-tag-version
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        if [[ "$PRERELEASE" == "true" || "$VERSION" == *beta* || "$VERSION" == *pre* || "$VERSION" == *alpha* || "$VERSION" == *rc* ]]; then
+          echo "tag=beta" >> "$GITHUB_OUTPUT"
+        else
+          echo "tag=latest" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Stage mdq package
+      run: bun run build:mdq
+
+    - name: Verify mdq tarball on Node.js
+      run: |
+        npm pack ./dist-mdq --pack-destination /tmp
+        mkdir -p /tmp/mdq-smoke && cd /tmp/mdq-smoke
+        npm init -y > /dev/null
+        npm install --ignore-scripts --no-audit --no-fund /tmp/mdq-*.tgz
+        printf '# Doc\n\n## API\n\n| Method | Path |\n|---|---|\n| GET | /users |\n' > sample.md
+
+        echo "CLI, file argument"
+        ./node_modules/.bin/mdq 'h2' sample.md
+
+        echo "CLI, stdin"
+        cat sample.md | ./node_modules/.bin/mdq 'section("API") table' --json
+
+        echo "CLI, file argument while stdin is an open pipe (must not EAGAIN)"
+        ( sleep 3 ) | ./node_modules/.bin/mdq 'h2' sample.md
+
+        echo "CLI, exit code 1 when nothing matches"
+        ./node_modules/.bin/mdq 'h5' sample.md && exit 1 || test $? -eq 1
+
+        echo "Library import"
+        node --input-type=module -e "
+          import { mdq } from 'mdq';
+          const doc = mdq('---\nurl: /x\n---\n\n## A\n\n- one\n');
+          if (doc.frontmatter().url !== '/x') throw new Error('frontmatter');
+          if (doc.query('h2').count() !== 1) throw new Error('headings');
+          if (!doc.list().addItem('two').toString().includes('- two')) throw new Error('addItem');
+        "
+
+    - name: Publish mdq to npm
+      run: |
+        if npm view "mdq@${{ steps.release.outputs.version }}" version > /dev/null 2>&1; then
+          echo "mdq@${{ steps.release.outputs.version }} is already published, skipping"
+          exit 0
+        fi
+        npm publish ./dist-mdq --access public --tag ${{ steps.release.outputs.tag }}

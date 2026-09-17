@@ -262,7 +262,7 @@ export class ExperienceTracker {
         while (content.split('\n').length > maxLines) {
           const sections = mdq(content).query('section2').each();
           if (sections.length <= 1) break;
-          content = sections[sections.length - 1].replace('');
+          content = sections[sections.length - 1].replace('').toString();
         }
         return { ...experience, content };
       });
@@ -286,7 +286,7 @@ export class ExperienceTracker {
       combined = renderAsHowTo(combined);
 
       if (options?.stripCode) {
-        combined = mdq(combined).query('code').replace('');
+        combined = mdq(combined).query('code').replace('').toString();
       }
 
       if (combined.trim()) results.push(combined.trim());
@@ -515,7 +515,8 @@ function renderAsHowTo(content: string): string {
       if (text.startsWith('FLOW:')) return `## HOW to ${text.slice(5).trim()} (multi-step)\n\n`;
       if (text.startsWith('ACTION:')) return `## HOW to ${text.slice(7).trim()} (single-step)\n\n`;
       return heading.text();
-    });
+    })
+    .toString();
 }
 
 export interface ExperienceFile {
