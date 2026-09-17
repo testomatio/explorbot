@@ -55,6 +55,7 @@ interface CLIOptions {
   debug?: boolean;
   config?: string;
   path?: string;
+  baseUrl?: string;
   show?: boolean;
   headless?: boolean;
   incognito?: boolean;
@@ -65,6 +66,7 @@ interface CLIOptions {
 function buildExplorBotOptions(from: string | undefined, options: CLIOptions): ExplorBotOptions {
   return {
     from,
+    baseUrl: options.baseUrl,
     verbose: options.verbose || options.debug,
     config: options.config,
     path: options.path,
@@ -82,6 +84,7 @@ function addCommonOptions(cmd: Command): Command {
     .option('--debug', 'Enable debug logging (same as --verbose)')
     .option('-c, --config <path>', 'Path to configuration file')
     .option('-p, --path <path>', 'Working directory path')
+    .option('--base-url <url>', 'Run against this URL: its path scopes relative paths from plans, its query params ride along with every page load')
     .option('-s, --show', 'Show browser window')
     .option('--headless', 'Run browser in headless mode')
     .option('--incognito', 'Run without recording experiences')

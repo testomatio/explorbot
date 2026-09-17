@@ -509,6 +509,8 @@ export class ExplorBot {
   setCurrentPlan(plan?: Plan): void {
     this.currentPlan = plan;
     if (!plan) return;
+    if (plan.url) plan.url = this.configParser.applyBasePath(plan.url);
+    for (const test of plan.tests) test.startUrl = this.configParser.applyBasePath(test.startUrl);
     if (!this.sessionPlans.includes(plan)) {
       this.sessionPlans.push(plan);
     }
