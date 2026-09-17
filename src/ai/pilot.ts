@@ -118,7 +118,7 @@ export class Pilot implements Agent {
     }
 
     const schema = z.object({
-      decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = scenario is irrelevant OR systematic execution failures prevented testing'),
+      decision: z.enum(['pass', 'fail', 'continue', 'skipped']).describe('pass = test succeeded, fail = test failed, continue = tester should keep going, skipped = prerequisites unmet, scenario irrelevant, OR systematic execution failures prevented testing'),
       reason: z.string().describe('Concise user-facing reason, maximum 1 short sentence and 120 characters. Do NOT repeat the decision status; explain only the evidence. For continue: explain why rejected and suggest alternatives.'),
       guidance: z.string().nullable().describe('Required for "continue": specific actionable instruction for the tester — what exactly to verify, retry differently, or complete next. Be concrete.'),
       requestVerification: z
@@ -407,9 +407,14 @@ export class Pilot implements Agent {
         DOM assertion can't be made.
         Do not pass when Tester achieved only a related navigation/filter/tab/status outcome instead of the
         requested action, workflow, or entity detail goal.
-      - "fail": goal not achieved and no further step toward it is available on the current page.
-      - "skipped": scenario is irrelevant to the app, OR systematic infrastructure failures (LLM errors,
-        crashes) prevented testing. NOT for "test failed to interact" — that's "fail" or "continue".
+      Before choosing between "fail" and "skipped", settle whether the app held the state the scenario
+      presumes: an inert control means a defect only if there was something for it to act on.
+      - "fail": the app held the data/state the scenario presumes, yet the goal was not achieved and no
+        further step toward it is available on the current page.
+      - "skipped": prerequisites unmet — scenario is irrelevant to the app, or the app never held the data
+        or prior state it presumes, so its control is absent or present with nothing to act on. Also
+        systematic infrastructure failures (LLM errors, crashes). NOT when the presumed state was present
+        and the app still failed — that's "fail" or "continue".
       - "continue": goal incomplete but the control for the NEXT step is present on the current page, or a
         concrete missing check would change your verdict. Guidance must name that step.
         If a verify() asserted a state that was ALREADY TRUE before the test, it proves nothing — reject.

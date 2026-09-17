@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-18
+
+### Changes
+
+- [Pilot] A scenario the app never had the data for is now reported as skipped instead of failed. Asking for
+  the page before the first one, the page after the last, or a record that was never there used to count as a
+  failure, because the control was clicked and nothing happened. Pilot now settles whether the app ever held
+  what the scenario assumed: nothing to act on is skipped, while a control that responded and still produced
+  the wrong result stays a failure.
+
 ## 2026-09-17
 
 ### Changes
