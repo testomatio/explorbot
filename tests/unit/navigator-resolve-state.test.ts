@@ -96,7 +96,7 @@ describe('Navigator resolveState', () => {
 
     await harness.navigator.resolveState('reach /defects', fakeActionResult('/login'), { expectedUrl: '/defects' });
 
-    expect(harness.sent.some((text) => text.includes('Reached /login, expected /defects'))).toBe(true);
+    expect(harness.sent.some((text) => text.includes(`Reached ${BASE_URL}/login, expected /defects`))).toBe(true);
   });
 
   it('resolves when a proposed step reaches the expected URL', async () => {
@@ -217,7 +217,7 @@ describe('Navigator resolveState', () => {
     expect(resolved).toBe(false);
     const retry = harness.sent[1];
     expect(retry).toContain('<previous_failures>');
-    expect(retry).toContain('Reached /login, expected /defects');
+    expect(retry).toContain(`Reached ${BASE_URL}/login, expected /defects`);
     expect(retry).toContain('Invalid email or password');
     expect(retry).toContain('Full HTML context');
     expect(retry).toContain('Choose exactly ONE path');

@@ -18,6 +18,7 @@ import { sleep, waitForPageReadiness } from './utils/page-readiness.ts';
 import type { Region } from './utils/region.js';
 import { isInternalStep } from './utils/step-analyzer.ts';
 import { safeFilename } from './utils/strings.ts';
+import { isSameHostFamily } from './utils/url-matcher.js';
 import { codeceptJSSandbox, hasPlaywrightCommands, playwrightSandbox, sanitizeCodeBlock } from './utils/web-sandbox.ts';
 
 const debugLog = createDebug('explorbot:action');
@@ -318,7 +319,7 @@ class Action {
 
     const url = URL.parse(request.url());
     if (!url) return;
-    if (url.origin !== this.baseOrigin) return;
+    if (!isSameHostFamily(url.href, this.baseOrigin)) return;
 
     const call: NetworkCall = { method: request.method(), path: url.pathname, status };
     if (this.networkRequests.some((r) => r.method === call.method && r.path === call.path && r.status === call.status)) return;
