@@ -4,6 +4,11 @@
 
 ### Changes
 
+- [Tester] A test now opens its start URL before it reads the page, so its first action is chosen from the
+  page the scenario actually starts on. Previously the opening step was planned from whatever page the previous
+  test left open — a test starting on a create form could spend its whole run on the list page behind it,
+  never filling the form.
+
 - [Pilot] When the app reports an action succeeded but the record is not visible on the page, Pilot now asks
   the API whether it was stored instead of failing on what the screenshot shows. A record the API cannot find
   is still a failure. Needs API access configured; without it, Pilot judges from the page as before.
