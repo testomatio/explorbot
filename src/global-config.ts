@@ -1,9 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import dedent from 'dedent';
 
 const GLOBAL_CONFIG_NAMES = ['config.js', 'config.mjs', 'config.ts'];
 const SITE_DIRS = ['knowledge', 'experience', 'output'];
+
+export const EXPLORBOT_CONFIG_PATHS = ['explorbot.config.js', 'explorbot.config.mjs', 'explorbot.config.ts'];
 
 export function globalDir(): string {
   return join(os.homedir(), '.explorbot');
@@ -18,11 +22,7 @@ export function globalConfigPath(): string {
 }
 
 export function findGlobalConfig(): string | null {
-  for (const name of GLOBAL_CONFIG_NAMES) {
-    const fullPath = join(globalDir(), name);
-    if (existsSync(fullPath)) return fullPath;
-  }
-  return null;
+  return firstExisting(globalDir(), GLOBAL_CONFIG_NAMES);
 }
 
 export function isGlobalConfigPath(configPath: string): boolean {
@@ -45,6 +45,52 @@ export function listSites(): SiteRecord[] {
     .map((entry) => readSite(entry.name))
     .filter((site): site is SiteRecord => !!site)
     .sort((a, b) => b.lastRunAt.localeCompare(a.lastRunAt));
+}
+
+export function findSiteConfig(dir: string): string | null {
+  return firstExisting(dir, EXPLORBOT_CONFIG_PATHS);
+}
+
+function ensureSiteConfig(dir: string, baseUrl: string): string {
+  const existing = findSiteConfig(dir);
+  if (existing) return existing;
+
+  const path = join(dir, EXPLORBOT_CONFIG_PATHS[0]);
+  writeFileSync(path, siteConfigTemplate(baseUrl), 'utf8');
+  return path;
+}
+
+export async function loadSiteConfig(dir: string, baseUrl: string): Promise<{ path: string; config: any }> {
+  const path = ensureSiteConfig(dir, baseUrl);
+  const module = await import(pathToFileURL(resolve(path)).href);
+  const config = module.default || module;
+  validateSiteConfig(config, path, baseUrl);
+  return { path, config };
+}
+
+function validateSiteConfig(config: any, configPath: string, baseUrl: string): void {
+  const url = config?.web?.url;
+  if (!url) {
+    throw new Error(dedent`
+      Site config is missing web.url.
+        ${configPath}
+
+      Add it so the config states which site it configures:
+        web: { url: '${baseUrl}' },
+    `);
+  }
+
+  const declared = URL.parse(url)?.origin;
+  if (declared === baseUrl) return;
+
+  throw new Error(dedent`
+    Site config declares a different site.
+      ${configPath}
+      web.url:  ${url}
+      site:     ${baseUrl}
+
+    Fix web.url, or explore ${url} to register it as its own site.
+  `);
 }
 
 export function findSiteWith(subpath: string): SiteRecord | undefined {
@@ -105,6 +151,35 @@ export function resolveSiteTarget(target?: string, defaultBaseUrl?: string): Sit
     throw new Error(withSites(`Unknown site "${reference}".`));
   }
   return { baseUrl: site.url, path };
+}
+
+function firstExisting(dir: string, names: string[]): string | null {
+  for (const name of names) {
+    const fullPath = join(dir, name);
+    if (existsSync(fullPath)) return fullPath;
+  }
+  return null;
+}
+
+function siteConfigTemplate(baseUrl: string): string {
+  return `// Config for ${baseUrl}
+// Extends ~/.explorbot/config.js — set only what differs.
+const config = {
+  web: {
+    url: '${baseUrl}',
+  },
+
+  // ai: {
+  //   model: 'openrouter/openai/gpt-oss-120b',
+  // },
+
+  // playwright: {
+  //   show: true,
+  // },
+};
+
+export default config;
+`;
 }
 
 function readSite(folder: string): SiteRecord | null {

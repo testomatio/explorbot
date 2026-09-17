@@ -221,13 +221,19 @@ export function createAskApiTool(fisherman: Fisherman | null, task: Test) {
   return {
     askApi: tool({
       description: dedent`
-        Ask what data already exists, changing nothing.
-        Ask a question about existing records: which ones are there, what they are called, whether a particular one exists.
-        Use it before precondition() to see whether suitable data is already available, and whenever a step needs the exact name or id of a record that is already there.
+        Read the app's data over the API, changing nothing.
+        Answers questions about records: which ones are there, what they are called, whether a particular one exists.
+
+        Use it to:
+        - check whether suitable data already exists, before precondition() creates any
+        - get the exact name or id of a record a step must act on
+        - find out whether an action was stored, when the app reported success but the page does not show the result
+        - find out whether data exists at all, when a list or dropdown is empty
+
         It never creates, edits or deletes anything — precondition() does that.
       `,
       inputSchema: z.object({
-        question: z.string().describe('What to find out about data that already exists'),
+        question: z.string().describe('What to find out about the data'),
       }),
       execute: async ({ question }) => {
         tag('info').log(`Ask API: ${question}`);

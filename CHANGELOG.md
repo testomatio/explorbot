@@ -1,5 +1,58 @@
 # Changelog
 
+## 2026-09-17
+
+### Changes
+
+- [Pilot] When the app reports an action succeeded but the record is not visible on the page, Pilot now asks
+  the API whether it was stored instead of failing on what the screenshot shows. A record the API cannot find
+  is still a failure. Needs API access configured; without it, Pilot judges from the page as before.
+
+## 2026-09-16
+
+### Configuration
+
+- **`~/.explorbot/sites/<host>/explorbot.config.js`** — Every site in a global installation now has its own config
+  that extends `~/.explorbot/config.js`. Keep the models, browser, and reporter settings every site shares in the
+  global file, and put anything one site needs differently in its own. The two are merged section by section and the
+  site wins, so a site that overrides `ai.model` still uses the global `ai.visionModel`. The file is written the first
+  time a site is explored and is never rewritten afterwards; a site without one runs on the global config unchanged.
+- **`web.url`** — Required in a per-site config, and must name the site whose folder holds it. Explorbot stops and
+  names the file when it is missing or points at a different site, instead of running against a site the config does
+  not describe. The site's directories and base URL stay owned by the site folder and cannot be overridden.
+
+### Changes
+
+- `explorbot sites` now shows which config each site uses, or says it inherits the global one.
+- `explorbot config` and `explorbot api config` print the per-site config file alongside the global one.
+- `explorbot init` now always writes configs as ES modules. A project without `"type": "module"` in its
+  `package.json` previously got a CommonJS config, and `init --global` always wrote one.
+
+### Fixes
+
+- A configuration error is now reported instead of being swallowed. `explorbot config` could print a configuration
+  that had in fact failed to load, because a failed load left its half-resolved settings behind for the retry to
+  pick up.
+### Fixes
+
+- [Tester] A click that matches several elements the page renders identically no longer turns into a
+  guessing game. When a locator matched more than one element, the list handed back to the tester numbered
+  them and asked it to pick one by number — but where the matches carry the same text, the same markup and
+  the same visible state, that number means nothing. A row of bare toggles would be clicked at random, one
+  after another, every click reported as a success while the setting under test never moved. The list now
+  marks which matches are identical to one another and points to clicking by sight, which is the only thing
+  that tells them apart.
+- Page snapshots: the HTML given to agents now carries the state of the control it describes — whether a
+  switch is on, a section expanded, a tab selected, a button pressed, or a control disabled. That state was
+  being stripped along with the framework noise, so two toggles set to opposite values looked like the same
+  element, and no agent could read from the markup whether its click had changed anything.
+- [Pilot] The evidence Pilot weighs when deciding pass or fail now says what each check found, rather than
+  only that it ran. A visual check was listed back as a restatement of the question it had been asked, so
+  its answer reached the final review buried at the end of the session log — and a test that had already
+  established the outcome on screen could still be failed with a vague "could not be confirmed" in place of
+  the result it observed. Verdicts now cite what was seen, and the evidence takes less room for it, because
+  a passed assertion is no longer repeated back several times over.
+
 ## 2026-09-15
 
 ### Fixes

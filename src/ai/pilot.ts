@@ -1016,14 +1016,14 @@ export class Pilot implements Agent {
   private formatSuccessfulAssertions(currentState: ActionResult, testerConversation: Conversation): string {
     const lines: string[] = [];
     for (const [assertion, passed] of Object.entries(currentState.verifications ?? {})) {
-      if (passed) lines.push(`state verification (passed): ${assertion}`);
+      if (passed) lines.push(`verify: ${assertion}`);
     }
 
     for (const exec of testerConversation.getToolExecutions()) {
       if (!EVIDENCE_TOOLS.includes(exec.toolName) || !exec.wasSuccessful) continue;
       const description = exec.input?.assertion || exec.input?.request || truncateJson(exec.input);
-      const result = exec.output?.message || exec.output?.analysis || exec.output?.result;
-      lines.push(`CHECK ${exec.toolName} (executed successfully): ${description}${result ? ` -> ${result}` : ''}`);
+      const analysis = exec.output?.analysis;
+      lines.push(`${exec.toolName}: ${description}${analysis ? ` -> ${analysis}` : ''}`);
     }
 
     return [...new Set(lines)].join('\n');
@@ -1157,9 +1157,14 @@ export class Pilot implements Agent {
 
       YOUR Pilot-only tools, both over the API:
 
-      askApi(question) — ask what data already exists. It changes nothing. Use it to check whether
-      suitable data is already there before creating any, and to get the exact name or id of an existing
-      record a step must act on.
+      askApi(question) — read the app's data over the API. It changes nothing. Use when:
+
+      - Before precondition() — check whether suitable data already exists.
+      - A step needs the exact name or id of an existing record.
+      - The app reported success but the page does not show the result — ask whether it was stored.
+      - A list or dropdown is empty — ask whether the data exists at all.
+
+      The page is not the only witness. A record missing from the page may still exist.
 
       precondition(description) — create FRESH disposable test data. Never request users. Use when:
 

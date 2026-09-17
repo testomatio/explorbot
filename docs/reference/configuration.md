@@ -413,7 +413,7 @@ Explorbot looks for a config file in this order:
 7. `src/config/explorbot.config.js`
 8. `src/config/explorbot.config.mjs`
 9. `src/config/explorbot.config.ts`
-10. `~/.explorbot/config.js` (or `.mjs`, `.ts`) — the global installation
+10. `~/.explorbot/config.js` (or `.mjs`, `.ts`) — the global installation, extended per site by `~/.explorbot/sites/<host>/explorbot.config.js`
 
 Or pass a custom path:
 
@@ -431,14 +431,15 @@ Env files fill in rather than override: the `.env` of the working directory is r
 
 ```
 ~/.explorbot/
-├── config.js            # AI models and keys, no URL
+├── config.js                    # AI models and keys, shared by every site
 ├── .env
 └── sites/
     ├── app.example.com/
-    │   ├── site.json    # base URL, first and last run
+    │   ├── explorbot.config.js  # this site's settings, extends config.js
+    │   ├── site.json            # base URL, first and last run
     │   ├── knowledge/
     │   ├── experience/
-    │   └── output/      # states, plans, reports, tests
+    │   └── output/              # states, plans, reports, tests
     └── localhost_3000/
 ```
 
@@ -455,6 +456,38 @@ npx explorbot sites                                   # list registered sites
 ```
 
 A `dirs` section in the global config is ignored in favor of the layout above. A `web.url` is allowed and acts as the default site for commands that pass no URL of their own.
+
+#### Per-site configuration
+
+`~/.explorbot/config.js` holds what every site shares — models, keys, reporter settings. Anything one site needs differently goes in its own `explorbot.config.js`, written into the site folder the first time that site is explored:
+
+```javascript
+// Config for https://app.example.com
+// Extends ~/.explorbot/config.js — set only what differs.
+const config = {
+  web: {
+    url: 'https://app.example.com',
+  },
+
+  ai: {
+    model: 'openrouter/anthropic/claude-sonnet-5',
+  },
+
+  playwright: {
+    show: true,
+  },
+};
+
+export default config;
+```
+
+The two are merged section by section, and the site wins. A site that overrides `ai.model` keeps the global `ai.visionModel`. Use it to give a slow or unusual app a stronger model, a visible browser, or its own reporter settings, without changing how every other site runs.
+
+`web.url` is required, and must be the site the folder belongs to — it is what makes the file readable on its own rather than meaningful only by where it sits. Explorbot refuses to run when it is missing or names a different site, instead of quietly ignoring the mismatch. To configure a different site, explore it and edit the config in its own folder.
+
+`dirs` and the base URL stay owned by the layout above and cannot be overridden. The file is never rewritten once created, and a site without one simply uses the global config.
+
+Per-site configs apply to the global installation only. A directory with its own `explorbot.config.js` and the `EXPLORBOT_*` environment mode below both resolve to a single config with nothing to extend.
 
 ### Running without a config file
 

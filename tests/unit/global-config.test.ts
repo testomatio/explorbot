@@ -52,6 +52,7 @@ function resetApibotParser(): ApibotConfigParser {
   (parser as any).config = null;
   (parser as any).configPath = null;
   (parser as any).site = null;
+  (parser as any).siteConfigPath = null;
   return parser;
 }
 
@@ -347,6 +348,97 @@ describe('global mode', () => {
   });
 });
 
+describe('per-site config', () => {
+  function siteConfig(folder: string): string {
+    return join(siteDir(folder), 'explorbot.config.js');
+  }
+
+  it('scaffolds a config naming the site and never overwrites it', async () => {
+    writeGlobalConfig();
+
+    await ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://app.example.com/login' });
+
+    const path = siteConfig('app.example.com');
+    expect(readFileSync(path, 'utf8')).toContain("url: 'https://app.example.com'");
+
+    const edited = "export default { web: { url: 'https://app.example.com' }, ai: { model: { modelId: 'edited' } } };\n";
+    writeFileSync(path, edited, 'utf8');
+    ConfigParser.resetForTesting();
+    await ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://app.example.com' });
+
+    expect(readFileSync(path, 'utf8')).toBe(edited);
+  });
+
+  it('lets the site config override the global one', async () => {
+    writeGlobalConfig("export default { ai: { model: { modelId: 'global-model' }, visionModel: { modelId: 'global-vision' } }, playwright: { show: false } };\n");
+    mkdirSync(siteDir('app.example.com'), { recursive: true });
+    writeFileSync(siteConfig('app.example.com'), "export default { web: { url: 'https://app.example.com' }, ai: { model: { modelId: 'site-model' } }, playwright: { show: true } };\n", 'utf8');
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://app.example.com' });
+
+    expect(config.ai.model.modelId).toBe('site-model');
+    expect(config.ai.visionModel.modelId).toBe('global-vision');
+    expect(config.playwright.show).toBe(true);
+  });
+
+  it('resolves a model spec written in the site config', async () => {
+    writeGlobalConfig();
+    mkdirSync(siteDir('app.example.com'), { recursive: true });
+    writeFileSync(siteConfig('app.example.com'), "export default { web: { url: 'https://app.example.com' }, ai: { model: 'groq/llama-site' } };\n", 'utf8');
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://app.example.com' });
+
+    expect(config.ai.model.modelId).toBe('llama-site');
+  });
+
+  it('keeps dirs and the site URL out of the site config', async () => {
+    writeGlobalConfig();
+    mkdirSync(siteDir('app.example.com'), { recursive: true });
+    writeFileSync(siteConfig('app.example.com'), "export default { web: { url: 'https://app.example.com' }, dirs: { knowledge: 'kb', experience: 'exp', output: 'out' } };\n", 'utf8');
+
+    const config = await ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://app.example.com' });
+
+    expect(config.dirs).toEqual({ knowledge: 'knowledge', experience: 'experience', output: 'output' });
+    expect(config.playwright.url).toBe('https://app.example.com');
+  });
+
+  it('refuses a site config without web.url', async () => {
+    writeGlobalConfig();
+    mkdirSync(siteDir('app.example.com'), { recursive: true });
+    writeFileSync(siteConfig('app.example.com'), "export default { ai: { model: { modelId: 'site-model' } } };\n", 'utf8');
+
+    await expect(ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://app.example.com' })).rejects.toThrow('missing web.url');
+  });
+
+  it('refuses a site config declaring a different site', async () => {
+    writeGlobalConfig();
+    mkdirSync(siteDir('app.example.com'), { recursive: true });
+    writeFileSync(siteConfig('app.example.com'), "export default { web: { url: 'https://staging.example.com' } };\n", 'utf8');
+
+    await expect(ConfigParser.getInstance().loadConfig({ path: workDir, from: 'https://app.example.com' })).rejects.toThrow('declares a different site');
+  });
+
+  it('caches nothing when the site config is rejected', async () => {
+    writeGlobalConfig();
+    mkdirSync(siteDir('app.example.com'), { recursive: true });
+    writeFileSync(siteConfig('app.example.com'), "export default { web: { url: 'https://staging.example.com' } };\n", 'utf8');
+
+    const parser = ConfigParser.getInstance();
+    await expect(parser.loadConfig({ path: workDir, from: 'https://app.example.com' })).rejects.toThrow('declares a different site');
+
+    await expect(parser.loadConfig({ path: workDir, from: 'https://app.example.com' })).rejects.toThrow('declares a different site');
+  });
+
+  it('scaffolds nothing outside global mode', async () => {
+    process.env.EXPLORBOT_AI_PROVIDER = 'groq';
+    process.env.EXPLORBOT_URL = 'https://app.example.com';
+
+    await ConfigParser.getInstance().loadConfig({ path: workDir });
+
+    expect(existsSync(siteConfig('app.example.com'))).toBe(false);
+  });
+});
+
 describe('global mode in the API boat', () => {
   it('derives the base endpoint and site folder from the endpoint host', async () => {
     writeGlobalConfig();
@@ -385,6 +477,32 @@ describe('global mode in the API boat', () => {
 
     expect(config.api.spec).toEqual(['from-option.yaml']);
     expect(process.env.EXPLORBOT_API_SPEC).toBe('from-option.yaml');
+
+    resetApibotParser();
+  });
+
+  it('lets the site config override the global one', async () => {
+    writeGlobalConfig("export default { ai: { model: { modelId: 'global-model' }, visionModel: { modelId: 'global-vision' } } };\n");
+    mkdirSync(siteDir('api.example.com'), { recursive: true });
+    writeFileSync(join(siteDir('api.example.com'), 'explorbot.config.js'), "export default { web: { url: 'https://api.example.com' }, ai: { model: 'groq/llama-site' } };\n", 'utf8');
+    const parser = resetApibotParser();
+
+    const config = await parser.loadConfig({ path: workDir, endpoint: 'https://api.example.com/users' });
+
+    expect(config.ai.model.modelId).toBe('llama-site');
+    expect(config.ai.visionModel.modelId).toBe('global-vision');
+    expect(config.api.baseEndpoint).toBe('https://api.example.com');
+
+    resetApibotParser();
+  });
+
+  it('refuses a site config declaring a different site', async () => {
+    writeGlobalConfig();
+    mkdirSync(siteDir('api.example.com'), { recursive: true });
+    writeFileSync(join(siteDir('api.example.com'), 'explorbot.config.js'), "export default { web: { url: 'https://other.example.com' } };\n", 'utf8');
+    const parser = resetApibotParser();
+
+    await expect(parser.loadConfig({ path: workDir, endpoint: 'https://api.example.com/users' })).rejects.toThrow('declares a different site');
 
     resetApibotParser();
   });
@@ -540,7 +658,7 @@ describe('explorbot init', () => {
     }
   });
 
-  it('writes an ESM config in a "type": "module" project and CommonJS otherwise', async () => {
+  it('writes an ESM config whatever the project module type says', async () => {
     writeFileSync(join(workDir, 'package.json'), '{"name":"t","type":"module"}\n', 'utf8');
 
     runInitCommand({ path: workDir });
@@ -548,10 +666,20 @@ describe('explorbot init', () => {
     expect((await ConfigParser.getInstance().loadConfig({ path: workDir })).ai?.model).toBeTruthy();
 
     rmSync(join(workDir, 'explorbot.config.js'));
-    rmSync(join(workDir, 'package.json'));
+    writeFileSync(join(workDir, 'package.json'), '{"name":"t","type":"commonjs"}\n', 'utf8');
 
     runInitCommand({ path: workDir });
-    expect(readFileSync(join(workDir, 'explorbot.config.js'), 'utf8')).toContain('module.exports = config;');
+    const body = readFileSync(join(workDir, 'explorbot.config.js'), 'utf8');
+    expect(body).toContain('export default config;');
+    expect(body).not.toContain('module.exports');
+  });
+
+  it('writes an ESM global config', async () => {
+    await runInit({ global: true, provider: 'groq', apiKey: 'test-key' });
+
+    const body = readFileSync(join(home, '.explorbot', 'config.js'), 'utf8');
+    expect(body).toContain('export default config;');
+    expect(body).not.toContain('module.exports');
   });
 
   it('scaffolds a local config that loads without installing a provider package', async () => {
@@ -571,10 +699,9 @@ describe('explorbot init', () => {
     expect(readFileSync(join(workDir, 'custom.mjs'), 'utf8')).toContain('export default config;');
   });
 
-  it('uses the nearest package.json to choose the module format', () => {
+  it('writes ESM into a nested path inside a CommonJS project', () => {
     writeFileSync(join(workDir, 'package.json'), '{"name":"root","type":"commonjs"}\n', 'utf8');
     mkdirSync(join(workDir, 'nested'));
-    writeFileSync(join(workDir, 'nested', 'package.json'), '{"name":"nested","type":"module"}\n', 'utf8');
 
     runInitCommand({ path: workDir, configPath: 'nested/explorbot.config.js' });
 
