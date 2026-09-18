@@ -102,6 +102,7 @@ describe('click on an ambiguous locator', () => {
 
     expect(result.judgedElement).toBe(2);
     expect(result.suggestion).toContain('elementIndex');
+    expect(result.matchedElements).toBeUndefined();
   });
 });
 

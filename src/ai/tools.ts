@@ -1415,7 +1415,7 @@ export async function formatMatchedElements(error: Error | null | undefined): Pr
 export async function resolveAmbiguousElement(judge: Judge | undefined, result: Record<string, any>, intent?: string): Promise<number | null> {
   if (!judge?.directEnabled) return null;
 
-  const matched = result?.matchedElements as MatchedElement[] | undefined;
+  const matched = result.matchedElements as MatchedElement[] | undefined;
   if (!matched || matched.length < 2) return null;
 
   const options: Record<string, string> = { none: 'None of these is the element meant.' };
@@ -1440,11 +1440,13 @@ async function attachJudgedElement(judge: Judge | undefined, result: Record<stri
   if (!result.multipleElementsDetected) return result;
 
   const judged = await resolveAmbiguousElement(judge, result, intent);
-  if (!judged) return result;
+  if (judged) {
+    const element = (result.matchedElements as MatchedElement[])[judged - 1];
+    result.judgedElement = judged;
+    result.suggestion = `Element ${judged} ("${element.text || 'no text'}") is the one meant. Repeat the action with step.opts({ elementIndex: ${judged} }) as the last argument.`;
+  }
 
-  const element = (result.matchedElements as MatchedElement[])[judged - 1];
-  result.judgedElement = judged;
-  result.suggestion = `Element ${judged} ("${element.text || 'no text'}") is the one meant. Repeat the action with step.opts({ elementIndex: ${judged} }) as the last argument.`;
+  Reflect.deleteProperty(result, 'matchedElements');
   return result;
 }
 
