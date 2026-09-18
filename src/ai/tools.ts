@@ -729,6 +729,14 @@ export function createAgentTools({ explorer, stateManager, ai, judge, researcher
           }
 
           if (result.inexpressible) {
+            if (result.judged) {
+              return failedToolResult('verify', `No assertion could express this claim: ${assertion}. Judge opinion (not a passed assertion): ${result.judged.answer} (confidence ${result.judged.confidence.toFixed(2)})`, {
+                inexpressible: true,
+                judged: result.judged,
+                suggestion: 'This is a judgement about the page, not an assertion that ran in the browser — treat it as a hint, not proof. Restate the claim in terms of what is visible or of a control state to get a real assertion, or check it with see().',
+              });
+            }
+
             return failedToolResult('verify', `No assertion could express this claim: ${assertion}`, {
               inexpressible: true,
               suggestion: 'This is not evidence the page is wrong — the claim could not be turned into an assertion. Restate it in terms of what is visible or of a control state, or check it with see().',
