@@ -12,12 +12,12 @@ describe('resolveDecisionModel', () => {
 
   afterEach(() => {
     if (savedOpenRouterKey === undefined) {
-      delete process.env.OPENROUTER_API_KEY;
+      Reflect.deleteProperty(process.env, 'OPENROUTER_API_KEY');
     } else {
       process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
     }
     if (savedTypeSafeKey === undefined) {
-      delete process.env.TYPESAFE_API_KEY;
+      Reflect.deleteProperty(process.env, 'TYPESAFE_API_KEY');
     } else {
       process.env.TYPESAFE_API_KEY = savedTypeSafeKey;
     }

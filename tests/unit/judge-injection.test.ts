@@ -13,7 +13,7 @@ describe('judge injection', () => {
 
   afterEach(() => {
     if (savedOpenRouterKey === undefined) {
-      delete process.env.OPENROUTER_API_KEY;
+      Reflect.deleteProperty(process.env, 'OPENROUTER_API_KEY');
       return;
     }
     process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
@@ -42,7 +42,7 @@ describe('judge() caching sentinel', () => {
 
   afterEach(() => {
     if (savedOpenRouterKey === undefined) {
-      delete process.env.OPENROUTER_API_KEY;
+      Reflect.deleteProperty(process.env, 'OPENROUTER_API_KEY');
       return;
     }
     process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
