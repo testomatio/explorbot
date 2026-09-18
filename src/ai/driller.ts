@@ -361,7 +361,7 @@ export class Driller extends TaskAgent implements Agent {
   private async buildComponentPrompt(originalState: ActionResult, component: ComponentInfo): Promise<string> {
     const html = await this.getComponentScopeHtml(component, originalState);
     const knowledge = this.getKnowledge(originalState);
-    const experience = this.getExperience(originalState);
+    const experience = await this.getExperience(originalState);
     const ariaMatches = component.ariaMatches.length > 0 ? component.ariaMatches.map((line) => `- ${line}`).join('\n') : '- no direct ARIA match';
 
     return dedent`
