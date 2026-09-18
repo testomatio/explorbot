@@ -712,144 +712,142 @@ class Navigator implements Agent {
       return { verified: cachedVerification, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
 
-    let alreadyVerified = false;
     const judgeMatch = await judgeAlreadyVerified(this.judge, message, actionResult.verifications ?? {});
     if (judgeMatch && actionResult.getVerification(judgeMatch) === true) {
       tag('operation').log(`Judge matched claim to an already verified one: "${judgeMatch}"`);
-      alreadyVerified = true;
+      return { verified: true, inexpressible: false, results: [], successfulCodes: [], assertionSteps: [], totalAttempted: 0 };
     }
+
+    const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
+    let experience = '';
+
+    if (!actionResult.isInsideIframe) {
+      experience = this.experienceTracker.renderExperienceTocFor(actionResult);
+    }
+
+    const priorVerifications = Object.entries(actionResult.verifications ?? {});
+    let verificationContext = '';
+    if (priorVerifications.length > 0) {
+      const lines = priorVerifications.map(([claim, passed]) => `- "${claim}" → ${passed ? 'passed' : 'failed'}`).join('\n');
+      verificationContext = dedent`
+        <already_verified>
+        These claims were already checked on this page:
+        ${lines}
+
+        If the claim to verify has the same meaning as one above (even if worded differently), do NOT write any assertion code.
+        Respond with a single line and nothing else: ALREADY_VERIFIED: <exact text of the matching claim>
+        </already_verified>
+      `;
+    }
+
+    const prompt = dedent`
+      <message>
+        ${message}
+      </message>
+
+      <page>
+        ${actionResult.toAiContext()}
+
+        <page_html>
+        ${await actionResult.combinedHtml()}
+        </page_html>
+      </page>
+
+      ${verificationContext}
+
+      <task>
+        Identify what assertion the user wants to verify on the page.
+        Propose 2-3 strong, distinct CodeceptJS assertion code blocks that each directly prove the claim.
+        Use only data from the <page> context to plan the verification.
+        Prefer the fewest, most specific assertions over many variants of the same locator.
+
+        IMPORTANT: Each code block must verify the SPECIFIC claim in the message, not just a generic aspect of it.
+        Bad: I.seeElement({"role":"button","aria-pressed":"true"}) — matches ANY button, not the specific one
+        Good: I.see("My Item", ".starred-list") — checks the specific item mentioned in the message
+        If the message mentions a specific item, name, or value, EVERY assertion must include that specific text or identifier.
+        Do not generate assertions that would pass even if the specific claim is false.
+      </task>
+
+      ${RulesLoader.loadRules('navigator', ['verification-actions'], actionResult.url || '')}
+
+      ${experience}
+
+      ${knowledge}
+    `;
+
+    debugLog('Sending verification prompt to AI provider');
+    tag('debug').log('Prompt:', prompt);
+
+    const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
+    conversation.addUserText(prompt);
+
+    let alreadyVerified = false;
+    const tools = this.buildExperienceTools();
 
     let codeBlocks: string[] = [];
     const successfulCodes: string[] = [];
     const results: AssertionResult[] = [];
     const assertionSteps: Array<{ name: string; args: any[] }> = [];
 
-    if (!alreadyVerified) {
-      const knowledge = this.knowledgeTracker.renderRelevantContext(actionResult);
-      let experience = '';
+    const action = this.explorer.action();
+    let failures = 0;
 
-      if (!actionResult.isInsideIframe) {
-        experience = this.experienceTracker.renderExperienceTocFor(actionResult);
-      }
+    const page = this.explorer.page;
+    const originalTimeout = this.config.playwright.timeout ?? 3000;
+    page?.setDefaultTimeout(this.verifyTimeout);
 
-      const priorVerifications = Object.entries(actionResult.verifications ?? {});
-      let verificationContext = '';
-      if (priorVerifications.length > 0) {
-        const lines = priorVerifications.map(([claim, passed]) => `- "${claim}" → ${passed ? 'passed' : 'failed'}`).join('\n');
-        verificationContext = dedent`
-          <already_verified>
-          These claims were already checked on this page:
-          ${lines}
+    try {
+      await loop(
+        async ({ stop, iteration }) => {
+          if (codeBlocks.length === 0) {
+            const result = await this.provider.invokeConversation(conversation, tools);
+            if (!result) return;
+            const aiResponse = result?.response?.text ?? '';
+            debugLog('Received AI response:', aiResponse.length, 'characters');
+            tag('step').log('Verifying assertion...');
 
-          If the claim to verify has the same meaning as one above (even if worded differently), do NOT write any assertion code.
-          Respond with a single line and nothing else: ALREADY_VERIFIED: <exact text of the matching claim>
-          </already_verified>
-        `;
-      }
-
-      const prompt = dedent`
-        <message>
-          ${message}
-        </message>
-
-        <page>
-          ${actionResult.toAiContext()}
-
-          <page_html>
-          ${await actionResult.combinedHtml()}
-          </page_html>
-        </page>
-
-        ${verificationContext}
-
-        <task>
-          Identify what assertion the user wants to verify on the page.
-          Propose 2-3 strong, distinct CodeceptJS assertion code blocks that each directly prove the claim.
-          Use only data from the <page> context to plan the verification.
-          Prefer the fewest, most specific assertions over many variants of the same locator.
-
-          IMPORTANT: Each code block must verify the SPECIFIC claim in the message, not just a generic aspect of it.
-          Bad: I.seeElement({"role":"button","aria-pressed":"true"}) — matches ANY button, not the specific one
-          Good: I.see("My Item", ".starred-list") — checks the specific item mentioned in the message
-          If the message mentions a specific item, name, or value, EVERY assertion must include that specific text or identifier.
-          Do not generate assertions that would pass even if the specific claim is false.
-        </task>
-
-        ${RulesLoader.loadRules('navigator', ['verification-actions'], actionResult.url || '')}
-
-        ${experience}
-
-        ${knowledge}
-      `;
-
-      debugLog('Sending verification prompt to AI provider');
-      tag('debug').log('Prompt:', prompt);
-
-      const conversation = this.provider.startConversation(this.systemPrompt, 'navigator');
-      conversation.addUserText(prompt);
-
-      const tools = this.buildExperienceTools();
-
-      const action = this.explorer.action();
-      let failures = 0;
-
-      const page = this.explorer.page;
-      const originalTimeout = this.config.playwright.timeout ?? 3000;
-      page?.setDefaultTimeout(this.verifyTimeout);
-
-      try {
-        await loop(
-          async ({ stop, iteration }) => {
-            if (codeBlocks.length === 0) {
-              const result = await this.provider.invokeConversation(conversation, tools);
-              if (!result) return;
-              const aiResponse = result?.response?.text ?? '';
-              debugLog('Received AI response:', aiResponse.length, 'characters');
-              tag('step').log('Verifying assertion...');
-
-              if (this.checkAlreadyVerified(aiResponse, actionResult)) {
-                alreadyVerified = true;
-                stop();
-                return;
-              }
-
-              codeBlocks = extractCodeBlocks(aiResponse);
-            }
-
-            if (codeBlocks.length === 0) {
-              return;
-            }
-
-            const codeBlock = codeBlocks[iteration - 1];
-            if (!codeBlock) {
+            if (this.checkAlreadyVerified(aiResponse, actionResult)) {
+              alreadyVerified = true;
               stop();
               return;
             }
 
-            await action.exitIframe();
-
-            const verified = await action.attempt(codeBlock, message);
-            const proof = action.assertionSteps.map(renderAssertion).filter(Boolean);
-            results.push({ code: codeBlock, passed: verified, proof });
-
-            if (verified) {
-              tag('success').log('Verification passed');
-              successfulCodes.push(codeBlock);
-              assertionSteps.push(...action.assertionSteps);
-            } else {
-              failures++;
-            }
-          },
-          {
-            maxAttempts: this.verifyAttempts,
-            observability: {
-              agent: 'navigator',
-            },
+            codeBlocks = extractCodeBlocks(aiResponse);
           }
-        );
-      } finally {
-        page?.setDefaultTimeout(originalTimeout);
-      }
+
+          if (codeBlocks.length === 0) {
+            return;
+          }
+
+          const codeBlock = codeBlocks[iteration - 1];
+          if (!codeBlock) {
+            stop();
+            return;
+          }
+
+          await action.exitIframe();
+
+          const verified = await action.attempt(codeBlock, message);
+          const proof = action.assertionSteps.map(renderAssertion).filter(Boolean);
+          results.push({ code: codeBlock, passed: verified, proof });
+
+          if (verified) {
+            tag('success').log('Verification passed');
+            successfulCodes.push(codeBlock);
+            assertionSteps.push(...action.assertionSteps);
+          } else {
+            failures++;
+          }
+        },
+        {
+          maxAttempts: this.verifyAttempts,
+          observability: {
+            agent: 'navigator',
+          },
+        }
+      );
+    } finally {
+      page?.setDefaultTimeout(originalTimeout);
     }
 
     const totalAttempted = Math.min(codeBlocks.length, this.verifyAttempts);
