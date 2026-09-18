@@ -718,7 +718,7 @@ export class Pilot implements Agent {
   }
 
   private pickPlanningTools() {
-    const { see, context, verify, research, getVisitedStates, xpathCheck, learnExperience, askUser } = this.agentTools ?? {};
+    const { see, context, verify, research, getVisitedStates, xpathCheck, learnExperience, askUser, judge } = this.agentTools ?? {};
     const planning: Record<string, unknown> = {};
     if (see) planning.see = see;
     if (context) planning.context = context;
@@ -728,6 +728,7 @@ export class Pilot implements Agent {
     if (xpathCheck) planning.xpathCheck = xpathCheck;
     if (learnExperience) planning.learnExperience = learnExperience;
     if (askUser) planning.askUser = askUser;
+    if (judge) planning.judge = judge;
     withdrawVisionTools(planning);
     return planning;
   }

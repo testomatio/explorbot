@@ -15,6 +15,7 @@ import { pause } from '../utils/loop.js';
 import { compactErrorMessage, normalizeInlineText, truncate } from '../utils/strings.ts';
 import { WebElement } from '../utils/web-element.ts';
 import type { ToolDeps } from './agent.ts';
+import { createJudgeTool } from './judge-tool.ts';
 import { Navigator } from './navigator.ts';
 import { Researcher } from './researcher.ts';
 import { sectionContextRule } from './rules.ts';
@@ -587,7 +588,7 @@ export function createLearnExperienceTool({ getExperienceTracker, getState }: { 
   });
 }
 
-export function createAgentTools({ explorer, stateManager, ai, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
+export function createAgentTools({ explorer, stateManager, ai, judge, researcher, navigator, supervisor, withExperience }: AgentToolDeps): any {
   const tools: Record<string, any> = {
     see: tool({
       description: dedent`
@@ -1143,6 +1144,20 @@ export function createAgentTools({ explorer, stateManager, ai, researcher, navig
     });
   }
 
+  const buildJudgeState = async () => {
+    const activeTest = explorer.activeTest;
+    const state = stateManager.getCurrentState();
+    const result = state ? ActionResult.fromState(state) : null;
+    return {
+      task: activeTest?.scenario || '',
+      page: cap(result?.getCompactARIA(), JUDGE_PAGE_CAP),
+      recentActions: Object.values(activeTest?.steps || {})
+        .slice(-JUDGE_RECENT_ACTIONS_LIMIT)
+        .map((step) => step.text),
+    };
+  };
+  Object.assign(tools, createJudgeTool({ explorer, stateManager, ai, judge }, buildJudgeState));
+
   withdrawVisionTools(tools);
 
   return tools;
@@ -1158,6 +1173,8 @@ const NAVIGATED_SUGGESTION = 'The action left the page. Elements are never compa
 const ARIA_OUTPUT_CAP = 4000;
 const HTML_OUTPUT_CAP = 6000;
 const ANALYSIS_OUTPUT_CAP = 2000;
+const JUDGE_PAGE_CAP = 12000;
+const JUDGE_RECENT_ACTIONS_LIMIT = 8;
 
 function cap(text: string | undefined | null, max: number): string {
   if (!text) return '';
