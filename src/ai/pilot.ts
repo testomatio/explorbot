@@ -19,6 +19,7 @@ import type { Agent, AgentDeps } from './agent.ts';
 import type { Conversation } from './conversation.ts';
 import type { Fisherman } from './fisherman.ts';
 import { createAskApiTool } from './fisherman/tools.ts';
+import type { Judge } from './judge.ts';
 import type { Navigator } from './navigator.ts';
 import type { Provider } from './provider.ts';
 import type { Researcher } from './researcher.ts';
@@ -45,6 +46,7 @@ export class Pilot implements Agent {
   private requestStore: RequestStore;
   private playwrightRecorder: PlaywrightRecorder;
   private fisherman: Fisherman | null = null;
+  private judge?: Judge;
 
   constructor(deps: AgentDeps, agentTools: any, researcher: Researcher) {
     this.provider = deps.ai;
@@ -54,6 +56,7 @@ export class Pilot implements Agent {
     this.stateManager = deps.stateManager;
     this.requestStore = deps.requestStore;
     this.playwrightRecorder = deps.playwrightRecorder;
+    this.judge = deps.judge;
   }
 
   setFisherman(fisherman: Fisherman): void {

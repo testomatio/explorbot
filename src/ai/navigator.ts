@@ -21,6 +21,7 @@ import { normalizeInlineText } from '../utils/strings.ts';
 import { extractStatePath, matchesNavigationUrl } from '../utils/url-matcher.js';
 import type { Agent, AgentDeps } from './agent.js';
 import type { Conversation } from './conversation.js';
+import type { Judge } from './judge.ts';
 import type { Provider } from './provider.js';
 import { Researcher } from './researcher.ts';
 import { actionRule, locatorRule, unexpectedPopupRule } from './rules.js';
@@ -80,6 +81,7 @@ class Navigator implements Agent {
   private explorer: Explorer;
   private config: ExplorbotConfig;
   private stateManager: StateManager;
+  private judge?: Judge;
 
   constructor(deps: AgentDeps) {
     this.provider = deps.ai;
@@ -89,6 +91,7 @@ class Navigator implements Agent {
     this.knowledgeTracker = deps.knowledgeTracker;
     this.experienceTracker = deps.stateManager.getExperienceTracker();
     this.hooksRunner = new HooksRunner(deps.explorer, deps.config);
+    this.judge = deps.judge;
   }
 
   private get verifyAttempts(): number {
