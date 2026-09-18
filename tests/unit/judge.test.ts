@@ -60,4 +60,20 @@ describe('Judge.ask', () => {
     expect(new Judge({ ...settings, tool: false }).toolEnabled).toBe(false);
     expect(new Judge({ ...settings, direct: false }).directEnabled).toBe(false);
   });
+
+  it('returns null instead of throwing when the state cannot be serialized', async () => {
+    const judge = judgeWith(() => new Response(JSON.stringify({ answers: {} })));
+    const circular: any = {};
+    circular.self = circular;
+
+    await expect(judge.ask(circular, { q: { instructions: 'x' } })).resolves.toBeNull();
+  });
+
+  it('returns null when the request times out', async () => {
+    const judge = new Judge(settings);
+    (judge as any).requestTimeoutMs = 20;
+    (judge as any).fetchImpl = () => new Promise(() => {});
+
+    expect(await judge.ask('s', { q: { instructions: 'x' } })).toBeNull();
+  });
 });

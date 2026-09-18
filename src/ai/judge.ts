@@ -1,4 +1,4 @@
-import { setActivity } from '../activity.ts';
+import { clearActivity, setActivity } from '../activity.ts';
 import type { DecisionModelSettings } from '../config.ts';
 import { Observability } from '../observability.ts';
 import { createDebug } from '../utils/logger.ts';
@@ -10,8 +10,11 @@ const YES_NO: Record<string, string> = {
   no: 'The statement is false.',
 };
 
+const REQUEST_TIMEOUT_MS = 15000;
+
 export class Judge {
   private fetchImpl: typeof fetch = fetch;
+  private requestTimeoutMs = REQUEST_TIMEOUT_MS;
 
   constructor(private settings: DecisionModelSettings) {}
 
@@ -28,9 +31,13 @@ export class Judge {
 
     return Observability.run('judge.ask', { tags: ['judge'] }, async () => {
       setActivity('⚖️ Asking judge...', 'ai');
-      const answers = await this.post(state, questions);
-      if (!answers) debugLog('judge declined, caller falls through');
-      return answers;
+      try {
+        const answers = await this.post(state, questions);
+        if (!answers) debugLog('judge declined, caller falls through');
+        return answers;
+      } finally {
+        clearActivity();
+      }
     });
   }
 
@@ -41,14 +48,32 @@ export class Judge {
       questions: Object.fromEntries(Object.entries(questions).map(([id, question]) => [id, { type: 'choice', instructions: question.instructions, criteria: question.options || YES_NO }])),
     };
 
-    const response = await this.fetchImpl(this.settings.baseUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${this.settings.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }).catch((error: unknown) => {
-      debugLog('transport failed: %s', error);
+    let requestBody: string;
+    try {
+      requestBody = JSON.stringify(body);
+    } catch (error) {
+      debugLog('failed to serialize request body: %s', error);
       return null;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const timedOut = new Promise<null>((resolve) => {
+      controller.signal.addEventListener('abort', () => resolve(null), { once: true });
     });
+
+    const response = await Promise.race([
+      this.fetchImpl(this.settings.baseUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.settings.apiKey}`, 'Content-Type': 'application/json' },
+        body: requestBody,
+        signal: controller.signal,
+      }).catch((error: unknown) => {
+        debugLog('transport failed: %s', error);
+        return null;
+      }),
+      timedOut,
+    ]).finally(() => clearTimeout(timeoutId));
 
     if (!response) return null;
     if (!response.ok) {
