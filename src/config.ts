@@ -831,11 +831,13 @@ export function resolveDecisionModel(ai?: AIConfig): DecisionModelSettings | nul
   const configured = ai?.decisionModel;
   if (!configured) return null;
 
-  const spec: DecisionModelConfig = typeof configured === 'string' ? { model: configured } : configured;
+  let spec: DecisionModelConfig = configured;
+  if (typeof configured === 'string') spec = { model: configured };
   if (!spec.model) return null;
 
   const baseUrl = spec.baseUrl || DECISION_ENDPOINT;
-  const envKey = baseUrl.includes('typesafe.ai') ? process.env.TYPESAFE_API_KEY : process.env.OPENROUTER_API_KEY;
+  let envKey = process.env.OPENROUTER_API_KEY;
+  if (baseUrl.includes('typesafe.ai')) envKey = process.env.TYPESAFE_API_KEY;
   const apiKey = spec.apiKey || envKey;
   if (!apiKey) return null;
 

@@ -1,7 +1,28 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import { resolveDecisionModel } from '../../src/config.ts';
 
 describe('resolveDecisionModel', () => {
+  let savedOpenRouterKey: string | undefined;
+  let savedTypeSafeKey: string | undefined;
+
+  beforeEach(() => {
+    savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
+    savedTypeSafeKey = process.env.TYPESAFE_API_KEY;
+  });
+
+  afterEach(() => {
+    if (savedOpenRouterKey === undefined) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
+    }
+    if (savedTypeSafeKey === undefined) {
+      delete process.env.TYPESAFE_API_KEY;
+    } else {
+      process.env.TYPESAFE_API_KEY = savedTypeSafeKey;
+    }
+  });
+
   it('returns null when unset', () => {
     expect(resolveDecisionModel({ model: {} } as any)).toBeNull();
   });
